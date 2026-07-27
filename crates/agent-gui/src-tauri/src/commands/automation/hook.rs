@@ -319,7 +319,10 @@ mod tests {
     fn run_hook_script_sync_executes_and_injects_context() {
         let registry = HookScopeRegistry::default();
         let dir = temp_workdir();
-        let script = if cfg!(windows) {
+        let script = if cfg!(windows)
+            && crate::runtime::shell_runner::default_platform_shell_profile().shell_family
+                != "posix"
+        {
             "Write-Output \"event=$env:LIVEAGENT_HOOK_EVENT\""
         } else {
             "printf \"event=$LIVEAGENT_HOOK_EVENT\""
@@ -341,7 +344,10 @@ mod tests {
     fn run_hook_script_sync_rejects_failed_script() {
         let registry = HookScopeRegistry::default();
         let dir = temp_workdir();
-        let script = if cfg!(windows) {
+        let script = if cfg!(windows)
+            && crate::runtime::shell_runner::default_platform_shell_profile().shell_family
+                != "posix"
+        {
             "Write-Output hook-out; Write-Error hook-err; exit 7"
         } else {
             "printf hook-out; printf hook-err >&2; exit 7"

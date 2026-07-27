@@ -371,6 +371,24 @@ fn is_windows_system32_dir(dir: &Path) -> bool {
     normalize(dir) == normalize(&Path::new(&root).join("System32"))
 }
 
+#[cfg(windows)]
+fn is_windows_app_execution_alias_dir(dir: &Path) -> bool {
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        return false;
+    };
+    let normalize = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_ascii_lowercase()
+    };
+    normalize(dir)
+        == normalize(
+            &Path::new(&local_app_data)
+                .join("Microsoft")
+                .join("WindowsApps"),
+        )
+}
+
 /// Git Bash 解析（对标 Claude Code）：env 覆盖 → PATH → Git for Windows 默认安装路径。
 #[cfg(windows)]
 fn find_git_bash() -> Option<PathBuf> {
@@ -388,8 +406,8 @@ fn find_git_bash() -> Option<PathBuf> {
 
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     for dir in std::env::split_paths(&path_var) {
-        // System32 下的 bash.exe 是 WSL 启动器，不是 Git Bash。
-        if is_windows_system32_dir(&dir) {
+        // System32 和 WindowsApps 下的 bash.exe 都可能是 WSL 启动器，不是 Git Bash。
+        if is_windows_system32_dir(&dir) || is_windows_app_execution_alias_dir(&dir) {
             continue;
         }
         let candidate = dir.join("bash.exe");
@@ -591,7 +609,7 @@ fn platform_shell_candidates(cmd: &str) -> Vec<ShellCandidate> {
 }
 
 #[cfg(test)]
-fn default_platform_shell_profile() -> ShellExecutionProfile {
+pub(crate) fn default_platform_shell_profile() -> ShellExecutionProfile {
     platform_shell_candidates("")
         .into_iter()
         .next()
@@ -908,6 +926,16 @@ mod tests {
             3 => assert_eq!(profiles[..], tail),
             other => panic!("unexpected windows candidate count: {other}"),
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_app_execution_alias_is_not_treated_as_git_bash() {
+        let local_app_data = std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA");
+        let windows_apps = std::path::Path::new(&local_app_data)
+            .join("Microsoft")
+            .join("WindowsApps");
+        assert!(super::is_windows_app_execution_alias_dir(&windows_apps));
     }
 
     #[cfg(windows)]
