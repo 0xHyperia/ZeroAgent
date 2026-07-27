@@ -568,6 +568,7 @@ pub async fn app_update_install(
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 pub fn app_restart(app: AppHandle) -> Result<(), String> {
     // restart() tears the process down without firing ExitRequested/Exit
     // (sync command, main thread), so the exit-path cleanup must run here or

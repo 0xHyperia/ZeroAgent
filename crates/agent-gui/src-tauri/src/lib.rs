@@ -25,6 +25,7 @@ const MAIN_WINDOW_LABEL: &str = "main";
 // layouts we don't manage, VISIBLE would re-show a tray-hidden window on
 // startup, and DECORATIONS would override the per-platform window chrome
 // (Windows runs undecorated with custom chrome).
+#[cfg(desktop)]
 pub(crate) const WINDOW_STATE_FLAGS: tauri_plugin_window_state::StateFlags =
     tauri_plugin_window_state::StateFlags::SIZE
         .union(tauri_plugin_window_state::StateFlags::MAXIMIZED);

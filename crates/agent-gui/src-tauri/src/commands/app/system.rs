@@ -1556,6 +1556,7 @@ pub async fn system_append_debug_jsonl(
 // 桌面端读系统剪贴板的唯一通道：WKWebView 的 navigator.clipboard.readText()
 // 对来自其他应用的剪贴板内容会弹出原生"粘贴"确认气泡（DOM paste access），
 // 自定义右键菜单的粘贴必须绕开 webview 直接读原生剪贴板。
+#[cfg(desktop)]
 fn system_clipboard_read_text_sync() -> Result<String, String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|e| format!("clipboard unavailable: {e}"))?;
@@ -1568,6 +1569,7 @@ fn system_clipboard_read_text_sync() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 pub async fn system_clipboard_read_text() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(system_clipboard_read_text_sync)
         .await
