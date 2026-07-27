@@ -39,6 +39,10 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
     cargoToml,
     /target\.'cfg\(not\(any\(target_os = "android", target_os = "ios"\)\)\)'\.dependencies/,
   );
+  assert.match(
+    cargoToml,
+    /target\.'cfg\(target_os = "android"\)'\.dependencies[\s\S]*rquickjs = \{[^\n]*features = \["bindgen"\]/,
+  );
 });
 
 test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a site", () => {
