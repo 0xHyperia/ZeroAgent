@@ -316,6 +316,7 @@ mod tests {
                     "name": "A",
                     "apiKey": "secret-key",
                     "usageQuery": {
+                        "apiKey": "usage-key",
                         "accessToken": "usage-token",
                         "secretAccessKey": "usage-secret"
                     },
@@ -335,6 +336,11 @@ mod tests {
             load_gateway_settings_sync_snapshot(&conn).expect("load gateway settings snapshot");
         assert_eq!(snapshot["customProviders"][0]["apiKey"], Value::Null);
         assert_eq!(snapshot["customProviders"][0]["apiKeyConfigured"], true);
+        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["apiKey"], Value::Null);
+        assert_eq!(
+            snapshot["customProviders"][0]["usageQuery"]["apiKeyConfigured"],
+            true
+        );
         assert_eq!(snapshot["customProviders"][0]["usageQuery"]["accessToken"], Value::Null);
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["accessTokenConfigured"],

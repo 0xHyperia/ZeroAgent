@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { CliIdentityUpdateHost } from "./components/CliIdentityUpdateHost";
 import { CronPromptRunner } from "./components/cron/CronPromptRunner";
 import { DesktopExecutionSwitcher } from "./components/DesktopExecutionSwitcher";
 import { Pin } from "./components/icons";
@@ -132,6 +133,7 @@ function hasSensitiveSettingsUpdates(settings: AppSettings) {
     settings.customProviders.some((provider) => provider.apiKey.trim().length > 0) ||
     settings.customProviders.some(
       (provider) =>
+        provider.usageQuery.apiKey.trim().length > 0 ||
         provider.usageQuery.accessToken.trim().length > 0 ||
         provider.usageQuery.secretAccessKey.trim().length > 0,
     ) ||
@@ -168,10 +170,16 @@ function hasSensitiveSettingsUpdatesPayload(payload: unknown) {
     !Array.isArray(usageQueryUpdates) &&
     Object.values(usageQueryUpdates).some((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-      const update = value as { accessToken?: unknown; secretAccessKey?: unknown };
+      const update = value as {
+        apiKey?: unknown;
+        accessToken?: unknown;
+        secretAccessKey?: unknown;
+      };
+      // 显式携带字段(含空串=清除已配置密钥)即视为敏感更新,不得被丢弃。
       return (
-        (typeof update.accessToken === "string" && update.accessToken.trim().length > 0) ||
-        (typeof update.secretAccessKey === "string" && update.secretAccessKey.trim().length > 0)
+        typeof update.apiKey === "string" ||
+        typeof update.accessToken === "string" ||
+        typeof update.secretAccessKey === "string"
       );
     })
   ) {
@@ -770,6 +778,7 @@ export default function App() {
   return (
     <LocaleContext.Provider value={localeContextValue}>
       <AppChrome>
+        <CliIdentityUpdateHost settings={settings} setSettings={setSettings} />
         <CronPromptRunner settings={settings} />
         <MemoryOrganizerHost settings={settings} setSettings={setSettings} />
         <AppErrorBoundary>

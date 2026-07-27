@@ -9,7 +9,6 @@ import type {
 } from "@earendil-works/pi-ai";
 import { buildStreamRequestDebugPayload, type StreamDebugLogger } from "../../debug/agentDebug";
 import { buildMemoryToolsSuffixSection } from "../../memory/prompts/injection";
-import { mergeCustomHeaders } from "../../providers/customHeaders";
 import {
   createHostedSearchEventAggregator,
   createHostedSearchProbeId,
@@ -17,12 +16,13 @@ import {
   withHostedSearchProbeHeader,
 } from "../../providers/hostedSearchEvents";
 import {
-  buildProviderRequestHeaders,
   buildProviderRequestMetadata,
   createModelFromConfig,
   createStreamingTextReconciler,
   finalizeProviderStreamOptions,
   normalizeErrorMessage,
+  type ProviderRuntimeConfig,
+  prepareProviderRequest,
   resolveProviderCacheRetention,
   type StreamOptionsEx,
   streamSimpleByApi,
@@ -36,7 +36,6 @@ import {
   isProviderNativeWebFetchToolName,
   isProviderNativeWebSearchToolName,
 } from "../../providers/nativeWebSearch";
-import { prepareProxyRequest } from "../../providers/proxy";
 import type { RetryAttemptRecord } from "../../providers/runtime/streamRetry";
 import {
   inferRuntimePlatform,
@@ -44,13 +43,7 @@ import {
   type RuntimePlatform,
   runtimePlatformLabel,
 } from "../../runtimePlatform";
-import type {
-  CodexRequestFormat,
-  CustomProvider,
-  ProviderId,
-  ProviderModelConfig,
-  ReasoningLevel,
-} from "../../settings";
+import type { ProviderId, ReasoningLevel } from "../../settings";
 import { createSubagentScheduler, type SubagentScheduler } from "../../subagents/scheduler";
 import { withPowerActivity } from "../../system/powerActivity";
 import { sanitizeContextForModelRequest } from "../context/requestContextSanitizer";
@@ -238,7 +231,9 @@ export function buildToolsSuffix(
     }
     if (has("Delete")) {
       lines.push(
-        "- For workspace or Skill deletion, use Delete with the exact path returned by List/Glob/Grep/Read.",
+        "- Every intentional deletion of a file or directory inside the workspace or an enabled Skill MUST use Delete with the exact path, preferably workspace-relative or skill://. Use one Delete call per target; deleting a directory is recursive.",
+        "- NEVER perform such a deletion through Bash, ManagedProcess, a shell script, or a deletion-oriented CLI, including `rm`, `rmdir`, `unlink`, `find -delete`, `git rm`, `git clean`, PowerShell `Remove-Item`, or cmd `del` / `erase` / `rd`. Structured Delete calls are required so LiveAgent can record the path in Edited Files and the file ledger.",
+        "- If a deleted workspace path is tracked by Git and staging is required, call Delete first, then stage only that path with `git add -u -- <exact-workspace-relative-path>`.",
       );
     }
     if (hasAny("Grep", "Glob", "List")) {
@@ -259,7 +254,6 @@ export function buildToolsSuffix(
           "write / create files via heredocs, `tee`, `touch`, `cp`, or `mkdir` just to prepare a parent directory",
         );
       }
-      if (has("Delete")) alts.push("delete via `rm`, `rmdir`, `unlink`, or `find -delete`");
       if (alts.length > 0) {
         lines.push(
           `- Do NOT use Bash to ${alts.join(" or ")} workspace or Skill files — use the corresponding file tool above.`,
@@ -268,11 +262,6 @@ export function buildToolsSuffix(
       if (hasReadFamily) {
         lines.push(
           "- Do not run Bash cat/ls/find/grep to read, list, or search workspace or Skill files.",
-        );
-      }
-      if (has("Delete")) {
-        lines.push(
-          "- Do not run Bash rm, rmdir, unlink, or find -delete for workspace or Skill files.",
         );
       }
     }
@@ -652,18 +641,7 @@ function findLastAssistantMessage(messages: Message[]): AssistantMessage | null 
 export async function runAssistantWithTools(params: {
   providerId: ProviderId;
   model: string;
-  runtime: {
-    baseUrl: string;
-    apiKey: string;
-    customHeaders?: CustomProvider["customHeaders"];
-    requestFormat?: CodexRequestFormat;
-    reasoning?: ReasoningLevel;
-    promptCachingEnabled?: boolean;
-    promptCacheRetention?: "short" | "long";
-    nativeWebSearchEnabled?: boolean;
-    useSystemProxy?: boolean;
-    modelConfig?: ProviderModelConfig;
-  };
+  runtime: ProviderRuntimeConfig;
   runtimePlatform?: RuntimePlatform;
   context: Context;
   workdir: string;
@@ -714,20 +692,9 @@ export async function runAssistantWithTools(params: {
   const subagentScheduler = params.subagentScheduler ?? createSubagentScheduler();
 
   return withPowerActivity("assistant-tools", `${params.providerId}:${modelId}`, async () => {
-    const proxyRequest = await prepareProxyRequest(
-      params.providerId,
-      params.runtime.baseUrl.trim(),
-      mergeCustomHeaders(
-        buildProviderRequestHeaders(
-          params.providerId,
-          params.runtime.apiKey,
-          params.sessionId,
-          params.runtime.requestFormat,
-        ),
-        params.runtime.customHeaders,
-      ),
-      { useSystemProxy: params.runtime.useSystemProxy === true },
-    );
+    const proxyRequest = await prepareProviderRequest(params.providerId, params.runtime, {
+      sessionId: params.sessionId,
+    });
 
     const model = createModelFromConfig(
       params.providerId,
@@ -1287,10 +1254,9 @@ export async function runAssistantWithTools(params: {
         streamContext.tools ?? (agent?.state.tools as Context["tools"] | undefined) ?? llmTools;
       const effectiveContext = sanitizeContextForModelRequest({
         ...streamContext,
-        systemPrompt:
-          typeof currentSystemPrompt === "string"
-            ? currentSystemPrompt
-            : streamContext.systemPrompt,
+        // Keep the runtime-only tool rules out of compaction and persistence,
+        // then reattach them at the provider boundary on every model round.
+        systemPrompt: buildSystemPrompt(currentSystemPrompt, toolsSuffix),
         messages: streamContext.messages.slice(),
         tools: filterRequestTools(streamTools),
       });
