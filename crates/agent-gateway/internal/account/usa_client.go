@@ -195,32 +195,9 @@ func (c *USAClient) EnsureWebAPIKey(ctx context.Context, accessToken string) (st
 }
 
 func (c *USAClient) ModelsForAPIKey(ctx context.Context, accessToken string, keyID int64) (json.RawMessage, error) {
-	if keyID <= 0 {
-		return nil, &APIError{Status: http.StatusBadRequest, Message: "invalid API key ID"}
-	}
-	data, err := c.request(ctx, http.MethodGet, "/api/v1/keys?page=1&page_size=1000", nil, accessToken)
+	apiKey, err := c.OwnedAPIKey(ctx, accessToken, keyID)
 	if err != nil {
 		return nil, err
-	}
-	var page struct {
-		Items []struct {
-			ID     int64  `json:"id"`
-			Key    string `json:"key"`
-			Status string `json:"status"`
-		} `json:"items"`
-	}
-	if err := json.Unmarshal(data, &page); err != nil {
-		return nil, err
-	}
-	var apiKey string
-	for _, item := range page.Items {
-		if item.ID == keyID && item.Status == "active" {
-			apiKey = strings.TrimSpace(item.Key)
-			break
-		}
-	}
-	if apiKey == "" {
-		return nil, &APIError{Status: http.StatusNotFound, Message: "API key not found"}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin+"/v1/models", nil)
@@ -245,6 +222,37 @@ func (c *USAClient) ModelsForAPIKey(ctx context.Context, accessToken string, key
 		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned an invalid model list"}
 	}
 	return json.RawMessage(body), nil
+}
+
+func (c *USAClient) OwnedAPIKey(ctx context.Context, accessToken string, keyID int64) (string, error) {
+	if keyID <= 0 {
+		return "", &APIError{Status: http.StatusBadRequest, Message: "invalid API key ID"}
+	}
+	data, err := c.request(ctx, http.MethodGet, "/api/v1/keys?page=1&page_size=1000", nil, accessToken)
+	if err != nil {
+		return "", err
+	}
+	var page struct {
+		Items []struct {
+			ID     int64  `json:"id"`
+			Key    string `json:"key"`
+			Status string `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return "", err
+	}
+	var apiKey string
+	for _, item := range page.Items {
+		if item.ID == keyID && item.Status == "active" {
+			apiKey = strings.TrimSpace(item.Key)
+			break
+		}
+	}
+	if apiKey == "" {
+		return "", &APIError{Status: http.StatusNotFound, Message: "API key not found"}
+	}
+	return apiKey, nil
 }
 
 func (c *USAClient) StreamChatCompletion(ctx context.Context, apiKey string, payload []byte) (*http.Response, error) {

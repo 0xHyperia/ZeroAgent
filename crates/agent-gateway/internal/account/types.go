@@ -124,6 +124,7 @@ type CloudMessage struct {
 type WebSettings struct {
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
+	ProviderKeyID   int64  `json:"provider_key_id,omitempty"`
 }
 
 type ConversationRoute struct {

@@ -420,6 +420,42 @@ func TestWebProviderModelsRequireAnOwnedActiveKey(t *testing.T) {
 	}
 }
 
+func TestWebChatCompletionUsesOnlyTheSelectedUsersProviderKey(t *testing.T) {
+	service, store, handler := newAccountTestRuntime(t)
+	now := time.Now().UTC()
+	session := &Session{
+		ID: "provider-completion-user-one", UserID: 1, User: json.RawMessage(`{"id":1}`),
+		AccessToken: "access-1", AccessExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.PutSession(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := service.CreateCloudConversation(context.Background(), 1, "gpt-5.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(keyID int64) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{"conversation_id":%q,"model":"gpt-5.2","provider_key_id":%d,"content":"Hi"}`,
+			conversation.ID, keyID)
+		req := httptest.NewRequest(http.MethodPost, "/api/web-chat/completions", strings.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID})
+		req.Header.Set("Content-Type", "application/json")
+		result := httptest.NewRecorder()
+		handler.ServeHTTP(result, req)
+		return result
+	}
+
+	if foreign := request(42); foreign.Code != http.StatusNotFound {
+		t.Fatalf("foreign provider key status=%d body=%s", foreign.Code, foreign.Body.String())
+	}
+	if messages, err := store.ListCloudMessages(context.Background(), 1, conversation.ID); err != nil || len(messages) != 0 {
+		t.Fatalf("foreign provider key mutated conversation: messages=%#v err=%v", messages, err)
+	}
+	if owned := request(41); owned.Code != http.StatusOK || !strings.Contains(owned.Body.String(), "Hello") {
+		t.Fatalf("owned provider key status=%d body=%s", owned.Code, owned.Body.String())
+	}
+}
+
 func TestDeviceHistoryRoutesRemainVisibleWhenDeviceIsOffline(t *testing.T) {
 	service, _, handler := newAccountTestRuntime(t)
 	ctx := context.Background()

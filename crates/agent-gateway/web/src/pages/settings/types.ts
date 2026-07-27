@@ -23,6 +23,7 @@ export type SettingsPageProps = {
   saveState: WebSettingsSaveState;
   onBack: () => void;
   initialSection?: SectionId;
+  onSectionChange?: (section: SectionId) => void;
   hiddenSections?: SectionId[];
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;

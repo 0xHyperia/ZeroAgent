@@ -17,6 +17,7 @@ import {
 import type { MentionComposerHandle } from "@/components/chat/MentionComposer";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
+import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
@@ -31,9 +32,16 @@ import { toModelValue } from "@/lib/providers/llm";
 import {
   getRelayDashboardStats,
   getRelayProfile,
+  listRelayApiKeys,
+  listRelayGroups,
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
+import {
+  bindRelayKeysToSettings,
+  relayProviderId,
+  relayProviderKeyId,
+} from "@/lib/relay/providers";
 import {
   type AppSettings,
   type ChatRuntimeControls,
@@ -42,14 +50,15 @@ import {
   type ReasoningLevel,
 } from "@/lib/settings";
 import {
-  type SidebarBatchDeleteOptions,
   deleteSidebarConversations,
+  type SidebarBatchDeleteOptions,
 } from "@/lib/sidebar/batchDelete";
 import type { SidebarConversation } from "@/lib/sidebar/types";
 import type { WebSettingsSaveState } from "@/lib/webSettings";
 import { ChatComposerBar } from "@/pages/chat/ChatComposerBar";
 import { ChatHeader } from "@/pages/chat/ChatHeader";
 import { SettingsPage } from "@/pages/SettingsPage";
+import type { SectionId } from "@/pages/settings/types";
 
 type Conversation = {
   id: string;
@@ -60,7 +69,11 @@ type Conversation = {
 };
 type Message = { id: string; role: "user" | "assistant"; content: unknown };
 type Attachment = { id: string; name: string; type: string; size: number; data: string };
-type WebSettings = { model: string; reasoning_effort: "low" | "medium" | "high" };
+type WebSettings = {
+  model: string;
+  reasoning_effort: "low" | "medium" | "high";
+  provider_key_id?: number;
+};
 type DeviceConversation = {
   conversation_id: string;
   device_id: string;
@@ -91,6 +104,7 @@ type Props = {
 const EMPTY_MUTATIONS = new Map<string, ChatHistorySidebarMutationKind>();
 const EMPTY_PATHS = new Set<string>();
 const DEVICE_ROUTE_PREFIX = "device-route:";
+const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
 
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -137,12 +151,22 @@ export function CloudChatPage({
   onSwitch,
   onLogout,
 }: Props) {
+  const requestedSettingsSection = new URLSearchParams(window.location.search).get(
+    "settings",
+  ) as SectionId | null;
+  const initialSettingsSection =
+    requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)
+      ? requestedSettingsSection
+      : "account";
   const [accountStats, setAccountStats] = useState<RelayDashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [deviceConversations, setDeviceConversations] = useState<DeviceConversation[]>([]);
-  const [conversationId, setConversationId] = useState("");
+  const [conversationId, setConversationId] = useState(
+    () => new URLSearchParams(window.location.search).get("conversation")?.trim() ?? "",
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [model, setModel] = useState("gpt-5.1");
+  const [providerKeyId, setProviderKeyId] = useState(0);
   const [reasoning, setReasoning] = useState<ReasoningLevel>("medium");
   const [runtimeControls, setRuntimeControls] = useState<ChatRuntimeControls>(() => ({
     ...DEFAULT_CHAT_RUNTIME_CONTROLS,
@@ -156,7 +180,10 @@ export function CloudChatPage({
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 821px)").matches,
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(() =>
+    Boolean(requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)),
+  );
+  const [settingsSection, setSettingsSection] = useState<SectionId>(initialSettingsSection);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [pinnedConversationIds, setPinnedConversationIds] = useState<ReadonlySet<string>>(
@@ -166,6 +193,22 @@ export function CloudChatPage({
   const abortRef = useRef<AbortController | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<MentionComposerHandle | null>(null);
+  const initialSettingsRef = useRef(settings);
+  const setSettingsRef = useRef(setSettings);
+  const restoredConversationIdRef = useRef(conversationId);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (conversationId) url.searchParams.set("conversation", conversationId);
+    else url.searchParams.delete("conversation");
+    if (accountSettingsOpen) url.searchParams.set("settings", settingsSection);
+    else url.searchParams.delete("settings");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [accountSettingsOpen, conversationId, settingsSection]);
 
   const refreshConversations = useCallback(async () => {
     const response = await webChatRequest<{ conversations: Conversation[] }>(
@@ -175,12 +218,20 @@ export function CloudChatPage({
     return response.conversations;
   }, []);
 
-  async function saveWebSettings(nextModel: string, nextReasoning: ReasoningLevel) {
+  async function saveWebSettings(
+    nextModel: string,
+    nextReasoning: ReasoningLevel,
+    nextProviderKeyId = providerKeyId,
+  ) {
     const normalizedModel = nextModel.trim();
     if (!normalizedModel) return;
     await webChatRequest<{ settings: WebSettings }>("/api/web-settings", {
       method: "PATCH",
-      body: JSON.stringify({ model: normalizedModel, reasoning_effort: nextReasoning }),
+      body: JSON.stringify({
+        model: normalizedModel,
+        reasoning_effort: nextReasoning,
+        provider_key_id: nextProviderKeyId,
+      }),
     });
   }
 
@@ -194,6 +245,7 @@ export function CloudChatPage({
       getRelayDashboardStats().then(setAccountStats),
       webChatRequest<{ settings: WebSettings }>("/api/web-settings").then((response) => {
         setModel(response.settings.model);
+        setProviderKeyId(response.settings.provider_key_id ?? 0);
         setReasoning(response.settings.reasoning_effort);
         setRuntimeControls((current) => ({
           ...current,
@@ -202,8 +254,32 @@ export function CloudChatPage({
       }),
     ])
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .then(async () => {
+        const restoredConversationId = restoredConversationIdRef.current;
+        if (!restoredConversationId) return;
+        const response = await webChatRequest<{ messages: Message[] }>(
+          `/api/web-chat/conversations/${restoredConversationId}/messages`,
+        );
+        setMessages(response.messages);
+        if (window.matchMedia("(max-width: 820px)").matches) setSidebarOpen(false);
+      })
       .finally(() => setHistoryLoading(false));
   }, [refreshConversations]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listRelayApiKeys(), listRelayGroups()])
+      .then(async ([keys, groups]) => {
+        const next = await bindRelayKeysToSettings(initialSettingsRef.current, keys, groups, true);
+        if (!cancelled) setSettingsRef.current(() => next);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshRelayAccount = useCallback(async () => {
     const [profile, stats] = await Promise.all([getRelayProfile(), getRelayDashboardStats()]);
@@ -379,6 +455,7 @@ export function CloudChatPage({
           conversation_id: id,
           model,
           reasoning_effort: reasoning,
+          provider_key_id: providerKeyId,
           content,
         }),
         signal: controller.signal,
@@ -510,15 +587,14 @@ export function CloudChatPage({
     [model],
   );
   const modelOptions = useMemo(() => {
-    const configured = buildModelOptions(settings, { floatSelectedFirst: false }).filter(
-      (option) => option.providerType === "codex",
-    );
+    const configured = buildModelOptions(settings, { floatSelectedFirst: false });
     return configured.some((option) => option.model === model)
       ? configured
       : [modelOption, ...configured];
   }, [model, modelOption, settings]);
-  const selectedModelValue =
-    modelOptions.find((option) => option.model === model)?.value ?? modelOption.value;
+  const selectedModelValue = providerKeyId
+    ? toModelValue(relayProviderId(providerKeyId), model)
+    : (modelOptions.find((option) => option.model === model)?.value ?? modelOption.value);
   const userMenuLabel = user.username || user.email;
   const userAvatarLabel = userMenuLabel.slice(0, 1).toUpperCase();
 
@@ -617,8 +693,10 @@ export function CloudChatPage({
                 selectedValue={selectedModelValue}
                 sidebarOpen={sidebarOpen}
                 onSelectModel={(next) => {
+                  const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
                   setModel(next.model);
-                  void saveWebSettings(next.model, reasoning).catch((cause) =>
+                  setProviderKeyId(nextProviderKeyId);
+                  void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch((cause) =>
                     setError(String(cause)),
                   );
                 }}
@@ -719,7 +797,8 @@ export function CloudChatPage({
               setSettings={setSettings}
               saveState={settingsSaveState}
               onBack={() => setAccountSettingsOpen(false)}
-              initialSection="account"
+              initialSection={settingsSection}
+              onSectionChange={setSettingsSection}
               hiddenSections={["systemTools", "agents", "ssh", "memory", "hooks", "cron", "remote"]}
               relayUser={user}
               relayStats={accountStats}
@@ -729,6 +808,13 @@ export function CloudChatPage({
             />
           </div>
         ) : null}
+        <FirstRunOnboarding
+          userId={user.id}
+          onSyncKeys={async (keys, groups) => {
+            const next = await bindRelayKeysToSettings(settings, keys, groups, true);
+            setSettings(() => next);
+          }}
+        />
       </div>
     </AppErrorBoundary>
   );

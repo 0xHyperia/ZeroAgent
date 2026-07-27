@@ -617,6 +617,10 @@ func (s *Service) WebProviderModels(ctx context.Context, session *Session, keyID
 	return s.usa.ModelsForAPIKey(ctx, session.AccessToken, keyID)
 }
 
+func (s *Service) WebAPIKeyForID(ctx context.Context, session *Session, keyID int64) (string, error) {
+	return s.usa.OwnedAPIKey(ctx, session.AccessToken, keyID)
+}
+
 func (s *Service) AddCloudMessage(ctx context.Context, message *CloudMessage) error {
 	return s.store.AddCloudMessage(ctx, message)
 }
