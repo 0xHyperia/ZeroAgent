@@ -139,12 +139,13 @@ test("preset scripts stay in sync with the Rust builtin presets", async () => {
     fileURLToPath(new URL("../../src-tauri/src/services/provider_usage.rs", import.meta.url)),
     "utf8",
   );
+  const normalizedRustSource = rustSource.replace(/\r\n/g, "\n");
   for (const preset of [
     forms.USAGE_QUERY_PRESET_SCRIPTS.general,
     forms.USAGE_QUERY_PRESET_SCRIPTS.newapi,
   ]) {
     assert.ok(
-      rustSource.includes(`r#"${preset}"#`),
+      normalizedRustSource.includes(`r#"${preset}"#`),
       "preset script must match the Rust builtin byte-for-byte",
     );
   }

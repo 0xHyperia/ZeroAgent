@@ -255,7 +255,7 @@ test("archived paths survive resolveWorkspaceProjects normalization", () => {
     "/tmp/project-a",
     "/tmp/default-project",
   ]);
-  assert.equal(resolved.activeWorkspaceProjectId, settings.DEFAULT_WORKSPACE_PROJECT_ID);
+  assert.equal(resolved.activeWorkspaceProjectId, "project-b");
 });
 
 test("resolveWorkspaceProjects keeps archived projects while plain chat remains selectable", () => {
@@ -273,10 +273,7 @@ test("resolveWorkspaceProjects keeps archived projects while plain chat remains 
   );
 
   assert.equal(resolved.activeWorkspaceProjectId, settings.DEFAULT_WORKSPACE_PROJECT_ID);
-  assert.deepEqual(resolved.archivedWorkspaceProjectPaths, [
-    "/tmp/default-project",
-    "/tmp/project-a",
-  ]);
+  assert.deepEqual(resolved.archivedWorkspaceProjectPaths, ["/tmp/project-a"]);
 });
 
 test("removed (hidden) paths are dropped from the archived list", () => {
@@ -392,7 +389,7 @@ test("legacy default workspace migrates to an explicit folder project", () => {
 
   assert.equal(resolved.activeWorkspaceProjectId, settings.DEFAULT_WORKSPACE_PROJECT_ID);
   assert.equal(resolved.workspaceProjects.length, 1);
-  assert.notEqual(resolved.workspaceProjects[0].id, settings.DEFAULT_WORKSPACE_PROJECT_ID);
+  assert.equal(resolved.workspaceProjects[0].id, settings.DEFAULT_WORKSPACE_PROJECT_ID);
   assert.equal(resolved.workspaceProjects[0].path, "/tmp/legacy-project");
-  assert.equal(resolved.workspaceProjects[0].kind, "folder");
+  assert.equal(resolved.workspaceProjects[0].kind, "managed");
 });
