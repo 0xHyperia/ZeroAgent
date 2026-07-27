@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ComposerAttachmentCard } from "../../../components/chat/ComposerAttachmentCard";
 import { getUploadedFileTypeIcon } from "../../../components/chat/fileTypeIcons";
 import {
   MentionComposer,
@@ -21,7 +22,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
-  FolderClosed,
   Globe,
   GlobeOff,
   Lightbulb,
@@ -36,7 +36,6 @@ import {
   Square,
   SquarePen,
   Trash2,
-  X,
 } from "../../../components/icons";
 import { Button } from "../../../components/ui/button";
 import {
@@ -47,10 +46,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { useLocale } from "../../../i18n";
-import {
-  formatUploadedFileSize,
-  type PendingUploadedFile,
-} from "../../../lib/chat/messages/uploadedFiles";
+import type { PendingUploadedFile } from "../../../lib/chat/messages/uploadedFiles";
 import type { GitClient } from "../../../lib/git/types";
 import {
   type ChatRuntimeControls,
@@ -59,6 +55,7 @@ import {
 } from "../../../lib/settings";
 import { cn } from "../../../lib/shared/utils";
 import type { WorkspaceActivityClient } from "../../../lib/workspace-activity/types";
+import { useUploadedImagePreview } from "../transcript/uploadedImagePreview";
 
 const REASONING_I18N_KEYS: Record<ReasoningLevel, string> = {
   off: "settings.reasoning.off",
@@ -99,6 +96,53 @@ function RuntimeControlTooltip(props: { label: string; children: ReactNode }) {
   );
 }
 
+let pendingComposerImagePreviewSequence = 0;
+const pendingComposerImagePreviewKeys = new WeakMap<PendingUploadedFile, string>();
+
+function getPendingComposerImagePreviewKey(file: PendingUploadedFile) {
+  const cached = pendingComposerImagePreviewKeys.get(file);
+  if (cached) return cached;
+  pendingComposerImagePreviewSequence += 1;
+  const next = String(pendingComposerImagePreviewSequence);
+  pendingComposerImagePreviewKeys.set(file, next);
+  return next;
+}
+
+function PendingComposerAttachment(props: {
+  file: PendingUploadedFile;
+  workdir: string;
+  disabled: boolean;
+  removeLabel: string;
+  previewLabel: string;
+  closePreviewLabel: string;
+  onRemove: (relativePath: string) => void;
+}) {
+  const { file, workdir, disabled, removeLabel, previewLabel, closePreviewLabel, onRemove } = props;
+  const shouldPreviewImage =
+    file.kind === "image" && typeof file.absolutePath === "string" && file.absolutePath.trim();
+  const { imageSrc, isLoading } = useUploadedImagePreview(
+    shouldPreviewImage ? file.absolutePath : undefined,
+    shouldPreviewImage ? workdir : undefined,
+    shouldPreviewImage ? getPendingComposerImagePreviewKey(file) : undefined,
+  );
+  const TypeIcon = getUploadedFileTypeIcon(file);
+
+  return (
+    <ComposerAttachmentCard
+      fileName={file.fileName}
+      pathTitle={file.relativePath}
+      imageSrc={imageSrc}
+      isImageLoading={isLoading}
+      fallbackIcon={<TypeIcon className="h-4 w-4" />}
+      disabled={disabled}
+      removeLabel={removeLabel}
+      previewLabel={previewLabel}
+      closePreviewLabel={closePreviewLabel}
+      onRemove={() => onRemove(file.relativePath)}
+    />
+  );
+}
+
 export type ChatQueueTurnPreview = {
   id: string;
   previewText: string;
@@ -133,12 +177,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
   isSending: boolean;
   isUploadingFiles: boolean;
   isInputDisabled: boolean;
-  allowUploadsWithoutWorkspace?: boolean;
   inputPlaceholder: string;
   workdir: string;
-  projectFolderLabel?: string;
-  canSelectProjectFolder: boolean;
-  onSelectProjectFolder: () => void;
   enabledSkills: MentionComposerSkill[];
   isAgentMode: boolean;
   chatRuntimeControls: ChatRuntimeControls;
@@ -170,12 +210,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
     isSending,
     isUploadingFiles,
     isInputDisabled,
-    allowUploadsWithoutWorkspace = false,
     inputPlaceholder,
     workdir,
-    projectFolderLabel,
-    canSelectProjectFolder,
-    onSelectProjectFolder,
     enabledSkills,
     isAgentMode,
     chatRuntimeControls,
@@ -202,14 +238,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
     onHeightChange,
   } = props;
   const { t } = useLocale();
-  const projectFolderDisplayName =
-    projectFolderLabel ||
-    workdir
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .at(-1) ||
-    "";
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const attachmentListRef = useRef<HTMLDivElement | null>(null);
+  const previousPendingUploadCountRef = useRef(0);
   const queuePanelRef = useRef<HTMLDivElement | null>(null);
   const queueListRef = useRef<HTMLUListElement | null>(null);
   const queueScrollbarTrackRef = useRef<HTMLDivElement | null>(null);
@@ -231,13 +262,12 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
   const [queueScrollbar, setQueueScrollbar] = useState<QueueScrollbarState>(
     DEFAULT_QUEUE_SCROLLBAR_STATE,
   );
-  const uploadDisabled =
-    isInputDisabled ||
-    isUploadingFiles ||
-    (!allowUploadsWithoutWorkspace && (!isAgentMode || !workdir));
+  const uploadDisabled = isInputDisabled || isUploadingFiles || !isAgentMode || !workdir;
   const controlsDisabled = isInputDisabled;
   const hasSendableDraft = !composerIsEmpty || pendingUploadedFiles.length > 0;
-  const thinkingSupported = reasoningOptions.length > 0;
+  // 档位为空但恒开（deepseek-reasoner 型"恒开不可调"）也算支持思考——
+  // 亮灯但开关与档位均不可操作；两者皆无才是真不支持。
+  const thinkingSupported = reasoningOptions.length > 0 || thinkingAlwaysOn;
   const sendDisabled = isInputDisabled || isUploadingFiles || !hasSendableDraft;
   const canQueueDraftWhileSending = isSending && !sendDisabled;
   const primaryActionTitle = canQueueDraftWhileSending
@@ -245,18 +275,20 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
     : isSending
       ? t("chat.stopGeneration")
       : t("chat.sendMessage");
+  // controls 已经过 normalizeChatRuntimeControlsForProvider 钳制；这里兜底
+  // 取表内最高档，绝不给 Select 喂表外值。
   const selectedReasoning = reasoningOptions.includes(chatRuntimeControls.reasoning)
     ? chatRuntimeControls.reasoning
-    : DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
+    : reasoningOptions.includes(DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning)
+      ? DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning
+      : (reasoningOptions[reasoningOptions.length - 1] ?? DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning);
   const uploadTooltip = isUploadingFiles
     ? t("chat.upload.uploading")
-    : allowUploadsWithoutWorkspace
-      ? t("chat.upload.button")
-      : !isAgentMode
-        ? t("chat.upload.onlyInTools")
-        : !workdir
-          ? t("chat.upload.requireWorkdir")
-          : t("chat.upload.button");
+    : !isAgentMode
+      ? t("chat.upload.onlyInTools")
+      : !workdir
+        ? t("chat.upload.requireWorkdir")
+        : t("chat.upload.button");
   const thinkingTooltip = !thinkingSupported
     ? t("chat.runtime.thinkingUnavailable")
     : t("chat.runtime.thinkingTooltip");
@@ -269,6 +301,15 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
   const toggleQueueCollapsed = useCallback(() => {
     setQueueCollapsed((current) => !current);
   }, []);
+
+  useLayoutEffect(() => {
+    const previousCount = previousPendingUploadCountRef.current;
+    previousPendingUploadCountRef.current = pendingUploadedFiles.length;
+    if (pendingUploadedFiles.length <= previousCount) return;
+
+    const attachmentList = attachmentListRef.current;
+    if (attachmentList) attachmentList.scrollLeft = attachmentList.scrollWidth;
+  }, [pendingUploadedFiles.length]);
 
   // ref 与 state 同步更新：高度上报的 RO/rAF 回调可能先于 effect 执行，
   // 必须在布局变化前就能读到最新展开态。切换前记录卡片当前高度，
@@ -535,44 +576,6 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
           isComposerExpanded && "flex min-h-0 flex-col justify-end",
         )}
       >
-        {/* Pending uploaded files — above the composer card */}
-        {pendingUploadedFiles.length > 0 && (
-          <div className="upload-file-list mb-2.5 flex gap-2 overflow-x-auto px-0.5 pb-1">
-            {pendingUploadedFiles.map((file) => {
-              const TypeIcon = getUploadedFileTypeIcon(file);
-              return (
-                <div
-                  key={file.relativePath}
-                  title={file.relativePath}
-                  className="group flex w-[calc(25%-6px)] min-w-[calc(25%-6px)] items-center gap-2 rounded-xl border border-white/45 bg-white/55 px-2.5 py-1.5 text-[calc(11px*var(--zone-font-scale,1))] shadow-[0_2px_8px_-2px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-150 transition-all hover:bg-white/75 hover:shadow-[0_4px_14px_-4px_rgba(15,23,42,0.10)] dark:border-white/10 dark:bg-white/[0.06] dark:hover:bg-white/[0.10]"
-                >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-black/[0.04] dark:bg-white/[0.10]">
-                    <TypeIcon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[calc(12px*var(--zone-font-scale,1))] font-medium tracking-tight text-foreground/90">
-                      {file.fileName}
-                    </div>
-                    <div className="truncate text-[calc(10px*var(--zone-font-scale,1))] text-muted-foreground">
-                      {formatUploadedFileSize(file.sizeBytes)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isInputDisabled}
-                    onClick={() => onRemovePendingUpload(file.relativePath)}
-                    className="shrink-0 rounded-full p-1 text-muted-foreground/70 opacity-0 transition-all hover:bg-foreground/5 hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none"
-                    aria-label={`${t("chat.upload.removeFile")} ${file.fileName}`}
-                    title={t("chat.upload.removeFile")}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {queuedTurns.length > 0 ? (
           <div
             ref={queuePanelRef}
@@ -748,28 +751,25 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
             className="pointer-events-none absolute inset-0 rounded-[24px] bg-gradient-to-b from-white/18 to-transparent opacity-70 dark:from-white/[0.04] dark:opacity-100"
           />
 
-          <div className="relative z-10 flex h-9 shrink-0 items-center border-b border-border/45 px-3">
-            <button
-              type="button"
-              disabled={!canSelectProjectFolder}
-              onClick={onSelectProjectFolder}
-              title={
-                workdir
-                  ? `${t("chat.composer.folderBound")}: ${workdir}`
-                  : t("chat.composer.selectFolder")
-              }
-              className={cn(
-                "flex h-7 min-w-0 max-w-full items-center gap-2 rounded-md px-2 text-xs text-muted-foreground outline-hidden transition-colors",
-                canSelectProjectFolder &&
-                  "hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
-              )}
+          {pendingUploadedFiles.length > 0 ? (
+            <div
+              ref={attachmentListRef}
+              className="upload-file-list relative z-10 flex shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden pb-1 pl-4 pr-12 pt-2"
             >
-              <FolderClosed className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">
-                {projectFolderDisplayName || t("chat.composer.noFolder")}
-              </span>
-            </button>
-          </div>
+              {pendingUploadedFiles.map((file) => (
+                <PendingComposerAttachment
+                  key={`${file.relativePath}-${file.absolutePath ?? file.fileName}`}
+                  file={file}
+                  workdir={workdir}
+                  disabled={isInputDisabled}
+                  removeLabel={t("chat.upload.removeFile")}
+                  previewLabel={t("chat.upload.previewImage")}
+                  closePreviewLabel={t("chat.upload.closePreview")}
+                  onRemove={onRemovePendingUpload}
+                />
+              ))}
+            </div>
+          ) : null}
 
           <button
             type="button"
@@ -789,7 +789,13 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
           {/* 常驻 flex-1：动画把卡片钳在中间高度时由本区吸收伸缩，工具栏才能
               全程贴住卡片底边。min-h-0 只在展开态加——折叠态靠自动最小高度
               (= 编辑器钳制高) 撑起卡片的固有高度，加了会塌缩。 */}
-          <div className={cn("relative flex flex-1 px-4 pt-3.5", isComposerExpanded && "min-h-0")}>
+          <div
+            className={cn(
+              "relative flex flex-1 px-4",
+              pendingUploadedFiles.length > 0 ? "pt-1.5" : "pt-3.5",
+              isComposerExpanded && "min-h-0",
+            )}
+          >
             <MentionComposer
               ref={composerRef}
               onSend={handleComposerSend}
@@ -815,13 +821,11 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
                   aria-label={
                     isUploadingFiles
                       ? t("chat.upload.uploading")
-                      : allowUploadsWithoutWorkspace
-                        ? t("chat.upload.selectFiles")
-                        : !isAgentMode
-                          ? t("chat.upload.onlyInTools")
-                          : !workdir
-                            ? t("chat.upload.requireWorkdir")
-                            : t("chat.upload.selectFiles")
+                      : !isAgentMode
+                        ? t("chat.upload.onlyInTools")
+                        : !workdir
+                          ? t("chat.upload.requireWorkdir")
+                          : t("chat.upload.selectFiles")
                   }
                   className={cn(
                     "composer-toolbar-action relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full outline-hidden transition-colors hover:bg-muted/60 focus-visible:bg-muted/60",
@@ -909,7 +913,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: {
                 </button>
               </RuntimeControlTooltip>
 
-              {reasoningOptions.length > 0 ? (
+              {reasoningOptions.length > 1 ? (
                 <div
                   aria-hidden={!chatRuntimeControls.thinkingEnabled}
                   className={cn(

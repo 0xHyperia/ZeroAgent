@@ -19,7 +19,6 @@ type AccountFixture struct {
 	ControllerSession   *account.Session
 	Device              *account.Device
 	Selection           *account.SelectionLease
-	DeviceManager       *session.Manager
 	SelectionCredential string
 }
 
@@ -76,14 +75,13 @@ func NewAccountFixture(t testing.TB, root *session.Manager) *AccountFixture {
 	}
 	payload, err := json.Marshal(map[string]string{
 		"lease": selection.ID, "runtimeKind": selection.RuntimeKind,
-		"deviceId": selection.DeviceID, "workspaceId": selection.WorkspaceID,
+		"deviceId": selection.DeviceID, "agentId": selection.AgentID, "workspaceId": selection.WorkspaceID,
 	})
 	if err != nil {
 		t.Fatalf("encode account fixture selection: %v", err)
 	}
 	return &AccountFixture{
 		Service: service, ControllerSession: controller, Device: device, Selection: selection,
-		DeviceManager:       root.DeviceManager(controller.UserID, device.ID),
 		SelectionCredential: "selection." + base64.RawURLEncoding.EncodeToString(payload),
 	}
 }

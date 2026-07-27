@@ -65,6 +65,7 @@ test("selection credentials preserve the remote workspace binding", () => {
     lease: "lease-2",
     runtimeKind: "device_agent",
     deviceId: "device-a",
+    agentId: "device-a",
     workspaceId: "workspace-a",
   });
 });

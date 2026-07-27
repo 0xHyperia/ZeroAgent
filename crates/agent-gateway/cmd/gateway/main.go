@@ -54,8 +54,9 @@ func main() {
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.NewHTTPServerWithAccountService(cfg, sm, accountService),
+		Handler:           server.NewHTTPServer(cfg, sm, accountService),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

@@ -7,6 +7,7 @@ import {
   Cloud,
   Cpu,
   Key,
+  MonitorSmartphone,
   Settings2,
   Shield,
   Wrench,
@@ -17,6 +18,7 @@ import { useLocale } from "../i18n";
 import { AccountSection } from "./settings/AccountSection";
 import { AgentsSection } from "./settings/AgentsSection";
 import { CronSection } from "./settings/CronSection";
+import { DevicesSection } from "./settings/DevicesSection";
 import { HooksSection } from "./settings/HooksSection";
 import { MemoryPanel } from "./settings/memory/MemoryPanel";
 import { RelayProvidersSection } from "./settings/RelayProvidersSection";
@@ -119,6 +121,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "ssh", icon: <Key className="h-4 w-4" /> },
       { id: "remote", icon: <Cloud className="h-4 w-4" /> },
+      { id: "devices", icon: <MonitorSmartphone className="h-4 w-4" /> },
     ],
   },
 ];
@@ -136,6 +139,7 @@ export function SettingsPage(props: SettingsPageProps) {
     onRelayUserChange,
     onRelayStatsChange,
     runtimeKind = "device_agent",
+    onAgentDirectoryChanged,
   } = props;
   const { t } = useLocale();
   const [section, setSection] = useState<SectionId>(initialSection);
@@ -150,6 +154,7 @@ export function SettingsPage(props: SettingsPageProps) {
     memory: t("settings.navMemory"),
     hooks: t("settings.navHooks"),
     cron: t("settings.navCron"),
+    devices: t("settings.navAgentManagement"),
     remote: t("settings.navRemote"),
   };
 
@@ -208,9 +213,11 @@ export function SettingsPage(props: SettingsPageProps) {
       case "agents":
         return <AgentsSection settings={settings} setSettings={setSettings} />;
       case "ssh":
-        return <SshSection settings={settings} setSettings={setSettings} />;
+        return <SshSection settings={settings} setSettings={setSettings} saveState={saveState} />;
       case "remote":
         return <RemoteSection settings={settings} setSettings={setSettings} />;
+      case "devices":
+        return <DevicesSection onDirectoryChanged={onAgentDirectoryChanged} />;
       case "memory":
         return (
           <MemoryPanel
@@ -290,13 +297,15 @@ export function SettingsPage(props: SettingsPageProps) {
               {sectionLabels[section]}
             </div>
           </div>
-          <div
-            className="settings-save-indicator flex items-center gap-1.5 text-xs text-muted-foreground"
-            title={saveIndicator.title}
-          >
-            <div className={`h-1.5 w-1.5 rounded-full ${saveIndicator.dotClass}`} />
-            {saveIndicator.text}
-          </div>
+          {section !== "devices" ? (
+            <div
+              className="settings-save-indicator flex items-center gap-1.5 text-xs text-muted-foreground"
+              title={saveIndicator.title}
+            >
+              <div className={`h-1.5 w-1.5 rounded-full ${saveIndicator.dotClass}`} />
+              {saveIndicator.text}
+            </div>
+          ) : null}
         </header>
 
         <div

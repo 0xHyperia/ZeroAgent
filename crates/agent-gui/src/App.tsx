@@ -48,6 +48,7 @@ import {
   type GatewaySettingsSyncPayload,
 } from "./lib/settings/sync";
 import { applyStoredGlobalShortcuts } from "./lib/shortcuts/globalShortcuts";
+import { applyFontFamilies } from "./lib/system/fontFamily";
 import { ChatPage } from "./pages/ChatPage";
 import { RemoteDeviceChatPage } from "./pages/RemoteDeviceChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -129,6 +130,11 @@ function hasSettingsSyncChanged(prev: AppSettings, next: AppSettings) {
 function hasSensitiveSettingsUpdates(settings: AppSettings) {
   return (
     settings.customProviders.some((provider) => provider.apiKey.trim().length > 0) ||
+    settings.customProviders.some(
+      (provider) =>
+        provider.usageQuery.accessToken.trim().length > 0 ||
+        provider.usageQuery.secretAccessKey.trim().length > 0,
+    ) ||
     settings.ssh.hosts.some(
       (host) => host.password.trim().length > 0 || host.privateKey.trim().length > 0,
     )
@@ -138,7 +144,11 @@ function hasSensitiveSettingsUpdates(settings: AppSettings) {
 function hasSensitiveSettingsUpdatesPayload(payload: unknown) {
   const source =
     payload && typeof payload === "object" && !Array.isArray(payload)
-      ? (payload as { providerApiKeyUpdates?: unknown; sshSecretUpdates?: unknown })
+      ? (payload as {
+          providerApiKeyUpdates?: unknown;
+          providerUsageQuerySecretUpdates?: unknown;
+          sshSecretUpdates?: unknown;
+        })
       : {};
   const providerUpdates = source.providerApiKeyUpdates;
   if (
@@ -148,6 +158,22 @@ function hasSensitiveSettingsUpdatesPayload(payload: unknown) {
     Object.values(providerUpdates).some(
       (value) => typeof value === "string" && value.trim().length > 0,
     )
+  ) {
+    return true;
+  }
+  const usageQueryUpdates = source.providerUsageQuerySecretUpdates;
+  if (
+    usageQueryUpdates &&
+    typeof usageQueryUpdates === "object" &&
+    !Array.isArray(usageQueryUpdates) &&
+    Object.values(usageQueryUpdates).some((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const update = value as { accessToken?: unknown; secretAccessKey?: unknown };
+      return (
+        (typeof update.accessToken === "string" && update.accessToken.trim().length > 0) ||
+        (typeof update.secretAccessKey === "string" && update.secretAccessKey.trim().length > 0)
+      );
+    })
   ) {
     return true;
   }
@@ -255,7 +281,7 @@ export default function App() {
     relayReady,
     settings.remote.enabled,
     settings.remote.gatewayUrl,
-    settings.remote.grpcPort,
+    settings.remote.gatewayPort,
     settings.system.activeWorkspaceProjectId,
     settings.system.workspaceProjects,
   ]);
@@ -281,7 +307,7 @@ export default function App() {
     relayReady,
     settings.remote.enabled,
     settings.remote.gatewayUrl,
-    settings.remote.grpcPort,
+    settings.remote.gatewayPort,
     settings.system.workspaceProjects,
     settings.system.archivedWorkspaceProjectPaths,
     settings.system.missingWorkspaceProjectPaths,
@@ -315,6 +341,18 @@ export default function App() {
     const root = document.documentElement;
     root.classList.toggle("dark", effectiveTheme === "dark");
   }, [effectiveTheme]);
+
+  useEffect(() => {
+    applyFontFamilies({
+      interfaceFontFamily: settings.customSettings.interfaceFontFamily,
+      chatFontFamily: settings.customSettings.chatFontFamily,
+      codeFontFamily: settings.customSettings.codeFontFamily,
+    });
+  }, [
+    settings.customSettings.interfaceFontFamily,
+    settings.customSettings.chatFontFamily,
+    settings.customSettings.codeFontFamily,
+  ]);
 
   useEffect(() => {
     if (!settingsReady) return;

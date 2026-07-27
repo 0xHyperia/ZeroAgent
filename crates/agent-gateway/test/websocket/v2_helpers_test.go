@@ -4,11 +4,10 @@ package websocket_test
 // 按 proto 帧收发。
 
 import (
-	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,82 +16,48 @@ import (
 
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/pbws"
 	"github.com/liveagent/agent-gateway/internal/session"
 )
 
-type v2AccountFixture struct {
-	accounts      *account.Service
-	accessToken   string
-	device        *account.Device
-	credential    string
-	selection     *account.SelectionLease
-	deviceManager *session.Manager
+type testAgentAuthenticator struct {
+	mu     sync.RWMutex
+	tokens map[string]string
 }
 
-func newV2AccountFixture(t *testing.T, root *session.Manager) *v2AccountFixture {
+func newAgentTokenStore(t *testing.T) *testAgentAuthenticator {
 	t.Helper()
-	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/auth/me":
-			_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"id":1,"email":"one@example.com"}}`)
-		case "/api/v1/user/step-up/consume":
-			_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"valid":true,"user_id":1}}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(usa.Close)
+	return &testAgentAuthenticator{tokens: make(map[string]string)}
+}
 
-	store := account.NewMemoryStore()
-	accounts := account.NewService(
-		store,
-		account.NewUSAClientWithHTTPClient(usa.URL, usa.Client()),
-		time.Hour,
-		time.Hour,
-	)
-	const accessToken = "account-access-token"
-	desktop, err := accounts.DesktopSession(context.Background(), accessToken)
-	if err != nil {
-		t.Fatalf("create desktop session: %v", err)
+func (s *testAgentAuthenticator) Issue(agentID, _ string) (string, error) {
+	token := "agt_test_" + agentID
+	s.mu.Lock()
+	s.tokens[agentID] = token
+	s.mu.Unlock()
+	return token, nil
+}
+
+func (s *testAgentAuthenticator) AuthenticateAgent(agentID, token, _, _ string) (string, uint64, error) {
+	s.mu.RLock()
+	want := s.tokens[agentID]
+	s.mu.RUnlock()
+	if want == "" || token != want {
+		return "", 0, account.ErrUnauthorizedAgent
 	}
-	device, credential, err := accounts.RegisterDevice(context.Background(), desktop.UserID, account.RegisterDeviceInput{
-		InstallationID: "installation-1",
-		Name:           "Desktop",
-		Platform:       "windows",
-		Version:        "1.0.0",
-		Workspaces: []account.Workspace{{
-			ID: "workspace-1", Name: "Project", Path: "/workspace/project",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("register device: %v", err)
-	}
-	if _, err := accounts.AuthenticateDevice(context.Background(), device.ID, credential); err != nil {
-		t.Fatalf("authenticate device: %v", err)
-	}
-	target := account.TargetFingerprint(account.RuntimeKindDeviceAgent, device.ID, "workspace-1")
-	selection, err := accounts.SelectTarget(context.Background(), desktop, account.SelectTargetInput{
-		Proof:       "proof-1",
-		RuntimeKind: account.RuntimeKindDeviceAgent,
-		DeviceID:    device.ID,
-		WorkspaceID: "workspace-1",
-		Target:      target,
-	})
-	if err != nil {
-		t.Fatalf("select device: %v", err)
-	}
-	return &v2AccountFixture{
-		accounts: accounts, accessToken: accessToken, device: device, credential: credential,
-		selection: selection, deviceManager: root.DeviceManager(desktop.UserID, device.ID),
-	}
+	return agentID, 1, nil
+}
+
+func (s *testAgentAuthenticator) AuthenticationCurrent(agentID string, epoch uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return epoch == 1 && s.tokens[agentID] != ""
 }
 
 func newV2TestConfig() *config.Config {
 	return &config.Config{
+		Token:          "ws-token",
 		RequestTimeout: time.Second,
 	}
 }
@@ -135,7 +100,7 @@ func sendProtoFrame(t *testing.T, conn *websocket.Conn, frame proto.Message) {
 	}
 }
 
-// receiveWebFrame 读取一条 WebServerFrame，跳过与断言无关的周期/广播帧（对应 v1 harness
+// receiveWebFrame 读取一条 WebServerFrame，跳过与断言无关的周期/广播帧（测试 helper
 // 过滤集）；带关联 id 的 status 是 status_get / chat_prepare 的响应，不过滤。
 func receiveWebFrame(t *testing.T, conn *websocket.Conn) *gatewayv2.WebServerFrame {
 	t.Helper()
@@ -190,7 +155,7 @@ func receiveWebFrameWithID(t *testing.T, conn *websocket.Conn, id string) *gatew
 }
 
 // helloV2 完成浏览器链路握手并断言成功。
-func helloV2(t *testing.T, conn *websocket.Conn, fixture *v2AccountFixture) {
+func helloV2(t *testing.T, conn *websocket.Conn, token string) {
 	t.Helper()
 	sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{
 		RequestId: "hello-1",
@@ -198,11 +163,8 @@ func helloV2(t *testing.T, conn *websocket.Conn, fixture *v2AccountFixture) {
 			Hello: &gatewayv2.ClientHello{
 				ProtocolVersion: pbws.ProtocolVersion,
 				Role:            gatewayv2.ClientRole_CLIENT_ROLE_BROWSER,
-				Token:           fixture.accessToken,
+				Token:           token,
 				ClientName:      "webui-test",
-				SelectionLease:  fixture.selection.ID,
-				WorkspaceId:     fixture.selection.WorkspaceID,
-				RuntimeKind:     fixture.selection.RuntimeKind,
 			},
 		},
 	})
@@ -217,21 +179,19 @@ func helloV2(t *testing.T, conn *websocket.Conn, fixture *v2AccountFixture) {
 func newV2BrowserTest(t *testing.T) (*session.Manager, *session.AgentSession, *websocket.Conn, func()) {
 	t.Helper()
 
-	root := session.NewManager()
-	fixture := newV2AccountFixture(t, root)
-	sm := fixture.deviceManager
+	sm := session.NewManager()
 	sm.RecordAuthentication("desktop-agent", "0.9.0", "session-1")
-	agentSession := session.NewAgentSession(sm.LatestAuthSnapshot())
+	agentSession := session.NewAgentSession(sm.LatestAuthSnapshot("desktop-agent"))
 	sm.SetSession(agentSession)
 
-	handler := pbws.NewServer(newV2TestConfig(), root, fixture.accounts).BrowserHandler()
+	handler := pbws.NewServer(newV2TestConfig(), sm, nil).BrowserHandler()
 	conn, cleanup := dialV2(t, handler)
-	helloV2(t, conn, fixture)
+	helloV2(t, conn, "ws-token")
 	return sm, agentSession, conn, cleanup
 }
 
 // readOutboundEnvelope 取出网关发往桌面端的下一条信封并 Ack。
-func readOutboundEnvelope(t *testing.T, agentSession *session.AgentSession) *gatewayv1.GatewayEnvelope {
+func readOutboundEnvelope(t *testing.T, agentSession *session.AgentSession) *gatewayv2.GatewayEnvelope {
 	t.Helper()
 	select {
 	case outbound := <-agentSession.Outbound():
@@ -240,6 +200,23 @@ func readOutboundEnvelope(t *testing.T, agentSession *session.AgentSession) *gat
 	case <-time.After(time.Second):
 		t.Fatalf("timed out waiting for gateway request to reach agent")
 		return nil
+	}
+}
+
+func answerAgentRequests(sm *session.Manager, sess *session.AgentSession, marker string) {
+	for outbound := range sess.Outbound() {
+		outbound.Ack(nil)
+		if outbound.GetHistoryWorkdirs() == nil {
+			continue
+		}
+		sm.DispatchFromAgentForSession(sess, &gatewayv2.AgentEnvelope{
+			RequestId: outbound.GetRequestId(),
+			Payload: &gatewayv2.AgentEnvelope_HistoryWorkdirsResp{
+				HistoryWorkdirsResp: &gatewayv2.HistoryWorkdirsResponse{
+					Workdirs: []*gatewayv2.HistoryWorkdirSummary{{Path: marker}},
+				},
+			},
+		})
 	}
 }
 
@@ -255,11 +232,11 @@ func answerChatRuntimeProbe(
 	if !strings.HasPrefix(requestID, "chat-runtime-wake-") || envelope.GetPing() == nil {
 		t.Fatalf("chat runtime probe = %#v, want chat-runtime-wake-* Ping", envelope)
 	}
-	sm.DispatchFromAgent(&gatewayv1.AgentEnvelope{
+	sm.DispatchFromAgent("desktop-agent", &gatewayv2.AgentEnvelope{
 		RequestId: requestID,
 		Timestamp: time.Now().Unix(),
-		Payload: &gatewayv1.AgentEnvelope_Pong{
-			Pong: &gatewayv1.PongResponse{Timestamp: envelope.GetPing().GetTimestamp()},
+		Payload: &gatewayv2.AgentEnvelope_Pong{
+			Pong: &gatewayv2.PongResponse{Timestamp: envelope.GetPing().GetTimestamp()},
 		},
 	})
 	return requestID
@@ -267,10 +244,10 @@ func answerChatRuntimeProbe(
 
 // dispatchStarted 以假桌面端身份上报 run 的 started 控制事件。
 func dispatchStarted(sm *session.Manager, runID string, conversationID string) {
-	sm.DispatchFromAgent(&gatewayv1.AgentEnvelope{
+	sm.DispatchFromAgent("desktop-agent", &gatewayv2.AgentEnvelope{
 		RequestId: runID,
-		Payload: &gatewayv1.AgentEnvelope_ChatControl{
-			ChatControl: &gatewayv1.ChatControlEvent{
+		Payload: &gatewayv2.AgentEnvelope_ChatControl{
+			ChatControl: &gatewayv2.ChatControlEvent{
 				RequestId:      runID,
 				ConversationId: conversationID,
 				Type:           "started",

@@ -30,6 +30,15 @@ import { registerAskUserQuestionAnswerHandler } from "@/lib/chat/askUserQuestion
 import type { ChatHistorySummary } from "@/lib/chat/chatHistory";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
+import {
+  adoptHistoryWindowState,
+  evaluateHistoryWindowResponse,
+  type HistoryWindowState,
+  noteHistoryWindowTotal,
+  planHistoryWindowRequest,
+  readHistoryWindowCounts,
+  trimLeadingHeadlessEntries,
+} from "@/lib/chat/historyWindow";
 import type { CodeMentionReference } from "@/lib/chat/mentionReferences";
 import { createActivityStore } from "@/lib/chat/stream/activityStore";
 import {
@@ -98,6 +107,7 @@ import {
   type SelectedModel,
   setSelectedModel,
   updateChatRuntimeControlsForProvider,
+  updateChatTranscriptWidth,
   updateCustomSettings,
   updateRightDockFileTreeState,
   updateRightDockProjectState,
@@ -158,6 +168,10 @@ import { findWorkspaceProject, mergeWorkspaceProjectsWithHistory } from "@/lib/w
 import { AccountLoginPage } from "@/pages/AccountLoginPage";
 import { CloudChatPage } from "@/pages/CloudChatPage";
 import { FloorNavRail } from "@/pages/chat/transcript/FloorNavRail";
+import {
+  CHAT_TRANSCRIPT_WIDTH_CSS_VAR,
+  TranscriptWidthControls,
+} from "@/pages/chat/transcript/TranscriptWidthControls";
 import { WorkspaceCloneModal } from "@/pages/chat/WorkspaceCloneModal";
 import {
   type WorkspaceCloneTask,
@@ -184,6 +198,7 @@ import {
   CHAT_RUNTIME_PREPARING_STATUS,
   DEFAULT_BROWSER_TITLE,
   HISTORY_DETAIL_INITIAL_MAX_MESSAGES,
+  HISTORY_DETAIL_LOAD_EARLIER_PAGE_MESSAGES,
   HISTORY_LIST_PAGE_SIZE,
   MAX_UPLOAD_FILES,
   MCP_HUB_BROWSER_TITLE,
@@ -223,9 +238,11 @@ import { WorkspaceOverlayHost } from "./WorkspaceOverlayHost";
 const STALE_HISTORY_RETRY_INITIAL_DELAY_MS = 1_000;
 const STALE_HISTORY_RETRY_MAX_DELAY_MS = 30_000;
 
-// Two-phase open: schedule the quiet full hydration at browser idle time,
-// with a hard timeout so it still runs on busy pages (mirrors the GUI helper
-// semantics).
+// Idle scheduler for the open controller (mirrors the GUI helper semantics:
+// requestIdleCallback with a hard timeout so it still runs on busy pages).
+// The web end's opens resolve "painted-complete", so the controller never
+// actually schedules its phase-2 hydration through this — it exists to
+// satisfy the shared controller deps.
 const HYDRATE_IDLE_TIMEOUT_MS = 1_500;
 function scheduleIdleTask(task: () => void): () => void {
   if (typeof window.requestIdleCallback === "function") {
@@ -255,6 +272,7 @@ export default function GatewayApp() {
     register: handleRegisterSubmit,
     verifyTwoFactor,
     switchExecutionTarget,
+    reloadEnvironments,
     clearSession,
   } = useGatewaySession(historyShareToken);
   const workspaceSectionLabel = useMemo(() => {
@@ -265,6 +283,10 @@ export default function GatewayApp() {
     );
   }, [desktopEmbedded, environments, selection]);
   const { api, terminalClient, sftpClient, gitClient } = useGatewayClients(token);
+  const activeAgentScope = selection?.agent_id?.trim() || selection?.device_id?.trim() || "";
+  useEffect(() => {
+    if (api && activeAgentScope) api.setActiveAgent(activeAgentScope);
+  }, [activeAgentScope, api]);
   const [workspaceCloneTasks, setWorkspaceCloneTasks] = useState<WorkspaceCloneTask[]>([]);
   const dismissedWorkspaceCloneTaskIds = useRef(new Set<string>());
   const [status, setStatus] = useState<AgentStatus | null>(null);
@@ -319,7 +341,7 @@ export default function GatewayApp() {
   const [settingsSection, setSettingsSection] = useState<SectionId>("system");
   const [overlay, setOverlay] = useState<OverlayState>("closed");
   const { settings, setSettings, settingsSyncReady, settingsSyncError, settingsSaveState } =
-    useGatewaySettingsSync({ token, api });
+    useGatewaySettingsSync({ token, api, activeAgentId: selection?.agent_id ?? selection?.device_id ?? "" });
   const [relayReady, setRelayReady] = useState(false);
   const [relayUser, setRelayUser] = useState<RelayUser | null>(null);
   const [relayStats, setRelayStats] = useState<RelayDashboardStats | null>(null);
@@ -408,6 +430,7 @@ export default function GatewayApp() {
     null,
   );
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
+  const transcriptStageRef = useRef<HTMLElement | null>(null);
   const { handle: transcriptFollow, following: transcriptFollowing } = useScrollFollow({
     viewport: transcriptViewport,
     listenerRoot: transcriptScrollAreaRoot,
@@ -442,6 +465,11 @@ export default function GatewayApp() {
   } | null>(null);
   // Per-conversation runtime workdir (drafts have no persisted summary yet).
   const conversationWorkdirsRef = useRef<Map<string, string>>(new Map());
+  // Lazy history windows: per conversation, the persisted-message edge the
+  // loaded transcript starts at (see lib/chat/historyWindow.ts). Entries are
+  // (re)established by every applied history fetch and dropped with the
+  // conversation's other per-id resources.
+  const historyWindowStatesRef = useRef<Map<string, HistoryWindowState>>(new Map());
   const displayedConversationWorkdirRef = useRef("");
   const pendingUploadContextRef = useRef<{
     conversationId: string;
@@ -526,6 +554,7 @@ export default function GatewayApp() {
     () => chatCommandPipeline.pendingConversationIds(),
     [chatCommandPipeline],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Agent ID 是侧边栏 Store 的数据隔离边界。
   const sidebarStore = useMemo(
     () =>
       createSidebarStore(
@@ -539,7 +568,13 @@ export default function GatewayApp() {
           : createIdleSidebarBackend(),
         { pageSize: HISTORY_LIST_PAGE_SIZE },
       ),
-    [activityStore, api, getActivityKeepConversationIds, getSidebarProtectedConversationIds],
+    [
+      activeAgentScope,
+      activityStore,
+      api,
+      getActivityKeepConversationIds,
+      getSidebarProtectedConversationIds,
+    ],
   );
   useEffect(() => {
     if (!api) {
@@ -640,25 +675,40 @@ export default function GatewayApp() {
     );
   }, [activeWorkspaceProjectPath, isAgentMode, sidebarStore]);
 
-  // Two-phase open controller: phase 1 paints the message tail fast, phase 2
-  // hydrates the full transcript at idle. Deps go through refs (assigned per
-  // render) so the controller instance stays stable.
-  const openInitialRef = useRef<(id: string, seq: number) => Promise<"cache-hit" | "painted">>(() =>
-    Promise.resolve("painted"),
-  );
-  const hydrateFullRef = useRef<(id: string, seq: number) => Promise<void>>(() =>
-    Promise.resolve(),
-  );
+  // Conversation-open controller: the web end paints the conversation's whole
+  // established history window in phase 1 (openInitial resolves
+  // "painted-complete"), so the controller never schedules a phase-2
+  // hydration — messages above the window edge stay unfetched until the user
+  // pages up. Deps go through refs (assigned per render) so the controller
+  // instance stays stable.
+  const openInitialRef = useRef<
+    (id: string, seq: number) => Promise<"cache-hit" | "painted" | "painted-complete">
+  >(() => Promise.resolve("painted-complete"));
   const openController = useMemo(
     () =>
       createConversationOpenController({
         openInitial: (id, seq) => openInitialRef.current(id, seq),
-        hydrateFull: (id, seq) => hydrateFullRef.current(id, seq),
         scheduleIdle: scheduleIdleTask,
         onStateChange: setConversationOpenState,
       }),
     [],
   );
+
+  const resolveActiveAgentID = useCallback(async () => {
+    const currentApi = apiRef.current;
+    if (!currentApi) {
+      throw new Error("Gateway 尚未连接。");
+    }
+    let agentID = currentApi.getActiveAgent().trim();
+    if (!agentID) {
+      await currentApi.listAgents();
+      agentID = currentApi.getActiveAgent().trim();
+    }
+    if (!agentID) {
+      throw new Error("没有可用的 Agent。");
+    }
+    return agentID;
+  }, []);
 
   const {
     pendingUploadedFiles,
@@ -678,6 +728,7 @@ export default function GatewayApp() {
     handleFileDrop: handlePendingFileDrop,
   } = usePendingUploads({
     token,
+    resolveAgentID: resolveActiveAgentID,
     historyShareToken,
     settingsSyncReady,
     settingsOpen,
@@ -930,8 +981,22 @@ export default function GatewayApp() {
   // id-preserving merge into the transcript store (no flicker, no remount).
   // Only runs while the conversation is idle; a run started mid-fetch aborts
   // the merge so a stale snapshot can never truncate freshly folded entries.
+  //
+  // Fetches are EDGE-ANCHORED WINDOWS, not full hydrations: the request spans
+  // from the conversation's established window edge (historyWindow.ts) to the
+  // tail, so the per-turn refresh cost stays proportional to the loaded
+  // window instead of the conversation's lifetime size. `extendMessages`
+  // grows the window upward by a page (the transcript's "load earlier"
+  // affordance). A windowed response whose top edge slipped below the
+  // established one (concurrent append while the request was in flight) is
+  // refetched once with the corrected span and skipped if it slipped again —
+  // applying it could truncate the rendered region's top.
   const refreshDisplayedConversationHistorySnapshot = useCallback(
-    async (targetConversationId: string, currentApi = api, options?: { forceFull?: boolean }) => {
+    async (
+      targetConversationId: string,
+      currentApi = api,
+      options?: { extendMessages?: number },
+    ) => {
       const conversationIdValue = targetConversationId.trim();
       if (!currentApi || !conversationIdValue || isLocalDraftConversationId(conversationIdValue)) {
         return;
@@ -944,30 +1009,77 @@ export default function GatewayApp() {
         return;
       }
 
-      // If the full history is already loaded, refresh the full transcript so
-      // the merge cannot truncate it back to the most recent page.
-      const hasFullHistoryLoaded =
-        options?.forceFull === true ||
-        (selectedHistoryRef.current?.conversation_id === conversationIdValue &&
-          selectedHistoryRef.current.has_more === false);
+      const extendMessages = options?.extendMessages;
+      const windowStates = historyWindowStatesRef.current;
 
       let detail: HistoryDetail;
       let entries: ChatEntry[];
       try {
+        const planned = planHistoryWindowRequest(windowStates.get(conversationIdValue), {
+          initialWindowMessages: HISTORY_DETAIL_INITIAL_MAX_MESSAGES,
+          extendMessages,
+        });
         detail = await currentApi.getHistory(
           conversationIdValue,
-          hasFullHistoryLoaded ? undefined : { maxMessages: HISTORY_DETAIL_INITIAL_MAX_MESSAGES },
+          planned === undefined ? undefined : { maxMessages: planned },
         );
-        entries = await parseHistoryMessagesJsonAsync(detail.messages_json);
-        if (
-          detail.has_more === true &&
-          entries.length < getConversationTranscriptEntryCount(conversationIdValue)
-        ) {
-          // Partial window smaller than what is currently rendered: merging
-          // it would truncate the top of a longer transcript. Refetch full.
-          detail = await currentApi.getHistory(conversationIdValue);
-          entries = await parseHistoryMessagesJsonAsync(detail.messages_json);
+
+        if (planned !== undefined && detail.has_more === true) {
+          const counts = readHistoryWindowCounts(detail);
+          if (!counts) {
+            // Producer reported a partial window without usable counts (a
+            // contradiction — both come from the same code path): fall back
+            // to a full fetch rather than risking a top truncation.
+            windowStates.delete(conversationIdValue);
+            detail = await currentApi.getHistory(conversationIdValue);
+          } else {
+            const verdict = evaluateHistoryWindowResponse({
+              previous: windowStates.get(conversationIdValue),
+              counts,
+              extendMessages,
+            });
+            if (verdict.action === "retry") {
+              detail = await currentApi.getHistory(conversationIdValue, {
+                maxMessages: verdict.retryMaxMessages,
+              });
+              const retryCounts = readHistoryWindowCounts(detail);
+              const retryVerdict =
+                retryCounts && detail.has_more === true
+                  ? evaluateHistoryWindowResponse({
+                      previous: windowStates.get(conversationIdValue),
+                      counts: retryCounts,
+                      extendMessages,
+                    })
+                  : null;
+              if (detail.has_more === true) {
+                if (!retryVerdict || retryVerdict.action === "retry") {
+                  // The edge slipped twice in a row: give up on this cycle;
+                  // the refresh loops (busy→idle, upsert, stale-retry)
+                  // converge on a later pass.
+                  return;
+                }
+                windowStates.set(conversationIdValue, retryVerdict.nextState);
+              }
+            } else {
+              windowStates.set(conversationIdValue, verdict.nextState);
+            }
+          }
         }
+        if (detail.has_more !== true) {
+          // Complete fetch: the window reaches message 0 and stays complete.
+          const counts = readHistoryWindowCounts(detail);
+          if (counts) {
+            windowStates.set(conversationIdValue, {
+              oldestOffset: 0,
+              lastTotal: counts.totalMessageCount,
+            });
+          } else {
+            windowStates.delete(conversationIdValue);
+          }
+        }
+
+        const parsed = await parseHistoryMessagesJsonAsync(detail.messages_json);
+        entries = detail.has_more === true ? trimLeadingHeadlessEntries(parsed) : parsed;
       } catch {
         return;
       }
@@ -987,7 +1099,7 @@ export default function GatewayApp() {
         .get(conversationIdValue)
         .applyHistorySnapshot(entries, { mode: "enrich" });
     },
-    [api, getConversationTranscriptEntryCount, isConversationBusy, transcriptStoreRegistry],
+    [api, isConversationBusy, transcriptStoreRegistry],
   );
 
   const markVisibleConversationRevision = useCallback(() => {
@@ -1011,6 +1123,12 @@ export default function GatewayApp() {
       }
 
       transcriptStoreRegistry.move(previousId, nextId);
+
+      const windowState = historyWindowStatesRef.current.get(previousId);
+      if (windowState !== undefined) {
+        historyWindowStatesRef.current.delete(previousId);
+        historyWindowStatesRef.current.set(nextId, windowState);
+      }
 
       const workdir = conversationWorkdirsRef.current.get(previousId);
       if (workdir !== undefined) {
@@ -1596,12 +1714,12 @@ export default function GatewayApp() {
     refreshChatQueueSnapshot(update.conversationId?.trim() || pending.conversationId);
     if (pending.isEditResend) {
       // The seeded `rebased` already truncated committed optimistically, but
-      // the command was parked — server-side history is unchanged; a full
-      // quiet refresh restores the truncated suffix.
+      // the command was parked — server-side history is unchanged; a quiet
+      // window refresh restores the truncated suffix (the edit anchor always
+      // sits inside the loaded window, so the window covers the whole cut).
       void refreshDisplayedConversationHistorySnapshot(
         update.conversationId?.trim() || pending.conversationId,
         api,
-        { forceFull: true },
       );
     }
   };
@@ -1609,9 +1727,7 @@ export default function GatewayApp() {
     draftClientRequestsRef.current.delete(pending.clientRequestId);
     const conversationIdValue = pending.conversationId.trim();
     if (pending.isEditResend) {
-      void refreshDisplayedConversationHistorySnapshot(conversationIdValue, api, {
-        forceFull: true,
-      });
+      void refreshDisplayedConversationHistorySnapshot(conversationIdValue, api);
     }
     if (isLocalDraftConversationId(conversationIdValue)) {
       // The draft never materialized: drop its optimistic sidebar row. The
@@ -1861,8 +1977,7 @@ export default function GatewayApp() {
   });
   displayedConversationBusyRef.current = displayedConversationBusy;
 
-  // Phase-1 open in flight (initial tail fetch). The quiet phase-2 hydration
-  // ("hydrating") intentionally does NOT gate the composer or transcript.
+  // Open in flight (history-window fetch, before the replace apply paints).
   const historyDetailLoading = conversationOpenState.phase === "opening";
 
   // Deterministic messageRef attachment: when the displayed conversation
@@ -1954,6 +2069,12 @@ export default function GatewayApp() {
   // a history upsert — re-run the quiet enrich for the displayed conversation
   // so a turn holding stale or adopted-nothing content converges without a
   // re-open. The refresh itself re-checks displayed + idle around the fetch.
+  //
+  // The upsert also carries the conversation's authoritative message_count:
+  // fold it into the window bookkeeping FIRST (for every tracked conversation
+  // — revisits plan from the same state), so the next planned span covers the
+  // flushed messages and the post-turn refresh applies in a single request
+  // instead of tripping the slipped-edge retry.
   useEffect(() => {
     if (!api) {
       return;
@@ -1963,10 +2084,20 @@ export default function GatewayApp() {
         return;
       }
       const conversationIdValue = event.conversation_id.trim();
+      if (!conversationIdValue) {
+        return;
+      }
+      const windowStates = historyWindowStatesRef.current;
+      const windowState = windowStates.get(conversationIdValue);
+      if (windowState) {
+        const noted = noteHistoryWindowTotal(windowState, event.conversation.message_count);
+        if (noted !== windowState) {
+          windowStates.set(conversationIdValue, noted);
+        }
+      }
       if (
-        !conversationIdValue ||
         resolveVisibleConversationId(selectedHistoryIdRef.current, conversationIdRef.current) !==
-          conversationIdValue
+        conversationIdValue
       ) {
         return;
       }
@@ -1974,17 +2105,22 @@ export default function GatewayApp() {
     });
   }, [api, refreshDisplayedConversationHistorySnapshot]);
 
-  // --- Two-phase conversation open (controller deps) ------------------------
-  // Phase 1: paint the message tail fast. Sets the selection state
-  // synchronously (controller.open calls this in the same tick), fetches the
-  // initial slice, and replace-applies it to the transcript store. The web
-  // end has no synchronous local-activation path, so it always resolves
-  // "painted" (never "cache-hit") — revisits still show the cached transcript
-  // instantly because the registry store keeps rendering underneath.
+  // --- Conversation open (controller deps) ----------------------------------
+  // Single-phase open: paint the conversation's established history window
+  // (first opens fetch the initial tail, revisits everything the user has
+  // paged up to). Sets the selection state synchronously (controller.open
+  // calls this in the same tick), fetches the window, and replace-applies it
+  // to the transcript store. The web end has no synchronous local-activation
+  // path, so it always resolves "painted-complete" (never "cache-hit") —
+  // revisits still show the cached transcript instantly because the registry
+  // store keeps rendering underneath. Messages above the window edge stay
+  // unfetched until the user pages up ("load earlier history"): an idle full
+  // hydration would put open cost back on the conversation's lifetime size,
+  // which is exactly what the lazy window avoids.
   async function openConversationInitial(
     conversationIdValue: string,
     _seq: number,
-  ): Promise<"cache-hit" | "painted"> {
+  ): Promise<"cache-hit" | "painted-complete"> {
     const currentApi = api;
     if (!currentApi) {
       throw new Error("Gateway client is not ready.");
@@ -2015,15 +2151,32 @@ export default function GatewayApp() {
     }
 
     try {
-      const detail = await currentApi.getHistory(conversationIdValue, {
-        maxMessages: HISTORY_DETAIL_INITIAL_MAX_MESSAGES,
-      });
+      // Revisits fetch the conversation's established window (everything the
+      // user has paged up to), first opens fetch the initial tail window.
+      // The replace apply repaints the store region from this window either
+      // way, so the response's counts are adopted unconditionally — on the
+      // rare in-flight append the region top just lands a page lower.
+      const planned = planHistoryWindowRequest(
+        historyWindowStatesRef.current.get(conversationIdValue),
+        { initialWindowMessages: HISTORY_DETAIL_INITIAL_MAX_MESSAGES },
+      );
+      const detail = await currentApi.getHistory(
+        conversationIdValue,
+        planned === undefined ? undefined : { maxMessages: planned },
+      );
       if (isStale()) {
-        return "painted";
+        return "painted-complete";
       }
-      const entries = await parseHistoryMessagesJsonAsync(detail.messages_json);
+      const counts = readHistoryWindowCounts(detail);
+      if (counts) {
+        historyWindowStatesRef.current.set(conversationIdValue, adoptHistoryWindowState(counts));
+      } else {
+        historyWindowStatesRef.current.delete(conversationIdValue);
+      }
+      const parsed = await parseHistoryMessagesJsonAsync(detail.messages_json);
+      const entries = detail.has_more === true ? trimLeadingHeadlessEntries(parsed) : parsed;
       if (isStale()) {
-        return "painted";
+        return "painted-complete";
       }
       setSelectedHistory(detail);
       transcriptStoreRegistry
@@ -2033,7 +2186,7 @@ export default function GatewayApp() {
       if (detailWorkdir) {
         conversationWorkdirsRef.current.set(conversationIdValue, detailWorkdir);
       }
-      return "painted";
+      return "painted-complete";
     } catch (error) {
       if (!isStale()) {
         const message = asErrorMessage(
@@ -2051,21 +2204,7 @@ export default function GatewayApp() {
     }
   }
 
-  // Phase 2: quiet full hydration at idle, through the id-preserving enrich
-  // path — it never clobbers live-stream transcript entries and it skips
-  // entirely when phase 1 already returned the whole conversation.
-  async function hydrateConversationFull(conversationIdValue: string, _seq: number): Promise<void> {
-    const selected = selectedHistoryRef.current;
-    if (selected?.conversation_id === conversationIdValue && selected.has_more !== true) {
-      return;
-    }
-    await refreshDisplayedConversationHistorySnapshot(conversationIdValue, api, {
-      forceFull: true,
-    });
-  }
-
   openInitialRef.current = openConversationInitial;
-  hydrateFullRef.current = hydrateConversationFull;
 
   const prepareChatRuntime = useCallback(
     async (
@@ -2357,11 +2496,16 @@ export default function GatewayApp() {
       isImportingPastedTextRef.current = true;
       setUploadingFiles(true);
       try {
+        const agentID = await resolveActiveAgentID();
         const imported = await importPastedTextsAsFiles({
           token,
+          agentId: agentID,
           workdir,
           pastes: draft.largePastes,
         });
+        if (apiRef.current?.getActiveAgent().trim() !== agentID) {
+          throw new Error("Agent 已切换，已取消发送本次大段粘贴内容。");
+        }
         text = buildTextFromComposerDraft(draft, imported.fileByPasteId).trim();
         uploadedFiles = mergePendingUploadedFiles(files, imported.files);
       } finally {
@@ -2877,6 +3021,7 @@ export default function GatewayApp() {
               // Immediate local echo; the gateway delete events confirm.
               sidebarStore.removeLocal(conversationId);
               transcriptStoreRegistry.remove(conversationId);
+              historyWindowStatesRef.current.delete(conversationId);
               conversationWorkdirsRef.current.delete(conversationId);
               clearCachedComposerDraft(conversationId);
               setPendingUploadsForConversation(conversationId, []);
@@ -3065,8 +3210,8 @@ export default function GatewayApp() {
       return;
     }
 
-    // Two-phase open: initial tail paint now, quiet full hydration at idle;
-    // the overlay appears only after ~150ms of still-loading.
+    // Paint the conversation's established history window; the overlay
+    // appears only after ~150ms of still-loading.
     openController.open(targetConversationId);
     restoreCachedComposerDraft(targetConversationId);
   }
@@ -3088,6 +3233,7 @@ export default function GatewayApp() {
         }
         removedIds.add(id);
         transcriptStoreRegistry.remove(id);
+        historyWindowStatesRef.current.delete(id);
         conversationWorkdirsRef.current.delete(id);
         composerDraftCacheRef.current.delete(id);
         setPendingUploadsForConversation(id, []);
@@ -3122,6 +3268,7 @@ export default function GatewayApp() {
   const handleSidebarLocalDraftDeleted = useCallback(
     (id: string) => {
       transcriptStoreRegistry.remove(id);
+      historyWindowStatesRef.current.delete(id);
       conversationWorkdirsRef.current.delete(id);
       composerDraftCacheRef.current.delete(id);
       setPendingUploadsForConversation(id, []);
@@ -3602,9 +3749,11 @@ export default function GatewayApp() {
     // effect stops the old one.
     openController.cancel();
     clearSession();
+    chatCommandPipeline.reset();
     transcriptStoreRegistry.clear();
     activityStore.clear();
     draftClientRequestsRef.current.clear();
+    historyWindowStatesRef.current.clear();
     conversationWorkdirsRef.current.clear();
     composerDraftCacheRef.current.clear();
     composerDraftOwnerRef.current = "";
@@ -3639,6 +3788,7 @@ export default function GatewayApp() {
     setSelectedHistory(null);
   }, [
     activityStore,
+    chatCommandPipeline,
     clearPendingUploads,
     clearSession,
     invalidateHistoryLoad,
@@ -4039,6 +4189,12 @@ export default function GatewayApp() {
   );
   // RightDockPanel is memo'd: every callback handed to it must be stable or
   // the memo boundary is void (see the panel-side context useMemo).
+  const handleChatTranscriptWidthChange = useCallback(
+    (nextWidth: number) => {
+      setSettings((prev) => updateChatTranscriptWidth(prev, nextWidth));
+    },
+    [setSettings],
+  );
   const handleRightDockWidthChange = useCallback(
     (nextWidth: number) => {
       setSettings((prev) => updateRightDockWidth(prev, nextWidth));
@@ -4192,15 +4348,15 @@ export default function GatewayApp() {
     selectedHistory?.conversation_id === displayedConversationId &&
     selectedHistory.has_more === true;
   const loadingOlderHistory = fullHistoryLoading && displayedTranscriptRowCount > 0;
-  const handleLoadFullHistory = useCallback(() => {
+  const handleLoadEarlierHistory = useCallback(() => {
     if (!api || !displayedConversationId) {
       return;
     }
-    // Explicit full fetch through the id-preserving enrich path (same as the
-    // idle hydration); no-ops while a run is streaming.
+    // Grow the loaded window upward by one page through the id-preserving
+    // enrich path; no-ops while a run is streaming.
     setFullHistoryLoading(true);
     void refreshDisplayedConversationHistorySnapshot(displayedConversationId, api, {
-      forceFull: true,
+      extendMessages: HISTORY_DETAIL_LOAD_EARLIER_PAGE_MESSAGES,
     }).finally(() => {
       setFullHistoryLoading(false);
     });
@@ -4661,7 +4817,19 @@ export default function GatewayApp() {
                     <div className="gateway-banner-error">{chatError}</div>
                   ) : null}
 
-                  <section className="gateway-transcript-stage">
+                  <section
+                    ref={transcriptStageRef}
+                    className="gateway-transcript-stage"
+                    // Preferred (persisted) width, so a fresh mount paints at
+                    // the user's width instead of the default.
+                    // TranscriptWidthControls narrows this same variable to
+                    // the stage in a layout effect — see its header.
+                    style={
+                      {
+                        [CHAT_TRANSCRIPT_WIDTH_CSS_VAR]: `${settings.customSettings.chatTranscript.width}px`,
+                      } as CSSProperties
+                    }
+                  >
                     <div className="gateway-transcript-scroll-shell">
                       <ScrollArea
                         ref={setTranscriptScrollAreaRoot}
@@ -4674,6 +4842,7 @@ export default function GatewayApp() {
                             rows={transcriptRows}
                             liveStartIndex={transcriptLiveStartIndex}
                             activeTurnKey={displayedTranscript.activeTurnKey}
+                            contentWidth={settings.customSettings.chatTranscript.width}
                             isViewportFollowing={transcriptFollow.isFollowing}
                             navRef={transcriptNavRef}
                             onAnchorUserRowChange={setActiveFloorKey}
@@ -4688,8 +4857,8 @@ export default function GatewayApp() {
                             onOpenSettings={openSettings}
                             hasMoreHistory={selectedHistoryHasMore}
                             isLoadingMoreHistory={loadingOlderHistory}
-                            onLoadFullHistory={
-                              selectedHistoryHasMore ? handleLoadFullHistory : undefined
+                            onLoadEarlierHistory={
+                              selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
                             }
                             isAgentMode={isAgentMode}
                             showUsage={isAgentDevExecutionMode}
@@ -4705,6 +4874,19 @@ export default function GatewayApp() {
                           />
                         </ChangedFilesActionsProvider>
                       </ScrollArea>
+                      <TranscriptWidthControls
+                        hostRef={transcriptStageRef}
+                        width={settings.customSettings.chatTranscript.width}
+                        onWidthChange={handleChatTranscriptWidthChange}
+                        resizeLabel={
+                          settings.locale === "en-US"
+                            ? "Resize conversation content"
+                            : "调整对话正文宽度"
+                        }
+                        resetLabel={
+                          settings.locale === "en-US" ? "Double-click to reset" : "双击恢复默认宽度"
+                        }
+                      />
                       {displayedTranscriptRowCount > 0 && !conversationOpenState.showOverlay ? (
                         <FloorNavRail
                           conversationId={displayedConversationId}
@@ -4844,6 +5026,7 @@ export default function GatewayApp() {
                       onChatRuntimeControlsChange={handleChatRuntimeControlsChange}
                       onPickReadableFiles={() => fileInputRef.current?.click()}
                       onPasteFiles={handleImportReadableFiles}
+                      onLoadUploadedImagePreview={handleLoadUploadedImagePreview}
                       loadHistoryPrompts={loadComposerHistoryPrompts}
                       pendingUploadedFiles={pendingUploadedFiles}
                       onRemovePendingUpload={(relativePath) => {
@@ -4958,6 +5141,9 @@ export default function GatewayApp() {
                 onBack={closeSettings}
                 initialSection={settingsSection}
                 hiddenSections={["remote"]}
+                onAgentDirectoryChanged={async () => {
+                  await reloadEnvironments();
+                }}
                 relayUser={relayUser}
                 relayStats={relayStats}
                 onRelayUserChange={setRelayUser}

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
 type Service struct {
@@ -28,6 +28,8 @@ type Service struct {
 	deviceRevoker     func(userID int64, deviceID string)
 	webKeyMu          sync.Mutex
 	webKeys           map[int64]string
+	credentialMu      sync.RWMutex
+	credentialEpochs  map[string]uint64
 }
 
 func (s *Service) SetDeviceRevoker(revoker func(userID int64, deviceID string)) {
@@ -41,7 +43,7 @@ func NewService(store Store, usa *USAClient, sessionTTL, selectionLeaseTTL time.
 	if selectionLeaseTTL <= 0 {
 		selectionLeaseTTL = 8 * time.Hour
 	}
-	return &Service{store: store, usa: usa, sessionTTL: sessionTTL, selectionLeaseTTL: selectionLeaseTTL, now: time.Now, webKeys: make(map[int64]string)}
+	return &Service{store: store, usa: usa, sessionTTL: sessionTTL, selectionLeaseTTL: selectionLeaseTTL, now: time.Now, webKeys: make(map[int64]string), credentialEpochs: make(map[string]uint64)}
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (*LoginResult, *Session, error) {
@@ -153,6 +155,8 @@ type RegisterDeviceInput struct {
 	Version          string      `json:"version"`
 	DeviceID         string      `json:"device_id,omitempty"`
 	DeviceCredential string      `json:"device_credential,omitempty"`
+	AgentID          string      `json:"agent_id,omitempty"`
+	AgentToken       string      `json:"agent_token,omitempty"`
 	Workspaces       []Workspace `json:"workspaces"`
 }
 
@@ -168,7 +172,9 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, input Regist
 	now := s.now().UTC()
 	existing, lookupErr := s.store.GetDeviceByInstallation(ctx, userID, input.InstallationID)
 	if lookupErr == nil {
-		if input.DeviceID != existing.ID || !VerifyDeviceCredential(existing, input.DeviceCredential) {
+		providedID := firstNonEmpty(input.AgentID, input.DeviceID)
+		providedToken := firstNonEmpty(input.AgentToken, input.DeviceCredential)
+		if canonicalAgentID(providedID) != existing.ID || !VerifyDeviceCredential(existing, providedToken) {
 			return nil, "", &APIError{Status: http.StatusUnauthorized, Message: "existing device credential is required"}
 		}
 		existing.Name = normalizeDeviceName(input.Name, existing.Name)
@@ -185,11 +191,19 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, input Regist
 	if err != nil {
 		return nil, "", err
 	}
+	agentID := canonicalAgentID(firstNonEmpty(input.AgentID, input.DeviceID))
+	if firstNonEmpty(input.AgentID, input.DeviceID) != "" && agentID == "" {
+		return nil, "", &APIError{Status: http.StatusBadRequest, Message: "agent_id must be agent-UUIDv4"}
+	}
+	if agentID == "" {
+		agentID = "agent-" + uuid.NewString()
+	}
+	credential = "agt_" + credential
 	device := &Device{
-		ID: uuid.NewString(), UserID: userID, InstallationID: input.InstallationID,
+		ID: agentID, AgentID: agentID, UserID: userID, InstallationID: input.InstallationID,
 		Name: normalizeDeviceName(input.Name, "ZeroAgent device"), Platform: strings.TrimSpace(input.Platform),
 		Version: strings.TrimSpace(input.Version), CredentialHash: hashToken(credential), Workspaces: workspaces,
-		CreatedAt: now, LastSeenAt: now, Online: false,
+		CreatedAt: now, TokenIssuedAt: now, LastSeenAt: now, Online: false,
 	}
 	if err := s.store.UpsertDevice(ctx, device); err != nil {
 		return nil, "", err
@@ -217,11 +231,62 @@ func (s *Service) RevokeDevice(ctx context.Context, userID int64, deviceID strin
 	if s.deviceRevoker != nil {
 		s.deviceRevoker(userID, deviceID)
 	}
+	s.bumpCredentialEpoch(canonicalAgentID(deviceID))
 	return nil
 }
 
+var ErrUnauthorizedAgent = errors.New("unauthorized agent credential")
+
+func (s *Service) AuthenticateAgent(agentID, token, legacyDeviceID, legacyCredential string) (string, uint64, error) {
+	canonical := canonicalAgentID(firstNonEmpty(agentID, legacyDeviceID))
+	credential := firstNonEmpty(token, legacyCredential)
+	device, err := s.store.GetDeviceByID(context.Background(), canonical)
+	if err != nil || !VerifyDeviceCredential(device, credential) {
+		return "", 0, ErrUnauthorizedAgent
+	}
+	_ = s.store.SetDevicePresence(context.Background(), device.ID, true, s.now().UTC())
+	s.credentialMu.RLock()
+	epoch := s.credentialEpochs[device.ID]
+	s.credentialMu.RUnlock()
+	return device.ID, epoch, nil
+}
+
+func (s *Service) AuthenticationCurrent(agentID string, epoch uint64) bool {
+	s.credentialMu.RLock()
+	defer s.credentialMu.RUnlock()
+	return s.credentialEpochs[canonicalAgentID(agentID)] == epoch
+}
+
+func (s *Service) RotateDeviceToken(ctx context.Context, userID int64, deviceID string) (*Device, string, error) {
+	device, err := s.store.GetDevice(ctx, userID, canonicalAgentID(deviceID))
+	if err != nil {
+		return nil, "", &APIError{Status: http.StatusNotFound, Message: "device not found"}
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return nil, "", err
+	}
+	token = "agt_" + token
+	device.CredentialHash = hashToken(token)
+	device.TokenIssuedAt = s.now().UTC()
+	if err := s.store.UpsertDevice(ctx, device); err != nil {
+		return nil, "", err
+	}
+	s.bumpCredentialEpoch(device.ID)
+	if s.deviceRevoker != nil {
+		s.deviceRevoker(userID, device.ID)
+	}
+	return device, token, nil
+}
+
+func (s *Service) bumpCredentialEpoch(agentID string) {
+	s.credentialMu.Lock()
+	s.credentialEpochs[agentID]++
+	s.credentialMu.Unlock()
+}
+
 func (s *Service) AuthenticateDevice(ctx context.Context, deviceID, credential string) (*Device, error) {
-	device, err := s.store.GetDeviceByID(ctx, strings.TrimSpace(deviceID))
+	device, err := s.store.GetDeviceByID(ctx, canonicalAgentID(deviceID))
 	if err != nil || !VerifyDeviceCredential(device, credential) {
 		return nil, &APIError{Status: http.StatusUnauthorized, Message: "invalid device credential"}
 	}
@@ -231,6 +296,20 @@ func (s *Service) AuthenticateDevice(ctx context.Context, deviceID, credential s
 	device.Online = true
 	device.LastSeenAt = s.now().UTC()
 	return device, nil
+}
+
+func canonicalAgentID(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "agent-") {
+		if parsed, err := uuid.Parse(strings.TrimPrefix(value, "agent-")); err == nil && parsed.Version() == 4 {
+			return "agent-" + parsed.String()
+		}
+		return ""
+	}
+	if parsed, err := uuid.Parse(value); err == nil && parsed.Version() == 4 {
+		return "agent-" + parsed.String()
+	}
+	return ""
 }
 
 func (s *Service) TouchDevice(ctx context.Context, deviceID string) error {
@@ -249,6 +328,10 @@ func (s *Service) ValidateSelection(ctx context.Context, controllerSessionID, le
 	lease, err := s.store.GetSelectionLease(ctx, strings.TrimSpace(leaseID))
 	if err != nil || lease.UserID != session.UserID || lease.ControllerID != session.ID {
 		return nil, nil, &APIError{Status: http.StatusUnauthorized, Message: "selection lease is invalid or expired"}
+	}
+	if lease.AgentID == "" {
+		lease.AgentID = canonicalAgentID(lease.DeviceID)
+		lease.DeviceID = lease.AgentID
 	}
 	return session, lease, nil
 }
@@ -331,6 +414,7 @@ func (s *Service) ConsumeDesktopHandoff(ctx context.Context, code string) (*Sess
 }
 
 func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, localDeviceID string) ([]Environment, error) {
+	localDeviceID = canonicalAgentID(localDeviceID)
 	devices, err := s.store.ListDevices(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -351,7 +435,7 @@ func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, 
 		}
 		lastSeen := device.LastSeenAt
 		environments = append(environments, Environment{
-			RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID, DeviceName: device.Name, Name: name, Online: device.Online,
+			RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID, AgentID: device.ID, DeviceName: device.Name, Name: name, Online: device.Online,
 			Platform: device.Platform, Version: device.Version, LastSeenAt: &lastSeen, Workspaces: device.Workspaces,
 			Capabilities: []string{"agent", "files", "terminal", "git", "mcp", "hooks", "cron"},
 		})
@@ -424,9 +508,10 @@ func (s *Service) SelectTarget(ctx context.Context, session *Session, input Sele
 		return nil, err
 	}
 	now := s.now().UTC()
+	input.DeviceID = canonicalAgentID(input.DeviceID)
 	lease := &SelectionLease{
 		ID: uuid.NewString(), UserID: session.UserID, ControllerID: session.ID,
-		RuntimeKind: input.RuntimeKind, DeviceID: input.DeviceID, WorkspaceID: input.WorkspaceID,
+		RuntimeKind: input.RuntimeKind, DeviceID: input.DeviceID, AgentID: input.DeviceID, WorkspaceID: input.WorkspaceID,
 		Scope: input.Scope, Target: expectedTarget, ConversationID: uuid.NewString(), ExpiresAt: now.Add(s.selectionLeaseTTL),
 	}
 	if err := s.store.PutSelectionLease(ctx, lease); err != nil {
@@ -565,7 +650,7 @@ func (s *Service) UpdateWebSettings(ctx context.Context, userID int64, input Web
 	return &input, nil
 }
 
-func (s *Service) RecordDeviceHistorySync(userID int64, deviceID string, event *gatewayv1.HistorySyncEvent) {
+func (s *Service) RecordDeviceHistorySync(userID int64, deviceID string, event *gatewayv2.HistorySyncEvent) {
 	if userID <= 0 || strings.TrimSpace(deviceID) == "" || event == nil {
 		return
 	}
@@ -618,9 +703,17 @@ func (s *Service) RecordDeviceHistorySync(userID int64, deviceID string, event *
 	}
 	_ = s.store.PutConversationRoute(ctx, &ConversationRoute{
 		ConversationID: conversationID, UserID: userID, RuntimeKind: RuntimeKindDeviceAgent,
-		DeviceID: deviceID, WorkspaceID: workspaceID, Title: title,
+		DeviceID: deviceID, AgentID: canonicalAgentID(deviceID), WorkspaceID: workspaceID, Title: title,
 		Summary: strings.Join(summaryParts, " · "), CreatedAt: createdAt, UpdatedAt: updatedAt,
 	})
+}
+
+func (s *Service) RecordAgentHistorySync(agentID string, event *gatewayv2.HistorySyncEvent) {
+	device, err := s.store.GetDeviceByID(context.Background(), agentID)
+	if err != nil {
+		return
+	}
+	s.RecordDeviceHistorySync(device.UserID, device.ID, event)
 }
 
 func (s *Service) ConversationRoutes(ctx context.Context, userID int64) ([]ConversationRoute, error) {

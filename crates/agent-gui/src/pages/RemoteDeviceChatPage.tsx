@@ -232,7 +232,7 @@ export function RemoteDeviceChatPage({
     environment.online,
     selectionLease,
     settings.remote.gatewayUrl,
-    settings.remote.grpcPort,
+    settings.remote.gatewayPort,
   ]);
 
   const loadConversations = useCallback(async () => {

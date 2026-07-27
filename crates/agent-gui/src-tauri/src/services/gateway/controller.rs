@@ -16,6 +16,7 @@ use crate::runtime::terminal::TerminalSessionRegistry;
 use crate::services::automation::AutomationStore;
 use crate::services::chat_run_ledger::{ChatRunLedger, ChatRunLedgerState};
 use crate::services::memory::MemoryStore;
+use crate::services::provider_usage::ProviderUsageService;
 use crate::services::tunnel::{TunnelProxy, TunnelStore};
 use crate::services::workspace_watch::WorkspaceWatchService;
 
@@ -26,6 +27,7 @@ impl GatewayController {
         app_handle: tauri::AppHandle,
         automation_store: Arc<AutomationStore>,
         memory_store: Arc<MemoryStore>,
+        provider_usage_service: Arc<ProviderUsageService>,
         terminal_registry: Arc<TerminalSessionRegistry>,
         sftp_registry: Arc<SftpSessionRegistry>,
         managed_process_registry: Arc<ManagedProcessRegistry>,
@@ -39,6 +41,7 @@ impl GatewayController {
             app_handle,
             automation_store,
             memory_store,
+            provider_usage_service,
             terminal_registry,
             sftp_registry,
             managed_process_registry,
@@ -50,7 +53,7 @@ impl GatewayController {
                 enabled: false,
                 configured: false,
                 gateway_url: String::new(),
-                agent_id: fallback_agent_id(),
+                agent_id: String::new(),
                 session_id: None,
                 connected_since: None,
                 last_heartbeat: None,
@@ -290,7 +293,13 @@ impl GatewayController {
     pub async fn reload_from_db(self: &Arc<Self>) -> Result<(), String> {
         let config = tauri::async_runtime::spawn_blocking(move || {
             let conn = open_db()?;
-            load_remote_settings(&conn)
+            let mut config = load_remote_settings(&conn)?;
+            if let Some(credential) = crate::services::device_credentials::load_device_credential()?
+            {
+                config.agent_id = credential.effective_agent_id().to_string();
+                config.token = credential.effective_token().to_string();
+            }
+            Ok::<_, String>(config)
         })
         .await
         .map_err(|e| format!("reload remote settings join failed: {e}"))??;
@@ -307,7 +316,7 @@ impl GatewayController {
             status.enabled = normalized.enabled;
             status.configured = is_remote_configured(&normalized);
             status.gateway_url = normalized.gateway_url.clone();
-            status.agent_id = effective_agent_id(&normalized);
+            status.agent_id = normalized.agent_id.clone();
             if !normalized.enabled {
                 set_disconnected_status(status, &normalized, None);
             } else if config_changed {
@@ -337,7 +346,7 @@ impl GatewayController {
                 enabled: false,
                 configured: false,
                 gateway_url: String::new(),
-                agent_id: fallback_agent_id(),
+                agent_id: String::new(),
                 session_id: None,
                 connected_since: None,
                 last_heartbeat: None,

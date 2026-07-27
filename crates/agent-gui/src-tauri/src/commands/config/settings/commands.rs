@@ -3,13 +3,17 @@ pub async fn settings_load_all() -> Result<SettingsLoadResponse, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let conn = open_db()?;
         let default_workdir = default_project_workdir()?;
+        let mut remote = load_remote(&conn)?;
+        if let Some(serde_json::Value::Object(settings)) = remote.as_mut() {
+            settings.insert("token".to_string(), serde_json::Value::String(String::new()));
+        }
         Ok(SettingsLoadResponse {
             providers: load_providers(&conn)?,
             system: Some(load_system_with_defaults(&conn, &default_workdir)?),
             mcp: load_mcp(&conn)?,
             agents: load_agents(&conn)?,
             ssh: load_ssh(&conn)?,
-            remote: load_remote(&conn)?,
+            remote,
             memory: load_memory(&conn)?,
             default_workdir,
         })
@@ -62,15 +66,17 @@ pub async fn settings_save_remote(
     payload: Value,
     gateway_controller: tauri::State<'_, Arc<GatewayController>>,
 ) -> Result<(), String> {
-    let normalized = parse_remote_settings_payload(payload)?;
-    let persisted = serde_json::to_value(&normalized)
-        .map_err(|e| format!("序列化 {REMOTE_SETTINGS_TABLE} 失败：{e}"))?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let normalized = tauri::async_runtime::spawn_blocking(move || {
         let mut conn = open_db()?;
-        save_remote(&mut conn, persisted)
+        save_remote(&mut conn, payload)
     })
     .await
     .map_err(|e| format!("settings_save_remote join 失败：{e}"))??;
+    let mut normalized = normalized;
+    if let Some(credential) = crate::services::device_credentials::load_device_credential()? {
+        normalized.agent_id = credential.effective_agent_id().to_string();
+        normalized.token = credential.effective_token().to_string();
+    }
     gateway_controller.apply_config(normalized)
 }
 
@@ -126,4 +132,3 @@ pub async fn settings_reset_ssh_known_host(
     .await
     .map_err(|e| format!("settings_reset_ssh_known_host join 失败：{e}"))?
 }
-

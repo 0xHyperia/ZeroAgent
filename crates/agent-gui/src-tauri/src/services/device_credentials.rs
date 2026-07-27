@@ -5,8 +5,34 @@ const CREDENTIAL_TARGET: &str = "ZeroBox/device-credential";
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceCredentialRecord {
+    #[serde(default)]
+    pub agent_id: String,
+    #[serde(default)]
+    pub token: String,
+    #[serde(default)]
     pub device_id: String,
+    #[serde(default)]
     pub credential: String,
+}
+
+impl DeviceCredentialRecord {
+    pub fn effective_agent_id(&self) -> &str {
+        let agent_id = self.agent_id.trim();
+        if agent_id.is_empty() {
+            self.device_id.trim()
+        } else {
+            agent_id
+        }
+    }
+
+    pub fn effective_token(&self) -> &str {
+        let token = self.token.trim();
+        if token.is_empty() {
+            self.credential.trim()
+        } else {
+            token
+        }
+    }
 }
 
 pub fn load_device_credential() -> Result<Option<DeviceCredentialRecord>, String> {
@@ -15,15 +41,15 @@ pub fn load_device_credential() -> Result<Option<DeviceCredentialRecord>, String
     };
     let record: DeviceCredentialRecord = serde_json::from_str(&value)
         .map_err(|error| format!("decode device credential: {error}"))?;
-    if record.device_id.trim().is_empty() || record.credential.trim().is_empty() {
+    if record.effective_agent_id().is_empty() || record.effective_token().is_empty() {
         return Ok(None);
     }
     Ok(Some(record))
 }
 
 pub fn save_device_credential(record: &DeviceCredentialRecord) -> Result<(), String> {
-    if record.device_id.trim().is_empty() || record.credential.trim().is_empty() {
-        return Err("device id and credential are required".to_string());
+    if record.agent_id.trim().is_empty() || record.token.trim().is_empty() {
+        return Err("agent id and token are required".to_string());
     }
     let value = serde_json::to_string(record)
         .map_err(|error| format!("encode device credential: {error}"))?;
@@ -36,8 +62,15 @@ pub fn device_credential_get() -> Result<Option<DeviceCredentialRecord>, String>
 }
 
 #[tauri::command]
-pub fn device_credential_set(record: DeviceCredentialRecord) -> Result<(), String> {
-    save_device_credential(&record)
+pub async fn device_credential_set(
+    record: DeviceCredentialRecord,
+    gateway_controller: tauri::State<
+        '_,
+        std::sync::Arc<crate::services::gateway::GatewayController>,
+    >,
+) -> Result<(), String> {
+    save_device_credential(&record)?;
+    gateway_controller.reload_from_db().await
 }
 
 #[tauri::command]
@@ -136,6 +169,32 @@ fn platform_delete() -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DeviceCredentialRecord;
+
+    #[test]
+    fn legacy_record_remains_usable_during_upgrade() {
+        let record: DeviceCredentialRecord =
+            serde_json::from_str(r#"{"deviceId":"legacy-device","credential":"legacy-token"}"#)
+                .unwrap();
+        assert_eq!(record.effective_agent_id(), "legacy-device");
+        assert_eq!(record.effective_token(), "legacy-token");
+    }
+
+    #[test]
+    fn canonical_record_takes_precedence_over_legacy_aliases() {
+        let record = DeviceCredentialRecord {
+            agent_id: "agent-new".to_string(),
+            token: "agt_new".to_string(),
+            device_id: "legacy-device".to_string(),
+            credential: "legacy-token".to_string(),
+        };
+        assert_eq!(record.effective_agent_id(), "agent-new");
+        assert_eq!(record.effective_token(), "agt_new");
+    }
 }
 
 #[cfg(target_os = "macos")]

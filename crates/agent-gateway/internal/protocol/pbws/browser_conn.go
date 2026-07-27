@@ -15,7 +15,6 @@ import (
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
 	"github.com/liveagent/agent-gateway/internal/observability"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/shared"
 	"github.com/liveagent/agent-gateway/internal/session"
@@ -32,28 +31,31 @@ type browserConn struct {
 	sm  *session.Manager
 	srv *Server
 
-	conn *websocket.Conn
-	core *wscore.Conn
-	done <-chan struct{}
+	conn                *websocket.Conn
+	core                *wscore.Conn
+	done                <-chan struct{}
+	controllerSessionID string
+	userID              int64
+	boundAgentID        string
+	workspaceID         string
+	selectionScope      string
+	allowedWorkspaces   []account.Workspace
 
 	// idPrefix + 原始 request_id 构成转发给桌面端的关联 id；回程剥离。
 	idPrefix string
 
 	terminalInterest *shared.TerminalInterestTracker
 
-	chatStreamsMu sync.Mutex
-	chatStreams   map[string]func() // conversation_id -> 订阅取消
+	// dispatchLimiter 限制在途派发数（慢请求 goroutine 上限）；rateLimiter 限制
+	// 入站帧速率（快帧 CPU 上限）。两者合围单连接的资源占用。
+	dispatchLimiter *wscore.DispatchLimiter
+	rateLimiter     *wscore.InboundRateLimiter
 
-	workspaceSubsMu     sync.Mutex
-	workspaceSubs       map[string]*workspaceSubscription
-	controllerSessionID string
-	userID              int64
-	deviceID            string
-	workspaceID         string
-	runtimeKind         string
-	selectionScope      string
-	selectionExpiresAt  time.Time
-	allowedWorkspaces   []account.Workspace
+	chatStreamsMu sync.Mutex
+	chatStreams   map[string]func() // agent_id + conversation_id -> 订阅取消
+
+	workspaceSubsMu sync.Mutex
+	workspaceSubs   map[string]*workspaceSubscription
 }
 
 // BrowserHandler 返回 /ws/v2 的 HTTP 处理器。
@@ -61,23 +63,36 @@ func (s *Server) BrowserHandler() http.Handler {
 	upgrader := s.upgrader()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		controllerSessionID := ""
-		if cookie, cookieErr := r.Cookie("zerobox_session"); cookieErr == nil {
-			controllerSessionID = cookie.Value
+		if s.accounts != nil {
+			if cookie, err := r.Cookie(account.SessionCookieName); err == nil {
+				controllerSessionID = strings.TrimSpace(cookie.Value)
+			}
+		}
+		release, ok := acquireConnSlot(&s.browserConns, s.maxBrowserConnections())
+		if !ok {
+			http.Error(w, "too many browser connections", http.StatusServiceUnavailable)
+			return
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			release()
 			return
 		}
-		conn.SetReadLimit(s.readLimit())
+		defer release()
+		conn.SetReadLimit(browserReadLimit)
 
 		c := &browserConn{
 			cfg:                 s.cfg,
 			sm:                  s.sm,
 			srv:                 s,
 			conn:                conn,
+			controllerSessionID: controllerSessionID,
 			idPrefix:            browserIDPrefix(),
 			terminalInterest:    shared.NewTerminalInterestTracker(),
-			controllerSessionID: controllerSessionID,
+			dispatchLimiter:     wscore.NewDispatchLimiter(maxInflightDispatches),
+			rateLimiter: wscore.NewInboundRateLimiter(
+				browserInboundFramesPerSecond, browserInboundBurst, browserRateLimitMaxViolations,
+			),
 		}
 		c.core = wscore.NewConn(conn, wscore.Config{
 			WriteTimeout:    s.cfg.WebSocketWriteTimeout,
@@ -111,11 +126,6 @@ func (c *browserConn) serve() {
 	if !c.handshake() {
 		return
 	}
-	var selectionExpiryTimer *time.Timer
-	if !c.selectionExpiresAt.IsZero() {
-		selectionExpiryTimer = time.AfterFunc(time.Until(c.selectionExpiresAt), c.core.Close)
-		defer selectionExpiryTimer.Stop()
-	}
 
 	observability.Usage.V2BrowserConnectionsTotal.Add(1)
 	observability.Usage.V2BrowserConnectionsActive.Add(1)
@@ -127,6 +137,15 @@ func (c *browserConn) serve() {
 			return
 		}
 		c.core.TouchInboundActivity()
+
+		// 入站限速：超限丢帧回错，连续违规判定失控客户端、关闭连接。
+		if allowed, exceeded := c.rateLimiter.Allow(); !allowed {
+			if exceeded {
+				return
+			}
+			_ = c.sendLocalError(frame.GetRequestId(), "too many requests")
+			continue
+		}
 
 		switch payload := frame.GetPayload().(type) {
 		case *gatewayv2.WebClientFrame_Pong:
@@ -144,7 +163,15 @@ func (c *browserConn) serve() {
 			continue
 		default:
 			_ = payload
-			go c.dispatch(frame)
+			// try-acquire 失败即拒绝：绝不阻塞读循环等槽位（会拖死 pong/存活检测）。
+			if !c.dispatchLimiter.TryAcquire() {
+				_ = c.sendLocalError(frame.GetRequestId(), "too many concurrent requests")
+				continue
+			}
+			go func(frame *gatewayv2.WebClientFrame) {
+				defer c.dispatchLimiter.Release()
+				c.dispatch(frame)
+			}(frame)
 		}
 	}
 }
@@ -176,44 +203,26 @@ func (c *browserConn) handshake() bool {
 		return false
 	}
 	hello := frame.GetHello()
-	verdict := c.srv.vetHelloBase(hello, gatewayv2.ClientRole_CLIENT_ROLE_BROWSER)
-	if verdict.ok {
-		if c.srv.accounts == nil || hello.GetSelectionLease() == "" {
+	verdict := c.srv.vetHello(hello, gatewayv2.ClientRole_CLIENT_ROLE_BROWSER)
+	if verdict.ok && c.srv.accounts != nil {
+		session, lease, err := c.srv.accounts.ValidateSelection(context.Background(), c.controllerSessionID, hello.GetSelectionLease())
+		if err != nil || lease.RuntimeKind != account.RuntimeKindDeviceAgent {
 			verdict = helloVerdict{message: "account login and selection lease required"}
+		} else if device, deviceErr := c.srv.accounts.Device(context.Background(), session.UserID, lease.DeviceID); deviceErr != nil {
+			verdict = helloVerdict{message: "selected device is unavailable"}
 		} else {
-			var accountSession *account.Session
-			var lease *account.SelectionLease
-			var err error
-			if c.controllerSessionID != "" {
-				accountSession, lease, err = c.srv.accounts.ValidateSelection(context.Background(), c.controllerSessionID, hello.GetSelectionLease())
-			} else {
-				accountSession, lease, err = c.srv.accounts.ValidateDesktopSelection(context.Background(), hello.GetToken(), hello.GetSelectionLease())
-			}
-			if err != nil || lease.RuntimeKind != "device_agent" || lease.DeviceID == "" ||
-				hello.GetRuntimeKind() != lease.RuntimeKind || hello.GetWorkspaceId() != lease.WorkspaceID {
-				verdict = helloVerdict{message: "invalid selection lease"}
-			} else {
-				device, deviceErr := c.srv.accounts.Device(context.Background(), accountSession.UserID, lease.DeviceID)
-				if deviceErr != nil {
-					verdict = helloVerdict{message: "selected device is unavailable"}
-				} else {
-					c.userID = accountSession.UserID
-					c.deviceID = lease.DeviceID
-					c.workspaceID = lease.WorkspaceID
-					c.runtimeKind = lease.RuntimeKind
-					c.selectionScope = lease.EffectiveScope()
-					c.selectionExpiresAt = lease.ExpiresAt
-					c.allowedWorkspaces = append([]account.Workspace(nil), device.Workspaces...)
-					c.sm = c.srv.sm.DeviceManager(c.userID, c.deviceID)
-				}
-			}
+			c.userID = session.UserID
+			c.boundAgentID = device.ID
+			c.workspaceID = lease.WorkspaceID
+			c.selectionScope = lease.EffectiveScope()
+			c.allowedWorkspaces = append([]account.Workspace(nil), device.Workspaces...)
 		}
 	}
 	if !verdict.ok {
 		_ = writeDirectMessage(c.conn, c.srv.writeTimeout(), &gatewayv2.WebServerFrame{
 			RequestId: frame.GetRequestId(),
 			Payload: &gatewayv2.WebServerFrame_Hello{
-				Hello: c.srv.serverHello(false, verdict.message, ""),
+				Hello: c.srv.serverHello(false, verdict.message, "", browserReadLimit),
 			},
 		})
 		closeUnauthorized(c.conn, c.srv.writeTimeout())
@@ -232,7 +241,7 @@ func (c *browserConn) handshake() bool {
 	if err := c.send(wscore.FrameResponse, "hello", &gatewayv2.WebServerFrame{
 		RequestId: frame.GetRequestId(),
 		Payload: &gatewayv2.WebServerFrame_Hello{
-			Hello: c.srv.serverHelloFor(true, "", "", c.userID, c.deviceID, c.workspaceID, c.runtimeKind),
+			Hello: c.srv.serverHello(true, "", "", browserReadLimit),
 		},
 	}); err != nil {
 		c.core.Close()
@@ -245,29 +254,68 @@ func (c *browserConn) handshake() bool {
 func (c *browserConn) dispatch(frame *gatewayv2.WebClientFrame) {
 	observability.Usage.V2BrowserRequestsTotal.Add(1)
 	requestID := strings.TrimSpace(frame.GetRequestId())
+	// 目标型请求必须显式声明 Agent；目录与全局会话查询不需要目标 id。
+	agentID := strings.TrimSpace(frame.GetAgentId())
+	if agentID == "" && c.boundAgentID != "" {
+		agentID = c.boundAgentID
+	}
 
 	switch payload := frame.GetPayload().(type) {
 	case *gatewayv2.WebClientFrame_AgentRequest:
-		c.handleAgentRequest(requestID, payload.AgentRequest)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleAgentRequest(requestID, agentID, payload.AgentRequest)
 	case *gatewayv2.WebClientFrame_StatusGet:
-		c.handleStatusGet(requestID)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleStatusGet(requestID, agentID)
 	case *gatewayv2.WebClientFrame_ChatCommand:
-		c.handleChatCommand(requestID, payload.ChatCommand)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleChatCommand(requestID, agentID, payload.ChatCommand)
 	case *gatewayv2.WebClientFrame_ChatPrepare:
-		c.handleChatPrepare(requestID, payload.ChatPrepare)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleChatPrepare(requestID, agentID, payload.ChatPrepare)
 	case *gatewayv2.WebClientFrame_ChatSubscribe:
-		c.handleChatSubscribe(requestID, payload.ChatSubscribe)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleChatSubscribe(requestID, agentID, payload.ChatSubscribe)
 	case *gatewayv2.WebClientFrame_ChatUnsubscribe:
-		c.handleChatUnsubscribe(requestID, payload.ChatUnsubscribe)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleChatUnsubscribe(requestID, agentID, payload.ChatUnsubscribe)
 	case *gatewayv2.WebClientFrame_ChatActivities:
 		c.handleChatActivities(requestID)
 	case *gatewayv2.WebClientFrame_WorkspaceSubscribe:
-		c.handleWorkspaceSubscribe(requestID, payload.WorkspaceSubscribe)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleWorkspaceSubscribe(requestID, agentID, payload.WorkspaceSubscribe)
 	case *gatewayv2.WebClientFrame_WorkspaceUnsubscribe:
-		c.handleWorkspaceUnsubscribe(requestID, payload.WorkspaceUnsubscribe)
+		if !c.requireAgentID(requestID, agentID) {
+			return
+		}
+		c.handleWorkspaceUnsubscribe(requestID, agentID, payload.WorkspaceUnsubscribe)
+	case *gatewayv2.WebClientFrame_AgentList:
+		c.handleAgentList(requestID)
 	default:
 		_ = c.sendLocalError(requestID, "unsupported frame payload")
 	}
+}
+
+func (c *browserConn) requireAgentID(requestID, agentID string) bool {
+	if agentID != "" && (c.boundAgentID == "" || agentID == c.boundAgentID) {
+		return true
+	}
+	_ = c.sendLocalError(requestID, "agent_id is missing or outside the selected account device")
+	return false
 }
 
 // send 编码并投递一帧（拥塞策略由帧类别声明，wscore 统一执行）。
@@ -285,12 +333,12 @@ func (c *browserConn) send(class wscore.FrameClass, kind string, frame *gatewayv
 	})
 }
 
-// sendLocalError 回送网关本地错误（对应 v1 的 type:"error" 信封，走控制队列保证拥塞下可达）。
+// sendLocalError 回送网关本地结构化错误，走控制队列保证拥塞下可达。
 func (c *browserConn) sendLocalError(requestID string, message string) error {
 	return c.send(wscore.FrameControl, "local_error", &gatewayv2.WebServerFrame{
 		RequestId: requestID,
 		Payload: &gatewayv2.WebServerFrame_LocalError{
-			LocalError: &gatewayv1.ErrorResponse{Message: message},
+			LocalError: &gatewayv2.ErrorResponse{Message: message},
 		},
 	})
 }

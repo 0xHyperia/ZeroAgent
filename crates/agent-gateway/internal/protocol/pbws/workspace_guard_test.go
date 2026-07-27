@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/liveagent/agent-gateway/internal/account"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
 func TestDeviceWorkspaceGuard(t *testing.T) {
@@ -43,9 +43,9 @@ func TestWorkspaceGuardRejectsRemoteProjectCreation(t *testing.T) {
 		selectionScope:    account.SelectionScopeDevice,
 		allowedWorkspaces: []account.Workspace{{ID: "project-a", Path: "/repo/a"}},
 	}
-	env := &gatewayv1.GatewayEnvelope{
-		Payload: &gatewayv1.GatewayEnvelope_FsCreateProjectFolder{
-			FsCreateProjectFolder: &gatewayv1.FsCreateProjectFolderRequest{
+	env := &gatewayv2.GatewayEnvelope{
+		Payload: &gatewayv2.GatewayEnvelope_FsCreateProjectFolder{
+			FsCreateProjectFolder: &gatewayv2.FsCreateProjectFolderRequest{
 				Parent: "/repo",
 				Name:   "new",
 			},

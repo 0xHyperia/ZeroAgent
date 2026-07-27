@@ -1,24 +1,11 @@
 syntax = "proto3";
 
-package liveagent.gateway.v1;
+package liveagent.gateway.v2;
 
-option go_package = "github.com/liveagent/agent-gateway/internal/proto/v1;gatewayv1";
+option go_package = "github.com/liveagent/agent-gateway/internal/proto/v2;gatewayv2";
 
-// 本文件是三端共享的业务消息单一事实源（v2 帧壳见 proto/v2/gateway_ws.proto，
-// 其载荷全部复用这里的消息）。v1 gRPC 服务 AgentGateway 已随 v1 协议移除；
-// 消息全部保留、永不弃用，编号只增不改。
-
-message AuthRequest {
-  string token = 1;
-  string agent_id = 2;
-  string agent_version = 3;
-}
-
-message AuthResponse {
-  bool success = 1;
-  string message = 2;
-  string session_id = 3;
-}
+// 三端共享的 v2 业务消息单一事实源。WebSocket 帧壳见 gateway_ws.proto；
+// 已发布消息的字段编号只增不改。
 
 message GatewayEnvelope {
   string request_id = 1;
@@ -71,6 +58,7 @@ message GatewayEnvelope {
     WorkspaceWatchRequest workspace_watch = 90;
     ManagedProcessRequest managed_process_request = 91;
     HistoryBranchRequest history_branch = 92;
+    ProviderUsageRequest provider_usage = 93;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -139,6 +127,7 @@ message AgentEnvelope {
     ManagedProcessResponse managed_process_response = 91;
     ManagedProcessSnapshot managed_process_snapshot = 92;
     HistoryBranchResponse history_branch_resp = 93;
+    ProviderUsageResponse provider_usage_resp = 94;
     ErrorResponse error = 99;
   }
 
@@ -399,6 +388,10 @@ message TerminalRequest {
   bool sftp_enabled = 15;
   string tab_id = 16;
   string tab_kind = 17;
+  string remote_host = 18;
+  uint32 remote_port = 19;
+  uint32 local_port = 20;
+  string forward_id = 21;
 }
 
 message TerminalSession {
@@ -519,6 +512,33 @@ message TerminalSshTabsSnapshot {
   uint64 revision = 4;
 }
 
+message TerminalSshLocalForward {
+  string id = 1;
+  string session_id = 2;
+  string project_path_key = 3;
+  string local_host = 4;
+  uint32 local_port = 5;
+  string address = 6;
+  string remote_host = 7;
+  uint32 remote_port = 8;
+  string status = 9;
+  uint64 created_at = 10;
+  uint64 updated_at = 11;
+  string error = 12;
+}
+
+message TerminalSshLocalForwardsSnapshot {
+  repeated TerminalSshLocalForward forwards = 1;
+  uint64 revision = 2;
+}
+
+message TerminalSshLocalForwardAction {
+  TerminalSshLocalForward forward = 1;
+  uint64 revision = 2;
+  // Only set on events: started | stopped | failed.
+  string kind = 3;
+}
+
 message TerminalResponse {
   string action = 1;
   repeated TerminalSession sessions = 2;
@@ -532,6 +552,9 @@ message TerminalResponse {
   TerminalSshPrompt ssh_prompt = 10;
   uint32 latency_ms = 11;
   TerminalSshTabsSnapshot ssh_tabs = 12;
+  TerminalSshLocalForwardsSnapshot ssh_local_forwards = 13;
+  TerminalSshLocalForwardAction ssh_local_forward = 14;
+  bool ssh_local_forward_port_available = 15;
 }
 
 message TerminalEvent {
@@ -543,6 +566,7 @@ message TerminalEvent {
   uint64 output_start_offset = 6;
   uint64 output_end_offset = 7;
   TerminalSshTabsSnapshot ssh_tabs = 8;
+  TerminalSshLocalForwardAction ssh_local_forward = 9;
 }
 
 message TerminalStreamFrame {
@@ -1111,4 +1135,13 @@ message ProviderModelsRequest {
 
 message ProviderModelsResponse {
   string models_json = 1;
+}
+
+message ProviderUsageRequest {
+  string provider_id = 1;
+  bool refresh = 2;
+}
+
+message ProviderUsageResponse {
+  string result_json = 1;
 }

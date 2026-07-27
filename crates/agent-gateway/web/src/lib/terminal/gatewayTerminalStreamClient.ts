@@ -32,12 +32,12 @@ type PendingAttach = {
   retryTimerId: ReturnType<typeof setTimeout> | null;
 };
 
-function terminalStreamUrl() {
-  const origin = terminalRuntimeOrigin();
+function terminalStreamUrl(originOverride = "") {
+  const origin = originOverride.trim() || terminalRuntimeOrigin();
   if (!origin) {
     throw new Error("Gateway terminal stream origin is unavailable");
   }
-  // v2 终端数据面唯一端点（旧 /ws/terminal 与 /ws?terminal=1 回退已淘汰）。
+  // v2 终端数据面唯一端点。
   const url = new URL(origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/ws/v2/terminal";
@@ -394,7 +394,12 @@ export class BrowserGatewayTerminalStreamClient implements TerminalStreamClient 
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
-  constructor(private readonly token: string) {}
+  // getAgentId 提供当前明确的活跃 Agent，终端数据面在 hello 时绑定该目标。
+  constructor(
+    private readonly token: string,
+    private readonly getAgentId: () => string,
+    private readonly origin = "",
+  ) {}
 
   async attach(
     session: TerminalSession,
@@ -507,7 +512,7 @@ export class BrowserGatewayTerminalStreamClient implements TerminalStreamClient 
       };
       let url: string;
       try {
-        url = terminalStreamUrl();
+        url = terminalStreamUrl(this.origin);
       } catch (error) {
         rejectOnce(error instanceof Error ? error : new Error(String(error)));
         return;
@@ -533,7 +538,7 @@ export class BrowserGatewayTerminalStreamClient implements TerminalStreamClient 
         failAttempt(new Error("Terminal stream connection timed out"));
       }, 15_000);
       socket.onopen = () => {
-        socket.send(encodeTerminalHelloFrame(this.token));
+        socket.send(encodeTerminalHelloFrame(this.token, this.getAgentId()));
       };
       socket.onmessage = (event) => {
         if (typeof event.data === "string") {

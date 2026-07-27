@@ -39,10 +39,12 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/devices/register", h.withSession(h.registerDevice))
 	mux.HandleFunc("PATCH /api/devices/{id}", h.withSession(h.renameDevice))
 	mux.HandleFunc("DELETE /api/devices/{id}", h.withSession(h.revokeDevice))
+	mux.HandleFunc("POST /api/devices/{id}/rotate-token", h.withSession(h.rotateDeviceToken))
 	mux.HandleFunc("/api/usa-zero/", h.withSession(h.proxyUSAZero))
 	mux.HandleFunc("POST /api/desktop/devices/register", h.withDesktopSession(h.registerDevice))
 	mux.HandleFunc("PATCH /api/desktop/devices/{id}", h.withDesktopSession(h.renameDevice))
 	mux.HandleFunc("DELETE /api/desktop/devices/{id}", h.withDesktopSession(h.revokeDevice))
+	mux.HandleFunc("POST /api/desktop/devices/{id}/rotate-token", h.withDesktopSession(h.rotateDeviceToken))
 	mux.HandleFunc("GET /api/desktop/environments", h.withDesktopSession(h.desktopEnvironments))
 	mux.HandleFunc("GET /api/desktop/conversation-routes", h.withDesktopSession(h.conversationRoutes))
 	mux.HandleFunc("POST /api/desktop/execution-target/step-up", h.withDesktopSession(h.issueStepUp))
@@ -170,6 +172,7 @@ func (h *HTTPHandler) consumeDesktopHandoff(w http.ResponseWriter, r *http.Reque
 	query.Set("selection_lease", lease.ID)
 	query.Set("runtime_kind", lease.RuntimeKind)
 	query.Set("device_id", lease.DeviceID)
+	query.Set("agent_id", lease.AgentID)
 	query.Set("workspace_id", lease.WorkspaceID)
 	query.Set("conversation_id", lease.ConversationID)
 	if r.URL.Query().Get("controller_surface") == "desktop_embed" {
@@ -266,7 +269,22 @@ func (h *HTTPHandler) registerDevice(w http.ResponseWriter, r *http.Request, ses
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"device": device, "device_credential": credential})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device": device, "agent_id": device.ID, "agent_token": credential,
+		"device_id": device.ID, "device_credential": credential,
+	})
+}
+
+func (h *HTTPHandler) rotateDeviceToken(w http.ResponseWriter, r *http.Request, session *Session) {
+	device, token, err := h.service.RotateDeviceToken(r.Context(), session.UserID, r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device": device, "agent_id": device.ID, "agent_token": token,
+		"device_id": device.ID, "device_credential": token,
+	})
 }
 
 func (h *HTTPHandler) renameDevice(w http.ResponseWriter, r *http.Request, session *Session) {

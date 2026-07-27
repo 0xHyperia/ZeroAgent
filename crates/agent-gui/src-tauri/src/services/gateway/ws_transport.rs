@@ -1,6 +1,6 @@
 //! v2 线协议（WebSocket+Protobuf）客户端传输层：URL 推导、子协议建连、hello 握手、prost 帧编解码。
-//! 一切失败（建连、握手、鉴权被拒）以错误消息上抛，由连接层统一退避重连——v1 时代
-//! 按"可否回退 gRPC"区分错误类别的机制已随 v1 删除。刻意不依赖 tauri，
+//! 一切失败（建连、握手、鉴权被拒）均以错误消息上抛，由连接层统一退避重连。
+//! 本模块刻意不依赖 tauri，
 //! 便于纯 tokio 测试；业务信封收发主循环由 connection.rs / terminal.rs 驱动。
 
 use std::time::Duration;
@@ -18,25 +18,24 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use super::ensure_rustls_crypto_provider;
 use super::gateway_proto::v2;
-use crate::services::device_credentials::DeviceCredentialRecord;
 
 /// v2 WebSocket 子协议名（与 Go 侧 `pbws.Subprotocol` 一致；服务端必须回显）。
 pub(crate) const GATEWAY_WS_SUBPROTOCOL: &str = "liveagent.v2.pb";
 /// v2 协议版本号（`ClientHello.protocol_version`）。
 pub(crate) const GATEWAY_WS_PROTOCOL_VERSION: u32 = 2;
-/// 桌面端主链路路径（承接 v1 gRPC Authenticate + AgentConnect 的职能，v1 已移除）。
+/// 桌面端主链路路径。
 pub(crate) const GATEWAY_WS_AGENT_PATH: &str = "/ws/v2/agent";
-/// 终端数据面路径（承接 v1 gRPC AgentTerminalConnect 的职能，v1 已移除）。
+/// 终端数据面路径。
 pub(crate) const GATEWAY_WS_TERMINAL_PATH: &str = "/ws/v2/terminal";
 /// 鉴权失败时服务端的自定义关闭码（Go 侧 `closeCodeUnauthorized`）。
 pub(crate) const GATEWAY_WS_CLOSE_CODE_UNAUTHORIZED: u16 = 4401;
-/// 建连 + hello 应答的整体超时（对齐 v1 authenticate 的 10 秒）。
+/// 建连 + hello 应答的整体超时。
 pub(crate) const GATEWAY_WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 /// 从网关基址推导 v2 WS URL：http→ws、https→wss，保留路径前缀（反代子路径），丢弃查询串与片段。
-/// 端口取设置里的 `grpc_port`（v1 命名遗留，实义网关端口）无条件覆盖基址端口，与界面预览拼法一致。
+/// 端口取设置里的 `gateway_port`，非零时覆盖基址端口，与界面预览拼法一致。
 pub(crate) fn build_ws_url(
     gateway_url: &str,
     gateway_port: u16,
@@ -65,32 +64,28 @@ pub(crate) fn build_ws_url(
     Ok(url.to_string())
 }
 
-/// 构造 v2 hello 载荷：桌面端两条链路均以 CLIENT_ROLE_AGENT 建连，字段对应 v1 AuthRequest。
-pub(crate) fn build_device_client_hello(
+/// 构造 v2 hello 载荷：桌面端两条链路均以 CLIENT_ROLE_AGENT 建连。
+pub(crate) fn build_client_hello(
+    token: &str,
     agent_id: String,
     agent_version: String,
-    device: Option<&DeviceCredentialRecord>,
 ) -> v2::ClientHello {
     v2::ClientHello {
         protocol_version: GATEWAY_WS_PROTOCOL_VERSION,
         role: v2::ClientRole::Agent as i32,
-        token: String::new(),
-        agent_id: agent_id.clone(),
+        token: token.trim().to_string(),
+        agent_id,
         agent_version: agent_version.clone(),
         client_name: "desktop".to_string(),
         client_version: agent_version,
-        device_id: device
-            .map(|value| value.device_id.trim().to_string())
-            .unwrap_or_default(),
-        device_credential: device
-            .map(|value| value.credential.trim().to_string())
-            .unwrap_or_default(),
-        device_name: agent_id.clone(),
+        device_id: String::new(),
+        device_credential: String::new(),
+        device_name: String::new(),
         platform: std::env::consts::OS.to_string(),
         workspaces: Vec::new(),
         selection_lease: String::new(),
         workspace_id: String::new(),
-        runtime_kind: "device_agent".to_string(),
+        runtime_kind: String::new(),
     }
 }
 
@@ -254,14 +249,6 @@ mod tests {
     };
     use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
-    fn test_device_hello(credential: &str) -> v2::ClientHello {
-        let device = DeviceCredentialRecord {
-            device_id: "device-1".to_string(),
-            credential: credential.to_string(),
-        };
-        build_device_client_hello("agent-1".to_string(), "0.0.0".to_string(), Some(&device))
-    }
-
     #[test]
     fn build_ws_url_maps_http_to_ws() {
         // 端口框（gateway_port）与界面预览一致：无条件覆盖基址端口。
@@ -278,7 +265,7 @@ mod tests {
 
     #[test]
     fn build_ws_url_applies_configured_port_to_portless_base() {
-        // 回归用例：端口单独存于 grpc_port、基址不带端口时，曾因未补端口导致 v2 拨到 80。
+        // 回归用例：端口单独存于 gateway_port、基址不带端口时，曾因未补端口导致 v2 拨到 80。
         assert_eq!(
             build_ws_url("http://127.0.0.1", 50052, GATEWAY_WS_AGENT_PATH)
                 .expect("build ws url with configured port"),
@@ -408,7 +395,7 @@ mod tests {
                 .await
                 .expect("accept ws");
 
-            // 首帧必须是携带 AGENT 角色与设备凭证的 hello。
+            // 首帧必须是携带 AGENT 角色与令牌的 hello。
             let hello_frame: v2::AgentClientFrame =
                 decode_ws_frame(&read_binary(&mut ws).await).expect("decode hello frame");
             let Some(v2::agent_client_frame::Payload::Hello(hello)) = hello_frame.payload else {
@@ -416,9 +403,7 @@ mod tests {
             };
             assert_eq!(hello.protocol_version, GATEWAY_WS_PROTOCOL_VERSION);
             assert_eq!(hello.role, v2::ClientRole::Agent as i32);
-            assert!(hello.token.is_empty());
-            assert_eq!(hello.device_id, "device-1");
-            assert_eq!(hello.device_credential, "test-credential");
+            assert_eq!(hello.token, "test-token");
             assert_eq!(hello.client_name, "desktop");
 
             ws.send(encode_ws_frame(&v2::AgentServerFrame {
@@ -456,7 +441,7 @@ mod tests {
 
         let (mut ws, server_hello) = connect_agent_ws(
             &format!("ws://{addr}"),
-            test_device_hello("test-credential"),
+            build_client_hello("test-token", "agent-1".to_string(), "0.0.0".to_string()),
         )
         .await
         .expect("agent ws handshake");
@@ -522,8 +507,11 @@ mod tests {
             .expect("send rejection hello");
         });
 
-        let result =
-            connect_agent_ws(&format!("ws://{addr}"), test_device_hello("bad-credential")).await;
+        let result = connect_agent_ws(
+            &format!("ws://{addr}"),
+            build_client_hello("bad-token", "agent-1".to_string(), "0.0.0".to_string()),
+        )
+        .await;
         assert_eq!(result.err(), Some("unauthorized".to_string()));
 
         server.await.expect("server task");
@@ -546,7 +534,7 @@ mod tests {
 
         let result = connect_agent_ws(
             &format!("ws://{addr}"),
-            test_device_hello("test-credential"),
+            build_client_hello("test-token", "agent-1".to_string(), "0.0.0".to_string()),
         )
         .await;
         match result.err() {

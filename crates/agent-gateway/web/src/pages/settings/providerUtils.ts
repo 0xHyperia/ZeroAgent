@@ -6,6 +6,7 @@ import {
   normalizeProviderModelConfigs,
   type ProviderId,
   type ProviderModelConfig,
+  type UsageQueryConfig,
 } from "../../lib/settings";
 import { normalizeBaseUrl } from "../../lib/settings/normalize";
 
@@ -15,6 +16,67 @@ const ANTHROPIC_API_VERSION = "2023-06-01";
 
 // Gateway WebUI 判定移至 lib/runtimeEnv 单一真源；此处再导出保持既有调用方不变。
 export { isGatewayWebuiRuntime };
+
+const REDACTED_USAGE_QUERY_SECRET_DISPLAY = "••••••••";
+
+export function createUsageQueryDraft(
+  usageQuery: UsageQueryConfig,
+  useRedactedSecrets: boolean,
+): UsageQueryConfig {
+  const accessTokenIsRedacted =
+    useRedactedSecrets && !usageQuery.accessToken && usageQuery.accessTokenConfigured === true;
+  const secretAccessKeyIsRedacted =
+    useRedactedSecrets &&
+    !usageQuery.secretAccessKey &&
+    usageQuery.secretAccessKeyConfigured === true;
+
+  return {
+    ...usageQuery,
+    accessToken: accessTokenIsRedacted
+      ? REDACTED_USAGE_QUERY_SECRET_DISPLAY
+      : usageQuery.accessToken,
+    secretAccessKey: secretAccessKeyIsRedacted
+      ? REDACTED_USAGE_QUERY_SECRET_DISPLAY
+      : usageQuery.secretAccessKey,
+  };
+}
+
+export function serializeUsageQueryDraft(
+  usageQuery: UsageQueryConfig,
+  useRedactedSecrets: boolean,
+): UsageQueryConfig {
+  const accessTokenIsRedacted =
+    useRedactedSecrets && usageQuery.accessToken === REDACTED_USAGE_QUERY_SECRET_DISPLAY;
+  const secretAccessKeyIsRedacted =
+    useRedactedSecrets && usageQuery.secretAccessKey === REDACTED_USAGE_QUERY_SECRET_DISPLAY;
+  const accessToken = accessTokenIsRedacted ? "" : usageQuery.accessToken.trim();
+  const secretAccessKey = secretAccessKeyIsRedacted ? "" : usageQuery.secretAccessKey.trim();
+
+  return {
+    ...usageQuery,
+    script: usageQuery.script.trim(),
+    baseUrl: usageQuery.baseUrl.trim(),
+    accessToken,
+    accessTokenConfigured: accessToken.length > 0 || accessTokenIsRedacted,
+    userId: usageQuery.userId.trim(),
+    accessKeyId: usageQuery.accessKeyId.trim(),
+    secretAccessKey,
+    secretAccessKeyConfigured: secretAccessKey.length > 0 || secretAccessKeyIsRedacted,
+  };
+}
+
+export function getPersistedUsageQueryProviderId(provider: { id?: string } | null | undefined) {
+  const id = provider?.id?.trim();
+  return id || null;
+}
+
+export function requiresCustomUsageQueryConfirmation(
+  usageQuery: Pick<UsageQueryConfig, "enabled" | "mode">,
+  customUsageQueryConfirmed: boolean,
+) {
+  return usageQuery.enabled && usageQuery.mode === "custom" && !customUsageQueryConfirmed;
+}
+
 export function formatTokenCount(value: number): string {
   if (value < 1_000) return String(value);
   if (value < 1_000_000) return `${String(Math.round(value / 1_000))}K`;
@@ -25,13 +87,13 @@ export function formatTokenCount(value: number): string {
 function normalizeModelBaseUrl(type: ProviderId, baseUrl: string) {
   let normalizedUrl = normalizeBaseUrl(baseUrl);
 
-  if (type !== "codex" && type !== "gemini") {
+  if (type !== "codex" && type !== "xai" && type !== "gemini") {
     return normalizedUrl;
   }
 
   const lower = normalizedUrl.toLowerCase();
 
-  if (type === "codex") {
+  if (type === "codex" || type === "xai") {
     for (const suffix of CODEX_MODELS_SUFFIXES) {
       if (lower.endsWith(suffix)) {
         normalizedUrl = normalizedUrl.slice(0, -suffix.length);
@@ -69,11 +131,11 @@ export type ProviderModelsFailure = {
   message: string;
 };
 
-function buildGeminiModelsUrl(baseUrl: string, versionPath: string) {
-  const normalizedUrl = normalizeBaseUrl(baseUrl);
-  if (normalizedUrl.toLowerCase().endsWith("/models")) return normalizedUrl;
-  if (/\/v\d+(?:beta)?$/i.test(normalizedUrl)) return `${normalizedUrl}/models`;
-  return `${normalizedUrl}/${versionPath}/models`;
+function buildVersionedModelsUrl(baseUrl: string, versionPath: string) {
+  const apiRoot = normalizeBaseUrl(baseUrl)
+    .replace(/\/models$/i, "")
+    .replace(/\/v\d+(?:beta)?$/i, "");
+  return `${apiRoot}/${versionPath}/models`;
 }
 
 export function buildProviderModelsUrl(
@@ -81,30 +143,31 @@ export function buildProviderModelsUrl(
   baseUrl: string,
   kind: ProviderModelsAttemptKind,
 ) {
-  if (type === "gemini") {
-    return buildGeminiModelsUrl(baseUrl, kind === "official" ? "v1beta" : "v1");
-  }
-
-  return baseUrl.endsWith("/v1") ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
+  const versionPath = kind === "official" && type === "gemini" ? "v1beta" : "v1";
+  return buildVersionedModelsUrl(baseUrl, versionPath);
 }
 
-// 每个供应商只带自家标准的 API Key 请求头：claude_code 用 x-api-key、
-// codex 用 Authorization Bearer、gemini 用 x-goog-api-key，绝不双头齐发。
-// default/official 两次尝试仅在 URL 上有差异（gemini v1 vs v1beta），
-// 请求头完全一致，重复的尝试由签名去重收敛。
-function buildModelsHeaders(type: ProviderId, apiKey: string): Record<string, string> {
-  if (type === "gemini") {
-    return {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    };
-  }
-  if (type === "claude_code") {
-    return {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_API_VERSION,
-    };
+// 首次尝试统一 /v1/models + Authorization Bearer；失败后回退到各家官方形式
+// （gemini v1beta + x-goog-api-key、claude_code x-api-key）。每次请求仍只带单一鉴权头。
+function buildModelsHeaders(
+  type: ProviderId,
+  apiKey: string,
+  kind: ProviderModelsAttemptKind,
+): Record<string, string> {
+  if (kind === "official") {
+    if (type === "gemini") {
+      return {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      };
+    }
+    if (type === "claude_code") {
+      return {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_API_VERSION,
+      };
+    }
   }
   return {
     "Content-Type": "application/json",
@@ -112,35 +175,19 @@ function buildModelsHeaders(type: ProviderId, apiKey: string): Record<string, st
   };
 }
 
-function providerModelsAttemptSignature(
-  type: ProviderId,
-  baseUrl: string,
-  attempt: ProviderModelsAttempt,
-) {
-  const url = buildProviderModelsUrl(type, baseUrl, attempt.kind);
-  const headers = Object.entries(attempt.headers).sort(([a], [b]) => a.localeCompare(b));
-  return `${url}||${JSON.stringify(headers)}`;
-}
-
 export function buildProviderModelsAttempts(
   type: ProviderId,
-  baseUrl: string,
   apiKey: string,
 ): ProviderModelsAttempt[] {
-  const candidates: ProviderModelsAttempt[] = [
-    { kind: "default", headers: buildModelsHeaders(type, apiKey) },
-    { kind: "official", headers: buildModelsHeaders(type, apiKey) },
+  const attempts: ProviderModelsAttempt[] = [
+    { kind: "default", headers: buildModelsHeaders(type, apiKey, "default") },
+    { kind: "official", headers: buildModelsHeaders(type, apiKey, "official") },
   ];
-
-  const attempts: ProviderModelsAttempt[] = [];
-  const seen = new Set<string>();
-  for (const candidate of candidates) {
-    const signature = providerModelsAttemptSignature(type, baseUrl, candidate);
-    if (seen.has(signature)) continue;
-    seen.add(signature);
-    attempts.push(candidate);
-  }
-  return attempts;
+  // codex/xai 的官方形式与首次尝试完全一致（URL 仅 gemini 随 kind 变化，且其请求头
+  // 必不同），重复请求同一端点没有意义，收敛为一次。
+  return JSON.stringify(attempts[0].headers) === JSON.stringify(attempts[1].headers)
+    ? [attempts[0]]
+    : attempts;
 }
 
 function isMissingEndpointStatus(status: number | null) {
@@ -323,21 +370,6 @@ export function mergeFetchedModels(
   return merged;
 }
 
-export function sortModelsBySelection(
-  models: ProviderModelConfig[],
-  activeModels: ReadonlySet<string>,
-): ProviderModelConfig[] {
-  const selected: ProviderModelConfig[] = [];
-  const unselected: ProviderModelConfig[] = [];
-
-  for (const model of models) {
-    if (activeModels.has(model.id)) selected.push(model);
-    else unselected.push(model);
-  }
-
-  return [...selected, ...unselected];
-}
-
 export function getModelBulkActionCounts(
   selectedModels: ReadonlySet<string>,
   activeModels: ReadonlySet<string>,
@@ -396,7 +428,7 @@ export async function fetchModelsFromApi(
     );
   }
 
-  const attempts = buildProviderModelsAttempts(type, normalizedUrl, normalizedApiKey);
+  const attempts = buildProviderModelsAttempts(type, normalizedApiKey);
   const failures: ProviderModelsFailure[] = [];
   let emptyResult: ProviderModelConfig[] | null = null;
 

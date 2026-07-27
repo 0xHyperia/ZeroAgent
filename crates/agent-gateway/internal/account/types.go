@@ -39,6 +39,8 @@ type Workspace struct {
 
 type Device struct {
 	ID             string      `json:"id"`
+	AgentID        string      `json:"agent_id"`
+	LegacyDeviceID string      `json:"device_id,omitempty"`
 	UserID         int64       `json:"-"`
 	InstallationID string      `json:"installation_id"`
 	Name           string      `json:"name"`
@@ -47,6 +49,7 @@ type Device struct {
 	CredentialHash string      `json:"-"`
 	Workspaces     []Workspace `json:"workspaces"`
 	CreatedAt      time.Time   `json:"created_at"`
+	TokenIssuedAt  time.Time   `json:"token_issued_at"`
 	LastSeenAt     time.Time   `json:"last_seen_at"`
 	RevokedAt      *time.Time  `json:"revoked_at,omitempty"`
 	Online         bool        `json:"online"`
@@ -58,6 +61,7 @@ type SelectionLease struct {
 	ControllerID   string    `json:"-"`
 	RuntimeKind    string    `json:"runtime_kind"`
 	DeviceID       string    `json:"device_id,omitempty"`
+	AgentID        string    `json:"agent_id,omitempty"`
 	WorkspaceID    string    `json:"workspace_id"`
 	Scope          string    `json:"scope,omitempty"`
 	Target         string    `json:"target_fingerprint"`
@@ -75,6 +79,7 @@ func (l *SelectionLease) EffectiveScope() string {
 type Environment struct {
 	RuntimeKind       string      `json:"runtime_kind"`
 	DeviceID          string      `json:"device_id,omitempty"`
+	AgentID           string      `json:"agent_id,omitempty"`
 	DeviceName        string      `json:"device_name,omitempty"`
 	Name              string      `json:"name"`
 	Online            bool        `json:"online"`
@@ -126,6 +131,7 @@ type ConversationRoute struct {
 	UserID         int64     `json:"-"`
 	RuntimeKind    string    `json:"runtime_kind"`
 	DeviceID       string    `json:"device_id"`
+	AgentID        string    `json:"agent_id,omitempty"`
 	WorkspaceID    string    `json:"workspace_id"`
 	Title          string    `json:"title"`
 	Summary        string    `json:"summary"`

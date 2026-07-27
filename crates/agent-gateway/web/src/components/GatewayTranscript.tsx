@@ -35,10 +35,14 @@ import {
   UserMessageContent,
 } from "@/lib/chat/userMessageContent";
 import type { GitClient } from "@/lib/git/types";
+import { DEFAULT_CHAT_TRANSCRIPT_WIDTH } from "@/lib/settings";
 import { cn } from "@/lib/shared/utils";
 import { extractLiveRange } from "@/lib/transcript-virtual/liveRangeExtractor";
 import { createLiveRowScrollAdjustPolicy } from "@/lib/transcript-virtual/liveScrollAdjustPolicy";
-import { createTranscriptMeasurementsLru } from "@/lib/transcript-virtual/measurementsLru";
+import {
+  buildTranscriptLayoutKey,
+  createTranscriptMeasurementsLru,
+} from "@/lib/transcript-virtual/measurementsLru";
 import {
   CHECKPOINT_ROW_ESTIMATE_PX,
   estimateAssistantRowHeight,
@@ -84,6 +88,7 @@ type GatewayTranscriptProps = {
   liveStartIndex?: number;
   // Key of the actively streaming turn (caret / live structural state).
   activeTurnKey?: string | null;
+  contentWidth?: number;
   // Whether the scroll-follow engine is attached to the bottom; gates the
   // virtualizer's resize-compensation carve-out for live-row growth.
   isViewportFollowing?: () => boolean;
@@ -104,7 +109,7 @@ type GatewayTranscriptProps = {
   onOpenSettings?: (section?: SectionId) => void;
   hasMoreHistory?: boolean;
   isLoadingMoreHistory?: boolean;
-  onLoadFullHistory?: () => void;
+  onLoadEarlierHistory?: () => void;
   isAgentMode?: boolean;
   showUsage?: boolean;
   usageContextWindow?: number;
@@ -280,11 +285,7 @@ function CheckpointCard(props: {
 
           {isExpanded ? (
             <div className="checkpoint-expand border-t border-black/[0.05] px-3.5 py-3 dark:border-white/[0.06]">
-              <Markdown
-                content={item.content}
-                className="font-openai-chat text-sm"
-                readOnly={readOnly}
-              />
+              <Markdown content={item.content} className="font-chat text-sm" readOnly={readOnly} />
             </div>
           ) : null}
         </div>
@@ -672,7 +673,7 @@ function GatewayUserMessageBubbleBody(props: {
   const { visibleFiles, pastedTextFiles } = splitUserAttachmentsForDisplay(attachments, text);
 
   return (
-    <div className="chat-user-bubble ml-auto w-fit max-w-full rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5 font-openai-chat text-[calc(14.5px*var(--zone-font-scale,1))] leading-relaxed text-[hsl(var(--chat-user-fg))]">
+    <div className="chat-user-bubble ml-auto w-fit max-w-full rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5 font-chat text-[calc(14.5px*var(--zone-font-scale,1))] leading-relaxed text-[hsl(var(--chat-user-fg))]">
       <GatewayUserAttachmentCards
         files={visibleFiles}
         workspaceRoot={workspaceRoot}
@@ -738,12 +739,26 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
     resizeEditableTextarea(textareaRef.current);
   }, [draftText]);
 
+  // A large paste is stored as an uploaded text file *plus* a
+  // "[Pasted text N: path]" marker inlined into the message text (rendered
+  // as a chip once sent, see GatewayUserMessageBubbleBody above). Editing
+  // must hide that same file's attachment card while its marker is still
+  // present in the text, otherwise the paste shows up twice: once as a
+  // card, once as raw marker text in the textarea below. The full
+  // (unfiltered) list — including pasted-text files — is still what gets
+  // submitted, so nothing is lost on resend; only the card list is
+  // narrowed for display.
+  const visibleAttachments = useMemo(
+    () => splitUserAttachmentsForDisplay(draftAttachments, draftText).visibleFiles,
+    [draftAttachments, draftText],
+  );
+
   const canSubmit = draftText.trim().length > 0 || draftAttachments.length > 0;
 
   return (
     <div className="chat-user-bubble-editor w-full max-w-[min(85%,calc(50em+2.5rem))] rounded-2xl border border-border bg-[hsl(var(--chat-user-bg))] p-3">
       <GatewayUserAttachmentCards
-        files={draftAttachments}
+        files={visibleAttachments}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         onRemove={(relativePath) => {
@@ -755,7 +770,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
       />
       <textarea
         ref={textareaRef}
-        className="chat-user-bubble-editor-textarea w-full resize-none overflow-hidden rounded-lg bg-transparent p-2 font-openai-chat text-[calc(14.5px*var(--zone-font-scale,1))] leading-relaxed text-[hsl(var(--chat-user-fg))] outline-none"
+        className="chat-user-bubble-editor-textarea w-full resize-none overflow-hidden rounded-lg bg-transparent p-2 font-chat text-[calc(14.5px*var(--zone-font-scale,1))] leading-relaxed text-[hsl(var(--chat-user-fg))] outline-none"
         value={draftText}
         onChange={(event) => setDraftText(event.target.value)}
         rows={1}
@@ -1165,13 +1180,14 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   rows: readonly TranscriptRow[];
   liveStartIndex: number;
   activeTurnKey?: string | null;
+  contentWidth: number;
   scrollViewport: HTMLDivElement | null;
   isViewportFollowing?: () => boolean;
   navRef?: MutableRefObject<GatewayTranscriptNavHandle | null>;
   onAnchorUserRowChange?: (rowKey: string | null) => void;
   hasMoreHistory?: boolean;
   isLoadingMoreHistory?: boolean;
-  onLoadFullHistory?: () => void;
+  onLoadEarlierHistory?: () => void;
   isStreaming: boolean;
   isAgentMode: boolean;
   showUsage: boolean;
@@ -1197,13 +1213,14 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     rows,
     liveStartIndex,
     activeTurnKey,
+    contentWidth,
     scrollViewport,
     isViewportFollowing,
     navRef,
     onAnchorUserRowChange,
     hasMoreHistory,
     isLoadingMoreHistory,
-    onLoadFullHistory,
+    onLoadEarlierHistory,
     isStreaming,
     isAgentMode,
     showUsage,
@@ -1323,7 +1340,10 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   const [initialMeasurementsCache] = useState(
     () =>
       (conversationId && scrollViewport
-        ? transcriptMeasurementsLru.restore(conversationId, scrollViewport.clientWidth)
+        ? transcriptMeasurementsLru.restore(
+            conversationId,
+            buildTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
+          )
         : null) ?? [],
   );
 
@@ -1362,6 +1382,12 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
       getLiveStartIndex: () => forceMountStartRef.current,
       isFollowing: () => isViewportFollowing?.() ?? false,
     });
+
+  // Every mounted row is already tracked by the virtualizer's ResizeObserver,
+  // which updates its measured height as the centered transcript reflows.
+  // Do not call measure() on width commits: it clears those fresh measurements
+  // after the DOM has already resized, so estimate-based row positions can
+  // overlap without another resize event to repopulate the cache.
 
   // 楼层跳转：scrollToIndex(align:"start") 后连续几帧重对齐——目标行远处的
   // 估高行在滚动后被真实测量，落点会漂移；对准同一 index 是收敛操作，不会
@@ -1483,6 +1509,47 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     reportAnchorRef.current();
   }, [virtualItems]);
 
+  // Infinite upward paging: scrolling within one viewport of the top requests
+  // the previous page through the same handler as the "load earlier history"
+  // button (which stays as the visible affordance and loading indicator).
+  // Only scroll events trigger it — opening a conversation lands at the
+  // bottom and never auto-fetches — and after a page lands the keyed
+  // anchoring parks the viewport about a page below the top, so walking
+  // further back keeps paging one request at a time: readers load exactly as
+  // far as they scroll, servers transfer only the pages actually walked to,
+  // and a failed fetch retries only on the next user scroll (no hammering).
+  const autoLoadEarlierInFlightRef = useRef(false);
+  const maybeAutoLoadEarlierRef = useRef(() => {});
+  maybeAutoLoadEarlierRef.current = () => {
+    if (
+      readOnly ||
+      isStreaming ||
+      !hasMoreHistory ||
+      !onLoadEarlierHistory ||
+      isLoadingMoreHistory ||
+      autoLoadEarlierInFlightRef.current ||
+      !scrollViewport ||
+      scrollViewport.scrollTop > scrollViewport.clientHeight
+    ) {
+      return;
+    }
+    autoLoadEarlierInFlightRef.current = true;
+    onLoadEarlierHistory();
+  };
+  useEffect(() => {
+    if (!scrollViewport || readOnly) return;
+    const handler = () => maybeAutoLoadEarlierRef.current();
+    scrollViewport.addEventListener("scroll", handler, { passive: true });
+    return () => scrollViewport.removeEventListener("scroll", handler);
+  }, [scrollViewport, readOnly]);
+  useEffect(() => {
+    // The latch guards the gap between firing and the loading flag landing;
+    // it releases whenever a load cycle is not (or no longer) running.
+    if (!isLoadingMoreHistory) {
+      autoLoadEarlierInFlightRef.current = false;
+    }
+  }, [isLoadingMoreHistory]);
+
   // First paint of a conversation lands at the bottom before the user sees
   // anything: scrollToEnd re-targets as dynamic measurements land. The region
   // remounts per conversation (keyed by the parent), so this runs once per
@@ -1507,7 +1574,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     if (!conversationId || !scrollViewport) return;
     transcriptMeasurementsLru.save(
       conversationId,
-      scrollViewport.clientWidth,
+      buildTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
       transcriptVirtualizer.takeSnapshot(),
     );
   };
@@ -1532,8 +1599,8 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
             >
               <button
                 type="button"
-                onClick={onLoadFullHistory}
-                disabled={isLoadingMoreHistory || !onLoadFullHistory}
+                onClick={onLoadEarlierHistory}
+                disabled={isLoadingMoreHistory || !onLoadEarlierHistory}
                 className="rounded-full border border-border/60 bg-background/80 px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isLoadingMoreHistory
@@ -1722,6 +1789,7 @@ export function GatewayTranscript({
   rows,
   liveStartIndex = -1,
   activeTurnKey = null,
+  contentWidth = DEFAULT_CHAT_TRANSCRIPT_WIDTH,
   isViewportFollowing,
   navRef,
   onAnchorUserRowChange,
@@ -1736,7 +1804,7 @@ export function GatewayTranscript({
   onOpenSettings,
   hasMoreHistory = false,
   isLoadingMoreHistory = false,
-  onLoadFullHistory,
+  onLoadEarlierHistory,
   isAgentMode = true,
   showUsage = false,
   usageContextWindow,
@@ -1808,13 +1876,14 @@ export function GatewayTranscript({
           rows={rows}
           liveStartIndex={liveStartIndex}
           activeTurnKey={activeTurnKey}
+          contentWidth={contentWidth}
           scrollViewport={transcriptScrollViewport}
           isViewportFollowing={isViewportFollowing}
           navRef={navRef}
           onAnchorUserRowChange={onAnchorUserRowChange}
           hasMoreHistory={hasMoreHistory}
           isLoadingMoreHistory={isLoadingMoreHistory}
-          onLoadFullHistory={onLoadFullHistory}
+          onLoadEarlierHistory={onLoadEarlierHistory}
           isStreaming={isStreaming}
           isAgentMode={isAgentMode}
           showUsage={showUsage}

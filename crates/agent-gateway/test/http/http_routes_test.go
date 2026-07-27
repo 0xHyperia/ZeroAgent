@@ -14,16 +14,20 @@ import (
 	"github.com/liveagent/agent-gateway/test/testutil"
 )
 
-func newHTTPTestHandler(sm *session.Manager) http.Handler {
+func newHTTPTestHandler(t *testing.T) (http.Handler, *session.Manager, *testutil.AccountFixture) {
+	t.Helper()
+	sm := session.NewManager()
+	accountFixture := testutil.NewAccountFixture(t, sm)
 	return server.NewHTTPServer(&config.Config{
+		Token:          "dev-token",
 		RequestTimeout: 500 * time.Millisecond,
-	}, sm)
+	}, sm, accountFixture.Service), sm, accountFixture
 }
 
-func TestAPIRoutesRequireAccountSelection(t *testing.T) {
+func TestAPIRoutesRequireBearerToken(t *testing.T) {
 	t.Parallel()
 
-	handler := newHTTPTestHandler(session.NewManager())
+	handler, _, _ := newHTTPTestHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "http://gateway.test/api/status", nil)
 	rec := httptest.NewRecorder()
@@ -43,7 +47,7 @@ func TestAPIRoutesRequireAccountSelection(t *testing.T) {
 func TestHealthRouteIsPublic(t *testing.T) {
 	t.Parallel()
 
-	handler := newHTTPTestHandler(session.NewManager())
+	handler, _, _ := newHTTPTestHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "http://gateway.test/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -57,19 +61,15 @@ func TestHealthRouteIsPublic(t *testing.T) {
 	}
 }
 
-func TestStatusRouteReturnsAuthenticatedSession(t *testing.T) {
+func TestStatusRouteReturnsAgentDirectory(t *testing.T) {
 	t.Parallel()
 
-	sm := session.NewManager()
-	fixture := testutil.NewAccountFixture(t, sm)
-	fixture.DeviceManager.RecordAuthentication("desktop-agent", "0.9.0", "session-1")
-	fixture.DeviceManager.SetSession(session.NewAgentSession(fixture.DeviceManager.LatestAuthSnapshot()))
-	handler := server.NewHTTPServerWithAccountService(&config.Config{
-		RequestTimeout: 500 * time.Millisecond,
-	}, sm, fixture.Service)
+	handler, sm, accountFixture := newHTTPTestHandler(t)
+	sm.RecordAuthentication(accountFixture.Device.ID, "0.9.0", "session-1")
+	sm.SetSession(session.NewAgentSession(sm.LatestAuthSnapshot(accountFixture.Device.ID)))
 
 	req := httptest.NewRequest(http.MethodGet, "http://gateway.test/api/status", nil)
-	fixture.Authorize(req)
+	accountFixture.Authorize(req)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -78,26 +78,29 @@ func TestStatusRouteReturnsAuthenticatedSession(t *testing.T) {
 	}
 
 	var payload struct {
-		Online       bool   `json:"online"`
-		AgentID      string `json:"agent_id"`
-		AgentVersion string `json:"agent_version"`
-		SessionID    string `json:"session_id"`
+		Agents []struct {
+			Online       bool   `json:"online"`
+			AgentID      string `json:"agent_id"`
+			AgentVersion string `json:"agent_version"`
+			SessionID    string `json:"session_id"`
+		} `json:"agents"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode status payload: %v", err)
 	}
-	if !payload.Online {
-		t.Fatalf("online = false, want true")
+	if len(payload.Agents) != 1 {
+		t.Fatalf("agents = %#v, want one entry", payload.Agents)
 	}
-	if payload.AgentID != "desktop-agent" || payload.AgentVersion != "0.9.0" || payload.SessionID != "session-1" {
-		t.Fatalf("payload = %#v, want authenticated session identity", payload)
+	agent := payload.Agents[0]
+	if !agent.Online || agent.AgentID != accountFixture.Device.ID || agent.AgentVersion != "0.9.0" || agent.SessionID != "session-1" {
+		t.Fatalf("agent = %#v, want authenticated session identity", agent)
 	}
 }
 
 func TestSPAFallbackServesIndexWithoutAuthorization(t *testing.T) {
 	t.Parallel()
 
-	handler := newHTTPTestHandler(session.NewManager())
+	handler, _, _ := newHTTPTestHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "http://gateway.test/conversations/session-1", nil)
 	rec := httptest.NewRecorder()

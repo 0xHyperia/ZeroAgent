@@ -7,6 +7,7 @@ export type ExecutionWorkspace = {
 export type ExecutionEnvironment = {
   runtime_kind: "web_chat" | "device_agent";
   device_id?: string;
+  agent_id?: string;
   device_name?: string;
   name: string;
   online: boolean;
@@ -22,6 +23,7 @@ export type ExecutionSelection = {
   selection_lease: string;
   runtime_kind: "web_chat" | "device_agent";
   device_id?: string;
+  agent_id?: string;
   workspace_id: string;
   target_fingerprint: string;
   conversation_id: string;
@@ -108,6 +110,7 @@ export function encodeSelectionCredential(selection: ExecutionSelection) {
     lease: selection.selection_lease,
     runtimeKind: selection.runtime_kind,
     deviceId: selection.device_id ?? "",
+    agentId: selection.agent_id ?? selection.device_id ?? "",
     workspaceId: selection.workspace_id,
   });
   const bytes = new TextEncoder().encode(json);
@@ -120,6 +123,7 @@ export function decodeSelectionCredential(value: string): {
   lease: string;
   runtimeKind: string;
   deviceId: string;
+  agentId: string;
   workspaceId: string;
 } | null {
   if (!value.startsWith("selection.")) return null;
@@ -132,6 +136,7 @@ export function decodeSelectionCredential(value: string): {
       lease: string;
       runtimeKind: string;
       deviceId: string;
+      agentId: string;
       workspaceId: string;
     };
   } catch {

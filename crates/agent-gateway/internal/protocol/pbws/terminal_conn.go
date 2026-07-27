@@ -13,16 +13,14 @@ import (
 
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/observability"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/shared"
 	"github.com/liveagent/agent-gateway/internal/session"
 )
 
-// 终端数据面（/ws/v2/terminal）：两端共用一条路径，角色由 hello 区分——浏览器角色对应
-// v1 /ws/terminal 自定义二进制流（attach/detach 登记、input/resize 需已附着、按订阅过滤），
-// Agent 角色对应 v1 gRPC AgentTerminalConnect（登记到-agent 通道、广播入站帧）。
-// 帧载荷直接复用 proto TerminalStreamFrame，淘汰 v1 浏览器侧的手工帧格式。
+// 终端数据面（/ws/v2/terminal）：两端共用一条路径，角色由 hello 区分。浏览器
+// 角色维护 attach/detach 订阅并校验 input/resize；Agent 角色登记数据通道并广播
+// 入站帧。两端直接传输 proto TerminalStreamFrame。
 
 const terminalWriteQueueSize = 1024
 
@@ -31,14 +29,24 @@ func (s *Server) TerminalHandler() http.Handler {
 	upgrader := s.upgrader()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		controllerSessionID := ""
-		if cookie, cookieErr := r.Cookie("zerobox_session"); cookieErr == nil {
-			controllerSessionID = cookie.Value
+		if s.accounts != nil {
+			if cookie, err := r.Cookie(account.SessionCookieName); err == nil {
+				controllerSessionID = strings.TrimSpace(cookie.Value)
+			}
+		}
+		release, ok := acquireConnSlot(&s.terminalConns, s.maxTerminalConnections())
+		if !ok {
+			http.Error(w, "too many terminal connections", http.StatusServiceUnavailable)
+			return
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			release()
 			return
 		}
-		conn.SetReadLimit(s.readLimit())
+		defer release()
+		// 角色未知前先按浏览器（更严）限额；hello 判定为 Agent 角色后再放宽。
+		conn.SetReadLimit(terminalBrowserReadLimit)
 		s.serveTerminal(conn, controllerSessionID)
 	})
 }
@@ -56,50 +64,100 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 	if wantRole == gatewayv2.ClientRole_CLIENT_ROLE_UNSPECIFIED {
 		wantRole = gatewayv2.ClientRole_CLIENT_ROLE_BROWSER
 	}
-	verdict := s.vetHelloBase(hello, wantRole)
-	targetManager := s.sm
-	var userID int64
-	deviceID, workspaceID, runtimeKind := "", "", ""
-	if verdict.ok && s.accounts != nil {
-		if wantRole == gatewayv2.ClientRole_CLIENT_ROLE_AGENT {
-			device, authErr := s.accounts.AuthenticateDevice(context.Background(), hello.GetDeviceId(), hello.GetDeviceCredential())
-			if authErr != nil {
-				verdict = helloVerdict{message: "unauthorized device"}
-			} else {
-				userID, deviceID, runtimeKind = device.UserID, device.ID, "device_agent"
-				targetManager = s.sm.DeviceManager(userID, deviceID)
-			}
+	verdict := s.vetHello(hello, wantRole)
+	if verdict.ok && strings.TrimSpace(hello.GetAgentId()) == "" && s.accounts == nil {
+		verdict = helloVerdict{message: "agent_id is required"}
+	}
+	boundAgentID := strings.TrimSpace(hello.GetAgentId())
+	if verdict.ok && wantRole == gatewayv2.ClientRole_CLIENT_ROLE_BROWSER && s.accounts != nil {
+		session, lease, err := s.accounts.ValidateSelection(context.Background(), controllerSessionID, hello.GetSelectionLease())
+		if err != nil || lease.RuntimeKind != account.RuntimeKindDeviceAgent {
+			verdict = helloVerdict{message: "account login and selection lease required"}
+		} else if device, deviceErr := s.accounts.Device(context.Background(), session.UserID, lease.DeviceID); deviceErr != nil {
+			verdict = helloVerdict{message: "selected device is unavailable"}
+		} else if boundAgentID != "" && boundAgentID != device.ID {
+			verdict = helloVerdict{message: "agent_id is outside the selected account device"}
 		} else {
-			var accountSession *account.Session
-			var lease *account.SelectionLease
-			var authErr error
-			if controllerSessionID != "" {
-				accountSession, lease, authErr = s.accounts.ValidateSelection(context.Background(), controllerSessionID, hello.GetSelectionLease())
-			} else {
-				accountSession, lease, authErr = s.accounts.ValidateDesktopSelection(context.Background(), hello.GetToken(), hello.GetSelectionLease())
-			}
-			if authErr != nil || lease.RuntimeKind != "device_agent" || hello.GetWorkspaceId() != lease.WorkspaceID {
-				verdict = helloVerdict{message: "invalid selection lease"}
-			} else {
-				userID, deviceID, workspaceID, runtimeKind = accountSession.UserID, lease.DeviceID, lease.WorkspaceID, lease.RuntimeKind
-				targetManager = s.sm.DeviceManager(userID, deviceID)
-			}
+			boundAgentID = device.ID
 		}
-	} else if verdict.ok {
-		verdict = helloVerdict{message: "unauthorized"}
 	}
 	if !verdict.ok {
 		_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.TerminalServerFrame{
 			Payload: &gatewayv2.TerminalServerFrame_Hello{
-				Hello: s.serverHello(false, verdict.message, ""),
+				Hello: s.serverHello(false, verdict.message, "", terminalBrowserReadLimit),
 			},
 		})
 		closeUnauthorized(conn, s.writeTimeout())
 		return
 	}
+
+	var (
+		authEpoch uint64
+		toAgent   chan *gatewayv2.TerminalStreamFrame
+		agentCtx  context.Context
+		cancel    context.CancelFunc
+		cleanup   func()
+	)
+	if wantRole == gatewayv2.ClientRole_CLIENT_ROLE_AGENT {
+		var err error
+		var canonicalAgentID string
+		canonicalAgentID, authEpoch, err = s.authenticateAgentHello(hello)
+		if err == nil {
+			boundAgentID = canonicalAgentID
+		}
+		if err != nil {
+			message := "gateway storage unavailable"
+			if errors.Is(err, account.ErrUnauthorizedAgent) {
+				message = "unauthorized"
+			}
+			_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.TerminalServerFrame{
+				Payload: &gatewayv2.TerminalServerFrame_Hello{
+					Hello: s.serverHello(false, message, "", terminalAgentReadLimit),
+				},
+			})
+			if errors.Is(err, account.ErrUnauthorizedAgent) {
+				closeUnauthorized(conn, s.writeTimeout())
+			}
+			return
+		}
+
+		agentCtx, cancel = context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			<-agentCtx.Done()
+			_ = conn.Close()
+		}()
+		toAgent = make(chan *gatewayv2.TerminalStreamFrame, 4096)
+		var registered bool
+		cleanup, registered = s.sm.RegisterTerminalStreamToAgentIfCurrent(
+			boundAgentID,
+			toAgent,
+			cancel,
+			func() bool {
+				return s.authenticator.AuthenticationCurrent(boundAgentID, authEpoch)
+			},
+		)
+		if !registered {
+			_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.TerminalServerFrame{
+				Payload: &gatewayv2.TerminalServerFrame_Hello{
+					Hello: s.serverHello(false, "unauthorized", "", terminalAgentReadLimit),
+				},
+			})
+			closeUnauthorized(conn, s.writeTimeout())
+			return
+		}
+		defer cleanup()
+	}
+
+	// 角色确定后按链路调整读限额并在 hello 中报告实际值。
+	roleReadLimit := int64(terminalBrowserReadLimit)
+	if wantRole == gatewayv2.ClientRole_CLIENT_ROLE_AGENT {
+		roleReadLimit = terminalAgentReadLimit
+	}
+	conn.SetReadLimit(roleReadLimit)
 	if err := writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.TerminalServerFrame{
 		Payload: &gatewayv2.TerminalServerFrame_Hello{
-			Hello: s.serverHelloFor(true, "", "", userID, deviceID, workspaceID, runtimeKind),
+			Hello: s.serverHelloForAgent(true, "", "", boundAgentID, roleReadLimit),
 		},
 	}); err != nil {
 		return
@@ -107,11 +165,11 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 
 	if wantRole == gatewayv2.ClientRole_CLIENT_ROLE_AGENT {
 		observability.Usage.V2TerminalConnectsTotal.Add(1)
-		s.serveTerminalAgent(conn, targetManager)
+		s.serveTerminalAgent(conn, boundAgentID, agentCtx, cancel, toAgent)
 		return
 	}
 	observability.Usage.V2TerminalConnectsTotal.Add(1)
-	s.serveTerminalBrowser(conn, targetManager)
+	s.serveTerminalBrowser(conn, boundAgentID)
 }
 
 func readTerminalFrame(conn *websocket.Conn) (*gatewayv2.TerminalClientFrame, bool) {
@@ -132,21 +190,16 @@ func readTerminalFrame(conn *websocket.Conn) (*gatewayv2.TerminalClientFrame, bo
 }
 
 // ---------------------------------------------------------------------------
-// Agent 角色（对应 v1 gRPC AgentTerminalConnect）
+// Agent 角色
 // ---------------------------------------------------------------------------
 
-func (s *Server) serveTerminalAgent(conn *websocket.Conn, sm *session.Manager) {
-	toAgent := make(chan *gatewayv1.TerminalStreamFrame, 4096)
-	cleanup := sm.RegisterTerminalStreamToAgent(toAgent)
-	defer cleanup()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
-
+func (s *Server) serveTerminalAgent(
+	conn *websocket.Conn,
+	agentID string,
+	ctx context.Context,
+	cancel context.CancelFunc,
+	toAgent <-chan *gatewayv2.TerminalStreamFrame,
+) {
 	go func() {
 		defer cancel()
 		for {
@@ -171,12 +224,12 @@ func (s *Server) serveTerminalAgent(conn *websocket.Conn, sm *session.Manager) {
 			return
 		}
 		if streamFrame := frame.GetFrame(); streamFrame != nil {
-			sm.BroadcastTerminalStreamFrame(streamFrame)
+			s.sm.BroadcastTerminalStreamFrame(agentID, streamFrame)
 		}
 	}
 }
 
-func (s *Server) writeTerminalFrame(conn *websocket.Conn, frame *gatewayv1.TerminalStreamFrame) bool {
+func (s *Server) writeTerminalFrame(conn *websocket.Conn, frame *gatewayv2.TerminalStreamFrame) bool {
 	data, err := proto.Marshal(&gatewayv2.TerminalServerFrame{
 		Payload: &gatewayv2.TerminalServerFrame_Frame{Frame: frame},
 	})
@@ -193,13 +246,16 @@ func (s *Server) writeTerminalFrame(conn *websocket.Conn, frame *gatewayv1.Termi
 }
 
 // ---------------------------------------------------------------------------
-// 浏览器角色（对应 v1 /ws/terminal 二进制流）
+// 浏览器角色
 // ---------------------------------------------------------------------------
 
 type terminalBrowserConn struct {
 	srv  *Server
 	sm   *session.Manager
 	conn *websocket.Conn
+	// agentID 是连接通过 hello.agent_id 显式绑定的目标 Agent；出站按它路由，
+	// 入站只放行同源帧。
+	agentID string
 
 	out  chan []byte
 	done chan struct{}
@@ -210,11 +266,12 @@ type terminalBrowserConn struct {
 	streams  map[string]struct{}
 }
 
-func (s *Server) serveTerminalBrowser(conn *websocket.Conn, sm *session.Manager) {
+func (s *Server) serveTerminalBrowser(conn *websocket.Conn, agentID string) {
 	c := &terminalBrowserConn{
 		srv:      s,
-		sm:       sm,
+		sm:       s.sm,
 		conn:     conn,
+		agentID:  agentID,
 		out:      make(chan []byte, terminalWriteQueueSize),
 		done:     make(chan struct{}),
 		attached: make(map[string]struct{}),
@@ -238,7 +295,7 @@ func (s *Server) serveTerminalBrowser(conn *websocket.Conn, sm *session.Manager)
 	}
 }
 
-func (c *terminalBrowserConn) handleFrame(frame *gatewayv1.TerminalStreamFrame) {
+func (c *terminalBrowserConn) handleFrame(frame *gatewayv2.TerminalStreamFrame) {
 	kind := strings.TrimSpace(frame.GetKind())
 	if !c.frameAllowed(frame) {
 		c.enqueueFrame(terminalErrorFrame(frame, shared.TerminalPermissionError(kind)))
@@ -262,7 +319,7 @@ func (c *terminalBrowserConn) handleFrame(frame *gatewayv1.TerminalStreamFrame) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := c.sm.SendTerminalFrameToAgent(ctx, frame); err != nil {
+	if err := c.sm.SendTerminalFrameToAgent(ctx, c.agentID, frame); err != nil {
 		message := "desktop agent is offline"
 		if !errors.Is(err, session.ErrAgentOffline) {
 			message = err.Error()
@@ -271,18 +328,19 @@ func (c *terminalBrowserConn) handleFrame(frame *gatewayv1.TerminalStreamFrame) 
 	}
 }
 
-func (c *terminalBrowserConn) frameAllowed(frame *gatewayv1.TerminalStreamFrame) bool {
+func (c *terminalBrowserConn) frameAllowed(frame *gatewayv2.TerminalStreamFrame) bool {
 	if frame == nil {
 		return false
 	}
+	view := c.sm.AgentView(c.agentID)
 	sessionID := strings.TrimSpace(frame.GetSessionId())
-	switch c.sm.TerminalSessionKind(sessionID) {
+	switch view.TerminalSessionKind(sessionID) {
 	case "ssh":
-		return c.sm.WebSshTerminalEnabled()
+		return view.WebSshTerminalEnabled()
 	case "local":
-		return c.sm.WebTerminalEnabled()
+		return view.WebTerminalEnabled()
 	default:
-		return c.sm.WebTerminalEnabled() || c.sm.WebSshTerminalEnabled()
+		return view.WebTerminalEnabled() || view.WebSshTerminalEnabled()
 	}
 }
 
@@ -299,16 +357,21 @@ func (c *terminalBrowserConn) startForwarder() {
 					c.close()
 					return
 				}
-				if !c.shouldForward(frame) {
+				if !c.fromBoundAgent(frame.AgentID) || !c.shouldForward(frame.Event) {
 					continue
 				}
-				c.enqueueFrame(frame)
+				c.enqueueFrame(frame.Event)
 			}
 		}
 	}()
 }
 
-func (c *terminalBrowserConn) shouldForward(frame *gatewayv1.TerminalStreamFrame) bool {
+// fromBoundAgent 判断帧来源是否为本连接显式绑定的 Agent。
+func (c *terminalBrowserConn) fromBoundAgent(frameAgentID string) bool {
+	return frameAgentID == c.agentID
+}
+
+func (c *terminalBrowserConn) shouldForward(frame *gatewayv2.TerminalStreamFrame) bool {
 	if frame == nil {
 		return false
 	}
@@ -376,9 +439,9 @@ func (c *terminalBrowserConn) knowsStream(streamID string) bool {
 	return ok
 }
 
-// enqueueFrame 与 v1 语义一致：队列满即关闭连接（终端输出无可容忍的丢帧语义，
+// enqueueFrame 在队列满时关闭连接（终端输出无可容忍的丢帧语义，
 // 客户端重连后 attach + snapshot 恢复）。
-func (c *terminalBrowserConn) enqueueFrame(frame *gatewayv1.TerminalStreamFrame) {
+func (c *terminalBrowserConn) enqueueFrame(frame *gatewayv2.TerminalStreamFrame) {
 	data, err := proto.Marshal(&gatewayv2.TerminalServerFrame{
 		Payload: &gatewayv2.TerminalServerFrame_Frame{Frame: frame},
 	})
@@ -418,8 +481,8 @@ func (c *terminalBrowserConn) close() {
 	})
 }
 
-func terminalErrorFrame(source *gatewayv1.TerminalStreamFrame, message string) *gatewayv1.TerminalStreamFrame {
-	return &gatewayv1.TerminalStreamFrame{
+func terminalErrorFrame(source *gatewayv2.TerminalStreamFrame, message string) *gatewayv2.TerminalStreamFrame {
+	return &gatewayv2.TerminalStreamFrame{
 		Kind:           "error",
 		StreamId:       strings.TrimSpace(source.GetStreamId()),
 		SessionId:      strings.TrimSpace(source.GetSessionId()),

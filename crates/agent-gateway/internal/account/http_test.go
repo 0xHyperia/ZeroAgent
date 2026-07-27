@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
 func newTestUSAZero(t *testing.T) *httptest.Server {
@@ -255,6 +256,54 @@ func TestDesktopDeviceManagementUsesAccountIdentity(t *testing.T) {
 	}
 }
 
+func TestAgentRegistrationLegacyUpgradeAndRotation(t *testing.T) {
+	service, _, _ := newAccountTestRuntime(t)
+	ctx := context.Background()
+	device, token, err := service.RegisterDevice(ctx, 1, RegisterDeviceInput{
+		InstallationID: "agent-identity", Name: "Desktop", Platform: "windows", Version: "1.0.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(device.ID, "agent-") || !strings.HasPrefix(token, "agt_") || device.TokenIssuedAt.IsZero() {
+		t.Fatalf("canonical registration missing: device=%#v token=%q", device, token)
+	}
+	legacyID := strings.TrimPrefix(device.ID, "agent-")
+	resolved, _, err := service.AuthenticateAgent("", "", legacyID, token)
+	if err != nil || resolved != device.ID {
+		t.Fatalf("legacy hello did not resolve canonical agent: id=%q err=%v", resolved, err)
+	}
+
+	before := device.TokenIssuedAt
+	rotated, nextToken, err := service.RotateDeviceToken(ctx, 1, device.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextToken == token || !strings.HasPrefix(nextToken, "agt_") || rotated.TokenIssuedAt.Before(before) {
+		t.Fatalf("invalid rotation result: device=%#v token=%q", rotated, nextToken)
+	}
+	if _, _, err := service.AuthenticateAgent(device.ID, token, "", ""); !errors.Is(err, ErrUnauthorizedAgent) {
+		t.Fatalf("old token remained valid after rotation: %v", err)
+	}
+	if resolved, _, err := service.AuthenticateAgent(device.ID, nextToken, "", ""); err != nil || resolved != device.ID {
+		t.Fatalf("rotated token was rejected: id=%q err=%v", resolved, err)
+	}
+	if _, _, err := service.RotateDeviceToken(ctx, 2, device.ID); err == nil {
+		t.Fatal("foreign account rotated an owned agent token")
+	}
+}
+
+func TestRegistrationRejectsMalformedProvidedAgentID(t *testing.T) {
+	service, _, _ := newAccountTestRuntime(t)
+	_, _, err := service.RegisterDevice(context.Background(), 1, RegisterDeviceInput{
+		InstallationID: "bad-agent-id", AgentID: "manual-agent",
+	})
+	var apiError *APIError
+	if !errors.As(err, &apiError) || apiError.Status != http.StatusBadRequest {
+		t.Fatalf("malformed agent id error = %v, want bad request", err)
+	}
+}
+
 func TestWebChatStreamsAndPersistsAccountHistory(t *testing.T) {
 	service, store, handler := newAccountTestRuntime(t)
 	now := time.Now().UTC()
@@ -382,9 +431,9 @@ func TestDeviceHistoryRoutesRemainVisibleWhenDeviceIsOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversationID := "46a06475-4cb9-4216-ab00-c229fe33b784"
-	service.RecordDeviceHistorySync(1, device.ID, &gatewayv1.HistorySyncEvent{
+	service.RecordDeviceHistorySync(1, device.ID, &gatewayv2.HistorySyncEvent{
 		Kind: "upsert", ConversationId: conversationID,
-		Conversation: &gatewayv1.ConversationSummary{
+		Conversation: &gatewayv2.ConversationSummary{
 			Id: conversationID, Title: "Offline summary", Cwd: `E:\code\home`,
 			Model: "gpt-5.1", MessageCount: 4, CreatedAt: 1_700_000_000_000, UpdatedAt: 1_700_000_001_000,
 		},
@@ -431,7 +480,7 @@ func TestDeviceHistoryRoutesRemainVisibleWhenDeviceIsOffline(t *testing.T) {
 		t.Fatalf("foreign routes status=%d body=%s", foreign.Code, foreign.Body.String())
 	}
 
-	service.RecordDeviceHistorySync(1, device.ID, &gatewayv1.HistorySyncEvent{Kind: "delete", ConversationId: conversationID})
+	service.RecordDeviceHistorySync(1, device.ID, &gatewayv2.HistorySyncEvent{Kind: "delete", ConversationId: conversationID})
 	routes, err = service.ConversationRoutes(ctx, 1)
 	if err != nil || len(routes) != 0 {
 		t.Fatalf("deleted route remained: routes=%#v err=%v", routes, err)

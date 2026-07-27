@@ -1,21 +1,40 @@
-import type { KnownProvider, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { DEFAULT_LOCALE, type Locale, normalizeLocale } from "../../i18n/config";
+import { normalizeFontFamily } from "../fontFamily";
+import {
+  findCatalogModel,
+  getProviderFallbackLimits,
+  normalizeModelLimits,
+  repairStaleCrossProviderLimits,
+  resolveModelLimits,
+  resolveModelLimitsAcrossProviders,
+} from "../models/modelCatalog";
+import {
+  clampThinkingLevelToList,
+  isAnthropicAdaptiveModelId,
+  resolveModelThinking,
+  type ThinkingLevel,
+} from "../models/modelThinking";
 import { createUuid } from "../shared/id";
 import { mergeAlwaysEnabledSkillNames } from "../skills/builtin";
 import { SYSTEM_TOOL_OPTIONS, type SystemToolId } from "../tools/systemToolOptions";
+import {
+  DEFAULT_CHAT_TRANSCRIPT_WIDTH,
+  MAX_CHAT_TRANSCRIPT_WIDTH,
+  MIN_CHAT_TRANSCRIPT_WIDTH,
+} from "../transcript-width/transcriptWidthModel";
 import { normalizeApiKey, normalizeBaseUrl, normalizeModels } from "./normalize";
+
+export { normalizeFontFamily } from "../fontFamily";
 
 export type { SystemToolId } from "../tools/systemToolOptions";
 
-export type ProviderId = "codex" | "claude_code" | "gemini";
+export type ProviderId = "codex" | "claude_code" | "gemini" | "xai";
 
 export type ExecutionMode = "text" | "tools" | "agent-dev";
 
 export type CodexRequestFormat = "openai-completions" | "openai-responses";
 
-export type ReasoningLevel = ModelThinkingLevel;
+export type ReasoningLevel = "off" | ThinkingLevel;
 
 export type McpTransport = "stdio" | "http" | "sse";
 
@@ -122,10 +141,23 @@ export type FontScaleSettings = {
   rightDock: number;
 };
 
+// Bounds live with the geometry that enforces them; re-exported here so
+// settings consumers keep a single import site.
+export { DEFAULT_CHAT_TRANSCRIPT_WIDTH, MAX_CHAT_TRANSCRIPT_WIDTH, MIN_CHAT_TRANSCRIPT_WIDTH };
+
+export type ChatTranscriptSettings = {
+  width: number;
+};
+
 export type CustomSettings = {
   conversationTitleModel?: SelectedModel;
   chatSidebar: ChatSidebarSettings;
+  chatTranscript: ChatTranscriptSettings;
   rightDock: RightDockSettings;
+  // Empty strings select the built-in font stacks for their respective UI zones.
+  interfaceFontFamily: string;
+  chatFontFamily: string;
+  codeFontFamily: string;
   fontScale: FontScaleSettings;
 };
 
@@ -176,22 +208,12 @@ export type SelectedModel = {
   model: string;
 };
 
-/** 单价均为 USD / 百万 token，与 pi-ai 模型目录的 cost 字段同单位。 */
-export type ProviderModelCost = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-};
-
 export type ProviderModelConfig = {
   id: string;
   /** /models 元数据；缺失时保持旧设置格式兼容。 */
   ownedBy?: string;
   contextWindow: number;
   maxOutputToken: number;
-  /** 用户自填单价：目录外模型（中转/改名）没有官方定价时用于成本展示。 */
-  cost?: ProviderModelCost;
 };
 
 export type ChatRuntimeControls = {
@@ -205,7 +227,8 @@ export type ChatRuntimeReasoningProviderKey =
   | "claude_code"
   | "codex_openai_responses"
   | "codex_openai_completions"
-  | "gemini";
+  | "gemini"
+  | "xai";
 
 export type AgentPromptTemplate = {
   id: string;
@@ -250,6 +273,36 @@ export type SshSettings = {
   projectHostAssociations: Record<string, string[]>;
 };
 
+export type UsageQueryMode = "coding-plan" | "general" | "newapi" | "custom";
+
+export type UsageQueryConfig = {
+  enabled: boolean;
+  mode: UsageQueryMode;
+  script: string;
+  baseUrl: string;
+  accessToken: string;
+  accessTokenConfigured?: boolean;
+  userId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  secretAccessKeyConfigured?: boolean;
+};
+
+export function getDefaultUsageQueryConfig(): UsageQueryConfig {
+  return {
+    enabled: false,
+    mode: "custom",
+    script: "",
+    baseUrl: "",
+    accessToken: "",
+    accessTokenConfigured: false,
+    userId: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    secretAccessKeyConfigured: false,
+  };
+}
+
 export type CustomProvider = {
   id: string;
   name: string;
@@ -268,6 +321,7 @@ export type CustomProvider = {
   promptCacheRetention?: "short" | "long";
   nativeWebSearchEnabled: boolean;
   useSystemProxy: boolean;
+  usageQuery: UsageQueryConfig;
 };
 
 export type EffectiveTheme = "light" | "dark";
@@ -280,8 +334,8 @@ const SYSTEM_THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 export type RemoteSettings = {
   enabled: boolean;
   gatewayUrl: string;
-  grpcPort: number;
-  grpcEndpoint: string;
+  gatewayPort: number;
+  token: string;
   agentId: string;
   autoReconnect: boolean;
   heartbeatInterval: number;
@@ -316,12 +370,6 @@ const CODEX_RESPONSES_SUFFIX = "/responses";
 const CODEX_RESPONSE_SUFFIX = "/response";
 const CODEX_CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
 const DEFAULT_MCP_TIMEOUT_MS = 60_000;
-const DEFAULT_CLAUDE_CONTEXT_WINDOW = 200_000;
-const DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN = 32_000;
-const DEFAULT_CODEX_CONTEXT_WINDOW = 258_000;
-const DEFAULT_CODEX_MAX_OUTPUT_TOKEN = 142_000;
-const DEFAULT_GEMINI_CONTEXT_WINDOW = 1_048_576;
-const DEFAULT_GEMINI_MAX_OUTPUT_TOKEN = 65_536;
 export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
   thinkingEnabled: true,
   nativeWebSearchEnabled: true,
@@ -331,6 +379,7 @@ export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
     codex_openai_responses: "high",
     codex_openai_completions: "high",
     gemini: "high",
+    xai: "high",
   },
 };
 
@@ -390,6 +439,7 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: true,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
     {
       id: "builtin-codex",
@@ -405,6 +455,7 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: true,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
     {
       id: "builtin-gemini",
@@ -419,6 +470,23 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: false,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
+    },
+    {
+      id: "builtin-xai",
+      name: "Grok",
+      type: "xai",
+      baseUrl: "https://api.x.ai/v1",
+      apiKey: "",
+      customHeaders: [],
+      models: [],
+      activeModels: [],
+      requestFormat: "openai-responses",
+      reasoning: "high",
+      promptCachingEnabled: false,
+      nativeWebSearchEnabled: true,
+      useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
   ];
 }
@@ -760,6 +828,7 @@ const CHAT_RUNTIME_REASONING_PROVIDER_KEYS: ChatRuntimeReasoningProviderKey[] = 
   "codex_openai_responses",
   "codex_openai_completions",
   "gemini",
+  "xai",
 ];
 
 export function getChatRuntimeReasoningProviderKey(params: {
@@ -771,6 +840,9 @@ export function getChatRuntimeReasoningProviderKey(params: {
   }
   if (params.providerId === "gemini") {
     return "gemini";
+  }
+  if (params.providerId === "xai") {
+    return "xai";
   }
   if (params.providerId === "codex" && params.requestFormat === "openai-completions") {
     return "codex_openai_completions";
@@ -786,7 +858,13 @@ function normalizeChatRuntimeReasoningForLevels(
     return DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
   }
   const reasoning = normalizeChatRuntimeReasoning(input);
-  return levels.includes(reasoning) ? reasoning : DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
+  if (levels.includes(reasoning)) return reasoning;
+  // 存量档位不在该模型档位表内：先回默认档，默认档也不可用（如单档 toggle
+  // 模型、gpt-5.2-chat-latest 只有 medium）时钳到最近档，绝不返回表外档位。
+  const fallback = DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
+  if (levels.includes(fallback)) return fallback;
+  const clampSource = (reasoning === "off" ? fallback : reasoning) as ThinkingLevel;
+  return clampThinkingLevelToList(clampSource, levels as ThinkingLevel[]) ?? fallback;
 }
 
 function normalizeChatRuntimeReasoningByProvider(
@@ -823,6 +901,8 @@ export function getChatRuntimeReasoningLevelsForProvider(params: {
   providerId?: ProviderId;
   requestFormat?: CodexRequestFormat;
   modelId?: string;
+  baseUrl?: string;
+  modelConfig?: ProviderModelConfig;
 }): ReasoningLevel[] {
   return getKnownModelThinkingLevels(params.providerId ?? "claude_code", params.modelId);
 }
@@ -969,20 +1049,13 @@ function normalizeIntegerInRange(
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizeGrpcEndpoint(input: unknown): string {
-  const value = normalizeOptionalText(input);
-  if (!value) return "";
-  if (/^https?:/i.test(value)) return normalizeBaseUrl(value);
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
-
 export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   return {
     enabled: obj.enabled === true,
     gatewayUrl: normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : ""),
-    grpcPort: normalizeIntegerInRange(obj.grpcPort, 1, 65_535, 443),
-    grpcEndpoint: normalizeGrpcEndpoint(obj.grpcEndpoint),
+    gatewayPort: normalizeIntegerInRange(obj.gatewayPort, 1, 65_535, 443),
+    token: normalizeApiKey(typeof obj.token === "string" ? obj.token : ""),
     agentId: normalizeOptionalText(obj.agentId),
     autoReconnect: obj.autoReconnect !== false,
     heartbeatInterval: normalizePositiveInteger(obj.heartbeatInterval, 30),
@@ -993,100 +1066,9 @@ export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   };
 }
 
-function toKnownProvider(providerId: ProviderId): KnownProvider {
-  if (providerId === "codex") return "openai";
-  if (providerId === "gemini") return "google";
-  return "anthropic";
-}
-
-function findKnownModel(providerId: ProviderId, modelId: string | undefined) {
-  const trimmedId = modelId?.trim();
-  if (!trimmedId) return undefined;
-  return getBuiltinModels(toKnownProvider(providerId)).find((model) => model.id === trimmedId);
-}
-
-// —— 以下 Anthropic id 规范化与启发式与桌面端 anthropicModels.ts/modelFactory.ts
-// 手动保持同步 ——
-// 中转/网关常给官方 Anthropic 模型 id 加装饰（日期后缀、@版本、大小写变化、
-// AnyRouter 系的 [1m] 长上下文后缀），逐字匹配漏检后档位列表会塌缩、丢掉
-// xhigh/max，上下文窗口默认值也与桌面端实际请求脱节。
-function normalizeAnthropicModelIdCandidates(modelId: string): string[] {
-  const candidates: string[] = [];
-  const push = (value: string) => {
-    if (value && !candidates.includes(value)) candidates.push(value);
-  };
-  push(modelId);
-  const lower = modelId.toLowerCase();
-  push(lower);
-  const withoutAtVersion = lower.split("@")[0];
-  push(withoutAtVersion);
-  const withoutContextSuffix = withoutAtVersion.replace(/\[1m\]$/i, "");
-  push(withoutContextSuffix);
-  push(withoutContextSuffix.replace(/-20\d{6}$/, ""));
-  return candidates;
-}
-
-function findKnownAnthropicModel(modelId: string) {
-  const models = getBuiltinModels("anthropic");
-  for (const candidate of normalizeAnthropicModelIdCandidates(modelId)) {
-    const known = models.find((model) => model.id === candidate);
-    if (known) return known;
-  }
-  return undefined;
-}
-
-function findKnownModelForThinking(providerId: ProviderId, modelId: string) {
-  return toKnownProvider(providerId) === "anthropic"
-    ? findKnownAnthropicModel(modelId)
-    : findKnownModel(providerId, modelId);
-}
-
-function isClaudeFamilyVersionAtLeast(
-  normalizedModelId: string,
-  family: "opus" | "sonnet",
-  minimumMinor: number,
-) {
-  // minor 限定 1-2 位数字，避免把日期后缀（如 claude-sonnet-4-20250514）误读成小版本号；
-  // 同时接受三方中转的倒序命名（claude-4.6-sonnet）。
-  const match = normalizedModelId.match(
-    new RegExp(`(?:${family}[-.]4[-.](\\d{1,2})(?!\\d)|4[-.](\\d{1,2})(?!\\d)[-.]${family})`),
-  );
-  if (!match) return false;
-  const minor = Number(match[1] ?? match[2]);
-  return Number.isFinite(minor) && minor >= minimumMinor;
-}
-
-// Claude 5 起（sonnet-5 / fable-5 / mythos-5 等）整个家族都是 adaptive thinking 且支持 xhigh。
-// 倒序写法（claude-5-sonnet）用负向后行断言排除 3-5-sonnet 这类旧世代小版本号。
-function isClaudeFamilyMajorVersionAtLeast(normalizedModelId: string, minimumMajor: number) {
-  const match = normalizedModelId.match(
-    /(?:(?:opus|sonnet|haiku|fable|mythos)[-.](\d{1,2})(?!\d)|(?<!\d[-.])(\d{1,2})[-.](?:opus|sonnet|haiku|fable|mythos))/,
-  );
-  if (!match) return false;
-  const major = Number(match[1] ?? match[2]);
-  return Number.isFinite(major) && major >= minimumMajor;
-}
-
-// 目录彻底未命中的三方改名 id（如 claude-4.6-sonnet）退回 id 启发式，推断
-// xhigh/max 档位声明；与桌面端 deriveAnthropicThinkingOverridesForCustomModel 同步。
-function deriveAnthropicThinkingLevelMapForCustomModel(
-  modelId: string,
-): Record<string, string> | undefined {
-  const id = modelId.trim().toLowerCase();
-  const adaptive =
-    id.includes("mythos-preview") ||
-    isClaudeFamilyVersionAtLeast(id, "opus", 6) ||
-    isClaudeFamilyVersionAtLeast(id, "sonnet", 6) ||
-    isClaudeFamilyMajorVersionAtLeast(id, 5);
-  if (!adaptive) return undefined;
-  const supportsXHigh =
-    isClaudeFamilyVersionAtLeast(id, "opus", 7) || isClaudeFamilyMajorVersionAtLeast(id, 5);
-  return supportsXHigh ? { xhigh: "xhigh", max: "max" } : { max: "max" };
-}
-
 // 旧世代默认按 200K 处理；显式 [1m] 变体表示中转端能力，adaptive 世代
-// （forceAdaptiveThinking）则是 1M GA 世代。与桌面端 anthropicModels.ts 的
-// 有效窗口规则手动保持同步。
+// （isAnthropicAdaptiveModelId，来自镜像模块 lib/models/modelThinking）则是
+// 1M GA 世代。与桌面端 anthropicModels.ts 的有效窗口规则手动保持同步。
 const ANTHROPIC_STANDARD_CONTEXT_WINDOW = 200_000;
 const ANTHROPIC_LONG_CONTEXT_WINDOW = 1_000_000;
 
@@ -1114,57 +1096,41 @@ function getKnownModelLimits(
 ): Pick<ProviderModelConfig, "contextWindow" | "maxOutputToken"> | undefined {
   const trimmedId = modelId?.trim();
   if (!trimmedId) return undefined;
-  if (toKnownProvider(providerId) === "anthropic") {
-    const known = findKnownAnthropicModel(trimmedId);
+  // Anthropic 的有效窗口叠加 1M beta/adaptive 世代策略（与桌面端
+  // anthropicModels.ts 手动同步）；其余供应商直接读生成目录（数据已在
+  // 生成期过统一语义规则）。
+  if (providerId === "claude_code") {
+    const known = findCatalogModel("claude_code", trimmedId);
     if (!known) return undefined;
-    const contextWindow =
-      known.compat?.forceAdaptiveThinking === true
-        ? known.contextWindow
-        : /\[1m\]$/i.test(trimmedId) &&
-            (baseUrl === undefined || shouldSendAnthropicLongContextHeader(baseUrl))
-          ? Math.max(known.contextWindow, ANTHROPIC_LONG_CONTEXT_WINDOW)
-          : Math.min(known.contextWindow, ANTHROPIC_STANDARD_CONTEXT_WINDOW);
-    return { contextWindow, maxOutputToken: known.maxTokens };
+    const contextWindow = isAnthropicAdaptiveModelId(trimmedId)
+      ? known.contextWindow
+      : /\[1m\]$/i.test(trimmedId) &&
+          (baseUrl === undefined || shouldSendAnthropicLongContextHeader(baseUrl))
+        ? Math.max(known.contextWindow, ANTHROPIC_LONG_CONTEXT_WINDOW)
+        : Math.min(known.contextWindow, ANTHROPIC_STANDARD_CONTEXT_WINDOW);
+    return { contextWindow, maxOutputToken: known.maxOutputToken };
   }
-  const known = findKnownModel(providerId, modelId);
-  if (!known) return undefined;
-  return { contextWindow: known.contextWindow, maxOutputToken: known.maxTokens };
+  return resolveModelLimits(providerId, trimmedId);
 }
+
+// ---------------------------------------------------------------------------
+// 思考档位（可用性单一真源：lib/models/modelThinking，两端字节镜像）
+// ---------------------------------------------------------------------------
+// 目录（models.dev 生成快照）直接回答"这个模型有哪些思考档、能否关闭"，
+// UI 列表与桌面端请求期钳制同源；旧的 pi-ai 目录回查与手动同步启发式已删。
 
 export function getKnownModelThinkingLevels(
   providerId: ProviderId,
   modelId: string | undefined,
 ): ReasoningLevel[] {
-  const trimmedId = modelId?.trim();
-  if (!trimmedId) return [];
-  const known = findKnownModelForThinking(providerId, trimmedId);
-  // 目录之外的自定义模型（deepseek/glm 等三方聚合）无法从 id 判断推理能力，
-  // 与桌面端 modelFactory 自定义分支一致按可推理处理：标准档位，xhigh/max
-  // 仍需目录 opt-in；deepseek 走 codex 时镜像桌面端 DeepSeek 适配层的 xhigh 档，
-  // claude_code 走桌面端同款 id 启发式补 xhigh/max。
-  const customThinkingLevelMap =
-    providerId === "codex" && trimmedId.toLowerCase().includes("deepseek")
-      ? { xhigh: "max" }
-      : toKnownProvider(providerId) === "anthropic"
-        ? deriveAnthropicThinkingLevelMapForCustomModel(trimmedId)
-        : undefined;
-  const model =
-    known ??
-    ({
-      reasoning: true,
-      ...(customThinkingLevelMap ? { thinkingLevelMap: customThinkingLevelMap } : {}),
-    } as Parameters<typeof getSupportedThinkingLevels>[0]);
-  return getSupportedThinkingLevels(model).filter((level) => level !== "off");
+  return resolveModelThinking(providerId, modelId).levels;
 }
 
 export function isThinkingAlwaysOnForModel(
   providerId: ProviderId,
   modelId: string | undefined,
 ): boolean {
-  const trimmedId = modelId?.trim();
-  if (!trimmedId) return false;
-  const known = findKnownModelForThinking(providerId, trimmedId);
-  return known ? !getSupportedThinkingLevels(known).includes("off") : false;
+  return resolveModelThinking(providerId, modelId).alwaysOn;
 }
 
 export function getProviderModelDefaults(
@@ -1175,38 +1141,27 @@ export function getProviderModelDefaults(
   const known = getKnownModelLimits(providerId, modelId, baseUrl);
   if (known) return known;
 
-  if (providerId === "codex") {
-    return {
-      contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_CODEX_MAX_OUTPUT_TOKEN,
-    };
-  }
-
-  if (providerId === "gemini") {
-    return {
-      contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_GEMINI_MAX_OUTPUT_TOKEN,
-    };
-  }
-
   if (
+    providerId === "claude_code" &&
     modelId &&
-    (/\[1m\]$/i.test(modelId.trim()) ||
-      deriveAnthropicThinkingLevelMapForCustomModel(modelId) !== undefined)
+    (/\[1m\]$/i.test(modelId.trim()) || isAnthropicAdaptiveModelId(modelId))
   ) {
     return {
       contextWindow:
         /\[1m\]$/i.test(modelId.trim()) && baseUrl && !shouldSendAnthropicLongContextHeader(baseUrl)
-          ? DEFAULT_CLAUDE_CONTEXT_WINDOW
+          ? ANTHROPIC_STANDARD_CONTEXT_WINDOW
           : ANTHROPIC_LONG_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN,
+      maxOutputToken: getProviderFallbackLimits(providerId).maxOutputToken,
     };
   }
 
-  return {
-    contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
-    maxOutputToken: DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN,
-  };
+  // 中转聚合把别家模型挂在本供应商下（如 Anthropic 兼容中转供 grok）：按 id
+  // 跨供应商回查真实限额，避免吃错本供应商兜底值。Anthropic 的 1M/adaptive
+  // 窗口策略只约束目录内的 Anthropic 模型，跨供应商命中直接透传目录值。
+  const crossProvider = resolveModelLimitsAcrossProviders(modelId);
+  if (crossProvider) return crossProvider;
+
+  return getProviderFallbackLimits(providerId);
 }
 
 export function createProviderModelConfig(
@@ -1220,28 +1175,6 @@ export function createProviderModelConfig(
     contextWindow: defaults.contextWindow,
     maxOutputToken: defaults.maxOutputToken,
   };
-}
-
-function normalizeNonNegativeNumber(input: unknown): number {
-  const numeric =
-    typeof input === "number" ? input : typeof input === "string" ? Number(input) : NaN;
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
-}
-
-function normalizeProviderModelCost(input: unknown): ProviderModelCost | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const obj = input as Record<string, unknown>;
-  const cost: ProviderModelCost = {
-    input: normalizeNonNegativeNumber(obj.input),
-    output: normalizeNonNegativeNumber(obj.output),
-    cacheRead: normalizeNonNegativeNumber(obj.cacheRead),
-    cacheWrite: normalizeNonNegativeNumber(obj.cacheWrite),
-  };
-  // 全零视为未配置，避免把"没填"持久化成显式的零单价。
-  if (cost.input <= 0 && cost.output <= 0 && cost.cacheRead <= 0 && cost.cacheWrite <= 0) {
-    return undefined;
-  }
-  return cost;
 }
 
 export function normalizeProviderModelConfig(
@@ -1263,19 +1196,26 @@ export function normalizeProviderModelConfig(
   if (!id) return null;
 
   const defaults = getProviderModelDefaults(providerId, id);
-  const cost = normalizeProviderModelCost(obj.cost);
   const ownedBy =
     (typeof obj.ownedBy === "string" ? obj.ownedBy.trim() : "") ||
     (typeof obj.owned_by === "string" ? obj.owned_by.trim() : "");
-  return {
-    id,
-    ...(ownedBy ? { ownedBy } : {}),
+  const storedLimits = {
     contextWindow: normalizePositiveInteger(obj.contextWindow, defaults.contextWindow),
     maxOutputToken: normalizePositiveInteger(
       obj.maxOutputToken ?? obj.maxTokens,
       defaults.maxOutputToken,
     ),
-    ...(cost !== undefined ? { cost } : {}),
+  };
+  // 退化限额（输出吃满窗口）可能来自坏目录数据落库期或手工配置，读侧统一修复；
+  // 规则与目录生成期同源（normalizeModelLimits），对所有供应商一视同仁。
+  // 跨供应商回查上线前落库的别家模型吃过本供应商兜底值，同样读侧修复，
+  // 不需要用户删除重加（识别与替换规则见 repairStaleCrossProviderLimits）。
+  const limits = repairStaleCrossProviderLimits(providerId, id, normalizeModelLimits(storedLimits));
+  return {
+    id,
+    ...(ownedBy ? { ownedBy } : {}),
+    contextWindow: limits.contextWindow,
+    maxOutputToken: limits.maxOutputToken,
   };
 }
 export function normalizeProviderModelConfigs(
@@ -1313,10 +1253,8 @@ export function findProviderModelConfig(
   }
   if (provider.type !== "claude_code") return matched;
   const defaults = getProviderModelDefaults(provider.type, normalizedId, provider.baseUrl);
-  const known = findKnownAnthropicModel(normalizedId);
-  const isAdaptive =
-    known?.compat?.forceAdaptiveThinking === true ||
-    deriveAnthropicThinkingLevelMapForCustomModel(normalizedId) !== undefined;
+  const known = findCatalogModel("claude_code", normalizedId);
+  const isAdaptive = isAnthropicAdaptiveModelId(normalizedId);
   const hasLongContextSuffix = /\[1m\]$/i.test(normalizedId);
   const contextWindow = isAdaptive
     ? Math.max(matched.contextWindow, defaults.contextWindow)
@@ -1328,7 +1266,7 @@ export function findProviderModelConfig(
           !shouldSendAnthropicLongContextHeader(provider.baseUrl) &&
           known.contextWindow > ANTHROPIC_STANDARD_CONTEXT_WINDOW
         ? defaults.contextWindow
-        : matched.contextWindow === DEFAULT_CLAUDE_CONTEXT_WINDOW
+        : matched.contextWindow === ANTHROPIC_STANDARD_CONTEXT_WINDOW
           ? defaults.contextWindow
           : matched.contextWindow;
   return {
@@ -1341,6 +1279,7 @@ function normalizeProviderId(input: unknown): ProviderId {
   switch (input) {
     case "codex":
     case "gemini":
+    case "xai":
       return input;
     default:
       return "claude_code";
@@ -1351,6 +1290,7 @@ function normalizeProviderName(id: string, input: unknown): string {
   const name = typeof input === "string" && input.trim() ? input.trim() : "未命名供应商";
   if (id === "builtin-claude_code" && name === "Claude Code") return "Anthropic";
   if (id === "builtin-codex" && name === "Codex") return "OpenAI";
+  if (id === "builtin-xai" && (name === "xAI" || name === "XAI")) return "Grok";
   return name;
 }
 
@@ -1386,11 +1326,46 @@ function normalizeProviderModelOrder(
   return order;
 }
 
+function normalizeUsageQueryMode(input: unknown): UsageQueryMode {
+  switch (input) {
+    case "coding-plan":
+    case "general":
+    case "newapi":
+      return input;
+    default:
+      // 含历史配置中的 "balance"(余额适配器已移除)——统一回退自定义脚本。
+      return "custom";
+  }
+}
+
+function normalizeUsageQueryConfig(input: unknown): UsageQueryConfig {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const accessToken = normalizeApiKey(typeof obj.accessToken === "string" ? obj.accessToken : "");
+  const secretAccessKey = normalizeApiKey(
+    typeof obj.secretAccessKey === "string" ? obj.secretAccessKey : "",
+  );
+
+  return {
+    enabled: obj.enabled === true,
+    mode: normalizeUsageQueryMode(obj.mode),
+    script: typeof obj.script === "string" ? obj.script.trim() : "",
+    baseUrl: normalizeBaseUrl(typeof obj.baseUrl === "string" ? obj.baseUrl : ""),
+    accessToken,
+    accessTokenConfigured: accessToken.length > 0 || obj.accessTokenConfigured === true,
+    userId: typeof obj.userId === "string" ? obj.userId.trim() : "",
+    accessKeyId: typeof obj.accessKeyId === "string" ? obj.accessKeyId.trim() : "",
+    secretAccessKey,
+    secretAccessKeyConfigured: secretAccessKey.length > 0 || obj.secretAccessKeyConfigured === true,
+  };
+}
+
 export function normalizeCustomProvider(input: unknown): CustomProvider {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const type = normalizeProviderId(obj.type);
   const codexRouting =
-    type === "codex" ? normalizeCodexRouting(obj.baseUrl, obj.requestFormat) : undefined;
+    type === "codex" || type === "xai"
+      ? normalizeCodexRouting(obj.baseUrl, type === "xai" ? "openai-responses" : obj.requestFormat)
+      : undefined;
   const models = normalizeProviderModelConfigs(obj.models, type);
   const modelOrder = normalizeProviderModelOrder(obj.modelOrder, models);
   const validModelIds = new Set(models.map((model) => model.id));
@@ -1412,16 +1387,18 @@ export function normalizeCustomProvider(input: unknown): CustomProvider {
     activeModels: normalizeModels(normalizeStringArray(obj.activeModels)).filter((modelId) =>
       validModelIds.has(modelId),
     ),
-    requestFormat: codexRouting?.requestFormat,
+    requestFormat: type === "xai" ? "openai-responses" : codexRouting?.requestFormat,
     reasoning: normalizeReasoningLevel(obj.reasoning),
     // Anthropic/OpenAI 默认开启提示词缓存（OpenAI 侧体现为稳定的
-    // prompt_cache_key 路由提示）；Gemini 的隐式缓存由服务端自动处理。
-    promptCachingEnabled: type === "gemini" ? false : obj.promptCachingEnabled !== false,
+    // prompt_cache_key 路由提示）；Gemini / xAI 不使用 OpenAI 风格 prompt cache。
+    promptCachingEnabled:
+      type === "gemini" || type === "xai" ? false : obj.promptCachingEnabled !== false,
     ...(type === "claude_code" && obj.promptCacheRetention === "long"
       ? { promptCacheRetention: "long" as const }
       : {}),
     nativeWebSearchEnabled: obj.nativeWebSearchEnabled !== false,
     useSystemProxy: obj.useSystemProxy === true,
+    usageQuery: normalizeUsageQueryConfig(obj.usageQuery),
   };
 }
 
@@ -2114,6 +2091,18 @@ export function normalizeFontScaleSettings(input: unknown): FontScaleSettings {
   };
 }
 
+export function normalizeChatTranscriptSettings(input: unknown): ChatTranscriptSettings {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  return {
+    width: normalizeIntegerInRange(
+      obj.width,
+      MIN_CHAT_TRANSCRIPT_WIDTH,
+      MAX_CHAT_TRANSCRIPT_WIDTH,
+      DEFAULT_CHAT_TRANSCRIPT_WIDTH,
+    ),
+  };
+}
+
 export function normalizeCustomSettings(
   input: unknown,
   customProviders: CustomProvider[],
@@ -2131,7 +2120,14 @@ export function normalizeCustomSettings(
       projectsCollapsed: chatSidebar.projectsCollapsed === true,
       recentCollapsed: chatSidebar.recentCollapsed === true,
     },
+    chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
     rightDock: normalizeRightDockSettings(obj.rightDock),
+    // Read the retired field only to migrate persisted settings; normalization never emits it.
+    interfaceFontFamily: normalizeFontFamily(
+      Object.hasOwn(obj, "interfaceFontFamily") ? obj.interfaceFontFamily : obj.fontFamily,
+    ),
+    chatFontFamily: normalizeFontFamily(obj.chatFontFamily),
+    codeFontFamily: normalizeFontFamily(obj.codeFontFamily),
     fontScale: normalizeFontScaleSettings(obj.fontScale),
   };
 }
@@ -2163,8 +2159,8 @@ export function getDefaultSettings(): AppSettings {
     remote: {
       enabled: false,
       gatewayUrl: "",
-      grpcPort: 443,
-      grpcEndpoint: "",
+      gatewayPort: 443,
+      token: "",
       agentId: "",
       autoReconnect: true,
       heartbeatInterval: 30,
@@ -2424,6 +2420,12 @@ export function getRightDockProjectState(
   return normalizeRightDockProjectState(
     normalizedPathKey ? customSettings.rightDock.projects[normalizedPathKey] : {},
   );
+}
+
+export function updateChatTranscriptWidth(prev: AppSettings, width: number): AppSettings {
+  const nextWidth = normalizeChatTranscriptSettings({ width }).width;
+  if (prev.customSettings.chatTranscript.width === nextWidth) return prev;
+  return updateCustomSettings(prev, { chatTranscript: { width: nextWidth } });
 }
 
 export function updateRightDockWidth(prev: AppSettings, width: number): AppSettings {

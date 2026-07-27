@@ -91,6 +91,31 @@ CREATE TABLE IF NOT EXISTS zerobox_devices (
 );
 CREATE INDEX IF NOT EXISTS zerobox_devices_user_idx ON zerobox_devices (user_id, revoked_at);
 
+CREATE TABLE IF NOT EXISTS agents (
+  agent_id TEXT PRIMARY KEY,
+  owner_user_id BIGINT NOT NULL,
+  legacy_device_id UUID NULL UNIQUE,
+  installation_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  platform TEXT NOT NULL DEFAULT '',
+  app_version TEXT NOT NULL DEFAULT '',
+  token_sha256 TEXT NOT NULL,
+  workspaces JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL,
+  token_issued_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ NULL,
+  UNIQUE (owner_user_id, installation_id)
+);
+CREATE INDEX IF NOT EXISTS agents_owner_idx ON agents (owner_user_id, revoked_at);
+INSERT INTO agents
+  (agent_id,owner_user_id,legacy_device_id,installation_id,display_name,platform,app_version,
+   token_sha256,workspaces,created_at,token_issued_at,last_seen_at,revoked_at)
+SELECT 'agent-' || id::text,user_id,id,installation_id,display_name,platform,app_version,
+       credential_hash,workspaces,created_at,created_at,last_seen_at,revoked_at
+FROM zerobox_devices
+ON CONFLICT (agent_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS zerobox_conversation_routes (
   user_id BIGINT NOT NULL,
   conversation_id UUID PRIMARY KEY,
@@ -103,6 +128,10 @@ CREATE TABLE IF NOT EXISTS zerobox_conversation_routes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS zerobox_conversation_routes_user_idx ON zerobox_conversation_routes (user_id, updated_at DESC);
+ALTER TABLE zerobox_conversation_routes ADD COLUMN IF NOT EXISTS agent_id TEXT NULL;
+UPDATE zerobox_conversation_routes
+SET agent_id='agent-' || device_id::text
+WHERE agent_id IS NULL AND device_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS zerobox_cloud_conversations (
   id UUID PRIMARY KEY,
@@ -130,8 +159,16 @@ CREATE TABLE IF NOT EXISTS zerobox_web_settings (
   settings JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`
-	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin ZeroAgent account schema migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate ZeroAgent account schema: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit ZeroAgent account schema migration: %w", err)
 	}
 	return nil
 }
@@ -172,22 +209,27 @@ func (s *PersistentStore) UpsertDevice(ctx context.Context, device *Device) erro
 	if err != nil {
 		return err
 	}
+	tokenIssuedAt := device.TokenIssuedAt
+	if tokenIssuedAt.IsZero() {
+		tokenIssuedAt = device.CreatedAt
+	}
 	_, err = s.db.ExecContext(ctx, `
-INSERT INTO zerobox_devices
-  (id, user_id, installation_id, display_name, platform, app_version, credential_hash, workspaces, created_at, last_seen_at, revoked_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-ON CONFLICT (id) DO UPDATE SET
+INSERT INTO agents
+  (agent_id, owner_user_id, installation_id, display_name, platform, app_version, token_sha256,
+   workspaces, created_at, token_issued_at, last_seen_at, revoked_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+ON CONFLICT (agent_id) DO UPDATE SET
   display_name=EXCLUDED.display_name, platform=EXCLUDED.platform, app_version=EXCLUDED.app_version,
-  credential_hash=EXCLUDED.credential_hash, workspaces=EXCLUDED.workspaces,
+  token_sha256=EXCLUDED.token_sha256, token_issued_at=EXCLUDED.token_issued_at, workspaces=EXCLUDED.workspaces,
   last_seen_at=EXCLUDED.last_seen_at, revoked_at=EXCLUDED.revoked_at`,
 		device.ID, device.UserID, device.InstallationID, device.Name, device.Platform, device.Version,
-		device.CredentialHash, workspaces, device.CreatedAt, device.LastSeenAt, device.RevokedAt,
+		device.CredentialHash, workspaces, device.CreatedAt, tokenIssuedAt, device.LastSeenAt, device.RevokedAt,
 	)
 	return err
 }
 
 func (s *PersistentStore) GetDevice(ctx context.Context, userID int64, deviceID string) (*Device, error) {
-	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, deviceID, userID)
+	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE agent_id=$1 AND owner_user_id=$2 AND revoked_at IS NULL`, canonicalAgentID(deviceID), userID)
 	device, err := scanDevice(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -200,7 +242,8 @@ func (s *PersistentStore) GetDevice(ctx context.Context, userID int64, deviceID 
 }
 
 func (s *PersistentStore) GetDeviceByID(ctx context.Context, deviceID string) (*Device, error) {
-	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE id=$1 AND revoked_at IS NULL`, deviceID)
+	canonical := canonicalAgentID(deviceID)
+	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE (agent_id=$1 OR legacy_device_id::text=$2) AND revoked_at IS NULL`, canonical, strings.TrimPrefix(canonical, "agent-"))
 	device, err := scanDevice(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -213,7 +256,7 @@ func (s *PersistentStore) GetDeviceByID(ctx context.Context, deviceID string) (*
 }
 
 func (s *PersistentStore) GetDeviceByInstallation(ctx context.Context, userID int64, installationID string) (*Device, error) {
-	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE user_id=$1 AND installation_id=$2 AND revoked_at IS NULL`, userID, installationID)
+	row := s.db.QueryRowContext(ctx, deviceSelect+` WHERE owner_user_id=$1 AND installation_id=$2 AND revoked_at IS NULL`, userID, installationID)
 	device, err := scanDevice(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -226,7 +269,7 @@ func (s *PersistentStore) GetDeviceByInstallation(ctx context.Context, userID in
 }
 
 func (s *PersistentStore) ListDevices(ctx context.Context, userID int64) ([]Device, error) {
-	rows, err := s.db.QueryContext(ctx, deviceSelect+` WHERE user_id=$1 AND revoked_at IS NULL ORDER BY display_name`, userID)
+	rows, err := s.db.QueryContext(ctx, deviceSelect+` WHERE owner_user_id=$1 AND revoked_at IS NULL ORDER BY display_name`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +300,8 @@ func (s *PersistentStore) ListDevices(ctx context.Context, userID int64) ([]Devi
 }
 
 func (s *PersistentStore) DeleteDevice(ctx context.Context, userID int64, deviceID string) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE zerobox_devices SET revoked_at=NOW() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, deviceID, userID)
+	deviceID = canonicalAgentID(deviceID)
+	result, err := s.db.ExecContext(ctx, `UPDATE agents SET revoked_at=NOW() WHERE agent_id=$1 AND owner_user_id=$2 AND revoked_at IS NULL`, deviceID, userID)
 	if err != nil {
 		return err
 	}
@@ -272,7 +316,8 @@ func (s *PersistentStore) DeleteDevice(ctx context.Context, userID int64, device
 }
 
 func (s *PersistentStore) SetDevicePresence(ctx context.Context, deviceID string, online bool, at time.Time) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE zerobox_devices SET last_seen_at=$2 WHERE id=$1 AND revoked_at IS NULL`, deviceID, at.UTC())
+	deviceID = canonicalAgentID(deviceID)
+	result, err := s.db.ExecContext(ctx, `UPDATE agents SET last_seen_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL`, deviceID, at.UTC())
 	if err != nil {
 		return err
 	}
@@ -435,13 +480,13 @@ func (s *PersistentStore) GetWebSettings(ctx context.Context, userID int64) (*We
 func (s *PersistentStore) PutConversationRoute(ctx context.Context, route *ConversationRoute) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO zerobox_conversation_routes
-  (user_id,conversation_id,runtime_kind,device_id,workspace_id,title,summary,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+  (user_id,conversation_id,runtime_kind,device_id,agent_id,workspace_id,title,summary,created_at,updated_at)
+VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9)
 ON CONFLICT (conversation_id) DO UPDATE SET
-  runtime_kind=EXCLUDED.runtime_kind,device_id=EXCLUDED.device_id,workspace_id=EXCLUDED.workspace_id,
+  runtime_kind=EXCLUDED.runtime_kind,device_id=NULL,agent_id=EXCLUDED.agent_id,workspace_id=EXCLUDED.workspace_id,
   title=EXCLUDED.title,summary=EXCLUDED.summary,updated_at=EXCLUDED.updated_at
 WHERE zerobox_conversation_routes.user_id=EXCLUDED.user_id`,
-		route.UserID, route.ConversationID, route.RuntimeKind, route.DeviceID, route.WorkspaceID,
+		route.UserID, route.ConversationID, route.RuntimeKind, canonicalAgentID(firstNonEmpty(route.AgentID, route.DeviceID)), route.WorkspaceID,
 		route.Title, route.Summary, route.CreatedAt, route.UpdatedAt)
 	return err
 }
@@ -458,7 +503,7 @@ func (s *PersistentStore) DeleteConversationRoute(ctx context.Context, userID in
 }
 
 func (s *PersistentStore) ListConversationRoutes(ctx context.Context, userID int64) ([]ConversationRoute, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversation_id::text,user_id,runtime_kind,COALESCE(device_id::text,''),workspace_id,title,summary,created_at,updated_at FROM zerobox_conversation_routes WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT conversation_id::text,user_id,runtime_kind,COALESCE(agent_id,''),workspace_id,title,summary,created_at,updated_at FROM zerobox_conversation_routes WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -469,6 +514,7 @@ func (s *PersistentStore) ListConversationRoutes(ctx context.Context, userID int
 		if err := rows.Scan(&route.ConversationID, &route.UserID, &route.RuntimeKind, &route.DeviceID, &route.WorkspaceID, &route.Title, &route.Summary, &route.CreatedAt, &route.UpdatedAt); err != nil {
 			return nil, err
 		}
+		route.AgentID = route.DeviceID
 		items = append(items, route)
 	}
 	return items, rows.Err()
@@ -508,7 +554,7 @@ func nullableJSON(value json.RawMessage) any {
 	return value
 }
 
-const deviceSelect = `SELECT id::text,user_id,installation_id,display_name,platform,app_version,credential_hash,workspaces,created_at,last_seen_at,revoked_at FROM zerobox_devices`
+const deviceSelect = `SELECT agent_id,owner_user_id,COALESCE(legacy_device_id::text,''),installation_id,display_name,platform,app_version,token_sha256,workspaces,created_at,token_issued_at,last_seen_at,revoked_at FROM agents`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -517,8 +563,8 @@ func scanDevice(row rowScanner) (*Device, error) {
 	var workspaces []byte
 	var revoked sql.NullTime
 	if err := row.Scan(
-		&device.ID, &device.UserID, &device.InstallationID, &device.Name, &device.Platform, &device.Version,
-		&device.CredentialHash, &workspaces, &device.CreatedAt, &device.LastSeenAt, &revoked,
+		&device.ID, &device.UserID, &device.LegacyDeviceID, &device.InstallationID, &device.Name, &device.Platform, &device.Version,
+		&device.CredentialHash, &workspaces, &device.CreatedAt, &device.TokenIssuedAt, &device.LastSeenAt, &revoked,
 	); err != nil {
 		return nil, err
 	}
@@ -527,6 +573,10 @@ func scanDevice(row rowScanner) (*Device, error) {
 	}
 	if revoked.Valid {
 		device.RevokedAt = &revoked.Time
+	}
+	device.AgentID = device.ID
+	if device.LegacyDeviceID == "" {
+		device.LegacyDeviceID = strings.TrimPrefix(device.ID, "agent-")
 	}
 	return &device, nil
 }

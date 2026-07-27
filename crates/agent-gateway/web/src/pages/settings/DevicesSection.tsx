@@ -17,7 +17,11 @@ function formatLastSeen(value?: string) {
     : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-export function DevicesSection() {
+export function DevicesSection({
+  onDirectoryChanged,
+}: {
+  onDirectoryChanged?: () => void | Promise<void>;
+}) {
   const [devices, setDevices] = useState<ExecutionEnvironment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
@@ -53,6 +57,7 @@ export function DevicesSection() {
         current.map((item) => (item.device_id === device.device_id ? { ...item, name } : item)),
       );
       setEditingId("");
+      await onDirectoryChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "重命名设备失败");
     } finally {
@@ -68,6 +73,7 @@ export function DevicesSection() {
     try {
       await revokeExecutionDevice(device.device_id);
       setDevices((current) => current.filter((item) => item.device_id !== device.device_id));
+      await onDirectoryChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "撤销设备失败");
     } finally {

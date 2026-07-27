@@ -490,7 +490,7 @@ pub(crate) async fn continue_keyboard_interactive_auth(
                 PasswordKbiPromptAction::SendPassword | PasswordKbiPromptAction::PromptUser => {
                     if prompts.len() != 1 {
                         return Err(
-                            "SSH keyboard-interactive requested multiple prompts, which is not supported in V1."
+                            "SSH keyboard-interactive requested multiple prompts, which is not supported."
                                 .to_string(),
                         );
                     }

@@ -14,6 +14,7 @@ export type SectionId =
   | "memory"
   | "hooks"
   | "cron"
+  | "devices"
   | "remote";
 
 export type SettingsPageProps = {
@@ -28,9 +29,11 @@ export type SettingsPageProps = {
   onRelayUserChange: (user: RelayUser) => void;
   onRelayStatsChange: (stats: RelayDashboardStats) => void;
   runtimeKind?: "web_chat" | "device_agent";
+  onAgentDirectoryChanged?: () => void | Promise<void>;
 };
 
 export type SettingsSectionProps = {
   settings: AppSettings;
   setSettings: SetSettingsFn;
+  saveState?: WebSettingsSaveState;
 };

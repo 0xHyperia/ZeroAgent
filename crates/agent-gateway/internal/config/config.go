@@ -8,11 +8,19 @@ import (
 	"time"
 )
 
-const DefaultGRPCMaxMessageBytes = 64 * 1024 * 1024
+const DefaultMaxMessageBytes = 64 * 1024 * 1024
+const DefaultGRPCMaxMessageBytes = DefaultMaxMessageBytes
+
+const (
+	DefaultMaxAgentConnections    = 256
+	DefaultMaxBrowserConnections  = 128
+	DefaultMaxTerminalConnections = 512
+)
 
 const DefaultUSAZeroOrigin = "https://usa0.top"
 
 type Config struct {
+	Token                    string // Test-only fallback when account auth is not configured.
 	USAZeroOrigin            string
 	DatabaseURL              string
 	RedisURL                 string
@@ -33,6 +41,10 @@ type Config struct {
 	WebSocketWriteTimeout    time.Duration
 	WebSocketWriteQueueSize  int
 	GRPCMaxMessageBytes      int
+	MaxMessageBytes          int
+	MaxAgentConnections     int
+	MaxBrowserConnections   int
+	MaxTerminalConnections  int
 	RelayBufferSeconds       int
 
 	// GRPCAddr is accepted but unused.
@@ -70,6 +82,10 @@ func Load() *Config {
 	flag.DurationVar(&cfg.WebSocketWriteTimeout, "websocket-write-timeout", getenvDuration("LIVEAGENT_GATEWAY_WS_WRITE_TIMEOUT", 10*time.Second), "write timeout for browser WebSocket connections")
 	flag.IntVar(&cfg.WebSocketWriteQueueSize, "websocket-write-queue-size", getenvInt("LIVEAGENT_GATEWAY_WS_WRITE_QUEUE_SIZE", 512), "write queue buffer size for browser WebSocket connections")
 	flag.IntVar(&cfg.GRPCMaxMessageBytes, "grpc-max-message-bytes", getenvInt("LIVEAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultGRPCMaxMessageBytes), "maximum gRPC message size in bytes")
+	flag.IntVar(&cfg.MaxMessageBytes, "max-message-bytes", getenvInt("LIVEAGENT_GATEWAY_MAX_MESSAGE_BYTES", getenvInt("LIVEAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultMaxMessageBytes)), "maximum WebSocket protobuf message size in bytes")
+	flag.IntVar(&cfg.MaxAgentConnections, "max-agent-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_AGENT_CONNECTIONS", DefaultMaxAgentConnections), "maximum concurrent agent connections")
+	flag.IntVar(&cfg.MaxBrowserConnections, "max-browser-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_BROWSER_CONNECTIONS", DefaultMaxBrowserConnections), "maximum concurrent browser connections")
+	flag.IntVar(&cfg.MaxTerminalConnections, "max-terminal-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_TERMINAL_CONNECTIONS", DefaultMaxTerminalConnections), "maximum concurrent terminal connections")
 	flag.IntVar(&cfg.RelayBufferSeconds, "relay-buffer-seconds", getenvInt("LIVEAGENT_GATEWAY_RELAY_BUFFER_SECONDS", 30), "seconds of chat events to buffer for brief reconnections")
 	flag.DurationVar(&cfg.CommandQueueTimeout, "command-queue-timeout", getenvDuration("LIVEAGENT_GATEWAY_COMMAND_QUEUE_TIMEOUT", 30*time.Second), "deprecated, no-op (kept for startup-script compatibility)")
 	flag.Parse()
@@ -82,6 +98,18 @@ func Load() *Config {
 
 	if cfg.GRPCMaxMessageBytes <= 0 {
 		cfg.GRPCMaxMessageBytes = DefaultGRPCMaxMessageBytes
+	}
+	if cfg.MaxMessageBytes <= 0 {
+		cfg.MaxMessageBytes = cfg.GRPCMaxMessageBytes
+	}
+	if cfg.MaxAgentConnections <= 0 {
+		cfg.MaxAgentConnections = DefaultMaxAgentConnections
+	}
+	if cfg.MaxBrowserConnections <= 0 {
+		cfg.MaxBrowserConnections = DefaultMaxBrowserConnections
+	}
+	if cfg.MaxTerminalConnections <= 0 {
+		cfg.MaxTerminalConnections = DefaultMaxTerminalConnections
 	}
 	if cfg.ChatPrepareTimeout <= 0 {
 		cfg.ChatPrepareTimeout = 2 * time.Second
