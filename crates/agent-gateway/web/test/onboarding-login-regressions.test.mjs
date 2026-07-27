@@ -32,5 +32,6 @@ test("first-run onboarding renders above application stacking contexts", () => {
 
 test("desktop onboarding uses the desktop relay client", () => {
   assert.match(desktopOnboardingSource, /from "\.\.\/\.\.\/lib\/relay\/client"/);
-  assert.match(desktopOnboardingSource, /dataSource=\{DESKTOP_DATA_SOURCE\}/);
+  assert.match(desktopOnboardingSource, /Promise\.all\(\[listRelayApiKeys\(\), listRelayGroups\(\)\]\)/);
+  assert.doesNotMatch(desktopOnboardingSource, /agent-gateway\/web/);
 });
