@@ -20,6 +20,10 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
 
   assert.match(workflow, /java-version: "17"/);
   assert.match(workflow, /targets: aarch64-linux-android/);
+  assert.match(
+    workflow,
+    /BINDGEN_EXTRA_CLANG_ARGS=--sysroot=\$\{ANDROID_HOME\}\/ndk\/\$\{ANDROID_NDK_VERSION\}\/toolchains\/llvm\/prebuilt\/linux-x86_64\/sysroot/,
+  );
   assert.match(workflow, /tauri android build --apk --target aarch64 --ci/);
   assert.match(workflow, /ANDROID_KEYSTORE_BASE64/);
   assert.match(workflow, /apksigner" sign/);
