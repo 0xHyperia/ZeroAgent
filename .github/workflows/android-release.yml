@@ -15,6 +15,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: android-release-${{ github.event.inputs.release_tag || github.event.inputs.source_ref || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -32,12 +36,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        run: npm install -g pnpm@10.32.1
+          cache: pnpm
+          cache-dependency-path: |
+            crates/agent-gui/pnpm-lock.yaml
+            crates/agent-gateway/web/pnpm-lock.yaml
 
       - uses: actions/setup-java@v4
         with:

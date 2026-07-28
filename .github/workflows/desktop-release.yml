@@ -10,6 +10,10 @@ on:
         description: Release tag to publish, for example v0.1.0
         required: true
 
+concurrency:
+  group: desktop-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -71,16 +75,19 @@ jobs:
         with:
           ref: ${{ needs.release-metadata.outputs.release_tag }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: crates/agent-gui/pnpm-lock.yaml
 
       - name: Prepare release version config
         working-directory: crates/agent-gui
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
-
-      - name: Install pnpm
-        run: npm install -g pnpm@10.32.1
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -138,17 +145,20 @@ jobs:
         with:
           ref: ${{ needs.release-metadata.outputs.release_tag }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: crates/agent-gui/pnpm-lock.yaml
 
       - name: Prepare release version config
         shell: bash
         working-directory: crates/agent-gui
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
-
-      - name: Install pnpm
-        run: npm install -g pnpm@10.32.1
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -218,16 +228,19 @@ jobs:
         with:
           ref: ${{ needs.release-metadata.outputs.release_tag }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: crates/agent-gui/pnpm-lock.yaml
 
       - name: Prepare release version config
         working-directory: crates/agent-gui
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
-
-      - name: Install pnpm
-        run: npm install -g pnpm@10.32.1
 
       - uses: dtolnay/rust-toolchain@stable
 
