@@ -67,7 +67,7 @@ ZeroAgent Gateway + 内嵌 WebUI
 
 ## 下载
 
-桌面安装包和 Android APK 可从 [GitHub Releases](https://github.com/tkxs/ZeroAgent/releases/latest) 下载。
+桌面安装包和 Android APK 可从 [GitHub Releases](https://github.com/USA-Zero/ZeroAgent/releases/latest) 下载。
 
 | 平台 | 安装包 |
 |---|---|
@@ -83,7 +83,7 @@ ZeroAgent Gateway + 内嵌 WebUI
 将仓库根目录的 `Dockerfile` 部署到 Railway 或其他 Docker 平台。一个容器会同时提供 WebUI、HTTP API、健康检查和全部 WebSocket 链路。
 
 ```bash
-docker pull ghcr.io/tkxs/zeroagent-gateway:latest
+docker pull ghcr.io/0xhyperia/zeroagent-gateway:latest
 
 docker run -d \
   --name zeroagent-gateway \
@@ -92,7 +92,7 @@ docker run -d \
   -e USA_ZERO_ORIGIN=https://usa0.top \
   -e DATABASE_URL=postgresql://user:password@host:5432/zeroagent \
   -e REDIS_URL=redis://host:6379/0 \
-  ghcr.io/tkxs/zeroagent-gateway:latest
+  ghcr.io/0xhyperia/zeroagent-gateway:latest
 ```
 
 生产环境需要：

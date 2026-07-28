@@ -17,8 +17,8 @@ test("release and Gateway documentation use the ZeroAgent repository and image",
 
   assert.match(workflow, /IMAGE_NAME: ghcr\.io\/\$\{\{ github\.repository_owner \}\}\/zeroagent-gateway/);
   for (const readme of readmes) {
-    assert.match(readme, /https:\/\/github\.com\/tkxs\/ZeroAgent\/releases\/latest/);
-    assert.match(readme, /ghcr\.io\/tkxs\/zeroagent-gateway:latest/);
+    assert.match(readme, /https:\/\/github\.com\/USA-Zero\/ZeroAgent\/releases\/latest/);
+    assert.match(readme, /ghcr\.io\/0xhyperia\/zeroagent-gateway:latest/);
     assert.doesNotMatch(readme, /Stack-Cairn|stack-cairn|LiveAgent-Updater/);
   }
 });

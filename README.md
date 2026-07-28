@@ -83,7 +83,7 @@ The desktop app can run locally without a Gateway. A Gateway deployment is requi
 Deploy the root `Dockerfile` to Railway or another Docker platform. One container serves the WebUI, HTTP API, health check, and all WebSocket traffic.
 
 ```bash
-docker pull ghcr.io/tkxs/zeroagent-gateway:latest
+docker pull ghcr.io/0xhyperia/zeroagent-gateway:latest
 
 docker run -d \
   --name zeroagent-gateway \
@@ -92,7 +92,7 @@ docker run -d \
   -e USA_ZERO_ORIGIN=https://usa0.top \
   -e DATABASE_URL=postgresql://user:password@host:5432/zeroagent \
   -e REDIS_URL=redis://host:6379/0 \
-  ghcr.io/tkxs/zeroagent-gateway:latest
+  ghcr.io/0xhyperia/zeroagent-gateway:latest
 ```
 
 Production requirements:
