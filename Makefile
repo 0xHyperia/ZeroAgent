@@ -59,7 +59,7 @@ dev-infra-down:
 	$(DEV_COMPOSE) down --remove-orphans
 
 dev:
-	@test -f deploy/.env.dev || { echo "run make dev-infra-up first"; exit 1; }
+	@test -f deploy/.env.dev || { echo "请先运行 make dev-infra-up"; exit 1; }
 	@set -a; . deploy/.env.dev; set +a; \
 	  trap 'kill 0' EXIT; \
 	  (USA_ZERO_ORIGIN="$${USA_ZERO_ORIGIN:-http://127.0.0.1:8080}" \
@@ -69,7 +69,7 @@ dev:
 	  (DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
 
 dev-tauri:
-	pnpm --dir $(AGENT_GUI_DIR) tauri dev
+	mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
 
 test:
 	go -C $(AGENT_GATEWAY_DIR) test ./...
@@ -153,14 +153,14 @@ check-github-release-tag:
 	@if [ -z "$(RELEASE_TAG)" ]; then echo "RELEASE_TAG is required. Example: make github-release-main RELEASE_TAG=v0.1.10"; exit 1; fi
 	@node scripts/release/prepare-app-version-from-tag.mjs "$(RELEASE_TAG)" --json >/dev/null
 
-## Gateway development
-# go:embed requires web/dist at compile time. Dev serves the SPA from Vite, so
-# a tiny stub is enough to let `go run` start without a full WebUI build.
+## Gateway 开发
+# go:embed 在编译时要求 web/dist 存在。开发环境由 Vite 提供 SPA，
+# 因此只需创建一个最小占位文件，无需先完整构建 WebUI。
 dev-gateway: ensure-webui-embed-stub
 	go -C $(AGENT_GATEWAY_DIR) run ./cmd/gateway --http-addr=$(DEV_GATEWAY_HTTP_ADDR)
 
 dev-webui:
-	npm_config_proxy_api=$(DEV_WEBUI_PROXY_API) pnpm --dir $(AGENT_GATEWAY_WEB_DIR) dev
+	npm_config_proxy_api=$(DEV_WEBUI_PROXY_API) pnpm --dir $(AGENT_GATEWAY_WEB_DIR) dev --host 127.0.0.1 --port 5174
 
 ensure-webui-embed-stub:
 	@if [ ! -f "$(AGENT_GATEWAY_WEB_DIR)/dist/index.html" ]; then \
