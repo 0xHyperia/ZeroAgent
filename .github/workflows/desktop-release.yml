@@ -15,6 +15,7 @@ permissions:
 
 env:
   NODE_VERSION: 22.19.0
+  RELEASE_REPOSITORY: USA-Zero/ZeroAgent
 
 jobs:
   release-metadata:
@@ -36,6 +37,14 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: node scripts/release/prepare-app-version-from-tag.mjs "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT" --json
+
+      - name: Validate public release repository
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          gh api "repos/$RELEASE_REPOSITORY/commits/main" --silent
 
   macos:
     name: macOS ${{ matrix.name }}
@@ -94,7 +103,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          LIVEAGENT_UPDATE_REPOSITORY: ${{ github.repository }}
+          LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target ${{ matrix.target }}
 
       - name: Stage macOS artifact
@@ -163,7 +172,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          LIVEAGENT_UPDATE_REPOSITORY: ${{ github.repository }}
+          LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-pc-windows-msvc
 
       - name: Stage Windows artifacts
@@ -253,7 +262,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          LIVEAGENT_UPDATE_REPOSITORY: ${{ github.repository }}
+          LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm
 
       - name: Strip bundled Wayland libraries and re-sign AppImage
@@ -321,7 +330,8 @@ jobs:
       - name: Publish assets
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          PUBLIC_RELEASE_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
           PACKYCODE_API_KEY: ${{ secrets.PACKYCODE_API_KEY }}
           AI_RELEASE_NOTES_API_KEY: ${{ secrets.AI_RELEASE_NOTES_API_KEY }}
@@ -330,10 +340,11 @@ jobs:
         run: |
           set -euo pipefail
           is_prerelease="$LIVEAGENT_IS_PRERELEASE"
+          test -n "$PUBLIC_RELEASE_TOKEN"
 
           github_notes_path="$RUNNER_TEMP/liveagent-github-release-notes.md"
           notes_path="$RUNNER_TEMP/liveagent-release-notes.md"
-          if ! gh api "repos/$GH_REPO/releases/generate-notes" \
+          if ! gh api "repos/$SOURCE_REPOSITORY/releases/generate-notes" \
             -f tag_name="$RELEASE_TAG" \
             --jq ".body" > "$github_notes_path"; then
             printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
@@ -347,6 +358,9 @@ jobs:
             printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$notes_path"
           fi
 
+          export GH_TOKEN="$PUBLIC_RELEASE_TOKEN"
+          export GH_REPO="$RELEASE_REPOSITORY"
+
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             edit_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
             if [ "$is_prerelease" = true ]; then
@@ -356,7 +370,7 @@ jobs:
             fi
             gh release edit "$RELEASE_TAG" "${edit_args[@]}"
           else
-            create_args=(--verify-tag --title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
+            create_args=(--target main --title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
             if [ "$is_prerelease" = true ]; then
               create_args+=(--prerelease)
             fi

@@ -16,11 +16,12 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NODE_VERSION: 22.19.0
   ANDROID_NDK_VERSION: 27.2.12479018
+  RELEASE_REPOSITORY: USA-Zero/ZeroAgent
 
 jobs:
   android:
@@ -200,8 +201,8 @@ jobs:
       - name: Upload APK to GitHub Release
         if: steps.version.outputs.release_tag != ''
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          GH_REPO: ${{ env.RELEASE_REPOSITORY }}
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
           APK_PATH: ${{ steps.package.outputs.apk }}
         run: |

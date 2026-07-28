@@ -239,7 +239,7 @@ export function AboutSection(props: AboutSectionProps) {
                 {installed ? t("settings.aboutRestartApp") : t("settings.aboutInstallUpdate")}
               </Button>
               <div className="text-xs text-muted-foreground">
-                {latestResult?.repository || "tkxs/ZeroAgent"}
+                {latestResult?.repository || "USA-Zero/ZeroAgent"}
               </div>
             </div>
           </div>

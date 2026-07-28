@@ -8,7 +8,7 @@
 |---|---|---|
 | PR / `main` push | `.github/workflows/ci.yml` | 跑 Gateway、WebUI、GUI、Tauri Rust 测试和 proto 一致性检查。 |
 | `v*` tag / 手动指定 tag | `.github/workflows/gateway-docker.yml` | 构建并推送 `vX.Y.Z` 与 `latest` Gateway 镜像。 |
-| `v*` tag / 手动指定 tag | `.github/workflows/desktop-release.yml` | 并行构建 macOS Intel、macOS Apple Silicon、Windows x64 和 Linux x64 桌面包，并上传到 GitHub Release。 |
+| `v*` tag / 手动指定 tag | `.github/workflows/desktop-release.yml` | 并行构建 macOS Intel、macOS Apple Silicon、Windows x64 和 Linux x64 桌面包，并上传到 `USA-Zero/ZeroAgent` 的 GitHub Release。 |
 
 ## Gateway 镜像
 
@@ -81,6 +81,17 @@ Gateway 运行时变量由用户在自己的平台配置：
 Gateway 一期按单实例部署，实时 conversation stream replay 与 `client_request_id` 去重仍是进程内有界状态。账号、设备、工作区、网页历史和设备对话路由写入 PostgreSQL；Web 会话、一次性 proof 状态和在线 TTL 写入 Redis。事件窗口默认保留最近 10 分钟、最多 4096 条或约 8 MiB；实时窗口在 Gateway 重启后不会保留。
 
 ## GitHub Secrets
+
+桌面和 Android 工作流在当前私有源码仓库中构建，并将公开产物发布到
+`USA-Zero/ZeroAgent`。公开仓库的 `main` 分支必须至少有一个提交；空仓库请先通过
+GitHub 创建 README。私有源码仓库还需要配置：
+
+| Secret | 说明 |
+|---|---|
+| `PUBLIC_RELEASE_TOKEN` | 可写入 `USA-Zero/ZeroAgent` Contents 的 fine-grained PAT，用于跨仓库创建 Release 和上传产物。 |
+
+源码 tag 只需存在于私有仓库。发布工作流会在公开仓库的 `main` 提交上创建同名
+Release tag，公开仓库不需要同步源码。
 
 macOS signed/notarized release 需要这些 secrets：
 

@@ -78,6 +78,39 @@ test("release updater manifest embeds generated notes and platform signatures", 
   }
 });
 
+test("release updater manifest can target a separate public repository", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "liveagent-release-"));
+  try {
+    writeAssetPair(dir, "ZeroAgent-v9.9.9-Linux-x86_64.AppImage", "sig-linux");
+
+    const outputPath = path.join(dir, "latest.json");
+    const result = spawnSync(process.execPath, [manifestScript, dir, outputPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        GITHUB_REPOSITORY: "private-owner/private-source",
+        RELEASE_REPOSITORY: "USA-Zero/ZeroAgent",
+        RELEASE_TAG: "v9.9.9",
+      },
+      encoding: "utf8",
+    });
+
+    assert.equal(
+      result.status,
+      0,
+      `manifest script failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    );
+
+    const manifest = JSON.parse(readFileSync(outputPath, "utf8"));
+    assert.equal(
+      manifest.platforms["linux-x86_64-appimage"].url,
+      "https://github.com/USA-Zero/ZeroAgent/releases/download/v9.9.9/ZeroAgent-v9.9.9-Linux-x86_64.AppImage",
+    );
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
 test("release updater manifest omits generic Linux fallback without an AppImage", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "liveagent-release-"));
   try {

@@ -67,7 +67,7 @@ The production Docker image builds the React WebUI and embeds it into the Go Gat
 
 ## Download
 
-Download desktop installers and Android packages from [GitHub Releases](https://github.com/tkxs/ZeroAgent/releases/latest).
+Download desktop installers and Android packages from [GitHub Releases](https://github.com/USA-Zero/ZeroAgent/releases/latest).
 
 | Platform | Package |
 |---|---|

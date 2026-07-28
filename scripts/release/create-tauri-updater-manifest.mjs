@@ -23,10 +23,12 @@ try {
   process.exit(1);
 }
 const releaseTag = releaseVersion.releaseTag;
-const repository = process.env.GITHUB_REPOSITORY?.trim();
+const repository =
+  process.env.RELEASE_REPOSITORY?.trim() ||
+  process.env.GITHUB_REPOSITORY?.trim();
 
 if (!repository) {
-  console.error("GITHUB_REPOSITORY is required.");
+  console.error("RELEASE_REPOSITORY or GITHUB_REPOSITORY is required.");
   process.exit(1);
 }
 
