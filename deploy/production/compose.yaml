@@ -1,0 +1,64 @@
+name: usa0-zeroagent
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 50m, max-file: "5"}
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?required}
+    container_name: zeroagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      PGDATA: /var/lib/postgresql/data
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes: ["${USA0_DATA_ROOT:-/opt/usa0/data}/zeroagent/postgres:/var/lib/postgresql/data"]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+  redis:
+    image: ${REDIS_IMAGE:?required}
+    container_name: zeroagent-redis
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    environment: {REDIS_PASSWORD: "${REDIS_PASSWORD:?required}", TZ: "${TZ:-Asia/Shanghai}"}
+    volumes: ["${USA0_DATA_ROOT:-/opt/usa0/data}/zeroagent/redis:/data"]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+  app:
+    image: ${APP_IMAGE:?required}
+    container_name: zeroagent-gateway
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-/opt/usa0/config/zeroagent.env}
+    environment:
+      PORT: "8080"
+      USA_ZERO_ORIGIN: ${USA_ZERO_ORIGIN:?required}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      LIVEAGENT_GATEWAY_COOKIE_SECURE: "true"
+      LIVEAGENT_GATEWAY_WEB_SESSION_TTL: ${LIVEAGENT_GATEWAY_WEB_SESSION_TTL:-720h}
+      LIVEAGENT_GATEWAY_SELECTION_LEASE_TTL: ${LIVEAGENT_GATEWAY_SELECTION_LEASE_TTL:-8h}
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
+    expose: ["8080"]
+    networks: {data: {}, edge: {aliases: [zeroagent-gateway]}}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *logging
+networks:
+  data: {name: zeroagent-data, internal: true}
+  edge: {name: usa0-edge, external: true}

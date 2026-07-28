@@ -23,6 +23,7 @@ dist
 dist-ssr
 target
 *.local
+deploy/.env.dev
 .vscode
 target
 bin

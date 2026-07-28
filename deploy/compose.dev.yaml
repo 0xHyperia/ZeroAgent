@@ -1,0 +1,36 @@
+name: zeroagent-dev
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: "3"}
+services:
+  zeroagent-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: zeroagent
+      POSTGRES_PASSWORD: ${ZEROAGENT_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: zeroagent
+      PGDATA: /var/lib/postgresql/data
+    ports: ["127.0.0.1:${ZEROAGENT_POSTGRES_PORT:-5433}:5432"]
+    volumes: [zeroagent-postgres:/var/lib/postgresql/data]
+    networks: [zeroagent-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zeroagent -d zeroagent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    logging: *logging
+  zeroagent-redis:
+    image: redis:8-alpine
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    environment: {REDIS_PASSWORD: "${ZEROAGENT_REDIS_PASSWORD:?required}"}
+    ports: ["127.0.0.1:${ZEROAGENT_REDIS_PORT:-6380}:6379"]
+    volumes: [zeroagent-redis:/data]
+    networks: [zeroagent-data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    logging: *logging
+volumes: {zeroagent-postgres: {}, zeroagent-redis: {}}
+networks: {zeroagent-data: {}}

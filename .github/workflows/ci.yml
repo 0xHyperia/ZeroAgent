@@ -13,6 +13,13 @@ env:
   NODE_VERSION: 22.19.0
 
 jobs:
+  deployment:
+    name: Deployment Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: make deploy-validate
+
   gateway:
     name: Gateway
     runs-on: ubuntu-latest

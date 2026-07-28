@@ -18,9 +18,28 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/zeroagent-gateway
 
 jobs:
+  quality-gate:
+    name: Gateway Release Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v6
+        with: {go-version-file: crates/agent-gateway/go.mod}
+      - uses: actions/setup-node@v6
+        with: {node-version: 22.19.0}
+      - run: npm install -g pnpm@10.32.1
+      - run: go test ./...
+        working-directory: crates/agent-gateway
+      - run: pnpm install --frozen-lockfile && pnpm test && pnpm build && pnpm lint
+        working-directory: crates/agent-gateway/web
+      - run: make deploy-validate
+
   build-and-push:
     name: Build and Push Gateway Image
     runs-on: ubuntu-latest
+    needs: quality-gate
     steps:
       - uses: actions/checkout@v6
         with:

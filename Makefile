@@ -28,16 +28,65 @@ DEV_WEBUI_PROXY_API ?= http://localhost:50052
 GATEWAY_DOCKER_IMAGE ?= liveagent-gateway:local
 RELEASE_TAG ?=
 
-.PHONY: all dev build desktop-build-macos desktop-build-macos-release desktop-build-macos-intel desktop-build-macos-m desktop-build-windows desktop-build-linux github-release-main check-github-release-tag help
+.PHONY: bootstrap doctor dev dev-tauri dev-infra-up dev-infra-down test deploy-validate integration-config
+.PHONY: all build desktop-build-macos desktop-build-macos-release desktop-build-macos-intel desktop-build-macos-m desktop-build-windows desktop-build-linux github-release-main check-github-release-tag help
 .PHONY: dev-gateway dev-webui ensure-webui-embed-stub
 .PHONY: proto proto-check webui gateway-build gateway-docker-build gateway-docker-run gateway-docker-smoke build-linux build-linux-amd build-linux-arm
 .PHONY: clean check-rust-target-% check-macos-signing-identity check-macos-notary-profile desktop-store-macos-notary-profile desktop-wait-macos-notary desktop-staple-macos desktop-verify-macos
 
 all: build gateway-build
 
-## Desktop app
+DEV_COMPOSE := docker compose --env-file deploy/.env.dev -f deploy/compose.dev.yaml
+
+bootstrap:
+	command -v mise >/dev/null
+	mise install
+	mise exec -- pnpm --dir $(AGENT_GATEWAY_WEB_DIR) install --frozen-lockfile
+	mise exec -- pnpm --dir $(AGENT_GUI_DIR) install --frozen-lockfile
+	@test -f deploy/.env.dev || cp deploy/.env.dev.example deploy/.env.dev
+
+doctor:
+	@command -v docker >/dev/null && docker compose version >/dev/null
+	@command -v mise >/dev/null
+	@mise exec -- go version
+	@mise exec -- pnpm --version
+
+dev-infra-up:
+	@test -f deploy/.env.dev || cp deploy/.env.dev.example deploy/.env.dev
+	$(DEV_COMPOSE) up -d --wait
+
+dev-infra-down:
+	$(DEV_COMPOSE) down --remove-orphans
+
 dev:
+	@test -f deploy/.env.dev || { echo "run make dev-infra-up first"; exit 1; }
+	@set -a; . deploy/.env.dev; set +a; \
+	  trap 'kill 0' EXIT; \
+	  (USA_ZERO_ORIGIN="$${USA_ZERO_ORIGIN:-http://127.0.0.1:8080}" \
+	    DATABASE_URL="postgresql://zeroagent:$$ZEROAGENT_POSTGRES_PASSWORD@127.0.0.1:$${ZEROAGENT_POSTGRES_PORT:-5433}/zeroagent?sslmode=disable" \
+	    REDIS_URL="redis://:$$ZEROAGENT_REDIS_PASSWORD@127.0.0.1:$${ZEROAGENT_REDIS_PORT:-6380}/0" \
+	    LIVEAGENT_GATEWAY_COOKIE_SECURE=false mise exec -- $(MAKE) dev-gateway) & \
+	  (DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
+
+dev-tauri:
 	pnpm --dir $(AGENT_GUI_DIR) tauri dev
+
+test:
+	go -C $(AGENT_GATEWAY_DIR) test ./...
+	pnpm --dir $(AGENT_GATEWAY_WEB_DIR) test
+	pnpm --dir $(AGENT_GATEWAY_WEB_DIR) build
+	pnpm --dir $(AGENT_GATEWAY_WEB_DIR) lint
+	pnpm --dir $(AGENT_GUI_DIR) test:frontend
+	pnpm --dir $(AGENT_GUI_DIR) test:release
+	pnpm --dir $(AGENT_GUI_DIR) build
+	pnpm --dir $(AGENT_GUI_DIR) lint
+	$(MAKE) proto-check
+
+deploy-validate:
+	deploy/production/validate.sh
+
+integration-config:
+	docker compose --env-file deploy/.env.dev.example -f deploy/compose.integration.yaml config --quiet
 
 build:
 	pnpm --dir $(AGENT_GUI_DIR) tauri build

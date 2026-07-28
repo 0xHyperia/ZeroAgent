@@ -1,0 +1,52 @@
+services:
+  zeroagent-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: zeroagent
+      POSTGRES_PASSWORD: ${ZEROAGENT_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: zeroagent
+      PGDATA: /var/lib/postgresql/data
+    volumes: [zeroagent-postgres:/var/lib/postgresql/data]
+    networks: [zeroagent-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zeroagent -d zeroagent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  zeroagent-redis:
+    image: redis:8-alpine
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    environment: {REDIS_PASSWORD: "${ZEROAGENT_REDIS_PASSWORD:?required}"}
+    volumes: [zeroagent-redis:/data]
+    networks: [zeroagent-data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  zeroagent-gateway:
+    build:
+      context: ../../ZeroAgent
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${http_proxy:-${HTTP_PROXY:-}}
+        HTTPS_PROXY: ${https_proxy:-${HTTPS_PROXY:-}}
+        NO_PROXY: ${no_proxy:-${NO_PROXY:-}}
+    environment:
+      PORT: "8080"
+      USA_ZERO_ORIGIN: http://sub2api:8080
+      DATABASE_URL: postgresql://zeroagent:${ZEROAGENT_POSTGRES_PASSWORD:?required}@zeroagent-postgres:5432/zeroagent?sslmode=disable
+      REDIS_URL: redis://:${ZEROAGENT_REDIS_PASSWORD:?required}@zeroagent-redis:6379/0
+      LIVEAGENT_GATEWAY_COOKIE_SECURE: "false"
+    depends_on:
+      zeroagent-postgres: {condition: service_healthy}
+      zeroagent-redis: {condition: service_healthy}
+    ports: ["127.0.0.1:${ZEROAGENT_PORT:-50052}:8080"]
+    networks: [zeroagent-data, integration-edge]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes: {zeroagent-postgres: {}, zeroagent-redis: {}}
+networks: {zeroagent-data: {internal: true}, integration-edge: {}}
