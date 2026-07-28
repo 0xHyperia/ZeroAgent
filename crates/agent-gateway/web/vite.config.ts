@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
 
-const DEFAULT_PROXY_API = "http://localhost:8080";
+const DEFAULT_PROXY_API = "http://localhost:3001";
 
 function resolveProxyTarget() {
   const cliArg = process.argv.find((arg) => arg.startsWith("--proxy-api="));

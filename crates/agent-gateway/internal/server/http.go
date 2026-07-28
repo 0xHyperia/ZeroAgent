@@ -38,7 +38,7 @@ func NewHTTPServerWithReadiness(
 	rootMux.HandleFunc("GET /readyz", handler.Ready(readinessCheck))
 	accounts, _ := authenticator.(*account.Service)
 	if accounts != nil {
-		account.NewHTTPHandler(accounts, cfg.CookieSecure).Register(rootMux)
+		account.NewHTTPHandler(accounts, cfg.CookieSecure, cfg.PublicOrigin).Register(rootMux)
 		accounts.SetDeviceRevoker(func(_ int64, agentID string) { sm.DisconnectAgent(agentID) })
 		sm.SetHistoryObserver(accounts.RecordAgentHistorySync)
 	}

@@ -73,106 +73,111 @@ function nextSocketId() {
 function installGatewayWebSocketBridge() {
   const eventApi = window.__TAURI__?.event;
   if (!eventApi) throw new Error("Android native event bridge is unavailable");
-  return eventApi.listen<NativeSocketEvent>("mobile-gateway-socket", ({ payload }) => {
-    nativeSocketHandlers.get(payload.id)?.(payload);
-  }).then(() => {
-    class NativeGatewayWebSocket {
-      static readonly CONNECTING = 0;
-      static readonly OPEN = 1;
-      static readonly CLOSING = 2;
-      static readonly CLOSED = 3;
-      readonly CONNECTING = NativeGatewayWebSocket.CONNECTING;
-      readonly OPEN = NativeGatewayWebSocket.OPEN;
-      readonly CLOSING = NativeGatewayWebSocket.CLOSING;
-      readonly CLOSED = NativeGatewayWebSocket.CLOSED;
-      binaryType: BinaryType = "arraybuffer";
-      readyState = NativeGatewayWebSocket.CONNECTING;
-      onopen: ((event: Event) => void) | null = null;
-      onclose: ((event: CloseEvent) => void) | null = null;
-      onerror: ((event: Event) => void) | null = null;
-      onmessage: ((event: MessageEvent<ArrayBuffer>) => void) | null = null;
-      private readonly id = nextSocketId();
+  return eventApi
+    .listen<NativeSocketEvent>("mobile-gateway-socket", ({ payload }) => {
+      nativeSocketHandlers.get(payload.id)?.(payload);
+    })
+    .then(() => {
+      class NativeGatewayWebSocket {
+        static readonly CONNECTING = 0;
+        static readonly OPEN = 1;
+        static readonly CLOSING = 2;
+        static readonly CLOSED = 3;
+        readonly CONNECTING = NativeGatewayWebSocket.CONNECTING;
+        readonly OPEN = NativeGatewayWebSocket.OPEN;
+        readonly CLOSING = NativeGatewayWebSocket.CLOSING;
+        readonly CLOSED = NativeGatewayWebSocket.CLOSED;
+        binaryType: BinaryType = "arraybuffer";
+        readyState = NativeGatewayWebSocket.CONNECTING;
+        onopen: ((event: Event) => void) | null = null;
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent<ArrayBuffer>) => void) | null = null;
+        private readonly id = nextSocketId();
 
-      constructor(url: string | URL, protocols?: string | string[]) {
-        const parsed = new URL(url.toString());
-        const path = `${parsed.pathname}${parsed.search}`;
-        const selectedProtocols = Array.isArray(protocols)
-          ? protocols
-          : typeof protocols === "string"
-            ? [protocols]
-            : [];
-        nativeSocketHandlers.set(this.id, (event) => this.handleNativeEvent(event));
-        void nativeInvoke("mobile_gateway_socket_connect", {
-          request: { id: this.id, path, protocols: selectedProtocols },
-        }).catch((cause) => this.fail(cause));
-      }
-
-      send(data: ArrayBuffer | ArrayBufferView) {
-        if (this.readyState !== NativeGatewayWebSocket.OPEN) {
-          throw new Error("Gateway WebSocket is not connected");
+        constructor(url: string | URL, protocols?: string | string[]) {
+          const parsed = new URL(url.toString());
+          const path = `${parsed.pathname}${parsed.search}`;
+          const selectedProtocols = Array.isArray(protocols)
+            ? protocols
+            : typeof protocols === "string"
+              ? [protocols]
+              : [];
+          nativeSocketHandlers.set(this.id, (event) => this.handleNativeEvent(event));
+          void nativeInvoke("mobile_gateway_socket_connect", {
+            request: { id: this.id, path, protocols: selectedProtocols },
+          }).catch((cause) => this.fail(cause));
         }
-        const bytes = data instanceof ArrayBuffer
-          ? new Uint8Array(data)
-          : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        void nativeInvoke("mobile_gateway_socket_send", {
-          request: { id: this.id, data: bytesToBase64(bytes) },
-        }).catch((cause) => this.fail(cause));
-      }
 
-      close() {
-        if (this.readyState === NativeGatewayWebSocket.CLOSED) return;
-        this.readyState = NativeGatewayWebSocket.CLOSING;
-        void nativeInvoke("mobile_gateway_socket_close", { id: this.id });
-      }
+        send(data: ArrayBuffer | ArrayBufferView) {
+          if (this.readyState !== NativeGatewayWebSocket.OPEN) {
+            throw new Error("Gateway WebSocket is not connected");
+          }
+          const bytes =
+            data instanceof ArrayBuffer
+              ? new Uint8Array(data)
+              : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+          void nativeInvoke("mobile_gateway_socket_send", {
+            request: { id: this.id, data: bytesToBase64(bytes) },
+          }).catch((cause) => this.fail(cause));
+        }
 
-      private handleNativeEvent(event: NativeSocketEvent) {
-        if (event.kind === "open") {
-          if (this.readyState !== NativeGatewayWebSocket.CONNECTING) return;
-          this.readyState = NativeGatewayWebSocket.OPEN;
-          this.onopen?.(new Event("open"));
-          return;
+        close() {
+          if (this.readyState === NativeGatewayWebSocket.CLOSED) return;
+          this.readyState = NativeGatewayWebSocket.CLOSING;
+          void nativeInvoke("mobile_gateway_socket_close", { id: this.id });
         }
-        if (event.kind === "message" && event.data) {
-          const bytes = base64ToBytes(event.data);
-          this.onmessage?.(new MessageEvent("message", { data: bytes.buffer }));
-          return;
+
+        private handleNativeEvent(event: NativeSocketEvent) {
+          if (event.kind === "open") {
+            if (this.readyState !== NativeGatewayWebSocket.CONNECTING) return;
+            this.readyState = NativeGatewayWebSocket.OPEN;
+            this.onopen?.(new Event("open"));
+            return;
+          }
+          if (event.kind === "message" && event.data) {
+            const bytes = base64ToBytes(event.data);
+            this.onmessage?.(new MessageEvent("message", { data: bytes.buffer }));
+            return;
+          }
+          if (event.kind === "error") {
+            this.onerror?.(new Event("error"));
+            return;
+          }
+          if (event.kind === "close") {
+            this.readyState = NativeGatewayWebSocket.CLOSED;
+            nativeSocketHandlers.delete(this.id);
+            this.onclose?.({
+              code: 1000,
+              wasClean: true,
+              reason: event.message ?? "",
+            } as CloseEvent);
+          }
         }
-        if (event.kind === "error") {
+
+        private fail(cause: unknown) {
+          if (this.readyState === NativeGatewayWebSocket.CLOSED) return;
           this.onerror?.(new Event("error"));
-          return;
-        }
-        if (event.kind === "close") {
-          this.readyState = NativeGatewayWebSocket.CLOSED;
-          nativeSocketHandlers.delete(this.id);
-          this.onclose?.({
-            code: 1000,
-            wasClean: true,
-            reason: event.message ?? "",
-          } as CloseEvent);
+          this.handleNativeEvent({
+            id: this.id,
+            kind: "close",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
         }
       }
-
-      private fail(cause: unknown) {
-        if (this.readyState === NativeGatewayWebSocket.CLOSED) return;
-        this.onerror?.(new Event("error"));
-        this.handleNativeEvent({
-          id: this.id,
-          kind: "close",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      }
-    }
-    window.WebSocket = NativeGatewayWebSocket as unknown as typeof WebSocket;
-  });
+      window.WebSocket = NativeGatewayWebSocket as unknown as typeof WebSocket;
+    });
 }
 
 function isGatewayRequest(input: RequestInfo | URL) {
-  const value = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const value =
+    typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   return value.startsWith("/") || value.startsWith(window.location.origin);
 }
 
 function requestPath(input: RequestInfo | URL) {
-  const value = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const value =
+    typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   if (value.startsWith("/")) return value;
   const url = new URL(value);
   return `${url.pathname}${url.search}`;
@@ -226,6 +231,32 @@ export async function configureEmbeddedMobileGateway(origin: string) {
 export async function clearEmbeddedMobileGatewaySession() {
   if (!isEmbeddedMobileRuntime()) return;
   await nativeInvoke("mobile_gateway_logout");
+}
+
+export async function openEmbeddedOAuth(url: string): Promise<string> {
+  if (!isEmbeddedMobileRuntime()) throw new Error("Android native bridge is unavailable");
+  const events = window.__TAURI__?.event;
+  if (!events) throw new Error("Android event bridge is unavailable");
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let unlisten: (() => void) | undefined;
+    const timer = window.setTimeout(() => finish(new Error("授权已超时，请重试")), 5 * 60_000);
+    const finish = (value: string | Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      unlisten?.();
+      if (value instanceof Error) reject(value);
+      else resolve(value);
+    };
+    void events
+      .listen<string>("mobile-oauth-callback", ({ payload }) => finish(payload))
+      .then((stop) => {
+        unlisten = stop;
+        return nativeInvoke("mobile_oauth_open", { url });
+      })
+      .catch((cause) => finish(cause instanceof Error ? cause : new Error(String(cause))));
+  });
 }
 
 export function isOfflineCacheResponse(response: Response) {

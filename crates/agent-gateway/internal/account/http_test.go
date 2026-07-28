@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,90 @@ func TestAccountRegistrationCreatesCookieSessionWithoutExposingTokens(t *testing
 	cookies := response.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Name != SessionCookieName || !cookies[0].HttpOnly || !cookies[0].Secure {
 		t.Fatalf("unexpected registration cookie: %#v", cookies)
+	}
+}
+
+func TestOAuthTransactionIsAtomicAndExpires(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Now().UTC()
+	store.now = func() time.Time { return now }
+	transaction := &OAuthTransaction{State: "state", ExpiresAt: now.Add(time.Minute)}
+	if err := store.PutOAuthTransaction(context.Background(), "hash", transaction); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeOAuthTransaction(context.Background(), "hash"); err != nil {
+		t.Fatalf("first consume: %v", err)
+	}
+	if _, err := store.ConsumeOAuthTransaction(context.Background(), "hash"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replay consume = %v, want ErrNotFound", err)
+	}
+	if err := store.PutOAuthTransaction(context.Background(), "expired", &OAuthTransaction{ExpiresAt: now.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := store.ConsumeOAuthTransaction(context.Background(), "expired"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired consume = %v, want ErrNotFound", err)
+	}
+}
+
+func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.T) {
+	var issuedState string
+	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/app-auth/authorize/requests":
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			issuedState, _ = payload["state"].(string)
+			if payload["client_id"] != "zerobox-web" || payload["redirect_uri"] != "https://gateway.example.com/api/auth/oauth/callback" {
+				t.Fatalf("unexpected authorization payload: %#v", payload)
+			}
+			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":{"request_id":"request-1"}}`)
+		case "/api/v1/app-auth/token":
+			_ = r.ParseForm()
+			if r.Form.Get("code") != "code-1" || r.Form.Get("client_id") != "zerobox-web" || r.Form.Get("code_verifier") == "" {
+				t.Fatalf("unexpected token form: %v", r.Form)
+			}
+			_, _ = io.WriteString(w, `{"access_token":"app-access","refresh_token":"app-refresh","token_type":"Bearer","expires_in":600,"scope":"profile:read"}`)
+		case "/api/v1/app/me":
+			_, _ = io.WriteString(w, `{"success":true,"message":"success","data":{"id":9,"email":"oauth@example.com"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer usa.Close()
+	store := NewMemoryStore()
+	service := NewService(store, NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
+	mux := http.NewServeMux()
+	NewHTTPHandler(service, true, "https://gateway.example.com").Register(mux)
+
+	start := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web","return_path":"/login?from=oauth"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(start, request)
+	if start.Code != http.StatusOK || issuedState == "" || !strings.Contains(start.Body.String(), "request-1") {
+		t.Fatalf("start status=%d state=%q body=%s", start.Code, issuedState, start.Body.String())
+	}
+
+	callbackURL := "/api/auth/oauth/callback?code=code-1&state=" + url.QueryEscape(issuedState)
+	callback := httptest.NewRecorder()
+	mux.ServeHTTP(callback, httptest.NewRequest(http.MethodGet, callbackURL, nil))
+	if callback.Code != http.StatusSeeOther || callback.Header().Get("Location") != "/login?from=oauth&oauth=success" {
+		t.Fatalf("callback status=%d location=%q body=%s", callback.Code, callback.Header().Get("Location"), callback.Body.String())
+	}
+	cookies := callback.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookies=%#v", cookies)
+	}
+	session, err := store.GetSession(context.Background(), cookies[0].Value)
+	if err != nil || !session.IsOAuth() || session.OAuthClientID != "zerobox-web" || session.UserID != 9 {
+		t.Fatalf("oauth session=%#v err=%v", session, err)
+	}
+
+	replay := httptest.NewRecorder()
+	mux.ServeHTTP(replay, httptest.NewRequest(http.MethodGet, callbackURL, nil))
+	if replay.Code != http.StatusSeeOther || !strings.Contains(replay.Header().Get("Location"), "oauth_error=authorization_failed") {
+		t.Fatalf("replay status=%d location=%q", replay.Code, replay.Header().Get("Location"))
 	}
 }
 
@@ -417,6 +502,42 @@ func TestWebProviderModelsRequireAnOwnedActiveKey(t *testing.T) {
 	unauthenticated := request("41", false)
 	if unauthenticated.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated models status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+}
+
+func TestWebChatCompletionUsesOnlyTheSelectedUsersProviderKey(t *testing.T) {
+	service, store, handler := newAccountTestRuntime(t)
+	now := time.Now().UTC()
+	session := &Session{
+		ID: "provider-completion-user-one", UserID: 1, User: json.RawMessage(`{"id":1}`),
+		AccessToken: "access-1", AccessExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.PutSession(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := service.CreateCloudConversation(context.Background(), 1, "gpt-5.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(keyID int64) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{"conversation_id":%q,"model":"gpt-5.2","provider_key_id":%d,"content":"Hi"}`,
+			conversation.ID, keyID)
+		req := httptest.NewRequest(http.MethodPost, "/api/web-chat/completions", strings.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID})
+		req.Header.Set("Content-Type", "application/json")
+		result := httptest.NewRecorder()
+		handler.ServeHTTP(result, req)
+		return result
+	}
+
+	if foreign := request(42); foreign.Code != http.StatusNotFound {
+		t.Fatalf("foreign provider key status=%d body=%s", foreign.Code, foreign.Body.String())
+	}
+	if messages, err := store.ListCloudMessages(context.Background(), 1, conversation.ID); err != nil || len(messages) != 0 {
+		t.Fatalf("foreign provider key mutated conversation: messages=%#v err=%v", messages, err)
+	}
+	if owned := request(41); owned.Code != http.StatusOK || !strings.Contains(owned.Body.String(), "Hello") {
+		t.Fatalf("owned provider key status=%d body=%s", owned.Code, owned.Body.String())
 	}
 }
 

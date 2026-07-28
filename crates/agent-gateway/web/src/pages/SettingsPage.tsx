@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -133,6 +133,7 @@ export function SettingsPage(props: SettingsPageProps) {
     saveState,
     onBack,
     initialSection = "system",
+    onSectionChange,
     hiddenSections = [],
     relayUser,
     relayStats,
@@ -143,6 +144,13 @@ export function SettingsPage(props: SettingsPageProps) {
   } = props;
   const { t } = useLocale();
   const [section, setSection] = useState<SectionId>(initialSection);
+  const selectSection = useCallback(
+    (next: SectionId) => {
+      setSection(next);
+      onSectionChange?.(next);
+    },
+    [onSectionChange],
+  );
 
   const sectionLabels: Record<SectionId, string> = {
     account: t("settings.navAccount"),
@@ -179,8 +187,8 @@ export function SettingsPage(props: SettingsPageProps) {
     if (allNavItems.some((item) => item.id === section)) {
       return;
     }
-    setSection(allNavItems[0]?.id ?? "system");
-  }, [allNavItems, section]);
+    selectSection(allNavItems[0]?.id ?? "system");
+  }, [allNavItems, section, selectSection]);
 
   const saveIndicator = getSaveIndicator(saveState, t);
   const sectionContent = (() => {
@@ -281,7 +289,7 @@ export function SettingsPage(props: SettingsPageProps) {
                     icon={item.icon}
                     label={item.label}
                     active={section === item.id}
-                    onClick={() => setSection(item.id)}
+                    onClick={() => selectSection(item.id)}
                   />
                 ))}
               </div>

@@ -20,6 +20,34 @@ import {
 import { createUuid } from "@/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
+const EXECUTION_SELECTION_HISTORY_KEY = "zeroboxExecutionSelection";
+
+function readHistorySelection(): ExecutionSelection | null {
+  const value = window.history.state?.[EXECUTION_SELECTION_HISTORY_KEY] as
+    | Partial<ExecutionSelection>
+    | undefined;
+  if (
+    value?.runtime_kind !== "device_agent" ||
+    !value.selection_lease?.trim() ||
+    !value.device_id?.trim() ||
+    !value.workspace_id?.trim()
+  ) {
+    return null;
+  }
+  if (value.expires_at && Date.parse(value.expires_at) <= Date.now()) return null;
+  return value as ExecutionSelection;
+}
+
+function persistHistorySelection(selection: ExecutionSelection | null) {
+  const state = { ...(window.history.state ?? {}) };
+  if (selection?.runtime_kind === "device_agent") {
+    state[EXECUTION_SELECTION_HISTORY_KEY] = selection;
+  } else {
+    delete state[EXECUTION_SELECTION_HISTORY_KEY];
+  }
+  window.history.replaceState(state, "", window.location.href);
+}
+
 export function useGatewaySession(historyShareToken: string | null) {
   const [accountUser, setAccountUser] = useState<RelayUser | null>(null);
   const [environments, setEnvironments] = useState<ExecutionEnvironment[]>([]);
@@ -74,8 +102,24 @@ export function useGatewaySession(historyShareToken: string | null) {
       ]) {
         cleanURL.searchParams.delete(key);
       }
-      window.history.replaceState(null, "", `${cleanURL.pathname}${cleanURL.search}`);
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), [EXECUTION_SELECTION_HISTORY_KEY]: next },
+        "",
+        `${cleanURL.pathname}${cleanURL.search}`,
+      );
       return items;
+    }
+    const restored = readHistorySelection();
+    if (restored) {
+      const environment = items.find(
+        (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
+      );
+      if (environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id)) {
+        setSelection(restored);
+        setToken(encodeSelectionCredential(restored));
+        return items;
+      }
+      persistHistorySelection(null);
     }
     setSelection((current) => {
       if (current) return current;
@@ -200,6 +244,7 @@ export function useGatewaySession(historyShareToken: string | null) {
       resetGatewayWebSocketClient();
       setSelection(next);
       setToken(next.runtime_kind === "device_agent" ? encodeSelectionCredential(next) : "");
+      persistHistorySelection(next.runtime_kind === "device_agent" ? next : null);
       return next;
     },
     [],
@@ -212,6 +257,7 @@ export function useGatewaySession(historyShareToken: string | null) {
     setEnvironments([]);
     setSelection(null);
     setToken("");
+    persistHistorySelection(null);
     setTwoFactorToken("");
     setAuthError(null);
   }, []);

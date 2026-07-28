@@ -1,17 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Copy,
-  Info,
   Key,
   Loader2,
-  LogOut,
   Plus,
-  RefreshCw,
 } from "../../components/icons";
 import { GroupMultiSelect } from "../../components/relay/GroupMultiSelect";
 import { RelayKeyCopyDialog } from "../../components/relay/RelayKeyCopyDialog";
-import { ZeroAgentLogo } from "../../components/relay/ZeroAgentLogo";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -20,8 +16,6 @@ import {
   getRelayCurrentUser,
   listRelayApiKeys,
   listRelayGroups,
-  logoutRelay,
-  RELAY_ORIGIN,
   type RelayApiKey,
   type RelayGroup,
   type RelayUser,
@@ -66,6 +60,10 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const settingsRef = useRef(settings);
+  const setSettingsRef = useRef(setSettings);
+  settingsRef.current = settings;
+  setSettingsRef.current = setSettings;
 
   const usableGroups = useMemo(
     () =>
@@ -87,6 +85,13 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
       setUser(currentUser);
       setKeys(currentKeys);
       setGroups(availableGroups);
+      const nextSettings = await bindRelayKeysToSettings(
+        settingsRef.current,
+        currentKeys,
+        availableGroups,
+        true,
+      );
+      setSettingsRef.current(() => nextSettings);
       setSelectedGroupIds((current) => {
         if (current.length > 0) return current;
         const firstSupported = availableGroups.find(
@@ -163,72 +168,6 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
 
   return (
     <div className="min-h-0 w-full min-w-0 flex-1 space-y-6 overflow-y-auto pr-1">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-white">
-            <ZeroAgentLogo className="h-full w-full object-contain" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">USA-零</h3>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              USA-零专属终端
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading || syncing || creating}
-            onClick={() => void syncProviders(true)}
-          >
-            {syncing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            从 USA-零 更新
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void logoutRelay()}>
-            <LogOut className="h-3.5 w-3.5" />
-            注销登录
-          </Button>
-        </div>
-      </div>
-
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Info className="h-4 w-4 text-muted-foreground" />
-          <h4 className="text-sm font-semibold">账户信息</h4>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border border-border/60 bg-card px-4 py-3">
-            <p className="text-[11px] font-medium text-muted-foreground">邮箱</p>
-            <p className="mt-1 truncate text-sm font-medium text-foreground">
-              {loading ? "正在加载..." : user?.email || "-"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-card px-4 py-3">
-            <p className="text-[11px] font-medium text-muted-foreground">用户名 / ID</p>
-            <p className="mt-1 truncate text-sm font-medium text-foreground">
-              {user?.username || "未设置"}{" "}
-              <span className="text-muted-foreground">#{user?.id ?? "-"}</span>
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-card px-4 py-3">
-            <p className="text-[11px] font-medium text-muted-foreground">余额</p>
-            <p className="mt-1 truncate text-sm font-medium tabular-nums text-foreground">
-              ${Number(user?.balance ?? 0).toFixed(2)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-card px-4 py-3">
-            <p className="text-[11px] font-medium text-muted-foreground">固定服务地址</p>
-            <p className="mt-1 truncate font-mono text-sm text-foreground">{RELAY_ORIGIN}</p>
-          </div>
-        </div>
-      </section>
-
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>

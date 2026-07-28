@@ -33,6 +33,12 @@ export function relayProviderId(keyId: number) {
   return `${RELAY_PROVIDER_PREFIX}${keyId}`;
 }
 
+export function relayProviderKeyId(providerId: string) {
+  if (!providerId.startsWith(RELAY_PROVIDER_PREFIX)) return 0;
+  const value = Number(providerId.slice(RELAY_PROVIDER_PREFIX.length));
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
 export function isRelayProvider(provider: Pick<CustomProvider, "id">) {
   return provider.id.startsWith(RELAY_PROVIDER_PREFIX);
 }

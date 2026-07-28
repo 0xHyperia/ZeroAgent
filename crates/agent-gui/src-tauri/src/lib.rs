@@ -6,11 +6,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::WindowEvent;
+#[cfg(mobile)]
+use tauri_plugin_deep_link::DeepLinkExt;
+#[cfg(mobile)]
+use tauri_plugin_opener::OpenerExt;
 
 #[cfg(desktop)]
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -55,6 +58,7 @@ macro_rules! app_invoke_handler {
             services::device_credentials::device_credential_delete,
             services::device_credentials::device_default_name,
             services::device_credentials::zeroagent_app_version,
+            services::desktop_oauth::desktop_oauth_login,
             commands::chat_history::chat_history_list,
             commands::chat_history::chat_history_workdirs,
             commands::chat_history::chat_history_shared_list,
@@ -667,11 +671,31 @@ fn configure_windows_window_chrome(app: &tauri::App) -> tauri::Result<()> {
 }
 
 #[cfg(mobile)]
+#[tauri::command]
+fn mobile_oauth_open(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(mobile)]
 #[tauri::mobile_entry_point]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                if let Some(url) = event.urls().first() {
+                    let _ = handle.emit("mobile-oauth-callback", url.to_string());
+                }
+            });
+            Ok(())
+        })
         .manage(services::mobile_gateway::MobileGatewayState::default())
         .invoke_handler(tauri::generate_handler![
+            mobile_oauth_open,
             services::mobile_gateway::mobile_gateway_bootstrap,
             services::mobile_gateway::mobile_gateway_origin,
             services::mobile_gateway::mobile_gateway_configure,

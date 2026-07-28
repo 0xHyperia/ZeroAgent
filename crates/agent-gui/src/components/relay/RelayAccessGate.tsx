@@ -9,6 +9,7 @@ import {
   listRelayGroups,
   loginRelay,
   loginRelay2FA,
+  loginRelayOAuth,
   RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
@@ -20,7 +21,18 @@ import { registerDesktopDevice } from "../../lib/relay/deviceRegistration";
 import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "../../lib/relay/providers";
 import type { AppSettings } from "../../lib/settings";
 import { CodeFlowBackground } from "../CodeFlowBackground";
-import { CheckCircle2, Eye, EyeOff, Key, Loader2, Lock, Mail, RefreshCw } from "../icons";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Key,
+  Loader2,
+  Lock,
+  Mail,
+  RefreshCw,
+  Shield,
+} from "../icons";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -171,6 +183,19 @@ export function RelayAccessGate({ settings, setSettings, onReady }: RelayAccessG
       await finishAuthentication(response.user);
     } catch (cause) {
       setError(errorMessage(cause, "两步验证码校验失败。"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitOAuth() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await loginRelayOAuth();
+      await finishAuthentication(response.user);
+    } catch (cause) {
+      setError(errorMessage(cause, "认证登录失败，请重试。"));
     } finally {
       setBusy(false);
     }
@@ -457,6 +482,33 @@ export function RelayAccessGate({ settings, setSettings, onReady }: RelayAccessG
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   {mode === "login" ? "登录" : "创建账号"}
                 </Button>
+                {mode === "login" && (
+                  <>
+                    <div
+                      className="flex items-center gap-3 text-xs text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <span className="h-px flex-1 bg-border" />
+                      <span>或</span>
+                      <span className="h-px flex-1 bg-border" />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => void submitOAuth()}
+                    >
+                      {busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Shield className="h-4 w-4" />
+                      )}
+                      认证登录
+                      <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </>
+                )}
                 {error && (
                   <Button type="button" variant="ghost" className="w-full" onClick={initialize}>
                     <RefreshCw className="h-4 w-4" />

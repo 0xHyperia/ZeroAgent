@@ -1,5 +1,7 @@
 pub mod automation;
 pub mod chat_run_ledger;
+#[cfg(desktop)]
+pub mod desktop_oauth;
 pub mod device_credentials;
 pub mod gateway;
 pub mod gateway_bridge;

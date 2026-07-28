@@ -8,6 +8,7 @@ import { DesktopExecutionSwitcher } from "./components/DesktopExecutionSwitcher"
 import { Pin } from "./components/icons";
 import { useNativeInputContextMenu } from "./components/input-context-menu/NativeInputContextMenu";
 import { MemoryOrganizerHost } from "./components/memory/useMemoryOrganizer";
+import { FirstRunOnboarding } from "./components/onboarding/FirstRunOnboarding";
 import { RelayAccessGate } from "./components/relay/RelayAccessGate";
 import { WindowsTitleBar } from "./components/WindowsTitleBar";
 import { LocaleContext, t as translate } from "./i18n";
@@ -26,7 +27,7 @@ import {
   switchDesktopDevice,
 } from "./lib/relay/desktopExecution";
 import { registerDesktopDevice } from "./lib/relay/deviceRegistration";
-import { enforceRelayProviderConstraint } from "./lib/relay/providers";
+import { bindRelayKeysToSettings, enforceRelayProviderConstraint } from "./lib/relay/providers";
 import {
   type AppSettings,
   getDefaultSettings,
@@ -893,6 +894,13 @@ export default function App() {
             {translate("app.windowPinned", settings.locale)}
           </button>
         )}
+        <FirstRunOnboarding
+          userId={relayUser.id}
+          onSyncKeys={async (keys, groups) => {
+            const next = await bindRelayKeysToSettings(settings, keys, groups, true);
+            setSettings(() => next);
+          }}
+        />
       </AppChrome>
     </LocaleContext.Provider>
   );

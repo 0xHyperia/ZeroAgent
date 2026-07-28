@@ -1,12 +1,22 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { CodeFlowBackground } from "../components/CodeFlowBackground";
-import { ArrowRight, Eye, EyeOff, Loader2, Lock, User } from "../components/icons";
+import {
+  ArrowRight,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Shield,
+  User,
+} from "../components/icons";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   getRelayPublicSettings,
   type RelayPublicSettings,
   sendRelayVerifyCode,
+  startRelayOAuth,
 } from "../lib/relay/client";
 
 type Props = {
@@ -49,6 +59,7 @@ export function AccountLoginPage({
   const [codeError, setCodeError] = useState("");
   const [codeMessage, setCodeMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [oauthSubmitting, setOAuthSubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +72,34 @@ export function AccountLoginPage({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const oauthError = url.searchParams.get("oauth_error");
+    if (oauthError)
+      onSetError(oauthError === "access_denied" ? "已取消认证授权" : "认证登录失败，请重试");
+    if (oauthError || url.searchParams.has("oauth")) {
+      url.searchParams.delete("oauth_error");
+      url.searchParams.delete("oauth");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
+  }, [onSetError]);
+
+  async function authorizeLogin() {
+    onClearError();
+    setOAuthSubmitting(true);
+    try {
+      await startRelayOAuth();
+      window.location.reload();
+    } catch (cause) {
+      onSetError(cause instanceof Error ? cause.message : "认证登录失败，请重试");
+      setOAuthSubmitting(false);
+    }
+  }
 
   useEffect(() => {
     if (codeCountdown <= 0) return;
@@ -290,6 +329,34 @@ export function AccountLoginPage({
           )}
           {twoFactorRequired ? "验证并登录" : mode === "register" ? "创建账户" : "登录"}
         </Button>
+        {!twoFactorRequired && mode === "login" && (
+          <div className="mt-3 space-y-3">
+            <div
+              className="flex items-center gap-3 text-xs text-muted-foreground"
+              aria-hidden="true"
+            >
+              <span className="h-px flex-1 bg-border" />
+              <span>或</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="w-full"
+              disabled={isSubmitting || oauthSubmitting}
+              onClick={() => void authorizeLogin()}
+            >
+              {oauthSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Shield className="h-4 w-4" />
+              )}
+              认证登录
+              <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+            </Button>
+          </div>
+        )}
       </form>
     </main>
   );

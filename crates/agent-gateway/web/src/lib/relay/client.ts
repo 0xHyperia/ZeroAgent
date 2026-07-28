@@ -1,9 +1,15 @@
-import { clearEmbeddedMobileGatewaySession, isEmbeddedMobileRuntime } from "../mobileRuntime";
+import {
+  clearEmbeddedMobileGatewaySession,
+  isEmbeddedMobileRuntime,
+  openEmbeddedOAuth,
+} from "../mobileRuntime";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zerobox:relay-session-changed";
+export const RELAY_SESSION_EXPIRED_EVENT = "zerobox:relay-session-expired";
 
 const RELAY_PROXY_BASE = "/api/usa-zero";
+let relaySessionExpiryNotified = false;
 
 type RelayEnvelope<T> = {
   code: number;
@@ -25,6 +31,7 @@ export type RelayUser = {
   total_recharged?: number;
   avatar_url?: string;
   email_bound?: boolean;
+  auth_kind?: "password" | "oauth";
 };
 
 export type RelayDashboardStats = {
@@ -123,6 +130,16 @@ export function hasStoredRelaySession() {
   return true;
 }
 
+export function notifyRelaySessionExpired() {
+  if (relaySessionExpiryNotified) return;
+  relaySessionExpiryNotified = true;
+  window.dispatchEvent(new Event(RELAY_SESSION_EXPIRED_EVENT));
+}
+
+function markRelaySessionAuthenticated() {
+  relaySessionExpiryNotified = false;
+}
+
 type RelayRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -153,6 +170,10 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
     );
   }
 
+  if (response.status === 401 && options.authenticated) {
+    notifyRelaySessionExpired();
+  }
+
   let envelope: RelayEnvelope<T> | null = null;
   try {
     envelope = (await response.json()) as RelayEnvelope<T>;
@@ -175,6 +196,31 @@ export function getRelayPublicSettings() {
   return requestGatewayAccount<RelayPublicSettings>("/api/auth/settings");
 }
 
+export async function startRelayOAuth() {
+  const embedded = isEmbeddedMobileRuntime();
+  const response = await requestGatewayAccount<{ authorize_url: string }>("/api/auth/oauth/start", {
+    method: "POST",
+    body: {
+      surface: embedded ? "android" : "web",
+      return_path: `${window.location.pathname}${window.location.search}`,
+    },
+  });
+  if (!embedded) {
+    window.location.assign(response.authorize_url);
+    return;
+  }
+  const callback = new URL(await openEmbeddedOAuth(response.authorize_url));
+  await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
+    method: "POST",
+    body: {
+      code: callback.searchParams.get("code") ?? "",
+      state: callback.searchParams.get("state") ?? "",
+      error: callback.searchParams.get("error") ?? "",
+    },
+  });
+  markRelaySessionAuthenticated();
+}
+
 export async function loginRelay(email: string, password: string) {
   const response = await requestGatewayAccount<
     { user: RelayUser } | { requires_2fa: true; temp_token: string; user_email_masked?: string }
@@ -183,6 +229,7 @@ export async function loginRelay(email: string, password: string) {
     body: { email: email.trim(), password },
   });
   if ("requires_2fa" in response) return response;
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -202,6 +249,7 @@ export async function loginRelay2FA(tempToken: string, totpCode: string) {
     method: "POST",
     body: { temp_token: tempToken, totp_code: totpCode.trim() },
   });
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -224,6 +272,7 @@ export async function registerRelay(input: {
       invitation_code: input.invitationCode?.trim() ?? "",
     },
   });
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -242,9 +291,12 @@ export function sendRelayVerifyCode(email: string) {
 }
 
 export function getRelayCurrentUser() {
-  return requestGatewayAccount<{ user: RelayUser }>("/api/auth/me").then(
-    (response) => response.user,
-  );
+  return requestGatewayAccount<{ user: RelayUser }>("/api/auth/me", {
+    authenticated: true,
+  }).then((response) => {
+    markRelaySessionAuthenticated();
+    return response.user;
+  });
 }
 
 export function getRelayProfile() {
@@ -328,12 +380,13 @@ export async function createRelayApiKeys(name: string, groupIds: number[], group
 export function getRelayProviderModels(keyId: number) {
   return requestGatewayAccount<{ models: unknown }>(
     `/api/web-chat/provider-keys/${encodeURIComponent(String(keyId))}/models`,
+    { authenticated: true },
   ).then((response) => response.models);
 }
 
 async function requestGatewayAccount<T>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: { method?: "GET" | "POST"; body?: unknown; authenticated?: boolean } = {},
 ): Promise<T> {
   let response: Response;
   try {
@@ -349,6 +402,9 @@ async function requestGatewayAccount<T>(
       `无法连接账户服务：${error instanceof Error ? error.message : String(error)}`,
       0,
     );
+  }
+  if (response.status === 401 && options.authenticated) {
+    notifyRelaySessionExpired();
   }
   if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => null)) as

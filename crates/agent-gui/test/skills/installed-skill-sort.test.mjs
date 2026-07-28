@@ -159,7 +159,8 @@ for (const { label, loader, page } of implementations) {
     assert.match(source, /h-10 w-full[^"]*bg-background\/95/);
     assert.match(source, /dark:bg-popover\/95/);
     assert.match(source, /hub-panel-enter flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch max-sm:gap-2/);
-    assert.match(source, /max-sm:max-w-full max-sm:overflow-x-auto max-sm:\[scrollbar-width:none\] max-sm:\[&::-webkit-scrollbar\]:hidden/);
+    assert.match(source, /max-sm:max-w-full max-sm:overflow-x-auto dark:border/);
+    assert.doesNotMatch(source, /max-sm:overflow-x-auto max-sm:\[scrollbar-width:none\]/);
     assert.match(source, /max-sm:max-w-\[7\.5rem\] max-sm:px-2/);
     assert.match(source, /relative w-full min-w-0 max-w-md max-sm:flex-1/);
     assert.match(source, /pb-\[calc\(10rem\+env\(safe-area-inset-bottom\)\)\] sm:pb-24/);

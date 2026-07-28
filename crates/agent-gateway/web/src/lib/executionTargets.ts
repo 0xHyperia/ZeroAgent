@@ -1,3 +1,5 @@
+import { notifyRelaySessionExpired } from "./relay/client";
+
 export type ExecutionWorkspace = {
   id: string;
   name: string;
@@ -43,12 +45,19 @@ export function resolveExecutionTarget(
   return { environment, workspace };
 }
 
-async function accountRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function accountRequest<T>(
+  path: string,
+  init?: RequestInit,
+  expireSessionOnUnauthorized = true,
+): Promise<T> {
   const response = await fetch(path, {
     ...init,
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
   });
+  if (response.status === 401 && expireSessionOnUnauthorized) {
+    notifyRelaySessionExpired();
+  }
   if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !payload) {
@@ -89,20 +98,28 @@ export async function selectExecutionTarget(
   password: string,
 ): Promise<ExecutionSelection> {
   const target = [environment.runtime_kind, environment.device_id ?? "", workspace.id].join(":");
-  const stepUp = await accountRequest<{ proof: string }>("/api/execution-target/step-up", {
-    method: "POST",
-    body: JSON.stringify({ password, target_fingerprint: target }),
-  });
-  return accountRequest<ExecutionSelection>("/api/execution-target/select", {
-    method: "POST",
-    body: JSON.stringify({
-      proof: stepUp.proof,
-      runtime_kind: environment.runtime_kind,
-      device_id: environment.device_id ?? "",
-      workspace_id: workspace.id,
-      target_fingerprint: target,
-    }),
-  });
+  const stepUp = await accountRequest<{ proof: string }>(
+    "/api/execution-target/step-up",
+    {
+      method: "POST",
+      body: JSON.stringify({ password, target_fingerprint: target }),
+    },
+    false,
+  );
+  return accountRequest<ExecutionSelection>(
+    "/api/execution-target/select",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        proof: stepUp.proof,
+        runtime_kind: environment.runtime_kind,
+        device_id: environment.device_id ?? "",
+        workspace_id: workspace.id,
+        target_fingerprint: target,
+      }),
+    },
+    false,
+  );
 }
 
 export function encodeSelectionCredential(selection: ExecutionSelection) {

@@ -1,5 +1,13 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
-import { Loader2, Lock, RefreshCw, Shield, Upload, Wallet } from "../../components/icons";
+import {
+  ExternalLink,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Shield,
+  Upload,
+  Wallet,
+} from "../../components/icons";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -285,95 +293,116 @@ export function AccountSection({ user, stats, onUserChange, onStatsChange }: Acc
           头像支持常见图片格式，文件大小不超过 100 KB。
         </p>
       </section>
-
-      <section className="space-y-4 border-t border-border/70 pt-6">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">绑定邮箱</h3>
-        </div>
-        <form onSubmit={saveEmail} className="grid max-w-xl gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="account-email">新邮箱</Label>
-            <div className="flex gap-2">
-              <Input
-                id="account-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={sendCode}>
-                {busy === "code" ? "发送中" : "发送验证码"}
-              </Button>
-            </div>
+      {user.auth_kind === "oauth" && (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">账户安全</h3>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-code">邮箱验证码</Label>
-            <Input
-              id="account-code"
-              inputMode="numeric"
-              value={verifyCode}
-              onChange={(event) => setVerifyCode(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-email-password">
-              {user.email_bound === false ? "设置登录密码" : "当前密码"}
-            </Label>
-            <Input
-              id="account-email-password"
-              type="password"
-              value={emailPassword}
-              onChange={(event) => setEmailPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
-            {busy === "email" && <Loader2 className="h-4 w-4 animate-spin" />}更新邮箱
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              window.open("https://usa0.top/profile/security", "_blank", "noopener,noreferrer")
+            }
+          >
+            <ExternalLink className="h-4 w-4" />在 usa0.top 管理邮箱和密码
           </Button>
-        </form>
-      </section>
+        </section>
+      )}
+
+      {user.auth_kind !== "oauth" && (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">绑定邮箱</h3>
+          </div>
+          <form onSubmit={saveEmail} className="grid max-w-xl gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="account-email">新邮箱</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="account-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={sendCode}>
+                  {busy === "code" ? "发送中" : "发送验证码"}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-code">邮箱验证码</Label>
+              <Input
+                id="account-code"
+                inputMode="numeric"
+                value={verifyCode}
+                onChange={(event) => setVerifyCode(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-email-password">
+                {user.email_bound === false ? "设置登录密码" : "当前密码"}
+              </Label>
+              <Input
+                id="account-email-password"
+                type="password"
+                value={emailPassword}
+                onChange={(event) => setEmailPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
+              {busy === "email" && <Loader2 className="h-4 w-4 animate-spin" />}更新邮箱
+            </Button>
+          </form>
+        </section>
+      )}
 
       <DevicesSection />
 
-      <section className="space-y-4 border-t border-border/70 pt-6">
-        <div className="flex items-center gap-2">
-          <Lock className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">修改密码</h3>
-        </div>
-        <form onSubmit={savePassword} className="grid max-w-xl gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="account-old-password">当前密码</Label>
-            <Input
-              id="account-old-password"
-              type="password"
-              value={oldPassword}
-              onChange={(event) => setOldPassword(event.target.value)}
-            />
+      {user.auth_kind !== "oauth" && (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">修改密码</h3>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-new-password">新密码</Label>
-            <Input
-              id="account-new-password"
-              type="password"
-              minLength={6}
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-confirm-password">确认新密码</Label>
-            <Input
-              id="account-confirm-password"
-              type="password"
-              minLength={6}
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
-            {busy === "password" && <Loader2 className="h-4 w-4 animate-spin" />}修改密码
-          </Button>
-        </form>
-      </section>
+          <form onSubmit={savePassword} className="grid max-w-xl gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="account-old-password">当前密码</Label>
+              <Input
+                id="account-old-password"
+                type="password"
+                value={oldPassword}
+                onChange={(event) => setOldPassword(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-new-password">新密码</Label>
+              <Input
+                id="account-new-password"
+                type="password"
+                minLength={6}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-confirm-password">确认新密码</Label>
+              <Input
+                id="account-confirm-password"
+                type="password"
+                minLength={6}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
+              {busy === "password" && <Loader2 className="h-4 w-4 animate-spin" />}修改密码
+            </Button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

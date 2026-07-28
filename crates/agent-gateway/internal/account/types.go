@@ -13,6 +13,8 @@ const (
 	StepUpPurposeTargetSwap = "execution_target_switch"
 	SelectionScopeWorkspace = "workspace"
 	SelectionScopeDevice    = "device"
+	AuthKindPassword        = "password"
+	AuthKindOAuth           = "oauth"
 )
 
 type Session struct {
@@ -23,6 +25,20 @@ type Session struct {
 	RefreshToken     string          `json:"refresh_token,omitempty"`
 	AccessExpiresAt  time.Time       `json:"access_expires_at"`
 	SessionExpiresAt time.Time       `json:"session_expires_at"`
+	AuthKind         string          `json:"auth_kind,omitempty"`
+	OAuthClientID    string          `json:"oauth_client_id,omitempty"`
+}
+
+func (s *Session) IsOAuth() bool { return s != nil && s.AuthKind == AuthKindOAuth }
+
+type OAuthTransaction struct {
+	State       string    `json:"state"`
+	Verifier    string    `json:"verifier"`
+	ClientID    string    `json:"client_id"`
+	RedirectURI string    `json:"redirect_uri"`
+	ReturnPath  string    `json:"return_path"`
+	Surface     string    `json:"surface"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 type Workspace struct {
@@ -124,6 +140,7 @@ type CloudMessage struct {
 type WebSettings struct {
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
+	ProviderKeyID   int64  `json:"provider_key_id,omitempty"`
 }
 
 type ConversationRoute struct {
