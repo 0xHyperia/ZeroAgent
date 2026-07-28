@@ -75,10 +75,10 @@ func (s *PersistentStore) Close() error {
 
 func (s *PersistentStore) Ready(ctx context.Context) error {
 	if err := s.db.PingContext(ctx); err != nil {
-		return fmt.Errorf("PostgreSQL readiness: %w", err)
+		return fmt.Errorf("postgres readiness: %w", err)
 	}
 	if err := s.rdb.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("Redis readiness: %w", err)
+		return fmt.Errorf("redis readiness: %w", err)
 	}
 	return nil
 }
