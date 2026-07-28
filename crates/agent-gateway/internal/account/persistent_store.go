@@ -21,6 +21,12 @@ if value then redis.call("DEL", KEYS[1]) end
 return value
 `)
 
+var consumeOAuthTransactionScript = redis.NewScript(`
+local value = redis.call("GET", KEYS[1])
+if value then redis.call("DEL", KEYS[1]) end
+return value
+`)
+
 type PersistentStore struct {
 	db  *sql.DB
 	rdb *redis.Client
@@ -557,6 +563,36 @@ func (s *PersistentStore) ConsumeDesktopHandoff(ctx context.Context, codeHash st
 	return &handoff, nil
 }
 
+func (s *PersistentStore) PutOAuthTransaction(ctx context.Context, stateHash string, transaction *OAuthTransaction) error {
+	data, err := json.Marshal(transaction)
+	if err != nil {
+		return err
+	}
+	ttl := time.Until(transaction.ExpiresAt)
+	if ttl <= 0 {
+		return ErrNotFound
+	}
+	return s.rdb.Set(ctx, oauthTransactionKey(stateHash), data, ttl).Err()
+}
+
+func (s *PersistentStore) ConsumeOAuthTransaction(ctx context.Context, stateHash string) (*OAuthTransaction, error) {
+	value, err := consumeOAuthTransactionScript.Run(ctx, s.rdb, []string{oauthTransactionKey(stateHash)}).Text()
+	if err == redis.Nil {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var transaction OAuthTransaction
+	if err := json.Unmarshal([]byte(value), &transaction); err != nil {
+		return nil, err
+	}
+	if !transaction.ExpiresAt.After(time.Now()) {
+		return nil, ErrNotFound
+	}
+	return &transaction, nil
+}
+
 func nullableJSON(value json.RawMessage) any {
 	if len(value) == 0 || string(value) == "null" {
 		return nil
@@ -591,7 +627,8 @@ func scanDevice(row rowScanner) (*Device, error) {
 	return &device, nil
 }
 
-func sessionKey(id string) string       { return "zerobox:web-session:" + id }
-func presenceKey(id string) string      { return "zerobox:device-presence:" + id }
-func leaseKey(id string) string         { return "zerobox:selection-lease:" + id }
-func handoffKey(codeHash string) string { return "zerobox:desktop-handoff:" + codeHash }
+func sessionKey(id string) string                 { return "zerobox:web-session:" + id }
+func presenceKey(id string) string                { return "zerobox:device-presence:" + id }
+func leaseKey(id string) string                   { return "zerobox:selection-lease:" + id }
+func handoffKey(codeHash string) string           { return "zerobox:desktop-handoff:" + codeHash }
+func oauthTransactionKey(stateHash string) string { return "zerobox:oauth-transaction:" + stateHash }

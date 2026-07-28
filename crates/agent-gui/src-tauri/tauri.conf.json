@@ -43,6 +43,15 @@
     }
   },
   "plugins": {
+	"deep-link": {
+	  "mobile": [
+		{
+		  "scheme": ["zerobox"],
+		  "host": "oauth",
+		  "pathPrefix": ["/callback"]
+		}
+	  ]
+	},
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFRTc0OTYxRkEwRkQ5NTIKUldSUzJRLzZZVW5uYnFvZXhibnBVVHZ6S3g0VlBrTVRUUlVDYUZVbWZXd3BCSlhQbXloTnIyaFQK",
       "endpoints": []

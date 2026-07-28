@@ -382,7 +382,15 @@
     box-shadow: var(--tw-shadow, 0 0 #0000);
   }
 
-  /* Custom scrollbar */
+  /* Scrollbars stay quiet until their own scrollable region is engaged. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover,
+  *:focus-within {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -391,23 +399,23 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.2);
+    background: transparent;
     border-radius: 3px;
+  }
+  :hover::-webkit-scrollbar-thumb,
+  :focus-within::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.26);
   }
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.35);
   }
+  ::-webkit-scrollbar-thumb:active {
+    background: hsl(var(--muted-foreground) / 0.48);
+  }
 
-  /* Upload file list: scrollable without a visible scrollbar */
+  /* Upload file list keeps horizontal overscroll contained. */
   .upload-file-list {
     overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .upload-file-list::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
   }
 
   .tool-text-scroll {
@@ -2337,13 +2345,6 @@ body > div:not(#root) [data-streamdown="mermaid"]:has([style*="cursor:grabbing"]
 .sftp-path-popover-enter {
   animation: sftpPathPopoverIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: top center;
-}
-
-.sftp-path-scroll {
-  scrollbar-width: none;
-}
-.sftp-path-scroll::-webkit-scrollbar {
-  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

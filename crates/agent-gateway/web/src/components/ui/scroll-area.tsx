@@ -11,7 +11,8 @@ export const ScrollArea = React.forwardRef<
 >(({ className, children, viewportRef, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
-    className={cn("relative overflow-hidden", className)}
+    data-scroll-area-root
+    className={cn("scroll-area-root relative overflow-hidden", className)}
     {...props}
   >
     <ScrollAreaPrimitive.Viewport
@@ -38,14 +39,17 @@ const ScrollBar = React.forwardRef<
     orientation={orientation}
     data-scroll-area-scrollbar
     className={cn(
-      "flex touch-none select-none transition-colors",
+      "scroll-area-scrollbar flex touch-none select-none transition-colors",
       orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent p-px",
       orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent p-px",
       className,
     )}
     {...props}
   >
-    <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border" />
+    <ScrollAreaPrimitive.Thumb
+      data-scroll-area-thumb
+      className="scroll-area-thumb relative flex-1 rounded-full"
+    />
   </ScrollAreaPrimitive.Scrollbar>
 ));
 ScrollBar.displayName = "ScrollBar";

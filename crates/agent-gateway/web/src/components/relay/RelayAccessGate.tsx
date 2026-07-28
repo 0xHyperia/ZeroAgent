@@ -335,7 +335,7 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
                   />
                 </div>
                 {error && <p className="text-sm text-destructive">{error}</p>}
-                <Button className="w-full" disabled={busy || !totpCode.trim()}>
+                <Button type="submit" className="w-full" disabled={busy || !totpCode.trim()}>
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />}验证并登录
                 </Button>
               </form>
@@ -429,7 +429,7 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
                     {error}
                   </div>
                 )}
-                <Button className="w-full" disabled={busy}>
+                <Button type="submit" className="w-full" disabled={busy}>
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   {mode === "login" ? "登录" : "创建账户"}
                 </Button>

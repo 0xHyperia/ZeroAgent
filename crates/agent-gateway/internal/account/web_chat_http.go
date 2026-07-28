@@ -136,6 +136,7 @@ func (h *HTTPHandler) streamCloudCompletion(w http.ResponseWriter, r *http.Reque
 		Model           string          `json:"model"`
 		Content         json.RawMessage `json:"content"`
 		ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+		ProviderKeyID   int64           `json:"provider_key_id,omitempty"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&request); err != nil || len(request.Content) == 0 {
@@ -150,6 +151,16 @@ func (h *HTTPHandler) streamCloudCompletion(w http.ResponseWriter, r *http.Reque
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
 		model = "gpt-5.1"
+	}
+	var apiKey string
+	if request.ProviderKeyID > 0 {
+		apiKey, err = h.service.WebAPIKeyForID(r.Context(), session, request.ProviderKeyID)
+	} else {
+		apiKey, err = h.service.WebAPIKey(r.Context(), session)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
 	}
 	now := time.Now().UTC()
 	userMessage := &CloudMessage{
@@ -188,14 +199,9 @@ func (h *HTTPHandler) streamCloudCompletion(w http.ResponseWriter, r *http.Reque
 		payload["reasoning_effort"] = effort
 	}
 	_, _ = h.service.UpdateWebSettings(r.Context(), session.UserID, WebSettings{
-		Model: model, ReasoningEffort: request.ReasoningEffort,
+		Model: model, ReasoningEffort: request.ReasoningEffort, ProviderKeyID: request.ProviderKeyID,
 	})
 	encoded, _ := json.Marshal(payload)
-	apiKey, err := h.service.WebAPIKey(r.Context(), session)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	upstream, err := h.service.usa.StreamChatCompletion(r.Context(), apiKey, encoded)
 	if err != nil {
 		writeError(w, err)

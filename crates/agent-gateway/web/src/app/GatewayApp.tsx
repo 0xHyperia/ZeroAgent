@@ -17,6 +17,7 @@ import { type NotifyItem, NotifyToast } from "@/components/chat/NotifyToast";
 import { SharedHistoryManagerModal } from "@/components/chat/SharedHistoryManagerModal";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { ChevronDown, PanelRightClose, PanelRightOpen, Terminal } from "@/components/icons";
+import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import type {
   GitCommitContextPayload,
   GitFileContextPayload,
@@ -81,9 +82,11 @@ import {
   getRelayDashboardStats,
   getRelayProfile,
   RELAY_SESSION_CHANGED_EVENT,
+  RELAY_SESSION_EXPIRED_EVENT,
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
+import { bindRelayKeysToSettings } from "@/lib/relay/providers";
 import {
   type ChatRuntimeControls,
   DEFAULT_WORKSPACE_PROJECT_ID,
@@ -237,6 +240,19 @@ import { WorkspaceOverlayHost } from "./WorkspaceOverlayHost";
 
 const STALE_HISTORY_RETRY_INITIAL_DELAY_MS = 1_000;
 const STALE_HISTORY_RETRY_MAX_DELAY_MS = 30_000;
+const WEB_SETTINGS_SECTIONS = new Set<SectionId>([
+  "account",
+  "system",
+  "systemTools",
+  "providers",
+  "agents",
+  "ssh",
+  "memory",
+  "hooks",
+  "cron",
+  "devices",
+  "remote",
+]);
 
 // Idle scheduler for the open controller (mirrors the GUI helper semantics:
 // requestIdleCallback with a hard timeout so it still runs on busy pages).
@@ -297,7 +313,9 @@ export default function GatewayApp() {
   // A cached Agent status is usable only after it has been observed on the
   // currently authenticated browser-socket epoch.
   const [sidebarAgentStatusFresh, setSidebarAgentStatusFresh] = useState(false);
-  const [conversationId, setConversationId] = useState("");
+  const initialLocation = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialConversationId = initialLocation.get("conversation")?.trim() ?? "";
+  const [conversationId, setConversationId] = useState(initialConversationId);
   // 本地未持久化的会话模型切换（按会话 id 键）；发消息随 selected_model
   // 落库后由 history-sync 回声在清理 effect 中收敛删除。
   const [conversationModelOverrides, setConversationModelOverrides] = useState<
@@ -319,7 +337,7 @@ export default function GatewayApp() {
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
   const [queuedChatTurns, setQueuedChatTurns] = useState<ChatQueueItemSummary[]>([]);
   const [, setChatQueueRevision] = useState(0);
-  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const [selectedHistoryId, setSelectedHistoryId] = useState(initialConversationId);
   const [selectedHistory, setSelectedHistory] = useState<HistoryDetail | null>(null);
   // Two-phase conversation open (openController): "opening" gates the
   // composer/transcript loading affordances; showOverlay drives the switch
@@ -335,13 +353,24 @@ export default function GatewayApp() {
   // Bumped whenever the command pipeline's pending set changes so busy state
   // re-derives.
   const [pendingCommandRevision, setPendingCommandRevision] = useState(0);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const requestedSettingsSection = initialLocation.get("settings")?.trim() as SectionId | undefined;
+  const initialSettingsSection =
+    requestedSettingsSection && WEB_SETTINGS_SECTIONS.has(requestedSettingsSection)
+      ? requestedSettingsSection
+      : undefined;
+  const [settingsOpen, setSettingsOpen] = useState(Boolean(initialSettingsSection));
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [workspaceCreateModalOpen, setWorkspaceCreateModalOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SectionId>("system");
-  const [overlay, setOverlay] = useState<OverlayState>("closed");
+  const [settingsSection, setSettingsSection] = useState<SectionId>(
+    initialSettingsSection || "system",
+  );
+  const [overlay, setOverlay] = useState<OverlayState>(initialSettingsSection ? "open" : "closed");
   const { settings, setSettings, settingsSyncReady, settingsSyncError, settingsSaveState } =
-    useGatewaySettingsSync({ token, api, activeAgentId: selection?.agent_id ?? selection?.device_id ?? "" });
+    useGatewaySettingsSync({
+      token,
+      api,
+      activeAgentId: selection?.agent_id ?? selection?.device_id ?? "",
+    });
   const [relayReady, setRelayReady] = useState(false);
   const [relayUser, setRelayUser] = useState<RelayUser | null>(null);
   const [relayStats, setRelayStats] = useState<RelayDashboardStats | null>(null);
@@ -420,8 +449,30 @@ export default function GatewayApp() {
   const [sharedHistoryListError, setSharedHistoryListError] = useState<string | null>(null);
   const [sharedHistoryItems, setSharedHistoryItems] = useState<ChatHistorySummary[]>([]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"chat" | "skills-hub" | "mcp-hub">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "skills-hub" | "mcp-hub">(() => {
+    const view = initialLocation.get("view");
+    return view === "skills-hub" || view === "mcp-hub" ? view : "chat";
+  });
   const [rightDockOpen, setRightDockOpen] = useState(false);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeView === "chat") url.searchParams.delete("view");
+    else url.searchParams.set("view", activeView);
+    if (settingsOpen) url.searchParams.set("settings", settingsSection);
+    else url.searchParams.delete("settings");
+    const visibleConversationId = selectedHistoryId.trim() || conversationId.trim();
+    if (visibleConversationId && !isLocalDraftConversationId(visibleConversationId)) {
+      url.searchParams.set("conversation", visibleConversationId);
+    } else {
+      url.searchParams.delete("conversation");
+    }
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [activeView, conversationId, selectedHistoryId, settingsOpen, settingsSection]);
   const { confirm: requestConfirmDialog, dialog: confirmDialog } = useConfirmDialog();
   // Both elements arrive via callback refs → state so the scroll-follow hook
   // re-binds on element identity change and can never keep listeners on a
@@ -2206,6 +2257,21 @@ export default function GatewayApp() {
 
   openInitialRef.current = openConversationInitial;
 
+  const restoredConversationOpenedRef = useRef(false);
+  useEffect(() => {
+    if (
+      restoredConversationOpenedRef.current ||
+      !api ||
+      !settingsSyncReady ||
+      activeView !== "chat" ||
+      !initialConversationId
+    ) {
+      return;
+    }
+    restoredConversationOpenedRef.current = true;
+    openController.open(initialConversationId);
+  }, [activeView, api, initialConversationId, openController, settingsSyncReady]);
+
   const prepareChatRuntime = useCallback(
     async (
       reason: string,
@@ -3797,6 +3863,11 @@ export default function GatewayApp() {
     transcriptStoreRegistry,
   ]);
 
+  useEffect(() => {
+    window.addEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
+    return () => window.removeEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
+  }, [handleLogout]);
+
   const userMenuLabel = relayUser?.username?.trim() || relayUser?.email.split("@")[0] || "当前用户";
   const userAvatarLabel = userMenuLabel.slice(0, 1).toUpperCase();
 
@@ -5140,6 +5211,7 @@ export default function GatewayApp() {
                 saveState={settingsSaveState}
                 onBack={closeSettings}
                 initialSection={settingsSection}
+                onSectionChange={setSettingsSection}
                 hiddenSections={["remote"]}
                 onAgentDirectoryChanged={async () => {
                   await reloadEnvironments();
@@ -5151,6 +5223,13 @@ export default function GatewayApp() {
               />
             </div>
           ) : null}
+          <FirstRunOnboarding
+            userId={accountUser.id}
+            onSyncKeys={async (keys, groups) => {
+              const next = await bindRelayKeysToSettings(settings, keys, groups, true);
+              setSettings(() => next);
+            }}
+          />
         </div>
       </AppErrorBoundary>
     </LocaleContext.Provider>

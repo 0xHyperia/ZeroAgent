@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,10 +16,15 @@ const maxRequestBodyBytes = 2 << 20
 type HTTPHandler struct {
 	service      *Service
 	cookieSecure bool
+	publicOrigin string
 }
 
-func NewHTTPHandler(service *Service, cookieSecure bool) *HTTPHandler {
-	return &HTTPHandler{service: service, cookieSecure: cookieSecure}
+func NewHTTPHandler(service *Service, cookieSecure bool, publicOrigin ...string) *HTTPHandler {
+	origin := ""
+	if len(publicOrigin) > 0 {
+		origin = normalizePublicOrigin(publicOrigin[0])
+	}
+	return &HTTPHandler{service: service, cookieSecure: cookieSecure, publicOrigin: origin}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -27,6 +33,9 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/send-verify-code", h.sendVerifyCode)
 	mux.HandleFunc("POST /api/auth/register", h.registerAccount)
 	mux.HandleFunc("POST /api/auth/login", h.login)
+	mux.HandleFunc("POST /api/auth/oauth/start", h.startOAuth)
+	mux.HandleFunc("GET /api/auth/oauth/callback", h.oauthCallback)
+	mux.HandleFunc("POST /api/auth/oauth/complete", h.completeOAuth)
 	mux.HandleFunc("GET /api/auth/handoff", h.consumeDesktopHandoff)
 	mux.HandleFunc("POST /api/auth/2fa", h.login2FA)
 	mux.HandleFunc("POST /api/auth/refresh", h.withSession(h.refresh))
@@ -50,6 +59,120 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/desktop/execution-target/step-up", h.withDesktopSession(h.issueStepUp))
 	mux.HandleFunc("POST /api/desktop/execution-target/select", h.withDesktopSession(h.selectTarget))
 	mux.HandleFunc("POST /api/desktop/handoff", h.withDesktopSession(h.createDesktopHandoff))
+}
+
+func (h *HTTPHandler) startOAuth(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Surface    string `json:"surface"`
+		ReturnPath string `json:"return_path"`
+	}
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	request.Surface = strings.ToLower(strings.TrimSpace(request.Surface))
+	redirectURI := "zerobox://oauth/callback"
+	if request.Surface == "web" {
+		origin, err := h.callbackOrigin(r)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		redirectURI = origin + "/api/auth/oauth/callback"
+	}
+	authorizeURL, err := h.service.StartOAuth(r.Context(), request.Surface, redirectURI, request.ReturnPath)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"authorize_url": authorizeURL})
+}
+
+func (h *HTTPHandler) oauthCallback(w http.ResponseWriter, r *http.Request) {
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	session, returnPath, err := h.service.CompleteOAuth(r.Context(), state, code, "web")
+	if err != nil {
+		message := "authorization_failed"
+		if upstream := strings.TrimSpace(r.URL.Query().Get("error")); upstream != "" {
+			message = upstream
+		}
+		h.redirectOAuthResult(w, r, returnPath, message)
+		return
+	}
+	h.setSessionCookie(w, session)
+	h.redirectOAuthResult(w, r, returnPath, "")
+}
+
+func (h *HTTPHandler) completeOAuth(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Code  string `json:"code"`
+		State string `json:"state"`
+		Error string `json:"error"`
+	}
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	if strings.TrimSpace(request.Error) != "" {
+		_, _, _ = h.service.CompleteOAuth(r.Context(), request.State, "", "android")
+		writeError(w, &APIError{Status: http.StatusBadRequest, Message: request.Error})
+		return
+	}
+	session, _, err := h.service.CompleteOAuth(r.Context(), request.State, request.Code, "android")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	h.setSessionCookie(w, session)
+	writeRawObject(w, http.StatusOK, "user", session.User)
+}
+
+func (h *HTTPHandler) callbackOrigin(r *http.Request) (string, error) {
+	if h.publicOrigin != "" {
+		return h.publicOrigin, nil
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	} else if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			forwarded := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]))
+			if forwarded == "http" || forwarded == "https" {
+				scheme = forwarded
+			}
+		}
+	}
+	origin := normalizePublicOrigin(scheme + "://" + r.Host)
+	if origin == "" {
+		return "", &APIError{Status: http.StatusBadRequest, Message: "Gateway public origin is invalid"}
+	}
+	return origin, nil
+}
+
+func (h *HTTPHandler) redirectOAuthResult(w http.ResponseWriter, r *http.Request, returnPath, oauthError string) {
+	target, err := url.Parse(sanitizeReturnPath(returnPath))
+	if err != nil {
+		target = &url.URL{Path: "/"}
+	}
+	query := target.Query()
+	if oauthError != "" {
+		query.Set("oauth_error", oauthError)
+	} else {
+		query.Set("oauth", "success")
+	}
+	target.RawQuery = query.Encode()
+	http.Redirect(w, r, target.String(), http.StatusSeeOther)
+}
+
+func normalizePublicOrigin(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return ""
+	}
+	parsed.Path = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func (h *HTTPHandler) publicSettings(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +443,7 @@ func (h *HTTPHandler) proxyUSAZero(w http.ResponseWriter, r *http.Request, sessi
 		writeError(w, &APIError{Status: http.StatusRequestEntityTooLarge, Message: "request body is too large"})
 		return
 	}
-	data, err := h.service.usa.Proxy(r.Context(), r.Method, apiPath, session.AccessToken, body)
+	data, err := h.service.ProxyUSA(r.Context(), session, r.Method, apiPath, body)
 	if err != nil {
 		var apiError *APIError
 		if errors.As(err, &apiError) {
