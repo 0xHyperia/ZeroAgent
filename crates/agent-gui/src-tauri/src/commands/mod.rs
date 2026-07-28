@@ -16,6 +16,8 @@ pub mod workspace_commands;
 pub use app_commands::app;
 pub use app_commands::custom_tools;
 pub use app_commands::system;
+#[cfg(desktop)]
+pub use app_commands::tray;
 pub use app_commands::update;
 
 pub use automation_commands::cron;
