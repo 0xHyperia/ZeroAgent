@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWebModuleLoader } from "../helpers/load-web-module.mjs";
 
 const loader = createWebModuleLoader();
@@ -103,4 +105,19 @@ test("Hook/Cron HTTP request drafts work without crypto.randomUUID", () => {
   withCrypto({}, () => {
     assert.match(createEmptyRequestDraft().id, UUID_V4_PATTERN);
   });
+});
+
+test("insecure-context WebUI flows use the UUID compatibility helper", () => {
+  for (const relativePath of [
+    "../../web/src/app/hooks/useGatewaySession.ts",
+    "../../web/src/pages/CloudChatPage.tsx",
+  ]) {
+    const source = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
+    assert.match(source, /createUuid\(\)/, `${relativePath} should use createUuid`);
+    assert.doesNotMatch(
+      source,
+      /crypto\.randomUUID\(\)/,
+      `${relativePath} must work over LAN HTTP where randomUUID is unavailable`,
+    );
+  }
 });

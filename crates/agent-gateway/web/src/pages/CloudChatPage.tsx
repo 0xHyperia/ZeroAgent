@@ -34,6 +34,7 @@ import {
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
+import { createUuid } from "@/lib/shared/id";
 import {
   type AppSettings,
   type ChatRuntimeControls,
@@ -317,7 +318,7 @@ export function CloudChatPage({
           reader.readAsDataURL(file);
         });
         next.push({
-          id: crypto.randomUUID(),
+          id: createUuid(),
           name: file.name,
           type: file.type,
           size: file.size,
@@ -325,7 +326,7 @@ export function CloudChatPage({
         });
       } else {
         next.push({
-          id: crypto.randomUUID(),
+          id: createUuid(),
           name: file.name,
           type: file.type || "text/plain",
           size: file.size,
@@ -358,8 +359,8 @@ export function CloudChatPage({
           ),
         ]
       : text;
-    const optimisticUser: Message = { id: crypto.randomUUID(), role: "user", content };
-    const assistantId = crypto.randomUUID();
+    const optimisticUser: Message = { id: createUuid(), role: "user", content };
+    const assistantId = createUuid();
     setMessages((current) => [
       ...current,
       optimisticUser,

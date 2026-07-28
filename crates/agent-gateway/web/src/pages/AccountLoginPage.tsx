@@ -276,6 +276,7 @@ export function AccountLoginPage({
           </p>
         )}
         <Button
+          type="submit"
           className="mt-7 w-full"
           size="lg"
           disabled={

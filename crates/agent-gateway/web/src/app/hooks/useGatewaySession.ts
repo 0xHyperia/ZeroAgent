@@ -17,6 +17,7 @@ import {
   type RelayUser,
   registerRelay,
 } from "@/lib/relay/client";
+import { createUuid } from "@/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
 export function useGatewaySession(historyShareToken: string | null) {
@@ -56,7 +57,7 @@ export function useGatewaySession(historyShareToken: string | null) {
           params.get("device_id")?.trim() ?? "",
           handoffWorkspace,
         ].join(":"),
-        conversation_id: params.get("conversation_id")?.trim() || crypto.randomUUID(),
+        conversation_id: params.get("conversation_id")?.trim() || createUuid(),
         expires_at: "",
       };
       setSelection(next);
@@ -84,7 +85,7 @@ export function useGatewaySession(historyShareToken: string | null) {
             runtime_kind: "web_chat",
             workspace_id: workspace.id,
             target_fingerprint: web.target_fingerprint ?? "web_chat::cloud",
-            conversation_id: crypto.randomUUID(),
+            conversation_id: createUuid(),
             expires_at: "",
           }
         : null;
