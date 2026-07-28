@@ -36,8 +36,18 @@ func NewHTTPServer(cfg *config.Config, sm *session.Manager) http.Handler {
 }
 
 func NewHTTPServerWithAccountService(cfg *config.Config, sm *session.Manager, accountService *account.Service) http.Handler {
+	return NewHTTPServerWithAccountServiceAndReadiness(cfg, sm, accountService, nil)
+}
+
+func NewHTTPServerWithAccountServiceAndReadiness(
+	cfg *config.Config,
+	sm *session.Manager,
+	accountService *account.Service,
+	readinessCheck func(context.Context) error,
+) http.Handler {
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("GET /healthz", handler.Health())
+	rootMux.HandleFunc("GET /readyz", handler.Ready(readinessCheck))
 	account.NewHTTPHandler(accountService, cfg.CookieSecure).Register(rootMux)
 	accountService.SetDeviceRevoker(sm.DisconnectDevice)
 	sm.SetHistoryObserver(accountService.RecordDeviceHistorySync)

@@ -73,6 +73,16 @@ func (s *PersistentStore) Close() error {
 	return result
 }
 
+func (s *PersistentStore) Ready(ctx context.Context) error {
+	if err := s.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("PostgreSQL readiness: %w", err)
+	}
+	if err := s.rdb.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("Redis readiness: %w", err)
+	}
+	return nil
+}
+
 func (s *PersistentStore) migrate(ctx context.Context) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS zerobox_devices (

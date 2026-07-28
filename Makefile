@@ -69,7 +69,7 @@ dev:
 	  (DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
 
 dev-tauri:
-	mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
+	TAURI_DEV_HOST=0.0.0.0 mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
 
 test:
 	go -C $(AGENT_GATEWAY_DIR) test ./...
@@ -160,7 +160,7 @@ dev-gateway: ensure-webui-embed-stub
 	go -C $(AGENT_GATEWAY_DIR) run ./cmd/gateway --http-addr=$(DEV_GATEWAY_HTTP_ADDR)
 
 dev-webui:
-	npm_config_proxy_api=$(DEV_WEBUI_PROXY_API) pnpm --dir $(AGENT_GATEWAY_WEB_DIR) dev --host 127.0.0.1 --port 5174
+	npm_config_proxy_api=$(DEV_WEBUI_PROXY_API) pnpm --dir $(AGENT_GATEWAY_WEB_DIR) dev --host 0.0.0.0 --port 5174
 
 ensure-webui-embed-stub:
 	@if [ ! -f "$(AGENT_GATEWAY_WEB_DIR)/dist/index.html" ]; then \

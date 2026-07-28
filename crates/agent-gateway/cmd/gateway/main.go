@@ -37,6 +37,7 @@ func main() {
 	}
 	var accountStore account.Store = account.NewMemoryStore()
 	var closeAccountStore func() error
+	var readinessCheck func(context.Context) error
 	if cfg.DatabaseURL != "" || cfg.RedisURL != "" {
 		startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		persistentStore, storeErr := account.OpenPersistentStore(startupCtx, cfg.DatabaseURL, cfg.RedisURL)
@@ -46,6 +47,7 @@ func main() {
 		}
 		accountStore = persistentStore
 		closeAccountStore = persistentStore.Close
+		readinessCheck = persistentStore.Ready
 		slog.Info("account storage enabled", "postgres", true, "redis", true)
 	} else {
 		slog.Warn("DATABASE_URL and REDIS_URL are not configured; account sessions and devices use in-memory development storage")
@@ -54,7 +56,7 @@ func main() {
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.NewHTTPServerWithAccountService(cfg, sm, accountService),
+		Handler:           server.NewHTTPServerWithAccountServiceAndReadiness(cfg, sm, accountService, readinessCheck),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
