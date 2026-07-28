@@ -11,6 +11,7 @@ import "streamdown/styles.css";
 import "./styles.css";
 
 // 渲染前写入 WebUI 运行时标记（isGatewayWebuiRuntime 的唯一权威写入点）。
+// 独立管理页：/admin/devices（Agent 凭证管理，REST + 网关 Token）。
 async function start() {
   await bootstrapEmbeddedMobileRuntime();
   document.documentElement.dataset.liveagentWebui = GATEWAY_WEBUI_MARKER;

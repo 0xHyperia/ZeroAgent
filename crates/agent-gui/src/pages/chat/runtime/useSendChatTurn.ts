@@ -16,6 +16,7 @@ import {
   appendMessagesToConversation,
   buildRequestContext,
   type ConversationViewState,
+  findHistoryMessageRefByMessageId,
   type HistoryMessageRef,
 } from "../../../lib/chat/conversation/conversationState";
 import {
@@ -40,7 +41,7 @@ import {
 import type { ScrollFollowHandle } from "../../../lib/chat-scroll/useScrollFollow";
 import { createStreamDebugLogger } from "../../../lib/debug/agentDebug";
 import { buildMemoryOverviewSection } from "../../../lib/memory/prompts/injection";
-import { createModelFromConfig } from "../../../lib/providers/llm";
+import { createModelFromConfig, createProviderRuntimeConfig } from "../../../lib/providers/llm";
 import {
   type AppSettings,
   applyMcpOpsToAppSettings,
@@ -79,6 +80,11 @@ import type { useLiveTranscriptController } from "../hooks/useLiveTranscriptCont
 import type { createChatRuntimeHost } from "./ChatRuntimeHost";
 import { buildErrorAssistantMessage, formatHookWarningMessage } from "./chatPageRuntime";
 import {
+  finalizeChatRunInOrder,
+  releaseChatRunUi,
+  settleChatRunFinalization,
+} from "./chatRunFinalization";
+import {
   buildPreparedContext as buildPreparedConversationContext,
   buildResumeContext as buildResumeConversationContext,
 } from "./conversationContextBuilders";
@@ -88,7 +94,6 @@ import {
   resolveEffectiveChatModelSelection,
 } from "./modelSelection";
 import {
-  buildProviderRuntimeConfig,
   resolveConversationTitleModelSelection,
   resolveMemorySummaryModelSelection,
   selectedModelsMatch,
@@ -128,6 +133,11 @@ type UseSendChatTurnParams = {
   buildRuntimeEntryFromVisibleState: ChatPageRuntimeStore["buildRuntimeEntryFromVisibleState"];
   updateConversationRuntimeEntry: ChatPageRuntimeStore["updateConversationRuntimeEntry"];
   setConversationAbortController: ChatPageRuntimeStore["setConversationAbortController"];
+  getConversationStopRequestVersion: ChatPageRuntimeStore["getConversationStopRequestVersion"];
+  isConversationStopRequested: ChatPageRuntimeStore["isConversationStopRequested"];
+  consumeConversationStop: ChatPageRuntimeStore["consumeConversationStop"];
+  setConversationStopHandler: ChatPageRuntimeStore["setConversationStopHandler"];
+  clearConversationStopHandler: ChatPageRuntimeStore["clearConversationStopHandler"];
   setConversationSendingState: ChatPageRuntimeStore["setConversationSendingState"];
   pendingUploadedFiles: PendingUploadedFile[];
   getPendingUploadsForConversation: (conversationId: string) => PendingUploadedFile[];
@@ -197,6 +207,11 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     buildRuntimeEntryFromVisibleState,
     updateConversationRuntimeEntry,
     setConversationAbortController,
+    getConversationStopRequestVersion,
+    isConversationStopRequested,
+    consumeConversationStop,
+    setConversationStopHandler,
+    clearConversationStopHandler,
     setConversationSendingState,
     pendingUploadedFiles,
     getPendingUploadsForConversation,
@@ -407,13 +422,13 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       gatewayBridgeRequest?.runtimeControlsOverride ??
       overrides?.runtimeControlsOverride ??
       settings.chatRuntimeControls;
-    const providerConfig = buildProviderRuntimeConfig(provider, model, runtimeControls);
+    const providerConfig = createProviderRuntimeConfig(provider, model, runtimeControls);
     const memorySummaryModelSelection = resolveMemorySummaryModelSelection(settings);
     const memoryExtractionModel = memorySummaryModelSelection
       ? {
           providerId: memorySummaryModelSelection.providerId,
           model: memorySummaryModelSelection.model,
-          runtime: buildProviderRuntimeConfig(
+          runtime: createProviderRuntimeConfig(
             memorySummaryModelSelection.provider,
             memorySummaryModelSelection.model,
             runtimeControls,
@@ -489,6 +504,21 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         isImportingPastedTextRef.current = false;
         setIsImportingPastedText(false);
       }
+    }
+    if (isConversationStopRequested(conversationId)) {
+      const stopRequestVersion = getConversationStopRequestVersion(conversationId);
+      if (gatewayBridgeRequest) {
+        void invoke("gateway_chat_cancel_request", {
+          request_id: gatewayBridgeRequestId,
+          conversation_id: conversationId,
+          worker_id: gatewayBridgeWorkerId ?? "gui-live",
+        } as any).catch((error) => {
+          console.warn("gateway_chat_cancel_request failed", error);
+        });
+      }
+      consumeConversationStop(conversationId, stopRequestVersion);
+      void settleChatRunFinalization(gatewayBridgeEvents.close());
+      return false;
     }
 
     const userMessage = createUserMessageWithUploads(text, uploadedFiles, Date.now());
@@ -570,7 +600,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         settings,
         effectiveSelectedModel,
       );
-      const titleProviderConfig = buildProviderRuntimeConfig(
+      const titleProviderConfig = createProviderRuntimeConfig(
         titleModelSelection.provider,
         titleModelSelection.model,
         runtimeControls,
@@ -578,20 +608,12 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       titlePromise = startConversationTitleJob({
         providerId: titleModelSelection.providerId,
         model: titleModelSelection.model,
-        runtime: {
-          baseUrl: titleProviderConfig.baseUrl,
-          apiKey: titleProviderConfig.apiKey,
-          requestFormat: titleProviderConfig.requestFormat,
-          reasoning: titleProviderConfig.reasoning,
-          promptCachingEnabled: titleProviderConfig.promptCachingEnabled,
-          nativeWebSearchEnabled: titleProviderConfig.nativeWebSearchEnabled,
-          useSystemProxy: titleProviderConfig.useSystemProxy,
-          modelConfig: titleProviderConfig.modelConfig,
-        },
+        runtime: titleProviderConfig,
         signal: cancellation.deriveScope().controller.signal,
         conversationId,
         titleSourceText,
         content,
+        locale: settings.locale,
         sidebarStore,
         titleJobRef,
         gatewayBridgeEvents,
@@ -618,28 +640,52 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       pendingUserMessage,
     ]);
     let conversationRunStarted = false;
+    let conversationUiReleased = false;
     let gatewayRunStarted = false;
+    let localGatewayRunStarted = false;
+    let remoteGatewayCancelRequested = false;
+    let gatewayRuntimeFinalState: GatewayRuntimeSnapshotState = "completed";
+    let initialPersistPromise: Promise<boolean> | null = null;
+    let terminalHistoryPersistPromise: Promise<boolean> | null = null;
+    let runCleanupPromise: Promise<void> = Promise.resolve();
+    let compactionBound = false;
+    let runStopRequestVersion: number | null = null;
+
+    function registerGatewayRuntimeRun(state: GatewayRuntimeSnapshotState) {
+      if (!(gatewayBridgeRequest || hasRemoteGatewayTarget)) {
+        return null;
+      }
+      return registerActiveGatewayRuntimeRun({
+        conversationId,
+        runId: gatewayBridgeRequestId,
+        clientRequestId: gatewayBridgeRequest?.clientRequestId,
+        workerId: gatewayBridgeWorkerId,
+        cwd: conversationCwd,
+        revision: 0,
+        state,
+        userMessage: pendingUserMessage,
+        transcriptStore,
+        toolStatusIsCompaction: false,
+      });
+    }
+
     function acknowledgeGatewayRunStarted() {
       if (gatewayRunStarted) {
         return;
       }
       gatewayRunStarted = true;
-      if (gatewayBridgeRequest || hasRemoteGatewayTarget) {
-        const run = registerActiveGatewayRuntimeRun({
-          conversationId,
-          runId: gatewayBridgeRequestId,
-          clientRequestId: gatewayBridgeRequest?.clientRequestId,
-          workerId: gatewayBridgeWorkerId,
-          cwd: conversationCwd,
-          revision: 0,
-          state: "running",
-          userMessage: pendingUserMessage,
-          transcriptStore,
-          toolStatusIsCompaction: false,
-        });
+      const run = registerGatewayRuntimeRun("running");
+      if (run) {
         void queueGatewayRuntimeSnapshotForRun(run, { state: "running", force: true });
       }
     }
+
+    function ensureGatewayRunForTerminalState(state: GatewayRuntimeSnapshotState) {
+      if (gatewayRunStarted) return;
+      gatewayRunStarted = true;
+      registerGatewayRuntimeRun(state);
+    }
+
     function markConversationRunStarted() {
       if (conversationRunStarted) {
         return;
@@ -648,6 +694,9 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       applyConversationState(nextConversationState);
       resetLiveTranscript(transcriptStore);
       setConversationAbortController(conversationId, cancellation.userStop);
+      if (isConversationStopRequested(conversationId)) {
+        cancellation.userStop.abort();
+      }
       setConversationSendingState(conversationId, true);
       // Queue-drained auto-starts are not a user gesture: the reader may be
       // deep in history when the previous run finishes, and force-pinning
@@ -657,18 +706,101 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         scrollFollowRef.current?.stickToBottom();
       }
     }
-    async function markConversationRunStopped(state: GatewayRuntimeSnapshotState = "completed") {
-      if (!conversationRunStarted) {
-        return;
+
+    function releaseConversationRunUi() {
+      if (!conversationRunStarted || conversationUiReleased) return;
+      conversationUiReleased = true;
+      releaseChatRunUi({
+        clearAbortController: () => setConversationAbortController(conversationId, null),
+        clearSendingState: () => setConversationSendingState(conversationId, false),
+        clearToolStatus: () => updateToolStatus(null, transcriptStore),
+      });
+    }
+
+    function requestRemoteGatewayCancellation() {
+      if (remoteGatewayCancelRequested) return;
+      remoteGatewayCancelRequested = true;
+      const command = gatewayBridgeRequest
+        ? "gateway_chat_cancel_request"
+        : mirrorsLocalRunToGateway
+          ? "gateway_chat_mark_local_cancelled"
+          : null;
+      if (!command) return;
+      const payload = gatewayBridgeRequest
+        ? {
+            request_id: gatewayBridgeRequestId,
+            conversation_id: conversationId,
+            worker_id: gatewayBridgeWorkerId ?? "gui-live",
+          }
+        : {
+            request_id: gatewayBridgeRequestId,
+            conversation_id: conversationId,
+          };
+      void invoke(command, payload as any).catch((error) => {
+        console.warn(`${command} failed`, error);
+      });
+    }
+
+    const handleConversationStop = (options: { force: boolean; requestVersion: number }) => {
+      runStopRequestVersion = options.requestVersion;
+      gatewayRuntimeFinalState = "cancelled";
+      cancellation.userStop.abort();
+      requestRemoteGatewayCancellation();
+      if (!options.force) return;
+      releaseConversationRunUi();
+      // Force stop is the escape hatch for a stuck run: it intentionally
+      // skips the persist barrier (which may itself be hung) so the gateway
+      // still learns the run is cancelled. The run's own finally block will
+      // additionally do the ordered persist-first finalization if it ever
+      // completes.
+      void settleChatRunFinalization(finishGatewayRuntimeRun("cancelled"));
+    };
+
+    async function finishGatewayRuntimeRun(state: GatewayRuntimeSnapshotState) {
+      if (state === "cancelled") {
+        ensureGatewayRunForTerminalState(state);
       }
-      setConversationAbortController(conversationId, null);
-      setConversationSendingState(conversationId, false);
-      await gatewayBridgeEvents.close();
       if (gatewayRunStarted) {
         await finishActiveGatewayRuntimeRun(conversationId, state);
       }
     }
-    let localGatewayRunStarted = false;
+
+    async function finalizeConversationRun(state: GatewayRuntimeSnapshotState) {
+      const result = await settleChatRunFinalization(
+        finalizeChatRunInOrder({
+          waitForPersistBarrier: async () => {
+            await runCleanupPromise.catch(() => undefined);
+            await waitForTerminalHistoryPersist(initialPersistPromise);
+            await waitForTerminalHistoryPersist(terminalHistoryPersistPromise);
+          },
+          closeBridge: () => gatewayBridgeEvents.close(),
+          finishRuntimeRun: () => finishGatewayRuntimeRun(state),
+        }),
+      );
+      if (result === "timed_out") {
+        console.warn(`chat run finalization timed out: ${conversationId}`);
+      }
+    }
+
+    async function finishRequestedStopBeforeRuntime() {
+      if (runStopRequestVersion === null) return false;
+      gatewayRuntimeFinalState = "cancelled";
+      cancellation.userStop.abort();
+      requestRemoteGatewayCancellation();
+      gatewayBridgeEvents.emitError("Cancelled", conversationId);
+      releaseConversationRunUi();
+      if (compactionBound) {
+        compaction.unbindTurn();
+        compactionBound = false;
+      }
+      clearAbortSnapshot(transcriptStore);
+      await finalizeConversationRun("cancelled");
+      clearConversationStopHandler(conversationId, handleConversationStop);
+      consumeConversationStop(conversationId, runStopRequestVersion);
+      pruneIdleConversationCaches([conversationId]);
+      return true;
+    }
+
     async function markLocalGatewayRunStarted() {
       if (!mirrorsLocalRunToGateway || localGatewayRunStarted) {
         return;
@@ -680,7 +812,11 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       localGatewayRunStarted = true;
     }
 
+    setConversationStopHandler(conversationId, handleConversationStop);
     markConversationRunStarted();
+    if (await finishRequestedStopBeforeRuntime()) {
+      return true;
+    }
     // Clear the composer in the same beat as the optimistic user bubble.
     // Everything below until the runtime turn starts (gateway mark-started
     // IPC, initial history persist, skills refresh, memory overview read) may
@@ -731,16 +867,26 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       } catch (error) {
         console.warn("gateway_chat_mark_local_started failed", error);
       }
+      if (await finishRequestedStopBeforeRuntime()) {
+        return true;
+      }
     }
     if (overrides?.beforeRuntimeStart) {
       try {
         await overrides.beforeRuntimeStart();
+        if (await finishRequestedStopBeforeRuntime()) {
+          return true;
+        }
       } catch (error) {
+        if (await finishRequestedStopBeforeRuntime()) {
+          return true;
+        }
         const message = asErrorMessage(error, "启动远程对话运行失败");
         setConversationErrorState(message);
         gatewayBridgeEvents.emitError(message, conversationId);
-        await gatewayBridgeEvents.close();
-        await markConversationRunStopped("failed");
+        releaseConversationRunUi();
+        await finalizeConversationRun("failed");
+        clearConversationStopHandler(conversationId, handleConversationStop);
         restoreComposerOnStartFailure();
         return false;
       }
@@ -749,7 +895,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     // Persist the user turn immediately so WebUI/GUI sidebars can surface the
     // latest conversation before the assistant round finishes. The live runtime
     // itself is mirrored through ChatRuntimeSnapshot, not history_sync.
-    const initialPersist = persistConversationWithHistorySync({
+    initialPersistPromise = persistConversationWithHistorySync({
       conversationId,
       sessionId,
       providerId,
@@ -762,25 +908,37 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       titlePromise,
       titleLookahead: true,
     });
+    const initialPersist = initialPersistPromise;
     if (overrides?.afterInitialHistoryPersist && !overrides.beforeRuntimeStart) {
       const persisted = await initialPersist;
+      if (await finishRequestedStopBeforeRuntime()) {
+        return true;
+      }
       if (!persisted) {
         const message = "历史记录保存失败，已取消回滚与重发。";
         setConversationErrorState(message);
         gatewayBridgeEvents.emitError(message, conversationId);
-        await gatewayBridgeEvents.close();
-        await markConversationRunStopped("failed");
+        releaseConversationRunUi();
+        await finalizeConversationRun("failed");
+        clearConversationStopHandler(conversationId, handleConversationStop);
         restoreComposerOnStartFailure();
         return true;
       }
       try {
         await overrides.afterInitialHistoryPersist();
+        if (await finishRequestedStopBeforeRuntime()) {
+          return true;
+        }
       } catch (error) {
+        if (await finishRequestedStopBeforeRuntime()) {
+          return true;
+        }
         const message = asErrorMessage(error, "回滚历史失败");
         setConversationErrorState(message);
         gatewayBridgeEvents.emitError(message, conversationId);
-        await gatewayBridgeEvents.close();
-        await markConversationRunStopped("failed");
+        releaseConversationRunUi();
+        await finalizeConversationRun("failed");
+        clearConversationStopHandler(conversationId, handleConversationStop);
         restoreComposerOnStartFailure();
         return true;
       }
@@ -812,10 +970,21 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       if (!persisted) {
         console.warn("gateway stream started before initial user turn was persisted");
       }
+      if (await finishRequestedStopBeforeRuntime()) {
+        return true;
+      }
     }
     await gatewayBridgeEvents.queueUserMessage(text, uploadedFiles, {
+      messageId: pendingUserMessage.id,
       baseMessageRef: overrides?.editResendBaseMessageRef,
+      // The new message's own stable identity: lets remote transcripts bind
+      // their user bubble's messageRef immediately, so a follow-up edit of
+      // this message can anchor its rebase without a history round-trip.
+      messageRef: findHistoryMessageRefByMessageId(nextConversationState, pendingUserMessage.id),
     });
+    if (await finishRequestedStopBeforeRuntime()) {
+      return true;
+    }
     acknowledgeGatewayRunStarted();
     let skillsPrompt = "";
     let memoryPrompt = "";
@@ -867,16 +1036,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     compaction.bindTurn({
       providerId,
       model,
-      runtime: {
-        baseUrl: providerConfig.baseUrl,
-        apiKey: providerConfig.apiKey,
-        requestFormat: providerConfig.requestFormat,
-        reasoning: providerConfig.reasoning,
-        promptCachingEnabled: providerConfig.promptCachingEnabled,
-        nativeWebSearchEnabled: providerConfig.nativeWebSearchEnabled,
-        useSystemProxy: providerConfig.useSystemProxy,
-        modelConfig: providerConfig.modelConfig,
-      },
+      runtime: providerConfig,
       cancellation,
       debugLogger: compactionDebugLogger,
       buildPreparedContext,
@@ -935,6 +1095,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         },
       },
     });
+    compactionBound = true;
 
     // Optionally append skills metadata to system prompt (progressive disclosure).
     if (effectiveSkillsEnabled && selectedSkillNames.length > 0) {
@@ -946,6 +1107,9 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       let missing = selectedSkillNames.filter((n) => !byName.has(n));
       if (missing.length > 0) {
         const fresh = await refreshSkills();
+        if (await finishRequestedStopBeforeRuntime()) {
+          return true;
+        }
         if (fresh) {
           skillsList = fresh.skills;
           rootDir = fresh.rootDir;
@@ -958,8 +1122,9 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         const message = `找不到以下 Skills：${missing.join(", ")}（请先重新扫描固定 Skills 目录）`;
         setConversationErrorState(message);
         gatewayBridgeEvents.emitError(message, conversationId);
-        await gatewayBridgeEvents.close();
-        await markConversationRunStopped("failed");
+        releaseConversationRunUi();
+        await finalizeConversationRun("failed");
+        clearConversationStopHandler(conversationId, handleConversationStop);
         restoreComposerOnStartFailure();
         return true;
       }
@@ -1003,6 +1168,9 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       console.warn("Failed to build memory overview prompt", error);
       memoryPrompt = "";
     }
+    if (await finishRequestedStopBeforeRuntime()) {
+      return true;
+    }
 
     const hookScope = createHookRunScope({
       hooks: getAutomationState().hooks.hooks,
@@ -1021,7 +1189,6 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     });
 
     let abortedConversationCommitted = false;
-    let terminalHistoryPersistPromise: Promise<boolean> | null = null;
     let persistableAgentProgress: {
       completedThroughRound: number;
       suppressedToolTrace: SuppressedToolTraceSnapshot[];
@@ -1121,7 +1288,6 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       resetLiveTranscript(transcriptStore);
     }
 
-    let gatewayRuntimeFinalState: GatewayRuntimeSnapshotState = "completed";
     try {
       if (effectiveIsAgentMode) {
         await chatRuntimeHost.runTurn({
@@ -1129,16 +1295,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
           params: {
             providerId,
             model,
-            runtime: {
-              baseUrl: providerConfig.baseUrl,
-              apiKey: providerConfig.apiKey,
-              requestFormat: providerConfig.requestFormat,
-              reasoning: providerConfig.reasoning,
-              promptCachingEnabled: providerConfig.promptCachingEnabled,
-              nativeWebSearchEnabled: providerConfig.nativeWebSearchEnabled,
-              useSystemProxy: providerConfig.useSystemProxy,
-              modelConfig: providerConfig.modelConfig,
-            },
+            runtime: providerConfig,
             runtimeModel,
             selectedModel,
             memoryExtractionModel,
@@ -1208,16 +1365,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
           params: {
             providerId,
             model,
-            runtime: {
-              baseUrl: providerConfig.baseUrl,
-              apiKey: providerConfig.apiKey,
-              requestFormat: providerConfig.requestFormat,
-              reasoning: providerConfig.reasoning,
-              promptCachingEnabled: providerConfig.promptCachingEnabled,
-              nativeWebSearchEnabled: providerConfig.nativeWebSearchEnabled,
-              useSystemProxy: providerConfig.useSystemProxy,
-              modelConfig: providerConfig.modelConfig,
-            },
+            runtime: providerConfig,
             runtimeModel,
             selectedModel,
             memoryExtractionModel,
@@ -1258,32 +1406,48 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         : (err instanceof Error ? err.message : String(err)) || "Request failed";
       if (aborted) {
         hookScope.cancel();
-        const rolledBack = await compaction.handleTurnAbort();
-        if (!rolledBack) {
-          commitVisibleAbortedConversation();
-        }
+        requestRemoteGatewayCancellation();
+        runCleanupPromise = (async () => {
+          const rolledBack = await compaction.handleTurnAbort();
+          if (!rolledBack) {
+            commitVisibleAbortedConversation();
+          }
+          if (shouldCreatePendingHistoryItem && !abortedConversationCommitted) {
+            sidebarStore.removeLocal(conversationId);
+          }
+        })();
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         commitErroredConversation(msg || "Request failed");
       }
-      await waitForTerminalHistoryPersist(terminalHistoryPersistPromise);
       gatewayBridgeEvents.emitError(remoteErrorMessage, conversationId);
-      await gatewayBridgeEvents.close();
-      if (shouldCreatePendingHistoryItem && !abortedConversationCommitted) {
-        sidebarStore.removeLocal(conversationId);
-      }
       if (titleJobRef.current?.conversationId === conversationId) {
         titleJobRef.current = null;
       }
     } finally {
-      compaction.unbindTurn();
+      releaseConversationRunUi();
+      if (compactionBound) {
+        compaction.unbindTurn();
+        compactionBound = false;
+      }
       hookLifecycle.endAgent();
       hookScope.close();
       clearAbortSnapshot(transcriptStore);
-      await waitForTerminalHistoryPersist(terminalHistoryPersistPromise);
-      await markConversationRunStopped(gatewayRuntimeFinalState);
+      const stopped = runStopRequestVersion !== null || cancellation.userStop.signal.aborted;
+      if (stopped) {
+        gatewayRuntimeFinalState = "cancelled";
+        requestRemoteGatewayCancellation();
+      }
+      await finalizeConversationRun(gatewayRuntimeFinalState);
+      clearConversationStopHandler(conversationId, handleConversationStop);
       pruneIdleConversationCaches([conversationId]);
-      requestQueuedChatTurnProcessing(conversationId);
+      if (stopped) {
+        if (runStopRequestVersion !== null) {
+          consumeConversationStop(conversationId, runStopRequestVersion);
+        }
+      } else {
+        requestQueuedChatTurnProcessing(conversationId);
+      }
     }
     return true;
   }

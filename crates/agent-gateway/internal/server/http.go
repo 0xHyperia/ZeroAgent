@@ -17,60 +17,50 @@ import (
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
 	"github.com/liveagent/agent-gateway/internal/handler"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/pbws"
 	"github.com/liveagent/agent-gateway/internal/session"
 )
 
-func NewHTTPServer(cfg *config.Config, sm *session.Manager) http.Handler {
-	origin := strings.TrimSpace(cfg.USAZeroOrigin)
-	if origin == "" {
-		origin = config.DefaultUSAZeroOrigin
-	}
-	usaClient, err := account.NewUSAClient(origin, cfg.RequestTimeout)
-	if err != nil {
-		panic(err)
-	}
-	accountService := account.NewService(account.NewMemoryStore(), usaClient, cfg.WebSessionTTL, cfg.SelectionLeaseTTL)
-	return NewHTTPServerWithAccountService(cfg, sm, accountService)
+// NewHTTPServer 构造 HTTP 路由；生产启动时 tokens 始终是已初始化的 Agent 目录与凭证存储。
+func NewHTTPServer(cfg *config.Config, sm *session.Manager, authenticator pbws.AgentAuthenticator) http.Handler {
+	return NewHTTPServerWithReadiness(cfg, sm, authenticator, nil)
 }
 
-func NewHTTPServerWithAccountService(cfg *config.Config, sm *session.Manager, accountService *account.Service) http.Handler {
-	return NewHTTPServerWithAccountServiceAndReadiness(cfg, sm, accountService, nil)
-}
-
-func NewHTTPServerWithAccountServiceAndReadiness(
+func NewHTTPServerWithReadiness(
 	cfg *config.Config,
 	sm *session.Manager,
-	accountService *account.Service,
+	authenticator pbws.AgentAuthenticator,
 	readinessCheck func(context.Context) error,
 ) http.Handler {
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("GET /healthz", handler.Health())
 	rootMux.HandleFunc("GET /readyz", handler.Ready(readinessCheck))
-	account.NewHTTPHandler(accountService, cfg.CookieSecure).Register(rootMux)
-	accountService.SetDeviceRevoker(sm.DisconnectDevice)
-	sm.SetHistoryObserver(accountService.RecordDeviceHistorySync)
+	accounts, _ := authenticator.(*account.Service)
+	if accounts != nil {
+		account.NewHTTPHandler(accounts, cfg.CookieSecure).Register(rootMux)
+		accounts.SetDeviceRevoker(func(_ int64, agentID string) { sm.DisconnectAgent(agentID) })
+		sm.SetHistoryObserver(accounts.RecordAgentHistorySync)
+	}
 
 	// v2 统一协议（WebSocket+Protobuf）三链路。
-	v2 := pbws.NewServer(cfg, sm, accountService)
+	v2 := pbws.NewServer(cfg, sm, authenticator)
 	rootMux.Handle("/ws/v2", v2.BrowserHandler())
 	rootMux.Handle("/ws/v2/agent", v2.AgentHandler())
 	rootMux.Handle("/ws/v2/terminal", v2.TerminalHandler())
-
-	// v1 路由（JSON 信封 /ws、二进制终端流 /ws/terminal）已移除：显式回 410，
-	// 让未刷新的旧客户端得到可诊断的拒绝，而不是落进 SPA fallback 拿到 index.html。
-	goneV1 := func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "v1 websocket protocol removed; upgrade to /ws/v2", http.StatusGone)
-	}
-	rootMux.HandleFunc("/ws", goneV1)
-	rootMux.HandleFunc("/ws/terminal", goneV1)
 
 	rootMux.HandleFunc("/t/", publicTunnelProxy(sm))
 	rootMux.HandleFunc("GET /image-proxy", handler.ImageProxy(cfg.RequestTimeout))
 	rootMux.HandleFunc("GET /api/public/history-shares/{token}", publicHistoryShare(cfg, sm))
 
-	rootMux.Handle("/api/", protectedAPIHandler(cfg, sm, accountService))
+	if accounts != nil {
+		rootMux.Handle("/api/status", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("/api/files/import", protectedAPIHandler(cfg, sm, accounts))
+	} else {
+		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
+		rootMux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(sm, cfg.RequestTimeout))
+	}
+	// Agent 目录与凭证管理，仅管理 token 可访问。
 
 	webFS, err := fs.Sub(gateway.WebUIAssets, "web/dist")
 	if err != nil {
@@ -122,14 +112,13 @@ type selectionCredentialPayload struct {
 	Lease       string `json:"lease"`
 	RuntimeKind string `json:"runtimeKind"`
 	DeviceID    string `json:"deviceId"`
+	AgentID     string `json:"agentId"`
 	WorkspaceID string `json:"workspaceId"`
 }
 
-func protectedAPIHandler(cfg *config.Config, root *session.Manager, accounts *account.Service) http.Handler {
+func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *account.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var target *session.Manager
-		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
-		parts := strings.SplitN(authorization, " ", 2)
+		parts := strings.SplitN(strings.TrimSpace(r.Header.Get("Authorization")), " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			return
@@ -145,15 +134,26 @@ func protectedAPIHandler(cfg *config.Config, root *session.Manager, accounts *ac
 			return
 		}
 		accountSession, lease, err := accounts.ValidateSelection(r.Context(), cookie.Value, credential.Lease)
-		if err != nil || lease.DeviceID != credential.DeviceID || lease.WorkspaceID != credential.WorkspaceID {
+		agentID := firstNonEmpty(credential.AgentID, credential.DeviceID)
+		if err != nil || lease.AgentID != agentID || lease.WorkspaceID != credential.WorkspaceID {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "selection lease is invalid or expired"})
 			return
 		}
-		target = root.DeviceManager(accountSession.UserID, lease.DeviceID)
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/status", handler.Status(target))
-		mux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(target, cfg.RequestTimeout))
-		mux.ServeHTTP(w, r)
+		if _, err := accounts.Device(r.Context(), accountSession.UserID, agentID); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "selected device is unavailable"})
+			return
+		}
+		switch r.URL.Path {
+		case "/api/status":
+			writeJSON(w, http.StatusOK, map[string]any{"agents": []session.Status{sm.Status(agentID)}})
+		case "/api/files/import":
+			query := r.URL.Query()
+			query.Set("agent_id", agentID)
+			r.URL.RawQuery = query.Encode()
+			handler.ImportReadableFiles(sm, cfg.RequestTimeout).ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
 	})
 }
 
@@ -171,6 +171,15 @@ func decodeSelectionCredential(value string) (selectionCredentialPayload, bool) 
 		return selectionCredentialPayload{}, false
 	}
 	return payload, true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func isWebUIStaticAssetPath(cleanPath string) bool {
@@ -197,15 +206,7 @@ func publicHistoryShare(cfg *config.Config, sm *session.Manager) http.HandlerFun
 		defer cancel()
 
 		requestID := "public-history-share-" + uuid.NewString()
-		response, err := sm.AwaitUnaryResponse(ctx, requestID, &gatewayv1.GatewayEnvelope{
-			RequestId: requestID,
-			Timestamp: time.Now().Unix(),
-			Payload: &gatewayv1.GatewayEnvelope_HistoryShareResolve{
-				HistoryShareResolve: &gatewayv1.HistoryShareResolveRequest{
-					Token: token,
-				},
-			},
-		})
+		response, err := resolveHistoryShareAcrossAgents(ctx, sm, requestID, token)
 		if err != nil {
 			switch {
 			case errors.Is(err, session.ErrAgentOffline):
@@ -242,6 +243,68 @@ func writePublicHistoryShareError(w http.ResponseWriter, status int, message str
 	writeJSON(w, status, map[string]any{
 		"error": strings.TrimSpace(message),
 	})
+}
+
+// resolveHistoryShareAcrossAgents 依次向各在线 Agent 解析公开分享 token（分享属于
+// 某一台桌面端，URL 不携带 agent 信息）：首个成功命中者胜；全部未命中返回最后一个
+// 分享层错误（error=99 臂）以保留 not-found 语义。≤10 Agent 且是公开低频端点，
+// 串行短超时探询已足够。
+func resolveHistoryShareAcrossAgents(
+	ctx context.Context,
+	sm *session.Manager,
+	requestID string,
+	token string,
+) (*gatewayv2.AgentEnvelope, error) {
+	agentIDs := sm.ConnectedAgentIDs()
+	if len(agentIDs) == 0 {
+		return nil, session.ErrAgentOffline
+	}
+	var lastResponse *gatewayv2.AgentEnvelope
+	var lastErr error
+	for index, agentID := range agentIDs {
+		probeCtx := ctx
+		var cancel context.CancelFunc
+		if len(agentIDs) > 1 {
+			// 均分剩余时限，避免第一个无响应的 Agent 吃满整个窗口。
+			probeCtx, cancel = context.WithTimeout(ctx, perAgentShareTimeout(ctx, len(agentIDs)-index))
+		}
+		response, err := sm.AwaitUnaryResponse(probeCtx, agentID, requestID+"-"+agentID, &gatewayv2.GatewayEnvelope{
+			RequestId: requestID + "-" + agentID,
+			Timestamp: time.Now().Unix(),
+			Payload: &gatewayv2.GatewayEnvelope_HistoryShareResolve{
+				HistoryShareResolve: &gatewayv2.HistoryShareResolveRequest{
+					Token: token,
+				},
+			},
+		})
+		if cancel != nil {
+			cancel()
+		}
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if response.GetError() == nil && response.GetHistoryShareResolveResp() != nil {
+			return response, nil
+		}
+		lastResponse = response
+	}
+	if lastResponse != nil {
+		return lastResponse, nil
+	}
+	return nil, lastErr
+}
+
+func perAgentShareTimeout(ctx context.Context, remaining int) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok || remaining <= 0 {
+		return 5 * time.Second
+	}
+	share := time.Until(deadline) / time.Duration(remaining)
+	if share < time.Second {
+		return time.Second
+	}
+	return share
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

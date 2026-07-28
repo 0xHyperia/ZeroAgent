@@ -42,6 +42,7 @@ export function loadWebSettings(token: string): AppSettings {
           ...fallback.remote,
           ...(parsed?.remote ?? {}),
           gatewayUrl: fallback.remote.gatewayUrl,
+          token: "",
           enabled: token.trim() !== "" || parsed?.remote?.enabled === true,
         },
       }),

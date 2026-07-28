@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/liveagent/agent-gateway/internal/account"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
 func normalizeRemoteWorkspacePath(value string) (string, bool) {
@@ -82,40 +82,40 @@ func (c *browserConn) requireWorkspace(workdir string) error {
 	return nil
 }
 
-func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv1.GatewayEnvelope) error {
+func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv2.GatewayEnvelope) error {
 	if c.selectionScope == "" || env == nil {
 		return nil
 	}
 	switch payload := env.GetPayload().(type) {
-	case *gatewayv1.GatewayEnvelope_HistoryList:
+	case *gatewayv2.GatewayEnvelope_HistoryList:
 		if strings.TrimSpace(payload.HistoryList.GetCwd()) != "" {
 			return c.requireWorkspace(payload.HistoryList.GetCwd())
 		}
-	case *gatewayv1.GatewayEnvelope_FileMentionList:
+	case *gatewayv2.GatewayEnvelope_FileMentionList:
 		return c.requireWorkspace(payload.FileMentionList.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsList:
+	case *gatewayv2.GatewayEnvelope_FsList:
 		return c.requireWorkspace(payload.FsList.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsReadEditableText:
+	case *gatewayv2.GatewayEnvelope_FsReadEditableText:
 		return c.requireWorkspace(payload.FsReadEditableText.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsReadWorkspaceImage:
+	case *gatewayv2.GatewayEnvelope_FsReadWorkspaceImage:
 		return c.requireWorkspace(payload.FsReadWorkspaceImage.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsWriteText:
+	case *gatewayv2.GatewayEnvelope_FsWriteText:
 		return c.requireWorkspace(payload.FsWriteText.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsCreateDir:
+	case *gatewayv2.GatewayEnvelope_FsCreateDir:
 		return c.requireWorkspace(payload.FsCreateDir.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsRename:
+	case *gatewayv2.GatewayEnvelope_FsRename:
 		return c.requireWorkspace(payload.FsRename.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_FsDelete:
+	case *gatewayv2.GatewayEnvelope_FsDelete:
 		return c.requireWorkspace(payload.FsDelete.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_GitRequest:
+	case *gatewayv2.GatewayEnvelope_GitRequest:
 		return c.requireWorkspace(payload.GitRequest.GetWorkdir())
-	case *gatewayv1.GatewayEnvelope_TerminalRequest:
+	case *gatewayv2.GatewayEnvelope_TerminalRequest:
 		if strings.TrimSpace(payload.TerminalRequest.GetCwd()) != "" {
 			return c.requireWorkspace(payload.TerminalRequest.GetCwd())
 		}
-	case *gatewayv1.GatewayEnvelope_FsRoots,
-		*gatewayv1.GatewayEnvelope_FsListDirs,
-		*gatewayv1.GatewayEnvelope_FsCreateProjectFolder:
+	case *gatewayv2.GatewayEnvelope_FsRoots,
+		*gatewayv2.GatewayEnvelope_FsListDirs,
+		*gatewayv2.GatewayEnvelope_FsCreateProjectFolder:
 		return errors.New("remote project browsing and creation are disabled")
 	}
 	return nil

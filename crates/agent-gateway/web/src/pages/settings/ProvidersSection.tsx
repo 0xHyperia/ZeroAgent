@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
   ClaudeIcon,
+  ExternalLink,
   Eye,
   EyeOff,
   GeminiIcon,
   Globe,
+  GrokIcon,
+  Key,
   List,
   OpenaiChatgptIcon,
   Pencil,
@@ -21,6 +24,7 @@ import {
 } from "../../components/icons";
 
 import { Button } from "../../components/ui/button";
+import { useConfirmDialog } from "../../components/ui/confirm-dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import {
@@ -30,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { Textarea } from "../../components/ui/textarea";
 import { useVerticalListReorder } from "../../components/ui/useVerticalListReorder";
 import { useLocale } from "../../i18n";
 import { buildModelOptions } from "../../lib/chat/chatPageHelpers";
@@ -37,15 +42,33 @@ import {
   getCustomHeaderKeyPresets,
   isReservedCustomHeaderKey,
   isValidCustomHeaderKey,
+  isValidCustomHeaderValue,
 } from "../../lib/providers/customHeaders";
 import { parseModelValue, toModelValue } from "../../lib/providers/llm";
-import { sortModelsByActiveStateAndVendor } from "../../lib/providers/modelVendor";
+import {
+  applyModelOrderSnapshot,
+  createModelOrderSnapshot,
+  findNewModelIds,
+} from "../../lib/providers/modelVendor";
+import {
+  getProviderUsageCardDisplay,
+  getUsagePlanDisplay,
+  type ProviderUsageState,
+  testProviderUsage,
+  type UsageData,
+  type UsagePlanDisplay,
+  type UsageRelativeTime,
+  useProviderUsage,
+  useUsageNowTicker,
+} from "../../lib/providers/usageQuery";
 import {
   CODEX_REQUEST_FORMAT_LABELS,
   type CodexRequestFormat,
   type CustomProvider,
+  getDefaultUsageQueryConfig,
   type ProviderId,
   type ProviderModelConfig,
+  type UsageQueryMode,
   updateCustomProviders,
   updateCustomSettings,
 } from "../../lib/settings";
@@ -55,14 +78,24 @@ import { cn } from "../../lib/shared/utils";
 import { ModelPicker } from "./modelPicker";
 import {
   applyModelBulkActiveState,
+  applyUsageQueryModePreset,
   buildProviderModelsFetchKey,
+  clampUsageQueryTimeoutSecs,
   createDraftModelConfig,
+  createUsageQueryDraft,
+  detectCodingPlanProvider,
   fetchModelsFromApi,
   formatTokenCount,
   getModelBulkActionCounts,
+  getPersistedUsageQueryProviderId,
   isGatewayWebuiRuntime,
+  matchBalanceProviders,
   mergeFetchedModels,
   normalizeFetchedModels,
+  requiresCustomUsageQueryConfirmation,
+  serializeUsageQueryDraft,
+  setUsageQueryScript,
+  USAGE_QUERY_CODING_PLAN_PROVIDERS,
 } from "./providerUtils";
 import { ConfirmDeletePopover } from "./shared";
 import type { SettingsSectionProps } from "./types";
@@ -74,22 +107,112 @@ type ModalProps = {
   onClose: () => void;
 };
 
-type ProviderDialogPanel = "general" | "request";
+// 脚本编写说明里的示例代码(纯代码,locale 无关);语义须与 Rust 沙箱执行
+// 契约一致:声明式单请求 + extractor 接收响应 JSON。
+const USAGE_QUERY_SCRIPT_HELP_EXAMPLE = `({
+  request: {
+    url: "{{baseUrl}}/api/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function (response) {
+    return {
+      planName: "Pro",
+      remaining: response.balance,
+      total: response.quota,
+      unit: "USD"
+    };
+  }
+})`;
+
+function usagePlanTitleText(
+  t: (key: string) => string,
+  title: UsagePlanDisplay["title"],
+): string | null {
+  if (title.kind === "window") return t(`settings.providerUsageWindow.${title.token}`);
+  if (title.kind === "text") return title.text;
+  return null;
+}
+
+function usageRelativeTimeText(t: (key: string) => string, time: UsageRelativeTime): string {
+  switch (time.kind) {
+    case "justNow":
+      return t("settings.providerUsageUpdated.justNow");
+    case "minutesAgo":
+      return t("settings.providerUsageUpdated.minutesAgo").replace("{count}", String(time.value));
+    case "hoursAgo":
+      return t("settings.providerUsageUpdated.hoursAgo").replace("{count}", String(time.value));
+    case "daysAgo":
+      return t("settings.providerUsageUpdated.daysAgo").replace("{count}", String(time.value));
+  }
+}
+
+// 单个套餐/余额行:失效红、余量 <10% 橙、正常绿(对齐 cc-switch UsageFooter 分级)。
+function UsagePlanLine({ plan }: { plan: UsagePlanDisplay }) {
+  const { t } = useLocale();
+  const title = usagePlanTitleText(t, plan.title);
+  if (plan.invalid) {
+    return (
+      <span className="flex min-w-0 items-baseline gap-1.5 text-destructive">
+        {title ? <span className="truncate">{title}</span> : null}
+        <span className="truncate">
+          {plan.invalidMessage ?? t("settings.providerUsageInvalid")}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex min-w-0 items-baseline gap-1.5">
+      {title ? <span className="truncate">{title}</span> : null}
+      <span
+        className={cn(
+          "whitespace-nowrap font-medium",
+          plan.severity === "low"
+            ? "text-amber-500 dark:text-amber-400"
+            : "text-emerald-600 dark:text-emerald-400",
+        )}
+      >
+        {plan.amount ?? "—"}
+        {plan.total ? ` / ${plan.total}` : ""}
+        {plan.unit ? ` ${plan.unit}` : ""}
+      </span>
+      {plan.percent !== null && plan.unit !== "%" ? (
+        <span className="whitespace-nowrap text-muted-foreground">{plan.percent}%</span>
+      ) : null}
+      {plan.extra ? <span className="truncate text-muted-foreground">{plan.extra}</span> : null}
+    </span>
+  );
+}
+
+type ProviderDialogPanel = "general" | "request" | "usage";
 
 type ModelEditDraft = {
   model: ProviderModelConfig;
   contextWindow: string;
   maxOutputToken: string;
-  costInput: string;
-  costOutput: string;
-  costCacheRead: string;
-  costCacheWrite: string;
 };
-const PROVIDER_TABS: ProviderId[] = ["claude_code", "codex", "gemini"];
+
+type NewModelPhase = "visible" | "fading";
+
+type PendingModelLayout = {
+  topById: Map<string, number>;
+  scrollContainer: HTMLDivElement | null;
+  scrollTop: number | null;
+};
+
+const NEW_MODEL_SORT_DELAY_MS = 1_200;
+const NEW_MODEL_BADGE_DURATION_MS = 3_200;
+const NEW_MODEL_BADGE_FADE_MS = 500;
+const MODEL_FLIP_DURATION_MS = 420;
+
+const PROVIDER_TABS: ProviderId[] = ["claude_code", "codex", "gemini", "xai"];
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   claude_code: "Anthropic",
   codex: "OpenAI",
   gemini: "Gemini",
+  xai: "Grok",
 };
 
 function getProviderLabel(type: ProviderId) {
@@ -99,6 +222,7 @@ function getProviderLabel(type: ProviderId) {
 function ProviderBrandIcon({ type }: { type: ProviderId }) {
   if (type === "claude_code") return <ClaudeIcon height="1em" />;
   if (type === "gemini") return <GeminiIcon height="1em" />;
+  if (type === "xai") return <GrokIcon height="1em" />;
   return <OpenaiChatgptIcon height="1em" className="fill-current dark:text-white" />;
 }
 
@@ -111,25 +235,24 @@ function parsePositiveInteger(input: string): number | null {
   return normalized > 0 ? normalized : null;
 }
 
-// 单价输入：留空视为未配置（0），负数与非数字视为非法。
-function parseCostRate(input: string): number | null {
-  const trimmed = input.trim();
-  if (!trimmed) return 0;
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value < 0) return null;
-  return value;
+type CustomHeaderIssue = "reserved" | "invalid-key" | "invalid-value";
+
+function customHeaderIssueMessage(issue: CustomHeaderIssue, t: (key: string) => string): string {
+  if (issue === "reserved") return t("settings.customHeaderReservedTitle");
+  if (issue === "invalid-value") return t("settings.invalidCustomHeaderValue");
+  return t("settings.invalidCustomHeaderKey");
 }
 
-function formatCostRate(value: number | undefined): string {
-  return typeof value === "number" && value > 0 ? String(value) : "";
-}
-
-type CustomHeaderKeyIssue = "reserved" | "invalid";
-
-function getCustomHeaderKeyIssue(key: string, includeEmpty = false): CustomHeaderKeyIssue | null {
-  if (!key && !includeEmpty) return null;
-  if (isReservedCustomHeaderKey(key)) return "reserved";
-  return isValidCustomHeaderKey(key) ? null : "invalid";
+function getCustomHeaderIssue(
+  header: { key: string; value: string },
+  includeEmpty = false,
+): CustomHeaderIssue | null {
+  if (!header.key && !includeEmpty) return null;
+  if (isReservedCustomHeaderKey(header.key)) return "reserved";
+  if (!isValidCustomHeaderKey(header.key)) return "invalid-key";
+  // 取值含非 ASCII / CR / LF 时 fetch() 会直接抛错，整轮对话被打断成一条与请求头
+  // 无关的报错——在保存前拦住，把问题指回这一行配置。
+  return isValidCustomHeaderValue(header.value) ? null : "invalid-value";
 }
 
 function DialogSwitch(props: {
@@ -190,23 +313,6 @@ function itemsByIdOrder<T extends { id: string }>(items: readonly T[], order: re
   });
 }
 
-function orderModels(
-  models: readonly ProviderModelConfig[],
-  order: readonly string[] | undefined,
-  activeModelIds: ReadonlySet<string>,
-) {
-  if (!order) return sortModelsByActiveStateAndVendor(models, activeModelIds);
-  const ordered = itemsByIdOrder(models, order);
-  const included = new Set(ordered.map((model) => model.id));
-  return [
-    ...ordered,
-    ...sortModelsByActiveStateAndVendor(
-      models.filter((model) => !included.has(model.id)),
-      activeModelIds,
-    ),
-  ];
-}
-
 function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProps) {
   const { t } = useLocale();
   const isGatewayWebui = isGatewayWebuiRuntime();
@@ -230,15 +336,32 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   const [activeModels, setActiveModels] = useState<Set<string>>(
     new Set(initialData?.activeModels ?? []),
   );
+  const [modelDisplayOrder, setModelDisplayOrder] = useState<string[]>(() =>
+    createModelOrderSnapshot(models, initialData?.modelOrder, activeModels),
+  );
+  const [newModelPhases, setNewModelPhases] = useState<ReadonlyMap<string, NewModelPhase>>(
+    () => new Map(),
+  );
   const [requestFormat, setRequestFormat] = useState<CodexRequestFormat>(
     initialData?.requestFormat ?? "openai-responses",
   );
   const [useSystemProxy, setUseSystemProxy] = useState(initialData?.useSystemProxy ?? false);
   const [promptCachingEnabled, setPromptCachingEnabled] = useState(
-    initialData?.promptCachingEnabled ?? providerType !== "gemini",
+    initialData?.promptCachingEnabled ?? (providerType !== "gemini" && providerType !== "xai"),
   );
   const [promptCacheRetention, setPromptCacheRetention] = useState<"short" | "long">(
     initialData?.promptCacheRetention === "long" ? "long" : "short",
+  );
+  const [usageQuery, setUsageQuery] = useState(() => {
+    const draft = createUsageQueryDraft(
+      initialData?.usageQuery ?? getDefaultUsageQueryConfig(),
+      isGatewayWebui,
+    );
+    // general/newapi 是可编辑脚本预设:脚本为空的存量配置打开时即在编辑器填充预设。
+    return applyUsageQueryModePreset(draft, draft.mode);
+  });
+  const [customUsageQueryConfirmed, setCustomUsageQueryConfirmed] = useState(
+    () => initialData?.usageQuery?.enabled === true && initialData.usageQuery.mode === "custom",
   );
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -265,9 +388,50 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   const prevFetchKey = useRef("");
   const headerKeyRefs = useRef<Array<HTMLInputElement | null>>([]);
   const headerValueRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const modelListRef = useRef<HTMLDivElement | null>(null);
+  const pendingModelLayoutRef = useRef<PendingModelLayout | null>(null);
+  const modelSortTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelBadgeTimersRef = useRef(new Map<string, Array<ReturnType<typeof setTimeout>>>());
+  const modelsRef = useRef(models);
+  const modelOrderRef = useRef(modelOrder);
+  const activeModelsRef = useRef(activeModels);
+  const draggingModelIdRef = useRef<string | null>(null);
+  const commitModelsWithNewRowsRef = useRef<(nextModels: ProviderModelConfig[]) => void>(
+    () => undefined,
+  );
+  modelsRef.current = models;
+  modelOrderRef.current = modelOrder;
+  activeModelsRef.current = activeModels;
   const apiKeyIsRedactedDisplay = initialUsesRedactedApiKey && apiKey === REDACTED_API_KEY_DISPLAY;
   const apiKeyForRequest = apiKeyIsRedactedDisplay ? "" : apiKey.trim();
   const canFetchModels = baseUrl.trim().length > 0 && apiKeyForRequest.length > 0;
+  const persistedUsageQueryProviderId = getPersistedUsageQueryProviderId(initialData);
+  const { confirm: requestUsageQueryConfirm, dialog: usageQueryConfirmDialog } = useConfirmDialog();
+  const [usageQueryTest, setUsageQueryTest] = useState<{
+    status: "idle" | "running" | "success" | "error";
+    data: UsageData[];
+    error: string | null;
+  }>({ status: "idle", data: [], error: null });
+  const usageQueryTestSeqRef = useRef(0);
+  // 数字输入用本地草稿字符串,blur 时 clamp 后写回 usageQuery。
+  const [usageTimeoutInput, setUsageTimeoutInput] = useState(() => String(usageQuery.timeoutSecs));
+  // 自定义模式的"支持的变量"面板:apiKey 打码,眼睛切换明文。
+  const [showUsageVariableApiKey, setShowUsageVariableApiKey] = useState(false);
+  // 变量实际生效值:查询专用覆盖优先,留空回退供应商自身配置(与 Rust
+  // prepare_script_query 的解析顺序一致)。
+  const usageVariableBaseUrl = usageQuery.baseUrl.trim() || baseUrl.trim();
+  const usageVariableApiKey = usageQuery.apiKey.trim() || apiKey.trim();
+  // Token Plan 供应商:显式选择优先,否则按 Base URL 自动检测。
+  const activeCodingPlanProvider =
+    usageQuery.codingPlanProvider || detectCodingPlanProvider(baseUrl);
+  const matchedBalanceProviders = matchBalanceProviders(baseUrl);
+
+  function commitUsageTimeoutInput() {
+    const raw = usageTimeoutInput.trim();
+    const next = clampUsageQueryTimeoutSecs(raw === "" ? Number.NaN : Number(raw));
+    setUsageTimeoutInput(String(next));
+    setUsageQuery((previous) => ({ ...previous, timeoutSecs: next }));
+  }
 
   const doFetch = useCallback(
     async (url: string, key: string) => {
@@ -275,7 +439,8 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
       setFetchError(null);
       try {
         const list = await fetchModelsFromApi(providerType, url, key, { useSystemProxy });
-        setModels((prev) => mergeFetchedModels(list, prev));
+        const mergedModels = mergeFetchedModels(list, modelsRef.current);
+        commitModelsWithNewRowsRef.current(mergedModels);
       } catch (err) {
         setFetchError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -313,6 +478,106 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
       setModelOrder(next);
     }
   }, [modelOrder, models]);
+
+  useEffect(() => {
+    setModelDisplayOrder((current) => {
+      const next = applyModelOrderSnapshot(models, current).map((model) => model.id);
+      return next.length === current.length && next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
+  }, [models]);
+
+  useEffect(
+    () => () => {
+      if (modelSortTimerRef.current) clearTimeout(modelSortTimerRef.current);
+      for (const timers of modelBadgeTimersRef.current.values()) {
+        for (const timer of timers) clearTimeout(timer);
+      }
+      modelBadgeTimersRef.current.clear();
+    },
+    [],
+  );
+
+  function captureModelLayout() {
+    const rows = modelListRef.current?.querySelectorAll<HTMLElement>("[data-model-row-id]");
+    const topById = new Map<string, number>();
+    for (const row of rows ?? []) {
+      for (const animation of row.getAnimations()) animation.cancel();
+      const id = row.dataset.modelRowId;
+      if (id) topById.set(id, row.getBoundingClientRect().top);
+    }
+    const scrollContainer = modelScrollContainerRef.current;
+    pendingModelLayoutRef.current = {
+      topById,
+      scrollContainer,
+      scrollTop: scrollContainer?.scrollTop ?? null,
+    };
+  }
+
+  function markModelAsNew(modelId: string) {
+    for (const timer of modelBadgeTimersRef.current.get(modelId) ?? []) clearTimeout(timer);
+    setNewModelPhases((current) => {
+      const next = new Map(current);
+      next.set(modelId, "visible");
+      return next;
+    });
+    const fadeTimer = setTimeout(() => {
+      setNewModelPhases((current) => {
+        if (!current.has(modelId)) return current;
+        const next = new Map(current);
+        next.set(modelId, "fading");
+        return next;
+      });
+    }, NEW_MODEL_BADGE_DURATION_MS);
+    const removeTimer = setTimeout(() => {
+      setNewModelPhases((current) => {
+        if (!current.has(modelId)) return current;
+        const next = new Map(current);
+        next.delete(modelId);
+        return next;
+      });
+      modelBadgeTimersRef.current.delete(modelId);
+    }, NEW_MODEL_BADGE_DURATION_MS + NEW_MODEL_BADGE_FADE_MS);
+    modelBadgeTimersRef.current.set(modelId, [fadeTimer, removeTimer]);
+  }
+
+  function settleNewModels() {
+    if (draggingModelIdRef.current) {
+      modelSortTimerRef.current = setTimeout(settleNewModels, 200);
+      return;
+    }
+    captureModelLayout();
+    setModelDisplayOrder(
+      createModelOrderSnapshot(modelsRef.current, modelOrderRef.current, activeModelsRef.current),
+    );
+    modelSortTimerRef.current = null;
+  }
+
+  function scheduleNewModelSettlement() {
+    if (modelSortTimerRef.current) clearTimeout(modelSortTimerRef.current);
+    modelSortTimerRef.current = setTimeout(settleNewModels, NEW_MODEL_SORT_DELAY_MS);
+  }
+
+  function commitModelsWithNewRows(nextModels: ProviderModelConfig[]) {
+    const newModelIds = findNewModelIds(modelsRef.current, nextModels);
+    if (newModelIds.length === 0) {
+      setModels(nextModels);
+      return;
+    }
+
+    captureModelLayout();
+    const nextIds = new Set(nextModels.map((model) => model.id));
+    const newIdSet = new Set(newModelIds);
+    setModels(nextModels);
+    setModelDisplayOrder((current) => [
+      ...current.filter((id) => nextIds.has(id) && !newIdSet.has(id)),
+      ...newModelIds,
+    ]);
+    for (const modelId of newModelIds) markModelAsNew(modelId);
+    scheduleNewModelSettlement();
+  }
+  commitModelsWithNewRowsRef.current = commitModelsWithNewRows;
 
   function handleRefresh() {
     const trimUrl = baseUrl.trim();
@@ -375,8 +640,8 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   function handleAddModel() {
     const model = newModelName.trim();
     if (!model) return;
-    if (!models.some((item) => item.id === model)) {
-      setModels((prev) => [...prev, createDraftModelConfig(providerType, model)]);
+    if (!modelsRef.current.some((item) => item.id === model)) {
+      commitModelsWithNewRows([...modelsRef.current, createDraftModelConfig(providerType, model)]);
     }
     setActiveModels((prev) => new Set([...prev, model]));
     setNewModelName("");
@@ -384,6 +649,14 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   }
 
   function removeModel(model: string) {
+    for (const timer of modelBadgeTimersRef.current.get(model) ?? []) clearTimeout(timer);
+    modelBadgeTimersRef.current.delete(model);
+    setNewModelPhases((current) => {
+      if (!current.has(model)) return current;
+      const next = new Map(current);
+      next.delete(model);
+      return next;
+    });
     setModels((prev) => prev.filter((item) => item.id !== model));
     setActiveModels((prev) => {
       const next = new Set(prev);
@@ -409,10 +682,6 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
             model: target,
             contextWindow: String(target.contextWindow),
             maxOutputToken: String(target.maxOutputToken),
-            costInput: formatCostRate(target.cost?.input),
-            costOutput: formatCostRate(target.cost?.output),
-            costCacheRead: formatCostRate(target.cost?.cacheRead),
-            costCacheWrite: formatCostRate(target.cost?.cacheWrite),
           },
     );
   }
@@ -423,50 +692,21 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   const editingModelMaxOutputToken = editingModel
     ? parsePositiveInteger(editingModel.maxOutputToken)
     : null;
-  const editingModelCost = editingModel
-    ? {
-        input: parseCostRate(editingModel.costInput),
-        output: parseCostRate(editingModel.costOutput),
-        cacheRead: parseCostRate(editingModel.costCacheRead),
-        cacheWrite: parseCostRate(editingModel.costCacheWrite),
-      }
-    : null;
-  const editingModelCostValid =
-    editingModelCost === null ||
-    (editingModelCost.input !== null &&
-      editingModelCost.output !== null &&
-      editingModelCost.cacheRead !== null &&
-      editingModelCost.cacheWrite !== null);
   const canSaveEditingModel =
-    editingModelContextWindow !== null &&
-    editingModelMaxOutputToken !== null &&
-    editingModelCostValid;
+    editingModelContextWindow !== null && editingModelMaxOutputToken !== null;
 
   function saveInlineModelSettings() {
     if (
       !editingModel ||
       editingModelContextWindow === null ||
-      editingModelMaxOutputToken === null ||
-      !editingModelCostValid
+      editingModelMaxOutputToken === null
     ) {
       return;
     }
-    const cost = editingModelCost
-      ? {
-          input: editingModelCost.input ?? 0,
-          output: editingModelCost.output ?? 0,
-          cacheRead: editingModelCost.cacheRead ?? 0,
-          cacheWrite: editingModelCost.cacheWrite ?? 0,
-        }
-      : undefined;
-    const hasCost =
-      cost !== undefined &&
-      (cost.input > 0 || cost.output > 0 || cost.cacheRead > 0 || cost.cacheWrite > 0);
     const nextModel: ProviderModelConfig = {
       ...editingModel.model,
       contextWindow: editingModelContextWindow,
       maxOutputToken: editingModelMaxOutputToken,
-      cost: hasCost ? cost : undefined,
     };
     setModels((prev) => prev.map((item) => (item.id === nextModel.id ? nextModel : item)));
     setEditingModel(null);
@@ -535,17 +775,34 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
     focusCustomHeader(headerSuggest.index, "value");
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!name.trim()) return;
     const invalidHeaderIndex = customHeaders.findIndex(
-      (header) => getCustomHeaderKeyIssue(header.key, true) !== null,
+      (header) => getCustomHeaderIssue(header, true) !== null,
     );
     if (invalidHeaderIndex >= 0) {
       setHeaderValidationSubmitted(true);
       exitModelBulkMode();
       setActivePanel("request");
-      focusCustomHeader(invalidHeaderIndex, "key");
+      focusCustomHeader(
+        invalidHeaderIndex,
+        getCustomHeaderIssue(customHeaders[invalidHeaderIndex], true) === "invalid-value"
+          ? "value"
+          : "key",
+      );
       return;
+    }
+    if (requiresCustomUsageQueryConfirmation(usageQuery, customUsageQueryConfirmed)) {
+      const confirmed = await requestUsageQueryConfirm({
+        title: t("settings.providerUsageCustomConfirmTitle"),
+        description: t("settings.providerUsageCustomConfirmDescription"),
+        detail: t("settings.providerUsageCustomConfirmDetail"),
+        confirmLabel: t("settings.providerUsageCustomConfirmAction"),
+        cancelLabel: t("settings.cancel"),
+        tone: "warning",
+      });
+      if (!confirmed) return;
+      setCustomUsageQueryConfirmed(true);
     }
     const nextApiKey = apiKeyIsRedactedDisplay ? "" : apiKey.trim();
     onSave({
@@ -561,28 +818,83 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
       models,
       modelOrder,
       activeModels: Array.from(activeModels),
-      requestFormat: providerType === "codex" ? requestFormat : undefined,
+      requestFormat:
+        providerType === "xai"
+          ? "openai-responses"
+          : providerType === "codex"
+            ? requestFormat
+            : undefined,
       reasoning:
         providerType === "gemini" && initialData?.reasoning === "xhigh"
           ? "high"
           : (initialData?.reasoning ?? "off"),
-      promptCachingEnabled: providerType === "gemini" ? false : promptCachingEnabled,
+      promptCachingEnabled:
+        providerType === "gemini" || providerType === "xai" ? false : promptCachingEnabled,
       promptCacheRetention:
         providerType === "claude_code" && promptCachingEnabled && promptCacheRetention === "long"
           ? "long"
           : undefined,
       nativeWebSearchEnabled: initialData?.nativeWebSearchEnabled ?? true,
       useSystemProxy,
+      usageQuery: serializeUsageQueryDraft(usageQuery, isGatewayWebui),
     });
     requestClose();
+  }
+
+  async function handleTestUsageQuery() {
+    if (!persistedUsageQueryProviderId) return;
+    const seq = ++usageQueryTestSeqRef.current;
+    setUsageQueryTest({ status: "running", data: [], error: null });
+    try {
+      // 测试永远以编辑器里的草稿为准(忽略启用开关,不落库、不进缓存);
+      // 秘密占位符经 serialize 还原为空串,由桌面端按 *Configured 沿用已存密钥。
+      const draft = serializeUsageQueryDraft(usageQuery, isGatewayWebui);
+      const result = await testProviderUsage(persistedUsageQueryProviderId, draft);
+      if (usageQueryTestSeqRef.current !== seq) return;
+      if (result?.error) {
+        setUsageQueryTest({ status: "error", data: result.data ?? [], error: result.error });
+      } else {
+        setUsageQueryTest({ status: "success", data: result?.data ?? [], error: null });
+      }
+    } catch (error) {
+      if (usageQueryTestSeqRef.current !== seq) return;
+      setUsageQueryTest({
+        status: "error",
+        data: [],
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const isEditing = Boolean(initialData);
   const typeLabel = getProviderLabel(providerType);
   const orderedModels = useMemo(
-    () => orderModels(models, modelOrder, activeModels),
-    [models, modelOrder, activeModels],
+    () => applyModelOrderSnapshot(models, modelDisplayOrder),
+    [models, modelDisplayOrder],
   );
+  useLayoutEffect(() => {
+    // The rendered row order is the commit boundary for restoring scroll and running FLIP.
+    void orderedModels;
+    const pending = pendingModelLayoutRef.current;
+    if (!pending) return;
+    pendingModelLayoutRef.current = null;
+    if (pending.scrollTop !== null && pending.scrollContainer) {
+      pending.scrollContainer.scrollTop = pending.scrollTop;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const rows = modelListRef.current?.querySelectorAll<HTMLElement>("[data-model-row-id]");
+    for (const row of rows ?? []) {
+      const id = row.dataset.modelRowId;
+      const previousTop = id ? pending.topById.get(id) : undefined;
+      if (previousTop === undefined) continue;
+      const delta = previousTop - row.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) continue;
+      row.animate([{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }], {
+        duration: MODEL_FLIP_DURATION_MS,
+        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      });
+    }
+  }, [orderedModels]);
   const modelSearchQuery = modelSearch.trim().toLowerCase();
   const visibleModels = useMemo(
     () =>
@@ -603,10 +915,13 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
       ? t("settings.modelReorderDisabledSearch")
       : t("settings.reorderNeedsTwoItems");
   const handleModelReorder = useCallback((nextIds: string[]) => {
+    if (modelSortTimerRef.current) clearTimeout(modelSortTimerRef.current);
+    modelSortTimerRef.current = null;
     setModels((current) => {
       return itemsByIdOrder(current, nextIds);
     });
     setModelOrder(nextIds);
+    setModelDisplayOrder(nextIds);
   }, []);
   const {
     draggingItemId: draggingModelId,
@@ -621,6 +936,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
     disabledHint: modelReorderDisabledHint,
     onReorder: handleModelReorder,
   });
+  draggingModelIdRef.current = draggingModelId;
   const headerSuggestQuery = headerSuggest
     ? (customHeaders[headerSuggest.index]?.key ?? "").trim().toLowerCase()
     : "";
@@ -647,14 +963,11 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
   );
   const firstHeaderIssue =
     customHeaders
-      .map((header) => getCustomHeaderKeyIssue(header.key, headerValidationSubmitted))
+      .map((header) => getCustomHeaderIssue(header, headerValidationSubmitted))
       .find((issue) => issue !== null) ?? null;
-  const headerIssueMessage =
-    firstHeaderIssue === "reserved"
-      ? t("settings.customHeaderReservedTitle")
-      : firstHeaderIssue === "invalid"
-        ? t("settings.invalidCustomHeaderKey")
-        : null;
+  const headerIssueMessage = firstHeaderIssue
+    ? customHeaderIssueMessage(firstHeaderIssue, t)
+    : null;
 
   return createPortal(
     <div
@@ -735,11 +1048,26 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                 </span>
               ) : null}
             </button>
+            <button
+              type="button"
+              className={cn(
+                "flex h-10 items-center gap-2 rounded-lg px-3 text-left text-sm text-muted-foreground max-[720px]:min-w-max max-[720px]:flex-1 max-[720px]:justify-center max-[720px]:px-2 max-[720px]:text-xs transition-colors hover:bg-accent/50 hover:text-foreground",
+                activePanel === "usage" && "bg-primary/10 font-medium text-primary",
+              )}
+              onClick={() => {
+                exitModelBulkMode();
+                setActivePanel("usage");
+              }}
+              aria-current={activePanel === "usage" ? "page" : undefined}
+            >
+              <Key className="h-4 w-4 shrink-0 max-[720px]:h-3.5 max-[720px]:w-3.5" />
+              {t("settings.providerUsageQuery")}
+            </button>
           </nav>
 
           <div
             ref={modelScrollContainerRef}
-            className="settings-modal-body min-w-0 flex-1 overflow-y-auto px-6 py-5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.875rem+env(safe-area-inset-bottom))] max-[720px]:pt-3.5"
+            className="settings-modal-body min-w-0 flex-1 overflow-y-auto [overflow-anchor:none] px-6 py-5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.875rem+env(safe-area-inset-bottom))] max-[720px]:pt-3.5"
             onScroll={() => setHeaderSuggest(null)}
           >
             {activePanel === "general" ? (
@@ -945,7 +1273,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                     </div>
                   ) : null}
 
-                  <div className="divide-y">
+                  <div ref={modelListRef} className="divide-y">
                     {visibleModels.length === 0 ? (
                       <div className="px-3 py-8 text-center text-xs text-muted-foreground">
                         {models.length > 0 && modelSearchQuery
@@ -957,16 +1285,20 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                     ) : (
                       visibleModels.map((model) => {
                         const isEditingModel = editingModel?.model.id === model.id;
+                        const newModelPhase = newModelPhases.get(model.id);
                         return (
                           // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useAriaPropsSupportedByRole: The row becomes an accessible checkbox only while bulk mode is active.
                           <div
                             key={model.id}
                             {...getModelReorderProps(model.id)}
+                            data-model-row-id={model.id}
                             className={cn(
-                              "settings-model-row group hover:bg-accent/30",
+                              "settings-model-row group transition-colors duration-500 hover:bg-accent/30",
                               draggingModelId === model.id && "bg-accent shadow-lg",
                               modelBulkMode && "cursor-pointer",
                               modelBulkSelection.has(model.id) && "bg-primary/5",
+                              newModelPhase === "visible" && "bg-primary/10 hover:bg-primary/15",
+                              newModelPhase === "fading" && "bg-primary/[0.04]",
                             )}
                             role={modelBulkMode ? "checkbox" : undefined}
                             aria-checked={
@@ -1030,6 +1362,16 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                               <div className="min-w-0 flex-1 max-[720px]:col-[2/5] max-[720px]:row-start-1">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span className="truncate text-sm font-medium">{model.id}</span>
+                                  {newModelPhase ? (
+                                    <span
+                                      className={cn(
+                                        "shrink-0 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-primary transition-all duration-500 max-[420px]:px-1.5",
+                                        newModelPhase === "fading" && "scale-95 opacity-0",
+                                      )}
+                                    >
+                                      {t("settings.newModelBadge")}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
                               <div className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground max-[720px]:col-[1/3] max-[720px]:row-start-2 max-[720px]:min-w-0">
@@ -1116,47 +1458,6 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                                   </div>
                                 </div>
 
-                                <div className="mt-3 text-xs font-medium text-muted-foreground">
-                                  {t("settings.modelCost")}
-                                </div>
-                                <div className="mt-1 text-[11px] text-muted-foreground/80">
-                                  {t("settings.modelCostHint")}
-                                </div>
-                                <div className="mt-2 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
-                                  {(
-                                    [
-                                      ["costInput", "settings.modelCostInput"],
-                                      ["costOutput", "settings.modelCostOutput"],
-                                      ["costCacheRead", "settings.modelCostCacheRead"],
-                                      ["costCacheWrite", "settings.modelCostCacheWrite"],
-                                    ] as const
-                                  ).map(([field, labelKey]) => (
-                                    <div key={field} className="space-y-1.5">
-                                      <Label>{t(labelKey)}</Label>
-                                      <Input
-                                        inputMode="decimal"
-                                        placeholder="0"
-                                        aria-invalid={
-                                          parseCostRate(editingModel[field]) === null
-                                            ? true
-                                            : undefined
-                                        }
-                                        className={cn(
-                                          parseCostRate(editingModel[field]) === null &&
-                                            "ring-1 ring-inset ring-destructive focus-visible:ring-destructive",
-                                        )}
-                                        value={editingModel[field]}
-                                        onChange={(event) => {
-                                          const value = event.currentTarget.value;
-                                          setEditingModel((prev) =>
-                                            prev ? { ...prev, [field]: value } : prev,
-                                          );
-                                        }}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-
                                 {!canSaveEditingModel ? (
                                   <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                                     {t("settings.positiveIntegerRequired")}
@@ -1190,7 +1491,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                   </div>
                 </div>
               </section>
-            ) : (
+            ) : activePanel === "request" ? (
               <section key="request" className="provider-panel-enter">
                 <div className="text-sm font-semibold">{t("settings.providerDialogRequest")}</div>
 
@@ -1218,7 +1519,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                   />
                 </div>
 
-                {providerType !== "gemini" ? (
+                {providerType !== "gemini" && providerType !== "xai" ? (
                   <div
                     className={cn(
                       "mt-3 rounded-xl border bg-card px-4 py-3 transition-colors",
@@ -1320,16 +1621,10 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                       onScroll={() => setHeaderSuggest(null)}
                     >
                       {customHeaders.map((header, index) => {
-                        const issue = getCustomHeaderKeyIssue(
-                          header.key,
-                          headerValidationSubmitted,
-                        );
-                        const issueTitle =
-                          issue === "reserved"
-                            ? t("settings.customHeaderReservedTitle")
-                            : issue === "invalid"
-                              ? t("settings.invalidCustomHeaderKey")
-                              : undefined;
+                        const issue = getCustomHeaderIssue(header, headerValidationSubmitted);
+                        const issueTitle = issue ? customHeaderIssueMessage(issue, t) : undefined;
+                        const valueIssue = issue === "invalid-value";
+                        const keyIssue = issue !== null && !valueIssue;
                         const valueVisible = visibleHeaderValues.has(index);
                         const suggestOpen =
                           headerSuggest?.index === index && headerSuggestItems.length > 0;
@@ -1350,11 +1645,11 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                               value={header.key}
                               className={cn(
                                 "h-10 w-[210px] shrink-0 rounded-none border-0 border-r bg-muted/30 px-3 font-mono text-xs shadow-none focus-visible:ring-0 max-[720px]:w-full max-[720px]:border-b max-[720px]:border-r-0 max-[720px]:bg-muted/40",
-                                issue && "text-destructive",
+                                keyIssue && "text-destructive",
                               )}
                               placeholder={t("settings.customHeaderKeyPlaceholder")}
                               aria-label={t("settings.customHeaderName")}
-                              aria-invalid={issue ? true : undefined}
+                              aria-invalid={keyIssue ? true : undefined}
                               role="combobox"
                               aria-expanded={suggestOpen}
                               aria-controls={suggestOpen ? "provider-header-suggest" : undefined}
@@ -1411,9 +1706,14 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                                 }}
                                 type={valueVisible ? "text" : "password"}
                                 value={header.value}
-                                className="h-10 w-full rounded-none border-0 bg-transparent pl-3 pr-[4.5rem] font-mono text-xs shadow-none focus-visible:ring-0"
+                                className={cn(
+                                  "h-10 w-full rounded-none border-0 bg-transparent pl-3 pr-[4.5rem] font-mono text-xs shadow-none focus-visible:ring-0",
+                                  valueIssue && "text-destructive",
+                                )}
                                 placeholder={t("settings.customHeaderValue")}
                                 aria-label={t("settings.customHeaderValue")}
+                                aria-invalid={valueIssue ? true : undefined}
+                                title={valueIssue ? issueTitle : undefined}
                                 autoComplete="off"
                                 spellCheck={false}
                                 onChange={(event) =>
@@ -1510,6 +1810,579 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
                     )
                   : null}
               </section>
+            ) : (
+              <section key="usage" className="provider-panel-enter">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold">{t("settings.providerUsageQuery")}</div>
+                  </div>
+                  <DialogSwitch
+                    checked={usageQuery.enabled}
+                    onCheckedChange={(enabled) =>
+                      setUsageQuery((previous) => ({ ...previous, enabled }))
+                    }
+                    ariaLabel={t("settings.providerUsageEnabled")}
+                  />
+                </div>
+
+                {/* 未启用时隐藏全部配置与测试入口,只留开关。 */}
+                {usageQuery.enabled ? (
+                  <>
+                    {/* 功能出处:居中带字分隔线,项目名是带图标的主色链接。 */}
+                    <div className="mt-3 flex items-center gap-2 text-xs leading-5 text-muted-foreground">
+                      <span aria-hidden="true" className="h-px min-w-0 flex-1 bg-border" />
+                      <span className="shrink-0">{t("settings.providerUsageCredit")}</span>
+                      <a
+                        href="https://github.com/farion1231/cc-switch"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex shrink-0 items-center gap-1 font-medium text-primary transition-colors hover:underline"
+                        title={t("settings.providerUsageCreditOpen")}
+                        aria-label={t("settings.providerUsageCreditOpen")}
+                      >
+                        cc-switch
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                      <span aria-hidden="true" className="h-px min-w-0 flex-1 bg-border" />
+                    </div>
+
+                    <div className="mt-4 space-y-1.5">
+                      <Label>{t("settings.providerUsageMode")}</Label>
+                      <Select
+                        value={usageQuery.mode}
+                        onValueChange={(mode) =>
+                          setUsageQuery((previous) =>
+                            applyUsageQueryModePreset(previous, mode as UsageQueryMode),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          {/* value≠label:闭合态必须显式渲染本地化标签(coding-plan → codingPlan 键)。 */}
+                          <SelectValue>
+                            {t(
+                              usageQuery.mode === "coding-plan"
+                                ? "settings.providerUsageMode.codingPlan"
+                                : `settings.providerUsageMode.${usageQuery.mode}`,
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="custom">
+                            {t("settings.providerUsageMode.custom")}
+                          </SelectItem>
+                          <SelectItem value="general">
+                            {t("settings.providerUsageMode.general")}
+                          </SelectItem>
+                          <SelectItem value="newapi">
+                            {t("settings.providerUsageMode.newapi")}
+                          </SelectItem>
+                          <SelectItem value="balance">
+                            {t("settings.providerUsageMode.balance")}
+                          </SelectItem>
+                          <SelectItem value="coding-plan">
+                            {t("settings.providerUsageMode.codingPlan")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {usageQuery.mode !== "custom" ? (
+                      <p className="mt-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        {usageQuery.mode === "general"
+                          ? t("settings.providerUsageTemplate.general")
+                          : usageQuery.mode === "newapi"
+                            ? t("settings.providerUsageTemplate.newapi")
+                            : usageQuery.mode === "balance"
+                              ? t("settings.providerUsageTemplate.balance")
+                              : t("settings.providerUsageTemplate.codingPlan")}
+                      </p>
+                    ) : null}
+
+                    {/* 官方余额:按 Base URL 匹配到的供应商徽章。 */}
+                    {usageQuery.mode === "balance" && matchedBalanceProviders.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {matchedBalanceProviders.map((entry) => (
+                          <span
+                            key={entry.id}
+                            className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                          >
+                            {entry.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* 只有通用模板需要用户自行填写 baseUrl / apiKey 覆盖。 */}
+                    {usageQuery.mode === "general" ? (
+                      <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="usage-query-base-url">
+                            {t("settings.providerUsageBaseUrl")}
+                          </Label>
+                          <Input
+                            id="usage-query-base-url"
+                            value={usageQuery.baseUrl}
+                            placeholder={baseUrl.trim() || undefined}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setUsageQuery((previous) => ({
+                                ...previous,
+                                baseUrl: value,
+                              }));
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="usage-query-api-key">
+                            {t("settings.providerUsageApiKey")}
+                          </Label>
+                          <Input
+                            id="usage-query-api-key"
+                            type="password"
+                            value={usageQuery.apiKey}
+                            autoComplete="off"
+                            onFocus={(event) => event.currentTarget.select()}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setUsageQuery((previous) => ({
+                                ...previous,
+                                apiKey: value,
+                              }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* 自定义模式:只读展示变量的实际生效值(对齐 cc-switch 支持的变量区)。 */}
+                    {usageQuery.mode === "custom" ? (
+                      <div className="mt-4 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs leading-5">
+                        <div className="font-medium text-foreground">
+                          {t("settings.providerUsageVariables")}
+                        </div>
+                        <div className="mt-2 flex min-w-0 items-center gap-2">
+                          <code className="shrink-0 font-mono text-emerald-600 dark:text-emerald-400">
+                            {"{{baseUrl}}"}
+                          </code>
+                          <span className="text-muted-foreground/60">=</span>
+                          {usageVariableBaseUrl ? (
+                            <code className="break-all font-mono text-muted-foreground">
+                              {usageVariableBaseUrl}
+                            </code>
+                          ) : (
+                            <span className="text-muted-foreground/60 italic">
+                              {t("settings.providerUsageVariableNotSet")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex min-w-0 items-center gap-2">
+                          <code className="shrink-0 font-mono text-emerald-600 dark:text-emerald-400">
+                            {"{{apiKey}}"}
+                          </code>
+                          <span className="text-muted-foreground/60">=</span>
+                          {usageVariableApiKey ? (
+                            <>
+                              <code className="break-all font-mono text-muted-foreground">
+                                {!isGatewayWebui && showUsageVariableApiKey
+                                  ? usageVariableApiKey
+                                  : "••••••••"}
+                              </code>
+                              {/* WebUI 永不下发明文 apiKey,查看按钮只在桌面端提供。 */}
+                              {!isGatewayWebui ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                                  onClick={() =>
+                                    setShowUsageVariableApiKey((previous) => !previous)
+                                  }
+                                  title={
+                                    showUsageVariableApiKey
+                                      ? t("settings.hideApiKey")
+                                      : t("settings.showApiKey")
+                                  }
+                                  aria-label={
+                                    showUsageVariableApiKey
+                                      ? t("settings.hideApiKey")
+                                      : t("settings.showApiKey")
+                                  }
+                                >
+                                  {showUsageVariableApiKey ? (
+                                    <EyeOff className="h-3 w-3" />
+                                  ) : (
+                                    <Eye className="h-3 w-3" />
+                                  )}
+                                </button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground/60 italic">
+                              {t("settings.providerUsageVariableNotSet")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {usageQuery.mode === "newapi" ? (
+                      <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="usage-query-access-token">
+                            {t("settings.providerUsageAccessToken")}
+                          </Label>
+                          <Input
+                            id="usage-query-access-token"
+                            type="password"
+                            value={usageQuery.accessToken}
+                            autoComplete="off"
+                            onFocus={(event) => event.currentTarget.select()}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setUsageQuery((previous) => ({
+                                ...previous,
+                                accessToken: value,
+                              }));
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="usage-query-user-id">
+                            {t("settings.providerUsageUserId")}
+                          </Label>
+                          <Input
+                            id="usage-query-user-id"
+                            value={usageQuery.userId}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setUsageQuery((previous) => ({
+                                ...previous,
+                                userId: value,
+                              }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {usageQuery.mode === "coding-plan" ? (
+                      <>
+                        {/* 内置供应商选择(一比一复刻 cc-switch Token Plan):
+                            显式选择优先,否则按 Base URL 自动检测高亮。 */}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {USAGE_QUERY_CODING_PLAN_PROVIDERS.map((entry) => (
+                            <Button
+                              key={entry.id}
+                              type="button"
+                              size="sm"
+                              variant={
+                                activeCodingPlanProvider === entry.id ? "default" : "outline"
+                              }
+                              onClick={() =>
+                                setUsageQuery((previous) => ({
+                                  ...previous,
+                                  codingPlanProvider: entry.id,
+                                }))
+                              }
+                            >
+                              {entry.label}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {activeCodingPlanProvider === "zenmux" ? (
+                          <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="usage-query-zenmux-base-url">
+                                {t("settings.providerUsageBaseUrl")}
+                              </Label>
+                              <Input
+                                id="usage-query-zenmux-base-url"
+                                value={usageQuery.baseUrl}
+                                placeholder="https://api.zenmux.com/v1/..."
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setUsageQuery((previous) => ({
+                                    ...previous,
+                                    baseUrl: value,
+                                  }));
+                                }}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="usage-query-zenmux-api-key">
+                                {t("settings.providerUsageApiKey")}
+                              </Label>
+                              <Input
+                                id="usage-query-zenmux-api-key"
+                                type="password"
+                                value={usageQuery.apiKey}
+                                autoComplete="off"
+                                placeholder="sk-..."
+                                onFocus={(event) => event.currentTarget.select()}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setUsageQuery((previous) => ({
+                                    ...previous,
+                                    apiKey: value,
+                                  }));
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeCodingPlanProvider === "zhipu_team" ? (
+                          <>
+                            <p className="mt-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                              {t("settings.providerUsageZhipuTeamHint")}{" "}
+                              {t("settings.providerUsageZhipuTeamConsoleLink")}{" "}
+                              <a
+                                href="https://bigmodel.cn/coding-plan/team/usage-stats"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                bigmodel.cn/coding-plan/team/usage-stats
+                              </a>
+                            </p>
+                            <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                              <div className="space-y-1.5">
+                                <Label htmlFor="usage-query-team-organization-id">
+                                  {t("settings.providerUsageOrganizationId")}
+                                </Label>
+                                <Input
+                                  id="usage-query-team-organization-id"
+                                  value={usageQuery.teamOrganizationId}
+                                  placeholder={t("settings.providerUsageOrganizationIdPlaceholder")}
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+                                    setUsageQuery((previous) => ({
+                                      ...previous,
+                                      teamOrganizationId: value,
+                                    }));
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label htmlFor="usage-query-team-project-id">
+                                  {t("settings.providerUsageProjectId")}
+                                </Label>
+                                <Input
+                                  id="usage-query-team-project-id"
+                                  value={usageQuery.teamProjectId}
+                                  placeholder={t("settings.providerUsageProjectIdPlaceholder")}
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+                                    setUsageQuery((previous) => ({
+                                      ...previous,
+                                      teamProjectId: value,
+                                    }));
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
+
+                        {activeCodingPlanProvider === "volcengine" ? (
+                          <>
+                            <p className="mt-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                              {t("settings.providerUsageVolcengineHint")}{" "}
+                              {t("settings.providerUsageVolcengineConsoleLink")}{" "}
+                              <a
+                                href="https://console.volcengine.com/iam/keymanage"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                console.volcengine.com/iam/keymanage
+                              </a>
+                            </p>
+                            <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                              <div className="space-y-1.5">
+                                <Label htmlFor="usage-query-access-key-id">
+                                  {t("settings.providerUsageAccessKeyId")}
+                                </Label>
+                                <Input
+                                  id="usage-query-access-key-id"
+                                  value={usageQuery.accessKeyId}
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+                                    setUsageQuery((previous) => ({
+                                      ...previous,
+                                      accessKeyId: value,
+                                    }));
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label htmlFor="usage-query-secret-access-key">
+                                  {t("settings.providerUsageSecretAccessKey")}
+                                </Label>
+                                <Input
+                                  id="usage-query-secret-access-key"
+                                  type="password"
+                                  value={usageQuery.secretAccessKey}
+                                  autoComplete="off"
+                                  onFocus={(event) => event.currentTarget.select()}
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+                                    setUsageQuery((previous) => ({
+                                      ...previous,
+                                      secretAccessKey: value,
+                                    }));
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="usage-query-timeout">
+                          {t("settings.providerUsageTimeout")}
+                        </Label>
+                        <Input
+                          id="usage-query-timeout"
+                          inputMode="numeric"
+                          value={usageTimeoutInput}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            setUsageTimeoutInput(value);
+                          }}
+                          onBlur={commitUsageTimeoutInput}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {t("settings.providerUsageTimeoutHint")}
+                        </p>
+                      </div>
+                    </div>
+
+                    {usageQuery.mode === "custom" ||
+                    usageQuery.mode === "general" ||
+                    usageQuery.mode === "newapi" ? (
+                      <div className="mt-4 space-y-1.5">
+                        <Label htmlFor="usage-query-script">
+                          {t("settings.providerUsageScript")}
+                        </Label>
+                        <Textarea
+                          id="usage-query-script"
+                          value={usageQuery.script}
+                          className="min-h-36 font-mono text-xs"
+                          placeholder={t("settings.providerUsageScriptPlaceholder")}
+                          spellCheck={false}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            // 同步写入当前模式的独立脚本槽位,切换查询方式互不串扰。
+                            setUsageQuery((previous) => setUsageQueryScript(previous, value));
+                          }}
+                        />
+                      </div>
+                    ) : null}
+
+                    {/* 测试查询:独占一行的 card——按钮居左,结果内容就地靠左展示。 */}
+                    <div className="mt-4 flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-10 shrink-0 gap-1.5"
+                        disabled={
+                          !persistedUsageQueryProviderId || usageQueryTest.status === "running"
+                        }
+                        onClick={() => void handleTestUsageQuery()}
+                        title={t("settings.providerUsageTest")}
+                        aria-label={t("settings.providerUsageTest")}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            usageQueryTest.status === "running" && "animate-spin",
+                          )}
+                        />
+                        {t("settings.providerUsageTest")}
+                      </Button>
+                      <div className="min-w-0 flex-1 text-xs" role="status" aria-live="polite">
+                        {usageQueryTest.status === "running" ? (
+                          <span className="text-muted-foreground">
+                            {t("settings.providerUsageTestRunning")}
+                          </span>
+                        ) : null}
+                        {usageQueryTest.status === "error" ? (
+                          <span className="text-destructive">
+                            {t("settings.providerUsageTestFailed")}
+                            {usageQueryTest.error ? `: ${usageQueryTest.error}` : ""}
+                          </span>
+                        ) : null}
+                        {usageQueryTest.status === "success" ? (
+                          usageQueryTest.data.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              {usageQueryTest.data.map((plan, index) => (
+                                <UsagePlanLine
+                                  key={`${plan.planName ?? ""}:${
+                                    // biome-ignore lint/suspicious/noArrayIndexKey: 套餐无稳定 id,索引即位置语义
+                                    index
+                                  }`}
+                                  plan={getUsagePlanDisplay(plan)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {t("settings.providerUsageTestEmpty")}
+                            </span>
+                          )
+                        ) : null}
+                        {usageQueryTest.status === "idle" && !persistedUsageQueryProviderId ? (
+                          <span className="text-muted-foreground">
+                            {t("settings.providerUsageTestSavedHint")}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {usageQuery.mode === "custom" ||
+                    usageQuery.mode === "general" ||
+                    usageQuery.mode === "newapi" ? (
+                      <div className="mt-4 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+                        <div className="font-medium text-foreground">
+                          {t("settings.providerUsageScriptHelp")}
+                        </div>
+                        <div className="mt-2 font-medium">
+                          {t("settings.providerUsageScriptHelpFormat")}
+                        </div>
+                        <pre className="mt-1 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-4">
+                          {USAGE_QUERY_SCRIPT_HELP_EXAMPLE}
+                        </pre>
+                        <div className="mt-2 font-medium">
+                          {t("settings.providerUsageScriptHelpExtractor")}
+                        </div>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                          <li>{t("settings.providerUsageScriptHelpField.planName")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.total")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.used")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.remaining")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.unit")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.isValid")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.invalidMessage")}</li>
+                          <li>{t("settings.providerUsageScriptHelpField.extra")}</li>
+                        </ul>
+                        <div className="mt-2 font-medium">
+                          {t("settings.providerUsageScriptHelpTips")}
+                        </div>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                          <li>{t("settings.providerUsageScriptHelpTip.variables")}</li>
+                          <li>{t("settings.providerUsageScriptHelpTip.sandbox")}</li>
+                          <li>{t("settings.providerUsageScriptHelpTip.wrap")}</li>
+                          <li>{t("settings.providerUsageScriptHelpTip.origin")}</li>
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </section>
             )}
           </div>
         </div>
@@ -1580,6 +2453,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
             {t("settings.save")}
           </Button>
         </div>
+        {usageQueryConfirmDialog}
       </div>
     </div>,
     document.body,
@@ -1728,10 +2602,40 @@ function ProviderList(props: {
   onEdit: (provider: CustomProvider) => void;
   onDelete: (id: string) => void;
   onReorder: (type: ProviderId, nextIds: string[]) => void;
+  usageByProvider: ProviderUsageState;
+  refreshingProviderIds: ReadonlySet<string>;
+  onRefreshUsage: (providerId: string) => void;
 }) {
   const { t } = useLocale();
-  const { type, providers, onAdd, onEdit, onDelete, onReorder } = props;
+  const {
+    type,
+    providers,
+    onAdd,
+    onEdit,
+    onDelete,
+    onReorder,
+    usageByProvider,
+    refreshingProviderIds,
+    onRefreshUsage,
+  } = props;
   const filtered = providers.filter((provider) => provider.type === type);
+  // 30s ticker 驱动"N 分钟前"相对时间;多套餐行的展开态是纯本地 UI 状态。
+  const usageNow = useUsageNowTicker(
+    filtered.some((provider) => provider.usageQuery?.enabled) ||
+      Object.keys(usageByProvider).length > 0,
+  );
+  const [expandedUsageProviderIds, setExpandedUsageProviderIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  function toggleUsageExpanded(providerId: string) {
+    setExpandedUsageProviderIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(providerId)) next.delete(providerId);
+      else next.add(providerId);
+      return next;
+    });
+  }
   const {
     draggingItemId: draggingProviderId,
     getItemProps: getProviderReorderProps,
@@ -1776,65 +2680,135 @@ function ProviderList(props: {
           </div>
         ) : (
           <div className="space-y-2 pb-1">
-            {filtered.map((provider) => (
-              <div
-                key={provider.id}
-                {...getProviderReorderProps(provider.id)}
-                className={cn(
-                  "settings-card-row group flex items-center gap-3 rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-accent/30",
-                  draggingProviderId === provider.id && "bg-accent shadow-lg",
-                )}
-              >
-                {renderProviderDragHandle(provider.id, provider.name)}
-                <div className="flex w-5 shrink-0 items-center justify-center text-lg text-foreground">
-                  <ProviderBrandIcon type={type} />
-                </div>
-                <div className="min-w-0 flex-1 max-[720px]:basis-[calc(100%-3rem)]">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{provider.name}</span>
-                    {provider.useSystemProxy ? (
-                      <span
-                        className="shrink-0 text-blue-500 dark:text-blue-400"
-                        title={t("settings.providerUseSystemProxy")}
-                      >
-                        <Waypoints className="h-3 w-3" />
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {provider.baseUrl || t("settings.noBaseUrl")} {" · "}
-                    {provider.activeModels.length} {t("settings.activeModels")}
-                  </div>
-                </div>
-                <div className="settings-card-actions settings-hover-actions flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => onEdit(provider)}
-                    title={t("settings.edit")}
+            {filtered.map((provider) =>
+              (() => {
+                const usage = usageByProvider[provider.id];
+                const refreshing = refreshingProviderIds.has(provider.id);
+                const usageDisplay = getProviderUsageCardDisplay(
+                  provider,
+                  usage,
+                  refreshing,
+                  usageNow,
+                );
+                const usageExpanded = expandedUsageProviderIds.has(provider.id);
+                const visibleUsagePlans =
+                  usageDisplay.plans.length > 1 && !usageExpanded
+                    ? usageDisplay.plans.slice(0, 1)
+                    : usageDisplay.plans;
+                return (
+                  <div
+                    key={provider.id}
+                    {...getProviderReorderProps(provider.id)}
+                    className={cn(
+                      "settings-card-row group flex items-center gap-3 rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-accent/30",
+                      draggingProviderId === provider.id && "bg-accent shadow-lg",
+                    )}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <ConfirmDeletePopover
-                    name={provider.name}
-                    onConfirm={() => onDelete(provider.id)}
-                  >
-                    {(open) => (
+                    {renderProviderDragHandle(provider.id, provider.name)}
+                    <div className="flex w-5 shrink-0 items-center justify-center text-lg text-foreground">
+                      <ProviderBrandIcon type={type} />
+                    </div>
+                    <div className="min-w-0 flex-1 max-[720px]:basis-[calc(100%-3rem)]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{provider.name}</span>
+                        {provider.useSystemProxy ? (
+                          <span
+                            className="shrink-0 text-blue-500 dark:text-blue-400"
+                            title={t("settings.providerUseSystemProxy")}
+                          >
+                            <Waypoints className="h-3 w-3" />
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {provider.baseUrl || t("settings.noBaseUrl")} {" · "}
+                        {provider.activeModels.length} {t("settings.activeModels")}
+                      </div>
+                      {usageDisplay.show ? (
+                        <div className="mt-1 flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+                          {visibleUsagePlans.map((plan, index) => (
+                            <UsagePlanLine
+                              key={`${plan.title.kind === "text" ? plan.title.text : plan.title.kind}:${
+                                // biome-ignore lint/suspicious/noArrayIndexKey: 套餐无稳定 id,索引即位置语义
+                                index
+                              }`}
+                              plan={plan}
+                            />
+                          ))}
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                            {usageDisplay.plans.length > 1 ? (
+                              <button
+                                type="button"
+                                className="text-primary hover:underline"
+                                onClick={() => toggleUsageExpanded(provider.id)}
+                              >
+                                {usageExpanded
+                                  ? t("settings.providerUsageCollapse")
+                                  : t("settings.providerUsageMorePlans").replace(
+                                      "{count}",
+                                      String(usageDisplay.plans.length - 1),
+                                    )}
+                              </button>
+                            ) : null}
+                            {usageDisplay.isStale ? (
+                              <span title={t("settings.providerUsageStaleTitle")}>
+                                {t("settings.providerUsageStale")}
+                              </span>
+                            ) : null}
+                            {usageDisplay.error ? (
+                              <span className="text-destructive">{usageDisplay.error}</span>
+                            ) : null}
+                            {usageDisplay.updatedAt ? (
+                              <time>{usageRelativeTimeText(t, usageDisplay.updatedAt)}</time>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="settings-card-actions settings-hover-actions flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      {usageDisplay.show ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          disabled={usageDisplay.refreshDisabled}
+                          onClick={() => onRefreshUsage(provider.id)}
+                          title={t("settings.providerUsageRefresh")}
+                          aria-label={t("settings.providerUsageRefresh")}
+                        >
+                          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+                        </Button>
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={open}
-                        title={t("settings.delete")}
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => onEdit(provider)}
+                        title={t("settings.edit")}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                    )}
-                  </ConfirmDeletePopover>
-                </div>
-              </div>
-            ))}
+                      <ConfirmDeletePopover
+                        name={provider.name}
+                        onConfirm={() => onDelete(provider.id)}
+                      >
+                        {(open) => (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={open}
+                            title={t("settings.delete")}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </ConfirmDeletePopover>
+                    </div>
+                  </div>
+                );
+              })(),
+            )}
           </div>
         )}
       </div>
@@ -1850,6 +2824,9 @@ export function ProvidersSection(props: SettingsSectionProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [customSettingsOpen, setCustomSettingsOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<CustomProvider | null>(null);
+  const { usageByProvider, refreshingProviderIds, refreshProvider } = useProviderUsage(
+    settings.customProviders,
+  );
 
   function openAdd() {
     setEditingProvider(null);
@@ -1964,6 +2941,9 @@ export function ProvidersSection(props: SettingsSectionProps) {
                 onEdit={openEdit}
                 onDelete={handleDelete}
                 onReorder={handleProviderReorder}
+                usageByProvider={usageByProvider}
+                refreshingProviderIds={refreshingProviderIds}
+                onRefreshUsage={(providerId) => void refreshProvider(providerId)}
               />
             </div>
           ))}

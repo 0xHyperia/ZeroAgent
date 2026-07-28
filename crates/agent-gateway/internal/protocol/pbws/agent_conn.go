@@ -2,6 +2,7 @@ package pbws
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -9,21 +10,28 @@ import (
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/observability"
-	gatewayv1 "github.com/liveagent/agent-gateway/internal/proto/v1"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/session"
 )
 
-// AgentHandler 返回 /ws/v2/agent 的 HTTP 处理器（承接 v1 gRPC Authenticate+AgentConnect 职能）：
-// hello 一并完成鉴权与会话登记，之后进入双向信封流。
+// AgentHandler 返回 /ws/v2/agent 的 HTTP 处理器：hello 一并完成鉴权与
+// 会话登记，之后进入双向信封流。
 func (s *Server) AgentHandler() http.Handler {
 	upgrader := s.upgrader()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
+		release, ok := acquireConnSlot(&s.agentConns, s.maxAgentConnections())
+		if !ok {
+			http.Error(w, "too many agent connections", http.StatusServiceUnavailable)
 			return
 		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			release()
+			return
+		}
+		defer release()
 		conn.SetReadLimit(s.readLimit())
 		s.serveAgent(conn)
 	})
@@ -32,43 +40,62 @@ func (s *Server) AgentHandler() http.Handler {
 func (s *Server) serveAgent(conn *websocket.Conn) {
 	defer func() { _ = conn.Close() }()
 
-	// ---- 握手：hello 即鉴权 + 会话登记（等价 Authenticate RPC）----
+	// ---- 握手：hello 同时完成鉴权与会话登记 ----
 	frame, ok := readAgentFrame(conn)
 	if !ok {
 		return
 	}
 	hello := frame.GetHello()
-	verdict := s.vetHelloBase(hello, gatewayv2.ClientRole_CLIENT_ROLE_AGENT)
-	targetManager := s.sm
-	var userID int64
-	deviceID := ""
-	if verdict.ok && hello.GetDeviceId() != "" && hello.GetDeviceCredential() != "" && s.accounts != nil {
-		device, authErr := s.accounts.AuthenticateDevice(context.Background(), hello.GetDeviceId(), hello.GetDeviceCredential())
-		if authErr != nil {
-			verdict = helloVerdict{message: "unauthorized device"}
-		} else {
-			userID = device.UserID
-			deviceID = device.ID
-			targetManager = s.sm.DeviceManager(userID, deviceID)
-		}
-	} else if verdict.ok {
-		verdict = helloVerdict{message: "device credentials required"}
-	}
+	verdict := s.vetHello(hello, gatewayv2.ClientRole_CLIENT_ROLE_AGENT)
 	if !verdict.ok {
 		_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
 			Payload: &gatewayv2.AgentServerFrame_Hello{
-				Hello: s.serverHello(false, verdict.message, ""),
+				Hello: s.serverHello(false, verdict.message, "", s.readLimit()),
 			},
 		})
 		closeUnauthorized(conn, s.writeTimeout())
 		return
 	}
+	agentID, authEpoch, err := s.authenticateAgentHello(hello)
+	if err != nil {
+		message := "gateway storage unavailable"
+		if errors.Is(err, account.ErrUnauthorizedAgent) {
+			message = "unauthorized"
+		}
+		_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
+			Payload: &gatewayv2.AgentServerFrame_Hello{
+				Hello: s.serverHello(false, message, "", s.readLimit()),
+			},
+		})
+		if errors.Is(err, account.ErrUnauthorizedAgent) {
+			closeUnauthorized(conn, s.writeTimeout())
+		}
+		return
+	}
 
 	sessionID := uuid.NewString()
-	targetManager.RecordAuthentication(hello.GetAgentId(), hello.GetAgentVersion(), sessionID)
+	authSnapshot := session.AuthSnapshot{
+		AgentID:      agentID,
+		AgentVersion: hello.GetAgentVersion(),
+		SessionID:    sessionID,
+	}
+	sess := session.NewAgentSession(authSnapshot)
+	toAgent := sess.Outbound()
+	if !s.sm.SetAuthenticatedSessionIfCurrent(sess, func() bool {
+		return s.authenticator.AuthenticationCurrent(agentID, authEpoch)
+	}) {
+		_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
+			Payload: &gatewayv2.AgentServerFrame_Hello{
+				Hello: s.serverHello(false, "unauthorized", "", s.readLimit()),
+			},
+		})
+		closeUnauthorized(conn, s.writeTimeout())
+		return
+	}
+	defer s.sm.ClearSession(sess)
 	if err := writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
 		Payload: &gatewayv2.AgentServerFrame_Hello{
-			Hello: s.serverHelloFor(true, "", sessionID, userID, deviceID, "", "device_agent"),
+			Hello: s.serverHelloForAgent(true, "", sessionID, agentID, s.readLimit()),
 		},
 	}); err != nil {
 		return
@@ -77,12 +104,6 @@ func (s *Server) serveAgent(conn *websocket.Conn) {
 	observability.Usage.V2AgentConnectsTotal.Add(1)
 	observability.Usage.V2AgentActive.Add(1)
 	defer observability.Usage.V2AgentActive.Add(-1)
-
-	// ---- 会话接管（等价 AgentConnect 流建立）----
-	sess := session.NewAgentSession(targetManager.LatestAuthSnapshot())
-	toAgent := sess.Outbound()
-	targetManager.SetSession(sess)
-	defer targetManager.ClearSession(sess)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -99,14 +120,11 @@ func (s *Server) serveAgent(conn *websocket.Conn) {
 		_ = conn.Close()
 	}()
 
-	go s.agentHeartbeatLoop(ctx, conn, targetManager, sess, deviceID)
+	go s.agentHeartbeatLoop(ctx, conn, sess)
 
 	// WS 控制帧 pong 计入桌面端存活（对应 h2 keepalive 的职能）。
 	conn.SetPongHandler(func(string) error {
-		targetManager.TouchHeartbeat(sess)
-		if deviceID != "" {
-			_ = s.accounts.TouchDevice(context.Background(), deviceID)
-		}
+		s.sm.TouchHeartbeat(sess)
 		return nil
 	})
 
@@ -161,13 +179,13 @@ func (s *Server) serveAgent(conn *websocket.Conn) {
 		env := frame.GetEnvelope()
 		if env == nil {
 			// 重复 hello 或空帧：忽略（仍计入存活）。
-			targetManager.TouchHeartbeat(sess)
+			s.sm.TouchHeartbeat(sess)
 			continue
 		}
 		// 任何入站信封都证明桌面端存活；活跃流式传输中的 agent 绝不能被判心跳过期。
-		targetManager.TouchHeartbeat(sess)
+		s.sm.TouchHeartbeat(sess)
 		// Pong 与其他信封同一分发：关联探测按 request_id 命中注册流，周期心跳的 Pong 无注册流、被无害忽略。
-		targetManager.DispatchFromAgentForSession(sess, env)
+		s.sm.DispatchFromAgentForSession(sess, env)
 	}
 }
 
@@ -189,7 +207,7 @@ func readAgentFrame(conn *websocket.Conn) (*gatewayv2.AgentClientFrame, bool) {
 }
 
 // writeAgentEnvelope 序列化并写出一条 GatewayEnvelope 帧（单写者无需互斥；WriteControl 与之并发安全）。
-func (s *Server) writeAgentEnvelope(conn *websocket.Conn, env *gatewayv1.GatewayEnvelope) bool {
+func (s *Server) writeAgentEnvelope(conn *websocket.Conn, env *gatewayv2.GatewayEnvelope) bool {
 	data, err := proto.Marshal(&gatewayv2.AgentServerFrame{
 		Payload: &gatewayv2.AgentServerFrame_Envelope{Envelope: env},
 	})
@@ -207,7 +225,7 @@ func (s *Server) writeAgentEnvelope(conn *websocket.Conn, env *gatewayv1.Gateway
 
 // agentHeartbeatLoop：周期发应用层 Ping（走专用心跳通道）、
 // 驱逐心跳过期会话；额外补发 WS 控制帧 ping，由 tokio-tungstenite 自动 pong 承担传输层保活。
-func (s *Server) agentHeartbeatLoop(ctx context.Context, conn *websocket.Conn, sm *session.Manager, sess *session.AgentSession, deviceID string) {
+func (s *Server) agentHeartbeatLoop(ctx context.Context, conn *websocket.Conn, sess *session.AgentSession) {
 	period := 30 * time.Second
 	if s.cfg != nil && s.cfg.HeartbeatPeriod > 0 {
 		period = s.cfg.HeartbeatPeriod
@@ -227,11 +245,8 @@ func (s *Server) agentHeartbeatLoop(ctx context.Context, conn *websocket.Conn, s
 		case <-sess.Done():
 			return
 		case <-ticker.C:
-			if sm.ClearSessionIfHeartbeatStale(sess, timeout) {
+			if s.sm.ClearSessionIfHeartbeatStale(sess, timeout) {
 				return
-			}
-			if deviceID != "" {
-				_ = s.accounts.TouchDevice(context.Background(), deviceID)
 			}
 			deadline := time.Now().Add(s.writeTimeout())
 			_ = conn.WriteControl(websocket.PingMessage, nil, deadline)
@@ -243,11 +258,11 @@ func (s *Server) agentHeartbeatLoop(ctx context.Context, conn *websocket.Conn, s
 }
 
 func (s *Server) sendAgentHeartbeat(sess *session.AgentSession) bool {
-	return sess.SendPing(&gatewayv1.GatewayEnvelope{
+	return sess.SendPing(&gatewayv2.GatewayEnvelope{
 		RequestId: "ping-" + uuid.NewString(),
 		Timestamp: time.Now().Unix(),
-		Payload: &gatewayv1.GatewayEnvelope_Ping{
-			Ping: &gatewayv1.PingRequest{
+		Payload: &gatewayv2.GatewayEnvelope_Ping{
+			Ping: &gatewayv2.PingRequest{
 				Timestamp: time.Now().Unix(),
 			},
 		},

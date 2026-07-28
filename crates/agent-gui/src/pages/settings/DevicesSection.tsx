@@ -8,6 +8,7 @@ import {
   renameDesktopDevice,
   revokeDesktopDevice,
 } from "../../lib/relay/desktopExecution";
+import { rotateDesktopAgentToken } from "../../lib/relay/deviceRegistration";
 import type { AppSettings } from "../../lib/settings";
 
 function formatLastSeen(value?: string) {
@@ -87,6 +88,21 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
       setDevices((current) => current.filter((item) => item.device_id !== device.device_id));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "撤销设备失败");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function rotateToken(device: DesktopEnvironment) {
+    if (device.device_id !== localDeviceId) return;
+    if (!window.confirm("确定轮换此设备的连接凭证吗？设备会立即重新连接。")) return;
+    setBusyId(device.device_id);
+    setError("");
+    try {
+      await rotateDesktopAgentToken(settings, device.agent_id || device.device_id);
+      await loadDevices();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "轮换设备凭证失败");
     } finally {
       setBusyId("");
     }
@@ -183,6 +199,18 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
               </div>
               {!editing ? (
                 <div className="flex justify-end gap-1">
+                  {isLocal ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="轮换连接凭证"
+                      disabled={Boolean(busyId)}
+                      onClick={() => void rotateToken(device)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"

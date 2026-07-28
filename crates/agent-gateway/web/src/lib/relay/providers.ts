@@ -1,4 +1,10 @@
-import type { AppSettings, CustomProvider, ProviderId, ProviderModelConfig } from "@/lib/settings";
+import {
+  type AppSettings,
+  type CustomProvider,
+  getDefaultUsageQueryConfig,
+  type ProviderId,
+  type ProviderModelConfig,
+} from "@/lib/settings";
 import { normalizeFetchedModels } from "@/pages/settings/providerUtils";
 import { getRelayProviderModels, RELAY_ORIGIN, type RelayApiKey, type RelayGroup } from "./client";
 
@@ -93,6 +99,7 @@ export async function buildRelayProviders(
           apiKey: key.key,
           apiKeyConfigured: Boolean(key.key.trim()),
           customHeaders: [],
+          usageQuery: existing?.usageQuery ?? getDefaultUsageQueryConfig(),
           models,
           activeModels: models.map((model) => model.id),
           requestFormat: type === "codex" ? "openai-responses" : undefined,

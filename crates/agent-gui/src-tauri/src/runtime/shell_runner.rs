@@ -23,7 +23,42 @@ pub(crate) const MAX_SHELL_TIMEOUT_MS: u64 = 10 * 60_000;
 const TERMINATION_GRACE_MS: u64 = 300;
 const STREAM_EOF_GRACE_MS: u64 = 300;
 
-pub(crate) type ShellCancelToken = Arc<AtomicBool>;
+/// Cancellation flag shared between the (possibly blocking) run body and the
+/// async cancel watchers. Blocking code polls `is_cancelled`; async code
+/// awaits `cancelled()`, which is event-driven via `Notify` — no polling.
+#[derive(Default)]
+pub(crate) struct ShellCancelFlag {
+    cancelled: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl ShellCancelFlag {
+    pub(crate) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// Resolves once `cancel` has been called.
+    pub(crate) async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            // Register interest before the re-check so a `cancel` landing
+            // between the check and the await cannot be missed.
+            notified.as_mut().enable();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+pub(crate) type ShellCancelToken = Arc<ShellCancelFlag>;
 
 #[derive(Default)]
 pub(crate) struct ShellRunRegistry {
@@ -32,11 +67,15 @@ pub(crate) struct ShellRunRegistry {
 
 impl ShellRunRegistry {
     pub(crate) fn register(&self, run_id: &str) -> ShellCancelToken {
-        let token = Arc::new(AtomicBool::new(false));
-        self.runs
+        let token = Arc::new(ShellCancelFlag::default());
+        let previous = self
+            .runs
             .lock()
             .expect("shell run registry poisoned")
             .insert(run_id.to_string(), Arc::clone(&token));
+        if let Some(previous) = previous {
+            previous.cancel();
+        }
         token
     }
 
@@ -50,15 +89,18 @@ impl ShellRunRegistry {
         else {
             return false;
         };
-        token.store(true, Ordering::SeqCst);
+        token.cancel();
         true
     }
 
-    pub(crate) fn unregister(&self, run_id: &str) {
-        self.runs
-            .lock()
-            .expect("shell run registry poisoned")
-            .remove(run_id);
+    pub(crate) fn unregister(&self, run_id: &str, token: &ShellCancelToken) {
+        let mut runs = self.runs.lock().expect("shell run registry poisoned");
+        let owns_registration = runs
+            .get(run_id)
+            .is_some_and(|registered| Arc::ptr_eq(registered, token));
+        if owns_registration {
+            runs.remove(run_id);
+        }
     }
 }
 
@@ -296,7 +338,7 @@ fn normalize_timeout_ms(timeout_ms: Option<u64>, max_timeout_ms: Option<u64>) ->
 
 fn is_cancelled(cancel_token: Option<&ShellCancelToken>) -> bool {
     cancel_token
-        .map(|token| token.load(Ordering::SeqCst))
+        .map(|token| token.is_cancelled())
         .unwrap_or(false)
 }
 
@@ -329,6 +371,24 @@ fn is_windows_system32_dir(dir: &Path) -> bool {
     normalize(dir) == normalize(&Path::new(&root).join("System32"))
 }
 
+#[cfg(windows)]
+fn is_windows_app_execution_alias_dir(dir: &Path) -> bool {
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        return false;
+    };
+    let normalize = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_ascii_lowercase()
+    };
+    normalize(dir)
+        == normalize(
+            &Path::new(&local_app_data)
+                .join("Microsoft")
+                .join("WindowsApps"),
+        )
+}
+
 /// Git Bash 解析（对标 Claude Code）：env 覆盖 → PATH → Git for Windows 默认安装路径。
 #[cfg(windows)]
 fn find_git_bash() -> Option<PathBuf> {
@@ -346,8 +406,8 @@ fn find_git_bash() -> Option<PathBuf> {
 
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     for dir in std::env::split_paths(&path_var) {
-        // System32 下的 bash.exe 是 WSL 启动器，不是 Git Bash。
-        if is_windows_system32_dir(&dir) {
+        // System32 和 WindowsApps 下的 bash.exe 都可能是 WSL 启动器，不是 Git Bash。
+        if is_windows_system32_dir(&dir) || is_windows_app_execution_alias_dir(&dir) {
             continue;
         }
         let candidate = dir.join("bash.exe");
@@ -549,7 +609,7 @@ fn platform_shell_candidates(cmd: &str) -> Vec<ShellCandidate> {
 }
 
 #[cfg(test)]
-fn default_platform_shell_profile() -> ShellExecutionProfile {
+pub(crate) fn default_platform_shell_profile() -> ShellExecutionProfile {
     platform_shell_candidates("")
         .into_iter()
         .next()
@@ -870,6 +930,16 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_app_execution_alias_is_not_treated_as_git_bash() {
+        let local_app_data = std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA");
+        let windows_apps = std::path::Path::new(&local_app_data)
+            .join("Microsoft")
+            .join("WindowsApps");
+        assert!(super::is_windows_app_execution_alias_dir(&windows_apps));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn find_git_bash_env_override_prefers_liveagent_var() {
         // 单个测试函数串行覆盖所有 env 场景，避免并行 env 竞态。
         let dir = tempfile::tempdir().expect("tempdir");
@@ -897,11 +967,26 @@ mod tests {
     fn shell_registry_cancel_marks_registered_run() {
         let registry = ShellRunRegistry::default();
         let token = registry.register("run-1");
-        assert!(!token.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!token.is_cancelled());
         assert!(registry.cancel("run-1"));
-        assert!(token.load(std::sync::atomic::Ordering::SeqCst));
-        registry.unregister("run-1");
+        assert!(token.is_cancelled());
+        registry.unregister("run-1", &token);
         assert!(!registry.cancel("run-1"));
+    }
+
+    #[test]
+    fn duplicate_run_id_cancels_old_token_without_losing_new_registration() {
+        let registry = ShellRunRegistry::default();
+        let first = registry.register("same-run");
+        let second = registry.register("same-run");
+
+        assert!(first.is_cancelled());
+        registry.unregister("same-run", &first);
+        assert!(registry.cancel("same-run"));
+        assert!(second.is_cancelled());
+
+        registry.unregister("same-run", &second);
+        assert!(!registry.cancel("same-run"));
     }
 
     #[cfg(unix)]
@@ -937,7 +1022,7 @@ mod tests {
             .expect("shell cancel worker thread should not panic")
             .expect("shell run should return a cancelled response");
 
-        registry.unregister("cancel-test");
+        registry.unregister("cancel-test", &token);
         let _ = fs::remove_dir_all(&temp_dir);
 
         assert!(result.cancelled);

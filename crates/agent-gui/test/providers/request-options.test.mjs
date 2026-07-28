@@ -72,7 +72,8 @@ test("llm facade preserves provider runtime exports", () => {
     "buildProviderRequestHeaders",
     "buildProviderRequestMetadata",
     "isValidCustomHeaderKey",
-    "mergeCustomHeaders",
+    "prepareProviderRequest",
+    "createProviderRuntimeConfig",
     "completeAssistantMessage",
     "composePayloadMiddlewares",
     "createModelFromConfig",
@@ -196,6 +197,11 @@ test("provider request helpers normalize auth, metadata, errors, and model value
   assert.deepEqual(providers.buildProviderRequestHeaders("gemini", "secret", "conversation-1"), {
     "x-goog-api-key": "secret",
   });
+  // xai：Bearer + grok CLI 身份 UA，不带 Codex CLI 的 session 头。
+  assert.deepEqual(providers.buildProviderRequestHeaders("xai", "secret", "conversation-1"), {
+    Authorization: "Bearer secret",
+    "User-Agent": "grok-shell/0.2.110 (linux; x86_64)",
+  });
   const generatedCodexHeaders = providers.buildProviderRequestHeaders("codex", "secret");
   assert.match(generatedCodexHeaders.session_id, /^[0-9a-f-]{36}$/i);
   assert.equal(generatedCodexHeaders.conversation_id, generatedCodexHeaders.session_id);
@@ -270,18 +276,64 @@ test("provider-specific custom header suggestions include standard model headers
   assert.ok(codexPresets.includes("session_id"));
   assert.ok(codexPresets.includes("conversation_id"));
   assert.ok(!codexPresets.includes("anthropic-version"));
+
+  const xaiPresets = customHeaderHelpers.getCustomHeaderKeyPresets("xai");
+  assert.ok(xaiPresets.includes("User-Agent"));
+  assert.ok(!xaiPresets.includes("session_id"));
+  assert.ok(!xaiPresets.includes("anthropic-version"));
 });
 
-test("local proxy preserves explicit user-agent and content-type values for the upstream hop", () => {
-  assert.deepEqual(
-    proxy.buildUpstreamHeaderOverrideHeaders({
-      "user-agent": "custom-agent/1.0",
-      "CONTENT-TYPE": "application/custom+json",
-    }),
-    {
-      "x-liveagent-upstream-user-agent": "custom-agent/1.0",
-      "x-liveagent-upstream-content-type": "application/custom+json",
-    },
+function decodeUpstreamHeaderOverrides(encoded) {
+  return JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+}
+
+test("upstream override channel carries every non-auth header for the local proxy hop", () => {
+  // 这些头名里 user-agent 会被 WebView 的 fetch 静默丢弃，靠覆盖包才能送达上游。
+  const encoded = proxy.encodeUpstreamHeaderOverrides({
+    "user-agent": "custom-agent/1.0",
+    "CONTENT-TYPE": "application/custom+json",
+    Cookie: "session=abc",
+    "X-Request-ID": "trace-1",
+    Authorization: "Bearer secret",
+    "x-api-key": "secret",
+    "x-goog-api-key": "secret",
+    "x-liveagent-proxy-token": "internal",
+  });
+
+  assert.deepEqual(decodeUpstreamHeaderOverrides(encoded), {
+    "user-agent": "custom-agent/1.0",
+    "CONTENT-TYPE": "application/custom+json",
+    Cookie: "session=abc",
+    "X-Request-ID": "trace-1",
+  });
+});
+
+test("upstream override channel stays empty when there is nothing to override", () => {
+  assert.equal(proxy.encodeUpstreamHeaderOverrides({}), undefined);
+  assert.equal(
+    proxy.encodeUpstreamHeaderOverrides({ Authorization: "Bearer secret" }),
+    undefined,
+  );
+});
+
+test("upstream override channel rejects oversized custom header sets", () => {
+  assert.throws(
+    () => proxy.encodeUpstreamHeaderOverrides({ "X-Big": "v".repeat(9 * 1024) }),
+    /too large/i,
+  );
+});
+
+test("anthropic-beta never enters the upstream override package", () => {
+  // 覆盖包在 prepareProxyRequest 时刻构建，早于长上下文中间件算出 anthropic-beta；
+  // 它是保留头（用户填不进来），因此绝不会回头压掉中间件的 beta 串。
+  const base = providers.buildProviderRequestHeaders("claude_code", "secret");
+  const merged = customHeaderHelpers.mergeCustomHeaders(base, [
+    { key: "anthropic-beta", value: "hijacked" },
+  ]);
+  const overrides = decodeUpstreamHeaderOverrides(proxy.encodeUpstreamHeaderOverrides(merged));
+  assert.ok(
+    !Object.keys(overrides).some((key) => key.toLowerCase() === "anthropic-beta"),
+    "anthropic-beta must stay owned by attachAnthropicLongContextBeta",
   );
 });
 
@@ -498,8 +550,12 @@ test("DeepSeek Codex models force Chat Completions compat", () => {
   assert.equal(model.compat.requiresReasoningContentOnAssistantMessages, true);
   assert.equal(model.compat.supportsStrictMode, false);
   assert.equal(model.compat.maxTokensField, "max_tokens");
-  assert.equal(model.thinkingLevelMap.minimal, "high");
-  assert.equal(model.thinkingLevelMap.xhigh, "max");
+  // 档位来自生成目录：deepseek-v4-pro 只有 high/max（minimal/low/medium=null），
+  // xhigh 目录未声明故不复活；wire 改写只补到已支持档位（high→"high"）。
+  assert.equal(model.thinkingLevelMap.minimal, null);
+  assert.equal(model.thinkingLevelMap.high, "high");
+  assert.equal(model.thinkingLevelMap.xhigh, undefined);
+  assert.equal(model.thinkingLevelMap.max, "max");
 });
 
 test("DeepSeek OpenAI payload adapter injects thinking and reasoning_content", async () => {
@@ -946,6 +1002,27 @@ test("provider payload finalization enables native web search for hosted search 
     { type: "web_search_20250305", name: "web_search" },
   ]);
 
+  // Modern Anthropic models get the paired web_fetch server tool alongside
+  // web_search; legacy/unknown catalog entries (above) keep search-only.
+  const anthropicModernPayload = await anthropicOptions.onPayload(
+    { messages: [{ role: "user", content: "hello" }] },
+    {
+      api: "anthropic-messages",
+      provider: "anthropic",
+      id: "claude-sonnet-5",
+      compat: { forceAdaptiveThinking: true },
+    },
+  );
+  assert.deepEqual(anthropicModernPayload.tools, [
+    { type: "web_search_20260318", name: "web_search" },
+    {
+      type: "web_fetch_20260318",
+      name: "web_fetch",
+      max_uses: 10,
+      max_content_tokens: 50_000,
+    },
+  ]);
+
   const geminiOptions = providers.finalizeProviderStreamOptions({
     providerId: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
@@ -1250,7 +1327,7 @@ test("streaming text reconciler emits only missing final text suffixes", () => {
 test("custom provider headers merge without mutating the base headers", () => {
   const base = { Accept: "application/json", "X-Tenant": "old" };
   assert.deepEqual(
-    providers.mergeCustomHeaders(base, [
+    customHeaderHelpers.mergeCustomHeaders(base, [
       { key: "X-Tenant", value: "new" },
       { key: "X-Request-ID", value: "request-123" },
     ]),
@@ -1271,7 +1348,7 @@ test("custom provider headers override model defaults but not credential or prot
     "Content-Length": "42",
   };
   assert.deepEqual(
-    providers.mergeCustomHeaders(base, [
+    customHeaderHelpers.mergeCustomHeaders(base, [
       { key: "authorization", value: "Bearer attacker" },
       { key: "X-API-KEY", value: "attacker" },
       { key: "X-GOOG-API-KEY", value: "attacker" },
@@ -1296,7 +1373,7 @@ test("custom provider headers override model defaults but not credential or prot
 
 test("custom provider headers filter invalid HTTP token keys", () => {
   assert.deepEqual(
-    providers.mergeCustomHeaders({}, [
+    customHeaderHelpers.mergeCustomHeaders({}, [
       { key: "", value: "empty" },
       { key: "Bad Header", value: "space" },
       { key: "Bad:Header", value: "colon" },
@@ -1309,12 +1386,30 @@ test("custom provider headers filter invalid HTTP token keys", () => {
   assert.equal(customHeaderHelpers.isReservedCustomHeaderKey("Anthropic-Beta"), true);
   assert.equal(providers.isValidCustomHeaderKey("X-Request-ID"), true);
   assert.equal(providers.isValidCustomHeaderKey("Bad Header"), false);
+  // 本地反代的内部命名空间不可被自定义头注入。
+  assert.equal(customHeaderHelpers.isReservedCustomHeaderKey("X-LiveAgent-Proxy-Token"), true);
+  assert.equal(customHeaderHelpers.isReservedCustomHeaderKey("x-liveagent-anything"), true);
+});
+
+test("custom provider headers reject values fetch() cannot transmit", () => {
+  assert.equal(customHeaderHelpers.isValidCustomHeaderValue("plain-ascii/1.0"), true);
+  assert.equal(customHeaderHelpers.isValidCustomHeaderValue(""), true);
+  assert.equal(customHeaderHelpers.isValidCustomHeaderValue("中文"), false);
+  assert.equal(customHeaderHelpers.isValidCustomHeaderValue("a\r\nb"), false);
+  assert.deepEqual(
+    customHeaderHelpers.mergeCustomHeaders({}, [
+      { key: "X-Bad", value: "中文" },
+      { key: "X-Injected", value: "a\r\nHost: evil" },
+      { key: "X-Good", value: "kept" },
+    ]),
+    { "X-Good": "kept" },
+  );
 });
 
 test("custom provider headers accept undefined and empty arrays", () => {
   const base = { Accept: "application/json" };
-  assert.deepEqual(providers.mergeCustomHeaders(base, undefined), base);
-  assert.deepEqual(providers.mergeCustomHeaders(base, []), base);
+  assert.deepEqual(customHeaderHelpers.mergeCustomHeaders(base, undefined), base);
+  assert.deepEqual(customHeaderHelpers.mergeCustomHeaders(base, []), base);
 });
 
 test("resolveProviderCacheRetention maps provider settings and per-request overrides", () => {
@@ -1392,52 +1487,35 @@ test("codex prompt_cache_key injection respects retention, existing keys, and le
   assert.equal(clampedPayload.prompt_cache_key, "k".repeat(64));
 });
 
-test("custom model pricing from settings reaches the runtime model", () => {
-  const cost = { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 2.5 };
+test("runtime models always carry zero pricing (billing removed)", () => {
+  // 计费功能已移除：pi-ai 的 Model.cost 是结构必填字段，构造侧统一喂零价，
+  // 目录内外模型一致，usage.cost 恒为 0。
+  const zeroCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
-  const codexModel = providers.createModelFromConfig(
-    "codex",
-    "relay-gpt",
-    "https://relay.example/v1",
-    undefined,
-    { id: "relay-gpt", contextWindow: 128_000, maxOutputToken: 8_192, cost },
-  );
-  assert.deepEqual(codexModel.cost, cost);
-
-  const claudeModel = providers.createModelFromConfig(
-    "claude_code",
-    "relay-claude",
-    "https://relay.example/v1",
-    undefined,
-    { id: "relay-claude", contextWindow: 200_000, maxOutputToken: 32_000, cost },
-  );
-  assert.deepEqual(claudeModel.cost, cost);
-
-  const geminiModel = providers.createModelFromConfig(
-    "gemini",
-    "relay-gemini",
-    "https://relay.example/v1",
-    undefined,
-    { id: "relay-gemini", contextWindow: 1_000_000, maxOutputToken: 65_536, cost },
-  );
-  assert.deepEqual(geminiModel.cost, cost);
-
-  // 目录内模型同样允许用户覆盖单价：中转计费经常与官方定价不同。
-  const catalogOverride = providers.createModelFromConfig(
-    "codex",
-    "gpt-5",
-    "https://api.openai.com/v1",
-    undefined,
-    { id: "gpt-5", contextWindow: 400_000, maxOutputToken: 128_000, cost },
-  );
-  assert.deepEqual(catalogOverride.cost, cost);
-
-  const uncosted = providers.createModelFromConfig(
+  const customModel = providers.createModelFromConfig(
     "codex",
     "relay-gpt",
     "https://relay.example/v1",
     undefined,
     { id: "relay-gpt", contextWindow: 128_000, maxOutputToken: 8_192 },
   );
-  assert.deepEqual(uncosted.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  assert.deepEqual(customModel.cost, zeroCost);
+
+  const knownModel = providers.createModelFromConfig(
+    "codex",
+    "gpt-5",
+    "https://api.openai.com/v1",
+    undefined,
+    { id: "gpt-5", contextWindow: 400_000, maxOutputToken: 128_000 },
+  );
+  assert.deepEqual(knownModel.cost, zeroCost);
+
+  const claudeModel = providers.createModelFromConfig(
+    "claude_code",
+    "claude-sonnet-4-6",
+    "https://api.anthropic.com/v1",
+    undefined,
+    { id: "claude-sonnet-4-6", contextWindow: 1_000_000, maxOutputToken: 128_000 },
+  );
+  assert.deepEqual(claudeModel.cost, zeroCost);
 });

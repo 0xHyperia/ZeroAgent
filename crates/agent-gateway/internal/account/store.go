@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -97,11 +98,14 @@ func (s *MemoryStore) DeleteSession(_ context.Context, id string) error {
 func (s *MemoryStore) UpsertDevice(_ context.Context, device *Device) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	device.ID = canonicalAgentID(device.ID)
+	device.AgentID = device.ID
 	s.devices[device.ID] = cloneDevice(*device)
 	return nil
 }
 
 func (s *MemoryStore) GetDevice(_ context.Context, userID int64, deviceID string) (*Device, error) {
+	deviceID = canonicalAgentID(deviceID)
 	s.mu.RLock()
 	device, ok := s.devices[deviceID]
 	s.mu.RUnlock()
@@ -113,6 +117,7 @@ func (s *MemoryStore) GetDevice(_ context.Context, userID int64, deviceID string
 }
 
 func (s *MemoryStore) GetDeviceByID(_ context.Context, deviceID string) (*Device, error) {
+	deviceID = canonicalAgentID(deviceID)
 	s.mu.RLock()
 	device, ok := s.devices[deviceID]
 	s.mu.RUnlock()
@@ -154,6 +159,7 @@ func (s *MemoryStore) ListDevices(_ context.Context, userID int64) ([]Device, er
 }
 
 func (s *MemoryStore) DeleteDevice(_ context.Context, userID int64, deviceID string) error {
+	deviceID = canonicalAgentID(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	device, ok := s.devices[deviceID]
@@ -168,6 +174,7 @@ func (s *MemoryStore) DeleteDevice(_ context.Context, userID int64, deviceID str
 }
 
 func (s *MemoryStore) SetDevicePresence(_ context.Context, deviceID string, online bool, at time.Time) error {
+	deviceID = canonicalAgentID(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	device, ok := s.devices[deviceID]
@@ -346,6 +353,11 @@ func cloneSession(session Session) Session {
 }
 
 func cloneDevice(device Device) Device {
+	device.ID = canonicalAgentID(device.ID)
+	device.AgentID = device.ID
+	if device.LegacyDeviceID == "" {
+		device.LegacyDeviceID = strings.TrimPrefix(device.ID, "agent-")
+	}
 	device.Workspaces = append([]Workspace(nil), device.Workspaces...)
 	return device
 }

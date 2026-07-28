@@ -1,5 +1,11 @@
 import { fetchModelsFromApi } from "../../pages/settings/providerUtils";
-import type { AppSettings, CustomProvider, ProviderId, ProviderModelConfig } from "../settings";
+import {
+  getDefaultUsageQueryConfig,
+  type AppSettings,
+  type CustomProvider,
+  type ProviderId,
+  type ProviderModelConfig,
+} from "../settings";
 import { RELAY_ORIGIN, type RelayApiKey, type RelayGroup } from "./client";
 
 const RELAY_PROVIDER_PREFIX = "relay-key-";
@@ -57,6 +63,7 @@ function buildRelayProvider(
     promptCachingEnabled: type === "claude_code",
     nativeWebSearchEnabled: true,
     useSystemProxy: false,
+    usageQuery: existing?.usageQuery ?? getDefaultUsageQueryConfig(),
   };
 }
 

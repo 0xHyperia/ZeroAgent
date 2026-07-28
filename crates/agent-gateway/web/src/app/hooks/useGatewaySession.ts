@@ -51,6 +51,7 @@ export function useGatewaySession(historyShareToken: string | null) {
         selection_lease: handoffLease,
         runtime_kind: "device_agent",
         device_id: params.get("device_id")?.trim() ?? "",
+        agent_id: params.get("agent_id")?.trim() || params.get("device_id")?.trim() || "",
         workspace_id: handoffWorkspace,
         target_fingerprint: [
           handoffRuntime,
@@ -67,6 +68,7 @@ export function useGatewaySession(historyShareToken: string | null) {
         "selection_lease",
         "runtime_kind",
         "device_id",
+        "agent_id",
         "workspace_id",
         "conversation_id",
       ]) {

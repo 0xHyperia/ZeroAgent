@@ -68,6 +68,7 @@ import {
   type RightDockProjectState,
   resolveEffectiveTheme,
   type SelectedModel,
+  updateChatTranscriptWidth,
   updateRightDockFileTreeState,
   updateRightDockProjectState,
   updateRightDockWidth,
@@ -271,7 +272,6 @@ export function ChatPage(props: ChatPageProps) {
     ensureTunnelToolTab,
     ensureSshTunnelToolTab,
     handleBrowseWorkspaceProjectInSystemFileManager,
-    pickWorkspaceProjectFolder,
     handleOpenCreateWorkspaceProject,
     workspaceCreateModalOpen,
     setWorkspaceCreateModalOpen,
@@ -299,7 +299,7 @@ export function ChatPage(props: ChatPageProps) {
     prepareComposerForConversationChangeActionRef,
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversationContextVersion, setConversationContextVersion] = useState(0);
+  const [conversationContextVersion] = useState(0);
   const { remoteRuntimeStatus, setRemoteRuntimeStatus } = useGatewayStatus({
     remote: settings.remote,
   });
@@ -469,6 +469,13 @@ export function ChatPage(props: ChatPageProps) {
     isConversationRunning,
     setConversationAbortController,
     getConversationAbortController,
+    requestConversationStop,
+    getConversationStopRequestVersion,
+    isConversationStopRequested,
+    consumeConversationStop,
+    setConversationStopHandler,
+    clearConversationStopHandler,
+    requestActiveConversationStop,
     setConversationSendingState,
   } = useChatPageRuntimeStore({
     initialConversation: initialConversationRef.current,
@@ -591,6 +598,12 @@ export function ChatPage(props: ChatPageProps) {
     : undefined;
   // RightDockPanel is memo'd: every callback handed to it must be stable or
   // the memo boundary is void (see the panel-side context useMemo).
+  const handleChatTranscriptWidthChange = useCallback(
+    (nextWidth: number) => {
+      setSettings((prev) => updateChatTranscriptWidth(prev, nextWidth));
+    },
+    [setSettings],
+  );
   const handleRightDockWidthChange = useCallback(
     (nextWidth: number) => {
       setSettings((prev) => updateRightDockWidth(prev, nextWidth));
@@ -820,6 +833,13 @@ export function ChatPage(props: ChatPageProps) {
     isConversationRunning,
     runningConversationIds,
     getConversationAbortController,
+    setConversationAbortController,
+    setConversationSendingState,
+    requestConversationStop,
+    getConversationStopRequestVersion,
+    isConversationStopRequested,
+    consumeConversationStop,
+    requestActiveConversationStop,
     getConversationLiveTranscriptStore,
     captureAbortSnapshot,
     updateToolStatus,
@@ -1203,6 +1223,9 @@ export function ChatPage(props: ChatPageProps) {
     enqueueGatewayChatRequest,
     isConversationRunning,
     getConversationAbortController,
+    requestConversationStop,
+    requestActiveConversationStop,
+    consumeConversationStop,
   });
 
   const { send } = useSendChatTurn({
@@ -1229,6 +1252,11 @@ export function ChatPage(props: ChatPageProps) {
     buildRuntimeEntryFromVisibleState,
     updateConversationRuntimeEntry,
     setConversationAbortController,
+    getConversationStopRequestVersion,
+    isConversationStopRequested,
+    consumeConversationStop,
+    setConversationStopHandler,
+    clearConversationStopHandler,
     setConversationSendingState,
     pendingUploadedFiles,
     getPendingUploadsForConversation,
@@ -1431,51 +1459,6 @@ export function ChatPage(props: ChatPageProps) {
   const isCompactionRunning = compactionStatus.phase === "running";
   const isConversationHydrating = hydratingConversationId === currentConversationId;
   const isConversationHydrationFailed = hydrationFailedConversationId === currentConversationId;
-  const conversationProject = displayedConversationWorkdir
-    ? workspaceProjects.find(
-        (project) =>
-          workspaceProjectPathKey(project.path) ===
-          workspaceProjectPathKey(displayedConversationWorkdir),
-      )
-    : undefined;
-  const canBindConversationFolder =
-    isDraftConversation &&
-    !displayedConversationWorkdir &&
-    conversationState.meta.totalMessageCount === 0 &&
-    pendingUploadedFiles.length === 0 &&
-    !isSending &&
-    !isConversationRunning(currentConversationId);
-  const handleBindConversationFolder = useCallback(async () => {
-    if (!canBindConversationFolder) return;
-    const conversationId = currentConversationIdRef.current;
-    const project = await pickWorkspaceProjectFolder();
-    if (!project) return;
-    if (currentConversationIdRef.current !== conversationId) return;
-    const persistedWorkdir = sidebarStore.peek(conversationId)?.cwd?.trim() || "";
-    const runtimeWorkdir =
-      conversationRuntimeCacheRef.current.get(conversationId)?.workdir?.trim() || "";
-    if (persistedWorkdir || runtimeWorkdir) return;
-    activateWorkspaceProject(project);
-    updateConversationRuntimeEntry(conversationId, (previous) => ({
-      ...previous,
-      workdir: previous.workdir?.trim() || project.path,
-    }));
-    setConversationContextVersion((current) => current + 1);
-    setSettings((previous) =>
-      previous.system.executionMode === "text"
-        ? updateSystem(previous, { executionMode: "tools" })
-        : previous,
-    );
-  }, [
-    activateWorkspaceProject,
-    canBindConversationFolder,
-    conversationRuntimeCacheRef,
-    currentConversationIdRef,
-    pickWorkspaceProjectFolder,
-    setSettings,
-    sidebarStore,
-    updateConversationRuntimeEntry,
-  ]);
   const composerPlaceholder = isCompactionRunning
     ? t("chat.compactingContextWait")
     : isConversationHydrating
@@ -1772,6 +1755,8 @@ export function ChatPage(props: ChatPageProps) {
                   liveTranscriptStore={liveTranscriptStore}
                   isCompactionRunning={isCompactionRunning}
                   bottomReservePx={composerOverlayHeight}
+                  contentWidth={settings.customSettings.chatTranscript.width}
+                  onContentWidthChange={handleChatTranscriptWidthChange}
                   onResendFromEdit={handleResendFromEdit}
                   onBranchConversation={
                     // 水合中/水合失败时 handler 只会静默 return——直接不传，
@@ -1794,9 +1779,6 @@ export function ChatPage(props: ChatPageProps) {
                 isInputDisabled={isComposerInputDisabled}
                 inputPlaceholder={composerPlaceholder}
                 workdir={displayedConversationWorkdir}
-                projectFolderLabel={conversationProject?.name}
-                canSelectProjectFolder={canBindConversationFolder}
-                onSelectProjectFolder={handleBindConversationFolder}
                 enabledSkills={enabledComposerSkills}
                 isAgentMode={isAgentMode}
                 chatRuntimeControls={chatRuntimeControlsForCurrentProvider}

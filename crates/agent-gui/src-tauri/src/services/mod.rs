@@ -10,6 +10,7 @@ pub mod mobile_gateway;
 pub mod mobile_secure_store;
 pub mod power_activity;
 pub mod provider_models;
+pub mod provider_usage;
 pub mod proxy;
 pub mod skills;
 pub mod system_proxy;

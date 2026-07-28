@@ -20,6 +20,10 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
 
   assert.match(workflow, /java-version: "17"/);
   assert.match(workflow, /targets: aarch64-linux-android/);
+  assert.match(
+    workflow,
+    /BINDGEN_EXTRA_CLANG_ARGS=--sysroot=\$\{ANDROID_HOME\}\/ndk\/\$\{ANDROID_NDK_VERSION\}\/toolchains\/llvm\/prebuilt\/linux-x86_64\/sysroot/,
+  );
   assert.match(workflow, /tauri android build --apk --target aarch64 --ci/);
   assert.match(workflow, /ANDROID_KEYSTORE_BASE64/);
   assert.match(workflow, /apksigner" sign/);
@@ -38,6 +42,10 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
   assert.match(
     cargoToml,
     /target\.'cfg\(not\(any\(target_os = "android", target_os = "ios"\)\)\)'\.dependencies/,
+  );
+  assert.match(
+    cargoToml,
+    /target\.'cfg\(target_os = "android"\)'\.dependencies[\s\S]*rquickjs = \{[^\n]*features = \["bindgen"\]/,
   );
 });
 
@@ -72,6 +80,13 @@ test("Android excludes desktop-only global shortcut commands", () => {
   const appCommands = readRepoFile(
     "crates/agent-gui/src-tauri/src/commands/app/app.rs",
   );
+  const appUpdate = readRepoFile(
+    "crates/agent-gui/src-tauri/src/commands/app/update.rs",
+  );
+  const systemCommands = readRepoFile(
+    "crates/agent-gui/src-tauri/src/commands/app/system.rs",
+  );
+  const tauriLib = readRepoFile("crates/agent-gui/src-tauri/src/lib.rs");
 
   assert.match(
     appCommands,
@@ -89,4 +104,20 @@ test("Android excludes desktop-only global shortcut commands", () => {
       ),
     );
   }
+  assert.match(
+    appUpdate,
+    /#\[tauri::command\]\s*#\[cfg\(desktop\)\]\s*pub fn app_restart/,
+  );
+  assert.match(
+    systemCommands,
+    /#\[cfg\(desktop\)\]\s*fn system_clipboard_read_text_sync/,
+  );
+  assert.match(
+    systemCommands,
+    /#\[tauri::command\]\s*#\[cfg\(desktop\)\]\s*pub async fn system_clipboard_read_text/,
+  );
+  assert.match(
+    tauriLib,
+    /#\[cfg\(desktop\)\]\s*pub\(crate\) const WINDOW_STATE_FLAGS/,
+  );
 });

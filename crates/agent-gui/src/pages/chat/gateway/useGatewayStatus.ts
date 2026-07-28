@@ -42,7 +42,7 @@ export function useGatewayStatus(params: UseGatewayStatusParams) {
     remote.autoReconnect,
     remote.enabled,
     remote.gatewayUrl,
-    remote.grpcPort,
+    remote.gatewayPort,
     remote.heartbeatInterval,
   ]);
 
@@ -77,7 +77,7 @@ export function useGatewayStatus(params: UseGatewayStatusParams) {
     remote.autoReconnect,
     remote.enabled,
     remote.gatewayUrl,
-    remote.grpcPort,
+    remote.gatewayPort,
     remote.heartbeatInterval,
   ]);
 

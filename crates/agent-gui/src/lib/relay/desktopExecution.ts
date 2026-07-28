@@ -16,6 +16,7 @@ export type DesktopWorkspace = {
 export type DesktopEnvironment = {
   runtime_kind: "device_agent";
   device_id: string;
+  agent_id?: string;
   device_name?: string;
   name: string;
   online: boolean;
@@ -25,11 +26,11 @@ export type DesktopEnvironment = {
   workspaces: DesktopWorkspace[];
 };
 
-type CredentialRecord = { deviceId: string; credential: string };
+type CredentialRecord = { agentId?: string; deviceId?: string };
 
 function gatewayURL(settings: AppSettings, path: string) {
   const url = new URL(settings.remote.gatewayUrl.trim());
-  if (settings.remote.grpcPort > 0) url.port = String(settings.remote.grpcPort);
+  if (settings.remote.gatewayPort > 0) url.port = String(settings.remote.gatewayPort);
   url.pathname = `${url.pathname.replace(/\/$/, "")}${path}`;
   url.search = "";
   url.hash = "";
@@ -58,10 +59,12 @@ async function desktopRequest<T>(settings: AppSettings, path: string, init?: Req
 export async function getDesktopEnvironments(settings: AppSettings) {
   if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return null;
   const credential = await invoke<CredentialRecord | null>("device_credential_get");
-  if (!credential?.deviceId) return null;
-  const path = `/api/desktop/environments?local_device_id=${encodeURIComponent(credential.deviceId)}`;
+  const localAgentId = credential?.agentId?.trim() || credential?.deviceId?.trim() || "";
+  if (!localAgentId) return null;
+  const encodedLocalAgentId = encodeURIComponent(localAgentId);
+  const path = `/api/desktop/environments?local_agent_id=${encodedLocalAgentId}&local_device_id=${encodedLocalAgentId}`;
   const response = await desktopRequest<{ environments: DesktopEnvironment[] }>(settings, path);
-  return { environments: response.environments, localDeviceId: credential.deviceId };
+  return { environments: response.environments, localDeviceId: localAgentId };
 }
 
 export async function renameDesktopDevice(settings: AppSettings, deviceId: string, name: string) {

@@ -6,6 +6,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/liveagent/agent-gateway/internal/account"
+	"github.com/liveagent/agent-gateway/internal/auth"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
@@ -15,7 +17,11 @@ type helloVerdict struct {
 	message string
 }
 
-func (s *Server) vetHelloBase(hello *gatewayv2.ClientHello, wantRole gatewayv2.ClientRole) helloVerdict {
+// vetHello 校验 ClientHello 的协议版本、角色与浏览器凭证。
+// 角色-凭证绑定：浏览器角色只接受网关 token；Agent 角色必须声明 agent_id。
+// Agent 凭证由 authenticateAgentHello 在存储锁内只校验一次，主链路与终端
+// 数据链路复用该入口。凭证失败统一报 "unauthorized"，防止枚举 Agent ID。
+func (s *Server) vetHello(hello *gatewayv2.ClientHello, wantRole gatewayv2.ClientRole) helloVerdict {
 	if hello == nil {
 		return helloVerdict{message: "hello frame is required"}
 	}
@@ -27,28 +33,52 @@ func (s *Server) vetHelloBase(hello *gatewayv2.ClientHello, wantRole gatewayv2.C
 	if role != gatewayv2.ClientRole_CLIENT_ROLE_UNSPECIFIED && role != wantRole {
 		return helloVerdict{message: "unexpected client role"}
 	}
+	switch wantRole {
+	case gatewayv2.ClientRole_CLIENT_ROLE_AGENT:
+		if strings.TrimSpace(hello.GetAgentId()) == "" {
+			return helloVerdict{message: "agent_id is required"}
+		}
+	default:
+		if s.accounts != nil {
+			return helloVerdict{ok: true}
+		}
+		if !auth.ValidateToken(hello.GetToken(), s.cfg.Token) {
+			return helloVerdict{message: "unauthorized"}
+		}
+	}
 	return helloVerdict{ok: true}
 }
 
-func (s *Server) serverHelloFor(ok bool, message, sessionID string, userID int64, deviceID, workspaceID, runtimeKind string) *gatewayv2.ServerHello {
-	hello := s.serverHello(ok, message, sessionID)
-	hello.UserId = userID
-	hello.DeviceId = strings.TrimSpace(deviceID)
-	hello.WorkspaceId = strings.TrimSpace(workspaceID)
-	hello.RuntimeKind = strings.TrimSpace(runtimeKind)
-	return hello
+// authenticateAgentHello 在 Store 内完成唯一一次独立 Token 查询、共享 Token 判定、
+// 自动登记及按 Agent 凭证纪元快照。调用方必须在注册传输时校验返回纪元。
+func (s *Server) authenticateAgentHello(hello *gatewayv2.ClientHello) (string, uint64, error) {
+	if s.authenticator == nil {
+		return "", 0, account.ErrUnauthorizedAgent
+	}
+	return s.authenticator.AuthenticateAgent(
+		hello.GetAgentId(), hello.GetToken(), hello.GetDeviceId(), hello.GetDeviceCredential(),
+	)
 }
 
-// serverHello 构造握手应答；sessionID 仅 agent 角色使用。
-func (s *Server) serverHello(ok bool, message string, sessionID string) *gatewayv2.ServerHello {
+// serverHello 构造握手应答；sessionID 仅 agent 角色使用，maxMessageBytes 按链路
+// 报告实际读限额（各链路收紧后不再统一）。
+func (s *Server) serverHello(ok bool, message string, sessionID string, maxMessageBytes int64) *gatewayv2.ServerHello {
 	return &gatewayv2.ServerHello{
 		Ok:                     ok,
 		Message:                strings.TrimSpace(message),
 		SessionId:              strings.TrimSpace(sessionID),
 		ServerTime:             time.Now().Unix(),
 		HeartbeatPeriodSeconds: uint32(s.heartbeatPeriod() / time.Second),
-		MaxMessageBytes:        uint64(s.readLimit()),
+		MaxMessageBytes:        uint64(maxMessageBytes),
 	}
+}
+
+func (s *Server) serverHelloForAgent(ok bool, message, sessionID, agentID string, maxMessageBytes int64) *gatewayv2.ServerHello {
+	hello := s.serverHello(ok, message, sessionID, maxMessageBytes)
+	hello.AgentId = strings.TrimSpace(agentID)
+	hello.DeviceId = hello.AgentId
+	hello.RuntimeKind = account.RuntimeKindDeviceAgent
+	return hello
 }
 
 // closeUnauthorized 以鉴权失败码关闭连接（调用方已写出失败 hello）。

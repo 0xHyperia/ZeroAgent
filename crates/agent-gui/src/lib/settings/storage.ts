@@ -7,7 +7,9 @@ import {
   type CloseWindowBehavior,
   getDefaultSettings,
   normalizeChatRuntimeControls,
+  normalizeChatTranscriptSettings,
   normalizeCloseWindowBehavior,
+  normalizeFontFamily,
   normalizeFontScaleSettings,
   normalizeRightDockSettings,
   normalizeSelectedModel,
@@ -85,7 +87,13 @@ function readLocalUiSettings(): {
         projectsCollapsed: chatSidebar.projectsCollapsed === true,
         recentCollapsed: chatSidebar.recentCollapsed === true,
       },
+      chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
       rightDock: normalizeRightDockSettings(obj.rightDock),
+      // fontFamily was the single pre-split preference. Read it only to migrate
+      // old local settings into the interface-specific field.
+      interfaceFontFamily: normalizeFontFamily(obj.interfaceFontFamily ?? obj.fontFamily),
+      chatFontFamily: normalizeFontFamily(obj.chatFontFamily),
+      codeFontFamily: normalizeFontFamily(obj.codeFontFamily),
       fontScale: normalizeFontScaleSettings(obj.fontScale),
     };
   }

@@ -17,6 +17,11 @@ import {
   resolveBashTimeoutPolicy,
 } from "./bashTimeoutPolicy";
 import { type BuiltinToolBundle, createBuiltinMetadataMap } from "./builtinTypes";
+import {
+  invokeWithAbort,
+  requestRuntimeCancel,
+  throwIfToolInvocationAborted,
+} from "./invokeWithAbort";
 import { formatResolvedTarget, type ResolvedPath, ToolPathResolver } from "./pathUtils";
 import { assertSkillPathAllowedByPolicy, type SkillAccessPolicy } from "./skillAccessPolicy";
 
@@ -35,10 +40,6 @@ type ShellRunResponse = {
   stdio_open_after_exit?: boolean;
   effective_timeout_ms: number;
   duration_ms: number;
-};
-
-type ShellCancelResponse = {
-  cancelled: boolean;
 };
 
 type ManagedProcessRecord = {
@@ -90,10 +91,6 @@ function createShellRunId(toolCallId: string) {
   return `bash-${toolCallId || "tool"}-${createUuid()}`;
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
-}
-
 function strictToolParameters(properties: Record<string, unknown>) {
   return Type.Object(properties as any, { additionalProperties: false });
 }
@@ -107,22 +104,6 @@ function assertKnownArguments(toolName: string, args: unknown, allowed: readonly
       `${toolName} received unsupported argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
     );
   }
-}
-
-function requestShellCancel(runId: string) {
-  void (async () => {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        const response = await invoke<ShellCancelResponse>("shell_cancel", {
-          run_id: runId,
-        } as any);
-        if (response.cancelled) return;
-      } catch {
-        return;
-      }
-      await delay(50);
-    }
-  })();
 }
 
 type ShellSyntaxScan = {
@@ -626,7 +607,7 @@ export function createShellTools(params: {
 
   const toolBash: Tool = {
     name: "Bash",
-    description: `Execute a non-interactive shell command on the local machine for builds, tests, package managers, external CLIs, curl/API calls, running Skill scripts, or explicitly requested shell work. Runtime platform: ${platformLabel}. ${shellPolicy} Reserve it for commands that truly require a shell — do NOT use Bash for file operations the dedicated tools handle: use Read/List/Glob/Grep instead of cat/ls/find/grep/rg for any workspace or Skill content; use Delete instead of rm/rmdir/unlink/find -delete; use Image instead of open/xdg-open/file paths to show pictures. Use curl with an explicit timeout such as \`--max-time 30\` for endpoint tests. ${backgroundPolicy} Running a Skill script: set cwd to \`skill://<enabled-skill>/scripts\` and run a relative command, or execute the absolute script path directly when that Skill is enabled. Use / as the path separator; Windows \\ is auto-normalized. Returns stdout, stderr, exit_code, platform, profile, and shell_family. For ${timeoutPolicy.providerLabel}, timeout defaults to ${timeoutPolicy.defaultTimeoutMs}ms and is capped at ${timeoutPolicy.maxTimeoutMs}ms; larger timeout_ms values are accepted by the schema but clamped before execution. High risk: use carefully.`,
+    description: `Execute a non-interactive shell command on the local machine for builds, tests, package managers, external CLIs, curl/API calls, running Skill scripts, or explicitly requested shell work. Runtime platform: ${platformLabel}. ${shellPolicy} Reserve it for commands that truly require a shell — do NOT use Bash for file operations the dedicated tools handle: use Read/List/Glob/Grep instead of cat/ls/find/grep/rg for any workspace or Skill content; always use Delete for intentional workspace or Skill deletions instead of Bash, scripts, or deletion-oriented CLIs such as rm/rmdir/unlink/find -delete/git rm/git clean/PowerShell Remove-Item/cmd del, erase, or rd, because only structured Delete calls make deletions visible in Edited Files and file-ledger tracking; use Image instead of open/xdg-open/file paths to show pictures. Use curl with an explicit timeout such as \`--max-time 30\` for endpoint tests. ${backgroundPolicy} Running a Skill script: set cwd to \`skill://<enabled-skill>/scripts\` and run a relative command, or execute the absolute script path directly when that Skill is enabled. Use / as the path separator; Windows \\ is auto-normalized. Returns stdout, stderr, exit_code, platform, profile, and shell_family. For ${timeoutPolicy.providerLabel}, timeout defaults to ${timeoutPolicy.defaultTimeoutMs}ms and is capped at ${timeoutPolicy.maxTimeoutMs}ms; larger timeout_ms values are accepted by the schema but clamped before execution. High risk: use carefully.`,
     parameters: strictToolParameters({
       command: Type.String({
         description: "Shell command to execute (prefer non-interactive, idempotent commands).",
@@ -649,7 +630,7 @@ export function createShellTools(params: {
 
   const toolManagedProcess: Tool = {
     name: "ManagedProcess",
-    description: `Start, inspect, read logs for, or stop a long-running local process such as a dev server, watcher, or preview server. Runtime platform: ${platformLabel}; commands use the same platform shell policy as Bash. Use this instead of detached shell/background syntax. action="start" runs a foreground command under LiveAgent process management, redirects stdout/stderr to a log file, and returns immediately with process_id, pid, and log_path. By default managed processes are terminated automatically when LiveAgent exits; pass isolated=true only when the user explicitly wants the service to outlive LiveAgent. Use action="status" to list or inspect processes, action="read_log" to read recent log output, and action="stop" to terminate the process tree.`,
+    description: `Start, inspect, read logs for, or stop a long-running local process such as a dev server, watcher, or preview server. Runtime platform: ${platformLabel}; commands use the same platform shell policy as Bash. Use this instead of detached shell/background syntax, but never use it to intentionally delete workspace or enabled Skill paths; use Delete so LiveAgent can track the deletion. action="start" runs a foreground command under LiveAgent process management, redirects stdout/stderr to a log file, and returns immediately with process_id, pid, and log_path. By default managed processes are terminated automatically when LiveAgent exits; pass isolated=true only when the user explicitly wants the service to outlive LiveAgent. Use action="status" to list or inspect processes, action="read_log" to read recent log output, and action="stop" to terminate the process tree.`,
     parameters: strictToolParameters({
       action: Type.Union(
         [
@@ -778,19 +759,30 @@ export function createShellTools(params: {
           required: false,
           allowExternal: true,
         });
+        throwIfToolInvocationAborted(signal);
         const cwd = backendCwd(cwdResolved);
         const label =
           typeof toolCall.arguments?.label === "string"
             ? toolCall.arguments.label.trim()
             : undefined;
         const isolated = toolCall.arguments?.isolated === true;
-        const response = await invoke<ManagedProcessStartResponse>("managed_process_start", {
-          workdir,
-          command,
-          cwd: cwd || undefined,
-          label: label || undefined,
-          isolated: isolated || undefined,
-        } as any);
+        const response = await invokeWithAbort<ManagedProcessStartResponse>(
+          "managed_process_start",
+          {
+            workdir,
+            command,
+            cwd: cwd || undefined,
+            label: label || undefined,
+            isolated: isolated || undefined,
+          },
+          signal,
+          {
+            onLateResult: (lateResponse) =>
+              invoke("managed_process_stop", { process_id: lateResponse.process.id } as any).then(
+                () => undefined,
+              ),
+          },
+        );
         return buildManagedProcessToolResult({
           toolCall,
           details: response,
@@ -805,9 +797,11 @@ export function createShellTools(params: {
       }
 
       if (action === "status") {
-        const response = await invoke<ManagedProcessStatusResponse>("managed_process_status", {
-          process_id: processId || undefined,
-        } as any);
+        const response = await invokeWithAbort<ManagedProcessStatusResponse>(
+          "managed_process_status",
+          { process_id: processId || undefined },
+          signal,
+        );
         const lines = [
           `ManagedProcess status count=${response.processes.length}`,
           ...response.processes.map((process) => `---\n${formatManagedProcessRecord(process)}`),
@@ -830,10 +824,14 @@ export function createShellTools(params: {
           typeof toolCall.arguments?.max_bytes === "number"
             ? Math.floor(toolCall.arguments.max_bytes)
             : undefined;
-        const response = await invoke<ManagedProcessLogResponse>("managed_process_read_log", {
-          process_id: processId,
-          max_bytes: maxBytes,
-        } as any);
+        const response = await invokeWithAbort<ManagedProcessLogResponse>(
+          "managed_process_read_log",
+          {
+            process_id: processId,
+            max_bytes: maxBytes,
+          },
+          signal,
+        );
         return buildManagedProcessToolResult({
           toolCall,
           details: response,
@@ -847,9 +845,11 @@ export function createShellTools(params: {
         });
       }
 
-      const response = await invoke<ManagedProcessStopResponse>("managed_process_stop", {
-        process_id: processId,
-      } as any);
+      const response = await invokeWithAbort<ManagedProcessStopResponse>(
+        "managed_process_stop",
+        { process_id: processId },
+        signal,
+      );
       return buildManagedProcessToolResult({
         toolCall,
         details: response,
@@ -1008,7 +1008,7 @@ export function createShellTools(params: {
     const timeout_ms = normalizeBashTimeoutMs(timeoutRaw, timeoutPolicy);
     const run_id = createShellRunId(toolCall.id);
     const abortHandler = () => {
-      requestShellCancel(run_id);
+      requestRuntimeCancel(run_id);
     };
 
     try {

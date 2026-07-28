@@ -1,29 +1,54 @@
-import type { KnownProvider, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { DEFAULT_LOCALE, type Locale, normalizeLocale } from "../../i18n/config";
 import {
+  getProviderFallbackLimits,
+  normalizeModelLimits,
+  repairStaleCrossProviderLimits,
+  resolveModelLimits,
+  resolveModelLimitsAcrossProviders,
+} from "../models/modelCatalog";
+import {
+  clampThinkingLevelToList,
+  resolveModelThinking,
+  type ThinkingLevel,
+} from "../models/modelThinking";
+import {
   ANTHROPIC_LONG_CONTEXT_WINDOW,
+  ANTHROPIC_STANDARD_CONTEXT_WINDOW,
   hasAnthropicLongContextSuffix,
   isAnthropicAdaptiveModelId,
   resolveAnthropicContextWindow,
   resolveAnthropicKnownModelLimits,
   shouldSendAnthropicLongContextHeader,
 } from "../providers/anthropicModels";
-import { getAvailableThinkingLevelsForModel } from "../providers/runtime/modelFactory";
 import { createUuid } from "../shared/id";
 import { mergeAlwaysEnabledSkillNames } from "../skills/builtin";
+import { normalizeFontFamily } from "../system/fontFamily";
 import { SYSTEM_TOOL_OPTIONS, type SystemToolId } from "../tools/systemToolOptions";
+import {
+  DEFAULT_CHAT_TRANSCRIPT_WIDTH,
+  MAX_CHAT_TRANSCRIPT_WIDTH,
+  MIN_CHAT_TRANSCRIPT_WIDTH,
+} from "../transcript-width/transcriptWidthModel";
 import { normalizeApiKey, normalizeBaseUrl, normalizeModels } from "./normalize";
+
+export { normalizeFontFamily } from "../system/fontFamily";
 
 export type { SystemToolId } from "../tools/systemToolOptions";
 
-export type ProviderId = "codex" | "claude_code" | "gemini";
+export function isThinkingAlwaysOnForModel(
+  providerId: ProviderId,
+  modelId: string | undefined,
+): boolean {
+  return resolveModelThinking(providerId, modelId).alwaysOn;
+}
+
+export type ProviderId = "codex" | "claude_code" | "gemini" | "xai";
 
 export type ExecutionMode = "text" | "tools" | "agent-dev";
 
 export type CodexRequestFormat = "openai-completions" | "openai-responses";
 
-export type ReasoningLevel = ModelThinkingLevel;
+export type ReasoningLevel = "off" | ThinkingLevel;
 
 export type McpTransport = "stdio" | "http" | "sse";
 
@@ -130,10 +155,23 @@ export type FontScaleSettings = {
   rightDock: number;
 };
 
+// Bounds live with the geometry that enforces them; re-exported here so
+// settings consumers keep a single import site.
+export { DEFAULT_CHAT_TRANSCRIPT_WIDTH, MAX_CHAT_TRANSCRIPT_WIDTH, MIN_CHAT_TRANSCRIPT_WIDTH };
+
+export type ChatTranscriptSettings = {
+  width: number;
+};
+
 export type CustomSettings = {
   conversationTitleModel?: SelectedModel;
   chatSidebar: ChatSidebarSettings;
+  chatTranscript: ChatTranscriptSettings;
   rightDock: RightDockSettings;
+  // Empty strings select the built-in stacks for each typography role.
+  interfaceFontFamily: string;
+  chatFontFamily: string;
+  codeFontFamily: string;
   fontScale: FontScaleSettings;
 };
 
@@ -188,22 +226,12 @@ export type SelectedModel = {
   model: string;
 };
 
-/** 单价均为 USD / 百万 token，与 pi-ai 模型目录的 cost 字段同单位。 */
-export type ProviderModelCost = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-};
-
 export type ProviderModelConfig = {
   id: string;
   /** /models 元数据；缺失时保持旧设置格式兼容。 */
   ownedBy?: string;
   contextWindow: number;
   maxOutputToken: number;
-  /** 用户自填单价：目录外模型（中转/改名）没有官方定价时用于成本展示。 */
-  cost?: ProviderModelCost;
 };
 
 export type ChatRuntimeControls = {
@@ -217,7 +245,8 @@ export type ChatRuntimeReasoningProviderKey =
   | "claude_code"
   | "codex_openai_responses"
   | "codex_openai_completions"
-  | "gemini";
+  | "gemini"
+  | "xai";
 
 export type AgentPromptTemplate = {
   id: string;
@@ -262,6 +291,71 @@ export type SshSettings = {
   projectHostAssociations: Record<string, string[]>;
 };
 
+export type UsageQueryMode = "coding-plan" | "balance" | "general" | "newapi" | "custom";
+
+export type UsageQueryScripts = Partial<Record<"custom" | "general" | "newapi", string>>;
+
+export type UsageQueryCodingPlanProvider =
+  | ""
+  | "kimi"
+  | "zhipu"
+  | "zhipu_team"
+  | "minimax"
+  | "zenmux"
+  | "volcengine";
+
+export type UsageQueryConfig = {
+  enabled: boolean;
+  mode: UsageQueryMode;
+  /** 当前模式的生效脚本(Rust 执行层只读这一个字段)。 */
+  script: string;
+  /** 每种脚本模式各自的脚本:切换查询方式互不串扰,未填写过的显示模板预设。 */
+  scripts: UsageQueryScripts;
+  baseUrl: string;
+  /** 查询专用 API Key 覆盖(空则回退供应商自身的 apiKey)。 */
+  apiKey: string;
+  apiKeyConfigured?: boolean;
+  accessToken: string;
+  accessTokenConfigured?: boolean;
+  userId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  secretAccessKeyConfigured?: boolean;
+  /** Token Plan 供应商(空=按 Base URL 自动检测;智谱团队必须显式选择)。 */
+  codingPlanProvider: UsageQueryCodingPlanProvider;
+  /** 智谱团队套餐:组织/项目 ID(作为 bigmodel-organization / bigmodel-project 请求头)。 */
+  teamOrganizationId: string;
+  teamProjectId: string;
+  /** 请求超时(秒,2-30)。 */
+  timeoutSecs: number;
+};
+
+export const USAGE_QUERY_TIMEOUT_MIN_SECS = 2;
+export const USAGE_QUERY_TIMEOUT_MAX_SECS = 30;
+export const USAGE_QUERY_TIMEOUT_DEFAULT_SECS = 10;
+
+export function getDefaultUsageQueryConfig(): UsageQueryConfig {
+  return {
+    enabled: false,
+    mode: "newapi",
+    script: "",
+    scripts: {},
+    baseUrl: "",
+    apiKey: "",
+    apiKeyConfigured: false,
+    accessToken: "",
+    accessTokenConfigured: false,
+    userId: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    secretAccessKeyConfigured: false,
+    codingPlanProvider: "",
+    teamOrganizationId: "",
+    teamProjectId: "",
+    timeoutSecs: USAGE_QUERY_TIMEOUT_DEFAULT_SECS,
+  };
+}
+
 export type CustomProvider = {
   id: string;
   name: string;
@@ -280,6 +374,7 @@ export type CustomProvider = {
   promptCacheRetention?: "short" | "long";
   nativeWebSearchEnabled: boolean;
   useSystemProxy: boolean;
+  usageQuery: UsageQueryConfig;
 };
 
 export type EffectiveTheme = "light" | "dark";
@@ -297,8 +392,8 @@ const SYSTEM_THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 export type RemoteSettings = {
   enabled: boolean;
   gatewayUrl: string;
-  grpcPort: number;
-  grpcEndpoint: string;
+  gatewayPort: number;
+  token: string;
   agentId: string;
   autoReconnect: boolean;
   heartbeatInterval: number;
@@ -336,12 +431,6 @@ const CODEX_RESPONSES_SUFFIX = "/responses";
 const CODEX_RESPONSE_SUFFIX = "/response";
 const CODEX_CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
 const DEFAULT_MCP_TIMEOUT_MS = 60_000;
-const DEFAULT_CLAUDE_CONTEXT_WINDOW = 200_000;
-const DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN = 32_000;
-const DEFAULT_CODEX_CONTEXT_WINDOW = 258_000;
-const DEFAULT_CODEX_MAX_OUTPUT_TOKEN = 142_000;
-const DEFAULT_GEMINI_CONTEXT_WINDOW = 1_048_576;
-const DEFAULT_GEMINI_MAX_OUTPUT_TOKEN = 65_536;
 export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
   thinkingEnabled: true,
   nativeWebSearchEnabled: true,
@@ -351,12 +440,12 @@ export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
     codex_openai_responses: "high",
     codex_openai_completions: "high",
     gemini: "high",
+    xai: "high",
   },
 };
 
 export const DEFAULT_WORKSPACE_PROJECT_ID = "default-project";
 export const DEFAULT_WORKSPACE_PROJECT_NAME = "Default Project";
-const LEGACY_DEFAULT_WORKSPACE_PROJECT_ID = "legacy-default-project";
 
 function normalizeCodexRequestFormat(input: unknown): CodexRequestFormat | undefined {
   switch (input) {
@@ -400,7 +489,7 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
   return [
     {
       id: "builtin-claude_code",
-      name: "USA-零 Claude",
+      name: "Anthropic",
       type: "claude_code",
       baseUrl: "https://usa0.top/v1",
       apiKey: "",
@@ -411,10 +500,11 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: true,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
     {
       id: "builtin-codex",
-      name: "USA-零 OpenAI",
+      name: "OpenAI",
       type: "codex",
       baseUrl: "https://usa0.top",
       apiKey: "",
@@ -426,10 +516,11 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: true,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
     {
       id: "builtin-gemini",
-      name: "USA-零 Gemini",
+      name: "Gemini",
       type: "gemini",
       baseUrl: "https://usa0.top",
       apiKey: "",
@@ -440,6 +531,7 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       promptCachingEnabled: false,
       nativeWebSearchEnabled: true,
       useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
     },
   ];
 }
@@ -657,18 +749,39 @@ export function resolveWorkspaceProjects(
   defaultWorkdir: string,
 ): SystemSettings {
   const defaultPath = normalizeWorkspaceProjectPath(defaultWorkdir || system.workdir);
+  if (!defaultPath) return system;
+
+  const now = Date.now();
+  const defaultKey = workspaceProjectPathKey(defaultPath);
   const configured = normalizeWorkspaceProjects(system.workspaceProjects);
-  const projects: WorkspaceProject[] = [];
-  const seenPaths = new Set<string>();
+  const defaultExisting = configured.find(
+    (project) =>
+      project.id === DEFAULT_WORKSPACE_PROJECT_ID ||
+      workspaceProjectPathKey(project.path) === defaultKey,
+  );
+  const defaultProject: WorkspaceProject = {
+    id: DEFAULT_WORKSPACE_PROJECT_ID,
+    name: DEFAULT_WORKSPACE_PROJECT_NAME,
+    path: defaultPath,
+    kind: "managed",
+    createdAt: defaultExisting?.createdAt ?? now,
+    updatedAt: defaultExisting?.updatedAt ?? now,
+    ...(defaultExisting?.lastConversationAt
+      ? { lastConversationAt: defaultExisting.lastConversationAt }
+      : {}),
+    ...(defaultExisting?.isPinned
+      ? { isPinned: true, pinnedAt: defaultExisting.pinnedAt ?? defaultExisting.updatedAt }
+      : {}),
+  };
+
+  const projects: WorkspaceProject[] = [defaultProject];
+  const seenPaths = new Set<string>([defaultKey]);
   const seenIds = new Set<string>([DEFAULT_WORKSPACE_PROJECT_ID]);
   for (const project of configured) {
     const pathKey = workspaceProjectPathKey(project.path);
     if (!pathKey || seenPaths.has(pathKey)) continue;
     seenPaths.add(pathKey);
-    let id =
-      project.id === DEFAULT_WORKSPACE_PROJECT_ID
-        ? LEGACY_DEFAULT_WORKSPACE_PROJECT_ID
-        : project.id;
+    let id = project.id;
     if (!id || id === DEFAULT_WORKSPACE_PROJECT_ID || seenIds.has(id)) {
       id = createUuid();
     }
@@ -677,16 +790,19 @@ export function resolveWorkspaceProjects(
       ...project,
       id,
       name:
-        (project.id === DEFAULT_WORKSPACE_PROJECT_ID ? "" : project.name.trim()) ||
-        project.path.split(/[\\/]+/).filter(Boolean).pop() ||
+        project.name.trim() ||
+        project.path
+          .split(/[\\/]+/)
+          .filter(Boolean)
+          .pop() ||
         "Project",
-      kind: project.id === DEFAULT_WORKSPACE_PROJECT_ID ? "folder" : project.kind,
+      kind: project.kind,
     });
   }
 
   const hiddenWorkspaceProjectPaths = normalizeHiddenWorkspaceProjectPaths(
     system.hiddenWorkspaceProjectPaths,
-  );
+  ).filter((path) => workspaceProjectPathKey(path) !== defaultKey);
   const hiddenWorkspaceProjectPathKeys = new Set(
     hiddenWorkspaceProjectPaths.map(workspaceProjectPathKey),
   );
@@ -697,25 +813,38 @@ export function resolveWorkspaceProjects(
   const normalizedArchivedWorkspaceProjectPaths = normalizeArchivedWorkspaceProjectPaths(
     system.archivedWorkspaceProjectPaths,
   ).filter((path) => !hiddenWorkspaceProjectPathKeys.has(workspaceProjectPathKey(path)));
-  const archivedWorkspaceProjectPaths = normalizedArchivedWorkspaceProjectPaths;
+  const normalizedArchivedWorkspaceProjectPathKeys = new Set(
+    normalizedArchivedWorkspaceProjectPaths.map(workspaceProjectPathKey),
+  );
+  const archivedWorkspaceProjectPaths = projects.every((project) =>
+    normalizedArchivedWorkspaceProjectPathKeys.has(workspaceProjectPathKey(project.path)),
+  )
+    ? normalizedArchivedWorkspaceProjectPaths.filter(
+        (path) => workspaceProjectPathKey(path) !== defaultKey,
+      )
+    : normalizedArchivedWorkspaceProjectPaths;
   const archivedWorkspaceProjectPathKeys = new Set(
     archivedWorkspaceProjectPaths.map(workspaceProjectPathKey),
   );
   const selectableProjects = projects.filter(
     (project) => !archivedWorkspaceProjectPathKeys.has(workspaceProjectPathKey(project.path)),
   );
-  const activeProjectId =
-    system.activeWorkspaceProjectId === DEFAULT_WORKSPACE_PROJECT_ID ||
-    selectableProjects.some((project) => project.id === system.activeWorkspaceProjectId)
-      ? system.activeWorkspaceProjectId
-      : DEFAULT_WORKSPACE_PROJECT_ID;
+  const activeProjectId = selectableProjects.some(
+    (project) => project.id === system.activeWorkspaceProjectId,
+  )
+    ? system.activeWorkspaceProjectId
+    : (selectableProjects.find((project) => project.id === DEFAULT_WORKSPACE_PROJECT_ID)?.id ??
+      selectableProjects[0]?.id ??
+      DEFAULT_WORKSPACE_PROJECT_ID);
+  const activeProject =
+    selectableProjects.find((project) => project.id === activeProjectId) ?? defaultProject;
   const workdir = normalizeWorkdir(system.workdir) || defaultPath;
 
   return {
     ...system,
     workdir,
     workspaceProjects: projects,
-    activeWorkspaceProjectId: activeProjectId,
+    activeWorkspaceProjectId: activeProject.id,
     hiddenWorkspaceProjectPaths,
     missingWorkspaceProjectPaths,
     archivedWorkspaceProjectPaths,
@@ -741,6 +870,7 @@ const CHAT_RUNTIME_REASONING_PROVIDER_KEYS: ChatRuntimeReasoningProviderKey[] = 
   "codex_openai_responses",
   "codex_openai_completions",
   "gemini",
+  "xai",
 ];
 
 export function getChatRuntimeReasoningProviderKey(params: {
@@ -752,6 +882,9 @@ export function getChatRuntimeReasoningProviderKey(params: {
   }
   if (params.providerId === "gemini") {
     return "gemini";
+  }
+  if (params.providerId === "xai") {
+    return "xai";
   }
   if (params.providerId === "codex" && params.requestFormat === "openai-completions") {
     return "codex_openai_completions";
@@ -767,7 +900,13 @@ function normalizeChatRuntimeReasoningForLevels(
     return DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
   }
   const reasoning = normalizeChatRuntimeReasoning(input);
-  return levels.includes(reasoning) ? reasoning : DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
+  if (levels.includes(reasoning)) return reasoning;
+  // 存量档位不在该模型档位表内：先回默认档，默认档也不可用（如单档 toggle
+  // 模型、gpt-5.2-chat-latest 只有 medium）时钳到最近档，绝不返回表外档位。
+  const fallback = DEFAULT_CHAT_RUNTIME_CONTROLS.reasoning;
+  if (levels.includes(fallback)) return fallback;
+  const clampSource = (reasoning === "off" ? fallback : reasoning) as ThinkingLevel;
+  return clampThinkingLevelToList(clampSource, levels as ThinkingLevel[]) ?? fallback;
 }
 
 function normalizeChatRuntimeReasoningByProvider(
@@ -804,18 +943,8 @@ export function getChatRuntimeReasoningLevelsForProvider(params: {
   providerId?: ProviderId;
   requestFormat?: CodexRequestFormat;
   modelId?: string;
-  baseUrl?: string;
-  modelConfig?: ProviderModelConfig;
 }): ReasoningLevel[] {
-  const modelId = params.modelId?.trim();
-  if (!modelId) return [];
-  return getAvailableThinkingLevelsForModel(
-    params.providerId ?? "claude_code",
-    modelId,
-    params.baseUrl ?? "",
-    params.requestFormat,
-    params.modelConfig,
-  );
+  return resolveModelThinking(params.providerId ?? "claude_code", params.modelId).levels;
 }
 
 export function normalizeChatRuntimeControlsForProvider(
@@ -824,8 +953,6 @@ export function normalizeChatRuntimeControlsForProvider(
     providerId?: ProviderId;
     requestFormat?: CodexRequestFormat;
     modelId?: string;
-    baseUrl?: string;
-    modelConfig?: ProviderModelConfig;
   },
 ): ChatRuntimeControls {
   const controls = normalizeChatRuntimeControls(input);
@@ -856,8 +983,6 @@ export function updateChatRuntimeControlsForProvider(
     providerId?: ProviderId;
     requestFormat?: CodexRequestFormat;
     modelId?: string;
-    baseUrl?: string;
-    modelConfig?: ProviderModelConfig;
   },
 ): ChatRuntimeControls {
   const key = getChatRuntimeReasoningProviderKey(params);
@@ -964,20 +1089,13 @@ function normalizeIntegerInRange(
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizeGrpcEndpoint(input: unknown): string {
-  const value = normalizeOptionalText(input);
-  if (!value) return "";
-  if (/^https?:/i.test(value)) return normalizeBaseUrl(value);
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
-
 export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   return {
     enabled: obj.enabled === true,
     gatewayUrl: normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : ""),
-    grpcPort: normalizeIntegerInRange(obj.grpcPort, 1, 65_535, 443),
-    grpcEndpoint: normalizeGrpcEndpoint(obj.grpcEndpoint),
+    gatewayPort: normalizeIntegerInRange(obj.gatewayPort, 1, 65_535, 443),
+    token: normalizeApiKey(typeof obj.token === "string" ? obj.token : ""),
     agentId: normalizeOptionalText(obj.agentId),
     autoReconnect: obj.autoReconnect !== false,
     heartbeatInterval: normalizePositiveInteger(obj.heartbeatInterval, 30),
@@ -988,12 +1106,6 @@ export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   };
 }
 
-function toKnownProvider(providerId: ProviderId): KnownProvider {
-  if (providerId === "codex") return "openai";
-  if (providerId === "gemini") return "google";
-  return "anthropic";
-}
-
 function getKnownModelLimits(
   providerId: ProviderId,
   modelId: string | undefined,
@@ -1001,16 +1113,13 @@ function getKnownModelLimits(
 ): Pick<ProviderModelConfig, "contextWindow" | "maxOutputToken"> | undefined {
   const trimmedId = modelId?.trim();
   if (!trimmedId) return undefined;
-  // Anthropic 走规范化目录回查（装饰 id/[1m] 后缀也能继承默认值），并对旧世代
-  // 钳出退役后的有效窗口；contextWindow > 200K 即请求侧启用 1M beta 的开关。
-  if (toKnownProvider(providerId) === "anthropic") {
+  // Anthropic 的有效窗口叠加了 1M beta/adaptive 世代的请求侧策略
+  // （contextWindow > 200K 即请求侧启用 1M beta 的开关），走策略层回查；
+  // 其余供应商直接读目录（数据已在生成期过统一语义规则）。
+  if (providerId === "claude_code") {
     return resolveAnthropicKnownModelLimits(trimmedId, baseUrl);
   }
-  const known = getBuiltinModels(toKnownProvider(providerId)).find(
-    (model) => model.id === trimmedId,
-  );
-  if (!known) return undefined;
-  return { contextWindow: known.contextWindow, maxOutputToken: known.maxTokens };
+  return resolveModelLimits(providerId, trimmedId);
 }
 
 export function getProviderModelDefaults(
@@ -1021,36 +1130,29 @@ export function getProviderModelDefaults(
   const known = getKnownModelLimits(providerId, modelId, baseUrl);
   if (known) return known;
 
-  if (providerId === "codex") {
-    return {
-      contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_CODEX_MAX_OUTPUT_TOKEN,
-    };
-  }
-
-  if (providerId === "gemini") {
-    return {
-      contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_GEMINI_MAX_OUTPUT_TOKEN,
-    };
-  }
-
-  if (modelId && (hasAnthropicLongContextSuffix(modelId) || isAnthropicAdaptiveModelId(modelId))) {
+  if (
+    providerId === "claude_code" &&
+    modelId &&
+    (hasAnthropicLongContextSuffix(modelId) || isAnthropicAdaptiveModelId(modelId))
+  ) {
     return {
       contextWindow:
         hasAnthropicLongContextSuffix(modelId) &&
         baseUrl &&
         !shouldSendAnthropicLongContextHeader(baseUrl)
-          ? DEFAULT_CLAUDE_CONTEXT_WINDOW
+          ? ANTHROPIC_STANDARD_CONTEXT_WINDOW
           : ANTHROPIC_LONG_CONTEXT_WINDOW,
-      maxOutputToken: DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN,
+      maxOutputToken: getProviderFallbackLimits(providerId).maxOutputToken,
     };
   }
 
-  return {
-    contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
-    maxOutputToken: DEFAULT_CLAUDE_MAX_OUTPUT_TOKEN,
-  };
+  // 中转聚合把别家模型挂在本供应商下（如 Anthropic 兼容中转供 grok）：按 id
+  // 跨供应商回查真实限额，避免吃错本供应商兜底值。Anthropic 的 1M/adaptive
+  // 窗口策略只约束目录内的 Anthropic 模型，跨供应商命中直接透传目录值。
+  const crossProvider = resolveModelLimitsAcrossProviders(modelId);
+  if (crossProvider) return crossProvider;
+
+  return getProviderFallbackLimits(providerId);
 }
 
 export function createProviderModelConfig(
@@ -1064,28 +1166,6 @@ export function createProviderModelConfig(
     contextWindow: defaults.contextWindow,
     maxOutputToken: defaults.maxOutputToken,
   };
-}
-
-function normalizeNonNegativeNumber(input: unknown): number {
-  const numeric =
-    typeof input === "number" ? input : typeof input === "string" ? Number(input) : NaN;
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
-}
-
-function normalizeProviderModelCost(input: unknown): ProviderModelCost | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const obj = input as Record<string, unknown>;
-  const cost: ProviderModelCost = {
-    input: normalizeNonNegativeNumber(obj.input),
-    output: normalizeNonNegativeNumber(obj.output),
-    cacheRead: normalizeNonNegativeNumber(obj.cacheRead),
-    cacheWrite: normalizeNonNegativeNumber(obj.cacheWrite),
-  };
-  // 全零视为未配置，避免把"没填"持久化成显式的零单价。
-  if (cost.input <= 0 && cost.output <= 0 && cost.cacheRead <= 0 && cost.cacheWrite <= 0) {
-    return undefined;
-  }
-  return cost;
 }
 
 export function normalizeProviderModelConfig(
@@ -1107,19 +1187,26 @@ export function normalizeProviderModelConfig(
   if (!id) return null;
 
   const defaults = getProviderModelDefaults(providerId, id);
-  const cost = normalizeProviderModelCost(obj.cost);
   const ownedBy =
     (typeof obj.ownedBy === "string" ? obj.ownedBy.trim() : "") ||
     (typeof obj.owned_by === "string" ? obj.owned_by.trim() : "");
-  return {
-    id,
-    ...(ownedBy ? { ownedBy } : {}),
+  const storedLimits = {
     contextWindow: normalizePositiveInteger(obj.contextWindow, defaults.contextWindow),
     maxOutputToken: normalizePositiveInteger(
       obj.maxOutputToken ?? obj.maxTokens,
       defaults.maxOutputToken,
     ),
-    ...(cost !== undefined ? { cost } : {}),
+  };
+  // 退化限额（输出吃满窗口）可能来自坏目录数据落库期或手工配置，读侧统一修复；
+  // 规则与目录生成期同源（normalizeModelLimits），对所有供应商一视同仁。
+  // 跨供应商回查上线前落库的别家模型吃过本供应商兜底值，同样读侧修复，
+  // 不需要用户删除重加（识别与替换规则见 repairStaleCrossProviderLimits）。
+  const limits = repairStaleCrossProviderLimits(providerId, id, normalizeModelLimits(storedLimits));
+  return {
+    id,
+    ...(ownedBy ? { ownedBy } : {}),
+    contextWindow: limits.contextWindow,
+    maxOutputToken: limits.maxOutputToken,
   };
 }
 export function normalizeProviderModelConfigs(
@@ -1170,6 +1257,7 @@ function normalizeProviderId(input: unknown): ProviderId {
   switch (input) {
     case "codex":
     case "gemini":
+    case "xai":
       return input;
     default:
       return "claude_code";
@@ -1180,6 +1268,7 @@ function normalizeProviderName(id: string, input: unknown): string {
   const name = typeof input === "string" && input.trim() ? input.trim() : "未命名供应商";
   if (id === "builtin-claude_code" && name === "Claude Code") return "Anthropic";
   if (id === "builtin-codex" && name === "Codex") return "OpenAI";
+  if (id === "builtin-xai" && (name === "xAI" || name === "XAI")) return "Grok";
   return name;
 }
 
@@ -1215,11 +1304,96 @@ function normalizeProviderModelOrder(
   return order;
 }
 
+function normalizeUsageQueryMode(input: unknown): UsageQueryMode {
+  switch (input) {
+    case "coding-plan":
+    case "balance":
+    case "general":
+    case "custom":
+      return input;
+    default:
+      // 缺省与未知模式统一回退 NewAPI 模板(默认查询方式)。
+      return "newapi";
+  }
+}
+
+function normalizeUsageQueryCodingPlanProvider(input: unknown): UsageQueryCodingPlanProvider {
+  switch (input) {
+    case "kimi":
+    case "zhipu":
+    case "zhipu_team":
+    case "minimax":
+    case "zenmux":
+    case "volcengine":
+      return input;
+    default:
+      return "";
+  }
+}
+
+function normalizeUsageQueryScripts(input: unknown): UsageQueryScripts {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const scripts: UsageQueryScripts = {};
+  for (const mode of ["custom", "general", "newapi"] as const) {
+    const value = obj[mode];
+    if (typeof value === "string" && value.trim()) {
+      scripts[mode] = value.trim();
+    }
+  }
+  return scripts;
+}
+
+function clampInt(input: unknown, min: number, max: number, fallback: number): number {
+  const value = typeof input === "number" && Number.isFinite(input) ? Math.round(input) : fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeUsageQueryConfig(input: unknown): UsageQueryConfig {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const apiKey = normalizeApiKey(typeof obj.apiKey === "string" ? obj.apiKey : "");
+  const accessToken = normalizeApiKey(typeof obj.accessToken === "string" ? obj.accessToken : "");
+  const secretAccessKey = normalizeApiKey(
+    typeof obj.secretAccessKey === "string" ? obj.secretAccessKey : "",
+  );
+
+  return {
+    enabled: obj.enabled === true,
+    mode: normalizeUsageQueryMode(obj.mode),
+    script: typeof obj.script === "string" ? obj.script.trim() : "",
+    scripts: normalizeUsageQueryScripts(obj.scripts),
+    baseUrl: normalizeBaseUrl(typeof obj.baseUrl === "string" ? obj.baseUrl : ""),
+    apiKey,
+    apiKeyConfigured: apiKey.length > 0 || obj.apiKeyConfigured === true,
+    accessToken,
+    accessTokenConfigured: accessToken.length > 0 || obj.accessTokenConfigured === true,
+    userId: typeof obj.userId === "string" ? obj.userId.trim() : "",
+    accessKeyId: typeof obj.accessKeyId === "string" ? obj.accessKeyId.trim() : "",
+    secretAccessKey,
+    secretAccessKeyConfigured: secretAccessKey.length > 0 || obj.secretAccessKeyConfigured === true,
+    codingPlanProvider: normalizeUsageQueryCodingPlanProvider(obj.codingPlanProvider),
+    teamOrganizationId:
+      typeof obj.teamOrganizationId === "string" ? obj.teamOrganizationId.trim() : "",
+    teamProjectId: typeof obj.teamProjectId === "string" ? obj.teamProjectId.trim() : "",
+    timeoutSecs: clampInt(
+      obj.timeoutSecs,
+      USAGE_QUERY_TIMEOUT_MIN_SECS,
+      USAGE_QUERY_TIMEOUT_MAX_SECS,
+      USAGE_QUERY_TIMEOUT_DEFAULT_SECS,
+    ),
+  };
+}
+
 export function normalizeCustomProvider(input: unknown): CustomProvider {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const type = normalizeProviderId(obj.type);
   const codexRouting =
-    type === "codex" ? normalizeCodexRouting(obj.baseUrl, obj.requestFormat) : undefined;
+    type === "codex" || type === "xai"
+      ? normalizeCodexRouting(
+          obj.baseUrl,
+          // xAI / Grok 固定走 Responses；忽略历史配置中的 completions。
+          type === "xai" ? "openai-responses" : obj.requestFormat,
+        )
+      : undefined;
   const models = normalizeProviderModelConfigs(obj.models, type);
   const modelOrder = normalizeProviderModelOrder(obj.modelOrder, models);
   const validModelIds = new Set(models.map((model) => model.id));
@@ -1241,16 +1415,18 @@ export function normalizeCustomProvider(input: unknown): CustomProvider {
     activeModels: normalizeModels(normalizeStringArray(obj.activeModels)).filter((modelId) =>
       validModelIds.has(modelId),
     ),
-    requestFormat: codexRouting?.requestFormat,
+    requestFormat: type === "xai" ? "openai-responses" : codexRouting?.requestFormat,
     reasoning: normalizeReasoningLevel(obj.reasoning),
     // Anthropic/OpenAI 默认开启提示词缓存（OpenAI 侧体现为稳定的
-    // prompt_cache_key 路由提示）；Gemini 的隐式缓存由服务端自动处理。
-    promptCachingEnabled: type === "gemini" ? false : obj.promptCachingEnabled !== false,
+    // prompt_cache_key 路由提示）；Gemini / xAI 不使用 OpenAI 风格 prompt cache。
+    promptCachingEnabled:
+      type === "gemini" || type === "xai" ? false : obj.promptCachingEnabled !== false,
     ...(type === "claude_code" && obj.promptCacheRetention === "long"
       ? { promptCacheRetention: "long" as const }
       : {}),
     nativeWebSearchEnabled: obj.nativeWebSearchEnabled !== false,
     useSystemProxy: obj.useSystemProxy === true,
+    usageQuery: normalizeUsageQueryConfig(obj.usageQuery),
   };
 }
 
@@ -1947,6 +2123,18 @@ export function normalizeFontScaleSettings(input: unknown): FontScaleSettings {
   };
 }
 
+export function normalizeChatTranscriptSettings(input: unknown): ChatTranscriptSettings {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  return {
+    width: normalizeIntegerInRange(
+      obj.width,
+      MIN_CHAT_TRANSCRIPT_WIDTH,
+      MAX_CHAT_TRANSCRIPT_WIDTH,
+      DEFAULT_CHAT_TRANSCRIPT_WIDTH,
+    ),
+  };
+}
+
 export function normalizeCustomSettings(
   input: unknown,
   customProviders: CustomProvider[],
@@ -1964,7 +2152,13 @@ export function normalizeCustomSettings(
       projectsCollapsed: chatSidebar.projectsCollapsed === true,
       recentCollapsed: chatSidebar.recentCollapsed === true,
     },
+    chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
     rightDock: normalizeRightDockSettings(obj.rightDock),
+    // fontFamily was the single pre-split preference. Read it only to migrate
+    // saved local settings into the new interface-specific field.
+    interfaceFontFamily: normalizeFontFamily(obj.interfaceFontFamily ?? obj.fontFamily),
+    chatFontFamily: normalizeFontFamily(obj.chatFontFamily),
+    codeFontFamily: normalizeFontFamily(obj.codeFontFamily),
     fontScale: normalizeFontScaleSettings(obj.fontScale),
   };
 }
@@ -2003,8 +2197,8 @@ export function getDefaultSettings(): AppSettings {
     remote: {
       enabled: false,
       gatewayUrl: "",
-      grpcPort: 443,
-      grpcEndpoint: "",
+      gatewayPort: 443,
+      token: "",
       agentId: "",
       autoReconnect: true,
       heartbeatInterval: 30,
@@ -2268,6 +2462,12 @@ export function getRightDockProjectState(
   return normalizeRightDockProjectState(
     normalizedPathKey ? customSettings.rightDock.projects[normalizedPathKey] : {},
   );
+}
+
+export function updateChatTranscriptWidth(prev: AppSettings, width: number): AppSettings {
+  const nextWidth = normalizeChatTranscriptSettings({ width }).width;
+  if (prev.customSettings.chatTranscript.width === nextWidth) return prev;
+  return updateCustomSettings(prev, { chatTranscript: { width: nextWidth } });
 }
 
 export function updateRightDockWidth(prev: AppSettings, width: number): AppSettings {

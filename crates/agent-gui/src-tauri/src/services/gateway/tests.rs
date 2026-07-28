@@ -1,18 +1,68 @@
 use super::{
     build_chat_event_envelope, build_chat_runtime_snapshot_envelope,
     build_gateway_runtime_status_envelope, build_local_settings_update_event_payload,
-    chat_event_is_terminal, gateway_connection_needs_restart, gateway_connection_stale_after,
-    gateway_reconnect_backoff, history_share_resolve_error_code, is_chat_runtime_wake_request_id,
-    merge_settings_sync_snapshot, merge_settings_update_into_snapshot, proto,
-    required_terminal_project_path_key, set_disconnected_status, GatewayChatRequestEvent,
-    GatewayChatRuntimeSnapshot, GatewayController, GatewayStatusSnapshot, RemoteChatInboxRecord,
-    GATEWAY_CHAT_LEASE_MS, GATEWAY_CHAT_RUNNING_LEASE_MS, GATEWAY_RECONNECT_MAX,
-    GATEWAY_RECONNECT_MIN, GATEWAY_RECONNECT_STABLE_AFTER,
-    GATEWAY_RUNTIME_STATUS_REPUBLISH_MAX_AGE, GATEWAY_WEBVIEW_REPORT_FRESH_WINDOW,
+    chat_event_is_terminal, effective_agent_id, gateway_connection_needs_restart,
+    gateway_connection_stale_after, gateway_reconnect_backoff, history_share_resolve_error_code,
+    is_chat_runtime_wake_request_id, merge_settings_sync_snapshot,
+    merge_settings_update_into_snapshot, proto, required_terminal_project_path_key,
+    set_disconnected_status, GatewayChatRequestEvent, GatewayChatRuntimeSnapshot,
+    GatewayController, GatewayStatusSnapshot, RemoteChatInboxRecord, GATEWAY_CHAT_LEASE_MS,
+    GATEWAY_CHAT_RUNNING_LEASE_MS, GATEWAY_RECONNECT_MAX, GATEWAY_RECONNECT_MIN,
+    GATEWAY_RECONNECT_STABLE_AFTER, GATEWAY_RUNTIME_STATUS_REPUBLISH_MAX_AGE,
+    GATEWAY_WEBVIEW_REPORT_FRESH_WINDOW,
 };
 use crate::commands::settings::RemoteSettingsPayload;
+use crate::services::gateway_bridge;
+use crate::services::provider_usage::{ProviderUsageResult, UsageData};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
+
+#[test]
+fn provider_usage_response_serializes_only_result_json() {
+    let response = gateway_bridge::provider_usage_response(ProviderUsageResult {
+        data: vec![UsageData {
+            plan_name: Some("Balance".to_string()),
+            remaining: Some(4.2),
+            unit: Some("USD".to_string()),
+            ..UsageData::default()
+        }],
+        queried_at: Some(1_772_000_000_000),
+        error: None,
+        is_stale: false,
+    })
+    .expect("provider usage response should serialize");
+
+    let expected_result_json = concat!(
+        r#"{"data":[{"planName":"Balance","remaining":4.2,"unit":"USD"}],"#,
+        r#""queriedAt":1772000000000,"error":null,"isStale":false}"#,
+    );
+    assert_eq!(response.result_json, expected_result_json);
+
+    let result: Value =
+        serde_json::from_str(&response.result_json).expect("result_json should be valid JSON");
+    assert_eq!(
+        result,
+        json!({
+            "data": [{ "planName": "Balance", "remaining": 4.2, "unit": "USD" }],
+            "queriedAt": 1_772_000_000_000_i64,
+            "error": null,
+            "isStale": false,
+        })
+    );
+    assert!(!response.result_json.contains("apiKey"));
+    assert!(!response.result_json.contains("accessToken"));
+    assert!(!response.result_json.contains("secretAccessKey"));
+
+    let envelope = super::envelope_handler::provider_usage_agent_envelope(
+        "provider-usage-request".to_string(),
+        response,
+    );
+    assert_eq!(envelope.request_id, "provider-usage-request");
+    let Some(proto::agent_envelope::Payload::ProviderUsageResp(response)) = envelope.payload else {
+        panic!("expected provider usage response payload");
+    };
+    assert_eq!(response.result_json, expected_result_json);
+}
 
 fn gateway_chat_request(
     request_id: &str,
@@ -441,6 +491,12 @@ fn local_settings_update_event_keeps_private_api_key_updates_only_at_root() {
         },
         "providerApiKeyUpdates": {
             "provider-a": "new-key"
+        },
+        "providerUsageQuerySecretUpdates": {
+            "provider-a": {
+                "accessToken": "usage-token",
+                "secretAccessKey": "usage-secret"
+            }
         }
     });
 
@@ -455,6 +511,14 @@ fn local_settings_update_event_keeps_private_api_key_updates_only_at_root() {
     assert_eq!(
         event_payload["providerApiKeyUpdates"]["provider-a"],
         "new-key"
+    );
+    assert_eq!(
+        event_payload["providerUsageQuerySecretUpdates"]["provider-a"]["accessToken"],
+        "usage-token"
+    );
+    assert_eq!(
+        event_payload["providerUsageQuerySecretUpdates"]["provider-a"]["secretAccessKey"],
+        "usage-secret"
     );
 }
 
@@ -476,8 +540,8 @@ fn set_disconnected_status_resets_runtime_fields_for_new_config() {
     let config = RemoteSettingsPayload {
         enabled: true,
         gateway_url: "https://gateway.example.com".to_string(),
-        grpc_port: 50051,
-        grpc_endpoint: String::new(),
+        gateway_port: 50051,
+        token: "dev-token".to_string(),
         agent_id: "agent-new".to_string(),
         auto_reconnect: true,
         heartbeat_interval: 30,
@@ -517,6 +581,18 @@ fn set_disconnected_status_resets_runtime_fields_for_new_config() {
 }
 
 #[test]
+fn effective_agent_id_requires_persisted_identity_and_does_not_use_hostname() {
+    let mut config = RemoteSettingsPayload::default();
+    assert!(effective_agent_id(&config).is_err());
+
+    config.agent_id = " agent-550e8400-e29b-41d4-a716-446655440000 ".to_string();
+    assert_eq!(
+        effective_agent_id(&config).as_deref(),
+        Ok("agent-550e8400-e29b-41d4-a716-446655440000")
+    );
+}
+
+#[test]
 fn chat_runtime_wake_ping_uses_dedicated_request_prefix() {
     assert!(is_chat_runtime_wake_request_id(
         "chat-runtime-wake-request-1"
@@ -532,8 +608,8 @@ fn gateway_connection_nudge_detects_offline_and_stale_sessions() {
     let config = RemoteSettingsPayload {
         enabled: true,
         gateway_url: "https://gateway.example.com".to_string(),
-        grpc_port: 50051,
-        grpc_endpoint: String::new(),
+        gateway_port: 50051,
+        token: "dev-token".to_string(),
         agent_id: "agent".to_string(),
         auto_reconnect: true,
         heartbeat_interval: 30,
@@ -760,6 +836,7 @@ fn build_chat_event_envelope_preserves_user_message_payload() {
             "type": "user_message",
             "conversation_id": "conversation-1",
             "message": "queued prompt",
+            "message_id": "user-1",
             "uploaded_files": [
                 {
                     "relativePath": "notes.md",
@@ -769,7 +846,15 @@ fn build_chat_event_envelope_preserves_user_message_payload() {
                     "sizeBytes": 12
                 }
             ],
-            "execution_mode": "agent"
+            "execution_mode": "agent",
+            "message_ref": {
+                "segment_index": 0,
+                "message_index": 3,
+                "segment_id": "segment-a",
+                "message_id": "user-9",
+                "role": "user",
+                "content_hash": "fnv1a32:00000000"
+            }
         }),
     )
     .expect("build user message event envelope");
@@ -786,9 +871,12 @@ fn build_chat_event_envelope_preserves_user_message_payload() {
 
     let data: Value = serde_json::from_str(&chat_event.data).expect("chat event data");
     assert_eq!(data["message"], "queued prompt");
+    assert_eq!(data["message_id"], "user-1");
     assert_eq!(data["uploaded_files"][0]["relativePath"], "notes.md");
     assert_eq!(data["uploaded_files"][0]["kind"], "text");
     assert_eq!(data["execution_mode"], "agent");
+    assert_eq!(data["message_ref"]["message_id"], "user-9");
+    assert_eq!(data["message_ref"]["content_hash"], "fnv1a32:00000000");
 }
 
 #[test]
