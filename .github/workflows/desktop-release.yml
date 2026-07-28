@@ -344,10 +344,12 @@ jobs:
           test -n "$PUBLIC_RELEASE_TOKEN"
 
           github_notes_path="$RUNNER_TEMP/liveagent-github-release-notes.md"
-          notes_path="$RUNNER_TEMP/liveagent-release-notes.md"
+          source_notes_path="$RUNNER_TEMP/liveagent-source-release-notes.md"
+          public_notes_path="$RUNNER_TEMP/liveagent-public-release-notes.md"
           curated_notes_path=".github/release-notes/$RELEASE_TAG.md"
+          curated_public_notes_path=".github/release-notes-public/$RELEASE_TAG.md"
           if [ -f "$curated_notes_path" ]; then
-            cp "$curated_notes_path" "$notes_path"
+            cp "$curated_notes_path" "$source_notes_path"
           else
             if ! GH_TOKEN="$SOURCE_RELEASE_TOKEN" gh api "repos/$SOURCE_REPOSITORY/releases/generate-notes" \
               -f tag_name="$RELEASE_TAG" \
@@ -358,11 +360,16 @@ jobs:
               printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
             fi
 
-            node scripts/release/create-ai-release-notes.mjs "$RELEASE_TAG" "$notes_path" "$github_notes_path"
+            node scripts/release/create-ai-release-notes.mjs "$RELEASE_TAG" "$source_notes_path" "$github_notes_path"
           fi
-          if [ ! -s "$notes_path" ]; then
-            printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$notes_path"
+          if [ ! -s "$source_notes_path" ]; then
+            printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$source_notes_path"
           fi
+          test -s "$curated_public_notes_path" || {
+            echo "Missing public release notes: $curated_public_notes_path" >&2
+            exit 1
+          }
+          cp "$curated_public_notes_path" "$public_notes_path"
 
           rm -rf public-release-assets
           mkdir -p public-release-assets
@@ -375,19 +382,20 @@ jobs:
             exit 1
           fi
 
-          node scripts/release/create-tauri-updater-manifest.mjs release-artifacts release-artifacts/latest.json "$notes_path"
+          node scripts/release/create-tauri-updater-manifest.mjs release-artifacts release-artifacts/latest.json "$public_notes_path"
 
           publish_release() {
             local repository="$1"
             local token="$2"
             local target_mode="$3"
-            local create_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
+            local release_notes_path="$4"
+            local create_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$release_notes_path")
 
             export GH_TOKEN="$token"
             export GH_REPO="$repository"
 
             if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              edit_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
+              edit_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$release_notes_path")
               if [ "$is_prerelease" = true ]; then
                 edit_args+=(--prerelease)
               else
@@ -415,5 +423,5 @@ jobs:
             gh release upload "$RELEASE_TAG" release-artifacts/latest.json --clobber
           }
 
-          publish_release "$SOURCE_REPOSITORY" "$SOURCE_RELEASE_TOKEN" source
-          publish_release "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN" public
+          publish_release "$SOURCE_REPOSITORY" "$SOURCE_RELEASE_TOKEN" source "$source_notes_path"
+          publish_release "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN" public "$public_notes_path"

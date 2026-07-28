@@ -31,4 +31,6 @@ test("desktop releases publish the same assets to source and public repositories
   assert.match(workflow, /publish_release "\$SOURCE_REPOSITORY"/);
   assert.match(workflow, /publish_release "\$RELEASE_REPOSITORY"/);
   assert.match(workflow, /\.github\/release-notes\/\$RELEASE_TAG\.md/);
+  assert.match(workflow, /\.github\/release-notes-public\/\$RELEASE_TAG\.md/);
+  assert.match(workflow, /Missing public release notes/);
 });
