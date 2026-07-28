@@ -30,10 +30,10 @@ jobs:
       - uses: actions/setup-node@v6
         with: {node-version: 22.19.0}
       - run: npm install -g pnpm@10.32.1
-      - run: go test ./...
-        working-directory: crates/agent-gateway
       - run: pnpm install --frozen-lockfile && pnpm test && pnpm build && pnpm lint
         working-directory: crates/agent-gateway/web
+      - run: go test ./...
+        working-directory: crates/agent-gateway
       - run: make deploy-validate
 
   build-and-push:
