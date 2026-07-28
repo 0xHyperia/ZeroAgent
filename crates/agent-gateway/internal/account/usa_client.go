@@ -24,6 +24,24 @@ type usaEnvelope struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+type OAuthTokenResult struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	Scope        string `json:"scope"`
+}
+
+type appEnvelope struct {
+	Success bool            `json:"success"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+	Error   struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 func NewUSAClient(origin string, timeout time.Duration) (*USAClient, error) {
 	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
 	parsed, err := url.Parse(origin)
@@ -38,6 +56,175 @@ func NewUSAClient(origin string, timeout time.Duration) (*USAClient, error) {
 
 func NewUSAClientWithHTTPClient(origin string, client *http.Client) *USAClient {
 	return &USAClient{origin: strings.TrimRight(origin, "/"), client: client}
+}
+
+func (c *USAClient) Origin() string { return c.origin }
+
+func (c *USAClient) CreateAppAuthorizationRequest(ctx context.Context, payload map[string]any) (string, error) {
+	data, err := c.request(ctx, http.MethodPost, "/api/v1/app-auth/authorize/requests", payload, "")
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		RequestID string `json:"request_id"`
+	}
+	if json.Unmarshal(data, &result) != nil || strings.TrimSpace(result.RequestID) == "" {
+		return "", &APIError{Status: http.StatusBadGateway, Message: "USA-Zero authorization response is incomplete"}
+	}
+	return result.RequestID, nil
+}
+
+func (c *USAClient) ExchangeAppCode(ctx context.Context, clientID, code, redirectURI, verifier string) (*OAuthTokenResult, error) {
+	return c.appToken(ctx, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {clientID}, "code": {code},
+		"redirect_uri": {redirectURI}, "code_verifier": {verifier},
+	})
+}
+
+func (c *USAClient) RefreshApp(ctx context.Context, clientID, refreshToken string) (*OAuthTokenResult, error) {
+	return c.appToken(ctx, url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {clientID}, "refresh_token": {refreshToken},
+	})
+}
+
+func (c *USAClient) RevokeApp(ctx context.Context, token, hint string) error {
+	values := url.Values{"token": {token}}
+	if hint != "" {
+		values.Set("token_type_hint", hint)
+	}
+	_, err := c.formRequest(ctx, "/api/v1/app-auth/revoke", values)
+	return err
+}
+
+func (c *USAClient) AppMe(ctx context.Context, accessToken string) (json.RawMessage, error) {
+	return c.appRequest(ctx, http.MethodGet, "/api/v1/app/me", nil, accessToken)
+}
+
+func (c *USAClient) AppIssueStepUp(ctx context.Context, accessToken, target string) (json.RawMessage, error) {
+	return c.appRequest(ctx, http.MethodPost, "/api/v1/app/execution/step-up", map[string]any{
+		"purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
+	}, accessToken)
+}
+
+func (c *USAClient) AppConsumeStepUp(ctx context.Context, accessToken, proof, target string) error {
+	_, err := c.appRequest(ctx, http.MethodPost, "/api/v1/app/execution/step-up/consume", map[string]any{
+		"proof": proof, "purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
+	}, accessToken)
+	return err
+}
+
+func (c *USAClient) ProxyApp(ctx context.Context, method, apiPath, accessToken string, body []byte) (json.RawMessage, error) {
+	path := strings.TrimPrefix(strings.SplitN(apiPath, "?", 2)[0], "/")
+	appPath := ""
+	switch path {
+	case "user/profile":
+		appPath = "/api/v1/app/me"
+	case "user":
+		appPath = "/api/v1/app/me"
+		if method == http.MethodPut {
+			method = http.MethodPatch
+		}
+	case "usage/dashboard/stats":
+		appPath = "/api/v1/app/usage"
+	case "groups/available":
+		appPath = "/api/v1/app/groups"
+	case "keys":
+		appPath = "/api/v1/app/keys"
+		if method == http.MethodPost {
+			var input struct {
+				Name    string `json:"name"`
+				GroupID int64  `json:"group_id"`
+			}
+			if json.Unmarshal(body, &input) != nil || input.GroupID <= 0 {
+				return nil, &APIError{Status: http.StatusBadRequest, Message: "group_id is required"}
+			}
+			appPath = fmt.Sprintf("/api/v1/app/groups/%d/keys", input.GroupID)
+			body, _ = json.Marshal(map[string]any{"name": input.Name})
+		}
+	case "subscriptions":
+		appPath = "/api/v1/app/subscriptions"
+	case "user/password", "user/account-bindings/email", "user/account-bindings/email/send-code":
+		return nil, &APIError{Status: http.StatusForbidden, Message: "Open usa0.top account security to change password or email"}
+	default:
+		return nil, &APIError{Status: http.StatusForbidden, Message: "resource is not available to an authorized app"}
+	}
+	var payload any
+	if len(body) > 0 {
+		payload = json.RawMessage(body)
+	}
+	return c.appRequest(ctx, method, appPath, payload, accessToken)
+}
+
+func (c *USAClient) EnsureAppWebAPIKey(ctx context.Context, accessToken string) (string, error) {
+	data, err := c.appRequest(ctx, http.MethodGet, "/api/v1/app/keys?page=1&page_size=100", nil, accessToken)
+	if err != nil {
+		return "", err
+	}
+	var page struct {
+		Items []struct{ Key, Name, Status string } `json:"items"`
+	}
+	if json.Unmarshal(data, &page) != nil {
+		return "", &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned invalid app keys"}
+	}
+	for _, key := range page.Items {
+		if key.Name == "ZeroAgent Web" && key.Status == "active" && key.Key != "" {
+			return key.Key, nil
+		}
+	}
+	groups, err := c.appRequest(ctx, http.MethodGet, "/api/v1/app/groups", nil, accessToken)
+	if err != nil {
+		return "", err
+	}
+	var items []struct {
+		ID     int64  `json:"id"`
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(groups, &items) != nil {
+		return "", &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned invalid app groups"}
+	}
+	var groupID int64
+	for _, group := range items {
+		if group.Status == "active" {
+			groupID = group.ID
+			break
+		}
+	}
+	if groupID == 0 {
+		return "", &APIError{Status: http.StatusConflict, Message: "account has no active model group"}
+	}
+	created, err := c.appRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/app/groups/%d/keys", groupID), map[string]any{"name": "ZeroAgent Web"}, accessToken)
+	if err != nil {
+		return "", err
+	}
+	var key struct {
+		Key string `json:"key"`
+	}
+	if json.Unmarshal(created, &key) != nil || strings.TrimSpace(key.Key) == "" {
+		return "", &APIError{Status: http.StatusBadGateway, Message: "USA-Zero did not return the web API key"}
+	}
+	return strings.TrimSpace(key.Key), nil
+}
+
+func (c *USAClient) AppOwnedAPIKey(ctx context.Context, accessToken string, keyID int64) (string, error) {
+	data, err := c.appRequest(ctx, http.MethodGet, "/api/v1/app/keys?page=1&page_size=100", nil, accessToken)
+	if err != nil {
+		return "", err
+	}
+	var page struct {
+		Items []struct {
+			ID          int64 `json:"id"`
+			Key, Status string
+		} `json:"items"`
+	}
+	if json.Unmarshal(data, &page) != nil {
+		return "", &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned invalid app keys"}
+	}
+	for _, item := range page.Items {
+		if item.ID == keyID && item.Status == "active" && item.Key != "" {
+			return item.Key, nil
+		}
+	}
+	return "", &APIError{Status: http.StatusNotFound, Message: "API key not found"}
 }
 
 func (c *USAClient) Login(ctx context.Context, email, password string) (*LoginResult, error) {
@@ -309,6 +496,82 @@ func (c *USAClient) request(ctx context.Context, method, path string, body any, 
 			status = http.StatusBadRequest
 		}
 		return nil, &APIError{Status: status, Code: envelope.Code, Reason: envelope.Reason, Message: firstNonEmpty(envelope.Message, "USA-Zero request failed")}
+	}
+	return envelope.Data, nil
+}
+
+func (c *USAClient) appToken(ctx context.Context, values url.Values) (*OAuthTokenResult, error) {
+	data, err := c.formRequest(ctx, "/api/v1/app-auth/token", values)
+	if err != nil {
+		return nil, err
+	}
+	var result OAuthTokenResult
+	if json.Unmarshal(data, &result) != nil || result.AccessToken == "" {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero token response is incomplete"}
+	}
+	return &result, nil
+}
+
+func (c *USAClient) formRequest(ctx context.Context, path string, values url.Values) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+path, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero service is unavailable"}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var oauthErr struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		_ = json.Unmarshal(data, &oauthErr)
+		return nil, &APIError{Status: resp.StatusCode, Reason: oauthErr.Error, Message: firstNonEmpty(oauthErr.ErrorDescription, "USA-Zero OAuth request failed")}
+	}
+	return data, nil
+}
+
+func (c *USAClient) appRequest(ctx context.Context, method, path string, body any, accessToken string) (json.RawMessage, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.origin+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero service is unavailable"}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	var envelope appEnvelope
+	if json.Unmarshal(data, &envelope) != nil {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned an invalid app response"}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !envelope.Success {
+		return nil, &APIError{Status: resp.StatusCode, Reason: envelope.Error.Code, Message: firstNonEmpty(envelope.Error.Message, envelope.Message, "USA-Zero app request failed")}
 	}
 	return envelope.Data, nil
 }

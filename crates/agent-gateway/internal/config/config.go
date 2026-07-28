@@ -27,6 +27,7 @@ type Config struct {
 	WebSessionTTL            time.Duration
 	SelectionLeaseTTL        time.Duration
 	CookieSecure             bool
+	PublicOrigin             string
 	HTTPAddr                 string
 	TLSCert                  string
 	TLSKey                   string
@@ -42,9 +43,9 @@ type Config struct {
 	WebSocketWriteQueueSize  int
 	GRPCMaxMessageBytes      int
 	MaxMessageBytes          int
-	MaxAgentConnections     int
-	MaxBrowserConnections   int
-	MaxTerminalConnections  int
+	MaxAgentConnections      int
+	MaxBrowserConnections    int
+	MaxTerminalConnections   int
 	RelayBufferSeconds       int
 
 	// GRPCAddr is accepted but unused.
@@ -67,6 +68,7 @@ func Load() *Config {
 	flag.DurationVar(&cfg.WebSessionTTL, "web-session-ttl", getenvDuration("LIVEAGENT_GATEWAY_WEB_SESSION_TTL", 30*24*time.Hour), "web account session lifetime")
 	flag.DurationVar(&cfg.SelectionLeaseTTL, "selection-lease-ttl", getenvDuration("LIVEAGENT_GATEWAY_SELECTION_LEASE_TTL", 8*time.Hour), "execution target selection lease lifetime")
 	flag.BoolVar(&cfg.CookieSecure, "cookie-secure", getenvBool("LIVEAGENT_GATEWAY_COOKIE_SECURE", defaultCookieSecure()), "set Secure on account session cookies")
+	flag.StringVar(&cfg.PublicOrigin, "public-origin", getenv("LIVEAGENT_GATEWAY_PUBLIC_ORIGIN", ""), "public Gateway origin used for OAuth callbacks")
 	flag.StringVar(&cfg.GRPCAddr, "grpc-addr", getenv("LIVEAGENT_GATEWAY_GRPC_ADDR", ""), "deprecated, no-op (v1 gRPC removed; kept for startup-script compatibility)")
 	flag.StringVar(&cfg.HTTPAddr, "http-addr", getenv("LIVEAGENT_GATEWAY_HTTP_ADDR", defaultHTTPAddr()), "HTTP listen address")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", getenv("LIVEAGENT_GATEWAY_TLS_CERT", ""), "TLS certificate path")
@@ -93,6 +95,7 @@ func Load() *Config {
 	cfg.USAZeroOrigin = strings.TrimRight(strings.TrimSpace(cfg.USAZeroOrigin), "/")
 	cfg.DatabaseURL = strings.TrimSpace(cfg.DatabaseURL)
 	cfg.RedisURL = strings.TrimSpace(cfg.RedisURL)
+	cfg.PublicOrigin = strings.TrimRight(strings.TrimSpace(cfg.PublicOrigin), "/")
 	cfg.TLSCert = strings.TrimSpace(cfg.TLSCert)
 	cfg.TLSKey = strings.TrimSpace(cfg.TLSKey)
 

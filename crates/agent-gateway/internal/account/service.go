@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +94,20 @@ func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
 		_ = s.store.DeleteSession(ctx, session.ID)
 		return nil, &APIError{Status: http.StatusUnauthorized, Message: "account session expired"}
 	}
+	if session.IsOAuth() {
+		refreshed, err := s.usa.RefreshApp(ctx, session.OAuthClientID, session.RefreshToken)
+		if err != nil {
+			_ = s.store.DeleteSession(ctx, session.ID)
+			return nil, err
+		}
+		session.AccessToken = refreshed.AccessToken
+		session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
+		session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
+		if err := s.store.PutSession(ctx, session); err != nil {
+			return nil, err
+		}
+		return session, nil
+	}
 	refreshed, err := s.usa.Refresh(ctx, session.RefreshToken)
 	if err != nil {
 		_ = s.store.DeleteSession(ctx, session.ID)
@@ -115,6 +130,16 @@ func (s *Service) Refresh(ctx context.Context, id string) (*Session, error) {
 	if err != nil || session.RefreshToken == "" {
 		return nil, &APIError{Status: http.StatusUnauthorized, Message: "account session cannot be refreshed"}
 	}
+	if session.IsOAuth() {
+		refreshed, err := s.usa.RefreshApp(ctx, session.OAuthClientID, session.RefreshToken)
+		if err != nil {
+			return nil, err
+		}
+		session.AccessToken = refreshed.AccessToken
+		session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
+		session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
+		return session, s.store.PutSession(ctx, session)
+	}
 	refreshed, err := s.usa.Refresh(ctx, session.RefreshToken)
 	if err != nil {
 		return nil, err
@@ -131,13 +156,24 @@ func (s *Service) Refresh(ctx context.Context, id string) (*Session, error) {
 func (s *Service) Logout(ctx context.Context, id string) error {
 	session, err := s.store.GetSession(ctx, id)
 	if err == nil && session.RefreshToken != "" {
-		_ = s.usa.Logout(ctx, session.RefreshToken)
+		if session.IsOAuth() {
+			_ = s.usa.RevokeApp(ctx, session.RefreshToken, "refresh_token")
+		} else {
+			_ = s.usa.Logout(ctx, session.RefreshToken)
+		}
 	}
 	return s.store.DeleteSession(ctx, id)
 }
 
 func (s *Service) RefreshUser(ctx context.Context, session *Session) (json.RawMessage, error) {
-	user, err := s.usa.Me(ctx, session.AccessToken)
+	var user json.RawMessage
+	var err error
+	if session.IsOAuth() {
+		user, err = s.usa.AppMe(ctx, session.AccessToken)
+		user = markOAuthUser(user)
+	} else {
+		user, err = s.usa.Me(ctx, session.AccessToken)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +378,13 @@ func (s *Service) DesktopSession(ctx context.Context, accessToken string) (*Sess
 		return nil, &APIError{Status: http.StatusUnauthorized, Message: "USA-Zero access token is required"}
 	}
 	user, err := s.usa.Me(ctx, accessToken)
+	authKind := AuthKindPassword
+	clientID := ""
+	if err != nil {
+		user, err = s.usa.AppMe(ctx, accessToken)
+		authKind = AuthKindOAuth
+		clientID = "zerobox-desktop"
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +397,7 @@ func (s *Service) DesktopSession(ctx context.Context, accessToken string) (*Sess
 	return &Session{
 		ID: "desktop:" + hashToken(accessToken), UserID: identity.ID, User: user,
 		AccessToken: accessToken, AccessExpiresAt: s.now().Add(15 * time.Minute),
-		SessionExpiresAt: s.now().Add(15 * time.Minute),
+		SessionExpiresAt: s.now().Add(15 * time.Minute), AuthKind: authKind, OAuthClientID: clientID,
 	}, nil
 }
 
@@ -444,6 +487,9 @@ func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, 
 }
 
 func (s *Service) IssueStepUp(ctx context.Context, session *Session, password, target string) (json.RawMessage, error) {
+	if session.IsOAuth() {
+		return s.usa.AppIssueStepUp(ctx, session.AccessToken, target)
+	}
 	return s.usa.IssueStepUp(ctx, session.AccessToken, password, target)
 }
 
@@ -504,8 +550,14 @@ func (s *Service) SelectTarget(ctx context.Context, session *Session, input Sele
 	default:
 		return nil, &APIError{Status: http.StatusBadRequest, Message: "unsupported runtime_kind"}
 	}
-	if err := s.usa.ConsumeStepUp(ctx, session.AccessToken, input.Proof, expectedTarget); err != nil {
-		return nil, err
+	var consumeErr error
+	if session.IsOAuth() {
+		consumeErr = s.usa.AppConsumeStepUp(ctx, session.AccessToken, input.Proof, expectedTarget)
+	} else {
+		consumeErr = s.usa.ConsumeStepUp(ctx, session.AccessToken, input.Proof, expectedTarget)
+	}
+	if consumeErr != nil {
+		return nil, consumeErr
 	}
 	now := s.now().UTC()
 	input.DeviceID = canonicalAgentID(input.DeviceID)
@@ -531,6 +583,103 @@ func (s *Service) createSession(ctx context.Context, result *LoginResult) (*Sess
 		return nil, err
 	}
 	return session, nil
+}
+
+func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPath string) (string, error) {
+	clientID := "zerobox-web"
+	platform := "web"
+	if surface == "android" {
+		clientID, platform = "zerobox-android", "android"
+	} else if surface != "web" {
+		return "", &APIError{Status: http.StatusBadRequest, Message: "surface must be web or android"}
+	}
+	state, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	verifier, err := randomToken(48)
+	if err != nil {
+		return "", err
+	}
+	challengeSum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
+	requestID, err := s.usa.CreateAppAuthorizationRequest(ctx, map[string]any{
+		"response_type": "code", "client_id": clientID, "redirect_uri": redirectURI,
+		"scope":          "openid profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
+		"code_challenge": challenge, "code_challenge_method": "S256", "state": state,
+		"device_name": "ZeroBox", "platform": platform,
+	})
+	if err != nil {
+		return "", err
+	}
+	transaction := &OAuthTransaction{
+		State: state, Verifier: verifier, ClientID: clientID, RedirectURI: redirectURI,
+		ReturnPath: sanitizeReturnPath(returnPath), Surface: surface, ExpiresAt: s.now().UTC().Add(5 * time.Minute),
+	}
+	if err := s.store.PutOAuthTransaction(ctx, hashToken(state), transaction); err != nil {
+		return "", err
+	}
+	return s.usa.Origin() + "/oauth/authorize?request_id=" + url.QueryEscape(requestID), nil
+}
+
+func (s *Service) CompleteOAuth(ctx context.Context, state, code, expectedSurface string) (*Session, string, error) {
+	transaction, err := s.store.ConsumeOAuthTransaction(ctx, hashToken(strings.TrimSpace(state)))
+	if err != nil || transaction.State != state || transaction.Surface != expectedSurface {
+		return nil, "", &APIError{Status: http.StatusBadRequest, Message: "authorization state is invalid, expired, or already used"}
+	}
+	if strings.TrimSpace(code) == "" {
+		return nil, transaction.ReturnPath, &APIError{Status: http.StatusBadRequest, Message: "authorization code is required"}
+	}
+	tokens, err := s.usa.ExchangeAppCode(ctx, transaction.ClientID, code, transaction.RedirectURI, transaction.Verifier)
+	if err != nil {
+		return nil, transaction.ReturnPath, err
+	}
+	user, err := s.usa.AppMe(ctx, tokens.AccessToken)
+	if err != nil {
+		return nil, transaction.ReturnPath, err
+	}
+	user = markOAuthUser(user)
+	var identity struct {
+		ID int64 `json:"id"`
+	}
+	if json.Unmarshal(user, &identity) != nil || identity.ID <= 0 {
+		return nil, transaction.ReturnPath, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero OAuth identity is invalid"}
+	}
+	now := s.now().UTC()
+	session := &Session{
+		ID: uuid.NewString(), UserID: identity.ID, User: user, AccessToken: tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken, AccessExpiresAt: s.accessExpiry(tokens.ExpiresIn),
+		SessionExpiresAt: now.Add(s.sessionTTL), AuthKind: AuthKindOAuth, OAuthClientID: transaction.ClientID,
+	}
+	if err := s.store.PutSession(ctx, session); err != nil {
+		return nil, transaction.ReturnPath, err
+	}
+	return session, transaction.ReturnPath, nil
+}
+
+func sanitizeReturnPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return "/"
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return "/"
+	}
+	return parsed.RequestURI()
+}
+
+func markOAuthUser(user json.RawMessage) json.RawMessage {
+	var value map[string]any
+	if json.Unmarshal(user, &value) != nil {
+		return user
+	}
+	value["auth_kind"] = AuthKindOAuth
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return user
+	}
+	return encoded
 }
 
 func (s *Service) accessExpiry(expiresIn int) time.Time {
@@ -605,7 +754,13 @@ func (s *Service) WebAPIKey(ctx context.Context, session *Session) (string, erro
 	if key := s.webKeys[session.UserID]; key != "" {
 		return key, nil
 	}
-	key, err := s.usa.EnsureWebAPIKey(ctx, session.AccessToken)
+	var key string
+	var err error
+	if session.IsOAuth() {
+		key, err = s.usa.EnsureAppWebAPIKey(ctx, session.AccessToken)
+	} else {
+		key, err = s.usa.EnsureWebAPIKey(ctx, session.AccessToken)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -618,7 +773,17 @@ func (s *Service) WebProviderModels(ctx context.Context, session *Session, keyID
 }
 
 func (s *Service) WebAPIKeyForID(ctx context.Context, session *Session, keyID int64) (string, error) {
+	if session.IsOAuth() {
+		return s.usa.AppOwnedAPIKey(ctx, session.AccessToken, keyID)
+	}
 	return s.usa.OwnedAPIKey(ctx, session.AccessToken, keyID)
+}
+
+func (s *Service) ProxyUSA(ctx context.Context, session *Session, method, apiPath string, body []byte) (json.RawMessage, error) {
+	if session.IsOAuth() {
+		return s.usa.ProxyApp(ctx, method, apiPath, session.AccessToken, body)
+	}
+	return s.usa.Proxy(ctx, method, apiPath, session.AccessToken, body)
 }
 
 func (s *Service) AddCloudMessage(ctx context.Context, message *CloudMessage) error {

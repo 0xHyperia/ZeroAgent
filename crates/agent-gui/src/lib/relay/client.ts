@@ -1,4 +1,5 @@
 import { prepareProxyRequest } from "../providers/proxy";
+import { invoke } from "@tauri-apps/api/core";
 
 const RELAY_ORIGIN_KEY = "zerobox.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
@@ -38,6 +39,8 @@ export const RELAY_SESSION_CHANGED_EVENT = "liveagent:relay-session-changed";
 const ACCESS_TOKEN_KEY = "liveagent.relay.access-token";
 const REFRESH_TOKEN_KEY = "liveagent.relay.refresh-token";
 const EXPIRES_AT_KEY = "liveagent.relay.expires-at";
+const AUTH_KIND_KEY = "liveagent.relay.auth-kind";
+const OAUTH_CLIENT_ID_KEY = "liveagent.relay.oauth-client-id";
 let relaySessionExpiryNotified = false;
 
 type RelayEnvelope<T> = {
@@ -87,6 +90,8 @@ type RelaySessionTokens = {
   refresh_token?: string;
   expires_in?: number;
   token_type?: string;
+  auth_kind?: "oauth" | "password";
+  oauth_client_id?: string;
 };
 
 export type RelayAuthResponse = RelaySessionTokens & {
@@ -173,12 +178,20 @@ function saveSession(response: RelaySessionTokens) {
   if (response.expires_in && response.expires_in > 0) {
     localStorage.setItem(EXPIRES_AT_KEY, String(Date.now() + response.expires_in * 1000));
   }
+  if (response.auth_kind) localStorage.setItem(AUTH_KIND_KEY, response.auth_kind);
+  if (response.oauth_client_id) localStorage.setItem(OAUTH_CLIENT_ID_KEY, response.oauth_client_id);
+}
+
+function isOAuthSession() {
+  return localStorage.getItem(AUTH_KIND_KEY) === "oauth";
 }
 
 export function clearRelaySession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_AT_KEY);
+  localStorage.removeItem(AUTH_KIND_KEY);
+  localStorage.removeItem(OAUTH_CLIENT_ID_KEY);
 }
 
 function expireRelaySession() {
@@ -204,7 +217,7 @@ export function hasStoredRelaySession() {
 }
 
 type RelayRequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   authenticated?: boolean;
   retryAfterRefresh?: boolean;
@@ -275,6 +288,38 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
   return envelope.data;
 }
 
+type AppRelayEnvelope<T> = {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: { code?: string; message?: string };
+};
+
+async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
+  const accessToken = readAccessToken();
+  if (!accessToken) throw new RelayApiError("请先登录 USA-Zero", 401);
+  const response = await fetch(`${RELAY_API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const envelope = (await response.json()) as AppRelayEnvelope<T>;
+  if (!response.ok || !envelope.success || envelope.data === undefined) {
+    throw new RelayApiError(
+      envelope.error?.message || envelope.message || "授权资源请求失败",
+      response.status,
+      undefined,
+      envelope.error?.code,
+    );
+  }
+  return envelope.data;
+}
+
 async function refreshRelaySession() {
   const refreshToken = readRefreshToken();
   if (!refreshToken) {
@@ -282,6 +327,26 @@ async function refreshRelaySession() {
     return false;
   }
   try {
+    if (isOAuthSession()) {
+      const clientId = localStorage.getItem(OAUTH_CLIENT_ID_KEY) || "zerobox-desktop";
+      const response = await fetch(`${RELAY_API_BASE_URL}/app-auth/token`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: clientId,
+          refresh_token: refreshToken,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) throw new Error("OAuth refresh failed");
+      const tokens = (await response.json()) as RelaySessionTokens;
+      saveSession({ ...tokens, auth_kind: "oauth", oauth_client_id: clientId });
+      return true;
+    }
     const response = await requestRelay<RelaySessionTokens>("/auth/refresh", {
       method: "POST",
       body: { refresh_token: refreshToken },
@@ -293,6 +358,14 @@ async function refreshRelaySession() {
     expireRelaySession();
     return false;
   }
+}
+
+export async function loginRelayOAuth() {
+  const response = await invoke<
+    RelayAuthResponse & { auth_kind: "oauth"; oauth_client_id: string }
+  >("desktop_oauth_login", { relayOrigin: RELAY_ORIGIN });
+  saveSession(response);
+  return response;
 }
 
 function isFullAuthResponse(response: RelayLoginResponse): response is RelayAuthResponse {
@@ -355,14 +428,18 @@ export async function sendRelayVerifyCode(email: string) {
 }
 
 export async function getRelayCurrentUser() {
+  if (isOAuthSession()) return requestAppRelay<RelayUser>("/app/me", { authenticated: true });
   return requestRelay<RelayUser>("/auth/me", { authenticated: true });
 }
 
 export async function getRelayProfile() {
+  if (isOAuthSession()) return requestAppRelay<RelayUser>("/app/me", { authenticated: true });
   return requestRelay<RelayUser>("/user/profile", { authenticated: true });
 }
 
 export async function getRelayDashboardStats() {
+  if (isOAuthSession())
+    return requestAppRelay<RelayDashboardStats>("/app/usage", { authenticated: true });
   return requestRelay<RelayDashboardStats>("/usage/dashboard/stats", { authenticated: true });
 }
 
@@ -370,6 +447,12 @@ export async function updateRelayProfile(profile: {
   username?: string;
   avatar_url?: string | null;
 }) {
+  if (isOAuthSession())
+    return requestAppRelay<RelayUser>("/app/me", {
+      method: "PATCH",
+      authenticated: true,
+      body: profile,
+    });
   return requestRelay<RelayUser>("/user", {
     method: "PUT",
     authenticated: true,
@@ -406,6 +489,13 @@ export async function changeRelayPassword(oldPassword: string, newPassword: stri
 }
 
 export async function listRelayApiKeys() {
+  if (isOAuthSession()) {
+    const page = await requestAppRelay<{ items: RelayApiKey[]; total: number }>(
+      "/app/keys?page=1&page_size=100",
+      { authenticated: true },
+    );
+    return page.items;
+  }
   const page = await requestRelay<RelayPaginated<RelayApiKey>>("/keys?page=1&page_size=1000", {
     authenticated: true,
   });
@@ -413,10 +503,18 @@ export async function listRelayApiKeys() {
 }
 
 export async function listRelayGroups() {
+  if (isOAuthSession())
+    return requestAppRelay<RelayGroup[]>("/app/groups", { authenticated: true });
   return requestRelay<RelayGroup[]>("/groups/available", { authenticated: true });
 }
 
 export async function createRelayApiKey(name: string, groupId: number) {
+  if (isOAuthSession())
+    return requestAppRelay<RelayApiKey>(`/app/groups/${groupId}/keys`, {
+      method: "POST",
+      authenticated: true,
+      body: { name: name.trim() },
+    });
   return requestRelay<RelayApiKey>("/keys", {
     method: "POST",
     authenticated: true,
@@ -445,6 +543,16 @@ export async function logoutRelay() {
   const refreshToken = readRefreshToken();
   if (refreshToken) {
     try {
+      if (isOAuthSession()) {
+        await fetch(`${RELAY_API_BASE_URL}/app-auth/revoke`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token: refreshToken, token_type_hint: "refresh_token" }),
+        });
+        clearRelaySession();
+        window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
+        return;
+      }
       await requestRelay<{ message: string }>("/auth/logout", {
         method: "POST",
         body: { refresh_token: refreshToken },

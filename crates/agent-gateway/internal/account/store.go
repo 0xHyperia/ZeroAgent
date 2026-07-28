@@ -38,6 +38,8 @@ type Store interface {
 	ListConversationRoutes(ctx context.Context, userID int64) ([]ConversationRoute, error)
 	PutDesktopHandoff(ctx context.Context, codeHash string, handoff *DesktopHandoff) error
 	ConsumeDesktopHandoff(ctx context.Context, codeHash string) (*DesktopHandoff, error)
+	PutOAuthTransaction(ctx context.Context, stateHash string, transaction *OAuthTransaction) error
+	ConsumeOAuthTransaction(ctx context.Context, stateHash string) (*OAuthTransaction, error)
 }
 
 type MemoryStore struct {
@@ -50,6 +52,7 @@ type MemoryStore struct {
 	webSettings        map[int64]WebSettings
 	conversationRoutes map[string]ConversationRoute
 	handoffs           map[string]DesktopHandoff
+	oauthTransactions  map[string]OAuthTransaction
 	now                func() time.Time
 }
 
@@ -63,8 +66,30 @@ func NewMemoryStore() *MemoryStore {
 		webSettings:        make(map[int64]WebSettings),
 		conversationRoutes: make(map[string]ConversationRoute),
 		handoffs:           make(map[string]DesktopHandoff),
+		oauthTransactions:  make(map[string]OAuthTransaction),
 		now:                time.Now,
 	}
+}
+
+func (s *MemoryStore) PutOAuthTransaction(_ context.Context, stateHash string, transaction *OAuthTransaction) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if transaction == nil || !transaction.ExpiresAt.After(s.now()) {
+		return ErrNotFound
+	}
+	s.oauthTransactions[stateHash] = *transaction
+	return nil
+}
+
+func (s *MemoryStore) ConsumeOAuthTransaction(_ context.Context, stateHash string) (*OAuthTransaction, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	transaction, ok := s.oauthTransactions[stateHash]
+	delete(s.oauthTransactions, stateHash)
+	if !ok || !transaction.ExpiresAt.After(s.now()) {
+		return nil, ErrNotFound
+	}
+	return &transaction, nil
 }
 
 func (s *MemoryStore) PutSession(_ context.Context, session *Session) error {

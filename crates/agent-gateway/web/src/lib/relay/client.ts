@@ -1,4 +1,8 @@
-import { clearEmbeddedMobileGatewaySession, isEmbeddedMobileRuntime } from "../mobileRuntime";
+import {
+  clearEmbeddedMobileGatewaySession,
+  isEmbeddedMobileRuntime,
+  openEmbeddedOAuth,
+} from "../mobileRuntime";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zerobox:relay-session-changed";
@@ -27,6 +31,7 @@ export type RelayUser = {
   total_recharged?: number;
   avatar_url?: string;
   email_bound?: boolean;
+  auth_kind?: "password" | "oauth";
 };
 
 export type RelayDashboardStats = {
@@ -189,6 +194,31 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
 
 export function getRelayPublicSettings() {
   return requestGatewayAccount<RelayPublicSettings>("/api/auth/settings");
+}
+
+export async function startRelayOAuth() {
+  const embedded = isEmbeddedMobileRuntime();
+  const response = await requestGatewayAccount<{ authorize_url: string }>("/api/auth/oauth/start", {
+    method: "POST",
+    body: {
+      surface: embedded ? "android" : "web",
+      return_path: `${window.location.pathname}${window.location.search}`,
+    },
+  });
+  if (!embedded) {
+    window.location.assign(response.authorize_url);
+    return;
+  }
+  const callback = new URL(await openEmbeddedOAuth(response.authorize_url));
+  await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
+    method: "POST",
+    body: {
+      code: callback.searchParams.get("code") ?? "",
+      state: callback.searchParams.get("state") ?? "",
+      error: callback.searchParams.get("error") ?? "",
+    },
+  });
+  markRelaySessionAuthenticated();
 }
 
 export async function loginRelay(email: string, password: string) {

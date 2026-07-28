@@ -1,9 +1,7 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
   CheckCircle2,
   Download,
-  ExternalLink,
   Info,
   Loader2,
   RefreshCw,
@@ -140,17 +138,6 @@ export function AboutSection(props: AboutSectionProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {latestResult?.releaseUrl ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void openUrl(latestResult.releaseUrl || "")}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t("settings.aboutOpenRelease")}
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="outline"

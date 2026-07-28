@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   CheckCircle2,
   Copy,
   Key,
   Loader2,
-  LogOut,
   Plus,
   RefreshCw,
 } from "@/components/icons";
@@ -20,8 +18,6 @@ import {
   getRelayCurrentUser,
   listRelayApiKeys,
   listRelayGroups,
-  logoutRelay,
-  RELAY_ORIGIN,
   type RelayApiKey,
   type RelayGroup,
   type RelayUser,
@@ -165,34 +161,8 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
             )}
             从 USA-零 更新
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void logoutRelay()}>
-            <LogOut className="h-3.5 w-3.5" />
-            注销登录
-          </Button>
         </div>
       </div>
-
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          <h4 className="text-sm font-semibold">账户信息</h4>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ["邮箱", loading ? "正在加载..." : user?.email || "-"],
-            ["用户名 / ID", `${user?.username || "未设置"} #${user?.id ?? "-"}`],
-            ["余额", `$${Number(user?.balance ?? 0).toFixed(2)}`],
-            ["固定服务地址", RELAY_ORIGIN],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-[11px] text-muted-foreground">{label}</p>
-              <p className="mt-1 truncate text-sm font-medium" title={value}>
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

@@ -123,6 +123,15 @@ func TestLoadUsesStandaloneDevelopmentDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadReadsGatewayPublicOrigin(t *testing.T) {
+	t.Setenv("LIVEAGENT_GATEWAY_PUBLIC_ORIGIN", " https://gateway.example.com ")
+	resetFlagsForTest(t)
+	cfg := Load()
+	if cfg.PublicOrigin != "https://gateway.example.com" {
+		t.Fatalf("PublicOrigin = %q", cfg.PublicOrigin)
+	}
+}
+
 func resetFlagsForTest(t *testing.T) {
 	t.Helper()
 	oldCommandLine := flag.CommandLine

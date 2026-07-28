@@ -14,6 +14,10 @@ const desktopOnboardingSource = readFileSync(
   ),
   "utf8",
 );
+const desktopRelayGateSource = readFileSync(
+  new URL("../../../agent-gui/src/components/relay/RelayAccessGate.tsx", import.meta.url),
+  "utf8",
+);
 const viteConfigSource = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
 const gatewayAppSource = readFileSync(new URL("../src/app/GatewayApp.tsx", import.meta.url), "utf8");
 const cloudChatSource = readFileSync(
@@ -23,6 +27,15 @@ const cloudChatSource = readFileSync(
 
 test("account login primary action submits its form", () => {
   assert.match(loginSource, /<Button\s+type="submit"\s+className="mt-7 w-full"/);
+});
+
+test("OAuth login is limited to the password-login state on web and desktop", () => {
+  assert.match(loginSource, /!twoFactorRequired && mode === "login" && \(/);
+  assert.match(loginSource, /await startRelayOAuth\(\)/);
+  assert.match(loginSource, /认证登录/);
+  assert.match(desktopRelayGateSource, /mode === "login" && \(/);
+  assert.match(desktopRelayGateSource, /await loginRelayOAuth\(\)/);
+  assert.match(desktopRelayGateSource, /认证登录/);
 });
 
 test("web development proxy targets the gateway default port", () => {

@@ -28,7 +28,7 @@ func NewHTTPServer(cfg *config.Config, sm *session.Manager, authenticator pbws.A
 	rootMux.HandleFunc("GET /healthz", handler.Health())
 	accounts, _ := authenticator.(*account.Service)
 	if accounts != nil {
-		account.NewHTTPHandler(accounts, cfg.CookieSecure).Register(rootMux)
+		account.NewHTTPHandler(accounts, cfg.CookieSecure, cfg.PublicOrigin).Register(rootMux)
 		accounts.SetDeviceRevoker(func(_ int64, agentID string) { sm.DisconnectAgent(agentID) })
 		sm.SetHistoryObserver(accounts.RecordAgentHistorySync)
 	}

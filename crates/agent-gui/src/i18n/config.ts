@@ -1138,7 +1138,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.aboutTitle": "关于 ZeroAgent",
     "settings.aboutDescription": "查看当前版本、发布说明和桌面端更新状态。",
     "settings.aboutCurrentVersion": "当前版本",
-    "settings.aboutOpenRelease": "发布页",
     "settings.aboutCheckUpdate": "检查更新",
     "settings.aboutInstallUpdate": "安装更新",
     "settings.aboutRestartApp": "重启应用",
@@ -3367,7 +3366,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.aboutDescription":
       "View the current version, release notes, and desktop update status.",
     "settings.aboutCurrentVersion": "Current Version",
-    "settings.aboutOpenRelease": "Release",
     "settings.aboutCheckUpdate": "Check",
     "settings.aboutInstallUpdate": "Install Update",
     "settings.aboutRestartApp": "Restart App",
