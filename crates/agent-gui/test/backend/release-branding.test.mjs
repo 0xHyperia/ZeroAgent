@@ -22,3 +22,13 @@ test("release and Gateway documentation use the ZeroAgent repository and image",
     assert.doesNotMatch(readme, /Stack-Cairn|stack-cairn|LiveAgent-Updater/);
   }
 });
+
+test("desktop releases publish the same assets to source and public repositories", () => {
+  const workflow = readRepoFile(".github/workflows/desktop-release.yml");
+
+  assert.match(workflow, /SOURCE_RELEASE_TOKEN/);
+  assert.match(workflow, /PUBLIC_RELEASE_TOKEN/);
+  assert.match(workflow, /publish_release "\$SOURCE_REPOSITORY"/);
+  assert.match(workflow, /publish_release "\$RELEASE_REPOSITORY"/);
+  assert.match(workflow, /\.github\/release-notes\/\$RELEASE_TAG\.md/);
+});

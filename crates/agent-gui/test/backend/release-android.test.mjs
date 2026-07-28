@@ -29,6 +29,10 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
   assert.match(workflow, /apksigner" sign/);
   assert.match(workflow, /apksigner" verify --verbose --print-certs/);
   assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /SOURCE_RELEASE_TOKEN/);
+  assert.match(workflow, /PUBLIC_RELEASE_TOKEN/);
+  assert.match(workflow, /upload_apk "\$SOURCE_REPOSITORY"/);
+  assert.match(workflow, /upload_apk "\$RELEASE_REPOSITORY"/);
   assert.match(workflow, /Install ZeroAgent Android launcher icons/);
   assert.match(workflow, /src-tauri\/icons\/android/);
   assert.match(workflow, /cp -R "\$source_dir"\/\. "\$target_dir"\//);

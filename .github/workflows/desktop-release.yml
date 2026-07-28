@@ -329,7 +329,7 @@ jobs:
 
       - name: Publish assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          SOURCE_RELEASE_TOKEN: ${{ github.token }}
           PUBLIC_RELEASE_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
@@ -340,47 +340,29 @@ jobs:
         run: |
           set -euo pipefail
           is_prerelease="$LIVEAGENT_IS_PRERELEASE"
+          test -n "$SOURCE_RELEASE_TOKEN"
           test -n "$PUBLIC_RELEASE_TOKEN"
 
           github_notes_path="$RUNNER_TEMP/liveagent-github-release-notes.md"
           notes_path="$RUNNER_TEMP/liveagent-release-notes.md"
-          if ! gh api "repos/$SOURCE_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$RELEASE_TAG" \
-            --jq ".body" > "$github_notes_path"; then
-            printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
-          fi
-          if [ ! -s "$github_notes_path" ]; then
-            printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
-          fi
+          curated_notes_path=".github/release-notes/$RELEASE_TAG.md"
+          if [ -f "$curated_notes_path" ]; then
+            cp "$curated_notes_path" "$notes_path"
+          else
+            if ! GH_TOKEN="$SOURCE_RELEASE_TOKEN" gh api "repos/$SOURCE_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              --jq ".body" > "$github_notes_path"; then
+              printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
+            fi
+            if [ ! -s "$github_notes_path" ]; then
+              printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$github_notes_path"
+            fi
 
-          node scripts/release/create-ai-release-notes.mjs "$RELEASE_TAG" "$notes_path" "$github_notes_path"
+            node scripts/release/create-ai-release-notes.mjs "$RELEASE_TAG" "$notes_path" "$github_notes_path"
+          fi
           if [ ! -s "$notes_path" ]; then
             printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$notes_path"
           fi
-
-          export GH_TOKEN="$PUBLIC_RELEASE_TOKEN"
-          export GH_REPO="$RELEASE_REPOSITORY"
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            edit_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
-            if [ "$is_prerelease" = true ]; then
-              edit_args+=(--prerelease)
-            else
-              edit_args+=(--prerelease=false --latest)
-            fi
-            gh release edit "$RELEASE_TAG" "${edit_args[@]}"
-          else
-            create_args=(--target main --title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
-            if [ "$is_prerelease" = true ]; then
-              create_args+=(--prerelease)
-            fi
-            gh release create "$RELEASE_TAG" "${create_args[@]}"
-          fi
-
-          mapfile -t signature_assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name | select(endswith(".sig"))')
-          for asset in "${signature_assets[@]}"; do
-            gh release delete-asset "$RELEASE_TAG" "$asset" --yes
-          done
 
           rm -rf public-release-assets
           mkdir -p public-release-assets
@@ -392,7 +374,46 @@ jobs:
             echo "No public release assets were found."
             exit 1
           fi
-          gh release upload "$RELEASE_TAG" "${public_assets[@]}" --clobber
 
           node scripts/release/create-tauri-updater-manifest.mjs release-artifacts release-artifacts/latest.json "$notes_path"
-          gh release upload "$RELEASE_TAG" release-artifacts/latest.json --clobber
+
+          publish_release() {
+            local repository="$1"
+            local token="$2"
+            local target_mode="$3"
+            local create_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
+
+            export GH_TOKEN="$token"
+            export GH_REPO="$repository"
+
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              edit_args=(--title "ZeroAgent $RELEASE_TAG" --notes-file "$notes_path")
+              if [ "$is_prerelease" = true ]; then
+                edit_args+=(--prerelease)
+              else
+                edit_args+=(--prerelease=false --latest)
+              fi
+              gh release edit "$RELEASE_TAG" "${edit_args[@]}"
+            else
+              if [ "$target_mode" = source ]; then
+                create_args+=(--verify-tag)
+              else
+                create_args+=(--target main)
+              fi
+              if [ "$is_prerelease" = true ]; then
+                create_args+=(--prerelease)
+              fi
+              gh release create "$RELEASE_TAG" "${create_args[@]}"
+            fi
+
+            mapfile -t signature_assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name | select(endswith(".sig"))')
+            for asset in "${signature_assets[@]}"; do
+              gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            done
+
+            gh release upload "$RELEASE_TAG" "${public_assets[@]}" --clobber
+            gh release upload "$RELEASE_TAG" release-artifacts/latest.json --clobber
+          }
+
+          publish_release "$SOURCE_REPOSITORY" "$SOURCE_RELEASE_TOKEN" source
+          publish_release "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN" public
