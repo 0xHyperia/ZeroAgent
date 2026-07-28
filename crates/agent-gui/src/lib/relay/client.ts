@@ -38,6 +38,7 @@ export const RELAY_SESSION_CHANGED_EVENT = "liveagent:relay-session-changed";
 const ACCESS_TOKEN_KEY = "liveagent.relay.access-token";
 const REFRESH_TOKEN_KEY = "liveagent.relay.refresh-token";
 const EXPIRES_AT_KEY = "liveagent.relay.expires-at";
+let relaySessionExpiryNotified = false;
 
 type RelayEnvelope<T> = {
   code: number;
@@ -164,6 +165,7 @@ function readRefreshToken() {
 }
 
 function saveSession(response: RelaySessionTokens) {
+  relaySessionExpiryNotified = false;
   localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token.trim());
   if (response.refresh_token?.trim()) {
     localStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token.trim());
@@ -177,6 +179,13 @@ export function clearRelaySession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_AT_KEY);
+}
+
+function expireRelaySession() {
+  clearRelaySession();
+  if (relaySessionExpiryNotified) return;
+  relaySessionExpiryNotified = true;
+  window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
 }
 
 export function configureRelayOrigin(value: string) {
@@ -208,8 +217,16 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
     "Content-Type": "application/json",
   };
   if (options.authenticated) {
-    const accessToken = readAccessToken();
-    if (!accessToken) throw new RelayApiError("请先登录 USA-零", 401);
+    let accessToken = readAccessToken();
+    if (!accessToken && options.retryAfterRefresh !== false) {
+      const refreshed = await refreshRelaySession();
+      if (refreshed) return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
+      accessToken = readAccessToken();
+    }
+    if (!accessToken) {
+      expireRelaySession();
+      throw new RelayApiError("请先登录 USA-零", 401);
+    }
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
@@ -230,18 +247,21 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
     );
   }
 
+  if (response.status === 401 && options.authenticated) {
+    if (options.retryAfterRefresh !== false) {
+      const refreshed = await refreshRelaySession();
+      if (refreshed) {
+        return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
+      }
+    }
+    expireRelaySession();
+  }
+
   let envelope: RelayEnvelope<T> | null = null;
   try {
     envelope = (await response.json()) as RelayEnvelope<T>;
   } catch {
     throw new RelayApiError(`USA-零返回了无效响应 (HTTP ${response.status})`, response.status);
-  }
-
-  if (response.status === 401 && options.authenticated && options.retryAfterRefresh !== false) {
-    const refreshed = await refreshRelaySession();
-    if (refreshed) {
-      return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
-    }
   }
 
   if (!response.ok || envelope.code !== 0 || envelope.data === undefined) {
@@ -258,7 +278,7 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
 async function refreshRelaySession() {
   const refreshToken = readRefreshToken();
   if (!refreshToken) {
-    clearRelaySession();
+    expireRelaySession();
     return false;
   }
   try {
@@ -270,7 +290,7 @@ async function refreshRelaySession() {
     saveSession(response);
     return true;
   } catch {
-    clearRelaySession();
+    expireRelaySession();
     return false;
   }
 }

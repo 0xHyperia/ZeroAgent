@@ -34,6 +34,7 @@ import {
   getRelayProfile,
   listRelayApiKeys,
   listRelayGroups,
+  notifyRelaySessionExpired,
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
@@ -112,6 +113,7 @@ async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
   });
+  if (response.status === 401) notifyRelaySessionExpired();
   if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !payload) {
@@ -460,6 +462,7 @@ export function CloudChatPage({
         }),
         signal: controller.signal,
       });
+      if (response.status === 401) notifyRelaySessionExpired();
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => null);
         throw new Error(

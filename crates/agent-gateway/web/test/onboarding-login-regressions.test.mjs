@@ -15,6 +15,11 @@ const desktopOnboardingSource = readFileSync(
   "utf8",
 );
 const viteConfigSource = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
+const gatewayAppSource = readFileSync(new URL("../src/app/GatewayApp.tsx", import.meta.url), "utf8");
+const cloudChatSource = readFileSync(
+  new URL("../src/pages/CloudChatPage.tsx", import.meta.url),
+  "utf8",
+);
 
 test("account login primary action submits its form", () => {
   assert.match(loginSource, /<Button\s+type="submit"\s+className="mt-7 w-full"/);
@@ -34,4 +39,12 @@ test("desktop onboarding uses the desktop relay client", () => {
   assert.match(desktopOnboardingSource, /from "\.\.\/\.\.\/lib\/relay\/client"/);
   assert.match(desktopOnboardingSource, /Promise\.all\(\[listRelayApiKeys\(\), listRelayGroups\(\)\]\)/);
   assert.doesNotMatch(desktopOnboardingSource, /agent-gateway\/web/);
+});
+
+test("expired web sessions clear the complete cached application state", () => {
+  assert.match(
+    gatewayAppSource,
+    /addEventListener\(RELAY_SESSION_EXPIRED_EVENT, handleLogout\)/,
+  );
+  assert.match(cloudChatSource, /response\.status === 401\) notifyRelaySessionExpired\(\)/);
 });

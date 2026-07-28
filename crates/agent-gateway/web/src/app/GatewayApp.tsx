@@ -82,6 +82,7 @@ import {
   getRelayDashboardStats,
   getRelayProfile,
   RELAY_SESSION_CHANGED_EVENT,
+  RELAY_SESSION_EXPIRED_EVENT,
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
@@ -3861,6 +3862,11 @@ export default function GatewayApp() {
     openController,
     transcriptStoreRegistry,
   ]);
+
+  useEffect(() => {
+    window.addEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
+    return () => window.removeEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
+  }, [handleLogout]);
 
   const userMenuLabel = relayUser?.username?.trim() || relayUser?.email.split("@")[0] || "当前用户";
   const userAvatarLabel = userMenuLabel.slice(0, 1).toUpperCase();

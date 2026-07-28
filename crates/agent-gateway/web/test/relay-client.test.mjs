@@ -192,3 +192,41 @@ test("provider model refresh uses the Gateway session and key ID without exposin
     globalThis.fetch = originalFetch;
   }
 });
+
+test("authenticated 401 expires the web session but invalid login credentials do not", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.window = new EventTarget();
+  globalThis.fetch = async (url) =>
+    new Response(JSON.stringify({ error: `unauthorized: ${String(url)}` }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+
+  try {
+    const loader = createTsModuleLoader({
+      rootDir: fileURLToPath(new URL("..", import.meta.url)),
+      mocks: {
+        "@/lib/storage": { loadToken: () => "" },
+      },
+    });
+    const relay = loader.loadModule("src/lib/relay/client.ts");
+    let expirations = 0;
+    window.addEventListener(relay.RELAY_SESSION_EXPIRED_EVENT, () => {
+      expirations += 1;
+    });
+
+    await assert.rejects(relay.getRelayCurrentUser(), (error) => error.status === 401);
+    assert.equal(expirations, 1);
+
+    await assert.rejects(
+      relay.loginRelay("wrong@example.com", "wrong-password"),
+      (error) => error.status === 401,
+    );
+    assert.equal(expirations, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});

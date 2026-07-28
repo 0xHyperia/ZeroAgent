@@ -2,8 +2,10 @@ import { clearEmbeddedMobileGatewaySession, isEmbeddedMobileRuntime } from "../m
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zerobox:relay-session-changed";
+export const RELAY_SESSION_EXPIRED_EVENT = "zerobox:relay-session-expired";
 
 const RELAY_PROXY_BASE = "/api/usa-zero";
+let relaySessionExpiryNotified = false;
 
 type RelayEnvelope<T> = {
   code: number;
@@ -123,6 +125,16 @@ export function hasStoredRelaySession() {
   return true;
 }
 
+export function notifyRelaySessionExpired() {
+  if (relaySessionExpiryNotified) return;
+  relaySessionExpiryNotified = true;
+  window.dispatchEvent(new Event(RELAY_SESSION_EXPIRED_EVENT));
+}
+
+function markRelaySessionAuthenticated() {
+  relaySessionExpiryNotified = false;
+}
+
 type RelayRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -151,6 +163,10 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
       `无法连接 USA-零：${error instanceof Error ? error.message : String(error)}`,
       0,
     );
+  }
+
+  if (response.status === 401 && options.authenticated) {
+    notifyRelaySessionExpired();
   }
 
   let envelope: RelayEnvelope<T> | null = null;
@@ -183,6 +199,7 @@ export async function loginRelay(email: string, password: string) {
     body: { email: email.trim(), password },
   });
   if ("requires_2fa" in response) return response;
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -202,6 +219,7 @@ export async function loginRelay2FA(tempToken: string, totpCode: string) {
     method: "POST",
     body: { temp_token: tempToken, totp_code: totpCode.trim() },
   });
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -224,6 +242,7 @@ export async function registerRelay(input: {
       invitation_code: input.invitationCode?.trim() ?? "",
     },
   });
+  markRelaySessionAuthenticated();
   return {
     access_token: "cookie-session",
     token_type: "Cookie",
@@ -242,9 +261,12 @@ export function sendRelayVerifyCode(email: string) {
 }
 
 export function getRelayCurrentUser() {
-  return requestGatewayAccount<{ user: RelayUser }>("/api/auth/me").then(
-    (response) => response.user,
-  );
+  return requestGatewayAccount<{ user: RelayUser }>("/api/auth/me", {
+    authenticated: true,
+  }).then((response) => {
+    markRelaySessionAuthenticated();
+    return response.user;
+  });
 }
 
 export function getRelayProfile() {
@@ -328,12 +350,13 @@ export async function createRelayApiKeys(name: string, groupIds: number[], group
 export function getRelayProviderModels(keyId: number) {
   return requestGatewayAccount<{ models: unknown }>(
     `/api/web-chat/provider-keys/${encodeURIComponent(String(keyId))}/models`,
+    { authenticated: true },
   ).then((response) => response.models);
 }
 
 async function requestGatewayAccount<T>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: { method?: "GET" | "POST"; body?: unknown; authenticated?: boolean } = {},
 ): Promise<T> {
   let response: Response;
   try {
@@ -349,6 +372,9 @@ async function requestGatewayAccount<T>(
       `无法连接账户服务：${error instanceof Error ? error.message : String(error)}`,
       0,
     );
+  }
+  if (response.status === 401 && options.authenticated) {
+    notifyRelaySessionExpired();
   }
   if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => null)) as
