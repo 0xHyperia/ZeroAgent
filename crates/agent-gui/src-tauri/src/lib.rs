@@ -737,6 +737,14 @@ pub fn run() {
     ));
 
     let app = tauri::Builder::default()
+        // Must be registered first so a second launch exits before it can start
+        // another gateway connection, scheduler, or local database writer.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Err(error) = show_main_window(app) {
+                eprintln!("failed to focus existing ZeroAgent instance: {error}");
+            }
+            eprintln!("focused existing ZeroAgent instance after a secondary launch");
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_mcp_bridge::init())
