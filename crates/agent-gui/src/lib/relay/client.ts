@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 const RELAY_ORIGIN_KEY = "zeroagent.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
+export const RELAY_DEBUG_CONTROLS_ENABLED =
+  typeof __ZEROAGENT_DEVELOPMENT__ !== "undefined" && __ZEROAGENT_DEVELOPMENT__;
 
 function normalizeRelayOrigin(value: string) {
   const url = new URL(value.trim());
@@ -22,9 +24,13 @@ function normalizeRelayOrigin(value: string) {
 
 function initialRelayOrigin() {
   const configured =
-    typeof localStorage === "undefined" ? "" : localStorage.getItem(RELAY_ORIGIN_KEY)?.trim();
+    RELAY_DEBUG_CONTROLS_ENABLED && typeof localStorage !== "undefined"
+      ? localStorage.getItem(RELAY_ORIGIN_KEY)?.trim()
+      : "";
   const buildDefault =
-    typeof __ZEROAGENT_USA_ZERO_ORIGIN__ === "string" ? __ZEROAGENT_USA_ZERO_ORIGIN__.trim() : "";
+    RELAY_DEBUG_CONTROLS_ENABLED && typeof __ZEROAGENT_USA_ZERO_ORIGIN__ === "string"
+      ? __ZEROAGENT_USA_ZERO_ORIGIN__.trim()
+      : "";
   try {
     return normalizeRelayOrigin(configured || buildDefault || DEFAULT_RELAY_ORIGIN);
   } catch {
@@ -202,6 +208,9 @@ function expireRelaySession() {
 }
 
 export function configureRelayOrigin(value: string) {
+  if (!RELAY_DEBUG_CONTROLS_ENABLED) {
+    throw new Error("正式版使用官方 USA-零服务地址");
+  }
   const next = normalizeRelayOrigin(value);
   if (next === RELAY_ORIGIN) return next;
   clearRelaySession();

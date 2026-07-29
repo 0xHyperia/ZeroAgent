@@ -2147,7 +2147,7 @@ test("mcp and remote settings normalize transport, selection, ports, and tokens"
     enableWebSshTerminal: true,
   });
 
-  assert.equal(remote.gatewayUrl, "http://127.0.0.1:8787");
+  assert.equal(remote.gatewayUrl, "https://agent.usa0.top");
   assert.equal(remote.gatewayPort, 443);
   assert.equal(remote.token, "secret");
   assert.equal(remote.agentId, "agent-550e8400-e29b-41d4-a716-446655440000");
@@ -2158,7 +2158,12 @@ test("mcp and remote settings normalize transport, selection, ports, and tokens"
   const remoteWithOversizedPort = settings.normalizeRemoteSettings({
     gatewayPort: "70000",
   });
-  assert.equal(remoteWithOversizedPort.gatewayPort, 65_535);
+  assert.equal(remoteWithOversizedPort.gatewayPort, 443);
+
+  const remoteWithFastHeartbeat = settings.normalizeRemoteSettings({ heartbeatInterval: 1 });
+  const remoteWithSlowHeartbeat = settings.normalizeRemoteSettings({ heartbeatInterval: 999 });
+  assert.equal(remoteWithFastHeartbeat.heartbeatInterval, 15);
+  assert.equal(remoteWithSlowHeartbeat.heartbeatInterval, 300);
 });
 
 test("font scale settings normalize invalid values to 1 and clamp out-of-range values", () => {

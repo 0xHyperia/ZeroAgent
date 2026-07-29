@@ -10,6 +10,7 @@ import {
   loginRelay,
   loginRelay2FA,
   loginRelayOAuth,
+  RELAY_DEBUG_CONTROLS_ENABLED,
   RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
@@ -21,6 +22,7 @@ import { registerDesktopDevice } from "../../lib/relay/deviceRegistration";
 import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "../../lib/relay/providers";
 import type { AppSettings } from "../../lib/settings";
 import { CodeFlowBackground } from "../CodeFlowBackground";
+import { AppUpdateButton } from "../AppUpdateButton";
 import {
   CheckCircle2,
   ExternalLink,
@@ -38,11 +40,13 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { GroupMultiSelect } from "./GroupMultiSelect";
 import { ZeroAgentLogo } from "./ZeroAgentLogo";
+import type { AppUpdateController } from "../../lib/appUpdates";
 
 type RelayAccessGateProps = {
   settings: AppSettings;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   onReady: (user: RelayUser) => void;
+  appUpdate: AppUpdateController;
 };
 
 type Mode = "login" | "register";
@@ -53,7 +57,12 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function RelayAccessGate({ settings, setSettings, onReady }: RelayAccessGateProps) {
+export function RelayAccessGate({
+  settings,
+  setSettings,
+  onReady,
+  appUpdate,
+}: RelayAccessGateProps) {
   const [step, setStep] = useState<Step>("checking");
   const [mode, setMode] = useState<Mode>("login");
   const [publicSettings, setPublicSettings] = useState<RelayPublicSettings | null>(null);
@@ -278,26 +287,28 @@ export function RelayAccessGate({ settings, setSettings, onReady }: RelayAccessG
           </div>
         </div>
 
-        <div className="mb-4 space-y-1.5">
-          <Label htmlFor="relay-origin">USA-零服务地址</Label>
-          <Input
-            id="relay-origin"
-            type="url"
-            inputMode="url"
-            autoComplete="url"
-            value={relayOriginDraft}
-            onChange={(event) => setRelayOriginDraft(event.target.value)}
-            onBlur={applyRelayOrigin}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                applyRelayOrigin();
-              }
-            }}
-            placeholder="https://api.example.com"
-            className="font-mono text-xs"
-          />
-        </div>
+        {RELAY_DEBUG_CONTROLS_ENABLED ? (
+          <div className="mb-4 space-y-1.5">
+            <Label htmlFor="relay-origin">USA-零服务地址</Label>
+            <Input
+              id="relay-origin"
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={relayOriginDraft}
+              onChange={(event) => setRelayOriginDraft(event.target.value)}
+              onBlur={applyRelayOrigin}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applyRelayOrigin();
+                }
+              }}
+              placeholder="https://api.example.com"
+              className="font-mono text-xs"
+            />
+          </div>
+        ) : null}
 
         {step === "provision" ? (
           <div className="rounded-lg border border-border bg-card/95 p-5 shadow-sm backdrop-blur-[2px]">
@@ -519,6 +530,25 @@ export function RelayAccessGate({ settings, setSettings, onReady }: RelayAccessG
             )}
           </div>
         )}
+        <div className="mt-5 flex items-center justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
+          <span>版本 v{__LIVEAGENT_APP_VERSION__}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={appUpdate.checking || appUpdate.installing || appUpdate.restarting}
+              onClick={() => void appUpdate.runCheck().catch(() => undefined)}
+            >
+              <RefreshCw
+                className={appUpdate.checking ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
+              检查更新
+            </Button>
+            <AppUpdateButton appUpdate={appUpdate} />
+          </div>
+        </div>
       </div>
     </div>
   );

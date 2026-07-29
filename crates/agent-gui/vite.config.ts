@@ -15,7 +15,9 @@ const usaZeroOrigin = env.VITE_USA_ZERO_ORIGIN?.trim() || "https://usa0.top";
 const host = env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => {
+  const developmentBuild = command === "serve";
+  return {
   plugins: [react(), Icons({ compiler: "jsx", jsx: "react" })],
   resolve: {
     dedupe: [
@@ -41,6 +43,7 @@ export default defineConfig(async () => ({
   define: {
     __LIVEAGENT_APP_VERSION__: JSON.stringify(appVersion),
     __ZEROAGENT_USA_ZERO_ORIGIN__: JSON.stringify(usaZeroOrigin),
+    __ZEROAGENT_DEVELOPMENT__: JSON.stringify(developmentBuild),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -69,4 +72,5 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-}));
+  };
+});

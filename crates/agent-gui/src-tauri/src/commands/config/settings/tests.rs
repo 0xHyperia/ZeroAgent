@@ -127,6 +127,23 @@ mod tests {
     }
 
     #[test]
+    fn normalize_remote_settings_clamps_heartbeat_interval() {
+        let mut fast = RemoteSettingsPayload::default();
+        fast.heartbeat_interval = 1;
+        let mut slow = RemoteSettingsPayload::default();
+        slow.heartbeat_interval = 999;
+
+        assert_eq!(
+            normalize_remote_settings_payload(fast).heartbeat_interval,
+            MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS
+        );
+        assert_eq!(
+            normalize_remote_settings_payload(slow).heartbeat_interval,
+            MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS
+        );
+    }
+
+    #[test]
     fn ensure_remote_agent_id_migrates_legacy_grpc_port() {
         let mut conn = open_memory_db();
         let legacy = json!({

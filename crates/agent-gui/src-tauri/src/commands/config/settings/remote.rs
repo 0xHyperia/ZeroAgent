@@ -3,6 +3,10 @@ fn default_remote_gateway_port() -> u16 {
     443
 }
 
+const OFFICIAL_GATEWAY_URL: &str = "https://agent.usa0.top";
+const MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS: u64 = 15;
+const MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS: u64 = 300;
+
 fn default_remote_auto_reconnect() -> bool {
     true
 }
@@ -29,7 +33,7 @@ impl Default for RemoteSettingsPayload {
     fn default() -> Self {
         Self {
             enabled: false,
-            gateway_url: String::new(),
+            gateway_url: OFFICIAL_GATEWAY_URL.to_string(),
             gateway_port: default_remote_gateway_port(),
             token: String::new(),
             agent_id: String::new(),
@@ -48,7 +52,11 @@ pub(crate) fn normalize_remote_settings_payload(
 ) -> RemoteSettingsPayload {
     RemoteSettingsPayload {
         enabled: payload.enabled,
-        gateway_url: normalize_base_url_text(&payload.gateway_url),
+        gateway_url: if cfg!(debug_assertions) {
+            normalize_base_url_text(&payload.gateway_url)
+        } else {
+            OFFICIAL_GATEWAY_URL.to_string()
+        },
         gateway_port: if payload.gateway_port == 0 {
             default_remote_gateway_port()
         } else {
@@ -57,7 +65,12 @@ pub(crate) fn normalize_remote_settings_payload(
         token: payload.token.trim().to_string(),
         agent_id: payload.agent_id.trim().to_string(),
         auto_reconnect: payload.auto_reconnect,
-        heartbeat_interval: payload.heartbeat_interval.max(1),
+        heartbeat_interval: payload
+            .heartbeat_interval
+            .clamp(
+                MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+                MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+            ),
         enable_web_terminal: payload.enable_web_terminal,
         enable_web_ssh_terminal: payload.enable_web_ssh_terminal,
         enable_web_git: payload.enable_web_git,

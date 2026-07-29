@@ -387,6 +387,14 @@ export const CLOSE_WINDOW_BEHAVIOR_OPTIONS = [
   "exit",
 ] as const satisfies readonly CloseWindowBehavior[];
 
+/** Remote access is operated by ZeroAgent. Release builds do not accept a user-supplied host. */
+export const OFFICIAL_GATEWAY_URL = "https://agent.usa0.top";
+export const OFFICIAL_GATEWAY_PORT = 443;
+export const MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS = 15;
+export const MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS = 300;
+export const REMOTE_DEBUG_CONTROLS_ENABLED =
+  typeof __ZEROAGENT_DEVELOPMENT__ !== "undefined" && __ZEROAGENT_DEVELOPMENT__;
+
 const SYSTEM_THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 
 export type RemoteSettings = {
@@ -1093,12 +1101,21 @@ export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   return {
     enabled: obj.enabled === true,
-    gatewayUrl: normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : ""),
-    gatewayPort: normalizeIntegerInRange(obj.gatewayPort, 1, 65_535, 443),
+    gatewayUrl: REMOTE_DEBUG_CONTROLS_ENABLED
+      ? normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : "")
+      : OFFICIAL_GATEWAY_URL,
+    gatewayPort: REMOTE_DEBUG_CONTROLS_ENABLED
+      ? normalizeIntegerInRange(obj.gatewayPort, 1, 65_535, OFFICIAL_GATEWAY_PORT)
+      : OFFICIAL_GATEWAY_PORT,
     token: normalizeApiKey(typeof obj.token === "string" ? obj.token : ""),
     agentId: normalizeOptionalText(obj.agentId),
     autoReconnect: obj.autoReconnect !== false,
-    heartbeatInterval: normalizePositiveInteger(obj.heartbeatInterval, 30),
+    heartbeatInterval: normalizeIntegerInRange(
+      obj.heartbeatInterval,
+      MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+      MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+      30,
+    ),
     enableWebTerminal: obj.enableWebTerminal === true,
     enableWebSshTerminal: obj.enableWebSshTerminal === true,
     enableWebGit: obj.enableWebGit === true,
@@ -2196,8 +2213,8 @@ export function getDefaultSettings(): AppSettings {
     },
     remote: {
       enabled: false,
-      gatewayUrl: "",
-      gatewayPort: 443,
+      gatewayUrl: OFFICIAL_GATEWAY_URL,
+      gatewayPort: OFFICIAL_GATEWAY_PORT,
       token: "",
       agentId: "",
       autoReconnect: true,

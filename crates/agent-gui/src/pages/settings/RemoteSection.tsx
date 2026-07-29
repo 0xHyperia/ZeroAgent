@@ -23,7 +23,12 @@ import {
 
 import { Input } from "../../components/ui/input";
 import { useLocale } from "../../i18n";
-import type { AppSettings } from "../../lib/settings";
+import {
+  MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+  MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+  REMOTE_DEBUG_CONTROLS_ENABLED,
+  type AppSettings,
+} from "../../lib/settings";
 import { normalizeIntegerDraftInput, parseIntegerDraftValue } from "./remoteInput";
 import { AgentActivationSwitch } from "./shared";
 import type { SettingsSectionProps } from "./types";
@@ -197,7 +202,10 @@ export function RemoteSection(props: SettingsSectionProps) {
   );
   const remoteHeartbeatDraft = usePositiveIntegerDraft(
     settings.remote.heartbeatInterval,
-    { min: 1 },
+    {
+      min: MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+      max: MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+    },
     (heartbeatInterval) =>
       updateRemoteSettings(setSettings, {
         heartbeatInterval,
@@ -317,175 +325,179 @@ export function RemoteSection(props: SettingsSectionProps) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
-        <SectionCardHeader icon={Server} title={t("settings.remoteGatewayConnection")} />
+      {REMOTE_DEBUG_CONTROLS_ENABLED ? (
+        <>
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
+            <SectionCardHeader icon={Server} title={t("settings.remoteGatewayConnection")} />
 
-        <div className="space-y-1.5">
-          <label
-            htmlFor="remote-gateway-url"
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-          >
-            <Link2 className="h-3 w-3" />
-            {t("settings.remoteGatewayUrl")}
-          </label>
-          <div className="flex items-center gap-2">
-            <Input
-              id="remote-gateway-url"
-              type="url"
-              value={settings.remote.gatewayUrl}
-              onChange={(e) =>
-                updateRemoteSettings(setSettings, {
-                  gatewayUrl: e.target.value,
-                })
-              }
-              placeholder="https://gateway.example.com"
-              className="min-w-0 flex-1 font-mono text-[13px]"
-            />
-            <span className="shrink-0 text-xs text-muted-foreground/50">:</span>
-            <Input
-              type="text"
-              inputMode="numeric"
-              value={remoteGatewayPortDraft.draft}
-              onBlur={remoteGatewayPortDraft.handleBlur}
-              onChange={(e) => remoteGatewayPortDraft.handleChange(e.target.value)}
-              placeholder="443"
-              className="w-24 shrink-0 font-mono text-[13px]"
-            />
-          </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-            {t("settings.remoteGatewayUrlHint")}
-          </p>
-        </div>
-
-        {gatewayEndpointPreview ? (
-          <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-            <Globe className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate font-mono">{gatewayEndpointPreview}</span>
-            <CopyButton value={gatewayEndpointPreview} />
-          </div>
-        ) : null}
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
-        <SectionCardHeader icon={Shield} title={t("settings.remoteAuth")} />
-
-        <div className="space-y-1.5">
-          <label
-            htmlFor="remote-agent-id"
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-          >
-            <MonitorSmartphone className="h-3 w-3" />
-            {t("settings.remoteAgentId")}
-          </label>
-          <div className="relative">
-            <Input
-              id="remote-agent-id"
-              type="text"
-              readOnly
-              value={settings.remote.agentId}
-              className="bg-muted/30 pr-12 font-mono text-[13px]"
-            />
-            <div className="absolute right-1 top-1/2 -translate-y-1/2">
-              <CopyButton value={settings.remote.agentId} />
-            </div>
-          </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-            {t("settings.remoteAgentIdHint")}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
-        <SectionCardHeader icon={Globe} title={t("settings.remoteAdvanced")} />
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <ToggleOptionCard
-            icon={RefreshCw}
-            title={t("settings.remoteAutoReconnect")}
-            hint={t("settings.remoteAutoReconnectHint")}
-            checked={settings.remote.autoReconnect}
-            onToggle={() =>
-              updateRemoteSettings(setSettings, {
-                autoReconnect: !settings.remote.autoReconnect,
-              })
-            }
-          />
-
-          <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/30 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 text-sm font-medium">
-                <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {t("settings.remoteHeartbeat")}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="remote-gateway-url"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                <Link2 className="h-3 w-3" />
+                {t("settings.remoteGatewayUrl")}
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="remote-gateway-url"
+                  type="url"
+                  value={settings.remote.gatewayUrl}
+                  onChange={(e) =>
+                    updateRemoteSettings(setSettings, {
+                      gatewayUrl: e.target.value,
+                    })
+                  }
+                  placeholder="https://gateway.example.com"
+                  className="min-w-0 flex-1 font-mono text-[13px]"
+                />
+                <span className="shrink-0 text-xs text-muted-foreground/50">:</span>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={remoteGatewayPortDraft.draft}
+                  onBlur={remoteGatewayPortDraft.handleBlur}
+                  onChange={(e) => remoteGatewayPortDraft.handleChange(e.target.value)}
+                  placeholder="443"
+                  className="w-24 shrink-0 font-mono text-[13px]"
+                />
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                {t("settings.remoteHeartbeatHint")}
+              <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+                {t("settings.remoteGatewayUrlHint")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={remoteHeartbeatDraft.draft}
-                onBlur={remoteHeartbeatDraft.handleBlur}
-                onChange={(e) => remoteHeartbeatDraft.handleChange(e.target.value)}
-                placeholder="30"
-                className="w-24 font-mono text-[13px]"
-              />
-              <span className="text-xs text-muted-foreground">
-                {t("settings.remoteHeartbeatUnit")}
-              </span>
+
+            {gatewayEndpointPreview ? (
+              <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+                <Globe className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate font-mono">{gatewayEndpointPreview}</span>
+                <CopyButton value={gatewayEndpointPreview} />
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
+            <SectionCardHeader icon={Shield} title={t("settings.remoteAuth")} />
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="remote-agent-id"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                <MonitorSmartphone className="h-3 w-3" />
+                {t("settings.remoteAgentId")}
+              </label>
+              <div className="relative">
+                <Input
+                  id="remote-agent-id"
+                  type="text"
+                  readOnly
+                  value={settings.remote.agentId}
+                  className="bg-muted/30 pr-12 font-mono text-[13px]"
+                />
+                <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <CopyButton value={settings.remote.agentId} />
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+                {t("settings.remoteAgentIdHint")}
+              </p>
             </div>
           </div>
 
-          <ToggleOptionCard
-            icon={Terminal}
-            title={t("settings.remoteWebTerminal")}
-            hint={t("settings.remoteWebTerminalHint")}
-            checked={settings.remote.enableWebTerminal}
-            onToggle={() =>
-              updateRemoteSettings(setSettings, {
-                enableWebTerminal: !settings.remote.enableWebTerminal,
-              })
-            }
-          />
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
+            <SectionCardHeader icon={Globe} title={t("settings.remoteAdvanced")} />
 
-          <ToggleOptionCard
-            icon={Server}
-            title={t("settings.remoteWebSshTerminal")}
-            hint={t("settings.remoteWebSshTerminalHint")}
-            checked={settings.remote.enableWebSshTerminal}
-            onToggle={() =>
-              updateRemoteSettings(setSettings, {
-                enableWebSshTerminal: !settings.remote.enableWebSshTerminal,
-              })
-            }
-          />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <ToggleOptionCard
+                icon={RefreshCw}
+                title={t("settings.remoteAutoReconnect")}
+                hint={t("settings.remoteAutoReconnectHint")}
+                checked={settings.remote.autoReconnect}
+                onToggle={() =>
+                  updateRemoteSettings(setSettings, {
+                    autoReconnect: !settings.remote.autoReconnect,
+                  })
+                }
+              />
 
-          <ToggleOptionCard
-            icon={GitBranch}
-            title={t("settings.remoteWebGit")}
-            hint={t("settings.remoteWebGitHint")}
-            checked={settings.remote.enableWebGit}
-            onToggle={() =>
-              updateRemoteSettings(setSettings, {
-                enableWebGit: !settings.remote.enableWebGit,
-              })
-            }
-          />
+              <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/30 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {t("settings.remoteHeartbeat")}
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    {t("settings.remoteHeartbeatHint")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={remoteHeartbeatDraft.draft}
+                    onBlur={remoteHeartbeatDraft.handleBlur}
+                    onChange={(e) => remoteHeartbeatDraft.handleChange(e.target.value)}
+                    placeholder="30"
+                    className="w-24 font-mono text-[13px]"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {t("settings.remoteHeartbeatUnit")}
+                  </span>
+                </div>
+              </div>
 
-          <ToggleOptionCard
-            icon={Share2}
-            title={t("settings.remoteWebTunnels")}
-            hint={t("settings.remoteWebTunnelsHint")}
-            checked={settings.remote.enableWebTunnels}
-            onToggle={() =>
-              updateRemoteSettings(setSettings, {
-                enableWebTunnels: !settings.remote.enableWebTunnels,
-              })
-            }
-          />
-        </div>
-      </div>
+              <ToggleOptionCard
+                icon={Terminal}
+                title={t("settings.remoteWebTerminal")}
+                hint={t("settings.remoteWebTerminalHint")}
+                checked={settings.remote.enableWebTerminal}
+                onToggle={() =>
+                  updateRemoteSettings(setSettings, {
+                    enableWebTerminal: !settings.remote.enableWebTerminal,
+                  })
+                }
+              />
+
+              <ToggleOptionCard
+                icon={Server}
+                title={t("settings.remoteWebSshTerminal")}
+                hint={t("settings.remoteWebSshTerminalHint")}
+                checked={settings.remote.enableWebSshTerminal}
+                onToggle={() =>
+                  updateRemoteSettings(setSettings, {
+                    enableWebSshTerminal: !settings.remote.enableWebSshTerminal,
+                  })
+                }
+              />
+
+              <ToggleOptionCard
+                icon={GitBranch}
+                title={t("settings.remoteWebGit")}
+                hint={t("settings.remoteWebGitHint")}
+                checked={settings.remote.enableWebGit}
+                onToggle={() =>
+                  updateRemoteSettings(setSettings, {
+                    enableWebGit: !settings.remote.enableWebGit,
+                  })
+                }
+              />
+
+              <ToggleOptionCard
+                icon={Share2}
+                title={t("settings.remoteWebTunnels")}
+                hint={t("settings.remoteWebTunnelsHint")}
+                checked={settings.remote.enableWebTunnels}
+                onToggle={() =>
+                  updateRemoteSettings(setSettings, {
+                    enableWebTunnels: !settings.remote.enableWebTunnels,
+                  })
+                }
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
         <SectionCardHeader icon={Clock3} title={t("settings.remoteConnectionStatus")} />

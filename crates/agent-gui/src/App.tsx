@@ -769,6 +769,7 @@ export default function App() {
           <RelayAccessGate
             settings={settings}
             setSettings={setSettings}
+            appUpdate={appUpdate}
             onReady={(user) => {
               setRelayUser(user);
               setRelayReady(true);
