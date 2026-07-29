@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
 import { ChevronDown, Loader2, MonitorSmartphone, X } from "./icons";
 import { Button } from "./ui/button";
@@ -18,6 +18,7 @@ export function DesktopExecutionSwitcher({
   authorizedDeviceIds = new Set(),
   onSwitch,
 }: Props) {
+  const menuRootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<DesktopEnvironment | null>(null);
   const [error, setError] = useState("");
@@ -28,6 +29,22 @@ export function DesktopExecutionSwitcher({
       environments.find((item) => item.device_id === localDeviceId);
     return environment;
   }, [environments, localDeviceId, selectedDeviceId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
   async function confirm() {
     if (!pending) return;
@@ -45,7 +62,7 @@ export function DesktopExecutionSwitcher({
 
   return (
     <>
-      <div className="relative">
+      <div ref={menuRootRef} className="relative">
         <Button
           variant="outline"
           className="h-8 max-w-[min(260px,28vw)] gap-2 bg-background/95 px-3 shadow-sm max-[900px]:w-8 max-[900px]:px-0"

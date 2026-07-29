@@ -72,6 +72,7 @@ export type SidebarStore = {
   start(): void;
   stop(): void;
   setScope(scope: SidebarScope): void;
+  prefetch(scope: SidebarScope): Promise<void>;
   refresh(options?: { reason?: SidebarRefreshReason }): Promise<void>;
   loadMore(): Promise<void>;
   refreshWorkdirs(reason: SidebarWorkdirsRefreshReason): Promise<void>;
@@ -507,6 +508,35 @@ export function createSidebarStore(
     }
   };
 
+  const prefetch = async (targetScope: SidebarScope) => {
+    if (startCount === 0 || targetScope.kind === "none") {
+      return;
+    }
+    try {
+      const page = await backend.listConversations(1, pageSize, targetScope);
+      if (startCount === 0) {
+        return;
+      }
+      const items = filterConversationsForScope(page.items, targetScope);
+      let nextById = byId;
+      let workdirActivity = snapshot.workdirActivity;
+      for (const item of items) {
+        if (nextById === byId) {
+          nextById = new Map(byId);
+        }
+        const merged = mergeSidebarConversation(nextById.get(item.id), item);
+        nextById.set(merged.id, merged);
+        workdirActivity = bumpWorkdirActivity(workdirActivity, merged.cwd, merged.updatedAt);
+      }
+      if (nextById !== byId || workdirActivity !== snapshot.workdirActivity) {
+        byId = nextById;
+        commit({ byId, workdirActivity });
+      }
+    } catch {
+      // Prefetch is auxiliary; the active scoped list owns visible read errors.
+    }
+  };
+
   const runMutation = async (params: {
     id: string;
     kind: SidebarMutationKind;
@@ -759,6 +789,7 @@ export function createSidebarStore(
       }
     },
 
+    prefetch,
     refresh,
     loadMore,
     refreshWorkdirs,

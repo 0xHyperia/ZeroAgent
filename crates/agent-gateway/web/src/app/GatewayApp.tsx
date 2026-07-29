@@ -717,6 +717,11 @@ export default function GatewayApp() {
         : { kind: "unscoped" },
     );
   }, [activeWorkspaceProjectPath, isAgentMode, sidebarStore]);
+  useEffect(() => {
+    if (isAgentMode) {
+      void sidebarStore.prefetch({ kind: "unscoped" });
+    }
+  }, [isAgentMode, sidebarStore]);
 
   // Conversation-open controller: the web end paints the conversation's whole
   // established history window in phase 1 (openInitial resolves
@@ -1312,7 +1317,7 @@ export default function GatewayApp() {
         setWorkspaceProjectDirectoryMissing(project, false);
         return true;
       } catch {
-        setWorkspaceProjectDirectoryMissing(project, true);
+        // A relay failure does not prove that the remote directory disappeared.
         return false;
       }
     },
@@ -4853,10 +4858,24 @@ export default function GatewayApp() {
                           />
                         ) : null}
                         <span
-                          className={`gateway-online-pill${status?.online ? " gateway-online-pill-active" : ""}`}
-                          title={status?.online ? "Online" : "Offline"}
+                          className="flex h-8 w-4 shrink-0 items-center justify-center"
+                          title={
+                            status?.online
+                              ? translate("settings.devicesOnlineStatus", settings.locale)
+                              : translate("settings.devicesOfflineStatus", settings.locale)
+                          }
                         >
-                          {status?.online ? "Online" : "Offline"}
+                          <span
+                            aria-hidden="true"
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              status?.online ? "bg-emerald-500/70" : "bg-muted-foreground/40"
+                            }`}
+                          />
+                          <span className="sr-only">
+                            {status?.online
+                              ? translate("settings.devicesOnlineStatus", settings.locale)
+                              : translate("settings.devicesOfflineStatus", settings.locale)}
+                          </span>
                         </span>
                       </>
                     }

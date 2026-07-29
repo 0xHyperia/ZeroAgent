@@ -119,6 +119,11 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
   useLayoutEffect(() => {
     sidebarStore.setScope(sidebarScope);
   }, [sidebarScope, sidebarStore]);
+  useEffect(() => {
+    if (isAgentMode) {
+      void sidebarStore.prefetch({ kind: "unscoped" });
+    }
+  }, [isAgentMode, sidebarStore]);
   const historyScopeKey = sidebarScopeKey(sidebarScope);
   const [projectRenamingId, setProjectRenamingId] = useState<string | null>(null);
   const [projectRenameDraft, setProjectRenameDraft] = useState("");

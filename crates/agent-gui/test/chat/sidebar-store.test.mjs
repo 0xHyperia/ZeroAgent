@@ -138,6 +138,26 @@ test("initial load fills the list and fetches workdirs exactly once", async () =
   store.stop();
 });
 
+test("prefetch hydrates chat conversations without replacing the active project list", async () => {
+  const fake = createFakeBackend();
+  fake.state.pages.set("cwd:/tmp/a", [conversation("agent", { cwd: "/tmp/a" })]);
+  fake.state.pages.set("cwd-empty", [conversation("chat", { updatedAt: 2 })]);
+  const store = createSidebarStore(fake.backend);
+  store.setScope(SCOPE_A);
+  store.start();
+  await tick();
+
+  await store.prefetch({ kind: "unscoped" });
+
+  assert.deepEqual(
+    store.getSnapshot().conversations.map((item) => item.id),
+    ["agent"],
+  );
+  assert.equal(store.getSnapshot().byId.get("chat")?.id, "chat");
+  assert.equal(store.getSnapshot().scopeKey, "cwd:/tmp/a");
+  store.stop();
+});
+
 test("a failed refresh keeps the visible list and sets an error code", async () => {
   const fake = createFakeBackend();
   fake.state.pages.set("cwd:/tmp/a", [conversation("one", { cwd: "/tmp/a" })]);

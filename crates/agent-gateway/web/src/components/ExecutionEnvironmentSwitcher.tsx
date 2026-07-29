@@ -25,6 +25,7 @@ export function ExecutionEnvironmentSwitcher({
   onSwitch,
 }: Props) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{
     left: number;
@@ -56,7 +57,7 @@ export function ExecutionEnvironmentSwitcher({
       const rect = trigger.getBoundingClientRect();
       const viewportPadding = 8;
       const gap = 8;
-      const width = Math.min(380, window.innerWidth - viewportPadding * 2);
+      const width = Math.min(300, window.innerWidth - viewportPadding * 2);
       const left = Math.min(
         Math.max(viewportPadding, rect.left),
         window.innerWidth - width - viewportPadding,
@@ -80,11 +81,24 @@ export function ExecutionEnvironmentSwitcher({
       });
     };
     updatePosition();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
 
@@ -144,6 +158,7 @@ export function ExecutionEnvironmentSwitcher({
         {open && menuPosition
           ? createPortal(
               <div
+                ref={menuRef}
                 className="fixed z-[1000] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl"
                 style={menuPosition}
               >
@@ -169,12 +184,12 @@ export function ExecutionEnvironmentSwitcher({
                         key={workspace.id}
                         type="button"
                         disabled={!environment.online}
-                        className="flex w-full items-center gap-2 rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                        className="flex w-full flex-col items-stretch gap-0.5 rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
                         onClick={() => choose(environment, workspace)}
                       >
-                        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                        <span className="min-w-0 truncate">{workspace.name}</span>
                         {workspace.path && (
-                          <span className="max-w-[160px] truncate text-muted-foreground">
+                          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                             {workspace.path}
                           </span>
                         )}
