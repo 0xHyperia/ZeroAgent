@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 version=${1:-}; target_image=${2:-}
 [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || die "invalid v-prefixed semantic version"
-[[ $target_image =~ ^ghcr\.io/tkxs/zeroagent-gateway@sha256:[0-9a-f]{64}$ ]] || die "target image must be the approved ZeroAgent digest"
+[[ $target_image =~ ^ghcr\.io/0xhyperia/zeroagent-gateway@sha256:[0-9a-f]{64}$ ]] || die "target image must be the approved ZeroAgent digest"
 require docker; validate_env
 old_image=$(current_image)
 APP_IMAGE=$target_image compose config --quiet
@@ -27,8 +27,8 @@ if docker pull "$target_image" && compose up -d --no-deps app; then
   [[ $status == deployed ]] && "$ASSET_DIR/smoke.sh" public || status=failed
 fi
 if [[ $status != deployed && $initialize != true ]]; then set_env_value APP_IMAGE "$old_image"; compose up -d --no-deps app || true; fi
-printf '{"service":"%s","version":"%s","source_commit":"%s","previous_image":"%s","image":"%s","backup":"%s","status":"%s"}\n' \
-  "$SERVICE" "$version" "${SOURCE_COMMIT:-unknown}" "$old_image" "$target_image" "$backup" "$status" >"$record"
+printf '{"service":"%s","version":"%s","source_commit":"%s","deploy_commit":"%s","previous_image":"%s","image":"%s","backup":"%s","status":"%s"}\n' \
+  "$SERVICE" "$version" "${SOURCE_COMMIT:-unknown}" "${DEPLOY_COMMIT:-unknown}" "$old_image" "$target_image" "$backup" "$status" >"$record"
 chmod 600 "$record"
 if [[ $status != deployed ]]; then
   [[ $initialize == true ]] && die "initial deployment failed; data containers were left for diagnosis"
