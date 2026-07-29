@@ -4596,13 +4596,7 @@ export default function GatewayApp() {
           settings={settings}
           setSettings={setSettings}
           settingsSaveState={settingsSaveState}
-          onSwitch={async (environment, workspace) => {
-            const next = await switchExecutionTarget(environment, workspace);
-            if (next.runtime_kind === "device_agent") {
-              setActiveWorkspaceProjectId(workspace.id);
-            }
-            return next;
-          }}
+          onSwitch={switchExecutionTarget}
           onLogout={handleLogout}
         />
       </LocaleContext.Provider>
@@ -4840,14 +4834,12 @@ export default function GatewayApp() {
                           <ExecutionEnvironmentSwitcher
                             environments={environments}
                             selection={selection}
-                            activeWorkspaceId={activeWorkspaceProjectId}
                             disabled={transcriptBusy}
                             onSwitch={async (environment, workspace) => {
                               const changesEnvironment =
                                 environment.runtime_kind !== selection?.runtime_kind ||
                                 (environment.device_id ?? "") !== (selection?.device_id ?? "");
                               await switchExecutionTarget(environment, workspace);
-                              setActiveWorkspaceProjectId(workspace.id);
                               if (changesEnvironment) {
                                 transcriptStoreRegistry.clear();
                                 setConversationId("");

@@ -122,7 +122,9 @@ func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv2.GatewayEnvelope) e
 	case *gatewayv2.GatewayEnvelope_FsRoots,
 		*gatewayv2.GatewayEnvelope_FsListDirs,
 		*gatewayv2.GatewayEnvelope_FsCreateProjectFolder:
-		return errors.New("remote project browsing and creation are disabled")
+		if c.selectionScope != account.SelectionScopeDevice {
+			return errors.New("project browsing and creation require a device selection")
+		}
 	}
 	return nil
 }

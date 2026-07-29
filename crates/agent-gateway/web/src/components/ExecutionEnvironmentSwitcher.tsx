@@ -6,13 +6,11 @@ import {
   type ExecutionEnvironment,
   type ExecutionSelection,
   type ExecutionWorkspace,
-  resolveExecutionTarget,
 } from "@/lib/executionTargets";
 
 type Props = {
   environments: ExecutionEnvironment[];
   selection: ExecutionSelection | null;
-  activeWorkspaceId?: string;
   disabled?: boolean;
   onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
 };
@@ -20,7 +18,6 @@ type Props = {
 export function ExecutionEnvironmentSwitcher({
   environments,
   selection,
-  activeWorkspaceId = "",
   disabled,
   onSwitch,
 }: Props) {
@@ -34,16 +31,18 @@ export function ExecutionEnvironmentSwitcher({
     width: number;
     maxHeight: number;
   } | null>(null);
-  const [pending, setPending] = useState<{
-    environment: ExecutionEnvironment;
-    workspace: ExecutionWorkspace;
-  } | null>(null);
+  const [pending, setPending] = useState<ExecutionEnvironment | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const current = useMemo(
-    () => resolveExecutionTarget(environments, selection, activeWorkspaceId),
-    [activeWorkspaceId, environments, selection],
+    () =>
+      environments.find(
+        (environment) =>
+          environment.runtime_kind === selection?.runtime_kind &&
+          (environment.device_id ?? "") === (selection?.device_id ?? ""),
+      ),
+    [environments, selection],
   );
 
   useEffect(() => {
@@ -102,18 +101,16 @@ export function ExecutionEnvironmentSwitcher({
     };
   }, [open]);
 
-  function choose(environment: ExecutionEnvironment, workspace: ExecutionWorkspace) {
+  function choose(environment: ExecutionEnvironment) {
     if (!environment.online || disabled) return;
     if (
       environment.runtime_kind === selection?.runtime_kind &&
-      (environment.device_id ?? "") === (selection.device_id ?? "") &&
-      workspace.id ===
-        (selection.runtime_kind === "device_agent" ? activeWorkspaceId : selection.workspace_id)
+      (environment.device_id ?? "") === (selection.device_id ?? "")
     ) {
       setOpen(false);
       return;
     }
-    setPending({ environment, workspace });
+    setPending(environment);
     setError("");
     setOpen(false);
   }
@@ -123,7 +120,8 @@ export function ExecutionEnvironmentSwitcher({
     setSubmitting(true);
     setError("");
     try {
-      await onSwitch(pending.environment, pending.workspace);
+      const workspace = pending.workspaces[0] ?? { id: "", name: "" };
+      await onSwitch(pending, workspace);
       setPending(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "切换失败");
@@ -143,14 +141,13 @@ export function ExecutionEnvironmentSwitcher({
           disabled={disabled}
           onClick={() => setOpen((value) => !value)}
         >
-          {current.environment?.runtime_kind === "web_chat" ? (
+          {current?.runtime_kind === "web_chat" ? (
             <Cloud className="h-4 w-4 shrink-0" />
           ) : (
             <MonitorSmartphone className="h-4 w-4 shrink-0" />
           )}
           <span className="truncate text-xs font-medium">
-            {current.environment?.name ?? "选择执行环境"}
-            {current.workspace ? ` / ${current.workspace.name}` : ""}
+            {current?.name ?? "选择设备"}
           </span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </Button>
@@ -179,22 +176,14 @@ export function ExecutionEnvironmentSwitcher({
                         {environment.online ? "在线" : "离线"}
                       </span>
                     </div>
-                    {environment.workspaces.map((workspace) => (
-                      <button
-                        key={workspace.id}
-                        type="button"
-                        disabled={!environment.online}
-                        className="flex w-full flex-col items-stretch gap-0.5 rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
-                        onClick={() => choose(environment, workspace)}
-                      >
-                        <span className="min-w-0 truncate">{workspace.name}</span>
-                        {workspace.path && (
-                          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-                            {workspace.path}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      disabled={!environment.online}
+                      className="flex w-full items-center rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => choose(environment)}
+                    >
+                      <span className="min-w-0 truncate">切换到此设备</span>
+                    </button>
                   </div>
                 ))}
               </div>,
@@ -212,9 +201,9 @@ export function ExecutionEnvironmentSwitcher({
           <div className="w-full max-w-[380px] rounded-md border bg-background p-5 shadow-2xl">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold">确认切换执行环境</h2>
+                <h2 className="text-sm font-semibold">确认切换设备</h2>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {pending.environment.name} / {pending.workspace.name}
+                  {pending.name}
                 </p>
               </div>
               <button
@@ -226,7 +215,7 @@ export function ExecutionEnvironmentSwitcher({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-5 text-xs text-muted-foreground">将在所选设备和工作区中继续操作。</p>
+            <p className="mt-5 text-xs text-muted-foreground">切换后可在左侧工作空间中选择项目或对话。</p>
             {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPending(null)}>

@@ -67,7 +67,7 @@ func TestWorkspaceGuardReadsCurrentDeviceWorkspaces(t *testing.T) {
 	}
 }
 
-func TestWorkspaceGuardRejectsRemoteProjectCreation(t *testing.T) {
+func TestWorkspaceGuardAllowsProjectBrowsingAndCreationForDeviceSelection(t *testing.T) {
 	conn := &browserConn{
 		selectionScope:    account.SelectionScopeDevice,
 		allowedWorkspaces: []account.Workspace{{ID: "project-a", Path: "/repo/a"}},
@@ -80,7 +80,19 @@ func TestWorkspaceGuardRejectsRemoteProjectCreation(t *testing.T) {
 			},
 		},
 	}
+	if err := conn.vetWorkspaceAgentRequest(env); err != nil {
+		t.Fatalf("remote project creation rejected: %v", err)
+	}
+}
+
+func TestWorkspaceGuardRejectsProjectBrowsingForWorkspaceSelection(t *testing.T) {
+	conn := &browserConn{selectionScope: account.SelectionScopeWorkspace}
+	env := &gatewayv2.GatewayEnvelope{
+		Payload: &gatewayv2.GatewayEnvelope_FsListDirs{
+			FsListDirs: &gatewayv2.FsListDirsRequest{Path: "/repo"},
+		},
+	}
 	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
-		t.Fatal("remote project creation accepted")
+		t.Fatal("workspace-scoped project browsing accepted")
 	}
 }

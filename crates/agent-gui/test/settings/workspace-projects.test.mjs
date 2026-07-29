@@ -51,7 +51,7 @@ test("workspace project path key normalizes windows-shaped paths and preserves P
   );
 });
 
-test("plain chat stays first while explicit projects follow latest activity", () => {
+test("projects sort by activity, including the default project", () => {
   const projects = [
     project(settings.DEFAULT_WORKSPACE_PROJECT_ID, "/tmp/default-project", 1),
     project("project-a", "/tmp/project-a", 2),
@@ -69,7 +69,7 @@ test("plain chat stays first while explicit projects follow latest activity", ()
 
   assert.deepEqual(
     ordered.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a", "project-b"],
+    ["project-a", "project-b", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 
@@ -95,11 +95,11 @@ test("workspace project keeps its active position after the running marker is cl
 
   assert.deepEqual(
     duringRun.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a"],
+    ["project-a", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
   assert.deepEqual(
     afterRun.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a"],
+    ["project-a", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 
@@ -122,7 +122,7 @@ test("running workspace project outranks a newer idle project", () => {
 
   assert.deepEqual(
     ordered.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-running"],
+    ["project-running", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 
@@ -188,7 +188,7 @@ test("history workdir activity restores ordering after page refresh", () => {
 
   assert.deepEqual(
     ordered.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a"],
+    ["project-a", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 
@@ -205,7 +205,7 @@ test("persisted last conversation activity restores ordering before history work
 
   assert.deepEqual(
     ordered.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a"],
+    ["project-a", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 
@@ -332,7 +332,7 @@ test("live activity overrides stale persisted last conversation activity", () =>
 
   assert.deepEqual(
     ordered.map((item) => item.id),
-    [settings.DEFAULT_WORKSPACE_PROJECT_ID, "project-a"],
+    ["project-a", settings.DEFAULT_WORKSPACE_PROJECT_ID],
   );
 });
 

@@ -2753,15 +2753,15 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     if (!item) return null;
 
                     return (
-                      <div
-                        key={virtualRow.key}
-                        data-index={virtualRow.index}
-                        ref={historyVirtualizer.measureElement}
-                        className="absolute inset-x-0 top-0 pb-0.5"
-                        style={{ transform: `translateY(${virtualRow.start}px)` }}
-                      >
-                        {renderHistoryRow(item)}
-                      </div>
+                            <div
+                              key={virtualRow.key}
+                              data-index={virtualRow.index}
+                              ref={historyVirtualizer.measureElement}
+                              className="absolute inset-x-0 top-0 pb-0.5"
+                              style={{ transform: `translateY(${virtualRow.start}px)` }}
+                            >
+                              {renderHistoryRow(item)}
+                            </div>
                     );
                   })}
                 </div>
