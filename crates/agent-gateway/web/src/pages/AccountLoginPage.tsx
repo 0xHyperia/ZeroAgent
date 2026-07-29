@@ -93,8 +93,8 @@ export function AccountLoginPage({
     onClearError();
     setOAuthSubmitting(true);
     try {
-      await startRelayOAuth();
-      window.location.reload();
+      const completedInPlace = await startRelayOAuth();
+      if (completedInPlace) window.location.reload();
     } catch (cause) {
       onSetError(cause instanceof Error ? cause.message : "认证登录失败，请重试");
       setOAuthSubmitting(false);

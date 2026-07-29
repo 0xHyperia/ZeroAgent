@@ -17,7 +17,7 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message,
 };
 
-const SESSION_COOKIE: &str = "zerobox_session";
+const SESSION_COOKIE: &str = "zeroagent_session";
 const MAX_CACHE_ENTRIES: usize = 96;
 
 #[derive(Default)]

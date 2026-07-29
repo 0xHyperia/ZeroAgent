@@ -5,8 +5,8 @@ import {
 } from "../mobileRuntime";
 
 export const RELAY_ORIGIN = "https://usa0.top";
-export const RELAY_SESSION_CHANGED_EVENT = "zerobox:relay-session-changed";
-export const RELAY_SESSION_EXPIRED_EVENT = "zerobox:relay-session-expired";
+export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
+export const RELAY_SESSION_EXPIRED_EVENT = "zeroagent:relay-session-expired";
 
 const RELAY_PROXY_BASE = "/api/usa-zero";
 let relaySessionExpiryNotified = false;
@@ -196,7 +196,7 @@ export function getRelayPublicSettings() {
   return requestGatewayAccount<RelayPublicSettings>("/api/auth/settings");
 }
 
-export async function startRelayOAuth() {
+export async function startRelayOAuth(): Promise<boolean> {
   const embedded = isEmbeddedMobileRuntime();
   const response = await requestGatewayAccount<{ authorize_url: string }>("/api/auth/oauth/start", {
     method: "POST",
@@ -207,7 +207,7 @@ export async function startRelayOAuth() {
   });
   if (!embedded) {
     window.location.assign(response.authorize_url);
-    return;
+    return false;
   }
   const callback = new URL(await openEmbeddedOAuth(response.authorize_url));
   await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
@@ -219,6 +219,7 @@ export async function startRelayOAuth() {
     },
   });
   markRelaySessionAuthenticated();
+  return true;
 }
 
 export async function loginRelay(email: string, password: string) {

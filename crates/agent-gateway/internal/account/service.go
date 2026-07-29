@@ -383,7 +383,7 @@ func (s *Service) DesktopSession(ctx context.Context, accessToken string) (*Sess
 	if err != nil {
 		user, err = s.usa.AppMe(ctx, accessToken)
 		authKind = AuthKindOAuth
-		clientID = "zerobox-desktop"
+		clientID = "zeroagent-desktop"
 	}
 	if err != nil {
 		return nil, err
@@ -586,12 +586,14 @@ func (s *Service) createSession(ctx context.Context, result *LoginResult) (*Sess
 }
 
 func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPath string) (string, error) {
-	clientID := "zerobox-web"
+	clientID := "zeroagent-web"
 	platform := "web"
 	if surface == "android" {
-		clientID, platform = "zerobox-android", "android"
+		clientID, platform = "zeroagent-android", "android"
 	} else if surface != "web" {
 		return "", &APIError{Status: http.StatusBadRequest, Message: "surface must be web or android"}
+	} else if !s.usa.WebOAuthConfigured() {
+		return "", &APIError{Status: http.StatusServiceUnavailable, Message: "ZeroAgent Web OAuth is not configured"}
 	}
 	state, err := randomToken(32)
 	if err != nil {
@@ -605,9 +607,9 @@ func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPa
 	challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
 	requestID, err := s.usa.CreateAppAuthorizationRequest(ctx, map[string]any{
 		"response_type": "code", "client_id": clientID, "redirect_uri": redirectURI,
-		"scope":          "openid profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
+		"scope":          "profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
 		"code_challenge": challenge, "code_challenge_method": "S256", "state": state,
-		"device_name": "ZeroBox", "platform": platform,
+		"device_name": "ZeroAgent", "platform": platform,
 	})
 	if err != nil {
 		return "", err
@@ -619,7 +621,7 @@ func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPa
 	if err := s.store.PutOAuthTransaction(ctx, hashToken(state), transaction); err != nil {
 		return "", err
 	}
-	return s.usa.Origin() + "/oauth/authorize?request_id=" + url.QueryEscape(requestID), nil
+	return s.usa.AuthorizationOrigin() + "/oauth/authorize?request_id=" + url.QueryEscape(requestID), nil
 }
 
 func (s *Service) CompleteOAuth(ctx context.Context, state, code, expectedSurface string) (*Session, string, error) {
@@ -769,6 +771,9 @@ func (s *Service) WebAPIKey(ctx context.Context, session *Session) (string, erro
 }
 
 func (s *Service) WebProviderModels(ctx context.Context, session *Session, keyID int64) (json.RawMessage, error) {
+	if session.IsOAuth() {
+		return s.usa.AppModelsForAPIKey(ctx, session.AccessToken, keyID)
+	}
 	return s.usa.ModelsForAPIKey(ctx, session.AccessToken, keyID)
 }
 

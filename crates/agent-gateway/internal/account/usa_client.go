@@ -13,8 +13,10 @@ import (
 )
 
 type USAClient struct {
-	origin string
-	client *http.Client
+	origin              string
+	authorizationOrigin string
+	client              *http.Client
+	webClientSecret     string
 }
 
 type usaEnvelope struct {
@@ -42,7 +44,7 @@ type appEnvelope struct {
 	} `json:"error"`
 }
 
-func NewUSAClient(origin string, timeout time.Duration) (*USAClient, error) {
+func NewUSAClient(origin, authorizationOrigin string, timeout time.Duration, webClientSecret ...string) (*USAClient, error) {
 	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -51,17 +53,35 @@ func NewUSAClient(origin string, timeout time.Duration) (*USAClient, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return &USAClient{origin: origin, client: &http.Client{Timeout: timeout}}, nil
+	authorizationOrigin = strings.TrimRight(strings.TrimSpace(authorizationOrigin), "/")
+	authorizationURL, err := url.Parse(authorizationOrigin)
+	if err != nil || authorizationURL.Scheme == "" || authorizationURL.Host == "" {
+		return nil, fmt.Errorf("invalid USA-Zero authorization origin %q", authorizationOrigin)
+	}
+	secret := ""
+	if len(webClientSecret) > 0 {
+		secret = strings.TrimSpace(webClientSecret[0])
+	}
+	return &USAClient{origin: origin, authorizationOrigin: authorizationOrigin, client: &http.Client{Timeout: timeout}, webClientSecret: secret}, nil
 }
 
-func NewUSAClientWithHTTPClient(origin string, client *http.Client) *USAClient {
-	return &USAClient{origin: strings.TrimRight(origin, "/"), client: client}
+func NewUSAClientWithHTTPClient(origin string, client *http.Client, webClientSecret ...string) *USAClient {
+	secret := ""
+	if len(webClientSecret) > 0 {
+		secret = strings.TrimSpace(webClientSecret[0])
+	}
+	origin = strings.TrimRight(origin, "/")
+	return &USAClient{origin: origin, authorizationOrigin: origin, client: client, webClientSecret: secret}
 }
 
 func (c *USAClient) Origin() string { return c.origin }
 
+func (c *USAClient) AuthorizationOrigin() string { return c.authorizationOrigin }
+
+func (c *USAClient) WebOAuthConfigured() bool { return len(c.webClientSecret) >= 32 }
+
 func (c *USAClient) CreateAppAuthorizationRequest(ctx context.Context, payload map[string]any) (string, error) {
-	data, err := c.request(ctx, http.MethodPost, "/api/v1/app-auth/authorize/requests", payload, "")
+	data, err := c.oauthJSONRequest(ctx, http.MethodPost, "/api/v1/app-auth/authorize/requests", payload)
 	if err != nil {
 		return "", err
 	}
@@ -92,8 +112,42 @@ func (c *USAClient) RevokeApp(ctx context.Context, token, hint string) error {
 	if hint != "" {
 		values.Set("token_type_hint", hint)
 	}
-	_, err := c.formRequest(ctx, "/api/v1/app-auth/revoke", values)
+	_, err := c.formRequest(ctx, "/api/v1/app-auth/revoke", values, "", "")
 	return err
+}
+
+func (c *USAClient) oauthJSONRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.origin+path, bytes.NewReader(encoded))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero service is unavailable"}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var oauthErr struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		_ = json.Unmarshal(data, &oauthErr)
+		return nil, &APIError{Status: resp.StatusCode, Reason: oauthErr.Error, Message: firstNonEmpty(oauthErr.ErrorDescription, "USA-Zero OAuth request failed")}
+	}
+	if !json.Valid(data) {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero returned an invalid OAuth response"}
+	}
+	return data, nil
 }
 
 func (c *USAClient) AppMe(ctx context.Context, accessToken string) (json.RawMessage, error) {
@@ -386,7 +440,18 @@ func (c *USAClient) ModelsForAPIKey(ctx context.Context, accessToken string, key
 	if err != nil {
 		return nil, err
 	}
+	return c.modelsForAPIKey(ctx, apiKey)
+}
 
+func (c *USAClient) AppModelsForAPIKey(ctx context.Context, accessToken string, keyID int64) (json.RawMessage, error) {
+	apiKey, err := c.AppOwnedAPIKey(ctx, accessToken, keyID)
+	if err != nil {
+		return nil, err
+	}
+	return c.modelsForAPIKey(ctx, apiKey)
+}
+
+func (c *USAClient) modelsForAPIKey(ctx context.Context, apiKey string) (json.RawMessage, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin+"/v1/models", nil)
 	if err != nil {
 		return nil, err
@@ -501,7 +566,12 @@ func (c *USAClient) request(ctx context.Context, method, path string, body any, 
 }
 
 func (c *USAClient) appToken(ctx context.Context, values url.Values) (*OAuthTokenResult, error) {
-	data, err := c.formRequest(ctx, "/api/v1/app-auth/token", values)
+	clientID := values.Get("client_id")
+	secret := ""
+	if clientID == "zeroagent-web" {
+		secret = c.webClientSecret
+	}
+	data, err := c.formRequest(ctx, "/api/v1/app-auth/token", values, clientID, secret)
 	if err != nil {
 		return nil, err
 	}
@@ -512,13 +582,20 @@ func (c *USAClient) appToken(ctx context.Context, values url.Values) (*OAuthToke
 	return &result, nil
 }
 
-func (c *USAClient) formRequest(ctx context.Context, path string, values url.Values) ([]byte, error) {
+func (c *USAClient) formRequest(ctx context.Context, path string, values url.Values, clientID, clientSecret string) ([]byte, error) {
+	if clientSecret != "" {
+		values = cloneValues(values)
+		values.Del("client_id")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+path, strings.NewReader(values.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if clientSecret != "" {
+		req.SetBasicAuth(clientID, clientSecret)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero service is unavailable"}
@@ -537,6 +614,14 @@ func (c *USAClient) formRequest(ctx context.Context, path string, values url.Val
 		return nil, &APIError{Status: resp.StatusCode, Reason: oauthErr.Error, Message: firstNonEmpty(oauthErr.ErrorDescription, "USA-Zero OAuth request failed")}
 	}
 	return data, nil
+}
+
+func cloneValues(values url.Values) url.Values {
+	clone := make(url.Values, len(values))
+	for key, items := range values {
+		clone[key] = append([]string(nil), items...)
+	}
+	return clone
 }
 
 func (c *USAClient) appRequest(ctx context.Context, method, path string, body any, accessToken string) (json.RawMessage, error) {

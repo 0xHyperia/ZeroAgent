@@ -8,8 +8,8 @@ test("failed desktop token refresh clears credentials and returns to the login g
   const originalLocalStorage = globalThis.localStorage;
   const originalWindow = globalThis.window;
   const values = new Map([
-    ["liveagent.relay.access-token", "expired-access"],
-    ["liveagent.relay.refresh-token", "expired-refresh"],
+    ["zeroagent.relay.access-token", "expired-access"],
+    ["zeroagent.relay.refresh-token", "expired-refresh"],
   ]);
   globalThis.localStorage = {
     getItem(key) {
@@ -49,8 +49,8 @@ test("failed desktop token refresh clears credentials and returns to the login g
     await assert.rejects(relay.getRelayProfile(), (error) => error.status === 401);
 
     assert.equal(sessionChanges, 1);
-    assert.equal(values.has("liveagent.relay.access-token"), false);
-    assert.equal(values.has("liveagent.relay.refresh-token"), false);
+    assert.equal(values.has("zeroagent.relay.access-token"), false);
+    assert.equal(values.has("zeroagent.relay.refresh-token"), false);
 
     await assert.rejects(
       relay.loginRelay("wrong@example.com", "wrong-password"),
@@ -69,7 +69,7 @@ test("an HTML 401 response still clears the desktop session before its body is p
   const originalFetch = globalThis.fetch;
   const originalLocalStorage = globalThis.localStorage;
   const originalWindow = globalThis.window;
-  const values = new Map([["liveagent.relay.access-token", "expired-access"]]);
+  const values = new Map([["zeroagent.relay.access-token", "expired-access"]]);
   globalThis.localStorage = {
     getItem(key) {
       return values.get(key) ?? null;
@@ -104,7 +104,7 @@ test("an HTML 401 response still clears the desktop session before its body is p
     await assert.rejects(relay.getRelayProfile(), (error) => error.status === 401);
 
     assert.equal(sessionChanges, 1);
-    assert.equal(values.has("liveagent.relay.access-token"), false);
+    assert.equal(values.has("zeroagent.relay.access-token"), false);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.localStorage = originalLocalStorage;

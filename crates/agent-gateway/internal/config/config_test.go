@@ -124,11 +124,30 @@ func TestLoadUsesStandaloneDevelopmentDefaults(t *testing.T) {
 }
 
 func TestLoadReadsGatewayPublicOrigin(t *testing.T) {
+	t.Setenv("USA_ZERO_ORIGIN", " http://127.0.0.1:8080/ ")
+	t.Setenv("USA_ZERO_AUTHORIZATION_ORIGIN", " http://127.0.0.1:5173/ ")
 	t.Setenv("LIVEAGENT_GATEWAY_PUBLIC_ORIGIN", " https://gateway.example.com ")
+	t.Setenv("ZEROAGENT_WEB_OAUTH_CLIENT_SECRET", " zeroagent-test-web-client-secret-32-bytes ")
 	resetFlagsForTest(t)
 	cfg := Load()
 	if cfg.PublicOrigin != "https://gateway.example.com" {
 		t.Fatalf("PublicOrigin = %q", cfg.PublicOrigin)
+	}
+	if cfg.USAZeroOrigin != "http://127.0.0.1:8080" || cfg.USAZeroAuthorizationOrigin != "http://127.0.0.1:5173" {
+		t.Fatalf("USA-Zero origins were not normalized: api=%q authorization=%q", cfg.USAZeroOrigin, cfg.USAZeroAuthorizationOrigin)
+	}
+	if cfg.OAuthWebClientSecret != "zeroagent-test-web-client-secret-32-bytes" {
+		t.Fatalf("OAuthWebClientSecret was not normalized")
+	}
+}
+
+func TestLoadDefaultsAuthorizationOriginToAPIOrigin(t *testing.T) {
+	t.Setenv("USA_ZERO_ORIGIN", "https://usa.example.com/")
+	t.Setenv("USA_ZERO_AUTHORIZATION_ORIGIN", "")
+	resetFlagsForTest(t)
+	cfg := Load()
+	if cfg.USAZeroAuthorizationOrigin != "https://usa.example.com" {
+		t.Fatalf("USAZeroAuthorizationOrigin = %q", cfg.USAZeroAuthorizationOrigin)
 	}
 }
 

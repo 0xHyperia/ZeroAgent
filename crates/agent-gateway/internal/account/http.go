@@ -70,7 +70,7 @@ func (h *HTTPHandler) startOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.Surface = strings.ToLower(strings.TrimSpace(request.Surface))
-	redirectURI := "zerobox://oauth/callback"
+	redirectURI := "top.usa0.zeroagent:/oauth/callback"
 	if request.Surface == "web" {
 		origin, err := h.callbackOrigin(r)
 		if err != nil {

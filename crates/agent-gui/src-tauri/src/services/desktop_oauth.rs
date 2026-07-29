@@ -13,10 +13,15 @@ use url::Url;
 const OAUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 #[derive(Deserialize)]
-struct ApiEnvelope {
-    code: i64,
-    message: String,
-    data: Option<Value>,
+struct AuthorizationRequestResponse {
+    request_id: String,
+    authorization_uri: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OAuthErrorResponse {
+    error: String,
+    error_description: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -71,41 +76,45 @@ pub async fn desktop_oauth_login(
         .post(format!("{origin}/api/v1/app-auth/authorize/requests"))
         .json(&json!({
             "response_type": "code",
-            "client_id": "zerobox-desktop",
+            "client_id": "zeroagent-desktop",
             "redirect_uri": redirect_uri,
-            "scope": "openid profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
+            "scope": "profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
             "code_challenge": challenge,
             "code_challenge_method": "S256",
             "state": state,
-            "device_name": "ZeroBox Desktop",
+            "device_name": "ZeroAgent Desktop",
             "platform": std::env::consts::OS,
         }))
         .send().await.map_err(|_| "usa0.top 暂时不可用".to_string())?;
     let status = response.status();
-    let envelope: ApiEnvelope = response
-        .json()
+    let response_body = response
+        .bytes()
         .await
         .map_err(|_| "usa0.top 返回了无效授权响应".to_string())?;
-    if !status.is_success() || envelope.code != 0 {
-        return Err(if envelope.message.is_empty() {
-            "无法创建授权请求".into()
-        } else {
-            envelope.message
-        });
+    if !status.is_success() {
+        let oauth_error = serde_json::from_slice::<OAuthErrorResponse>(&response_body).ok();
+        return Err(oauth_error
+            .as_ref()
+            .and_then(|error| error.error_description.as_deref())
+            .filter(|message| !message.is_empty())
+            .map(str::to_owned)
+            .or_else(|| oauth_error.map(|error| error.error))
+            .unwrap_or_else(|| "无法创建授权请求".to_string()));
     }
-    let request_id = envelope
-        .data
-        .and_then(|value| {
-            value
-                .get("request_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .ok_or_else(|| "授权响应缺少 request_id".to_string())?;
-    let authorize_url = format!(
-        "{origin}/oauth/authorize?request_id={}",
-        url::form_urlencoded::byte_serialize(request_id.as_bytes()).collect::<String>()
-    );
+    let authorization: AuthorizationRequestResponse = serde_json::from_slice(&response_body)
+        .map_err(|_| "usa0.top 返回了无效授权响应".to_string())?;
+    if authorization.request_id.trim().is_empty() {
+        return Err("授权响应缺少 request_id".to_string());
+    }
+    let authorize_url = match authorization.authorization_uri {
+        Some(uri) if uri.starts_with('/') => format!("{origin}{uri}"),
+        Some(uri) if uri.starts_with("https://") || uri.starts_with("http://") => uri,
+        _ => format!(
+            "{origin}/oauth/authorize?request_id={}",
+            url::form_urlencoded::byte_serialize(authorization.request_id.as_bytes())
+                .collect::<String>()
+        ),
+    };
     app.opener()
         .open_url(authorize_url, None::<&str>)
         .map_err(|error| error.to_string())?;
@@ -131,7 +140,7 @@ pub async fn desktop_oauth_login(
         .post(format!("{origin}/api/v1/app-auth/token"))
         .form(&[
             ("grant_type", "authorization_code"),
-            ("client_id", "zerobox-desktop"),
+            ("client_id", "zeroagent-desktop"),
             ("code", code.as_str()),
             ("redirect_uri", redirect_uri.as_str()),
             ("code_verifier", verifier.as_str()),
@@ -174,7 +183,7 @@ pub async fn desktop_oauth_login(
         expires_in: tokens.expires_in,
         scope: tokens.scope,
         auth_kind: "oauth",
-        oauth_client_id: "zerobox-desktop",
+        oauth_client_id: "zeroagent-desktop",
         user,
     })
 }
@@ -201,7 +210,7 @@ async fn receive_callback(listener: TcpListener) -> Result<HashMap<String, Strin
         .query_pairs()
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
-    let body = "<!doctype html><meta charset=utf-8><title>ZeroBox</title><p>认证已完成，可以关闭此页面并返回 ZeroBox。</p>";
+    let body = "<!doctype html><meta charset=utf-8><title>ZeroAgent</title><p>认证已完成，可以关闭此页面并返回 ZeroAgent。</p>";
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
     stream
         .write_all(response.as_bytes())

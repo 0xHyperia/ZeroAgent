@@ -35,7 +35,7 @@ mod platform {
         JNIEnv, JavaVM,
     };
 
-    const KEY_ALIAS: &str = "com.tkxs.zerobox.mobile_gateway_state.v1";
+    const KEY_ALIAS: &str = "top.usa0.zeroagent.mobile_gateway_state.v1";
     const ENCRYPT_MODE: i32 = 1;
     const DECRYPT_MODE: i32 = 2;
     const PURPOSE_ENCRYPT_DECRYPT: i32 = 3;

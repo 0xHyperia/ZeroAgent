@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ZeroAgent",
   "version": "../package.json",
-  "identifier": "com.tkxs.zerobox",
+  "identifier": "top.usa0.zeroagent",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:2120",
@@ -46,7 +46,7 @@
 	"deep-link": {
 	  "mobile": [
 		{
-		  "scheme": ["zerobox"],
+		  "scheme": ["top.usa0.zeroagent"],
 		  "host": "oauth",
 		  "pathPrefix": ["/callback"]
 		}

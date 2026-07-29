@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const CREDENTIAL_TARGET: &str = "ZeroBox/device-credential";
+const CREDENTIAL_TARGET: &str = "ZeroAgent/device-credential";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +107,7 @@ fn platform_save(value: &str) -> Result<(), String> {
         CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
     };
     let mut target = wide(CREDENTIAL_TARGET);
-    let mut username = wide("ZeroBox");
+    let mut username = wide("ZeroAgent");
     let mut blob = value.as_bytes().to_vec();
     let credential = CREDENTIALW {
         Type: CRED_TYPE_GENERIC,
@@ -204,7 +204,7 @@ fn platform_save(value: &str) -> Result<(), String> {
             "add-generic-password",
             "-U",
             "-a",
-            "ZeroBox",
+            "ZeroAgent",
             "-s",
             CREDENTIAL_TARGET,
             "-w",
@@ -225,7 +225,7 @@ fn platform_load() -> Result<Option<String>, String> {
         .args([
             "find-generic-password",
             "-a",
-            "ZeroBox",
+            "ZeroAgent",
             "-s",
             CREDENTIAL_TARGET,
             "-w",
@@ -246,7 +246,7 @@ fn platform_delete() -> Result<(), String> {
         .args([
             "delete-generic-password",
             "-a",
-            "ZeroBox",
+            "ZeroAgent",
             "-s",
             CREDENTIAL_TARGET,
         ])
@@ -264,7 +264,7 @@ fn platform_save(value: &str) -> Result<(), String> {
             "service",
             CREDENTIAL_TARGET,
             "account",
-            "ZeroBox",
+            "ZeroAgent",
         ])
         .stdin(std::process::Stdio::piped())
         .spawn()
@@ -285,7 +285,13 @@ fn platform_save(value: &str) -> Result<(), String> {
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 fn platform_load() -> Result<Option<String>, String> {
     let output = std::process::Command::new("secret-tool")
-        .args(["lookup", "service", CREDENTIAL_TARGET, "account", "ZeroBox"])
+        .args([
+            "lookup",
+            "service",
+            CREDENTIAL_TARGET,
+            "account",
+            "ZeroAgent",
+        ])
         .output()
         .map_err(|error| format!("launch Secret Service: {error}"))?;
     if !output.status.success() {
@@ -298,7 +304,13 @@ fn platform_load() -> Result<Option<String>, String> {
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 fn platform_delete() -> Result<(), String> {
     let _ = std::process::Command::new("secret-tool")
-        .args(["clear", "service", CREDENTIAL_TARGET, "account", "ZeroBox"])
+        .args([
+            "clear",
+            "service",
+            CREDENTIAL_TARGET,
+            "account",
+            "ZeroAgent",
+        ])
         .status();
     Ok(())
 }

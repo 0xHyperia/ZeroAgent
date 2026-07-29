@@ -28,7 +28,7 @@ function registrationURL(settings: AppSettings) {
 }
 
 function installationID() {
-  const key = "zerobox.installation-id";
+  const key = "zeroagent.installation-id";
   const current = localStorage.getItem(key)?.trim();
   if (current) return current;
   const created = crypto.randomUUID();

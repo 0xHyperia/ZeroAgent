@@ -1,7 +1,7 @@
 export function remoteProjectStorageKey(deviceId: string) {
-  return `zerobox.remote-project:${deviceId}`;
+  return `zeroagent.remote-project:${deviceId}`;
 }
 
 export function remoteConversationStorageKey(deviceId: string, projectId: string | null) {
-  return `zerobox.remote-conversation:${deviceId}:${projectId || "plain-chat"}`;
+  return `zeroagent.remote-conversation:${deviceId}:${projectId || "plain-chat"}`;
 }

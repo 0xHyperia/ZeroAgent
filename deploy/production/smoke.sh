@@ -9,7 +9,7 @@ if [[ $mode == internal ]]; then
 fi
 [[ $mode == public ]] || die "usage: smoke.sh internal|public"
 require curl; set -a; source "$ENV_FILE"; set +a
-origin=${PUBLIC_ORIGIN:-https://agent.usa0.top}
+origin=${LIVEAGENT_GATEWAY_PUBLIC_ORIGIN:-https://agent.usa0.top}
 curl --fail --silent --show-error "$origin/healthz" >/dev/null
 curl --fail --silent --show-error "$origin/readyz" >/dev/null
 curl --fail --silent --show-error "$origin/" >/dev/null

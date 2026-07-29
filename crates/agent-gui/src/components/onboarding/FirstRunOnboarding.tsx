@@ -23,7 +23,7 @@ type FirstRunOnboardingProps = {
 };
 
 function storageKey(userId: number) {
-  return `zerobox.onboarding.${ONBOARDING_VERSION}.${userId}`;
+  return `zeroagent.onboarding.${ONBOARDING_VERSION}.${userId}`;
 }
 
 function hasCompleted(userId: number) {
@@ -43,7 +43,7 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
   const [step, setStep] = useState<"welcome" | "key" | "ready">("welcome");
   const [groups, setGroups] = useState<RelayGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
-  const [keyName, setKeyName] = useState("ZeroBox");
+  const [keyName, setKeyName] = useState("ZeroAgent");
   const [loading, setLoading] = useState(open);
   const [creating, setCreating] = useState(false);
   const [needsKey, setNeedsKey] = useState(false);
@@ -148,7 +148,7 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <h1 id="onboarding-title" className="text-2xl font-semibold">
-                  开始使用 ZeroBox
+                  开始使用 ZeroAgent
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   完成一次基础设置后，就可以在网页端、桌面端和已连接设备之间继续工作。
@@ -253,7 +253,7 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
               {creating ? "创建中" : "创建并同步"}
             </Button>
           ) : (
-            <Button onClick={complete}>进入 ZeroBox</Button>
+            <Button onClick={complete}>进入 ZeroAgent</Button>
           )}
         </footer>
       </section>

@@ -24,6 +24,10 @@ const cloudChatSource = readFileSync(
   new URL("../src/pages/CloudChatPage.tsx", import.meta.url),
   "utf8",
 );
+const relayClientSource = readFileSync(
+  new URL("../src/lib/relay/client.ts", import.meta.url),
+  "utf8",
+);
 
 test("account login primary action submits its form", () => {
   assert.match(loginSource, /<Button\s+type="submit"\s+className="mt-7 w-full"/);
@@ -31,7 +35,9 @@ test("account login primary action submits its form", () => {
 
 test("OAuth login is limited to the password-login state on web and desktop", () => {
   assert.match(loginSource, /!twoFactorRequired && mode === "login" && \(/);
-  assert.match(loginSource, /await startRelayOAuth\(\)/);
+  assert.match(loginSource, /const completedInPlace = await startRelayOAuth\(\)/);
+  assert.match(loginSource, /if \(completedInPlace\) window\.location\.reload\(\)/);
+  assert.match(relayClientSource, /window\.location\.assign\(response\.authorize_url\);\s+return false;/);
   assert.match(loginSource, /认证登录/);
   assert.match(desktopRelayGateSource, /mode === "login" && \(/);
   assert.match(desktopRelayGateSource, /await loginRelayOAuth\(\)/);
@@ -60,4 +66,13 @@ test("expired web sessions clear the complete cached application state", () => {
     /addEventListener\(RELAY_SESSION_EXPIRED_EVENT, handleLogout\)/,
   );
   assert.match(cloudChatSource, /response\.status === 401\) notifyRelaySessionExpired\(\)/);
+});
+
+test("session restoration renders a neutral loading surface before the login page", () => {
+  assert.match(gatewayAppSource, /if \(authInitializing\) \{/);
+  assert.match(gatewayAppSource, /aria-label="正在恢复登录状态"/);
+  assert.match(
+    gatewayAppSource,
+    /if \(authInitializing\) \{[\s\S]*?if \(!accountUser\) \{/,
+  );
 });

@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	SessionCookieName       = "zerobox_session"
+	SessionCookieName       = "zeroagent_session"
 	RuntimeKindWebChat      = "web_chat"
 	RuntimeKindDeviceAgent  = "device_agent"
 	CloudWorkspaceID        = "cloud"

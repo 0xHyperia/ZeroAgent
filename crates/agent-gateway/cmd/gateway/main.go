@@ -31,7 +31,7 @@ func main() {
 		slog.Warn("-grpc-addr is deprecated and ignored: the v1 gRPC listener was removed; desktop clients connect via /ws/v2/agent on the HTTP port")
 	}
 	sm := session.NewManager()
-	usaClient, err := account.NewUSAClient(cfg.USAZeroOrigin, cfg.RequestTimeout)
+	usaClient, err := account.NewUSAClient(cfg.USAZeroOrigin, cfg.USAZeroAuthorizationOrigin, cfg.RequestTimeout, cfg.OAuthWebClientSecret)
 	if err != nil {
 		fatal("invalid USA-Zero configuration", "err", err)
 	}

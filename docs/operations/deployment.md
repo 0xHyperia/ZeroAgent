@@ -25,6 +25,9 @@
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `USA_ZERO_ORIGIN` | 是 | USA-零账户与模型服务地址，默认 `https://usa0.top`。 |
+| `USA_ZERO_AUTHORIZATION_ORIGIN` | 否 | USA-零浏览器授权页地址；默认与 `USA_ZERO_ORIGIN` 相同。 |
+| `ZEROAGENT_WEB_OAUTH_CLIENT_SECRET` | 是 | 与 USA-零配置一致的 ZeroAgent Web OAuth 客户端密钥。 |
+| `LIVEAGENT_GATEWAY_PUBLIC_ORIGIN` | 是 | Gateway 的公开 HTTPS Origin，例如 `https://agent.usa0.top`，用于生成精确 OAuth 回调。 |
 | `DATABASE_URL` | 是（生产） | PostgreSQL 连接地址，保存设备、工作区快照、对话路由与网页对话历史。 |
 | `REDIS_URL` | 是（生产） | Redis 连接地址，保存 Web 会话、step-up proof 消费状态与设备在线 TTL。 |
 | `LIVEAGENT_GATEWAY_COOKIE_SECURE` | 否 | 账号会话 Cookie 的 `Secure` 标志；生产默认 `true`。仅本机 HTTP 开发时设为 `false`。 |
@@ -52,7 +55,7 @@ Railway 自部署路径：
 1. 在 Railway 新建项目，选择 GitHub Repository。
 2. 选择 `Stack-Cairn/LiveAgent` 或用户自己的 fork。
 3. 分支选择包含根目录 `Dockerfile` 和 `railway.json` 的分支。
-4. 在 service variables 中设置 `USA_ZERO_ORIGIN`、`DATABASE_URL` 和 `REDIS_URL`。
+4. 在 service variables 中设置 `USA_ZERO_ORIGIN`、`USA_ZERO_AUTHORIZATION_ORIGIN`、`DATABASE_URL` 和 `REDIS_URL`。
 5. 部署成功后生成 Public Domain，并访问 `/healthz` 验证健康检查。
 
 推荐生产部署模型：
@@ -70,6 +73,7 @@ Gateway 运行时变量由用户在自己的平台配置：
 | 变量 | 说明 |
 |---|---|
 | `USA_ZERO_ORIGIN` | USA-零账户与模型服务地址。 |
+| `USA_ZERO_AUTHORIZATION_ORIGIN` | USA-零浏览器授权页地址；同域部署时与 `USA_ZERO_ORIGIN` 相同。 |
 | `DATABASE_URL` | PostgreSQL 连接地址。 |
 | `REDIS_URL` | Redis 连接地址。 |
 | `LIVEAGENT_GATEWAY_COOKIE_SECURE` | 生产保持 `true`；仅本机 HTTP 调试设为 `false`。 |

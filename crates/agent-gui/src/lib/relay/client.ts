@@ -1,7 +1,7 @@
 import { prepareProxyRequest } from "../providers/proxy";
 import { invoke } from "@tauri-apps/api/core";
 
-const RELAY_ORIGIN_KEY = "zerobox.usa-zero-origin";
+const RELAY_ORIGIN_KEY = "zeroagent.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
 
 function normalizeRelayOrigin(value: string) {
@@ -34,13 +34,13 @@ function initialRelayOrigin() {
 
 export let RELAY_ORIGIN = initialRelayOrigin();
 export let RELAY_API_BASE_URL = `${RELAY_ORIGIN}/api/v1`;
-export const RELAY_SESSION_CHANGED_EVENT = "liveagent:relay-session-changed";
+export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
 
-const ACCESS_TOKEN_KEY = "liveagent.relay.access-token";
-const REFRESH_TOKEN_KEY = "liveagent.relay.refresh-token";
-const EXPIRES_AT_KEY = "liveagent.relay.expires-at";
-const AUTH_KIND_KEY = "liveagent.relay.auth-kind";
-const OAUTH_CLIENT_ID_KEY = "liveagent.relay.oauth-client-id";
+const ACCESS_TOKEN_KEY = "zeroagent.relay.access-token";
+const REFRESH_TOKEN_KEY = "zeroagent.relay.refresh-token";
+const EXPIRES_AT_KEY = "zeroagent.relay.expires-at";
+const AUTH_KIND_KEY = "zeroagent.relay.auth-kind";
+const OAUTH_CLIENT_ID_KEY = "zeroagent.relay.oauth-client-id";
 let relaySessionExpiryNotified = false;
 
 type RelayEnvelope<T> = {
@@ -328,7 +328,7 @@ async function refreshRelaySession() {
   }
   try {
     if (isOAuthSession()) {
-      const clientId = localStorage.getItem(OAUTH_CLIENT_ID_KEY) || "zerobox-desktop";
+      const clientId = localStorage.getItem(OAUTH_CLIENT_ID_KEY) || "zeroagent-desktop";
       const response = await fetch(`${RELAY_API_BASE_URL}/app-auth/token`, {
         method: "POST",
         headers: {

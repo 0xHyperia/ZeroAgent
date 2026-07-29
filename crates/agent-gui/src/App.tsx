@@ -70,7 +70,7 @@ function asErrorMessage(error: unknown, fallback: string) {
 }
 
 const GATEWAY_SETTINGS_SYNC_EVENT = "gateway:settings-sync";
-const LOCAL_ONLY_DEVICE_ID = "zerobox-local";
+const LOCAL_ONLY_DEVICE_ID = "zeroagent-local";
 
 type RemoteSelectionLease = {
   lease: string;

@@ -627,8 +627,8 @@ func scanDevice(row rowScanner) (*Device, error) {
 	return &device, nil
 }
 
-func sessionKey(id string) string                 { return "zerobox:web-session:" + id }
-func presenceKey(id string) string                { return "zerobox:device-presence:" + id }
-func leaseKey(id string) string                   { return "zerobox:selection-lease:" + id }
-func handoffKey(codeHash string) string           { return "zerobox:desktop-handoff:" + codeHash }
-func oauthTransactionKey(stateHash string) string { return "zerobox:oauth-transaction:" + stateHash }
+func sessionKey(id string) string                 { return "zeroagent:web-session:" + id }
+func presenceKey(id string) string                { return "zeroagent:device-presence:" + id }
+func leaseKey(id string) string                   { return "zeroagent:selection-lease:" + id }
+func handoffKey(codeHash string) string           { return "zeroagent:desktop-handoff:" + codeHash }
+func oauthTransactionKey(stateHash string) string { return "zeroagent:oauth-transaction:" + stateHash }

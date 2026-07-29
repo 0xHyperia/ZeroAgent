@@ -280,6 +280,7 @@ export default function GatewayApp() {
     accountUser,
     environments,
     selection,
+    authInitializing,
     authSubmitting,
     authError,
     twoFactorRequired,
@@ -4551,6 +4552,25 @@ export default function GatewayApp() {
       <LocaleContext.Provider value={localeContextValue}>
         <SharedHistoryPage token={historyShareToken} />
       </LocaleContext.Provider>
+    );
+  }
+
+  if (authInitializing) {
+    return (
+      <main
+        className="flex min-h-screen items-center justify-center bg-background"
+        role="status"
+        aria-label="正在恢复登录状态"
+      >
+        <img
+          src="/zeroagent-logo.png"
+          alt=""
+          width={48}
+          height={48}
+          className="h-12 w-12 animate-pulse"
+          draggable={false}
+        />
+      </main>
     );
   }
 

@@ -28,7 +28,7 @@ func TestAccountBrowserIsBoundToOwnedAgent(t *testing.T) {
 	dialer := websocket.Dialer{Subprotocols: []string{pbws.Subprotocol}}
 	conn, _, err := dialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), http.Header{
 		"Origin": []string{server.URL},
-		"Cookie": []string{"zerobox_session=" + fixture.ControllerSession.ID},
+		"Cookie": []string{"zeroagent_session=" + fixture.ControllerSession.ID},
 	})
 	if err != nil {
 		t.Fatal(err)

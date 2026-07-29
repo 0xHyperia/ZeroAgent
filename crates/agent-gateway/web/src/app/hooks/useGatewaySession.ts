@@ -20,7 +20,7 @@ import {
 import { createUuid } from "@/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
-const EXECUTION_SELECTION_HISTORY_KEY = "zeroboxExecutionSelection";
+const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";
 
 function readHistorySelection(): ExecutionSelection | null {
   const value = window.history.state?.[EXECUTION_SELECTION_HISTORY_KEY] as
@@ -53,7 +53,8 @@ export function useGatewaySession(historyShareToken: string | null) {
   const [environments, setEnvironments] = useState<ExecutionEnvironment[]>([]);
   const [selection, setSelection] = useState<ExecutionSelection | null>(null);
   const [token, setToken] = useState("");
-  const [authSubmitting, setAuthSubmitting] = useState(!historyShareToken);
+  const [authInitializing, setAuthInitializing] = useState(!historyShareToken);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [twoFactorToken, setTwoFactorToken] = useState("");
 
@@ -141,7 +142,7 @@ export function useGatewaySession(historyShareToken: string | null) {
 
   useEffect(() => {
     if (historyShareToken) {
-      setAuthSubmitting(false);
+      setAuthInitializing(false);
       return;
     }
     let cancelled = false;
@@ -155,7 +156,7 @@ export function useGatewaySession(historyShareToken: string | null) {
         if (!cancelled) setAccountUser(null);
       })
       .finally(() => {
-        if (!cancelled) setAuthSubmitting(false);
+        if (!cancelled) setAuthInitializing(false);
       });
     return () => {
       cancelled = true;
@@ -267,6 +268,7 @@ export function useGatewaySession(historyShareToken: string | null) {
     accountUser,
     environments,
     selection,
+    authInitializing,
     authSubmitting,
     authError,
     twoFactorRequired: Boolean(twoFactorToken),

@@ -53,11 +53,21 @@ func newTestUSAZero(t *testing.T) *httptest.Server {
 		case "/api/v1/user/step-up/consume":
 			writeEnvelope(`{"valid":true,"user_id":1}`)
 		case "/api/v1/keys":
+			if r.Header.Get("Authorization") == "Bearer oauth-access" {
+				http.Error(w, "app tokens cannot use user key routes", http.StatusUnauthorized)
+				return
+			}
 			if r.Header.Get("Authorization") == "Bearer access-2" {
 				writeEnvelope(`{"items":[{"id":42,"key":"web-key-2","name":"User Two","status":"active"}],"total":1,"page":1,"page_size":1000,"pages":1}`)
 			} else {
 				writeEnvelope(`{"items":[{"id":41,"key":"web-key-1","name":"ZeroAgent Web","status":"active"}],"total":1,"page":1,"page_size":1000,"pages":1}`)
 			}
+		case "/api/v1/app/keys":
+			if r.Header.Get("Authorization") != "Bearer oauth-access" {
+				http.Error(w, `{"success":false,"error":{"code":"invalid_token","message":"invalid token"}}`, http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, `{"success":true,"message":"success","data":{"items":[{"id":41,"key":"web-key-1","name":"ZeroAgent Web","status":"active"}],"total":1}}`)
 		case "/v1/models":
 			if r.Header.Get("Authorization") != "Bearer web-key-1" {
 				http.Error(w, `{"error":"invalid key"}`, http.StatusUnauthorized)
@@ -170,6 +180,27 @@ func TestOAuthTransactionIsAtomicAndExpires(t *testing.T) {
 	}
 }
 
+func TestOAuthStartPreservesUSAZeroErrorDetails(t *testing.T) {
+	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"invalid_client","error_description":"client authentication failed"}`)
+	}))
+	defer usa.Close()
+
+	service := NewService(NewMemoryStore(), NewUSAClientWithHTTPClient(usa.URL, usa.Client(), "zeroagent-test-web-client-secret-32-bytes"), time.Hour, time.Hour)
+	mux := http.NewServeMux()
+	NewHTTPHandler(service, false, "http://127.0.0.1:50052").Register(mux)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "client authentication failed") || !strings.Contains(recorder.Body.String(), "invalid_client") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.T) {
 	var issuedState string
 	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,13 +210,15 @@ func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.
 			var payload map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&payload)
 			issuedState, _ = payload["state"].(string)
-			if payload["client_id"] != "zerobox-web" || payload["redirect_uri"] != "https://gateway.example.com/api/auth/oauth/callback" {
+			if payload["client_id"] != "zeroagent-web" || payload["redirect_uri"] != "https://gateway.example.com/api/auth/oauth/callback" {
 				t.Fatalf("unexpected authorization payload: %#v", payload)
 			}
-			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":{"request_id":"request-1"}}`)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"request_id":"request-1","expires_in":300,"authorization_uri":"/oauth/authorize?request_id=request-1"}`)
 		case "/api/v1/app-auth/token":
 			_ = r.ParseForm()
-			if r.Form.Get("code") != "code-1" || r.Form.Get("client_id") != "zerobox-web" || r.Form.Get("code_verifier") == "" {
+			clientID, clientSecret, ok := r.BasicAuth()
+			if !ok || clientID != "zeroagent-web" || clientSecret != "zeroagent-test-web-client-secret-32-bytes" || r.Form.Get("code") != "code-1" || r.Form.Get("client_id") != "" || r.Form.Get("code_verifier") == "" {
 				t.Fatalf("unexpected token form: %v", r.Form)
 			}
 			_, _ = io.WriteString(w, `{"access_token":"app-access","refresh_token":"app-refresh","token_type":"Bearer","expires_in":600,"scope":"profile:read"}`)
@@ -197,7 +230,7 @@ func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.
 	}))
 	defer usa.Close()
 	store := NewMemoryStore()
-	service := NewService(store, NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
+	service := NewService(store, NewUSAClientWithHTTPClient(usa.URL, usa.Client(), "zeroagent-test-web-client-secret-32-bytes"), time.Hour, time.Hour)
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, true, "https://gateway.example.com").Register(mux)
 
@@ -220,7 +253,7 @@ func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.
 		t.Fatalf("cookies=%#v", cookies)
 	}
 	session, err := store.GetSession(context.Background(), cookies[0].Value)
-	if err != nil || !session.IsOAuth() || session.OAuthClientID != "zerobox-web" || session.UserID != 9 {
+	if err != nil || !session.IsOAuth() || session.OAuthClientID != "zeroagent-web" || session.UserID != 9 {
 		t.Fatalf("oauth session=%#v err=%v", session, err)
 	}
 
@@ -479,27 +512,39 @@ func TestWebProviderModelsRequireAnOwnedActiveKey(t *testing.T) {
 	if err := store.PutSession(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
+	oauthSession := &Session{
+		ID: "provider-models-oauth", UserID: 1, User: json.RawMessage(`{"id":1}`),
+		AccessToken: "oauth-access", AccessExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour),
+		AuthKind: AuthKindOAuth,
+	}
+	if err := store.PutSession(context.Background(), oauthSession); err != nil {
+		t.Fatal(err)
+	}
 
-	request := func(keyID string, withSession bool) *httptest.ResponseRecorder {
+	request := func(keyID, sessionID string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/api/web-chat/provider-keys/"+keyID+"/models", nil)
 		req.SetPathValue("id", keyID)
-		if withSession {
-			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID})
+		if sessionID != "" {
+			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: sessionID})
 		}
 		result := httptest.NewRecorder()
 		handler.ServeHTTP(result, req)
 		return result
 	}
 
-	owned := request("41", true)
+	owned := request("41", session.ID)
 	if owned.Code != http.StatusOK || !strings.Contains(owned.Body.String(), `"gpt-5.2"`) {
 		t.Fatalf("owned key models status=%d body=%s", owned.Code, owned.Body.String())
 	}
-	foreign := request("42", true)
+	oauthOwned := request("41", oauthSession.ID)
+	if oauthOwned.Code != http.StatusOK || !strings.Contains(oauthOwned.Body.String(), `"gpt-5.2"`) {
+		t.Fatalf("OAuth-owned key models status=%d body=%s", oauthOwned.Code, oauthOwned.Body.String())
+	}
+	foreign := request("42", session.ID)
 	if foreign.Code != http.StatusNotFound {
 		t.Fatalf("foreign key models status=%d body=%s", foreign.Code, foreign.Body.String())
 	}
-	unauthenticated := request("41", false)
+	unauthenticated := request("41", "")
 	if unauthenticated.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated models status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
 	}

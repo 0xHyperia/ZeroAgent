@@ -6,7 +6,7 @@ import { createTsModuleLoader } from "../../../agent-gui/test/helpers/load-ts-mo
 test("multi-group key creation is sequential and preserves group names", async () => {
   const originalFetch = globalThis.fetch;
   const originalLocalStorage = globalThis.localStorage;
-  const values = new Map([["zerobox.relay.access-token", "relay-token"]]);
+  const values = new Map([["zeroagent.relay.access-token", "relay-token"]]);
   let activeRequests = 0;
   let maximumActiveRequests = 0;
   const requests = [];
@@ -84,7 +84,7 @@ test("multi-group key creation is sequential and preserves group names", async (
 test("account APIs use the Gateway relay proxy with authenticated payloads", async () => {
   const originalFetch = globalThis.fetch;
   const originalLocalStorage = globalThis.localStorage;
-  const values = new Map([["zerobox.relay.access-token", "relay-token"]]);
+  const values = new Map([["zeroagent.relay.access-token", "relay-token"]]);
   const requests = [];
 
   globalThis.localStorage = {

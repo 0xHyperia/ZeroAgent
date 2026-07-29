@@ -6,7 +6,7 @@ const loader = createTsModuleLoader();
 const state = loader.loadModule("src/lib/relay/remoteDeviceState.ts");
 
 test("remote device project state is isolated by device", () => {
-  assert.equal(state.remoteProjectStorageKey("device-a"), "zerobox.remote-project:device-a");
+  assert.equal(state.remoteProjectStorageKey("device-a"), "zeroagent.remote-project:device-a");
   assert.notEqual(
     state.remoteProjectStorageKey("device-a"),
     state.remoteProjectStorageKey("device-b"),
@@ -19,7 +19,7 @@ test("remote conversation state is isolated by device and project", () => {
   const projectA = state.remoteConversationStorageKey("device-a", "project-a");
   const projectB = state.remoteConversationStorageKey("device-a", "project-b");
 
-  assert.equal(plainA, "zerobox.remote-conversation:device-a:plain-chat");
+  assert.equal(plainA, "zeroagent.remote-conversation:device-a:plain-chat");
   assert.notEqual(plainA, plainB);
   assert.notEqual(plainA, projectA);
   assert.notEqual(projectA, projectB);
