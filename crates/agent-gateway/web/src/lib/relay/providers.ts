@@ -15,8 +15,9 @@ export function relayProviderTypeForPlatform(platform: string): ProviderId | nul
     case "anthropic":
       return "claude_code";
     case "openai":
-    case "grok":
       return "codex";
+    case "grok":
+      return "xai";
     case "gemini":
     case "antigravity":
       return "gemini";
@@ -108,7 +109,7 @@ export async function buildRelayProviders(
           usageQuery: existing?.usageQuery ?? getDefaultUsageQueryConfig(),
           models,
           activeModels: models.map((model) => model.id),
-          requestFormat: type === "codex" ? "openai-responses" : undefined,
+          requestFormat: type === "codex" || type === "xai" ? "openai-responses" : undefined,
           reasoning: existing?.reasoning ?? "high",
           promptCachingEnabled: type === "claude_code",
           nativeWebSearchEnabled: true,

@@ -20,6 +20,7 @@ import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import { useLocale } from "@/i18n";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
 import type { PendingUploadedFile } from "@/lib/chat/uploadedFiles";
 import type {
@@ -27,7 +28,6 @@ import type {
   ExecutionSelection,
   ExecutionWorkspace,
 } from "@/lib/executionTargets";
-import type { ModelOption } from "@/lib/providers/llm";
 import { toModelValue } from "@/lib/providers/llm";
 import {
   getRelayDashboardStats,
@@ -178,6 +178,8 @@ export function CloudChatPage({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [webSettingsLoaded, setWebSettingsLoaded] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 821px)").matches,
@@ -199,6 +201,7 @@ export function CloudChatPage({
   const initialSettingsRef = useRef(settings);
   const setSettingsRef = useRef(setSettings);
   const restoredConversationIdRef = useRef(conversationId);
+  const { t } = useLocale();
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -254,6 +257,7 @@ export function CloudChatPage({
           ...current,
           reasoning: response.settings.reasoning_effort,
         }));
+        setWebSettingsLoaded(true);
       }),
     ])
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
@@ -278,6 +282,9 @@ export function CloudChatPage({
       })
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -423,7 +430,13 @@ export function CloudChatPage({
   async function send() {
     const draft = composerRef.current?.getDraft();
     const text = draft ? buildTextFromComposerDraft(draft).trim() : "";
-    if (streaming || (!text && attachments.length === 0)) return;
+    if (
+      streaming ||
+      modelsLoading ||
+      modelOptions.length === 0 ||
+      (!text && attachments.length === 0)
+    )
+      return;
     setError("");
     const id = conversationId || (await createConversation());
     if (!id) return;
@@ -579,26 +592,41 @@ export function CloudChatPage({
       })),
     [attachments],
   );
-  const modelOption = useMemo<ModelOption>(
-    () => ({
-      value: toModelValue("web-chat", model),
-      label: model,
-      providerId: "web-chat",
-      providerName: "USA-零",
-      providerType: "codex",
-      model,
-    }),
-    [model],
+  const modelOptions = useMemo(
+    () => buildModelOptions(settings, { floatSelectedFirst: false }),
+    [settings],
   );
-  const modelOptions = useMemo(() => {
-    const configured = buildModelOptions(settings, { floatSelectedFirst: false });
-    return configured.some((option) => option.model === model)
-      ? configured
-      : [modelOption, ...configured];
-  }, [model, modelOption, settings]);
   const selectedModelValue = providerKeyId
     ? toModelValue(relayProviderId(providerKeyId), model)
-    : (modelOptions.find((option) => option.model === model)?.value ?? modelOption.value);
+    : modelOptions.find((option) => option.model === model)?.value;
+  const selectedModelOption = modelOptions.find((option) => option.value === selectedModelValue);
+
+  useEffect(() => {
+    if (modelsLoading || !webSettingsLoaded || selectedModelOption || modelOptions.length === 0) {
+      return;
+    }
+    const preferred = settings.selectedModel
+      ? modelOptions.find(
+          (option) =>
+            option.providerId === settings.selectedModel?.customProviderId &&
+            option.model === settings.selectedModel.model,
+        )
+      : undefined;
+    const next = preferred ?? modelOptions[0];
+    const nextProviderKeyId = relayProviderKeyId(next.providerId);
+    setModel(next.model);
+    setProviderKeyId(nextProviderKeyId);
+    void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch((cause) =>
+      setError(String(cause)),
+    );
+  }, [
+    modelOptions,
+    modelsLoading,
+    reasoning,
+    selectedModelOption,
+    settings.selectedModel,
+    webSettingsLoaded,
+  ]);
   const userMenuLabel = user.username || user.email;
   const userAvatarLabel = userMenuLabel.slice(0, 1).toUpperCase();
 
@@ -691,20 +719,35 @@ export function CloudChatPage({
             >
               <ChatHeader
                 settings={settings}
-                hasModels
+                hasModels={modelOptions.length > 0}
                 currentModelLabel={model}
                 modelOptions={modelOptions}
                 selectedValue={selectedModelValue}
+                modelsLoading={modelsLoading}
+                emptyModelAction={{
+                  label: t("chat.createApiKey"),
+                  onSelect: () => {
+                    setSettingsSection("providers");
+                    setAccountSettingsOpen(true);
+                  },
+                }}
                 sidebarOpen={sidebarOpen}
                 onSelectModel={(next) => {
                   const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
                   setModel(next.model);
                   setProviderKeyId(nextProviderKeyId);
+                  setSettings((current) => ({
+                    ...current,
+                    selectedModel: next,
+                  }));
                   void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch((cause) =>
                     setError(String(cause)),
                   );
                 }}
-                onOpenSettings={() => setAccountSettingsOpen(true)}
+                onOpenSettings={(section) => {
+                  if (section) setSettingsSection(section);
+                  setAccountSettingsOpen(true);
+                }}
                 onToggleTheme={() =>
                   setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) }))
                 }
@@ -736,9 +779,12 @@ export function CloudChatPage({
                       toolStatus={streaming ? "Vibing..." : null}
                       isStreaming={streaming}
                       isLoading={historyLoading}
-                      hasModels
+                      hasModels={modelOptions.length > 0}
                       isAgentMode={false}
-                      onOpenSettings={() => setAccountSettingsOpen(true)}
+                      onOpenSettings={() => {
+                        setSettingsSection("providers");
+                        setAccountSettingsOpen(true);
+                      }}
                       onSuggestionSelect={(text) => {
                         composerRef.current?.setText(text);
                         composerRef.current?.focus();
@@ -750,7 +796,7 @@ export function CloudChatPage({
                   composerRef={composerRef}
                   isSending={streaming}
                   isUploadingFiles={false}
-                  isInputDisabled={historyLoading}
+                  isInputDisabled={historyLoading || modelsLoading || modelOptions.length === 0}
                   allowUploadsWithoutWorkspace
                   inputPlaceholder="发送消息"
                   workdir=""

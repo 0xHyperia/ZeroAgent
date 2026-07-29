@@ -7,7 +7,9 @@ import {
   ClaudeIcon,
   GeminiIcon,
   GrokIcon,
+  Key,
   Layers,
+  Loader2,
   MonitorSmartphone,
   Moon,
   OpenaiChatgptIcon,
@@ -27,6 +29,7 @@ import {
   sortModelOptionGroups,
 } from "../../lib/chat/chatPageHelpers";
 import { type ModelOption, parseModelValue } from "../../lib/providers/llm";
+import { resolveModelVendor } from "../../lib/providers/modelVendor";
 import {
   type AppSettings,
   getNextTheme,
@@ -47,6 +50,18 @@ function ProviderBrandIcon({ type, className }: { type: ProviderId; className?: 
   return <OpenaiChatgptIcon className={cn(cls, "fill-current dark:text-white")} />;
 }
 
+function ModelBrandIcon({ option, className }: { option: ModelOption; className?: string }) {
+  const vendor = resolveModelVendor({ id: option.model });
+  const cls = cn("h-4 w-4 shrink-0", className);
+  if (vendor === "Anthropic") return <ClaudeIcon className={cls} />;
+  if (vendor === "Google") return <GeminiIcon className={cls} />;
+  if (vendor === "xAI") return <GrokIcon className={cls} />;
+  if (vendor === "OpenAI") {
+    return <OpenaiChatgptIcon className={cn(cls, "fill-current dark:text-white")} />;
+  }
+  return <ProviderBrandIcon type={option.providerType} className={className} />;
+}
+
 function ThemeToggleIcon(props: { theme: Theme }) {
   if (props.theme === "light") return <Sun className="h-4 w-4" />;
   if (props.theme === "dark") return <Moon className="h-4 w-4" />;
@@ -59,6 +74,8 @@ export const ChatHeader = memo(function ChatHeader(props: {
   currentModelLabel: string;
   modelOptions: ModelOption[];
   selectedValue?: string;
+  modelsLoading?: boolean;
+  emptyModelAction?: { label: string; onSelect: () => void };
   sidebarOpen: boolean;
   onSelectModel: (selection: SelectedModel) => void;
   // 模型下拉内嵌的执行模式分段器：请求切到 Chat("text") 或 Agent("tools")。
@@ -76,6 +93,8 @@ export const ChatHeader = memo(function ChatHeader(props: {
     currentModelLabel,
     modelOptions,
     selectedValue,
+    modelsLoading = false,
+    emptyModelAction,
     sidebarOpen,
     onSelectModel,
     onSelectExecutionMode,
@@ -127,6 +146,11 @@ export const ChatHeader = memo(function ChatHeader(props: {
       : t("chat.sortProvidersByType");
 
   const selectedOption = modelOptions.find((option) => option.value === selectedValue);
+  const displayedModelLabel = modelsLoading
+    ? t("chat.loadingModels")
+    : selectedOption
+      ? currentModelLabel
+      : t("chat.selectModel");
   const selectedGroupId = selectedOption?.providerId;
   // 默认全部折叠，仅当前选中模型所在分组展开；搜索时强制展开所有匹配分组
   const isGroupExpanded = (id: string) =>
@@ -157,7 +181,7 @@ export const ChatHeader = memo(function ChatHeader(props: {
             render={
               <Button
                 variant="ghost"
-                disabled={!hasModels}
+                disabled={!hasModels && !modelsLoading && !emptyModelAction}
                 className={cn(
                   "model-selector-trigger h-8 max-w-[min(20rem,calc(100vw-8.5rem))] justify-between gap-1.5 overflow-hidden rounded-lg px-2.5 py-1 text-base font-semibold text-foreground transition-all duration-200 ease-out hover:bg-muted/60 dark:text-white",
                   isModelPickerOpen && "bg-muted/60",
@@ -167,9 +191,9 @@ export const ChatHeader = memo(function ChatHeader(props: {
           >
             <span className="model-selector-current-label flex min-w-0 items-center gap-1.5 text-left">
               {selectedOption ? (
-                <ProviderBrandIcon type={selectedOption.providerType} className="opacity-80" />
+                <ModelBrandIcon option={selectedOption} className="opacity-80" />
               ) : null}
-              <span className="min-w-0 truncate">{currentModelLabel}</span>
+              <span className="min-w-0 truncate">{displayedModelLabel}</span>
             </span>
             <ChevronDown
               className={cn(
@@ -193,59 +217,59 @@ export const ChatHeader = memo(function ChatHeader(props: {
               >
                 {onSelectExecutionMode
                   ? (() => {
-                  const isAgent = isAgentExecutionMode(settings.system.executionMode);
-                  const isDev = isAgentDevMode(settings.system.executionMode);
-                  return (
-                    <div className="px-2 pb-1 pt-2">
-                      <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1.5">
-                        <span className="text-[11px] font-medium text-muted-foreground">
-                          {t("settings.executionMode")}
-                        </span>
-                        <div
-                          role="radiogroup"
-                          aria-label={t("settings.executionMode")}
-                          className="flex rounded-md bg-background/80 p-0.5 shadow-sm ring-1 ring-border/40"
-                        >
-                          <label
-                            className={cn(
-                              "relative cursor-pointer rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
-                              isAgent
-                                ? "text-muted-foreground hover:text-foreground"
-                                : "bg-foreground/[0.07] text-foreground",
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name={executionModeRadioName}
-                              value="text"
-                              checked={!isAgent}
-                              onChange={() => onSelectExecutionMode("text")}
-                              className="sr-only"
-                            />
-                            Chat
-                          </label>
-                          <label
-                            className={cn(
-                              "relative cursor-pointer rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
-                              isAgent
-                                ? "bg-foreground/[0.07] text-foreground"
-                                : "text-muted-foreground hover:text-foreground",
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name={executionModeRadioName}
-                              value="tools"
-                              checked={isAgent}
-                              onChange={() => onSelectExecutionMode("tools")}
-                              className="sr-only"
-                            />
-                            {isDev ? "Agent·dev" : "Agent"}
-                          </label>
+                      const isAgent = isAgentExecutionMode(settings.system.executionMode);
+                      const isDev = isAgentDevMode(settings.system.executionMode);
+                      return (
+                        <div className="px-2 pb-1 pt-2">
+                          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1.5">
+                            <span className="text-[11px] font-medium text-muted-foreground">
+                              {t("settings.executionMode")}
+                            </span>
+                            <div
+                              role="radiogroup"
+                              aria-label={t("settings.executionMode")}
+                              className="flex rounded-md bg-background/80 p-0.5 shadow-sm ring-1 ring-border/40"
+                            >
+                              <label
+                                className={cn(
+                                  "relative cursor-pointer rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
+                                  isAgent
+                                    ? "text-muted-foreground hover:text-foreground"
+                                    : "bg-foreground/[0.07] text-foreground",
+                                )}
+                              >
+                                <input
+                                  type="radio"
+                                  name={executionModeRadioName}
+                                  value="text"
+                                  checked={!isAgent}
+                                  onChange={() => onSelectExecutionMode("text")}
+                                  className="sr-only"
+                                />
+                                Chat
+                              </label>
+                              <label
+                                className={cn(
+                                  "relative cursor-pointer rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
+                                  isAgent
+                                    ? "bg-foreground/[0.07] text-foreground"
+                                    : "text-muted-foreground hover:text-foreground",
+                                )}
+                              >
+                                <input
+                                  type="radio"
+                                  name={executionModeRadioName}
+                                  value="tools"
+                                  checked={isAgent}
+                                  onChange={() => onSelectExecutionMode("tools")}
+                                  className="sr-only"
+                                />
+                                {isDev ? "Agent·dev" : "Agent"}
+                              </label>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
+                      );
                     })()
                   : null}
                 <div className="px-2 py-1.5">
@@ -291,6 +315,45 @@ export const ChatHeader = memo(function ChatHeader(props: {
                           }))
                           .filter((group) => group.opts.length > 0)
                       : groups;
+
+                    if (modelsLoading) {
+                      return (
+                        <div className="flex items-center justify-center gap-2 px-3 py-8 text-xs text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>{t("chat.loadingModels")}</span>
+                        </div>
+                      );
+                    }
+
+                    if (modelOptions.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center px-4 py-7 text-center">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                            <Key className="h-4 w-4" />
+                          </div>
+                          <p className="mt-3 text-xs font-medium text-foreground">
+                            {t("chat.noModelsTitle")}
+                          </p>
+                          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                            {t("chat.noModelsDescription")}
+                          </p>
+                          {emptyModelAction ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="mt-4"
+                              onClick={() => {
+                                setIsModelPickerOpen(false);
+                                emptyModelAction.onSelect();
+                              }}
+                            >
+                              <Key className="h-3.5 w-3.5" />
+                              {emptyModelAction.label}
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    }
 
                     if (filteredGroups.length === 0) {
                       return (
@@ -351,8 +414,8 @@ export const ChatHeader = memo(function ChatHeader(props: {
                                     style={{ animationDelay: itemAnimationDelay }}
                                   >
                                     <span className="flex min-w-0 items-center gap-2">
-                                      <ProviderBrandIcon
-                                        type={option.providerType}
+                                      <ModelBrandIcon
+                                        option={option}
                                         className={cn("opacity-70", isSelected && "opacity-100")}
                                       />
                                       <span className="min-w-0 truncate">{option.model}</span>

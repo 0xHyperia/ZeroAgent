@@ -216,6 +216,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.collapseProvider": "收起该提供商的模型",
     "chat.searchModel": "搜索模型...",
     "chat.noModelFound": "未找到匹配的模型",
+    "chat.loadingModels": "正在加载模型",
+    "chat.noModelsTitle": "尚无可用模型",
+    "chat.noModelsDescription": "创建一个 API Key 并绑定可用分组后即可开始对话。",
+    "chat.createApiKey": "创建 API Key",
     "chat.sortProvidersByType": "按供应商类型分组",
     "chat.sortProvidersByName": "按供应商首字母排序",
     "chat.aborted": "已取消",
@@ -1231,7 +1235,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.noSystemTools": "暂无可用的系统工具",
     "settings.systemToolsTabBuiltin": "内置工具",
     "settings.systemToolsTabCustom": "自定义工具",
-    "settings.systemToolsBuiltinDesc": "ZeroAgent 在 Agent 模式下自动注册的内置工具，此处仅供查阅。",
+    "settings.systemToolsBuiltinDesc":
+      "ZeroAgent 在 Agent 模式下自动注册的内置工具，此处仅供查阅。",
     "settings.systemToolsCustomDesc":
       "可按需启用的自定义系统工具；启用后会在 Agent 模式下注册，供模型在对话中调用。",
     "settings.systemToolsViewDetail": "查看详情",
@@ -2352,6 +2357,11 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.collapseProvider": "Collapse provider models",
     "chat.searchModel": "Search models...",
     "chat.noModelFound": "No matching models found",
+    "chat.loadingModels": "Loading models",
+    "chat.noModelsTitle": "No models available",
+    "chat.noModelsDescription":
+      "Create an API key and bind it to an available group to start chatting.",
+    "chat.createApiKey": "Create API key",
     "chat.sortProvidersByType": "Group providers by type",
     "chat.sortProvidersByName": "Sort providers alphabetically",
     "chat.aborted": "Cancelled",

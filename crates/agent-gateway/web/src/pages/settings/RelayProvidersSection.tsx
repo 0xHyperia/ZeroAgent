@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  Copy,
-  Key,
-  Loader2,
-  Plus,
-  RefreshCw,
-} from "@/components/icons";
+import { CheckCircle2, Copy, Key, Loader2, Plus, RefreshCw } from "@/components/icons";
 import { GroupMultiSelect } from "@/components/relay/GroupMultiSelect";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
 import { ZeroAgentLogo } from "@/components/relay/ZeroAgentLogo";
@@ -41,6 +34,7 @@ function platformLabel(platform: string) {
   if (type === "claude_code") return "Claude";
   if (type === "codex") return "OpenAI / Codex";
   if (type === "gemini") return "Gemini";
+  if (type === "xai") return "Grok";
   return platform;
 }
 
