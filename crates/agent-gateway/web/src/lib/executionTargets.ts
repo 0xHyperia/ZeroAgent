@@ -95,23 +95,13 @@ export async function revokeExecutionDevice(deviceId: string) {
 export async function selectExecutionTarget(
   environment: ExecutionEnvironment,
   workspace: ExecutionWorkspace,
-  password: string,
 ): Promise<ExecutionSelection> {
   const target = [environment.runtime_kind, environment.device_id ?? "", workspace.id].join(":");
-  const stepUp = await accountRequest<{ proof: string }>(
-    "/api/execution-target/step-up",
-    {
-      method: "POST",
-      body: JSON.stringify({ password, target_fingerprint: target }),
-    },
-    false,
-  );
   return accountRequest<ExecutionSelection>(
     "/api/execution-target/select",
     {
       method: "POST",
       body: JSON.stringify({
-        proof: stepUp.proof,
         runtime_kind: environment.runtime_kind,
         device_id: environment.device_id ?? "",
         workspace_id: workspace.id,
@@ -134,6 +124,22 @@ export function encodeSelectionCredential(selection: ExecutionSelection) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `selection.${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
+}
+
+export async function validateExecutionSelection(selection: ExecutionSelection): Promise<boolean> {
+  if (selection.runtime_kind !== "device_agent" || !selection.selection_lease.trim()) return false;
+  try {
+    const response = await fetch("/api/status", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${encodeSelectionCredential(selection)}`,
+      },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function decodeSelectionCredential(value: string): {

@@ -154,19 +154,6 @@ func (c *USAClient) AppMe(ctx context.Context, accessToken string) (json.RawMess
 	return c.appRequest(ctx, http.MethodGet, "/api/v1/app/me", nil, accessToken)
 }
 
-func (c *USAClient) AppIssueStepUp(ctx context.Context, accessToken, target string) (json.RawMessage, error) {
-	return c.appRequest(ctx, http.MethodPost, "/api/v1/app/execution/step-up", map[string]any{
-		"purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
-	}, accessToken)
-}
-
-func (c *USAClient) AppConsumeStepUp(ctx context.Context, accessToken, proof, target string) error {
-	_, err := c.appRequest(ctx, http.MethodPost, "/api/v1/app/execution/step-up/consume", map[string]any{
-		"proof": proof, "purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
-	}, accessToken)
-	return err
-}
-
 func (c *USAClient) ProxyApp(ctx context.Context, method, apiPath, accessToken string, body []byte) (json.RawMessage, error) {
 	path := strings.TrimPrefix(strings.SplitN(apiPath, "?", 2)[0], "/")
 	appPath := ""
@@ -346,19 +333,6 @@ func (c *USAClient) Logout(ctx context.Context, refreshToken string) error {
 
 func (c *USAClient) Me(ctx context.Context, accessToken string) (json.RawMessage, error) {
 	return c.request(ctx, http.MethodGet, "/api/v1/auth/me", nil, accessToken)
-}
-
-func (c *USAClient) IssueStepUp(ctx context.Context, accessToken, password, target string) (json.RawMessage, error) {
-	return c.request(ctx, http.MethodPost, "/api/v1/user/step-up", map[string]any{
-		"password": password, "purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
-	}, accessToken)
-}
-
-func (c *USAClient) ConsumeStepUp(ctx context.Context, accessToken, proof, target string) error {
-	_, err := c.request(ctx, http.MethodPost, "/api/v1/user/step-up/consume", map[string]any{
-		"proof": proof, "purpose": StepUpPurposeTargetSwap, "target_fingerprint": target,
-	}, accessToken)
-	return err
 }
 
 func (c *USAClient) Proxy(ctx context.Context, method, apiPath, accessToken string, body []byte) (json.RawMessage, error) {

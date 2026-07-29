@@ -43,7 +43,6 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/me", h.withSession(h.me))
 	mux.HandleFunc("GET /api/environments", h.withSession(h.environments))
 	mux.HandleFunc("GET /api/conversation-routes", h.withSession(h.conversationRoutes))
-	mux.HandleFunc("POST /api/execution-target/step-up", h.withSession(h.issueStepUp))
 	mux.HandleFunc("POST /api/execution-target/select", h.withSession(h.selectTarget))
 	mux.HandleFunc("POST /api/devices/register", h.withSession(h.registerDevice))
 	mux.HandleFunc("PATCH /api/devices/{id}", h.withSession(h.renameDevice))
@@ -56,7 +55,6 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/desktop/devices/{id}/rotate-token", h.withDesktopSession(h.rotateDeviceToken))
 	mux.HandleFunc("GET /api/desktop/environments", h.withDesktopSession(h.desktopEnvironments))
 	mux.HandleFunc("GET /api/desktop/conversation-routes", h.withDesktopSession(h.conversationRoutes))
-	mux.HandleFunc("POST /api/desktop/execution-target/step-up", h.withDesktopSession(h.issueStepUp))
 	mux.HandleFunc("POST /api/desktop/execution-target/select", h.withDesktopSession(h.selectTarget))
 	mux.HandleFunc("POST /api/desktop/handoff", h.withDesktopSession(h.createDesktopHandoff))
 }
@@ -351,24 +349,6 @@ func (h *HTTPHandler) desktopEnvironments(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"environments": environments})
 }
 
-func (h *HTTPHandler) issueStepUp(w http.ResponseWriter, r *http.Request, session *Session) {
-	var request struct {
-		Password          string `json:"password"`
-		TargetFingerprint string `json:"target_fingerprint"`
-	}
-	if !decodeRequest(w, r, &request) {
-		return
-	}
-	result, err := h.service.IssueStepUp(r.Context(), session, request.Password, request.TargetFingerprint)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(result)
-}
-
 func (h *HTTPHandler) selectTarget(w http.ResponseWriter, r *http.Request, session *Session) {
 	var request SelectTargetInput
 	if !decodeRequest(w, r, &request) {
@@ -379,7 +359,22 @@ func (h *HTTPHandler) selectTarget(w http.ResponseWriter, r *http.Request, sessi
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, lease)
+	writeJSON(w, http.StatusOK, publicSelectionLease(lease))
+}
+
+func publicSelectionLease(lease *SelectionLease) map[string]any {
+	return map[string]any{
+		"selection_lease":    lease.ID,
+		"user_id":            lease.UserID,
+		"runtime_kind":       lease.RuntimeKind,
+		"device_id":          lease.DeviceID,
+		"agent_id":           lease.AgentID,
+		"workspace_id":       lease.WorkspaceID,
+		"scope":              lease.Scope,
+		"target_fingerprint": lease.Target,
+		"conversation_id":    lease.ConversationID,
+		"expires_at":         lease.ExpiresAt,
+	}
 }
 
 func (h *HTTPHandler) registerDevice(w http.ResponseWriter, r *http.Request, session *Session) {

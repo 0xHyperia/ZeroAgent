@@ -48,10 +48,6 @@ func newTestUSAZero(t *testing.T) *httptest.Server {
 			} else {
 				writeEnvelope(`{"id":1,"email":"one@example.com"}`)
 			}
-		case "/api/v1/user/step-up":
-			writeEnvelope(`{"proof":"proof-1","expires_in":60}`)
-		case "/api/v1/user/step-up/consume":
-			writeEnvelope(`{"valid":true,"user_id":1}`)
 		case "/api/v1/keys":
 			if r.Header.Get("Authorization") == "Bearer oauth-access" {
 				http.Error(w, "app tokens cannot use user key routes", http.StatusUnauthorized)
@@ -290,7 +286,7 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 	}
 	target := TargetFingerprint(RuntimeKindDeviceAgent, device.ID, "workspace-1")
 	lease, err := service.SelectTarget(ctx, desktop1, SelectTargetInput{
-		Proof: "proof-1", RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
 		WorkspaceID: "workspace-1", Target: target,
 	})
 	if err != nil {
@@ -298,7 +294,7 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 	}
 	deviceTarget := TargetFingerprint(RuntimeKindDeviceAgent, device.ID, "")
 	deviceLease, err := service.SelectTarget(ctx, desktop1, SelectTargetInput{
-		Proof: "proof-2", RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
 		Scope: SelectionScopeDevice, Target: deviceTarget,
 	})
 	if err != nil {
@@ -308,13 +304,13 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 		t.Fatalf("unexpected device-scoped lease: %#v", deviceLease)
 	}
 	if _, err := service.SelectTarget(ctx, desktop1, SelectTargetInput{
-		Proof: "proof-3", RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
 		WorkspaceID: "workspace-1", Scope: SelectionScopeDevice, Target: target,
 	}); err == nil {
 		t.Fatal("device-scoped selection accepted workspace_id")
 	}
 	if _, err := service.SelectTarget(ctx, desktop2, SelectTargetInput{
-		Proof: "proof-1", RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: device.ID,
 		WorkspaceID: "workspace-1", Target: target,
 	}); err == nil {
 		t.Fatal("second user selected first user's device")
@@ -332,6 +328,34 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 	}
 	if _, _, err := service.ConsumeDesktopHandoff(ctx, code); err == nil {
 		t.Fatal("desktop handoff code was replayable")
+	}
+}
+
+func TestSelectionLeasePersistenceKeepsControllerButPublicResponseOmitsIt(t *testing.T) {
+	lease := &SelectionLease{
+		ID: "lease-1", UserID: 7, ControllerID: "controller-secret",
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: "agent-1", AgentID: "agent-1",
+		WorkspaceID: "workspace-1", Scope: SelectionScopeWorkspace,
+		Target: "device_agent:agent-1:workspace-1", ConversationID: "conversation-1",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	data, err := json.Marshal(lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored SelectionLease
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.ControllerID != lease.ControllerID {
+		t.Fatalf("selection controller was not persisted: %#v", restored)
+	}
+	publicData, err := json.Marshal(publicSelectionLease(lease))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(publicData, []byte("controller")) || bytes.Contains(publicData, []byte(lease.ControllerID)) {
+		t.Fatalf("public selection response leaked controller identity: %s", publicData)
 	}
 }
 

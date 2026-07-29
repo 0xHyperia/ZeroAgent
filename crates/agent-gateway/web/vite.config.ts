@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
 
-const DEFAULT_PROXY_API = "http://localhost:3001";
+const DEFAULT_PROXY_API = "http://127.0.0.1:50052";
 
 function resolveProxyTarget() {
   const cliArg = process.argv.find((arg) => arg.startsWith("--proxy-api="));
@@ -44,7 +44,9 @@ export default defineConfig(({ mode }) => ({
       },
       "/ws": {
         target: resolveProxyTarget(),
-        changeOrigin: true,
+        // Preserve the browser-facing Host so Gateway's strict same-origin
+        // WebSocket check can compare it with the Origin header.
+        changeOrigin: false,
         ws: true,
       },
       "/image-proxy": {

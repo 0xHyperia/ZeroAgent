@@ -7,8 +7,9 @@ import {
   encodeSelectionCredential,
   getExecutionEnvironments,
   selectExecutionTarget,
+  validateExecutionSelection,
 } from "@/lib/executionTargets";
-import { resetGatewayWebSocketClient } from "@/lib/gatewaySocket";
+import { GATEWAY_SELECTION_INVALID_EVENT, resetGatewayWebSocketClient } from "@/lib/gatewaySocket";
 import {
   getRelayCurrentUser,
   loginRelay,
@@ -58,10 +59,12 @@ export function useGatewaySession(historyShareToken: string | null) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [twoFactorToken, setTwoFactorToken] = useState("");
 
-  useEffect(() => {
-    setEphemeralCredential(token);
-    return () => setEphemeralCredential(null);
-  }, [token]);
+  const applyToken = useCallback((next: string) => {
+    // Child effects can issue Gateway requests before parent effects run.
+    // Publish the credential before the state update makes those children mount.
+    setEphemeralCredential(next);
+    setToken(next);
+  }, []);
 
   const loadEnvironments = useCallback(async () => {
     const params = new URLSearchParams(window.location.search);
@@ -90,8 +93,6 @@ export function useGatewaySession(historyShareToken: string | null) {
         conversation_id: params.get("conversation_id")?.trim() || createUuid(),
         expires_at: "",
       };
-      setSelection(next);
-      setToken(encodeSelectionCredential(next));
       const cleanURL = new URL(window.location.href);
       for (const key of [
         "selection_lease",
@@ -104,20 +105,29 @@ export function useGatewaySession(historyShareToken: string | null) {
         cleanURL.searchParams.delete(key);
       }
       window.history.replaceState(
-        { ...(window.history.state ?? {}), [EXECUTION_SELECTION_HISTORY_KEY]: next },
+        { ...(window.history.state ?? {}) },
         "",
         `${cleanURL.pathname}${cleanURL.search}`,
       );
-      return items;
+      if (await validateExecutionSelection(next)) {
+        setSelection(next);
+        applyToken(encodeSelectionCredential(next));
+        persistHistorySelection(next);
+        return items;
+      }
+      persistHistorySelection(null);
     }
     const restored = readHistorySelection();
     if (restored) {
       const environment = items.find(
         (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
       );
-      if (environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id)) {
+      if (
+        environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id) &&
+        (await validateExecutionSelection(restored))
+      ) {
         setSelection(restored);
-        setToken(encodeSelectionCredential(restored));
+        applyToken(encodeSelectionCredential(restored));
         return items;
       }
       persistHistorySelection(null);
@@ -138,7 +148,7 @@ export function useGatewaySession(historyShareToken: string | null) {
         : null;
     });
     return items;
-  }, []);
+  }, [applyToken]);
 
   useEffect(() => {
     if (historyShareToken) {
@@ -170,6 +180,21 @@ export function useGatewaySession(historyShareToken: string | null) {
     }, 15_000);
     return () => window.clearInterval(timer);
   }, [accountUser, historyShareToken, loadEnvironments]);
+
+  useEffect(() => {
+    const handleInvalidSelection = () => {
+      resetGatewayWebSocketClient();
+      persistHistorySelection(null);
+      setSelection(null);
+      applyToken("");
+      void loadEnvironments().catch((error) => {
+        setAuthError(error instanceof Error ? error.message : "执行环境加载失败");
+      });
+    };
+    window.addEventListener(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection);
+    return () =>
+      window.removeEventListener(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection);
+  }, [applyToken, loadEnvironments]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -240,15 +265,15 @@ export function useGatewaySession(historyShareToken: string | null) {
   );
 
   const switchExecutionTarget = useCallback(
-    async (environment: ExecutionEnvironment, workspace: ExecutionWorkspace, password: string) => {
-      const next = await selectExecutionTarget(environment, workspace, password);
+    async (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => {
+      const next = await selectExecutionTarget(environment, workspace);
       resetGatewayWebSocketClient();
       setSelection(next);
-      setToken(next.runtime_kind === "device_agent" ? encodeSelectionCredential(next) : "");
+      applyToken(next.runtime_kind === "device_agent" ? encodeSelectionCredential(next) : "");
       persistHistorySelection(next.runtime_kind === "device_agent" ? next : null);
       return next;
     },
-    [],
+    [applyToken],
   );
 
   const clearSession = useCallback(() => {
@@ -257,11 +282,11 @@ export function useGatewaySession(historyShareToken: string | null) {
     setAccountUser(null);
     setEnvironments([]);
     setSelection(null);
-    setToken("");
+    applyToken("");
     persistHistorySelection(null);
     setTwoFactorToken("");
     setAuthError(null);
-  }, []);
+  }, [applyToken]);
 
   return {
     token,

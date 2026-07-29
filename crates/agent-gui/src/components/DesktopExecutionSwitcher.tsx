@@ -1,15 +1,14 @@
 import { useMemo, useState } from "react";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
-import { ChevronDown, Loader2, Lock, MonitorSmartphone, X } from "./icons";
+import { ChevronDown, Loader2, MonitorSmartphone, X } from "./icons";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 
 type Props = {
   environments: DesktopEnvironment[];
   localDeviceId: string;
   selectedDeviceId: string;
   authorizedDeviceIds?: ReadonlySet<string>;
-  onSwitch: (environment: DesktopEnvironment, password: string) => Promise<void>;
+  onSwitch: (environment: DesktopEnvironment) => Promise<void>;
 };
 
 export function DesktopExecutionSwitcher({
@@ -21,7 +20,6 @@ export function DesktopExecutionSwitcher({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<DesktopEnvironment | null>(null);
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const current = useMemo(() => {
@@ -32,11 +30,11 @@ export function DesktopExecutionSwitcher({
   }, [environments, localDeviceId, selectedDeviceId]);
 
   async function confirm() {
-    if (!pending || !password) return;
+    if (!pending) return;
     setBusy(true);
     setError("");
     try {
-      await onSwitch(pending, password);
+      await onSwitch(pending);
       setPending(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "切换失败");
@@ -78,19 +76,18 @@ export function DesktopExecutionSwitcher({
                   }
                   setOpen(false);
                   if (environment.device_id === localDeviceId) {
-                    void onSwitch(environment, "");
+                    void onSwitch(environment);
                     return;
                   }
                   if (authorizedDeviceIds.has(environment.device_id)) {
-                    void onSwitch(environment, "");
+                    void onSwitch(environment);
                     return;
                   }
                   if (!environment.online) {
-                    void onSwitch(environment, "");
+                    void onSwitch(environment);
                     return;
                   }
                   setPending(environment);
-                  setPassword("");
                   setError("");
                 }}
               >
@@ -110,11 +107,8 @@ export function DesktopExecutionSwitcher({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
           <div className="w-full max-w-[380px] rounded-md border bg-background p-5 shadow-2xl">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
-                <Lock className="h-4 w-4" />
-              </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold">验证账户密码</h2>
+                <h2 className="text-sm font-semibold">确认切换设备</h2>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {pending.device_id === localDeviceId ? "此电脑" : pending.name}
                 </p>
@@ -123,27 +117,14 @@ export function DesktopExecutionSwitcher({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <Input
-              className="mt-5"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setError("");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void confirm();
-              }}
-              autoFocus
-            />
+            <p className="mt-5 text-xs text-muted-foreground">将在所选设备中继续操作。</p>
             {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPending(null)}>
                 取消
               </Button>
-              <Button disabled={!password || busy} onClick={() => void confirm()}>
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />}验证并切换
+              <Button disabled={busy} onClick={() => void confirm()}>
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}确认切换
               </Button>
             </div>
           </div>

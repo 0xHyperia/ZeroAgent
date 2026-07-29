@@ -105,6 +105,8 @@ type ChatActivityListener = (event: ConversationActivityEvent) => void;
 type ChatCommandUpdateListener = (update: ChatCommandUpdate) => void;
 type WorkspaceActivityListener = (event: WorkspaceActivityEventPayload) => void;
 
+export const GATEWAY_SELECTION_INVALID_EVENT = "zeroagent:gateway-selection-invalid";
+
 type PendingRequest = {
   resolve: (value: any) => void;
   reject: (reason?: unknown) => void;
@@ -3258,7 +3260,11 @@ export class GatewayWebSocketClient {
       } else {
         // 服务端将以 4401 关闭：标记鉴权失败并阻断自动重连，交由上层展示鉴权错误。
         this.authRejected = true;
-        pending.reject(new Error(decoded.message || "unauthorized"));
+        const message = decoded.message || "unauthorized";
+        pending.reject(new Error(message));
+        if (message.includes("selection lease")) {
+          window.dispatchEvent(new Event(GATEWAY_SELECTION_INVALID_EVENT));
+        }
       }
       return;
     }

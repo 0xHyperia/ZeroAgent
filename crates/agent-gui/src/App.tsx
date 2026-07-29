@@ -782,11 +782,11 @@ export default function App() {
   const visible = settingsOpen;
   const active = overlay === "open";
 
-  async function handleExecutionSwitch(environment: DesktopEnvironment, password: string) {
+  async function handleExecutionSwitch(environment: DesktopEnvironment) {
     const isLocal = environment.device_id === localDeviceId;
     const existingLease = remoteSelectionLeases.get(environment.device_id);
     if (!isLocal && environment.online && !isRemoteLeaseValid(existingLease)) {
-      const selection = await switchDesktopDevice(settings, environment, password);
+      const selection = await switchDesktopDevice(settings, environment);
       setRemoteSelectionLeases((current) => {
         const next = new Map(current);
         next.set(environment.device_id, {

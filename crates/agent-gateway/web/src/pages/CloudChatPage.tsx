@@ -19,8 +19,8 @@ import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentS
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import { useLocale } from "@/i18n";
+import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
 import type { PendingUploadedFile } from "@/lib/chat/uploadedFiles";
 import type {
@@ -38,7 +38,6 @@ import {
   type RelayDashboardStats,
   type RelayUser,
 } from "@/lib/relay/client";
-import { createUuid } from "@/lib/shared/id";
 import {
   bindRelayKeysToSettings,
   relayProviderId,
@@ -51,6 +50,7 @@ import {
   getNextTheme,
   type ReasoningLevel,
 } from "@/lib/settings";
+import { createUuid } from "@/lib/shared/id";
 import {
   deleteSidebarConversations,
   type SidebarBatchDeleteOptions,
@@ -95,11 +95,7 @@ type Props = {
   settings: AppSettings;
   setSettings: (updater: (previous: AppSettings) => AppSettings) => void;
   settingsSaveState: WebSettingsSaveState;
-  onSwitch: (
-    environment: ExecutionEnvironment,
-    workspace: ExecutionWorkspace,
-    password: string,
-  ) => Promise<unknown>;
+  onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
   onLogout: () => void;
 };
 

@@ -4600,8 +4600,8 @@ export default function GatewayApp() {
           settings={settings}
           setSettings={setSettings}
           settingsSaveState={settingsSaveState}
-          onSwitch={async (environment, workspace, password) => {
-            const next = await switchExecutionTarget(environment, workspace, password);
+          onSwitch={async (environment, workspace) => {
+            const next = await switchExecutionTarget(environment, workspace);
             if (next.runtime_kind === "device_agent") {
               setActiveWorkspaceProjectId(workspace.id);
             }
@@ -4845,8 +4845,8 @@ export default function GatewayApp() {
                             environments={environments}
                             selection={selection}
                             disabled={transcriptBusy}
-                            onSwitch={async (environment, workspace, password) => {
-                              await switchExecutionTarget(environment, workspace, password);
+                            onSwitch={async (environment, workspace) => {
+                              await switchExecutionTarget(environment, workspace);
                               setActiveWorkspaceProjectId(workspace.id);
                               transcriptStoreRegistry.clear();
                               setConversationId("");

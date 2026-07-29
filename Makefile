@@ -31,7 +31,7 @@ MODEL_CATALOG_GENERATED_FILES := $(AGENT_GUI_DIR)/src/lib/models/catalog.generat
 
 .PHONY: bootstrap doctor dev dev-tauri dev-infra-up dev-infra-down test deploy-validate integration-config
 .PHONY: all build desktop-build-macos desktop-build-macos-release desktop-build-macos-intel desktop-build-macos-m desktop-build-windows desktop-build-linux github-release-main check-github-release-tag help
-.PHONY: dev-gateway dev-webui ensure-webui-embed-stub
+.PHONY: dev-gateway dev-webui wait-dev-gateway ensure-webui-embed-stub
 .PHONY: proto proto-check webui gateway-build gateway-docker-build gateway-docker-run gateway-docker-smoke build-linux build-linux-amd build-linux-arm
 .PHONY: clean update-model-catalog check-rust-target-% check-macos-signing-identity check-macos-notary-profile desktop-store-macos-notary-profile desktop-wait-macos-notary desktop-staple-macos desktop-verify-macos
 
@@ -67,7 +67,8 @@ dev:
 	    DATABASE_URL="postgresql://zeroagent:$$ZEROAGENT_POSTGRES_PASSWORD@127.0.0.1:$${ZEROAGENT_POSTGRES_PORT:-5433}/zeroagent?sslmode=disable" \
 	    REDIS_URL="redis://:$$ZEROAGENT_REDIS_PASSWORD@127.0.0.1:$${ZEROAGENT_REDIS_PORT:-6380}/0" \
 	    LIVEAGENT_GATEWAY_COOKIE_SECURE=false mise exec -- $(MAKE) dev-gateway) & \
-	  (DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
+	  ($(MAKE) wait-dev-gateway && \
+	    DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
 
 dev-tauri:
 	TAURI_DEV_HOST=0.0.0.0 mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
@@ -173,6 +174,16 @@ dev-gateway: ensure-webui-embed-stub
 
 dev-webui:
 	npm_config_proxy_api=$(DEV_WEBUI_PROXY_API) pnpm --dir $(AGENT_GATEWAY_WEB_DIR) dev --host 0.0.0.0 --port 5174
+
+wait-dev-gateway:
+	@attempt=0; \
+	while [ $$attempt -lt 60 ]; do \
+		if curl --noproxy '*' -fsS http://127.0.0.1:50052/healthz >/dev/null 2>&1; then exit 0; fi; \
+		attempt=$$((attempt + 1)); \
+		sleep 0.5; \
+	done; \
+	echo "Gateway did not become healthy on http://127.0.0.1:50052"; \
+	exit 1
 
 ensure-webui-embed-stub:
 	@if [ ! -f "$(AGENT_GATEWAY_WEB_DIR)/dist/index.html" ]; then \

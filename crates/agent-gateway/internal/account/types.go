@@ -10,7 +10,6 @@ const (
 	RuntimeKindWebChat      = "web_chat"
 	RuntimeKindDeviceAgent  = "device_agent"
 	CloudWorkspaceID        = "cloud"
-	StepUpPurposeTargetSwap = "execution_target_switch"
 	SelectionScopeWorkspace = "workspace"
 	SelectionScopeDevice    = "device"
 	AuthKindPassword        = "password"
@@ -74,7 +73,7 @@ type Device struct {
 type SelectionLease struct {
 	ID             string    `json:"selection_lease"`
 	UserID         int64     `json:"user_id"`
-	ControllerID   string    `json:"-"`
+	ControllerID   string    `json:"controller_id"`
 	RuntimeKind    string    `json:"runtime_kind"`
 	DeviceID       string    `json:"device_id,omitempty"`
 	AgentID        string    `json:"agent_id,omitempty"`

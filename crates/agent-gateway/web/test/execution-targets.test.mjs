@@ -69,3 +69,30 @@ test("selection credentials preserve the remote workspace binding", () => {
     workspaceId: "workspace-a",
   });
 });
+
+test("selection restoration is accepted only when the gateway validates the lease", async () => {
+  const selection = {
+    selection_lease: "lease-3",
+    runtime_kind: "device_agent",
+    device_id: "device-a",
+    workspace_id: "workspace-a",
+    target_fingerprint: "device_agent:device-a:workspace-a",
+    conversation_id: "conversation-3",
+    expires_at: "",
+  };
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  try {
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return { ok: requests.length === 1 };
+    };
+    assert.equal(await targets.validateExecutionSelection(selection), true);
+    assert.equal(await targets.validateExecutionSelection(selection), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(requests[0].url, "/api/status");
+  assert.equal(requests[0].init.credentials, "include");
+  assert.match(requests[0].init.headers.Authorization, /^Bearer selection\./);
+});

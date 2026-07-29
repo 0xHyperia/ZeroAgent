@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { ChevronDown, Cloud, Loader2, Lock, MonitorSmartphone, X } from "@/components/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, Cloud, Loader2, MonitorSmartphone, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   type ExecutionEnvironment,
   type ExecutionSelection,
@@ -13,11 +13,7 @@ type Props = {
   environments: ExecutionEnvironment[];
   selection: ExecutionSelection | null;
   disabled?: boolean;
-  onSwitch: (
-    environment: ExecutionEnvironment,
-    workspace: ExecutionWorkspace,
-    password: string,
-  ) => Promise<unknown>;
+  onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
 };
 
 export function ExecutionEnvironmentSwitcher({
@@ -26,12 +22,19 @@ export function ExecutionEnvironmentSwitcher({
   disabled,
   onSwitch,
 }: Props) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
   const [pending, setPending] = useState<{
     environment: ExecutionEnvironment;
     workspace: ExecutionWorkspace;
   } | null>(null);
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -39,6 +42,49 @@ export function ExecutionEnvironmentSwitcher({
     () => resolveExecutionTarget(environments, selection),
     [environments, selection],
   );
+
+  useEffect(() => {
+    if (!open) {
+      setMenuPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportPadding = 8;
+      const gap = 8;
+      const width = Math.min(380, window.innerWidth - viewportPadding * 2);
+      const left = Math.min(
+        Math.max(viewportPadding, rect.left),
+        window.innerWidth - width - viewportPadding,
+      );
+      const availableBelow = window.innerHeight - rect.bottom - gap - viewportPadding;
+      const availableAbove = rect.top - gap - viewportPadding;
+      if (availableBelow < 180 && availableAbove > availableBelow) {
+        setMenuPosition({
+          left,
+          bottom: window.innerHeight - rect.top + gap,
+          width,
+          maxHeight: Math.min(520, Math.max(120, availableAbove)),
+        });
+        return;
+      }
+      setMenuPosition({
+        left,
+        top: rect.bottom + gap,
+        width,
+        maxHeight: Math.min(520, Math.max(120, availableBelow)),
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   function choose(environment: ExecutionEnvironment, workspace: ExecutionWorkspace) {
     if (!environment.online || disabled) return;
@@ -51,21 +97,19 @@ export function ExecutionEnvironmentSwitcher({
       return;
     }
     setPending({ environment, workspace });
-    setPassword("");
     setError("");
     setOpen(false);
   }
 
   async function confirm() {
-    if (!pending || !password) return;
+    if (!pending) return;
     setSubmitting(true);
     setError("");
     try {
-      await onSwitch(pending.environment, pending.workspace, password);
+      await onSwitch(pending.environment, pending.workspace);
       setPending(null);
-      setPassword("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "身份验证失败");
+      setError(cause instanceof Error ? cause.message : "切换失败");
     } finally {
       setSubmitting(false);
     }
@@ -75,6 +119,7 @@ export function ExecutionEnvironmentSwitcher({
     <>
       <div className="relative">
         <Button
+          ref={triggerRef}
           type="button"
           variant="ghost"
           className="h-8 max-w-[min(18rem,42vw)] gap-1.5 rounded-lg px-2 text-muted-foreground hover:text-foreground"
@@ -93,43 +138,51 @@ export function ExecutionEnvironmentSwitcher({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </Button>
 
-        {open && (
-          <div className="absolute left-0 z-[70] mt-2 max-h-[min(520px,70vh)] w-[min(380px,92vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
-            {environments.map((environment) => (
-              <div key={`${environment.runtime_kind}:${environment.device_id ?? "web"}`}>
-                <div className="flex items-center gap-2 px-2 pb-1 pt-2 text-xs font-medium">
-                  {environment.runtime_kind === "web_chat" ? (
-                    <Cloud className="h-3.5 w-3.5" />
-                  ) : (
-                    <MonitorSmartphone className="h-3.5 w-3.5" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{environment.name}</span>
-                  <span
-                    className={environment.online ? "text-emerald-600" : "text-muted-foreground"}
-                  >
-                    {environment.online ? "在线" : "离线"}
-                  </span>
-                </div>
-                {environment.workspaces.map((workspace) => (
-                  <button
-                    key={workspace.id}
-                    type="button"
-                    disabled={!environment.online}
-                    className="flex w-full items-center gap-2 rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
-                    onClick={() => choose(environment, workspace)}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                    {workspace.path && (
-                      <span className="max-w-[160px] truncate text-muted-foreground">
-                        {workspace.path}
+        {open && menuPosition
+          ? createPortal(
+              <div
+                className="fixed z-[1000] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl"
+                style={menuPosition}
+              >
+                {environments.map((environment) => (
+                  <div key={`${environment.runtime_kind}:${environment.device_id ?? "web"}`}>
+                    <div className="flex items-center gap-2 px-2 pb-1 pt-2 text-xs font-medium">
+                      {environment.runtime_kind === "web_chat" ? (
+                        <Cloud className="h-3.5 w-3.5" />
+                      ) : (
+                        <MonitorSmartphone className="h-3.5 w-3.5" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{environment.name}</span>
+                      <span
+                        className={
+                          environment.online ? "text-emerald-600" : "text-muted-foreground"
+                        }
+                      >
+                        {environment.online ? "在线" : "离线"}
                       </span>
-                    )}
-                  </button>
+                    </div>
+                    {environment.workspaces.map((workspace) => (
+                      <button
+                        key={workspace.id}
+                        type="button"
+                        disabled={!environment.online}
+                        className="flex w-full items-center gap-2 rounded-sm px-7 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => choose(environment, workspace)}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                        {workspace.path && (
+                          <span className="max-w-[160px] truncate text-muted-foreground">
+                            {workspace.path}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 ))}
-              </div>
-            ))}
-          </div>
-        )}
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
 
       {pending && (
@@ -140,11 +193,8 @@ export function ExecutionEnvironmentSwitcher({
         >
           <div className="w-full max-w-[380px] rounded-md border bg-background p-5 shadow-2xl">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                <Lock className="h-4 w-4" />
-              </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold">验证账户密码</h2>
+                <h2 className="text-sm font-semibold">确认切换执行环境</h2>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {pending.environment.name} / {pending.workspace.name}
                 </p>
@@ -158,29 +208,15 @@ export function ExecutionEnvironmentSwitcher({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <Input
-              className="mt-5"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              placeholder="当前密码"
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setError("");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void confirm();
-              }}
-              autoFocus
-            />
+            <p className="mt-5 text-xs text-muted-foreground">将在所选设备和工作区中继续操作。</p>
             {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPending(null)}>
                 取消
               </Button>
-              <Button disabled={!password || submitting} onClick={() => void confirm()}>
+              <Button disabled={submitting} onClick={() => void confirm()}>
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                验证并切换
+                确认切换
               </Button>
             </div>
           </div>

@@ -20,6 +20,10 @@ const desktopRelayGateSource = readFileSync(
 );
 const viteConfigSource = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
 const gatewayAppSource = readFileSync(new URL("../src/app/GatewayApp.tsx", import.meta.url), "utf8");
+const gatewaySocketSource = readFileSync(
+  new URL("../src/lib/gatewaySocket.ts", import.meta.url),
+  "utf8",
+);
 const cloudChatSource = readFileSync(
   new URL("../src/pages/CloudChatPage.tsx", import.meta.url),
   "utf8",
@@ -28,6 +32,19 @@ const relayClientSource = readFileSync(
   new URL("../src/lib/relay/client.ts", import.meta.url),
   "utf8",
 );
+const gatewaySessionSource = readFileSync(
+  new URL("../src/app/hooks/useGatewaySession.ts", import.meta.url),
+  "utf8",
+);
+const executionSwitcherSource = readFileSync(
+  new URL("../src/components/ExecutionEnvironmentSwitcher.tsx", import.meta.url),
+  "utf8",
+);
+const executionTargetsSource = readFileSync(
+  new URL("../src/lib/executionTargets.ts", import.meta.url),
+  "utf8",
+);
+const makefileSource = readFileSync(new URL("../../../../Makefile", import.meta.url), "utf8");
 
 test("account login primary action submits its form", () => {
   assert.match(loginSource, /<Button\s+type="submit"\s+className="mt-7 w-full"/);
@@ -45,7 +62,46 @@ test("OAuth login is limited to the password-login state on web and desktop", ()
 });
 
 test("web development proxy targets the gateway default port", () => {
-  assert.match(viteConfigSource, /DEFAULT_PROXY_API\s*=\s*"http:\/\/localhost:3001"/);
+  assert.match(viteConfigSource, /DEFAULT_PROXY_API\s*=\s*"http:\/\/127\.0\.0\.1:50052"/);
+  assert.match(
+    viteConfigSource,
+    /"\/ws": \{[\s\S]*?changeOrigin: false,[\s\S]*?ws: true/,
+  );
+  assert.match(makefileSource, /\$\(MAKE\) wait-dev-gateway &&/);
+  assert.match(makefileSource, /wait-dev-gateway:[\s\S]*?127\.0\.0\.1:50052\/healthz/);
+});
+
+test("gateway credential is published before token state mounts websocket consumers", () => {
+  assert.match(
+    gatewaySessionSource,
+    /const applyToken = useCallback\(\(next: string\) => \{[\s\S]*?setEphemeralCredential\(next\);[\s\S]*?setToken\(next\);/,
+  );
+  assert.doesNotMatch(
+    gatewaySessionSource,
+    /useEffect\(\(\) => \{\s*setEphemeralCredential\(token\)/,
+  );
+  assert.match(gatewaySessionSource, /applyToken\(encodeSelectionCredential\(restored\)\)/);
+  assert.match(gatewaySessionSource, /await validateExecutionSelection\(restored\)/);
+  assert.match(
+    gatewaySessionSource,
+    /addEventListener\(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection\)/,
+  );
+  assert.match(gatewaySocketSource, /message\.includes\("selection lease"\)/);
+  assert.match(
+    gatewaySocketSource,
+    /dispatchEvent\(new Event\(GATEWAY_SELECTION_INVALID_EVENT\)\)/,
+  );
+  assert.match(
+    gatewaySessionSource,
+    /applyToken\(next\.runtime_kind === "device_agent" \? encodeSelectionCredential\(next\) : ""\)/,
+  );
+  assert.match(gatewaySessionSource, /applyToken\(""\)/);
+});
+
+test("execution target switching does not request a second password verification", () => {
+  assert.doesNotMatch(executionSwitcherSource, /current-password|验证账户密码|requiresPassword/);
+  assert.doesNotMatch(executionTargetsSource, /execution-target\/step-up|proof|password/);
+  assert.match(executionTargetsSource, /"\/api\/execution-target\/select"/);
 });
 
 test("first-run onboarding renders above application stacking contexts", () => {

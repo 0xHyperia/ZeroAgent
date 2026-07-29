@@ -85,24 +85,14 @@ export async function switchDesktopEnvironment(
   settings: AppSettings,
   environment: DesktopEnvironment,
   workspace: DesktopWorkspace,
-  password: string,
 ) {
   const target = `device_agent:${environment.device_id}:${workspace.id}`;
-  const stepUp = await desktopRequest<{ proof: string }>(
-    settings,
-    "/api/desktop/execution-target/step-up",
-    {
-      method: "POST",
-      body: JSON.stringify({ password, target_fingerprint: target }),
-    },
-  );
   const selection = await desktopRequest<{ selection_lease: string }>(
     settings,
     "/api/desktop/execution-target/select",
     {
       method: "POST",
       body: JSON.stringify({
-        proof: stepUp.proof,
         runtime_kind: "device_agent",
         device_id: environment.device_id,
         workspace_id: workspace.id,
@@ -154,20 +144,8 @@ export async function getDesktopConversationRoutes(settings: AppSettings, device
   return response.conversations;
 }
 
-export async function switchDesktopDevice(
-  settings: AppSettings,
-  environment: DesktopEnvironment,
-  password: string,
-) {
+export async function switchDesktopDevice(settings: AppSettings, environment: DesktopEnvironment) {
   const target = `device_agent:${environment.device_id}:`;
-  const stepUp = await desktopRequest<{ proof: string }>(
-    settings,
-    "/api/desktop/execution-target/step-up",
-    {
-      method: "POST",
-      body: JSON.stringify({ password, target_fingerprint: target }),
-    },
-  );
   return desktopRequest<{
     selection_lease: string;
     scope: "device";
@@ -176,7 +154,6 @@ export async function switchDesktopDevice(
   }>(settings, "/api/desktop/execution-target/select", {
     method: "POST",
     body: JSON.stringify({
-      proof: stepUp.proof,
       runtime_kind: "device_agent",
       device_id: environment.device_id,
       workspace_id: "",

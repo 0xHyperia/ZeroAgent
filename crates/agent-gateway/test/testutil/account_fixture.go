@@ -29,8 +29,6 @@ func NewAccountFixture(t testing.TB, root *session.Manager) *AccountFixture {
 		switch r.URL.Path {
 		case "/api/v1/auth/login":
 			_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"access_token":"access-1","refresh_token":"refresh-1","expires_in":3600,"user":{"id":1,"email":"one@example.com"}}}`)
-		case "/api/v1/user/step-up/consume":
-			_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"valid":true,"user_id":1}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -64,7 +62,6 @@ func NewAccountFixture(t testing.TB, root *session.Manager) *AccountFixture {
 	}
 	target := account.TargetFingerprint(account.RuntimeKindDeviceAgent, device.ID, "workspace-1")
 	selection, err := service.SelectTarget(context.Background(), controller, account.SelectTargetInput{
-		Proof:       "proof-1",
 		RuntimeKind: account.RuntimeKindDeviceAgent,
 		DeviceID:    device.ID,
 		WorkspaceID: "workspace-1",

@@ -486,15 +486,7 @@ func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, 
 	return environments, nil
 }
 
-func (s *Service) IssueStepUp(ctx context.Context, session *Session, password, target string) (json.RawMessage, error) {
-	if session.IsOAuth() {
-		return s.usa.AppIssueStepUp(ctx, session.AccessToken, target)
-	}
-	return s.usa.IssueStepUp(ctx, session.AccessToken, password, target)
-}
-
 type SelectTargetInput struct {
-	Proof       string `json:"proof"`
 	RuntimeKind string `json:"runtime_kind"`
 	DeviceID    string `json:"device_id,omitempty"`
 	WorkspaceID string `json:"workspace_id"`
@@ -549,15 +541,6 @@ func (s *Service) SelectTarget(ctx context.Context, session *Session, input Sele
 		}
 	default:
 		return nil, &APIError{Status: http.StatusBadRequest, Message: "unsupported runtime_kind"}
-	}
-	var consumeErr error
-	if session.IsOAuth() {
-		consumeErr = s.usa.AppConsumeStepUp(ctx, session.AccessToken, input.Proof, expectedTarget)
-	} else {
-		consumeErr = s.usa.ConsumeStepUp(ctx, session.AccessToken, input.Proof, expectedTarget)
-	}
-	if consumeErr != nil {
-		return nil, consumeErr
 	}
 	now := s.now().UTC()
 	input.DeviceID = canonicalAgentID(input.DeviceID)
