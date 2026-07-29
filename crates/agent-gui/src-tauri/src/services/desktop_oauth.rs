@@ -56,6 +56,7 @@ pub struct DesktopOAuthResult {
 pub async fn desktop_oauth_login(
     app: AppHandle,
     relay_origin: String,
+    installation_id: String,
 ) -> Result<DesktopOAuthResult, String> {
     let origin = normalize_origin(&relay_origin)?;
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -82,9 +83,10 @@ pub async fn desktop_oauth_login(
             "code_challenge": challenge,
             "code_challenge_method": "S256",
             "state": state,
-            "device_name": "ZeroAgent Desktop",
-            "platform": std::env::consts::OS,
-        }))
+		"device_name": "ZeroAgent Desktop",
+		"platform": std::env::consts::OS,
+		"installation_id": installation_id,
+	}))
         .send().await.map_err(|_| "usa0.top 暂时不可用".to_string())?;
     let status = response.status();
     let response_body = response

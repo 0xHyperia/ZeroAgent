@@ -1,5 +1,6 @@
-import { prepareProxyRequest } from "../providers/proxy";
 import { invoke } from "@tauri-apps/api/core";
+import { prepareProxyRequest } from "../providers/proxy";
+import { getInstallationID } from "./installation";
 
 const RELAY_ORIGIN_KEY = "zeroagent.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
@@ -372,7 +373,7 @@ async function refreshRelaySession() {
 export async function loginRelayOAuth() {
   const response = await invoke<
     RelayAuthResponse & { auth_kind: "oauth"; oauth_client_id: string }
-  >("desktop_oauth_login", { relayOrigin: RELAY_ORIGIN });
+  >("desktop_oauth_login", { relayOrigin: RELAY_ORIGIN, installationId: getInstallationID() });
   saveSession(response);
   return response;
 }

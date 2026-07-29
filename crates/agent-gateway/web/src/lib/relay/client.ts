@@ -3,6 +3,7 @@ import {
   isEmbeddedMobileRuntime,
   openEmbeddedOAuth,
 } from "../mobileRuntime";
+import { createUuid } from "../shared/id";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
@@ -10,6 +11,15 @@ export const RELAY_SESSION_EXPIRED_EVENT = "zeroagent:relay-session-expired";
 
 const RELAY_PROXY_BASE = "/api/usa-zero";
 let relaySessionExpiryNotified = false;
+const OAUTH_INSTALLATION_ID_KEY = "zeroagent.oauth.installation-id";
+
+function oauthInstallationID() {
+  const current = localStorage.getItem(OAUTH_INSTALLATION_ID_KEY)?.trim();
+  if (current) return current;
+  const created = createUuid();
+  localStorage.setItem(OAUTH_INSTALLATION_ID_KEY, created);
+  return created;
+}
 
 type RelayEnvelope<T> = {
   code: number;
@@ -203,6 +213,7 @@ export async function startRelayOAuth(): Promise<boolean> {
     body: {
       surface: embedded ? "android" : "web",
       return_path: `${window.location.pathname}${window.location.search}`,
+      installation_id: oauthInstallationID(),
     },
   });
   if (!embedded) {

@@ -61,8 +61,9 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 
 func (h *HTTPHandler) startOAuth(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Surface    string `json:"surface"`
-		ReturnPath string `json:"return_path"`
+		Surface        string `json:"surface"`
+		ReturnPath     string `json:"return_path"`
+		InstallationID string `json:"installation_id"`
 	}
 	if !decodeRequest(w, r, &request) {
 		return
@@ -77,7 +78,7 @@ func (h *HTTPHandler) startOAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		redirectURI = origin + "/api/auth/oauth/callback"
 	}
-	authorizeURL, err := h.service.StartOAuth(r.Context(), request.Surface, redirectURI, request.ReturnPath)
+	authorizeURL, err := h.service.StartOAuth(r.Context(), request.Surface, redirectURI, request.ReturnPath, request.InstallationID)
 	if err != nil {
 		writeError(w, err)
 		return

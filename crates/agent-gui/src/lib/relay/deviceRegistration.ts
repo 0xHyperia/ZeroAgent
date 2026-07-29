@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../settings";
 import { getRelayAccessToken } from "./client";
+import { getInstallationID } from "./installation";
 
 export type CredentialRecord = {
   agentId?: string;
@@ -26,15 +27,6 @@ function registrationURL(settings: AppSettings) {
   return url.toString();
 }
 
-function installationID() {
-  const key = "zeroagent.installation-id";
-  const current = localStorage.getItem(key)?.trim();
-  if (current) return current;
-  const created = crypto.randomUUID();
-  localStorage.setItem(key, created);
-  return created;
-}
-
 export async function registerDesktopDevice(settings: AppSettings) {
   const accessToken = getRelayAccessToken();
   if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim() || !accessToken) return null;
@@ -51,7 +43,7 @@ export async function registerDesktopDevice(settings: AppSettings) {
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
-      installation_id: installationID(),
+      installation_id: getInstallationID(),
       name: existing ? "" : defaultName,
       platform: navigator.platform || "desktop",
       version: await invoke<string>("zeroagent_app_version"),

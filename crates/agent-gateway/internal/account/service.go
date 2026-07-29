@@ -609,7 +609,7 @@ func (s *Service) createSession(ctx context.Context, result *LoginResult) (*Sess
 	return session, nil
 }
 
-func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPath string) (string, error) {
+func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPath, installationID string) (string, error) {
 	clientID := "zeroagent-web"
 	platform := "web"
 	if surface == "android" {
@@ -634,6 +634,7 @@ func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPa
 		"scope":          "profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
 		"code_challenge": challenge, "code_challenge_method": "S256", "state": state,
 		"device_name": "ZeroAgent", "platform": platform,
+		"installation_id": strings.TrimSpace(installationID),
 	})
 	if err != nil {
 		return "", err

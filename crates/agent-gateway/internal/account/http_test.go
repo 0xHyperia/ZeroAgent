@@ -188,7 +188,7 @@ func TestOAuthStartPreservesUSAZeroErrorDetails(t *testing.T) {
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, false, "http://127.0.0.1:50052").Register(mux)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web","installation_id":"browser-1"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -231,7 +231,7 @@ func TestOAuthStartCallbackCreatesTypedCookieSessionAndRejectsReplay(t *testing.
 	NewHTTPHandler(service, true, "https://gateway.example.com").Register(mux)
 
 	start := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web","return_path":"/login?from=oauth"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/start", strings.NewReader(`{"surface":"web","return_path":"/login?from=oauth","installation_id":"browser-1"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(start, request)
 	if start.Code != http.StatusOK || issuedState == "" || !strings.Contains(start.Body.String(), "request-1") {
