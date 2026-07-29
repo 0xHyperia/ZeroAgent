@@ -304,11 +304,6 @@ export function sortWorkspaceProjectsByActivity(
       };
     })
     .sort((left, right) => {
-      const leftIsDefault = left.project.id === DEFAULT_WORKSPACE_PROJECT_ID;
-      const rightIsDefault = right.project.id === DEFAULT_WORKSPACE_PROJECT_ID;
-      if (leftIsDefault !== rightIsDefault) {
-        return leftIsDefault ? -1 : 1;
-      }
       const leftIsPinned = left.project.isPinned === true;
       const rightIsPinned = right.project.isPinned === true;
       if (leftIsPinned !== rightIsPinned) {
