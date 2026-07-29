@@ -274,7 +274,6 @@ func (s *Service) AuthenticateAgent(agentID, token, legacyDeviceID, legacyCreden
 	if err != nil || !VerifyDeviceCredential(device, credential) {
 		return "", 0, ErrUnauthorizedAgent
 	}
-	_ = s.store.SetDevicePresence(context.Background(), device.ID, true, s.now().UTC())
 	s.credentialMu.RLock()
 	epoch := s.credentialEpochs[device.ID]
 	s.credentialMu.RUnlock()
@@ -372,6 +371,30 @@ func (s *Service) TouchDevice(ctx context.Context, deviceID string) error {
 
 func (s *Service) MarkDeviceOffline(ctx context.Context, deviceID string) error {
 	return s.store.SetDevicePresence(ctx, deviceID, false, s.now().UTC())
+}
+
+func (s *Service) ClaimDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+) error {
+	return s.store.ClaimDeviceSessionPresence(ctx, deviceID, sessionID, s.now().UTC())
+}
+
+func (s *Service) RenewDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+) (bool, error) {
+	return s.store.RenewDeviceSessionPresence(ctx, deviceID, sessionID, s.now().UTC())
+}
+
+func (s *Service) ReleaseDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+) (bool, error) {
+	return s.store.ReleaseDeviceSessionPresence(ctx, deviceID, sessionID, s.now().UTC())
 }
 
 func (s *Service) ValidateSelection(ctx context.Context, controllerSessionID, leaseID string) (*Session, *SelectionLease, error) {

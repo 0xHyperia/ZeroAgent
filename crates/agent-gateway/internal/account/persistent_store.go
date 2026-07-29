@@ -15,6 +15,25 @@ import (
 
 const devicePresenceTTL = 90 * time.Second
 
+// Presence ownership prevents a displaced Agent session from renewing or
+// deleting the key claimed by its replacement, including across Gateway instances.
+var renewDeviceSessionPresenceScript = redis.NewScript(`
+local current = redis.call("GET", KEYS[1])
+if not current then
+  redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+  return 1
+end
+if current ~= ARGV[1] then return 0 end
+redis.call("PEXPIRE", KEYS[1], ARGV[2])
+return 1
+`)
+
+var releaseDeviceSessionPresenceScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call("DEL", KEYS[1])
+return 1
+`)
+
 var consumeDesktopHandoffScript = redis.NewScript(`
 local value = redis.call("GET", KEYS[1])
 if value then redis.call("DEL", KEYS[1]) end
@@ -333,7 +352,102 @@ func (s *PersistentStore) DeleteDevice(ctx context.Context, userID int64, device
 
 func (s *PersistentStore) SetDevicePresence(ctx context.Context, deviceID string, online bool, at time.Time) error {
 	deviceID = canonicalAgentID(deviceID)
-	result, err := s.db.ExecContext(ctx, `UPDATE agents SET last_seen_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL`, deviceID, at.UTC())
+	if err := s.touchDeviceLastSeen(ctx, deviceID, at); err != nil {
+		return err
+	}
+	if online {
+		return s.rdb.Set(ctx, presenceKey(deviceID), "1", devicePresenceTTL).Err()
+	}
+	return s.rdb.Del(ctx, presenceKey(deviceID)).Err()
+}
+
+func (s *PersistentStore) ClaimDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) error {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return ErrNotFound
+	}
+	if err := s.touchDeviceLastSeen(ctx, deviceID, at); err != nil {
+		return err
+	}
+	return s.rdb.Set(ctx, presenceKey(deviceID), sessionID, devicePresenceTTL).Err()
+}
+
+func (s *PersistentStore) RenewDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) (bool, error) {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false, nil
+	}
+	renewed, err := renewDeviceSessionPresenceScript.Run(
+		ctx,
+		s.rdb,
+		[]string{presenceKey(deviceID)},
+		sessionID,
+		devicePresenceTTL.Milliseconds(),
+	).Int64()
+	if err != nil || renewed == 0 {
+		return false, err
+	}
+	if err := s.touchDeviceLastSeen(ctx, deviceID, at); err != nil {
+		_, _ = releaseDeviceSessionPresenceScript.Run(
+			context.Background(),
+			s.rdb,
+			[]string{presenceKey(deviceID)},
+			sessionID,
+		).Result()
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *PersistentStore) ReleaseDeviceSessionPresence(
+	ctx context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) (bool, error) {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false, nil
+	}
+	released, err := releaseDeviceSessionPresenceScript.Run(
+		ctx,
+		s.rdb,
+		[]string{presenceKey(deviceID)},
+		sessionID,
+	).Int64()
+	if err != nil || released == 0 {
+		return false, err
+	}
+	if err := s.touchDeviceLastSeen(ctx, deviceID, at); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *PersistentStore) touchDeviceLastSeen(
+	ctx context.Context,
+	deviceID string,
+	at time.Time,
+) error {
+	result, err := s.db.ExecContext(
+		ctx,
+		`UPDATE agents SET last_seen_at=$2 WHERE agent_id=$1 AND revoked_at IS NULL`,
+		deviceID,
+		at.UTC(),
+	)
 	if err != nil {
 		return err
 	}
@@ -344,10 +458,7 @@ func (s *PersistentStore) SetDevicePresence(ctx context.Context, deviceID string
 	if count == 0 {
 		return ErrNotFound
 	}
-	if online {
-		return s.rdb.Set(ctx, presenceKey(deviceID), "1", devicePresenceTTL).Err()
-	}
-	return s.rdb.Del(ctx, presenceKey(deviceID)).Err()
+	return nil
 }
 
 func (s *PersistentStore) PutSelectionLease(ctx context.Context, lease *SelectionLease) error {

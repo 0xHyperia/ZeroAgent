@@ -112,6 +112,27 @@ func (s *Server) serveAgent(conn *websocket.Conn) {
 		return
 	}
 	defer s.sm.ClearSession(sess)
+	if s.accounts != nil {
+		if err := s.accounts.ClaimDeviceSessionPresence(
+			context.Background(),
+			agentID,
+			sessionID,
+		); err != nil {
+			_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
+				Payload: &gatewayv2.AgentServerFrame_Hello{
+					Hello: s.serverHello(false, "gateway storage unavailable", "", s.readLimit()),
+				},
+			})
+			return
+		}
+		defer func() {
+			_, _ = s.accounts.ReleaseDeviceSessionPresence(
+				context.Background(),
+				agentID,
+				sessionID,
+			)
+		}()
+	}
 	if err := writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
 		Payload: &gatewayv2.AgentServerFrame_Hello{
 			Hello: s.serverHelloForAgent(true, "", sessionID, agentID, s.readLimit()),
@@ -266,6 +287,17 @@ func (s *Server) agentHeartbeatLoop(ctx context.Context, conn *websocket.Conn, s
 		case <-ticker.C:
 			if s.sm.ClearSessionIfHeartbeatStale(sess, timeout) {
 				return
+			}
+			if s.accounts != nil {
+				renewed, err := s.accounts.RenewDeviceSessionPresence(
+					context.Background(),
+					sess.AgentID,
+					sess.SessionID,
+				)
+				if errors.Is(err, account.ErrNotFound) || (err == nil && !renewed) {
+					s.sm.ClearSession(sess)
+					return
+				}
 			}
 			deadline := time.Now().Add(s.writeTimeout())
 			_ = conn.WriteControl(websocket.PingMessage, nil, deadline)

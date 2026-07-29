@@ -23,6 +23,9 @@ type Store interface {
 	ListDevices(ctx context.Context, userID int64) ([]Device, error)
 	DeleteDevice(ctx context.Context, userID int64, deviceID string) error
 	SetDevicePresence(ctx context.Context, deviceID string, online bool, at time.Time) error
+	ClaimDeviceSessionPresence(ctx context.Context, deviceID, sessionID string, at time.Time) error
+	RenewDeviceSessionPresence(ctx context.Context, deviceID, sessionID string, at time.Time) (bool, error)
+	ReleaseDeviceSessionPresence(ctx context.Context, deviceID, sessionID string, at time.Time) (bool, error)
 	PutSelectionLease(ctx context.Context, lease *SelectionLease) error
 	GetSelectionLease(ctx context.Context, id string) (*SelectionLease, error)
 	PutCloudConversation(ctx context.Context, conversation *CloudConversation) error
@@ -46,6 +49,7 @@ type MemoryStore struct {
 	mu                 sync.RWMutex
 	sessions           map[string]Session
 	devices            map[string]Device
+	deviceSessions     map[string]string
 	leases             map[string]SelectionLease
 	cloudConversations map[string]CloudConversation
 	cloudMessages      map[string][]CloudMessage
@@ -60,6 +64,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		sessions:           make(map[string]Session),
 		devices:            make(map[string]Device),
+		deviceSessions:     make(map[string]string),
 		leases:             make(map[string]SelectionLease),
 		cloudConversations: make(map[string]CloudConversation),
 		cloudMessages:      make(map[string][]CloudMessage),
@@ -195,6 +200,7 @@ func (s *MemoryStore) DeleteDevice(_ context.Context, userID int64, deviceID str
 	device.RevokedAt = &now
 	device.Online = false
 	s.devices[deviceID] = device
+	delete(s.deviceSessions, deviceID)
 	return nil
 }
 
@@ -209,7 +215,81 @@ func (s *MemoryStore) SetDevicePresence(_ context.Context, deviceID string, onli
 	device.Online = online
 	device.LastSeenAt = at.UTC()
 	s.devices[deviceID] = device
+	delete(s.deviceSessions, deviceID)
 	return nil
+}
+
+func (s *MemoryStore) ClaimDeviceSessionPresence(
+	_ context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) error {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	device, ok := s.devices[deviceID]
+	if !ok || device.RevokedAt != nil || sessionID == "" {
+		return ErrNotFound
+	}
+	device.Online = true
+	device.LastSeenAt = at.UTC()
+	s.devices[deviceID] = device
+	s.deviceSessions[deviceID] = sessionID
+	return nil
+}
+
+func (s *MemoryStore) RenewDeviceSessionPresence(
+	_ context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) (bool, error) {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	device, ok := s.devices[deviceID]
+	if !ok || device.RevokedAt != nil {
+		return false, ErrNotFound
+	}
+	owner, exists := s.deviceSessions[deviceID]
+	if exists && owner != sessionID {
+		return false, nil
+	}
+	if sessionID == "" {
+		return false, nil
+	}
+	device.Online = true
+	device.LastSeenAt = at.UTC()
+	s.devices[deviceID] = device
+	s.deviceSessions[deviceID] = sessionID
+	return true, nil
+}
+
+func (s *MemoryStore) ReleaseDeviceSessionPresence(
+	_ context.Context,
+	deviceID string,
+	sessionID string,
+	at time.Time,
+) (bool, error) {
+	deviceID = canonicalAgentID(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	device, ok := s.devices[deviceID]
+	if !ok || device.RevokedAt != nil {
+		return false, ErrNotFound
+	}
+	if s.deviceSessions[deviceID] != sessionID || sessionID == "" {
+		return false, nil
+	}
+	device.Online = false
+	device.LastSeenAt = at.UTC()
+	s.devices[deviceID] = device
+	delete(s.deviceSessions, deviceID)
+	return true, nil
 }
 
 func (s *MemoryStore) PutSelectionLease(_ context.Context, lease *SelectionLease) error {
