@@ -41,15 +41,9 @@ type OAuthTransaction struct {
 }
 
 type Workspace struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Path      string `json:"path,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	IsPinned  bool   `json:"is_pinned,omitempty"`
-	PinnedAt  int64  `json:"pinned_at,omitempty"`
-	Archived  bool   `json:"archived,omitempty"`
-	Missing   bool   `json:"missing,omitempty"`
-	UpdatedAt int64  `json:"updated_at,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path,omitempty"`
 }
 
 type Device struct {

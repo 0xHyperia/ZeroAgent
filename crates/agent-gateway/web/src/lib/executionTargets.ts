@@ -27,6 +27,7 @@ export type ExecutionSelection = {
   device_id?: string;
   agent_id?: string;
   workspace_id: string;
+  scope?: "workspace" | "device";
   target_fingerprint: string;
   conversation_id: string;
   expires_at: string;
@@ -35,14 +36,32 @@ export type ExecutionSelection = {
 export function resolveExecutionTarget(
   environments: readonly ExecutionEnvironment[],
   selection: ExecutionSelection | null,
+  activeWorkspaceId = "",
 ) {
   const environment = environments.find(
     (item) =>
       item.runtime_kind === selection?.runtime_kind &&
       (item.device_id ?? "") === (selection?.device_id ?? ""),
   );
-  const workspace = environment?.workspaces.find((item) => item.id === selection?.workspace_id);
+  const workspaceId =
+    selection?.runtime_kind === "device_agent" ? activeWorkspaceId : selection?.workspace_id;
+  const workspace = environment?.workspaces.find((item) => item.id === workspaceId);
   return { environment, workspace };
+}
+
+export function canReuseDeviceSelection(
+  selection: ExecutionSelection | null,
+  environment: ExecutionEnvironment,
+): selection is ExecutionSelection {
+  if (
+    selection?.runtime_kind !== "device_agent" ||
+    environment.runtime_kind !== "device_agent" ||
+    environment.device_id !== selection.device_id ||
+    !selection.selection_lease.trim()
+  ) {
+    return false;
+  }
+  return !selection.expires_at || Date.parse(selection.expires_at) > Date.now();
 }
 
 async function accountRequest<T>(
@@ -96,7 +115,9 @@ export async function selectExecutionTarget(
   environment: ExecutionEnvironment,
   workspace: ExecutionWorkspace,
 ): Promise<ExecutionSelection> {
-  const target = [environment.runtime_kind, environment.device_id ?? "", workspace.id].join(":");
+  const deviceScoped = environment.runtime_kind === "device_agent";
+  const workspaceId = deviceScoped ? "" : workspace.id;
+  const target = [environment.runtime_kind, environment.device_id ?? "", workspaceId].join(":");
   return accountRequest<ExecutionSelection>(
     "/api/execution-target/select",
     {
@@ -104,7 +125,8 @@ export async function selectExecutionTarget(
       body: JSON.stringify({
         runtime_kind: environment.runtime_kind,
         device_id: environment.device_id ?? "",
-        workspace_id: workspace.id,
+        workspace_id: workspaceId,
+        scope: deviceScoped ? "device" : "workspace",
         target_fingerprint: target,
       }),
     },

@@ -8,6 +8,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use prost::Message as ProstMessage;
 use reqwest::Url;
+use serde_json::Value;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
@@ -69,6 +70,7 @@ pub(crate) fn build_client_hello(
     token: &str,
     agent_id: String,
     agent_version: String,
+    workspaces: Vec<v2::DeviceWorkspace>,
 ) -> v2::ClientHello {
     v2::ClientHello {
         protocol_version: GATEWAY_WS_PROTOCOL_VERSION,
@@ -82,11 +84,87 @@ pub(crate) fn build_client_hello(
         device_credential: String::new(),
         device_name: String::new(),
         platform: std::env::consts::OS.to_string(),
-        workspaces: Vec::new(),
+        workspaces,
         selection_lease: String::new(),
         workspace_id: String::new(),
         runtime_kind: String::new(),
     }
+}
+
+fn workspace_path_key(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+pub(crate) fn workspace_snapshot_from_settings(
+    snapshot: &Value,
+) -> Result<Vec<v2::DeviceWorkspace>, String> {
+    let system = snapshot
+        .get("system")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "gateway settings snapshot is missing system settings".to_string())?;
+    let projects = system
+        .get("workspaceProjects")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "gateway settings snapshot is missing workspaceProjects".to_string())?;
+    let excluded_paths = [
+        "archivedWorkspaceProjectPaths",
+        "missingWorkspaceProjectPaths",
+    ]
+    .into_iter()
+    .flat_map(|field| {
+        system
+            .get(field)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(workspace_path_key)
+    })
+    .collect::<std::collections::HashSet<_>>();
+
+    projects
+        .iter()
+        .map(|project| {
+            let project = project
+                .as_object()
+                .ok_or_else(|| "workspace project must be an object".to_string())?;
+            let id = project
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            let name = project
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            let path = project
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if id.is_empty() || name.is_empty() || path.is_empty() {
+                return Err("workspace project requires id, name and path".to_string());
+            }
+            Ok((
+                workspace_path_key(path),
+                v2::DeviceWorkspace {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    path: path.to_string(),
+                },
+            ))
+        })
+        .filter_map(|result| match result {
+            Ok((path_key, _)) if excluded_paths.contains(&path_key) => None,
+            Ok((_, workspace)) => Some(Ok(workspace)),
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
 }
 
 /// prost 编码为一条 WS 二进制消息（v2 约定：一帧一消息，无长度前缀）。
@@ -248,6 +326,51 @@ mod tests {
         Request as ServerRequest, Response as ServerResponse,
     };
     use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+
+    #[test]
+    fn workspace_snapshot_filters_unavailable_projects() {
+        let snapshot = serde_json::json!({
+            "system": {
+                "workspaceProjects": [
+                    {"id": "active", "name": "Active", "path": "D:\\code\\active"},
+                    {"id": "archived", "name": "Archived", "path": "D:\\code\\archived"},
+                    {"id": "missing", "name": "Missing", "path": "D:\\code\\missing"}
+                ],
+                "archivedWorkspaceProjectPaths": ["d:/code/archived/"],
+                "missingWorkspaceProjectPaths": ["D:/CODE/MISSING"]
+            }
+        });
+        let workspaces = workspace_snapshot_from_settings(&snapshot).expect("workspace snapshot");
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0].id, "active");
+        assert_eq!(workspaces[0].path, "D:\\code\\active");
+    }
+
+    #[test]
+    fn workspace_snapshot_rejects_invalid_projects() {
+        let snapshot = serde_json::json!({
+            "system": {
+                "workspaceProjects": [{"id": "broken", "name": "Broken", "path": ""}]
+            }
+        });
+        assert!(workspace_snapshot_from_settings(&snapshot).is_err());
+    }
+
+    #[test]
+    fn client_hello_carries_workspace_snapshot() {
+        let workspaces = vec![v2::DeviceWorkspace {
+            id: "project-a".to_string(),
+            name: "Project A".to_string(),
+            path: "D:\\code\\project-a".to_string(),
+        }];
+        let hello = build_client_hello(
+            "token",
+            "agent-1".to_string(),
+            "1.0.0".to_string(),
+            workspaces.clone(),
+        );
+        assert_eq!(hello.workspaces, workspaces);
+    }
 
     #[test]
     fn build_ws_url_maps_http_to_ws() {
@@ -441,7 +564,12 @@ mod tests {
 
         let (mut ws, server_hello) = connect_agent_ws(
             &format!("ws://{addr}"),
-            build_client_hello("test-token", "agent-1".to_string(), "0.0.0".to_string()),
+            build_client_hello(
+                "test-token",
+                "agent-1".to_string(),
+                "0.0.0".to_string(),
+                Vec::new(),
+            ),
         )
         .await
         .expect("agent ws handshake");
@@ -509,7 +637,12 @@ mod tests {
 
         let result = connect_agent_ws(
             &format!("ws://{addr}"),
-            build_client_hello("bad-token", "agent-1".to_string(), "0.0.0".to_string()),
+            build_client_hello(
+                "bad-token",
+                "agent-1".to_string(),
+                "0.0.0".to_string(),
+                Vec::new(),
+            ),
         )
         .await;
         assert_eq!(result.err(), Some("unauthorized".to_string()));
@@ -534,7 +667,12 @@ mod tests {
 
         let result = connect_agent_ws(
             &format!("ws://{addr}"),
-            build_client_hello("test-token", "agent-1".to_string(), "0.0.0".to_string()),
+            build_client_hello(
+                "test-token",
+                "agent-1".to_string(),
+                "0.0.0".to_string(),
+                Vec::new(),
+            ),
         )
         .await;
         match result.err() {

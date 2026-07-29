@@ -101,6 +101,7 @@ impl GatewayController {
             &config.token,
             effective_agent_id(&config)?,
             crate::app_version().to_string(),
+            Vec::new(),
         );
 
         let connect = connect_terminal_ws(&ws_url, hello);

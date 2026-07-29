@@ -108,10 +108,13 @@ impl GatewayController {
             config.gateway_port,
             GATEWAY_WS_AGENT_PATH,
         )?;
+        let settings_snapshot = self.current_settings_snapshot().await?;
+        let workspaces = workspace_snapshot_from_settings(&settings_snapshot)?;
         let hello = build_client_hello(
             &config.token,
             effective_agent_id(&config)?,
             crate::app_version().to_string(),
+            workspaces,
         );
 
         let connect_result = await_abortable_on_reconfigure(&config, config_rx, async move {

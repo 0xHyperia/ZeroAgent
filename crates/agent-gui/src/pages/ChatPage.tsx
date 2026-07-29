@@ -256,7 +256,6 @@ export function ChatPage(props: ChatPageProps) {
   const [rightDockOpen, setRightDockOpen] = useState(false);
   const {
     workspaceProjects,
-    sidebarWorkspaceProjects,
     setActiveWorkspaceProjectId,
     missingWorkspaceProjectPathKeys,
     archivedWorkspaceProjectPathKeys,
@@ -784,6 +783,38 @@ export function ChatPage(props: ChatPageProps) {
     setErrorMessage,
     addNotify,
   });
+
+  // Keep an empty draft conversation's workdir following the active project,
+  // matching the Gateway WebUI behavior.
+  useEffect(() => {
+    const nextWorkdir = activeWorkspaceProjectPath.trim();
+    if (
+      !isAgentMode ||
+      !nextWorkdir ||
+      !currentConversationId.trim() ||
+      !isDraftConversation ||
+      isConversationRunning(currentConversationId) ||
+      conversationState.meta.totalMessageCount > 0 ||
+      pendingUploadedFiles.length > 0 ||
+      currentConversationRuntimeWorkdir === nextWorkdir
+    ) {
+      return;
+    }
+    updateConversationRuntimeEntry(currentConversationId, (prev) => ({
+      ...prev,
+      workdir: nextWorkdir,
+    }));
+  }, [
+    activeWorkspaceProjectPath,
+    conversationState.meta.totalMessageCount,
+    currentConversationId,
+    currentConversationRuntimeWorkdir,
+    isAgentMode,
+    isConversationRunning,
+    isDraftConversation,
+    pendingUploadedFiles.length,
+    updateConversationRuntimeEntry,
+  ]);
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   function resetVisibleTransientState(targetConversationId = currentConversationIdRef.current) {
     if (currentConversationIdRef.current !== targetConversationId) {
@@ -1324,16 +1355,17 @@ export function ChatPage(props: ChatPageProps) {
 
   const handleNewConversation = useCallback(() => {
     openController.cancel();
-    const plainChatProject = workspaceProjects.find(
-      (project) => project.id === DEFAULT_WORKSPACE_PROJECT_ID,
-    );
-    if (plainChatProject) {
-      activateWorkspaceProject(plainChatProject, { startConversation: true });
-      return;
-    }
     prepareComposerForConversationChange();
-    startNewConversationActionRef.current({ workdir: "" });
-  }, [activateWorkspaceProject, openController, workspaceProjects]);
+    startNewConversationActionRef.current({
+      workdir: isAgentMode ? activeWorkspaceProjectPath || workdir : "",
+    });
+  }, [
+    activeWorkspaceProjectPath,
+    isAgentMode,
+    openController,
+    prepareComposerForConversationChange,
+    workdir,
+  ]);
 
   // 动作总线（Rust `app:action`）里 ChatPage 拥有的动作在下方统一监听
   // （handleSelectConversation 定义之后）；这里先备好 ref 镜像。
@@ -1710,8 +1742,8 @@ export function ChatPage(props: ChatPageProps) {
           isOpen={sidebarOpen}
           fontScale={settings.customSettings.fontScale.sidebar}
           activeView={activeView}
-          showProjects={isAgentMode && sidebarWorkspaceProjects.length > 0}
-          projects={sidebarWorkspaceProjects}
+          showProjects={isAgentMode}
+          projects={workspaceProjects}
           activeProjectId={activeWorkspaceProject?.id}
           missingProjectPathKeys={missingWorkspaceProjectPathKeys}
           projectRenamingId={projectRenamingId}

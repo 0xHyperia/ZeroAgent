@@ -12,6 +12,7 @@ import {
 type Props = {
   environments: ExecutionEnvironment[];
   selection: ExecutionSelection | null;
+  activeWorkspaceId?: string;
   disabled?: boolean;
   onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
 };
@@ -19,6 +20,7 @@ type Props = {
 export function ExecutionEnvironmentSwitcher({
   environments,
   selection,
+  activeWorkspaceId = "",
   disabled,
   onSwitch,
 }: Props) {
@@ -39,8 +41,8 @@ export function ExecutionEnvironmentSwitcher({
   const [submitting, setSubmitting] = useState(false);
 
   const current = useMemo(
-    () => resolveExecutionTarget(environments, selection),
-    [environments, selection],
+    () => resolveExecutionTarget(environments, selection, activeWorkspaceId),
+    [activeWorkspaceId, environments, selection],
   );
 
   useEffect(() => {
@@ -91,7 +93,8 @@ export function ExecutionEnvironmentSwitcher({
     if (
       environment.runtime_kind === selection?.runtime_kind &&
       (environment.device_id ?? "") === (selection.device_id ?? "") &&
-      workspace.id === selection.workspace_id
+      workspace.id ===
+        (selection.runtime_kind === "device_agent" ? activeWorkspaceId : selection.workspace_id)
     ) {
       setOpen(false);
       return;

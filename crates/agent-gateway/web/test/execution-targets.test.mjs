@@ -29,18 +29,19 @@ const environments = [
   },
 ];
 
-test("execution target resolution matches both device and workspace", () => {
+test("device selection resolves its active workspace independently", () => {
   const selection = {
     selection_lease: "lease-1",
     runtime_kind: "device_agent",
     device_id: "device-a",
-    workspace_id: "workspace-b",
-    target_fingerprint: "device_agent:device-a:workspace-b",
+    workspace_id: "",
+    scope: "device",
+    target_fingerprint: "device_agent:device-a:",
     conversation_id: "conversation-1",
     expires_at: "",
   };
 
-  const resolved = targets.resolveExecutionTarget(environments, selection);
+  const resolved = targets.resolveExecutionTarget(environments, selection, "workspace-b");
   assert.equal(resolved.environment.name, "Office PC");
   assert.deepEqual(resolved.workspace, {
     id: "workspace-b",
@@ -49,13 +50,14 @@ test("execution target resolution matches both device and workspace", () => {
   });
 });
 
-test("selection credentials preserve the remote workspace binding", () => {
+test("device selection credentials do not bind a remote workspace", () => {
   const selection = {
     selection_lease: "lease-2",
     runtime_kind: "device_agent",
     device_id: "device-a",
-    workspace_id: "workspace-a",
-    target_fingerprint: "device_agent:device-a:workspace-a",
+    workspace_id: "",
+    scope: "device",
+    target_fingerprint: "device_agent:device-a:",
     conversation_id: "conversation-2",
     expires_at: "",
   };
@@ -66,8 +68,67 @@ test("selection credentials preserve the remote workspace binding", () => {
     runtimeKind: "device_agent",
     deviceId: "device-a",
     agentId: "device-a",
-    workspaceId: "workspace-a",
+    workspaceId: "",
   });
+});
+
+test("selecting a device requests a device-scoped lease", async () => {
+  const originalFetch = globalThis.fetch;
+  let request;
+  try {
+    globalThis.fetch = async (url, init) => {
+      request = { url, init };
+      return {
+        ok: true,
+        json: async () => ({
+          selection_lease: "lease-device",
+          runtime_kind: "device_agent",
+          device_id: "device-a",
+          workspace_id: "",
+          scope: "device",
+          target_fingerprint: "device_agent:device-a:",
+          conversation_id: "conversation-device",
+          expires_at: "",
+        }),
+      };
+    };
+    await targets.selectExecutionTarget(environments[1], environments[1].workspaces[0]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(request.url, "/api/execution-target/select");
+  assert.deepEqual(JSON.parse(request.init.body), {
+    runtime_kind: "device_agent",
+    device_id: "device-a",
+    workspace_id: "",
+    scope: "device",
+    target_fingerprint: "device_agent:device-a:",
+  });
+});
+
+test("a valid device lease is reusable across workspaces on the same device", () => {
+  const selection = {
+    selection_lease: "lease-reuse",
+    runtime_kind: "device_agent",
+    device_id: "device-a",
+    workspace_id: "",
+    scope: "device",
+    target_fingerprint: "device_agent:device-a:",
+    conversation_id: "conversation-reuse",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  };
+  assert.equal(targets.canReuseDeviceSelection(selection, environments[1]), true);
+  assert.equal(
+    targets.canReuseDeviceSelection(selection, { ...environments[1], device_id: "device-b" }),
+    false,
+  );
+  assert.equal(
+    targets.canReuseDeviceSelection(
+      { ...selection, expires_at: new Date(Date.now() - 60_000).toISOString() },
+      environments[1],
+    ),
+    false,
+  );
 });
 
 test("selection restoration is accepted only when the gateway validates the lease", async () => {
@@ -75,8 +136,9 @@ test("selection restoration is accepted only when the gateway validates the leas
     selection_lease: "lease-3",
     runtime_kind: "device_agent",
     device_id: "device-a",
-    workspace_id: "workspace-a",
-    target_fingerprint: "device_agent:device-a:workspace-a",
+    workspace_id: "",
+    scope: "device",
+    target_fingerprint: "device_agent:device-a:",
     conversation_id: "conversation-3",
     expires_at: "",
   };

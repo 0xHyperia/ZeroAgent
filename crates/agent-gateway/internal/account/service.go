@@ -185,25 +185,20 @@ func (s *Service) RefreshUser(ctx context.Context, session *Session) (json.RawMe
 }
 
 type RegisterDeviceInput struct {
-	InstallationID   string      `json:"installation_id"`
-	Name             string      `json:"name"`
-	Platform         string      `json:"platform"`
-	Version          string      `json:"version"`
-	DeviceID         string      `json:"device_id,omitempty"`
-	DeviceCredential string      `json:"device_credential,omitempty"`
-	AgentID          string      `json:"agent_id,omitempty"`
-	AgentToken       string      `json:"agent_token,omitempty"`
-	Workspaces       []Workspace `json:"workspaces"`
+	InstallationID   string `json:"installation_id"`
+	Name             string `json:"name"`
+	Platform         string `json:"platform"`
+	Version          string `json:"version"`
+	DeviceID         string `json:"device_id,omitempty"`
+	DeviceCredential string `json:"device_credential,omitempty"`
+	AgentID          string `json:"agent_id,omitempty"`
+	AgentToken       string `json:"agent_token,omitempty"`
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, userID int64, input RegisterDeviceInput) (*Device, string, error) {
 	input.InstallationID = strings.TrimSpace(input.InstallationID)
 	if input.InstallationID == "" || len(input.InstallationID) > 200 {
 		return nil, "", &APIError{Status: http.StatusBadRequest, Message: "installation_id is required"}
-	}
-	workspaces, err := normalizeWorkspaces(input.Workspaces)
-	if err != nil {
-		return nil, "", err
 	}
 	now := s.now().UTC()
 	existing, lookupErr := s.store.GetDeviceByInstallation(ctx, userID, input.InstallationID)
@@ -216,7 +211,6 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, input Regist
 		existing.Name = normalizeDeviceName(input.Name, existing.Name)
 		existing.Platform = strings.TrimSpace(input.Platform)
 		existing.Version = strings.TrimSpace(input.Version)
-		existing.Workspaces = workspaces
 		existing.LastSeenAt = now
 		return existing, "", s.store.UpsertDevice(ctx, existing)
 	}
@@ -238,7 +232,7 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, input Regist
 	device := &Device{
 		ID: agentID, AgentID: agentID, UserID: userID, InstallationID: input.InstallationID,
 		Name: normalizeDeviceName(input.Name, "ZeroAgent device"), Platform: strings.TrimSpace(input.Platform),
-		Version: strings.TrimSpace(input.Version), CredentialHash: hashToken(credential), Workspaces: workspaces,
+		Version: strings.TrimSpace(input.Version), CredentialHash: hashToken(credential),
 		CreatedAt: now, TokenIssuedAt: now, LastSeenAt: now, Online: false,
 	}
 	if err := s.store.UpsertDevice(ctx, device); err != nil {
@@ -285,6 +279,30 @@ func (s *Service) AuthenticateAgent(agentID, token, legacyDeviceID, legacyCreden
 	epoch := s.credentialEpochs[device.ID]
 	s.credentialMu.RUnlock()
 	return device.ID, epoch, nil
+}
+
+// UpdateAgentWorkspaces replaces the device workspace directory with the
+// authenticated Agent's complete ClientHello snapshot.
+func (s *Service) UpdateAgentWorkspaces(ctx context.Context, agentID string, input []Workspace) error {
+	workspaces, err := normalizeWorkspaces(input)
+	if err != nil {
+		return err
+	}
+	device, err := s.store.GetDeviceByID(ctx, canonicalAgentID(agentID))
+	if err != nil {
+		return err
+	}
+	device.Workspaces = workspaces
+	device.LastSeenAt = s.now().UTC()
+	return s.store.UpsertDevice(ctx, device)
+}
+
+func (s *Service) AgentWorkspaces(ctx context.Context, agentID string) ([]Workspace, error) {
+	device, err := s.store.GetDeviceByID(ctx, canonicalAgentID(agentID))
+	if err != nil {
+		return nil, err
+	}
+	return append([]Workspace(nil), device.Workspaces...), nil
 }
 
 func (s *Service) AuthenticationCurrent(agentID string, epoch uint64) bool {
@@ -931,7 +949,6 @@ func normalizeWorkspaces(input []Workspace) ([]Workspace, error) {
 		workspace.ID = strings.TrimSpace(workspace.ID)
 		workspace.Name = strings.TrimSpace(workspace.Name)
 		workspace.Path = strings.TrimSpace(workspace.Path)
-		workspace.Kind = strings.TrimSpace(workspace.Kind)
 		if workspace.ID == "" || workspace.Name == "" || workspace.Path == "" || len(workspace.Path) > 4096 {
 			return nil, &APIError{Status: http.StatusBadRequest, Message: "each workspace requires id, name and path"}
 		}

@@ -50,12 +50,14 @@ func NewAccountFixture(t testing.TB, root *session.Manager) *AccountFixture {
 		Name:           "Desktop",
 		Platform:       "windows",
 		Version:        "1.0.0",
-		Workspaces: []account.Workspace{{
-			ID: "workspace-1", Name: "Project", Path: "/workspace/project",
-		}},
 	})
 	if err != nil {
 		t.Fatalf("register account fixture device: %v", err)
+	}
+	if err := service.UpdateAgentWorkspaces(context.Background(), device.ID, []account.Workspace{{
+		ID: "workspace-1", Name: "Project", Path: "/workspace/project",
+	}}); err != nil {
+		t.Fatalf("publish account fixture workspaces: %v", err)
 	}
 	if _, err := service.AuthenticateDevice(context.Background(), device.ID, credential); err != nil {
 		t.Fatalf("authenticate account fixture device: %v", err)

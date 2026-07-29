@@ -72,6 +72,25 @@ func (s *Server) serveAgent(conn *websocket.Conn) {
 		}
 		return
 	}
+	if s.accounts != nil {
+		workspaces := make([]account.Workspace, 0, len(hello.GetWorkspaces()))
+		for _, workspace := range hello.GetWorkspaces() {
+			if workspace == nil {
+				continue
+			}
+			workspaces = append(workspaces, account.Workspace{
+				ID: workspace.GetId(), Name: workspace.GetName(), Path: workspace.GetPath(),
+			})
+		}
+		if err := s.accounts.UpdateAgentWorkspaces(context.Background(), agentID, workspaces); err != nil {
+			_ = writeDirectMessage(conn, s.writeTimeout(), &gatewayv2.AgentServerFrame{
+				Payload: &gatewayv2.AgentServerFrame_Hello{
+					Hello: s.serverHello(false, "invalid workspace snapshot", "", s.readLimit()),
+				},
+			})
+			return
+		}
+	}
 
 	sessionID := uuid.NewString()
 	authSnapshot := session.AuthSnapshot{

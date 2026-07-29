@@ -1,6 +1,7 @@
 package pbws
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -37,10 +38,15 @@ func (c *browserConn) workspaceAllows(workdir string) bool {
 	if !ok || normalized == "" {
 		return false
 	}
-	for _, workspace := range c.allowedWorkspaces {
-		if workspace.Archived || workspace.Missing {
-			continue
+	workspaces := c.allowedWorkspaces
+	if c.srv != nil && c.srv.accounts != nil && strings.TrimSpace(c.boundAgentID) != "" {
+		current, err := c.srv.accounts.AgentWorkspaces(context.Background(), c.boundAgentID)
+		if err != nil {
+			return false
 		}
+		workspaces = current
+	}
+	for _, workspace := range workspaces {
 		if c.selectionScope == account.SelectionScopeWorkspace && workspace.ID != c.workspaceID {
 			continue
 		}

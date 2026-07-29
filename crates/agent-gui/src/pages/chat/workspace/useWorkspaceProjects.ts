@@ -74,25 +74,9 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
   } = params;
 
   const sidebarWorkdirs = useSidebarSelector(sidebarStore, (s) => s.workdirs);
-  const workspaceProjects = useMemo(() => {
-    const now = Date.now();
-    return [
-      {
-        id: DEFAULT_WORKSPACE_PROJECT_ID,
-        name: t("chat.plainChat"),
-        path: "",
-        kind: "managed" as const,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs).filter(
-        (project) => project.id !== DEFAULT_WORKSPACE_PROJECT_ID,
-      ),
-    ];
-  }, [sidebarWorkdirs, settings.system, t]);
-  const sidebarWorkspaceProjects = useMemo(
-    () => workspaceProjects.filter((project) => project.id !== DEFAULT_WORKSPACE_PROJECT_ID),
-    [workspaceProjects],
+  const workspaceProjects = useMemo(
+    () => mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs),
+    [sidebarWorkdirs, settings.system],
   );
   const [activeWorkspaceProjectId, setActiveWorkspaceProjectId] = useState<string>(
     () => settings.system.activeWorkspaceProjectId?.trim() || DEFAULT_WORKSPACE_PROJECT_ID,
@@ -174,9 +158,6 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
 
   const checkWorkspaceProjectDirectory = useCallback(
     async (project: WorkspaceProject) => {
-      if (project.id === DEFAULT_WORKSPACE_PROJECT_ID) {
-        return true;
-      }
       const path = project.path.trim();
       if (!path) {
         setWorkspaceProjectDirectoryMissing(project, true);
@@ -202,22 +183,6 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
 
   const activateWorkspaceProject = useCallback(
     (project: WorkspaceProject, options?: { startConversation?: boolean }) => {
-      if (project.id === DEFAULT_WORKSPACE_PROJECT_ID) {
-        const changedProject = activeWorkspaceProjectId !== DEFAULT_WORKSPACE_PROJECT_ID;
-        setActiveWorkspaceProjectId(DEFAULT_WORKSPACE_PROJECT_ID);
-        setSettings((prev) => ({
-          ...prev,
-          system: {
-            ...prev.system,
-            activeWorkspaceProjectId: DEFAULT_WORKSPACE_PROJECT_ID,
-          },
-        }));
-        if (options?.startConversation || changedProject) {
-          prepareComposerForConversationChangeActionRef.current();
-          startNewConversationActionRef.current({ workdir: "" });
-        }
-        return;
-      }
       const pathKey = project.path.trim();
       if (!pathKey) return;
       const normalizedPathKey = workspaceProjectPathKey(pathKey);
@@ -561,7 +526,6 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
 
   return {
     workspaceProjects,
-    sidebarWorkspaceProjects,
     activeWorkspaceProjectId,
     setActiveWorkspaceProjectId,
     missingWorkspaceProjectPathKeys,

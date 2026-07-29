@@ -643,48 +643,45 @@ export default function GatewayApp() {
   const sidebarWorkdirs = useSidebarSelector(sidebarStore, (snapshot) => snapshot.workdirs);
   const sidebarConversationsById = useSidebarSelector(sidebarStore, (snapshot) => snapshot.byId);
 
-  const selectedExecutionWorkspace = useMemo(
-    () => resolveExecutionTarget(environments, selection).workspace,
+  const selectedExecutionEnvironment = useMemo(
+    () => resolveExecutionTarget(environments, selection).environment,
     [environments, selection],
   );
   const workspaceProjects = useMemo(() => {
-    const projects = mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs);
-    if (selection?.runtime_kind !== "device_agent" || !selectedExecutionWorkspace) {
+    let projects = mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs);
+    if (selection?.runtime_kind !== "device_agent" || !selectedExecutionEnvironment) {
       return projects;
     }
-    const selectedPathKey = workspaceProjectPathKey(selectedExecutionWorkspace.path ?? "");
-    const index = projects.findIndex(
-      (project) =>
-        project.id === selectedExecutionWorkspace.id ||
-        (selectedPathKey !== "" && workspaceProjectPathKey(project.path) === selectedPathKey),
-    );
-    if (index >= 0) {
-      if (!selectedExecutionWorkspace.path) return projects;
-      return projects.map((project, projectIndex) =>
-        projectIndex === index
-          ? {
-              ...project,
-              id: selectedExecutionWorkspace.id,
-              name: selectedExecutionWorkspace.name || project.name,
-              path: selectedExecutionWorkspace.path ?? project.path,
-            }
-          : project,
-      );
-    }
-    if (!selectedExecutionWorkspace.path) return projects;
     const now = Date.now();
-    return [
-      {
-        id: selectedExecutionWorkspace.id,
-        name: selectedExecutionWorkspace.name,
-        path: selectedExecutionWorkspace.path,
-        kind: "managed" as const,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...projects,
-    ];
-  }, [selectedExecutionWorkspace, selection?.runtime_kind, settings.system, sidebarWorkdirs]);
+    for (const workspace of selectedExecutionEnvironment.workspaces) {
+      if (!workspace.path) continue;
+      const pathKey = workspaceProjectPathKey(workspace.path);
+      const index = projects.findIndex(
+        (project) =>
+          project.id === workspace.id || workspaceProjectPathKey(project.path) === pathKey,
+      );
+      if (index >= 0) {
+        projects = projects.map((project, projectIndex) =>
+          projectIndex === index
+            ? { ...project, id: workspace.id, name: workspace.name || project.name, path: workspace.path! }
+            : project,
+        );
+      } else {
+        projects = [
+          {
+            id: workspace.id,
+            name: workspace.name,
+            path: workspace.path,
+            kind: "managed" as const,
+            createdAt: now,
+            updatedAt: now,
+          },
+          ...projects,
+        ];
+      }
+    }
+    return projects;
+  }, [selectedExecutionEnvironment, selection?.runtime_kind, settings.system, sidebarWorkdirs]);
   const archivedWorkspaceProjectPathKeys = useMemo(
     () => new Set(settings.system.archivedWorkspaceProjectPaths.map(workspaceProjectPathKey)),
     [settings.system.archivedWorkspaceProjectPaths],
@@ -706,12 +703,6 @@ export default function GatewayApp() {
       setActiveWorkspaceProjectId(activeWorkspaceProject.id);
     }
   }, [activeWorkspaceProject?.id, activeWorkspaceProjectId]);
-  useEffect(() => {
-    if (selection?.runtime_kind !== "device_agent" || !selectedExecutionWorkspace?.id) return;
-    setActiveWorkspaceProjectId((current) =>
-      current === selectedExecutionWorkspace.id ? current : selectedExecutionWorkspace.id,
-    );
-  }, [selectedExecutionWorkspace?.id, selection?.runtime_kind]);
   const activeWorkspaceProjectPath = activeWorkspaceProject?.path.trim() ?? "";
 
   // Scope derivation: agent mode with a project → that workdir; agent mode
@@ -4844,14 +4835,20 @@ export default function GatewayApp() {
                           <ExecutionEnvironmentSwitcher
                             environments={environments}
                             selection={selection}
+                            activeWorkspaceId={activeWorkspaceProjectId}
                             disabled={transcriptBusy}
                             onSwitch={async (environment, workspace) => {
+                              const changesEnvironment =
+                                environment.runtime_kind !== selection?.runtime_kind ||
+                                (environment.device_id ?? "") !== (selection?.device_id ?? "");
                               await switchExecutionTarget(environment, workspace);
                               setActiveWorkspaceProjectId(workspace.id);
-                              transcriptStoreRegistry.clear();
-                              setConversationId("");
-                              setSelectedHistoryId("");
-                              setSelectedHistory(null);
+                              if (changesEnvironment) {
+                                transcriptStoreRegistry.clear();
+                                setConversationId("");
+                                setSelectedHistoryId("");
+                                setSelectedHistory(null);
+                              }
                             }}
                           />
                         ) : null}

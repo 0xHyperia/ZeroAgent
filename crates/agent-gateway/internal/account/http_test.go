@@ -273,10 +273,12 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 	}
 	device, credential, err := service.RegisterDevice(ctx, desktop1.UserID, RegisterDeviceInput{
 		InstallationID: "installation-1", Name: "Office PC", Platform: "windows", Version: "1.0.0",
-		Workspaces: []Workspace{{ID: "workspace-1", Name: "ZeroAgent", Path: `E:\code\ZeroAgent`}},
 	})
 	if err != nil || credential == "" {
 		t.Fatalf("register device: credential=%q err=%v", credential, err)
+	}
+	if err := service.UpdateAgentWorkspaces(ctx, device.ID, []Workspace{{ID: "workspace-1", Name: "ZeroAgent", Path: `E:\code\ZeroAgent`}}); err != nil {
+		t.Fatalf("publish workspaces: %v", err)
 	}
 	if err := service.store.SetDevicePresence(ctx, device.ID, true, time.Now().UTC()); err != nil {
 		t.Fatal(err)
@@ -363,7 +365,6 @@ func TestDesktopDeviceManagementUsesAccountIdentity(t *testing.T) {
 	service, _, handler := newAccountTestRuntime(t)
 	device, _, err := service.RegisterDevice(context.Background(), 1, RegisterDeviceInput{
 		InstallationID: "installation-managed", Name: "Old name", Platform: "windows", Version: "1.0.0",
-		Workspaces: []Workspace{{ID: "workspace-1", Name: "ZeroAgent", Path: `E:\code\ZeroAgent`}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -615,9 +616,11 @@ func TestDeviceHistoryRoutesRemainVisibleWhenDeviceIsOffline(t *testing.T) {
 	ctx := context.Background()
 	device, _, err := service.RegisterDevice(ctx, 1, RegisterDeviceInput{
 		InstallationID: "history-device", Name: "Home PC", Platform: "windows", Version: "1.0.0",
-		Workspaces: []Workspace{{ID: "workspace-home", Name: "Home", Path: `E:\code\home`}},
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.UpdateAgentWorkspaces(ctx, device.ID, []Workspace{{ID: "workspace-home", Name: "Home", Path: `E:\code\home`}}); err != nil {
 		t.Fatal(err)
 	}
 	conversationID := "46a06475-4cb9-4216-ab00-c229fe33b784"

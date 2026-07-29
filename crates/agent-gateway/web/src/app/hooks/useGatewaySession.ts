@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  canReuseDeviceSelection,
   type ExecutionEnvironment,
   type ExecutionSelection,
   type ExecutionWorkspace,
@@ -30,8 +31,7 @@ function readHistorySelection(): ExecutionSelection | null {
   if (
     value?.runtime_kind !== "device_agent" ||
     !value.selection_lease?.trim() ||
-    !value.device_id?.trim() ||
-    !value.workspace_id?.trim()
+    !value.device_id?.trim()
   ) {
     return null;
   }
@@ -78,13 +78,14 @@ export function useGatewaySession(historyShareToken: string | null) {
     const handoffLease = params.get("selection_lease")?.trim() ?? "";
     const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
     const handoffWorkspace = params.get("workspace_id")?.trim() ?? "";
-    if (handoffLease && handoffRuntime === "device_agent" && handoffWorkspace) {
+    if (handoffLease && handoffRuntime === "device_agent") {
       const next: ExecutionSelection = {
         selection_lease: handoffLease,
         runtime_kind: "device_agent",
         device_id: params.get("device_id")?.trim() ?? "",
         agent_id: params.get("agent_id")?.trim() || params.get("device_id")?.trim() || "",
         workspace_id: handoffWorkspace,
+        scope: handoffWorkspace ? "workspace" : "device",
         target_fingerprint: [
           handoffRuntime,
           params.get("device_id")?.trim() ?? "",
@@ -122,10 +123,10 @@ export function useGatewaySession(historyShareToken: string | null) {
       const environment = items.find(
         (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
       );
-      if (
-        environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id) &&
-        (await validateExecutionSelection(restored))
-      ) {
+      const workspaceIsValid =
+        !restored.workspace_id ||
+        environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id);
+      if (environment && workspaceIsValid && (await validateExecutionSelection(restored))) {
         setSelection(restored);
         applyToken(encodeSelectionCredential(restored));
         return items;
@@ -266,6 +267,9 @@ export function useGatewaySession(historyShareToken: string | null) {
 
   const switchExecutionTarget = useCallback(
     async (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => {
+      if (canReuseDeviceSelection(selection, environment)) {
+        return selection;
+      }
       const next = await selectExecutionTarget(environment, workspace);
       resetGatewayWebSocketClient();
       setSelection(next);
@@ -273,7 +277,7 @@ export function useGatewaySession(historyShareToken: string | null) {
       persistHistorySelection(next.runtime_kind === "device_agent" ? next : null);
       return next;
     },
-    [applyToken],
+    [applyToken, selection],
   );
 
   const clearSession = useCallback(() => {
