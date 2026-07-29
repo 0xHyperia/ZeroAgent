@@ -10,6 +10,7 @@ import type { ChatHistorySummary } from "@/lib/chat/chatHistory";
 import type { WorkspaceProject } from "@/lib/settings";
 import type { SidebarBatchDeleteOptions } from "@/lib/sidebar/batchDelete";
 import { deleteSidebarConversations } from "@/lib/sidebar/batchDelete";
+import { sortSidebarConversations } from "@/lib/sidebar/reconcile";
 import {
   selectConversations,
   selectListState,
@@ -144,6 +145,14 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
   const { t } = useLocale();
 
   const items = useSidebarSelector(store, selectConversations);
+  const conversationsById = useSidebarSelector(store, selectConversationIndex);
+  const taskItems = useMemo(
+    () =>
+      sortSidebarConversations(
+        Array.from(conversationsById.values()).filter((item) => !item.cwd?.trim()),
+      ),
+    [conversationsById],
+  );
   const listState = useSidebarSelector(store, selectListState, sidebarShallowEqual);
   const scopeKey = useSidebarSelector(store, (snapshot) => snapshot.scopeKey);
   const runningConversationIds = useSidebarSelector(store, selectRunningConversationIds);
@@ -323,6 +332,7 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
   return (
     <ChatHistorySidebar
       items={items}
+      taskItems={taskItems}
       currentConversationId={props.currentConversationId}
       busyConversationIds={mutations}
       runningConversationIds={runningConversationIds}

@@ -39,6 +39,11 @@ test("translation lookup falls back to the key for unknown entries", () => {
   assert.equal(i18n.t("missing.key", "en-US"), "missing.key");
 });
 
+test("the lower conversation section is labeled as recent conversations", () => {
+  assert.equal(i18n.translations["zh-CN"]["chat.recentConversation"], "最近会话");
+  assert.equal(i18n.translations["en-US"]["chat.recentConversation"], "Conversations");
+});
+
 test("usage query labels exist in both locales", () => {
   for (const locale of ["zh-CN", "en-US"]) {
     assert.ok(i18n.translations[locale]["settings.providerUsageQuery"]);

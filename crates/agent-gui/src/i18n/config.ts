@@ -50,7 +50,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.memoryExtraction.done": "记忆整理完成。",
     "chat.memoryExtraction.noop": "本轮无需更新记忆。",
     "chat.memoryExtraction.partial": "记忆部分更新（{accepted} 条已应用，{rejected} 条被拒）。",
-    "chat.recentConversation": "任务",
+    "chat.recentConversation": "最近会话",
     "chat.workspaceSection": "项目",
     "chat.workspaceCreate": "新建项目",
     "chat.workspaceCreateDescription": "打开已有文件夹，或从远程 Git 仓库创建新的工作空间。",
@@ -2265,7 +2265,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.memoryExtraction.noop": "No memory updates needed this turn.",
     "chat.memoryExtraction.partial":
       "Memory partially updated ({accepted} applied, {rejected} rejected).",
-    "chat.recentConversation": "Tasks",
+    "chat.recentConversation": "Conversations",
     "chat.workspaceSection": "Projects",
     "chat.workspaceCreate": "New project",
     "chat.workspaceCreateDescription":

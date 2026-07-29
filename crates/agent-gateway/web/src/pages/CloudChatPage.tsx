@@ -76,17 +76,6 @@ type WebSettings = {
   reasoning_effort: "low" | "medium" | "high";
   provider_key_id?: number;
 };
-type DeviceConversation = {
-  conversation_id: string;
-  device_id: string;
-  workspace_id: string;
-  title: string;
-  summary: string;
-  updated_at: string;
-  device_name?: string;
-  device_online: boolean;
-};
-
 type Props = {
   user: RelayUser;
   onUserChange: (user: RelayUser) => void;
@@ -101,7 +90,6 @@ type Props = {
 
 const EMPTY_MUTATIONS = new Map<string, ChatHistorySidebarMutationKind>();
 const EMPTY_PATHS = new Set<string>();
-const DEVICE_ROUTE_PREFIX = "device-route:";
 const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
 
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -159,7 +147,6 @@ export function CloudChatPage({
       : "account";
   const [accountStats, setAccountStats] = useState<RelayDashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [deviceConversations, setDeviceConversations] = useState<DeviceConversation[]>([]);
   const [conversationId, setConversationId] = useState(
     () => new URLSearchParams(window.location.search).get("conversation")?.trim() ?? "",
   );
@@ -241,9 +228,6 @@ export function CloudChatPage({
     setHistoryLoading(true);
     void Promise.all([
       refreshConversations(),
-      webChatRequest<{ conversations: DeviceConversation[] }>("/api/conversation-routes").then(
-        (response) => setDeviceConversations(response.conversations),
-      ),
       getRelayDashboardStats().then(setAccountStats),
       webChatRequest<{ settings: WebSettings }>("/api/web-settings").then((response) => {
         setModel(response.settings.model);
@@ -320,16 +304,6 @@ export function CloudChatPage({
 
   async function openConversation(id: string) {
     if (streaming) return;
-    if (id.startsWith(DEVICE_ROUTE_PREFIX)) {
-      const routeId = id.slice(DEVICE_ROUTE_PREFIX.length);
-      const route = deviceConversations.find((item) => item.conversation_id === routeId);
-      setError(
-        route?.device_online
-          ? `请先切换到 ${route.device_name || "对应设备"} 的工作区，再打开完整对话。`
-          : `${route?.device_name || "对应设备"} 当前离线，只能查看历史摘要。`,
-      );
-      return;
-    }
     setConversationId(id);
     setHistoryLoading(true);
     try {
@@ -344,7 +318,7 @@ export function CloudChatPage({
   }
 
   async function removeConversation(id: string) {
-    if (streaming || id.startsWith(DEVICE_ROUTE_PREFIX)) return;
+    if (streaming) return;
     await webChatRequest<void>(`/api/web-chat/conversations/${id}`, { method: "DELETE" });
     setConversations((current) => current.filter((item) => item.id !== id));
     if (conversationId === id) {
@@ -357,7 +331,7 @@ export function CloudChatPage({
     return deleteSidebarConversations(
       ids,
       async (id) => {
-        if (streaming || id.startsWith(DEVICE_ROUTE_PREFIX)) return false;
+        if (streaming) return false;
         await removeConversation(id);
         return true;
       },
@@ -370,7 +344,7 @@ export function CloudChatPage({
     const title = renameDraft.trim();
     setRenamingId(null);
     setRenameDraft("");
-    if (!id || !title || id.startsWith(DEVICE_ROUTE_PREFIX)) return;
+    if (!id || !title) return;
     try {
       const response = await webChatRequest<{ conversation: Conversation }>(
         `/api/web-chat/conversations/${id}`,
@@ -557,22 +531,12 @@ export function CloudChatPage({
       updatedAt: toEpoch(conversation.updated_at),
       isPinned: pinnedConversationIds.has(conversation.id),
     }));
-    const routes: SidebarConversation[] = deviceConversations.map((conversation) => ({
-      id: `${DEVICE_ROUTE_PREFIX}${conversation.conversation_id}`,
-      title: conversation.title,
-      providerId: conversation.device_id,
-      model: conversation.device_name || "设备历史",
-      cwd: conversation.workspace_id,
-      createdAt: toEpoch(conversation.updated_at),
-      updatedAt: toEpoch(conversation.updated_at),
-      isPending: true,
-    }));
-    return [...cloud, ...routes].sort(
+    return cloud.sort(
       (left, right) =>
         Number(right.isPinned === true) - Number(left.isPinned === true) ||
         right.updatedAt - left.updatedAt,
     );
-  }, [conversations, deviceConversations, pinnedConversationIds]);
+  }, [conversations, pinnedConversationIds]);
 
   const runningConversationIds = useMemo(
     () => (streaming && conversationId ? new Set([conversationId]) : new Set<string>()),

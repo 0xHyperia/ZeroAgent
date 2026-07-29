@@ -65,6 +65,7 @@ export type ChatHistorySidebarMutationKind = "rename" | "pin" | "delete";
 
 type ChatHistorySidebarProps = {
   items: readonly ChatHistorySummary[];
+  taskItems?: readonly ChatHistorySummary[];
   currentConversationId: string;
   // Per-row in-flight mutations: only that row's menu/inputs disable.
   busyConversationIds: ReadonlyMap<string, ChatHistorySidebarMutationKind>;
@@ -1346,6 +1347,7 @@ function HistoryListLoadingSkeleton() {
 export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHistorySidebarProps) {
   const {
     items,
+    taskItems = items,
     currentConversationId,
     busyConversationIds,
     runningConversationIds,
@@ -1445,19 +1447,19 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
   // starts returning true and its continuation stops touching state.
   const bulkDeleteRunRef = useRef(0);
   const { confirm: requestBulkDeleteConfirm, dialog: bulkDeleteDialog } = useConfirmDialog();
-  const orderedConversationIds = useMemo(() => items.map((item) => item.id), [items]);
+  const orderedConversationIds = useMemo(() => taskItems.map((item) => item.id), [taskItems]);
   const selectableConversationIds = useMemo(
     () =>
       new Set(
         sectionsDisabled
           ? []
-          : items
+          : taskItems
               .filter(
                 (item) => !runningConversationIds.has(item.id) && !busyConversationIds.has(item.id),
               )
               .map((item) => item.id),
       ),
-    [busyConversationIds, items, runningConversationIds, sectionsDisabled],
+    [busyConversationIds, runningConversationIds, sectionsDisabled, taskItems],
   );
   const handleSelectConversation = useStableEvent((id: string) => {
     if (!sectionsDisabled) {
@@ -1712,12 +1714,28 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       ),
     [archivedProjectPathKeys, projects],
   );
+  const activeScopedProject = useMemo(() => {
+    if (!scopeKey.startsWith("cwd:")) return undefined;
+    const scopedPathKey = workspaceProjectPathKey(scopeKey.slice(4));
+    return activeProjects.find(
+      (project) => workspaceProjectPathKey(project.path) === scopedPathKey,
+    );
+  }, [activeProjects, scopeKey]);
+  const isTaskScopeActive = !scopeKey.startsWith("cwd:");
+  const selectedProject = useMemo(
+    () => activeProjects.find((project) => project.id === activeProjectId),
+    [activeProjectId, activeProjects],
+  );
   // Projects arrive pre-sorted from the container; only the render cap is
   // applied here.
-  const renderedProjects = useMemo(
-    () => (showAllProjects ? activeProjects : activeProjects.slice(0, SIDEBAR_PROJECT_RENDER_CAP)),
-    [activeProjects, showAllProjects],
-  );
+  const renderedProjects = useMemo(() => {
+    if (showAllProjects) return activeProjects;
+    const visible = activeProjects.slice(0, SIDEBAR_PROJECT_RENDER_CAP);
+    if (!selectedProject || visible.some((project) => project.id === selectedProject.id)) {
+      return visible;
+    }
+    return [...visible, selectedProject];
+  }, [activeProjects, selectedProject, showAllProjects]);
   // Archiving must always leave at least one active workspace behind.
   const canArchiveProjects = Boolean(onArchiveProject) && activeProjects.length > 1;
   const [archivedGroupOpen, setArchivedGroupOpen] = useState(false);
@@ -1931,9 +1949,12 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
 
   const menuSide = isMobileMenuLayout ? "bottom" : "right";
   const historyScrollRef = useRef<HTMLDivElement | null>(null);
-  const getHistoryItemKey = useCallback((index: number) => items[index]?.id ?? index, [items]);
+  const getHistoryItemKey = useCallback(
+    (index: number) => taskItems[index]?.id ?? index,
+    [taskItems],
+  );
   const historyVirtualizer = useVirtualizer({
-    count: items.length,
+    count: taskItems.length,
     getScrollElement: () => historyScrollRef.current,
     estimateSize: () => HISTORY_ROW_ESTIMATED_HEIGHT + HISTORY_ROW_GAP,
     getItemKey: getHistoryItemKey,
@@ -1954,12 +1975,13 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     if (
       sectionsDisabled ||
       !hasMore ||
+      !isTaskScopeActive ||
       listStatus === "loading" ||
       listStatus === "initial" ||
       isLoadingMore ||
       recentCollapsed ||
-      items.length === 0 ||
-      lastVirtualHistoryIndex < items.length - HISTORY_LOAD_MORE_THRESHOLD
+      taskItems.length === 0 ||
+      lastVirtualHistoryIndex < taskItems.length - HISTORY_LOAD_MORE_THRESHOLD
     ) {
       return;
     }
@@ -1969,10 +1991,11 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     hasMore,
     listStatus,
     isLoadingMore,
-    items.length,
+    taskItems.length,
     lastVirtualHistoryIndex,
     handleLoadMore,
     recentCollapsed,
+    isTaskScopeActive,
   ]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run to (re)observe section refs when sections mount/unmount or toggle
@@ -2365,35 +2388,78 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 <div ref={projectsBodyRef} className="space-y-0.5 px-2 pb-0.5">
                   {renderedProjects.map((project) => {
                     const pathKey = workspaceProjectPathKey(project.path);
+                    const isExpanded = activeScopedProject?.id === project.id;
                     return (
-                      <ProjectRow
-                        key={project.id}
-                        project={project}
-                        isActive={activeProjectId === project.id}
-                        isMissing={missingProjectPathKeys.has(pathKey)}
-                        isRunning={runningProjectPathKeys.has(pathKey)}
-                        isRenaming={projectRenamingId === project.id}
-                        isPendingRemove={pendingProjectRemoveId === project.id}
-                        isInteractionDisabled={sectionsDisabled}
-                        renameDraft={projectRenameDraft}
-                        onSelectProject={handleSelectProject}
-                        onBrowseProjectInFileTree={
-                          onBrowseProjectInFileTree ? handleBrowseProjectInFileTree : undefined
-                        }
-                        onStartRenamingProject={handleStartRenamingProject}
-                        onProjectRenameDraftChange={handleProjectRenameDraftChange}
-                        onCommitProjectRename={handleCommitProjectRename}
-                        onCancelProjectRename={handleCancelProjectRename}
-                        onSetProjectPinned={handleSetProjectPinned}
-                        onRemoveProject={handleRemoveProject}
-                        isArchived={false}
-                        canArchive={canArchiveProjects}
-                        onArchiveProject={handleArchiveProject}
-                        onUnarchiveProject={handleUnarchiveProject}
-                        onSetPendingRemove={handleSetPendingProjectRemove}
-                        menuOpen={!sectionsDisabled && openProjectMenuId === project.id}
-                        onMenuOpenChange={handleProjectMenuOpenChange}
-                      />
+                      <div key={project.id}>
+                        <ProjectRow
+                          project={project}
+                          isActive={activeProjectId === project.id}
+                          isMissing={missingProjectPathKeys.has(pathKey)}
+                          isRunning={runningProjectPathKeys.has(pathKey)}
+                          isRenaming={projectRenamingId === project.id}
+                          isPendingRemove={pendingProjectRemoveId === project.id}
+                          isInteractionDisabled={sectionsDisabled}
+                          renameDraft={projectRenameDraft}
+                          onSelectProject={handleSelectProject}
+                          onBrowseProjectInFileTree={
+                            onBrowseProjectInFileTree ? handleBrowseProjectInFileTree : undefined
+                          }
+                          onStartRenamingProject={handleStartRenamingProject}
+                          onProjectRenameDraftChange={handleProjectRenameDraftChange}
+                          onCommitProjectRename={handleCommitProjectRename}
+                          onCancelProjectRename={handleCancelProjectRename}
+                          onSetProjectPinned={handleSetProjectPinned}
+                          onRemoveProject={handleRemoveProject}
+                          isArchived={false}
+                          canArchive={canArchiveProjects}
+                          onArchiveProject={handleArchiveProject}
+                          onUnarchiveProject={handleUnarchiveProject}
+                          onSetPendingRemove={handleSetPendingProjectRemove}
+                          menuOpen={!sectionsDisabled && openProjectMenuId === project.id}
+                          onMenuOpenChange={handleProjectMenuOpenChange}
+                        />
+                        {isExpanded ? (
+                          <div className="ml-5 border-l border-border/45 py-1 pl-1">
+                            {errorMessage ? (
+                              <div
+                                role="alert"
+                                className="mx-1 mb-1 rounded-md px-2 py-1.5 text-xs text-destructive"
+                              >
+                                {errorMessage}
+                              </div>
+                            ) : null}
+                            {(listStatus === "loading" || listStatus === "initial") &&
+                            items.length === 0 ? (
+                              <div className="flex min-h-10 items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground/60">
+                                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                                <span>{t("chat.history.syncing")}</span>
+                              </div>
+                            ) : items.length === 0 ? (
+                              listStatus === "ready" && !errorMessage ? (
+                                <p className="flex min-h-10 items-center px-3 py-2 text-xs font-medium text-muted-foreground/60">
+                                  {t("chat.emptyChatHistory")}
+                                </p>
+                              ) : null
+                            ) : (
+                              <div className="space-y-0.5">
+                                {items.map((item) => renderHistoryRow(item))}
+                              </div>
+                            )}
+                            {items.length > 0 && (hasMore || isLoadingMore) ? (
+                              <button
+                                type="button"
+                                disabled={sectionsDisabled || isLoadingMore}
+                                onClick={handleLoadMore}
+                                className="w-full px-2 py-1.5 text-center text-[calc(11px*var(--zone-font-scale,1))] leading-5 text-muted-foreground/70 hover:text-foreground disabled:cursor-wait"
+                              >
+                                {isLoadingMore
+                                  ? t("sidebar.loadingMoreHistory")
+                                  : t("sidebar.continueLoadingHistory")}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                   {hasCappedProjects ? (
@@ -2575,7 +2641,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 </>
               ) : (
                 <>
-                  {listStatus === "syncing" ? (
+                  {isTaskScopeActive && listStatus === "syncing" ? (
                     <span
                       role="status"
                       aria-live="polite"
@@ -2588,7 +2654,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                       {t("chat.history.syncing")}
                     </span>
                   ) : null}
-                  {errorMessage ? (
+                  {isTaskScopeActive && errorMessage ? (
                     <span
                       role="status"
                       title={`${t("chat.historyReadFailed")}: ${errorMessage}`}
@@ -2600,7 +2666,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                       />
                     </span>
                   ) : null}
-                  {items.length > 0 ? (
+                  {taskItems.length > 0 ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -2666,17 +2732,24 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
             ) : null}
             <div
               ref={historyScrollRef}
-              aria-busy={listStatus === "loading" || listStatus === "syncing" || isLoadingMore}
+              aria-busy={
+                isTaskScopeActive &&
+                (listStatus === "loading" || listStatus === "syncing" || isLoadingMore)
+              }
               className="chat-history-list min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3"
             >
-              {items.length > 0 ? (
+              {isTaskScopeActive &&
+              (listStatus === "loading" || listStatus === "initial") &&
+              taskItems.length === 0 ? (
+                <HistoryListLoadingSkeleton />
+              ) : taskItems.length > 0 ? (
                 <div
                   key={scopeKey || "scope"}
                   className="chat-history-scope-enter relative"
                   style={{ height: historyVirtualizer.getTotalSize() }}
                 >
                   {virtualHistoryRows.map((virtualRow) => {
-                    const item = items[virtualRow.index];
+                    const item = taskItems[virtualRow.index];
                     if (!item) return null;
 
                     return (
@@ -2692,16 +2765,15 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     );
                   })}
                 </div>
-              ) : listStatus === "loading" || listStatus === "initial" ? (
-                <HistoryListLoadingSkeleton />
-              ) : listStatus === "ready" && !errorMessage ? (
+              ) : (!isTaskScopeActive || listStatus === "ready") &&
+                (!isTaskScopeActive || !errorMessage) ? (
                 <div className="chat-history-scope-enter flex items-center justify-center px-4 py-8 text-center">
                   <p className="text-xs font-medium text-muted-foreground/60">
                     {t("chat.emptyChatHistory")}
                   </p>
                 </div>
               ) : null}
-              {items.length > 0 && (hasMore || isLoadingMore) ? (
+              {isTaskScopeActive && taskItems.length > 0 && (hasMore || isLoadingMore) ? (
                 <div className="px-2 pb-2 pt-1 text-center text-[calc(11px*var(--zone-font-scale,1))] leading-5 text-muted-foreground/70">
                   {isLoadingMore
                     ? t("sidebar.loadingMoreHistory")
