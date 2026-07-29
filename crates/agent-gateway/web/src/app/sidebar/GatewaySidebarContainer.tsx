@@ -118,6 +118,7 @@ export type GatewaySidebarContainerProps = {
   onUnarchiveProject: (project: WorkspaceProject) => void;
   archivedProjectPathKeys?: ReadonlySet<string>;
   onNewConversation: () => void;
+  onNewRecentConversation: () => void;
   onSelectConversation: (id: string) => void;
   onShareConversation: (item: ChatHistorySummary) => void;
   onOpenSharedConversations: () => void;
@@ -375,6 +376,7 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
       onUnarchiveProject={props.onUnarchiveProject}
       archivedProjectPathKeys={props.archivedProjectPathKeys}
       onNewConversation={props.onNewConversation}
+      onNewRecentConversation={props.onNewRecentConversation}
       onSelectConversation={props.onSelectConversation}
       onStartRenaming={handleStartRenaming}
       onRenameDraftChange={setRenameDraft}

@@ -1751,14 +1751,16 @@ export function encodeTerminalHelloFrame(token: string, agentId: string): WireBy
   if (!normalizedAgentId) {
     throw new Error("agent_id is required");
   }
+  const selection = decodeSelectionCredential(token);
   const frame = create(TerminalClientFrameSchema, {
     payload: {
       case: "hello",
       value: create(ClientHelloSchema, {
         protocolVersion: GATEWAY_V2_PROTOCOL_VERSION,
         role: ClientRole.BROWSER,
-        token,
+        token: selection ? "" : token,
         agentId: normalizedAgentId,
+        selectionLease: selection?.lease ?? "",
         clientName: "webui",
         clientVersion: "",
       }),

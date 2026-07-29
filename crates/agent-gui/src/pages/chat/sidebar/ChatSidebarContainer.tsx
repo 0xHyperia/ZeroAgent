@@ -57,6 +57,7 @@ type ChatSidebarContainerProps = {
   onUnarchiveProject: (project: WorkspaceProject) => void;
   archivedProjectPathKeys?: ReadonlySet<string>;
   onNewConversation: () => void;
+  onNewRecentConversation: () => void;
   onSelectConversation: (id: string) => void;
   // Invoked after the store confirmed a deletion; ChatPage cleans artifacts
   // and replaces the current conversation when needed.
@@ -248,6 +249,7 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
       onUnarchiveProject={props.onUnarchiveProject}
       archivedProjectPathKeys={props.archivedProjectPathKeys}
       onNewConversation={props.onNewConversation}
+      onNewRecentConversation={props.onNewRecentConversation}
       onSelectConversation={props.onSelectConversation}
       onStartRenaming={handleStartRenaming}
       onRenameDraftChange={setRenameDraft}

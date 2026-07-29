@@ -12,7 +12,13 @@ const adapters = loader.loadModule("src/lib/gatewaySocketV2/adapters.ts");
 const pb = loader.loadModule("@bufbuild/protobuf");
 const v2 = loader.loadModule("src/lib/proto/gen/proto/v2/gateway_ws_pb.ts");
 
-const { decodeServerFrame, decodeServerFrameBinary, encodeHelloFrame, encodeRequestFrame } = adapters;
+const {
+  decodeServerFrame,
+  decodeServerFrameBinary,
+  encodeHelloFrame,
+  encodeRequestFrame,
+  encodeTerminalHelloFrame,
+} = adapters;
 
 function serverFrame(init) {
   return pb.fromJson(v2.WebServerFrameSchema, init);
@@ -24,6 +30,10 @@ function roundtrip(frame) {
 
 function decodeClientFrame(bytes) {
   return pb.fromBinary(v2.WebClientFrameSchema, bytes);
+}
+
+function decodeTerminalClientFrame(bytes) {
+  return pb.fromBinary(v2.TerminalClientFrameSchema, bytes);
 }
 
 test("desktop selection hello carries the lease and desktop bearer token", () => {
@@ -50,6 +60,24 @@ test("desktop selection hello carries the lease and desktop bearer token", () =>
   assert.equal(frame.payload.value.workspaceId, "");
   assert.equal(frame.payload.value.runtimeKind, "device_agent");
   assert.equal(frame.payload.value.clientName, "desktop-controller");
+});
+
+test("terminal hello carries the selected device lease", () => {
+  const selection = Buffer.from(
+    JSON.stringify({
+      lease: "lease-device-a",
+      runtimeKind: "device_agent",
+      deviceId: "device-a",
+      workspaceId: "",
+    }),
+  ).toString("base64url");
+  const frame = decodeTerminalClientFrame(
+    encodeTerminalHelloFrame(`selection.${selection}`, "device-a"),
+  );
+  assert.equal(frame.payload.case, "hello");
+  assert.equal(frame.payload.value.token, "");
+  assert.equal(frame.payload.value.agentId, "device-a");
+  assert.equal(frame.payload.value.selectionLease, "lease-device-a");
 });
 
 test("adapters convert int64/uint64 fields to Number at realistic maxima", () => {

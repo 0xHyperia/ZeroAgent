@@ -3235,6 +3235,14 @@ export default function GatewayApp() {
     });
   }
 
+  function handleSidebarNewRecentConversation() {
+    if (isMobileSidebarLayout()) {
+      setSidebarOpen(false);
+    }
+    setActiveView("chat");
+    startNewConversation({ workdir: "", preserveCurrentComposerDraft: true });
+  }
+
   function handleSidebarSelectConversation(id: string) {
     if (isMobileSidebarLayout()) {
       setSidebarOpen(false);
@@ -4683,6 +4691,7 @@ export default function GatewayApp() {
               onUnarchiveProject={handleUnarchiveWorkspaceProject}
               archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
               onNewConversation={handleSidebarNewConversation}
+              onNewRecentConversation={handleSidebarNewRecentConversation}
               onSelectConversation={handleSidebarSelectConversation}
               onShareConversation={handleOpenShareModal}
               onOpenSharedConversations={handleOpenSharedHistoryManager}

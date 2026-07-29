@@ -121,6 +121,7 @@ type ChatHistorySidebarProps = {
   // collapsed group at the end of the list.
   archivedProjectPathKeys?: ReadonlySet<string>;
   onNewConversation: () => void;
+  onNewRecentConversation?: () => void;
   onSelectConversation: (id: string) => void;
   onStartRenaming: (item: ChatHistorySummary) => void;
   onRenameDraftChange: (value: string) => void;
@@ -879,6 +880,7 @@ const ProjectRow = memo(function ProjectRow(props: {
   onCommitProjectRename: () => void;
   onCancelProjectRename: () => void;
   onSetProjectPinned: (project: WorkspaceProject, isPinned: boolean) => void;
+  onNewConversationForProject?: (project: WorkspaceProject) => void;
   onRemoveProject: (project: WorkspaceProject) => void;
   // Archived rows render disabled: no selection (so no new conversations),
   // no pin — but rename/remove/browse stay available from the menu.
@@ -907,6 +909,7 @@ const ProjectRow = memo(function ProjectRow(props: {
     onCommitProjectRename,
     onCancelProjectRename,
     onSetProjectPinned,
+    onNewConversationForProject,
     onRemoveProject,
     isArchived,
     canArchive,
@@ -956,6 +959,10 @@ const ProjectRow = memo(function ProjectRow(props: {
     }
     onSetProjectPinned(project, !isPinned);
   }, [isInteractionDisabled, isPinned, onSetProjectPinned, project]);
+
+  const handleNewConversation = useCallback(() => {
+    if (!isInteractionDisabled) onNewConversationForProject?.(project);
+  }, [isInteractionDisabled, onNewConversationForProject, project]);
 
   const handleBrowseInFileTree = useCallback(() => {
     if (isInteractionDisabled) {
@@ -1159,9 +1166,9 @@ const ProjectRow = memo(function ProjectRow(props: {
             isMissing
               ? "max-w-8 opacity-100"
               : isRunning
-                ? "max-w-7 opacity-100 group-hover/project:max-w-16 group-focus-within/project:max-w-16"
-                : "max-w-0 opacity-0 group-hover/project:max-w-16 group-hover/project:opacity-100 group-focus-within/project:max-w-16 group-focus-within/project:opacity-100",
-            menuOpen && "max-w-16 opacity-100",
+                ? "max-w-7 opacity-100 group-hover/project:max-w-24 group-focus-within/project:max-w-24"
+                : "max-w-0 opacity-0 group-hover/project:max-w-24 group-hover/project:opacity-100 group-focus-within/project:max-w-24 group-focus-within/project:opacity-100",
+            menuOpen && "max-w-24 opacity-100",
           )}
         >
           {isRunning && !isMissing ? (
@@ -1207,6 +1214,20 @@ const ProjectRow = memo(function ProjectRow(props: {
               ) : null
             ) : (
               <>
+                {!isArchived ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={PROJECT_ICON_BUTTON_CLASS}
+                    title={t("chat.workspaceNewConversation")}
+                    aria-label={t("chat.workspaceNewConversation")}
+                    onClick={handleNewConversation}
+                    disabled={isInteractionDisabled}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
                 {!isArchived ? (
                   <Button
                     type="button"
@@ -1378,6 +1399,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onRecentCollapsedChange,
     onCreateProject,
     onSelectProject,
+    onNewConversationForProject,
     onBrowseProjectInFileTree,
     onStartRenamingProject,
     onProjectRenameDraftChange,
@@ -1389,6 +1411,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onUnarchiveProject,
     archivedProjectPathKeys = EMPTY_PROJECT_PATH_KEYS,
     onNewConversation,
+    onNewRecentConversation,
     onSelectConversation,
     onStartRenaming,
     onRenameDraftChange,
@@ -2409,6 +2432,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                           onCommitProjectRename={handleCommitProjectRename}
                           onCancelProjectRename={handleCancelProjectRename}
                           onSetProjectPinned={handleSetProjectPinned}
+                          onNewConversationForProject={onNewConversationForProject}
                           onRemoveProject={handleRemoveProject}
                           isArchived={false}
                           canArchive={canArchiveProjects}
@@ -2521,6 +2545,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                                 onCommitProjectRename={handleCommitProjectRename}
                                 onCancelProjectRename={handleCancelProjectRename}
                                 onSetProjectPinned={handleSetProjectPinned}
+                                onNewConversationForProject={onNewConversationForProject}
                                 onRemoveProject={handleRemoveProject}
                                 isArchived
                                 canArchive={false}
@@ -2680,6 +2705,18 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                       <ListChecks className="h-3.5 w-3.5" />
                     </Button>
                   ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={onNewRecentConversation}
+                    disabled={sectionsDisabled || !onNewRecentConversation}
+                    className={PROJECT_ICON_BUTTON_CLASS}
+                    title={t("chat.newConversation")}
+                    aria-label={t("chat.newConversation")}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
                   {canShareConversations ? (
                     <Button
                       type="button"
