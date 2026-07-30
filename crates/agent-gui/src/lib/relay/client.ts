@@ -4,8 +4,6 @@ import { getInstallationID } from "./installation";
 
 const RELAY_ORIGIN_KEY = "zeroagent.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
-export const RELAY_DEBUG_CONTROLS_ENABLED =
-  typeof __ZEROAGENT_DEVELOPMENT__ !== "undefined" && __ZEROAGENT_DEVELOPMENT__;
 
 function normalizeRelayOrigin(value: string) {
   const url = new URL(value.trim());
@@ -25,15 +23,16 @@ function normalizeRelayOrigin(value: string) {
 
 function initialRelayOrigin() {
   const configured =
-    RELAY_DEBUG_CONTROLS_ENABLED && typeof localStorage !== "undefined"
-      ? localStorage.getItem(RELAY_ORIGIN_KEY)?.trim()
-      : "";
+    typeof localStorage !== "undefined" ? localStorage.getItem(RELAY_ORIGIN_KEY)?.trim() : "";
   const buildDefault =
-    RELAY_DEBUG_CONTROLS_ENABLED && typeof __ZEROAGENT_USA_ZERO_ORIGIN__ === "string"
-      ? __ZEROAGENT_USA_ZERO_ORIGIN__.trim()
-      : "";
+    typeof __ZEROAGENT_USA_ZERO_ORIGIN__ === "string" ? __ZEROAGENT_USA_ZERO_ORIGIN__.trim() : "";
+  const buildOverrideConfigured =
+    typeof __ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__ !== "undefined" &&
+    __ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__;
   try {
-    return normalizeRelayOrigin(configured || buildDefault || DEFAULT_RELAY_ORIGIN);
+    return normalizeRelayOrigin(
+      (buildOverrideConfigured ? buildDefault : configured || buildDefault) || DEFAULT_RELAY_ORIGIN,
+    );
   } catch {
     return DEFAULT_RELAY_ORIGIN;
   }
@@ -209,9 +208,6 @@ function expireRelaySession() {
 }
 
 export function configureRelayOrigin(value: string) {
-  if (!RELAY_DEBUG_CONTROLS_ENABLED) {
-    throw new Error("正式版使用官方 USA-零服务地址");
-  }
   const next = normalizeRelayOrigin(value);
   if (next === RELAY_ORIGIN) return next;
   clearRelaySession();

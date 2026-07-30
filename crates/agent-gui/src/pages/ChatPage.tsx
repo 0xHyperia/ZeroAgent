@@ -511,6 +511,8 @@ export function ChatPage(props: ChatPageProps) {
     currentModelLabel,
     currentModelContextWindow,
     handleSelectModel,
+    modelsRefreshing,
+    handleRefreshModels,
     chatRuntimeReasoningOptions,
     chatRuntimeThinkingAlwaysOn,
     chatRuntimeControlsForCurrentProvider,
@@ -1914,8 +1916,10 @@ export function ChatPage(props: ChatPageProps) {
                   currentModelLabel={currentModelLabel}
                   modelOptions={modelOptions}
                   selectedValue={selectedValue}
+                  modelsRefreshing={modelsRefreshing}
                   sidebarOpen={sidebarOpen}
                   onSelectModel={handleSelectModel}
+                  onRefreshModels={handleRefreshModels}
                   onOpenSettings={onOpenSettings}
                   onToggleTheme={onToggleTheme}
                   onOpenSidebar={handleOpenSidebar}

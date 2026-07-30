@@ -40,6 +40,7 @@ import {
 } from "@/lib/relay/client";
 import {
   bindRelayKeysToSettings,
+  mergeRefreshedRelaySettings,
   relayProviderId,
   relayProviderKeyId,
 } from "@/lib/relay/providers";
@@ -182,9 +183,12 @@ export function CloudChatPage({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const initialSettingsRef = useRef(settings);
+  const settingsRef = useRef(settings);
   const setSettingsRef = useRef(setSettings);
   const restoredConversationIdRef = useRef(conversationId);
   const { t } = useLocale();
+  settingsRef.current = settings;
+  setSettingsRef.current = setSettings;
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -205,6 +209,19 @@ export function CloudChatPage({
     );
     setConversations(response.conversations);
     return response.conversations;
+  }, []);
+
+  const refreshModels = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      const [keys, groups] = await Promise.all([listRelayApiKeys(), listRelayGroups()]);
+      const next = await bindRelayKeysToSettings(settingsRef.current, keys, groups, true);
+      setSettingsRef.current((current) => mergeRefreshedRelaySettings(current, next));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setModelsLoading(false);
+    }
   }, []);
 
   async function saveWebSettings(
@@ -684,6 +701,7 @@ export function CloudChatPage({
                 modelOptions={modelOptions}
                 selectedValue={selectedModelValue}
                 modelsLoading={modelsLoading}
+                modelsRefreshing={modelsLoading}
                 emptyModelAction={{
                   label: t("chat.createApiKey"),
                   onSelect: () => {
@@ -704,6 +722,7 @@ export function CloudChatPage({
                     setError(String(cause)),
                   );
                 }}
+                onRefreshModels={refreshModels}
                 onOpenSettings={(section) => {
                   if (section) setSettingsSection(section);
                   setAccountSettingsOpen(true);

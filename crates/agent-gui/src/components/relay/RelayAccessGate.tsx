@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { AppUpdateController } from "../../lib/appUpdates";
 import {
   configureRelayOrigin,
   createRelayApiKeys,
@@ -10,7 +11,6 @@ import {
   loginRelay,
   loginRelay2FA,
   loginRelayOAuth,
-  RELAY_DEBUG_CONTROLS_ENABLED,
   RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
@@ -21,8 +21,8 @@ import {
 import { registerDesktopDevice } from "../../lib/relay/deviceRegistration";
 import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "../../lib/relay/providers";
 import type { AppSettings } from "../../lib/settings";
-import { CodeFlowBackground } from "../CodeFlowBackground";
 import { AppUpdateButton } from "../AppUpdateButton";
+import { CodeFlowBackground } from "../CodeFlowBackground";
 import {
   CheckCircle2,
   ExternalLink,
@@ -40,7 +40,6 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { GroupMultiSelect } from "./GroupMultiSelect";
 import { ZeroAgentLogo } from "./ZeroAgentLogo";
-import type { AppUpdateController } from "../../lib/appUpdates";
 
 type RelayAccessGateProps = {
   settings: AppSettings;
@@ -287,28 +286,26 @@ export function RelayAccessGate({
           </div>
         </div>
 
-        {RELAY_DEBUG_CONTROLS_ENABLED ? (
-          <div className="mb-4 space-y-1.5">
-            <Label htmlFor="relay-origin">USA-零服务地址</Label>
-            <Input
-              id="relay-origin"
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              value={relayOriginDraft}
-              onChange={(event) => setRelayOriginDraft(event.target.value)}
-              onBlur={applyRelayOrigin}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  applyRelayOrigin();
-                }
-              }}
-              placeholder="https://api.example.com"
-              className="font-mono text-xs"
-            />
-          </div>
-        ) : null}
+        <div className="mb-4 space-y-1.5">
+          <Label htmlFor="relay-origin">USA-零服务地址</Label>
+          <Input
+            id="relay-origin"
+            type="url"
+            inputMode="url"
+            autoComplete="url"
+            value={relayOriginDraft}
+            onChange={(event) => setRelayOriginDraft(event.target.value)}
+            onBlur={applyRelayOrigin}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                applyRelayOrigin();
+              }
+            }}
+            placeholder="https://api.example.com"
+            className="font-mono text-xs"
+          />
+        </div>
 
         {step === "provision" ? (
           <div className="rounded-lg border border-border bg-card/95 p-5 shadow-sm backdrop-blur-[2px]">

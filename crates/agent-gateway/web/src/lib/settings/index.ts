@@ -465,7 +465,7 @@ export function getBuiltinCustomProviders(): CustomProvider[] {
       id: "builtin-claude_code",
       name: "Anthropic",
       type: "claude_code",
-      baseUrl: "https://usa0.top/v1",
+      baseUrl: "https://usa0.top",
       apiKey: "",
       customHeaders: [],
       models: [],

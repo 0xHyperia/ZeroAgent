@@ -11,12 +11,13 @@ const packageJson = JSON.parse(
 // @ts-expect-error process is a nodejs global
 const env = process.env as Record<string, string | undefined>;
 const appVersion = env.LIVEAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
-const usaZeroOrigin = env.VITE_USA_ZERO_ORIGIN?.trim() || "https://usa0.top";
+const usaZeroOriginOverride =
+  env.ZEROAGENT_USA_ZERO_ORIGIN?.trim() || env.VITE_USA_ZERO_ORIGIN?.trim() || "";
+const usaZeroOrigin = usaZeroOriginOverride || "https://usa0.top";
 const host = env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async ({ command }) => {
-  const developmentBuild = command === "serve";
+export default defineConfig(async () => {
   return {
   plugins: [react(), Icons({ compiler: "jsx", jsx: "react" })],
   resolve: {
@@ -43,7 +44,7 @@ export default defineConfig(async ({ command }) => {
   define: {
     __LIVEAGENT_APP_VERSION__: JSON.stringify(appVersion),
     __ZEROAGENT_USA_ZERO_ORIGIN__: JSON.stringify(usaZeroOrigin),
-    __ZEROAGENT_DEVELOPMENT__: JSON.stringify(developmentBuild),
+    __ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__: JSON.stringify(Boolean(usaZeroOriginOverride)),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

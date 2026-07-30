@@ -4,6 +4,8 @@ fn default_remote_gateway_port() -> u16 {
 }
 
 const OFFICIAL_GATEWAY_URL: &str = "https://agent.usa0.top";
+const GATEWAY_URL_ENV: &str = "ZEROAGENT_GATEWAY_URL";
+const GATEWAY_PORT_ENV: &str = "ZEROAGENT_GATEWAY_PORT";
 const MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS: u64 = 15;
 const MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS: u64 = 300;
 
@@ -50,27 +52,45 @@ impl Default for RemoteSettingsPayload {
 pub(crate) fn normalize_remote_settings_payload(
     payload: RemoteSettingsPayload,
 ) -> RemoteSettingsPayload {
+    let gateway_url_override = std::env::var(GATEWAY_URL_ENV).ok();
+    let gateway_port_override = std::env::var(GATEWAY_PORT_ENV).ok();
+    normalize_remote_settings_payload_with_overrides(
+        payload,
+        gateway_url_override.as_deref(),
+        gateway_port_override.as_deref(),
+    )
+}
+
+fn normalize_remote_settings_payload_with_overrides(
+    payload: RemoteSettingsPayload,
+    gateway_url_override: Option<&str>,
+    gateway_port_override: Option<&str>,
+) -> RemoteSettingsPayload {
+    let gateway_url = gateway_url_override
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&payload.gateway_url);
+    let gateway_port = gateway_port_override
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(payload.gateway_port);
     RemoteSettingsPayload {
         enabled: payload.enabled,
-        gateway_url: if cfg!(debug_assertions) {
-            normalize_base_url_text(&payload.gateway_url)
-        } else {
-            OFFICIAL_GATEWAY_URL.to_string()
-        },
-        gateway_port: if payload.gateway_port == 0 {
+        gateway_url: normalize_base_url_text(gateway_url),
+        gateway_port: if gateway_port == 0 {
             default_remote_gateway_port()
         } else {
-            payload.gateway_port
+            gateway_port
         },
         token: payload.token.trim().to_string(),
         agent_id: payload.agent_id.trim().to_string(),
         auto_reconnect: payload.auto_reconnect,
-        heartbeat_interval: payload
-            .heartbeat_interval
-            .clamp(
-                MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
-                MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
-            ),
+        heartbeat_interval: payload.heartbeat_interval.clamp(
+            MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+            MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,
+        ),
         enable_web_terminal: payload.enable_web_terminal,
         enable_web_ssh_terminal: payload.enable_web_ssh_terminal,
         enable_web_git: payload.enable_web_git,
@@ -128,7 +148,9 @@ pub(crate) fn load_remote(conn: &Connection) -> Result<Option<Value>, String> {
 pub(crate) fn load_remote_settings(conn: &Connection) -> Result<RemoteSettingsPayload, String> {
     match load_remote(conn)? {
         Some(value) => parse_remote_settings_payload(value),
-        None => Ok(RemoteSettingsPayload::default()),
+        None => Ok(normalize_remote_settings_payload(
+            RemoteSettingsPayload::default(),
+        )),
     }
 }
 

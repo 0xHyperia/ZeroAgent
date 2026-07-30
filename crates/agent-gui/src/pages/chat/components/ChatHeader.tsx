@@ -12,6 +12,7 @@ import {
   Moon,
   OpenaiChatgptIcon,
   PanelLeft,
+  RefreshCw,
   Search,
   Settings,
   Sun,
@@ -28,6 +29,7 @@ import {
   sortModelOptionGroups,
 } from "../../../lib/chat/page/chatPageHelpers";
 import { type ModelOption, parseModelValue } from "../../../lib/providers/llm";
+import { resolveModelVendor } from "../../../lib/providers/modelVendor";
 import {
   type AppSettings,
   getNextTheme,
@@ -48,6 +50,18 @@ function ProviderBrandIcon({ type, className }: { type: ProviderId; className?: 
   return <OpenaiChatgptIcon className={cn(cls, "fill-current dark:text-white")} />;
 }
 
+function ModelBrandIcon({ option, className }: { option: ModelOption; className?: string }) {
+  const vendor = resolveModelVendor({ id: option.model });
+  const cls = cn("h-4 w-4 shrink-0", className);
+  if (vendor === "Anthropic") return <ClaudeIcon className={cls} />;
+  if (vendor === "Google") return <GeminiIcon className={cls} />;
+  if (vendor === "xAI") return <GrokIcon className={cls} />;
+  if (vendor === "OpenAI") {
+    return <OpenaiChatgptIcon className={cn(cls, "fill-current dark:text-white")} />;
+  }
+  return <ProviderBrandIcon type={option.providerType} className={className} />;
+}
+
 function ThemeToggleIcon(props: { theme: Theme }) {
   if (props.theme === "light") return <Sun className="h-4 w-4" />;
   if (props.theme === "dark") return <Moon className="h-4 w-4" />;
@@ -60,8 +74,10 @@ export const ChatHeader = memo(function ChatHeader(props: {
   currentModelLabel: string;
   modelOptions: ModelOption[];
   selectedValue?: string;
+  modelsRefreshing?: boolean;
   sidebarOpen: boolean;
   onSelectModel: (selection: SelectedModel) => void;
+  onRefreshModels?: () => void | Promise<void>;
   // 模型下拉内嵌的执行模式分段器：请求切到 Chat("text") 或 Agent("tools")。
   // agent-dev 视为 Agent 的一种，由调用方决定是否保持不降级。
   onSelectExecutionMode: (mode: "text" | "tools") => void;
@@ -78,8 +94,10 @@ export const ChatHeader = memo(function ChatHeader(props: {
     currentModelLabel,
     modelOptions,
     selectedValue,
+    modelsRefreshing = false,
     sidebarOpen,
     onSelectModel,
+    onRefreshModels,
     onSelectExecutionMode,
     onOpenSettings,
     onToggleTheme,
@@ -168,7 +186,7 @@ export const ChatHeader = memo(function ChatHeader(props: {
             render={
               <Button
                 variant="ghost"
-                disabled={!hasModels}
+                disabled={!hasModels && !onRefreshModels}
                 className={cn(
                   "model-selector-trigger h-8 max-w-[min(20rem,calc(100vw-8.5rem))] -translate-y-px justify-between gap-1.5 overflow-hidden rounded-lg px-2.5 py-1 cursor-pointer text-xs font-normal text-foreground transition-all duration-200 ease-out hover:bg-muted/60 dark:text-white",
                   isModelPickerOpen && "bg-muted/60",
@@ -178,7 +196,7 @@ export const ChatHeader = memo(function ChatHeader(props: {
           >
             <span className="model-selector-current-label flex min-w-0 items-center gap-1.5 text-left">
               {selectedOption ? (
-                <ProviderBrandIcon type={selectedOption.providerType} className="opacity-80" />
+                <ModelBrandIcon option={selectedOption} className="opacity-80" />
               ) : null}
               <span className="min-w-0 truncate">{currentModelLabel}</span>
             </span>
@@ -283,6 +301,20 @@ export const ChatHeader = memo(function ChatHeader(props: {
                         <Layers className="h-3.5 w-3.5" />
                       )}
                     </button>
+                    {onRefreshModels ? (
+                      <button
+                        type="button"
+                        onClick={() => void onRefreshModels()}
+                        disabled={modelsRefreshing}
+                        title={t("chat.refreshModels")}
+                        aria-label={t("chat.refreshModels")}
+                        className="flex w-7 shrink-0 cursor-pointer items-center justify-center self-stretch rounded-md border border-border/50 bg-muted/40 text-muted-foreground/70 transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={cn("h-3.5 w-3.5", modelsRefreshing && "animate-spin")}
+                        />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="max-h-[min(20rem,var(--available-height,20rem))] overflow-y-auto overscroll-contain px-1 pb-1 [scrollbar-gutter:stable]">
@@ -364,8 +396,8 @@ export const ChatHeader = memo(function ChatHeader(props: {
                                     style={{ animationDelay: itemAnimationDelay }}
                                   >
                                     <span className="flex min-w-0 items-center gap-2">
-                                      <ProviderBrandIcon
-                                        type={option.providerType}
+                                      <ModelBrandIcon
+                                        option={option}
                                         className={cn("opacity-70", isSelected && "opacity-100")}
                                       />
                                       <span className="min-w-0 truncate">{option.model}</span>

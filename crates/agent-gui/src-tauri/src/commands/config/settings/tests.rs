@@ -127,6 +127,38 @@ mod tests {
     }
 
     #[test]
+    fn startup_gateway_environment_overrides_persisted_address() {
+        let normalized = normalize_remote_settings_payload_with_overrides(
+            RemoteSettingsPayload {
+                gateway_url: "https://persisted.example.com".to_string(),
+                gateway_port: 443,
+                ..RemoteSettingsPayload::default()
+            },
+            Some(" http:/172.16.0.121/ "),
+            Some("50052"),
+        );
+
+        assert_eq!(normalized.gateway_url, "http://172.16.0.121");
+        assert_eq!(normalized.gateway_port, 50052);
+    }
+
+    #[test]
+    fn missing_gateway_environment_preserves_persisted_address() {
+        let normalized = normalize_remote_settings_payload_with_overrides(
+            RemoteSettingsPayload {
+                gateway_url: "https://persisted.example.com/".to_string(),
+                gateway_port: 8443,
+                ..RemoteSettingsPayload::default()
+            },
+            None,
+            None,
+        );
+
+        assert_eq!(normalized.gateway_url, "https://persisted.example.com");
+        assert_eq!(normalized.gateway_port, 8443);
+    }
+
+    #[test]
     fn normalize_remote_settings_clamps_heartbeat_interval() {
         let mut fast = RemoteSettingsPayload::default();
         fast.heartbeat_interval = 1;
@@ -353,12 +385,18 @@ mod tests {
             load_gateway_settings_sync_snapshot(&conn).expect("load gateway settings snapshot");
         assert_eq!(snapshot["customProviders"][0]["apiKey"], Value::Null);
         assert_eq!(snapshot["customProviders"][0]["apiKeyConfigured"], true);
-        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["apiKey"], Value::Null);
+        assert_eq!(
+            snapshot["customProviders"][0]["usageQuery"]["apiKey"],
+            Value::Null
+        );
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["apiKeyConfigured"],
             true
         );
-        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["accessToken"], Value::Null);
+        assert_eq!(
+            snapshot["customProviders"][0]["usageQuery"]["accessToken"],
+            Value::Null
+        );
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["accessTokenConfigured"],
             true
@@ -1464,10 +1502,7 @@ mod tests {
 
     #[test]
     fn ccs_maps_grokbuild_app_type_to_xai() {
-        assert_eq!(
-            ccs_provider_type_from_app_type("grokbuild"),
-            Some("xai")
-        );
+        assert_eq!(ccs_provider_type_from_app_type("grokbuild"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("grok"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("xai"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("Grok-Build"), Some("xai"));
@@ -1480,13 +1515,8 @@ mod tests {
         let config = json!({
             "config": "[models]\ndefault = \"grok-4.5\"\n\n[model]\n[model.\"grok-4.5\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://api.x.ai/v1\"\nname = \"packy\"\napi_backend = \"responses\"\ncontext_window = 500000\napi_key = \"sk-test-key\"\n"
         });
-        let item = ccs_provider_from_value(
-            "d262e762-test",
-            "grokbuild",
-            "PackyCode",
-            &config,
-        )
-        .expect("grokbuild provider should import");
+        let item = ccs_provider_from_value("d262e762-test", "grokbuild", "PackyCode", &config)
+            .expect("grokbuild provider should import");
 
         assert_eq!(item.provider_type, "xai");
         assert_eq!(item.app_type, "grokbuild");
@@ -1499,13 +1529,9 @@ mod tests {
     #[test]
     fn ccs_imports_empty_official_grokbuild_seed() {
         let config = json!({ "config": "" });
-        let item = ccs_provider_from_value(
-            "grokbuild-official",
-            "grokbuild",
-            "Grok Official",
-            &config,
-        )
-        .expect("official grok seed should still map");
+        let item =
+            ccs_provider_from_value("grokbuild-official", "grokbuild", "Grok Official", &config)
+                .expect("official grok seed should still map");
         assert_eq!(item.provider_type, "xai");
         assert_eq!(item.base_url, "");
         assert_eq!(item.api_key, "");

@@ -15,8 +15,9 @@ export function relayProviderTypeForPlatform(platform: string): ProviderId | nul
     case "anthropic":
       return "claude_code";
     case "openai":
-    case "grok":
       return "codex";
+    case "grok":
+      return "xai";
     case "gemini":
     case "antigravity":
       return "gemini";
@@ -25,8 +26,8 @@ export function relayProviderTypeForPlatform(platform: string): ProviderId | nul
   }
 }
 
-export function relayProviderBaseUrl(type: ProviderId) {
-  return type === "claude_code" ? `${RELAY_ORIGIN}/v1` : RELAY_ORIGIN;
+export function relayProviderBaseUrl(_type: ProviderId) {
+  return RELAY_ORIGIN;
 }
 
 export function relayProviderId(keyId: number) {
@@ -58,7 +59,7 @@ function buildRelayProvider(
     customHeaders: [],
     models,
     activeModels,
-    requestFormat: type === "codex" ? "openai-responses" : undefined,
+    requestFormat: type === "codex" || type === "xai" ? "openai-responses" : undefined,
     reasoning: existing?.reasoning ?? "high",
     promptCachingEnabled: type === "claude_code",
     nativeWebSearchEnabled: true,
@@ -88,6 +89,25 @@ export function enforceRelayProviderConstraint(settings: AppSettings): AppSettin
       selectedModel && selectedProvider?.activeModels.includes(selectedModel.model)
         ? selectedModel
         : undefined,
+  };
+}
+
+export function mergeRefreshedRelaySettings(
+  current: AppSettings,
+  refreshed: Pick<AppSettings, "customProviders" | "selectedModel">,
+): AppSettings {
+  const selectedModel = current.selectedModel;
+  const selectedStillAvailable = selectedModel
+    ? refreshed.customProviders.some(
+        (provider) =>
+          provider.id === selectedModel.customProviderId &&
+          provider.activeModels.includes(selectedModel.model),
+      )
+    : false;
+  return {
+    ...current,
+    customProviders: refreshed.customProviders,
+    selectedModel: selectedStillAvailable ? selectedModel : refreshed.selectedModel,
   };
 }
 

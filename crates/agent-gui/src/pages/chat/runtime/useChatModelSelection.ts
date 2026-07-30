@@ -1,7 +1,12 @@
-import { type MutableRefObject, useCallback, useEffect, useMemo } from "react";
+import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setChatHistoryModel } from "../../../lib/chat/history/chatHistory";
 import { buildModelOptions } from "../../../lib/chat/page/chatPageHelpers";
 import { toModelValue } from "../../../lib/providers/llm";
+import { listRelayApiKeys, listRelayGroups } from "../../../lib/relay/client";
+import {
+  bindRelayKeysToSettings,
+  mergeRefreshedRelaySettings,
+} from "../../../lib/relay/providers";
 import {
   type AppSettings,
   type ChatRuntimeControls,
@@ -58,6 +63,10 @@ export function useChatModelSelection(params: UseChatModelSelectionParams) {
     conversationRuntimeCacheRef,
     updateConversationRuntimeEntry,
   } = params;
+  const [modelsRefreshing, setModelsRefreshing] = useState(false);
+  const modelRefreshSequenceRef = useRef(0);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   const modelOptions = useMemo(
     () => buildModelOptions(settings, { floatSelectedFirst: false }),
@@ -116,6 +125,34 @@ export function useChatModelSelection(params: UseChatModelSelectionParams) {
     },
     [currentConversationIdRef, setSettings, sidebarStore, updateConversationRuntimeEntry],
   );
+
+  const handleRefreshModels = useCallback(async () => {
+    const sequence = modelRefreshSequenceRef.current + 1;
+    modelRefreshSequenceRef.current = sequence;
+    setModelsRefreshing(true);
+    try {
+      const [keys, groups] = await Promise.all([listRelayApiKeys(), listRelayGroups()]);
+      const next = await bindRelayKeysToSettings(settingsRef.current, keys, groups, true);
+      if (modelRefreshSequenceRef.current === sequence) {
+        setSettings((current) => mergeRefreshedRelaySettings(current, next));
+      }
+    } catch (error) {
+      if (modelRefreshSequenceRef.current === sequence) {
+        const conversationId = currentConversationIdRef.current;
+        updateConversationRuntimeEntry(conversationId, (prev) => ({
+          ...prev,
+          errorMessage: asErrorMessage(error, t("chat.refreshModelsFailed")),
+        }));
+      }
+    } finally {
+      if (modelRefreshSequenceRef.current === sequence) setModelsRefreshing(false);
+    }
+  }, [
+    currentConversationIdRef,
+    setSettings,
+    t,
+    updateConversationRuntimeEntry,
+  ]);
 
   // 跨端收敛：history-sync 带回的会话模型选择（如 WebUI 发消息后落库）
   // 写回当前会话的 runtime entry；值相等或发送中不动，无回环。
@@ -189,6 +226,8 @@ export function useChatModelSelection(params: UseChatModelSelectionParams) {
     currentModelLabel,
     currentModelContextWindow,
     handleSelectModel,
+    modelsRefreshing,
+    handleRefreshModels,
     chatRuntimeReasoningOptions,
     chatRuntimeThinkingAlwaysOn,
     chatRuntimeControlsForCurrentProvider,

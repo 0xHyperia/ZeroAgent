@@ -3,9 +3,13 @@ pub async fn settings_load_all() -> Result<SettingsLoadResponse, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let conn = open_db()?;
         let default_workdir = default_project_workdir()?;
-        let mut remote = load_remote(&conn)?;
-        if let Some(serde_json::Value::Object(settings)) = remote.as_mut() {
-            settings.insert("token".to_string(), serde_json::Value::String(String::new()));
+        let mut remote = serde_json::to_value(load_remote_settings(&conn)?)
+            .map_err(|e| format!("序列化 remote settings 失败：{e}"))?;
+        if let serde_json::Value::Object(settings) = &mut remote {
+            settings.insert(
+                "token".to_string(),
+                serde_json::Value::String(String::new()),
+            );
         }
         Ok(SettingsLoadResponse {
             providers: load_providers(&conn)?,
@@ -13,7 +17,7 @@ pub async fn settings_load_all() -> Result<SettingsLoadResponse, String> {
             mcp: load_mcp(&conn)?,
             agents: load_agents(&conn)?,
             ssh: load_ssh(&conn)?,
-            remote,
+            remote: Some(remote),
             memory: load_memory(&conn)?,
             default_workdir,
         })

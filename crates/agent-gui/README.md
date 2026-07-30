@@ -9,3 +9,14 @@
 - 前端构建：`pnpm build`
 - Windows 平台会自动合并 `src-tauri/tauri.windows.conf.json`
 - macOS 平台会自动合并 `src-tauri/tauri.macos.conf.json`
+
+服务地址由启动环境变量独立指定，与 debug/release 构建模式无关：
+
+```powershell
+$env:ZEROAGENT_USA_ZERO_ORIGIN="https://usa0.top"
+$env:ZEROAGENT_GATEWAY_URL="https://agent.usa0.top"
+$env:ZEROAGENT_GATEWAY_PORT="443"
+pnpm tauri dev
+```
+
+`VITE_USA_ZERO_ORIGIN` 仍可作为 `ZEROAGENT_USA_ZERO_ORIGIN` 的兼容别名。

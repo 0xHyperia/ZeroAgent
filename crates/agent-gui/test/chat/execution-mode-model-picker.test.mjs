@@ -53,3 +53,24 @@ test("model pickers search models and providers", () => {
     assert.match(source, /t\("chat\.noModelFound"\)/);
   }
 });
+
+test("model pickers expose an asynchronous refresh action", () => {
+  for (const source of headerSources) {
+    assert.match(source, /onRefreshModels\?: \(\) => void \| Promise<void>/);
+    assert.match(source, /onClick=\{\(\) => void onRefreshModels\(\)\}/);
+    assert.match(source, /disabled=\{modelsRefreshing\}/);
+    assert.match(source, /t\("chat\.refreshModels"\)/);
+    assert.match(source, /modelsRefreshing && "animate-spin"/);
+  }
+});
+
+test("model pickers resolve model-vendor icons including Grok", () => {
+  for (const source of headerSources) {
+    assert.match(source, /function ModelBrandIcon/);
+    assert.match(source, /resolveModelVendor\(\{ id: option\.model \}\)/);
+    assert.match(source, /vendor === "xAI"/);
+    assert.match(source, /<GrokIcon className=\{cls\} \/>/);
+    assert.match(source, /<ModelBrandIcon option=\{selectedOption\}/);
+    assert.match(source, /<ModelBrandIcon\s+option=\{option\}/);
+  }
+});
