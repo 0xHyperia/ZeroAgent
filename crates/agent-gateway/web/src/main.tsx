@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
+import { MobileAppExperience } from "./components/mobile/MobileAppExperience";
 import { bootstrapEmbeddedMobileRuntime } from "./lib/mobileRuntime";
 import { GATEWAY_WEBUI_MARKER } from "./lib/runtimeEnv";
 import "./index.css";
@@ -18,6 +19,7 @@ async function start() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <App />
+      <MobileAppExperience />
     </React.StrictMode>,
   );
 }

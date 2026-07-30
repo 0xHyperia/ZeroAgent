@@ -61,6 +61,8 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
     "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
   );
   const mobileRuntime = readRepoFile("crates/agent-gateway/web/src/lib/mobileRuntime.ts");
+  const mobileUpdate = readRepoFile("crates/agent-gateway/web/src/lib/mobileAppUpdate.ts");
+  const gatewayApp = readRepoFile("crates/agent-gateway/web/src/app/GatewayApp.tsx");
   const mobileRelayGate = readRepoFile(
     "crates/agent-gateway/web/src/components/relay/RelayAccessGate.tsx",
   );
@@ -75,6 +77,14 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(tauriLib, /#\[cfg\(desktop\)\]\s*pub fn run\(\)/);
   assert.match(mobileRuntime, /mobile_gateway_request/);
   assert.match(mobileRuntime, /mobile_gateway_socket_connect/);
+  assert.match(mobileRuntime, /maximum-scale=1, user-scalable=no/);
+  assert.match(mobileRuntime, /visualViewport/);
+  assert.match(mobileRuntime, /MOBILE_BACK_EVENT/);
+  assert.match(tauriLib, /mobile_app_exit/);
+  assert.match(tauriLib, /mobile_open_external_url/);
+  assert.match(gatewayApp, /MOBILE_BACK_EVENT/);
+  assert.match(mobileUpdate, /Android-arm64\.apk/);
+  assert.match(mobileUpdate, /__ZEROAGENT_APP_VERSION__/);
   assert.doesNotMatch(mobileRuntime, /mobile-session/);
   assert.match(mobileGateway, /OFFICIAL_GATEWAY_URL: &str = "https:\/\/agent\.usa0\.top"/);
   assert.match(mobileGateway, /option_env!\("ZEROAGENT_GATEWAY_URL"\)/);
@@ -84,6 +94,7 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.doesNotMatch(mobileRuntime, /configureEmbeddedMobileGateway/);
   assert.doesNotMatch(mobileRelayGate, /mobile-gateway-origin|Gateway 服务地址|RELAY_ORIGIN/);
   assert.match(gatewayViteConfig, /mode === "embedded-mobile"/);
+  assert.match(gatewayViteConfig, /LIVEAGENT_APP_VERSION/);
   assert.equal(existsSync(path.join(guiRoot, "mobile.html")), false);
   assert.equal(existsSync(path.join(guiRoot, "src/mobile.ts")), false);
   for (const filename of ["README.md", "README.zh-CN.md"]) {

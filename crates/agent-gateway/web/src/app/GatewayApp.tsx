@@ -77,6 +77,7 @@ import type {
 } from "@/lib/gatewayTypes";
 import { parseHistoryMessagesJsonAsync } from "@/lib/historyParser";
 import { memoryDeleteProject } from "@/lib/memory/api";
+import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT, mobileHaptic } from "@/lib/mobileRuntime";
 import { toModelValue } from "@/lib/providers/llm";
 import {
   getRelayDashboardStats,
@@ -455,6 +456,50 @@ export default function GatewayApp() {
     return view === "skills-hub" || view === "mcp-hub" ? view : "chat";
   });
   const [rightDockOpen, setRightDockOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isEmbeddedMobileRuntime()) return;
+    const handleMobileBack = (rawEvent: Event) => {
+      if (rawEvent.defaultPrevented) return;
+      let handled = true;
+      if (shareConversation) {
+        setShareConversation(null);
+      } else if (sharedManagerOpen) {
+        setSharedManagerOpen(false);
+      } else if (projectPickerOpen) {
+        setProjectPickerOpen(false);
+      } else if (workspaceCreateModalOpen) {
+        setWorkspaceCreateModalOpen(false);
+      } else if (userMenuOpen) {
+        setUserMenuOpen(false);
+      } else if (settingsOpen) {
+        setOverlay("leaving");
+      } else if (rightDockOpen) {
+        setRightDockOpen(false);
+      } else if (sidebarOpen) {
+        setSidebarOpen(false);
+      } else if (activeView !== "chat") {
+        setActiveView("chat");
+      } else {
+        handled = false;
+      }
+      if (!handled) return;
+      rawEvent.preventDefault();
+      mobileHaptic(8);
+    };
+    window.addEventListener(MOBILE_BACK_EVENT, handleMobileBack);
+    return () => window.removeEventListener(MOBILE_BACK_EVENT, handleMobileBack);
+  }, [
+    activeView,
+    projectPickerOpen,
+    rightDockOpen,
+    settingsOpen,
+    shareConversation,
+    sharedManagerOpen,
+    sidebarOpen,
+    userMenuOpen,
+    workspaceCreateModalOpen,
+  ]);
 
   useEffect(() => {
     const url = new URL(window.location.href);

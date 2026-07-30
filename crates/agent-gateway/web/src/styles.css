@@ -2,6 +2,126 @@
   font-family: var(--chat-font-family);
 }
 
+html[data-zeroagent-platform="android"] {
+  height: var(--zeroagent-visual-viewport-height, 100dvh);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-zeroagent-platform="android"] body,
+html[data-zeroagent-platform="android"] #root {
+  height: var(--zeroagent-visual-viewport-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html[data-zeroagent-platform="android"] body {
+  position: fixed;
+  top: var(--zeroagent-visual-viewport-offset-top, 0px);
+  inset-inline: 0;
+  width: 100%;
+}
+
+html[data-zeroagent-platform="android"] button,
+html[data-zeroagent-platform="android"] a,
+html[data-zeroagent-platform="android"] [role="button"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html[data-zeroagent-platform="android"] button:active,
+html[data-zeroagent-platform="android"] [role="button"]:active {
+  filter: brightness(0.96);
+}
+
+html[data-zeroagent-platform="android"] input,
+html[data-zeroagent-platform="android"] textarea,
+html[data-zeroagent-platform="android"] [contenteditable="true"] {
+  font-size: max(16px, 1em);
+}
+
+.mobile-update-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(0 0 0 / 0.38);
+}
+
+.mobile-update-sheet {
+  width: 100%;
+  max-height: min(78dvh, 680px);
+  overflow: hidden;
+  border-top: 1px solid hsl(var(--border));
+  border-radius: 16px 16px 0 0;
+  background: hsl(var(--background));
+  padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+  box-shadow: 0 -16px 48px rgb(0 0 0 / 0.2);
+  animation: mobile-sheet-enter 180ms ease-out;
+}
+
+.mobile-update-notes {
+  margin-top: 16px;
+  max-height: 34dvh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.45);
+  padding: 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.55;
+  overscroll-behavior: contain;
+}
+
+.mobile-native-icon-button {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: hsl(var(--muted-foreground));
+}
+
+.mobile-runtime-toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px));
+  z-index: 2147483647;
+  display: flex;
+  max-width: calc(100vw - 32px);
+  min-height: 40px;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--popover) / 0.96);
+  padding: 9px 16px;
+  color: hsl(var(--popover-foreground));
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+  backdrop-filter: blur(12px);
+}
+
+@keyframes mobile-sheet-enter {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 html[data-liveagent-webui="gateway"] .chat-history-new-conversation-button {
   font-size: 14px;
   line-height: 20px;

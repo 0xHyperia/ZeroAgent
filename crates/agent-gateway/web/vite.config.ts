@@ -1,10 +1,15 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
 
 const DEFAULT_PROXY_API = "http://127.0.0.1:50052";
+const packageJson = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+) as { version?: string };
+const appVersion = process.env.LIVEAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
 
 function resolveProxyTarget() {
   const cliArg = process.argv.find((arg) => arg.startsWith("--proxy-api="));
@@ -35,6 +40,7 @@ export default defineConfig(({ mode }) => ({
   },
   define: {
     __ZEROAGENT_EMBEDDED_MOBILE__: JSON.stringify(mode === "embedded-mobile"),
+    __ZEROAGENT_APP_VERSION__: JSON.stringify(appVersion),
   },
   server: {
     proxy: {

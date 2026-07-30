@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ChevronUp, LogOut, Settings, User } from "@/components/icons";
+import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
+import { requestMobileAppUpdateCheck } from "@/lib/mobileAppUpdate";
+import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
 
 type UserMenuProps = {
   open: boolean;
@@ -128,6 +130,12 @@ export function UserMenu(props: UserMenuProps) {
           <Settings className="h-4 w-4" />
           设置
         </DropdownMenuItem>
+        {isEmbeddedMobileRuntime() ? (
+          <DropdownMenuItem onSelect={requestMobileAppUpdateCheck} className="gap-2 rounded-md">
+            <RefreshCw className="h-4 w-4" />
+            检查更新
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={onLogout}
           className="gap-2 rounded-md text-destructive focus:bg-destructive/10 focus:text-destructive"

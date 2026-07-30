@@ -20,8 +20,14 @@ declare global {
   }
 }
 
+export const MOBILE_BACK_EVENT = "zeroagent:mobile-back";
+export const MOBILE_EXIT_HINT_EVENT = "zeroagent:mobile-exit-hint";
+
 let bootstrapped = false;
 let socketSequence = 0;
+let lastUnhandledBackAt = 0;
+
+const MOBILE_HISTORY_GUARD = "zeroagent-mobile-history-guard";
 
 type NativeSocketEvent = {
   id: string;
@@ -46,6 +52,76 @@ function nativeInvoke<T>(command: string, args?: Record<string, unknown>) {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("Android native bridge is unavailable");
   return invoke<T>(command, args);
+}
+
+function updateMobileViewport() {
+  const viewport = window.visualViewport;
+  const height = viewport?.height ?? window.innerHeight;
+  const offsetTop = viewport?.offsetTop ?? 0;
+  const keyboardInset = Math.max(0, window.innerHeight - height - offsetTop);
+  const root = document.documentElement;
+  root.style.setProperty("--zeroagent-visual-viewport-height", `${Math.round(height)}px`);
+  root.style.setProperty("--zeroagent-visual-viewport-offset-top", `${Math.round(offsetTop)}px`);
+  root.style.setProperty("--zeroagent-keyboard-inset", `${Math.round(keyboardInset)}px`);
+  root.dataset.zeroagentKeyboard = keyboardInset >= 96 ? "open" : "closed";
+}
+
+function syncMobileThemeColor() {
+  const dark = document.documentElement.classList.contains("dark");
+  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.name = "theme-color";
+    document.head.append(meta);
+  }
+  meta.content = dark ? "#09090B" : "#FFFFFF";
+}
+
+function armMobileHistoryGuard() {
+  const state =
+    window.history.state && typeof window.history.state === "object" ? window.history.state : {};
+  if (state[MOBILE_HISTORY_GUARD]) return;
+  window.history.pushState({ ...state, [MOBILE_HISTORY_GUARD]: true }, "", window.location.href);
+}
+
+function installMobileBackBridge() {
+  armMobileHistoryGuard();
+  window.addEventListener("popstate", () => {
+    const handled = !window.dispatchEvent(new Event(MOBILE_BACK_EVENT, { cancelable: true }));
+    if (handled) {
+      lastUnhandledBackAt = 0;
+      armMobileHistoryGuard();
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastUnhandledBackAt <= 2_000) {
+      void nativeInvoke("mobile_app_exit");
+      return;
+    }
+    lastUnhandledBackAt = now;
+    window.dispatchEvent(new Event(MOBILE_EXIT_HINT_EVENT));
+    armMobileHistoryGuard();
+  });
+}
+
+function installMobileExperience() {
+  document.documentElement.dataset.zeroagentPlatform = "android";
+  const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  viewport?.setAttribute(
+    "content",
+    "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+  );
+  updateMobileViewport();
+  window.addEventListener("resize", updateMobileViewport, { passive: true });
+  window.visualViewport?.addEventListener("resize", updateMobileViewport, { passive: true });
+  window.visualViewport?.addEventListener("scroll", updateMobileViewport, { passive: true });
+  syncMobileThemeColor();
+  new MutationObserver(syncMobileThemeColor).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+  installMobileBackBridge();
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -212,10 +288,24 @@ function installGatewayFetchBridge() {
 
 export async function bootstrapEmbeddedMobileRuntime() {
   if (!isEmbeddedMobileRuntime() || bootstrapped) return;
+  installMobileExperience();
   await nativeInvoke("mobile_gateway_bootstrap");
   installGatewayFetchBridge();
   await installGatewayWebSocketBridge();
   bootstrapped = true;
+}
+
+export function mobileHaptic(duration = 12) {
+  if (!isEmbeddedMobileRuntime() || typeof navigator.vibrate !== "function") return;
+  navigator.vibrate(Math.max(1, Math.min(50, duration)));
+}
+
+export async function openEmbeddedExternalUrl(url: string) {
+  if (!isEmbeddedMobileRuntime()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await nativeInvoke("mobile_open_external_url", { url });
 }
 
 export async function clearEmbeddedMobileGatewaySession() {

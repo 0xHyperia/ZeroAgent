@@ -679,6 +679,24 @@ fn mobile_oauth_open(app: tauri::AppHandle, url: String) -> Result<(), String> {
 }
 
 #[cfg(mobile)]
+#[tauri::command]
+fn mobile_open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = url::Url::parse(url.trim()).map_err(|_| "external URL is invalid".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("external URL must use HTTP or HTTPS".to_string());
+    }
+    app.opener()
+        .open_url(parsed.as_str(), None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+fn mobile_app_exit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[cfg(mobile)]
 #[tauri::mobile_entry_point]
 pub fn run() {
     tauri::Builder::default()
@@ -696,6 +714,8 @@ pub fn run() {
         .manage(services::mobile_gateway::MobileGatewayState::default())
         .invoke_handler(tauri::generate_handler![
             mobile_oauth_open,
+            mobile_open_external_url,
+            mobile_app_exit,
             services::mobile_gateway::mobile_gateway_bootstrap,
             services::mobile_gateway::mobile_gateway_logout,
             services::mobile_gateway::mobile_gateway_request,

@@ -3,6 +3,8 @@
 
 declare module "monaco-editor/esm/nls.messages.zh-cn.js" {}
 
+declare const __ZEROAGENT_APP_VERSION__: string;
+
 declare module "~icons/*?raw" {
   const svg: string;
   export default svg;
