@@ -306,19 +306,55 @@ type AppRelayEnvelope<T> = {
 };
 
 async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
-  const accessToken = readAccessToken();
-  if (!accessToken) throw new RelayApiError("请先登录 USA-Zero", 401);
-  const response = await fetch(`${RELAY_API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const envelope = (await response.json()) as AppRelayEnvelope<T>;
+  let accessToken = readAccessToken();
+  if (!accessToken && options.retryAfterRefresh !== false) {
+    const refreshed = await refreshRelaySession();
+    if (refreshed) return requestAppRelay<T>(path, { ...options, retryAfterRefresh: false });
+    accessToken = readAccessToken();
+  }
+  if (!accessToken) {
+    expireRelaySession();
+    throw new RelayApiError("请先登录 USA-Zero", 401);
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+  };
+  const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  let response: Response;
+  try {
+    response = await fetch(`${proxyRequest.baseUrl}${normalizedPath}`, {
+      method: options.method ?? "GET",
+      headers: proxyRequest.headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    throw new RelayApiError(
+      `无法连接 USA-零：${error instanceof Error ? error.message : String(error)}`,
+      0,
+    );
+  }
+
+  if (response.status === 401) {
+    if (options.retryAfterRefresh !== false) {
+      const refreshed = await refreshRelaySession();
+      if (refreshed) {
+        return requestAppRelay<T>(path, { ...options, retryAfterRefresh: false });
+      }
+    }
+    expireRelaySession();
+  }
+
+  let envelope: AppRelayEnvelope<T>;
+  try {
+    envelope = (await response.json()) as AppRelayEnvelope<T>;
+  } catch {
+    throw new RelayApiError(`USA-零返回了无效响应 (HTTP ${response.status})`, response.status);
+  }
   if (!response.ok || !envelope.success || envelope.data === undefined) {
     throw new RelayApiError(
       envelope.error?.message || envelope.message || "授权资源请求失败",
@@ -339,12 +375,14 @@ async function refreshRelaySession() {
   try {
     if (isOAuthSession()) {
       const clientId = localStorage.getItem(OAUTH_CLIENT_ID_KEY) || "zeroagent-desktop";
-      const response = await fetch(`${RELAY_API_BASE_URL}/app-auth/token`, {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+      const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+      const response = await fetch(`${proxyRequest.baseUrl}/app-auth/token`, {
         method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers: proxyRequest.headers,
         body: new URLSearchParams({
           grant_type: "refresh_token",
           client_id: clientId,
@@ -554,9 +592,13 @@ export async function logoutRelay() {
   if (refreshToken) {
     try {
       if (isOAuthSession()) {
-        await fetch(`${RELAY_API_BASE_URL}/app-auth/revoke`, {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/x-www-form-urlencoded",
+        };
+        const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+        await fetch(`${proxyRequest.baseUrl}/app-auth/revoke`, {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          headers: proxyRequest.headers,
           body: new URLSearchParams({ token: refreshToken, token_type_hint: "refresh_token" }),
         });
         clearRelaySession();

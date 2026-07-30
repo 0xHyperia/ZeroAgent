@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../settings";
-import { getRelayAccessToken } from "./client";
+import { desktopRequest } from "./desktopRequest";
 
 export type DesktopWorkspace = {
   id: string;
@@ -28,32 +28,13 @@ export type DesktopEnvironment = {
 
 type CredentialRecord = { agentId?: string; deviceId?: string };
 
-function gatewayURL(settings: AppSettings, path: string) {
+function gatewayURL(settings: AppSettings) {
   const url = new URL(settings.remote.gatewayUrl.trim());
   if (settings.remote.gatewayPort > 0) url.port = String(settings.remote.gatewayPort);
-  url.pathname = `${url.pathname.replace(/\/$/, "")}${path}`;
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
   url.search = "";
   url.hash = "";
   return url;
-}
-
-async function desktopRequest<T>(settings: AppSettings, path: string, init?: RequestInit) {
-  const token = getRelayAccessToken();
-  if (!token) throw new Error("USA-零登录已失效");
-  const response = await fetch(gatewayURL(settings, path), {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  });
-  if (response.status === 204) return undefined as T;
-  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!response.ok || !payload)
-    throw new Error(payload?.error || `Gateway 请求失败 (HTTP ${response.status})`);
-  return payload;
 }
 
 export async function getDesktopEnvironments(settings: AppSettings) {
@@ -61,9 +42,16 @@ export async function getDesktopEnvironments(settings: AppSettings) {
   const credential = await invoke<CredentialRecord | null>("device_credential_get");
   const localAgentId = credential?.agentId?.trim() || credential?.deviceId?.trim() || "";
   if (!localAgentId) return null;
-  const encodedLocalAgentId = encodeURIComponent(localAgentId);
-  const path = `/api/desktop/environments?local_agent_id=${encodedLocalAgentId}&local_device_id=${encodedLocalAgentId}`;
-  const response = await desktopRequest<{ environments: DesktopEnvironment[] }>(settings, path);
+  const searchParams = new URLSearchParams({
+    local_agent_id: localAgentId,
+    local_device_id: localAgentId,
+  });
+  const response = await desktopRequest<{ environments: DesktopEnvironment[] }>(
+    settings,
+    "/api/desktop/environments",
+    undefined,
+    searchParams,
+  );
   return { environments: response.environments, localDeviceId: localAgentId };
 }
 
@@ -104,7 +92,7 @@ export async function switchDesktopEnvironment(
 }
 
 export function desktopGatewayOrigin(settings: AppSettings) {
-  return gatewayURL(settings, "/").origin;
+  return gatewayURL(settings).origin;
 }
 
 export function encodeDesktopSelectionCredential(
@@ -137,9 +125,12 @@ export type DesktopConversationRoute = {
 };
 
 export async function getDesktopConversationRoutes(settings: AppSettings, deviceId: string) {
+  const searchParams = new URLSearchParams({ device_id: deviceId });
   const response = await desktopRequest<{ conversations: DesktopConversationRoute[] }>(
     settings,
-    `/api/desktop/conversation-routes?device_id=${encodeURIComponent(deviceId)}`,
+    "/api/desktop/conversation-routes",
+    undefined,
+    searchParams,
   );
   return response.conversations;
 }
