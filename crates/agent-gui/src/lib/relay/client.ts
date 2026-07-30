@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { prepareProxyRequest } from "../providers/proxy";
 import { getInstallationID } from "./installation";
 
-const RELAY_ORIGIN_KEY = "zeroagent.usa-zero-origin";
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
 
 function normalizeRelayOrigin(value: string) {
@@ -22,24 +21,17 @@ function normalizeRelayOrigin(value: string) {
 }
 
 function initialRelayOrigin() {
-  const configured =
-    typeof localStorage !== "undefined" ? localStorage.getItem(RELAY_ORIGIN_KEY)?.trim() : "";
   const buildDefault =
     typeof __ZEROAGENT_USA_ZERO_ORIGIN__ === "string" ? __ZEROAGENT_USA_ZERO_ORIGIN__.trim() : "";
-  const buildOverrideConfigured =
-    typeof __ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__ !== "undefined" &&
-    __ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__;
   try {
-    return normalizeRelayOrigin(
-      (buildOverrideConfigured ? buildDefault : configured || buildDefault) || DEFAULT_RELAY_ORIGIN,
-    );
+    return normalizeRelayOrigin(buildDefault || DEFAULT_RELAY_ORIGIN);
   } catch {
     return DEFAULT_RELAY_ORIGIN;
   }
 }
 
-export let RELAY_ORIGIN = initialRelayOrigin();
-export let RELAY_API_BASE_URL = `${RELAY_ORIGIN}/api/v1`;
+export const RELAY_ORIGIN = initialRelayOrigin();
+export const RELAY_API_BASE_URL = `${RELAY_ORIGIN}/api/v1`;
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
 
 const ACCESS_TOKEN_KEY = "zeroagent.relay.access-token";
@@ -205,17 +197,6 @@ function expireRelaySession() {
   if (relaySessionExpiryNotified) return;
   relaySessionExpiryNotified = true;
   window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
-}
-
-export function configureRelayOrigin(value: string) {
-  const next = normalizeRelayOrigin(value);
-  if (next === RELAY_ORIGIN) return next;
-  clearRelaySession();
-  localStorage.setItem(RELAY_ORIGIN_KEY, next);
-  RELAY_ORIGIN = next;
-  RELAY_API_BASE_URL = `${next}/api/v1`;
-  window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
-  return next;
 }
 
 export function hasStoredRelaySession() {

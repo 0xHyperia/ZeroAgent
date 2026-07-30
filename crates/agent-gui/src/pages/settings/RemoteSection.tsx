@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Check,
   Clock3,
@@ -9,7 +9,6 @@ import {
   GitBranch,
   Globe,
   type IconComponent,
-  Link2,
   MonitorSmartphone,
   Radio,
   RefreshCw,
@@ -31,8 +30,6 @@ import {
 import { normalizeIntegerDraftInput, parseIntegerDraftValue } from "./remoteInput";
 import { AgentActivationSwitch } from "./shared";
 import type { SettingsSectionProps } from "./types";
-
-const REMOTE_GATEWAY_PORT_MAX = 65_535;
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -165,23 +162,6 @@ function usePositiveIntegerDraft(
   };
 }
 
-function buildGatewayEndpointPreview(settings: AppSettings["remote"]) {
-  const gatewayUrl = settings.gatewayUrl.trim();
-  if (!gatewayUrl) return "";
-
-  try {
-    const url = new URL(gatewayUrl);
-    const port = String(settings.gatewayPort || 443);
-    url.port = port;
-    url.pathname = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return `${gatewayUrl}:${settings.gatewayPort || 443}`;
-  }
-}
-
 function formatTimestamp(value?: number | null) {
   if (!value) return "N/A";
   const timestampMs = value > 1_000_000_000_000 ? value : value * 1000;
@@ -191,14 +171,6 @@ function formatTimestamp(value?: number | null) {
 export function RemoteSection(props: SettingsSectionProps) {
   const { settings, setSettings } = props;
   const { t } = useLocale();
-  const remoteGatewayPortDraft = usePositiveIntegerDraft(
-    settings.remote.gatewayPort,
-    { min: 1, max: REMOTE_GATEWAY_PORT_MAX },
-    (gatewayPort) =>
-      updateRemoteSettings(setSettings, {
-        gatewayPort,
-      }),
-  );
   const remoteHeartbeatDraft = usePositiveIntegerDraft(
     settings.remote.heartbeatInterval,
     {
@@ -266,11 +238,6 @@ export function RemoteSection(props: SettingsSectionProps) {
   }, []);
 
   const isConnected = Boolean(status.online);
-  const gatewayEndpointPreview = useMemo(
-    () => buildGatewayEndpointPreview(settings.remote),
-    [settings.remote],
-  );
-
   const connectedProtocol = status.protocol?.trim();
   const statusText = isConnected
     ? connectedProtocol
@@ -322,55 +289,6 @@ export function RemoteSection(props: SettingsSectionProps) {
             }
           />
         </div>
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">
-        <SectionCardHeader icon={Server} title={t("settings.remoteGatewayConnection")} />
-
-        <div className="space-y-1.5">
-          <label
-            htmlFor="remote-gateway-url"
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-          >
-            <Link2 className="h-3 w-3" />
-            {t("settings.remoteGatewayUrl")}
-          </label>
-          <div className="flex items-center gap-2">
-            <Input
-              id="remote-gateway-url"
-              type="url"
-              value={settings.remote.gatewayUrl}
-              onChange={(e) =>
-                updateRemoteSettings(setSettings, {
-                  gatewayUrl: e.target.value,
-                })
-              }
-              placeholder="https://gateway.example.com"
-              className="min-w-0 flex-1 font-mono text-[13px]"
-            />
-            <span className="shrink-0 text-xs text-muted-foreground/50">:</span>
-            <Input
-              type="text"
-              inputMode="numeric"
-              value={remoteGatewayPortDraft.draft}
-              onBlur={remoteGatewayPortDraft.handleBlur}
-              onChange={(e) => remoteGatewayPortDraft.handleChange(e.target.value)}
-              placeholder="443"
-              className="w-24 shrink-0 font-mono text-[13px]"
-            />
-          </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-            {t("settings.remoteGatewayUrlHint")}
-          </p>
-        </div>
-
-        {gatewayEndpointPreview ? (
-          <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-            <Globe className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate font-mono">{gatewayEndpointPreview}</span>
-            <CopyButton value={gatewayEndpointPreview} />
-          </div>
-        ) : null}
       </div>
 
       <div className="space-y-4 rounded-xl border border-border/60 bg-card p-5">

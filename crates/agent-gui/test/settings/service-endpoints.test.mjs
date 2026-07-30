@@ -12,39 +12,42 @@ const remoteSettings = readFileSync(
   new URL("../../src/lib/settings/index.ts", import.meta.url),
   "utf8",
 );
+const relayAccessGate = readFileSync(
+  new URL("../../src/components/relay/RelayAccessGate.tsx", import.meta.url),
+  "utf8",
+);
+const remoteSection = readFileSync(
+  new URL("../../src/pages/settings/RemoteSection.tsx", import.meta.url),
+  "utf8",
+);
 
 test("service endpoints are independent from the frontend build mode", () => {
   assert.match(viteConfig, /env\.ZEROAGENT_USA_ZERO_ORIGIN/);
-  assert.match(viteConfig, /__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__/);
+  assert.doesNotMatch(viteConfig, /__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__/);
   assert.doesNotMatch(viteConfig, /__ZEROAGENT_DEVELOPMENT__/);
   assert.doesNotMatch(relayClient, /RELAY_DEBUG_CONTROLS_ENABLED/);
   assert.doesNotMatch(remoteSettings, /REMOTE_DEBUG_CONTROLS_ENABLED/);
   assert.doesNotMatch(remoteSettings, /__ZEROAGENT_DEVELOPMENT__/);
 });
 
-test("an explicit USA-Zero startup address overrides the stored address", () => {
-  const previousLocalStorage = globalThis.localStorage;
+test("USA-Zero uses only the startup address", () => {
   const previousOrigin = globalThis.__ZEROAGENT_USA_ZERO_ORIGIN__;
-  const previousConfigured = globalThis.__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__;
-  globalThis.localStorage = {
-    getItem: () => "https://stored.example.com",
-    setItem() {},
-    removeItem() {},
-  };
   globalThis.__ZEROAGENT_USA_ZERO_ORIGIN__ = "https://startup.example.com";
-  globalThis.__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__ = true;
 
   try {
     const relay = createTsModuleLoader().loadModule("src/lib/relay/client.ts");
     assert.equal(relay.RELAY_ORIGIN, "https://startup.example.com");
   } finally {
-    globalThis.localStorage = previousLocalStorage;
     if (previousOrigin === undefined) delete globalThis.__ZEROAGENT_USA_ZERO_ORIGIN__;
     else globalThis.__ZEROAGENT_USA_ZERO_ORIGIN__ = previousOrigin;
-    if (previousConfigured === undefined) {
-      delete globalThis.__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__;
-    } else {
-      globalThis.__ZEROAGENT_USA_ZERO_ORIGIN_CONFIGURED__ = previousConfigured;
-    }
   }
+});
+
+test("service endpoint controls are not rendered or persisted by the frontend", () => {
+  assert.doesNotMatch(relayClient, /RELAY_ORIGIN_KEY|configureRelayOrigin/);
+  assert.doesNotMatch(relayAccessGate, /relay-origin|USA-零服务地址/);
+  assert.doesNotMatch(
+    remoteSection,
+    /remote-gateway-url|remoteGatewayPortDraft|gatewayEndpointPreview/,
+  );
 });

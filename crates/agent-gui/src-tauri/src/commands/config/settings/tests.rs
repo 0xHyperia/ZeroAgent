@@ -107,21 +107,26 @@ mod tests {
 
     #[test]
     fn normalize_remote_settings_repairs_single_slash_gateway_url() {
-        let normalized = normalize_remote_settings_payload(RemoteSettingsPayload {
-            enabled: true,
-            gateway_url: " https:/agent.cnweb.org/ ".to_string(),
-            gateway_port: 443,
-            token: " agent-token-dev ".to_string(),
-            agent_id: " mac-mini ".to_string(),
-            auto_reconnect: true,
-            heartbeat_interval: 30,
-            enable_web_terminal: false,
-            enable_web_ssh_terminal: false,
-            enable_web_git: false,
-            enable_web_tunnels: false,
-        });
+        let normalized = normalize_remote_settings_payload_with_overrides(
+            RemoteSettingsPayload {
+                enabled: true,
+                gateway_url: "https://persisted.example.com".to_string(),
+                gateway_port: 8443,
+                token: " agent-token-dev ".to_string(),
+                agent_id: " mac-mini ".to_string(),
+                auto_reconnect: true,
+                heartbeat_interval: 30,
+                enable_web_terminal: false,
+                enable_web_ssh_terminal: false,
+                enable_web_git: false,
+                enable_web_tunnels: false,
+            },
+            Some(" https:/agent.cnweb.org/ "),
+            None,
+        );
 
         assert_eq!(normalized.gateway_url, "https://agent.cnweb.org");
+        assert_eq!(normalized.gateway_port, 443);
         assert_eq!(normalized.token, "agent-token-dev");
         assert_eq!(normalized.agent_id, "mac-mini");
     }
@@ -143,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_gateway_environment_preserves_persisted_address() {
+    fn missing_gateway_environment_uses_official_address() {
         let normalized = normalize_remote_settings_payload_with_overrides(
             RemoteSettingsPayload {
                 gateway_url: "https://persisted.example.com/".to_string(),
@@ -154,8 +159,8 @@ mod tests {
             None,
         );
 
-        assert_eq!(normalized.gateway_url, "https://persisted.example.com");
-        assert_eq!(normalized.gateway_port, 8443);
+        assert_eq!(normalized.gateway_url, OFFICIAL_GATEWAY_URL);
+        assert_eq!(normalized.gateway_port, 443);
     }
 
     #[test]
@@ -205,9 +210,10 @@ mod tests {
             )
             .expect("load stored remote payload");
 
-        assert_eq!(migrated.gateway_port, 8443);
+        assert_eq!(migrated.gateway_url, OFFICIAL_GATEWAY_URL);
+        assert_eq!(migrated.gateway_port, 443);
         assert!(is_generated_agent_id(&migrated.agent_id));
-        assert!(stored_json.contains("\"gatewayPort\":8443"));
+        assert!(stored_json.contains("\"gatewayPort\":443"));
         assert!(!stored_json.contains("grpcPort"));
         assert!(!stored_json.contains("gateway-token"));
     }
@@ -251,8 +257,8 @@ mod tests {
 
         assert!(is_generated_agent_id(&generated));
         assert_eq!(stored.agent_id, generated);
-        assert_eq!(stored.gateway_url, "https://gateway.example.com");
-        assert_eq!(stored.gateway_port, 8443);
+        assert_eq!(stored.gateway_url, OFFICIAL_GATEWAY_URL);
+        assert_eq!(stored.gateway_port, 443);
         assert!(stored.token.is_empty());
         assert!(!stored.auto_reconnect);
         assert_eq!(stored.heartbeat_interval, 45);
@@ -272,7 +278,7 @@ mod tests {
             json!({
                 "enabled": true,
                 "gatewayUrl": "https://gateway.example.com",
-                "gatewayPort": 443,
+                "gatewayPort": 8443,
                 "token": "gateway-token",
                 "agentId": "attacker-controlled",
                 "autoReconnect": true,
@@ -284,6 +290,10 @@ mod tests {
 
         assert_eq!(saved.agent_id, generated);
         assert_eq!(stored.agent_id, generated);
+        assert_eq!(saved.gateway_url, OFFICIAL_GATEWAY_URL);
+        assert_eq!(saved.gateway_port, 443);
+        assert_eq!(stored.gateway_url, OFFICIAL_GATEWAY_URL);
+        assert_eq!(stored.gateway_port, 443);
     }
 
     #[test]

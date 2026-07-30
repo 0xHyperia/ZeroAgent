@@ -1844,10 +1844,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.remoteDisconnected": "未连接",
     "settings.remoteEnable": "启用远程访问",
     "settings.remoteDisable": "关闭远程访问",
-    "settings.remoteGatewayConnection": "Gateway 连接",
-    "settings.remoteGatewayUrl": "Gateway 地址",
-    "settings.remoteGatewayUrlHint":
-      "云端 Gateway 的 HTTPS 地址，用于 WebUI 访问与桌面端 v2 WebSocket 连接",
     "settings.remoteAuth": "设备身份",
     "settings.remoteAgentId": "Agent 标识",
     "settings.remoteAgentIdHint": "由此安装自动生成并持久化，连接不同 Gateway 时保持不变",
@@ -4146,10 +4142,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.remoteDisconnected": "Disconnected",
     "settings.remoteEnable": "Enable remote access",
     "settings.remoteDisable": "Disable remote access",
-    "settings.remoteGatewayConnection": "Gateway Connection",
-    "settings.remoteGatewayUrl": "Gateway URL",
-    "settings.remoteGatewayUrlHint":
-      "HTTPS address of the cloud Gateway for WebUI access and the desktop v2 WebSocket link",
     "settings.remoteAuth": "Device Identity",
     "settings.remoteAgentId": "Agent ID",
     "settings.remoteAgentIdHint":

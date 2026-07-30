@@ -1,7 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import {
-  configureRelayOrigin,
   createRelayApiKeys,
   getRelayCurrentUser,
   getRelayPublicSettings,
@@ -11,7 +10,6 @@ import {
   loginRelay,
   loginRelay2FA,
   loginRelayOAuth,
-  RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
   type RelayUser,
@@ -69,7 +67,6 @@ export function RelayAccessGate({
   const [groups, setGroups] = useState<RelayGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [email, setEmail] = useState("");
-  const [relayOriginDraft, setRelayOriginDraft] = useState(RELAY_ORIGIN);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
@@ -249,17 +246,6 @@ export function RelayAccessGate({
     }
   }
 
-  function applyRelayOrigin() {
-    try {
-      const next = configureRelayOrigin(relayOriginDraft);
-      setRelayOriginDraft(next);
-      setError("");
-      void initialize();
-    } catch (cause) {
-      setError(errorMessage(cause, "USA-零服务地址无效。"));
-    }
-  }
-
   if (step === "checking") {
     return (
       <div className="relative isolate flex h-full items-center justify-center overflow-hidden bg-background">
@@ -284,27 +270,6 @@ export function RelayAccessGate({
             <h1 className="text-lg font-semibold text-foreground">ZeroAgent</h1>
             <p className="truncate text-xs text-muted-foreground">USA-零账户服务</p>
           </div>
-        </div>
-
-        <div className="mb-4 space-y-1.5">
-          <Label htmlFor="relay-origin">USA-零服务地址</Label>
-          <Input
-            id="relay-origin"
-            type="url"
-            inputMode="url"
-            autoComplete="url"
-            value={relayOriginDraft}
-            onChange={(event) => setRelayOriginDraft(event.target.value)}
-            onBlur={applyRelayOrigin}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                applyRelayOrigin();
-              }
-            }}
-            placeholder="https://api.example.com"
-            className="font-mono text-xs"
-          />
         </div>
 
         {step === "provision" ? (

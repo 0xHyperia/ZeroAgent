@@ -69,13 +69,13 @@ fn normalize_remote_settings_payload_with_overrides(
     let gateway_url = gateway_url_override
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or(&payload.gateway_url);
+        .unwrap_or(OFFICIAL_GATEWAY_URL);
     let gateway_port = gateway_port_override
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<u16>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(payload.gateway_port);
+        .unwrap_or_else(default_remote_gateway_port);
     RemoteSettingsPayload {
         enabled: payload.enabled,
         gateway_url: normalize_base_url_text(gateway_url),
