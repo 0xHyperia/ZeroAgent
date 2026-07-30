@@ -697,8 +697,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             mobile_oauth_open,
             services::mobile_gateway::mobile_gateway_bootstrap,
-            services::mobile_gateway::mobile_gateway_origin,
-            services::mobile_gateway::mobile_gateway_configure,
             services::mobile_gateway::mobile_gateway_logout,
             services::mobile_gateway::mobile_gateway_request,
             services::mobile_gateway::mobile_gateway_socket_connect,

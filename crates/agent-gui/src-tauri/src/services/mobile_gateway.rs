@@ -19,6 +19,8 @@ use tokio_tungstenite::tungstenite::{
 
 const SESSION_COOKIE: &str = "zeroagent_session";
 const MAX_CACHE_ENTRIES: usize = 96;
+const OFFICIAL_GATEWAY_URL: &str = "https://agent.usa0.top";
+const DEFAULT_GATEWAY_PORT: u16 = 443;
 
 #[derive(Default)]
 struct MobileGatewaySession {
@@ -115,6 +117,24 @@ fn normalize_origin(value: &str) -> Result<String, String> {
     Ok(url.to_string().trim_end_matches('/').to_string())
 }
 
+fn compiled_gateway_origin() -> Result<String, String> {
+    let gateway_url = option_env!("ZEROAGENT_GATEWAY_URL")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(OFFICIAL_GATEWAY_URL);
+    let gateway_port = option_env!("ZEROAGENT_GATEWAY_PORT")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_GATEWAY_PORT);
+    let mut url = reqwest::Url::parse(&normalize_origin(gateway_url)?)
+        .map_err(|_| "Gateway URL is invalid".to_string())?;
+    url.set_port(Some(gateway_port))
+        .map_err(|_| "Gateway port is invalid".to_string())?;
+    Ok(url.to_string().trim_end_matches('/').to_string())
+}
+
 fn cache_key(request: &MobileGatewayRequest) -> String {
     format!("{} {}", request.method.to_ascii_uppercase(), request.path)
 }
@@ -198,67 +218,22 @@ pub fn mobile_gateway_bootstrap(state: tauri::State<'_, MobileGatewayState>) -> 
         .session
         .lock()
         .map_err(|_| "mobile gateway state is unavailable")?;
+    let configured_origin = compiled_gateway_origin()?;
     if session.origin.is_empty() {
         if let Some(data) = super::mobile_secure_store::load()? {
             let persisted: PersistedMobileGatewaySession = serde_json::from_slice(&data)
                 .map_err(|error| format!("parse encrypted mobile state: {error}"))?;
-            session.origin = normalize_origin(&persisted.origin)?;
-            session.session_id = persisted.session_id;
-            session.user_id = persisted.user_id;
-            session.cache = persisted.cache;
-        }
-    }
-    if session.origin.is_empty() {
-        if let Ok(origin) = std::env::var("ZEROAGENT_MOBILE_GATEWAY_ORIGIN") {
-            if !origin.trim().is_empty() {
-                session.origin = normalize_origin(&origin)?;
+            if normalize_origin(&persisted.origin)? == configured_origin {
+                session.session_id = persisted.session_id;
+                session.user_id = persisted.user_id;
+                session.cache = persisted.cache;
+            } else {
+                super::mobile_secure_store::clear()?;
             }
         }
+        session.origin = configured_origin;
     }
     Ok(())
-}
-
-#[tauri::command]
-pub fn mobile_gateway_origin(
-    state: tauri::State<'_, MobileGatewayState>,
-) -> Result<String, String> {
-    Ok(state
-        .session
-        .lock()
-        .map_err(|_| "mobile gateway state is unavailable")?
-        .origin
-        .clone())
-}
-
-#[tauri::command]
-pub fn mobile_gateway_configure(
-    origin: String,
-    state: tauri::State<'_, MobileGatewayState>,
-) -> Result<String, String> {
-    let origin = normalize_origin(&origin)?;
-    let mut session = state
-        .session
-        .lock()
-        .map_err(|_| "mobile gateway state is unavailable")?;
-    let changed = session.origin != origin;
-    if changed {
-        session.origin = origin.clone();
-        session.session_id.clear();
-        session.user_id = None;
-        session.cache.clear();
-        super::mobile_secure_store::clear()?;
-    }
-    drop(session);
-    if changed {
-        let mut sockets = state
-            .sockets
-            .lock()
-            .map_err(|_| "mobile Gateway sockets are unavailable")?;
-        for sender in sockets.senders.drain().map(|(_, sender)| sender) {
-            let _ = sender.send(Message::Close(None));
-        }
-    }
-    Ok(origin)
 }
 
 #[tauri::command]

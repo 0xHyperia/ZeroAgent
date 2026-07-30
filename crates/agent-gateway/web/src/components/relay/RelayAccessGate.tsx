@@ -12,7 +12,6 @@ import {
   listRelayGroups,
   loginRelay,
   loginRelay2FA,
-  RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
   type RelayUser,
@@ -20,11 +19,6 @@ import {
   sendRelayVerifyCode,
 } from "@/lib/relay/client";
 import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "@/lib/relay/providers";
-import {
-  configureEmbeddedMobileGateway,
-  getEmbeddedMobileGatewayOrigin,
-  isEmbeddedMobileRuntime,
-} from "@/lib/mobileRuntime";
 import type { AppSettings } from "@/lib/settings";
 import { GroupMultiSelect } from "./GroupMultiSelect";
 import { ZeroAgentLogo } from "./ZeroAgentLogo";
@@ -49,7 +43,6 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
   const [groups, setGroups] = useState<RelayGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [email, setEmail] = useState("");
-  const [gatewayOrigin, setGatewayOrigin] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
@@ -79,13 +72,6 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
     );
     return () => window.clearInterval(timer);
   }, [codeCountdown]);
-
-  useEffect(() => {
-    if (!isEmbeddedMobileRuntime()) return;
-    void getEmbeddedMobileGatewayOrigin().then(setGatewayOrigin).catch((cause) => {
-      setError(errorMessage(cause, "无法读取 Gateway 地址"));
-    });
-  }, []);
 
   const finishAuthentication = useCallback(
     async (authenticatedUser?: RelayUser) => {
@@ -128,9 +114,6 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
 
   async function submitAuth(event: FormEvent) {
     event.preventDefault();
-    if (isEmbeddedMobileRuntime() && !gatewayOrigin.trim()) {
-      return setError("请先填写 Gateway 服务地址");
-    }
     if (!email.trim() || !password) return setError("请输入邮箱和密码。");
     if (mode === "register" && password !== confirmPassword) {
       return setError("两次输入的密码不一致。");
@@ -152,21 +135,6 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
       }
     } catch (cause) {
       setError(errorMessage(cause, mode === "login" ? "登录失败。" : "注册失败。"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function applyMobileGatewayOrigin() {
-    if (!isEmbeddedMobileRuntime()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const configured = await configureEmbeddedMobileGateway(gatewayOrigin);
-      setGatewayOrigin(configured);
-      await initialize();
-    } catch (cause) {
-      setError(errorMessage(cause, "Gateway 服务地址无效"));
     } finally {
       setBusy(false);
     }
@@ -229,32 +197,13 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
   return (
     <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-background px-5 py-8">
       <div className="w-full max-w-[420px]">
-        {isEmbeddedMobileRuntime() && (
-          <div className="mb-4 space-y-2 rounded-lg border bg-card p-4 shadow-sm">
-            <Label htmlFor="mobile-gateway-origin">Gateway 服务地址</Label>
-            <div className="flex gap-2">
-              <Input
-                id="mobile-gateway-origin"
-                type="url"
-                inputMode="url"
-                autoComplete="url"
-                value={gatewayOrigin}
-                onChange={(event) => setGatewayOrigin(event.target.value)}
-                placeholder="https://gateway.example.com"
-              />
-              <Button type="button" variant="outline" disabled={busy} onClick={applyMobileGatewayOrigin}>
-                保存
-              </Button>
-            </div>
-          </div>
-        )}
         <div className="mb-6 flex items-center gap-3">
           <div className="h-11 w-11 overflow-hidden rounded-md border bg-white">
             <ZeroAgentLogo className="h-full w-full object-contain" />
           </div>
           <div>
             <h1 className="text-lg font-semibold">ZeroAgent</h1>
-            <p className="text-xs text-muted-foreground">USA-零 {RELAY_ORIGIN}</p>
+            <p className="text-xs text-muted-foreground">USA-零账户服务</p>
           </div>
         </div>
         {step === "provision" ? (

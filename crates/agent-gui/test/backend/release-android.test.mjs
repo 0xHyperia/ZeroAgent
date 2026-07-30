@@ -56,7 +56,13 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
 test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a site", () => {
   const androidConfig = readRepoFile("crates/agent-gui/src-tauri/tauri.android.conf.json");
   const tauriLib = readRepoFile("crates/agent-gui/src-tauri/src/lib.rs");
+  const mobileGateway = readRepoFile(
+    "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
+  );
   const mobileRuntime = readRepoFile("crates/agent-gateway/web/src/lib/mobileRuntime.ts");
+  const mobileRelayGate = readRepoFile(
+    "crates/agent-gateway/web/src/components/relay/RelayAccessGate.tsx",
+  );
   const gatewayViteConfig = readRepoFile("crates/agent-gateway/web/vite.config.ts");
 
   assert.match(androidConfig, /agent-gateway\/web exec vite build --mode embedded-mobile/);
@@ -69,6 +75,13 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileRuntime, /mobile_gateway_request/);
   assert.match(mobileRuntime, /mobile_gateway_socket_connect/);
   assert.doesNotMatch(mobileRuntime, /mobile-session/);
+  assert.match(mobileGateway, /OFFICIAL_GATEWAY_URL: &str = "https:\/\/agent\.usa0\.top"/);
+  assert.match(mobileGateway, /option_env!\("ZEROAGENT_GATEWAY_URL"\)/);
+  assert.match(mobileGateway, /option_env!\("ZEROAGENT_GATEWAY_PORT"\)/);
+  assert.doesNotMatch(mobileGateway, /ZEROAGENT_MOBILE_GATEWAY_ORIGIN/);
+  assert.doesNotMatch(tauriLib, /mobile_gateway_configure/);
+  assert.doesNotMatch(mobileRuntime, /configureEmbeddedMobileGateway/);
+  assert.doesNotMatch(mobileRelayGate, /mobile-gateway-origin|Gateway 服务地址|RELAY_ORIGIN/);
   assert.match(gatewayViteConfig, /mode === "embedded-mobile"/);
   assert.equal(existsSync(path.join(guiRoot, "mobile.html")), false);
   assert.equal(existsSync(path.join(guiRoot, "src/mobile.ts")), false);

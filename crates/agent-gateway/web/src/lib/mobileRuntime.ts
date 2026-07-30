@@ -218,16 +218,6 @@ export async function bootstrapEmbeddedMobileRuntime() {
   bootstrapped = true;
 }
 
-export async function getEmbeddedMobileGatewayOrigin() {
-  if (!isEmbeddedMobileRuntime()) return "";
-  return nativeInvoke<string>("mobile_gateway_origin");
-}
-
-export async function configureEmbeddedMobileGateway(origin: string) {
-  if (!isEmbeddedMobileRuntime()) return origin;
-  return nativeInvoke<string>("mobile_gateway_configure", { origin });
-}
-
 export async function clearEmbeddedMobileGatewaySession() {
   if (!isEmbeddedMobileRuntime()) return;
   await nativeInvoke("mobile_gateway_logout");
