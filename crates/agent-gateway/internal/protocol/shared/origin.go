@@ -8,7 +8,9 @@ import (
 )
 
 // OriginAllowed 是 WebSocket 升级的同源校验（v2 共用，自 internal/server/http_origin.go
-// 平移，行为不变）：无 Origin 头（非浏览器）、同源、或两端均为回环地址（本机开发）时放行。
+// 平移）：无 Origin 头、同源，或回环来源（桌面开发端）时放行。桌面端访问远程
+// Gateway 时来源是 localhost 而请求主机是局域网/公网地址；其 selection lease 和
+// account credential 仍在 protobuf hello 中强制校验，Origin 不承担认证职责。
 func OriginAllowed(r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
@@ -30,7 +32,7 @@ func OriginAllowed(r *http.Request) bool {
 	if originHost == "" || requestHost == "" {
 		return false
 	}
-	return isLoopbackHost(originHost) && isLoopbackHost(requestHost)
+	return isLoopbackHost(originHost)
 }
 
 func requestURLForOriginCheck(r *http.Request) *url.URL {

@@ -363,6 +363,15 @@ func TestOriginAllowedPermitsLoopbackDevPorts(t *testing.T) {
 	}
 }
 
+func TestOriginAllowedPermitsLoopbackDesktopAgainstRemoteGateway(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://172.16.0.121:50052/api/chat/commands", nil)
+	req.Header.Set("Origin", "http://localhost:2120")
+
+	if !shared.OriginAllowed(req) {
+		t.Fatal("expected local desktop origin to be allowed against a remote Gateway")
+	}
+}
+
 func TestOriginAllowedUsesForwardedProtoForSameOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "http://gateway.test/api/chat/commands", nil)
 	req.Host = "gateway.test"
