@@ -323,7 +323,7 @@ impl GatewayController {
                 set_disconnected_status(status, &normalized, None);
             }
         });
-        if should_run_remote {
+        if config_changed && should_run_remote {
             self.restart_runner()?;
         } else {
             self.ensure_runner()?;

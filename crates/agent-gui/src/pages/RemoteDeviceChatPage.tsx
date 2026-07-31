@@ -18,7 +18,7 @@ import {
   remoteConversationStorageKey,
   remoteProjectStorageKey,
 } from "../lib/relay/remoteDeviceState";
-import { getRelayAccessToken } from "../lib/relay/client";
+import { getRelayAccessToken, RELAY_TOKEN_CHANGED_EVENT } from "../lib/relay/client";
 import { cn } from "../lib/shared/utils";
 import { Textarea } from "../components/ui/textarea";
 import { GatewayWebSocketClient } from "@/lib/gatewaySocket";
@@ -208,7 +208,14 @@ export function RemoteDeviceChatPage({
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [queues, setQueues] = useState<Map<string, ChatQueueSnapshot>>(() => new Map());
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const [desktopAccessToken, setDesktopAccessToken] = useState(() => getRelayAccessToken());
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleTokenChanged = () => setDesktopAccessToken(getRelayAccessToken());
+    window.addEventListener(RELAY_TOKEN_CHANGED_EVENT, handleTokenChanged);
+    return () => window.removeEventListener(RELAY_TOKEN_CHANGED_EVENT, handleTokenChanged);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(
@@ -217,20 +224,42 @@ export function RemoteDeviceChatPage({
     );
   }, [conversationId, environment.device_id, projectId]);
 
-  const api = useMemo(() => {
-    if (!environment.online || !selectionLease) return null;
-    return new GatewayWebSocketClient(
-      encodeDesktopSelectionCredential(selectionLease, environment.device_id),
-      {
-        origin: desktopGatewayOrigin(settings),
-        desktopAccessToken: getRelayAccessToken(),
-        clientName: "desktop-controller",
-      },
-    );
-  }, [
+  const apiKey = JSON.stringify([
     environment.device_id,
     environment.online,
     selectionLease,
+    desktopAccessToken,
+    settings.remote.gatewayUrl,
+    settings.remote.gatewayPort,
+  ]);
+  const [apiState, setApiState] = useState<{
+    key: string;
+    client: GatewayWebSocketClient;
+  } | null>(null);
+  const api = apiState?.key === apiKey ? apiState.client : null;
+
+  useEffect(() => {
+    if (!environment.online || !selectionLease) {
+      setApiState(null);
+      return;
+    }
+    const client = new GatewayWebSocketClient(
+      encodeDesktopSelectionCredential(selectionLease, environment.device_id),
+      {
+        origin: desktopGatewayOrigin(settings),
+        desktopAccessToken,
+        clientName: "desktop-controller",
+      },
+    );
+    client.setActiveAgent(environment.device_id);
+    setApiState({ key: apiKey, client });
+    return () => client.dispose();
+  }, [
+    apiKey,
+    environment.device_id,
+    environment.online,
+    selectionLease,
+    desktopAccessToken,
     settings.remote.gatewayUrl,
     settings.remote.gatewayPort,
   ]);
@@ -306,7 +335,6 @@ export function RemoteDeviceChatPage({
     });
     return () => {
       for (const cleanup of cleanups) cleanup();
-      api.dispose();
     };
   }, [api, loadConversations]);
 

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../settings";
-import { getRelayAccessToken, getRelayCurrentUser, RELAY_ORIGIN } from "./client";
+import { getRelayCurrentUser, getValidRelayAccessToken, RELAY_ORIGIN } from "./client";
 import { desktopRequest } from "./desktopRequest";
 import { getInstallationID } from "./installation";
 
@@ -32,8 +32,8 @@ async function currentAccountScope() {
 }
 
 export async function registerDesktopDevice(settings: AppSettings) {
-  const accessToken = getRelayAccessToken();
-  if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim() || !accessToken) return null;
+  if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return null;
+  await getValidRelayAccessToken();
   const accountScope = await currentAccountScope();
   await invoke("device_credential_activate", { accountScope });
   const existing = await invoke<CredentialRecord | null>("device_credential_get", { accountScope });
@@ -85,8 +85,7 @@ export async function registerDesktopDevice(settings: AppSettings) {
 }
 
 export async function rotateDesktopAgentToken(settings: AppSettings, agentId: string) {
-  const accessToken = getRelayAccessToken();
-  if (!accessToken) throw new Error("USA-Zero login has expired");
+  await getValidRelayAccessToken();
   const accountScope = await currentAccountScope();
   await invoke("device_credential_activate", { accountScope });
   const payload = await desktopRequest<{

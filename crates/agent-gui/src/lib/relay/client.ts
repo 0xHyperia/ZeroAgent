@@ -33,6 +33,7 @@ function initialRelayOrigin() {
 export const RELAY_ORIGIN = initialRelayOrigin();
 export const RELAY_API_BASE_URL = `${RELAY_ORIGIN}/api/v1`;
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
+export const RELAY_TOKEN_CHANGED_EVENT = "zeroagent:relay-token-changed";
 
 const ACCESS_TOKEN_KEY = "zeroagent.relay.access-token";
 const REFRESH_TOKEN_KEY = "zeroagent.relay.refresh-token";
@@ -40,6 +41,9 @@ const EXPIRES_AT_KEY = "zeroagent.relay.expires-at";
 const AUTH_KIND_KEY = "zeroagent.relay.auth-kind";
 const OAUTH_CLIENT_ID_KEY = "zeroagent.relay.oauth-client-id";
 let relaySessionExpiryNotified = false;
+let refreshRelaySessionPromise: Promise<boolean> | null = null;
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+const TOKEN_REFRESH_RETRY_MS = 30_000;
 
 type RelayEnvelope<T> = {
   code: number;
@@ -169,15 +173,21 @@ function readRefreshToken() {
 
 function saveSession(response: RelaySessionTokens) {
   relaySessionExpiryNotified = false;
+  const previousAccessToken = readAccessToken();
   localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token.trim());
   if (response.refresh_token?.trim()) {
     localStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token.trim());
   }
   if (response.expires_in && response.expires_in > 0) {
     localStorage.setItem(EXPIRES_AT_KEY, String(Date.now() + response.expires_in * 1000));
+  } else {
+    localStorage.removeItem(EXPIRES_AT_KEY);
   }
   if (response.auth_kind) localStorage.setItem(AUTH_KIND_KEY, response.auth_kind);
   if (response.oauth_client_id) localStorage.setItem(OAUTH_CLIENT_ID_KEY, response.oauth_client_id);
+  if (previousAccessToken !== response.access_token.trim()) {
+    window.dispatchEvent(new Event(RELAY_TOKEN_CHANGED_EVENT));
+  }
 }
 
 function isOAuthSession() {
@@ -203,6 +213,77 @@ export function hasStoredRelaySession() {
   return Boolean(readAccessToken() || readRefreshToken());
 }
 
+function accessTokenExpiresAt() {
+  const value = Number(localStorage.getItem(EXPIRES_AT_KEY) ?? "");
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+async function requireValidRelayAccessToken(forceRefresh = false) {
+  const accessToken = readAccessToken();
+  const expiresAt = accessTokenExpiresAt();
+  if (!forceRefresh && accessToken && (!expiresAt || expiresAt > Date.now() + TOKEN_REFRESH_SKEW_MS)) {
+    return accessToken;
+  }
+  if (await refreshRelaySession()) {
+    const refreshed = readAccessToken();
+    if (refreshed) return refreshed;
+  }
+  throw new RelayApiError("请先登录 USA-零", 401);
+}
+
+export async function getValidRelayAccessToken(forceRefresh = false) {
+  return requireValidRelayAccessToken(forceRefresh);
+}
+
+export function installRelaySessionLifecycle() {
+  let stopped = false;
+  let timer: number | null = null;
+
+  const clearTimer = () => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
+  };
+  const schedule = () => {
+    clearTimer();
+    if (stopped || !hasStoredRelaySession()) return;
+    const expiresAt = accessTokenExpiresAt();
+    if (!expiresAt) return;
+    const delay = Math.max(0, expiresAt - Date.now() - TOKEN_REFRESH_SKEW_MS);
+    timer = window.setTimeout(() => void refreshAndSchedule(), delay);
+  };
+  const refreshAndSchedule = async () => {
+    clearTimer();
+    try {
+      await getValidRelayAccessToken();
+      schedule();
+    } catch {
+      if (!stopped && hasStoredRelaySession()) {
+        timer = window.setTimeout(() => void refreshAndSchedule(), TOKEN_REFRESH_RETRY_MS);
+      }
+    }
+  };
+  const handleWake = () => void refreshAndSchedule();
+  const handleVisibility = () => {
+    if (document.visibilityState === "visible") handleWake();
+  };
+
+  window.addEventListener(RELAY_TOKEN_CHANGED_EVENT, schedule);
+  window.addEventListener("online", handleWake);
+  window.addEventListener("focus", handleWake);
+  window.addEventListener("pageshow", handleWake);
+  document.addEventListener("visibilitychange", handleVisibility);
+  schedule();
+  return () => {
+    stopped = true;
+    clearTimer();
+    window.removeEventListener(RELAY_TOKEN_CHANGED_EVENT, schedule);
+    window.removeEventListener("online", handleWake);
+    window.removeEventListener("focus", handleWake);
+    window.removeEventListener("pageshow", handleWake);
+    document.removeEventListener("visibilitychange", handleVisibility);
+  };
+}
+
 type RelayRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -212,22 +293,14 @@ type RelayRequestOptions = {
 
 async function requestRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
+  let requestAccessToken = "";
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
   if (options.authenticated) {
-    let accessToken = readAccessToken();
-    if (!accessToken && options.retryAfterRefresh !== false) {
-      const refreshed = await refreshRelaySession();
-      if (refreshed) return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
-      accessToken = readAccessToken();
-    }
-    if (!accessToken) {
-      expireRelaySession();
-      throw new RelayApiError("请先登录 USA-零", 401);
-    }
-    headers.Authorization = `Bearer ${accessToken}`;
+    requestAccessToken = await requireValidRelayAccessToken();
+    headers.Authorization = `Bearer ${requestAccessToken}`;
   }
 
   const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
@@ -249,10 +322,11 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
 
   if (response.status === 401 && options.authenticated) {
     if (options.retryAfterRefresh !== false) {
-      const refreshed = await refreshRelaySession();
-      if (refreshed) {
+      if (readAccessToken() && readAccessToken() !== requestAccessToken) {
         return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
       }
+      const refreshed = await refreshRelaySession();
+      if (refreshed) return requestRelay<T>(path, { ...options, retryAfterRefresh: false });
     }
     expireRelaySession();
   }
@@ -283,16 +357,7 @@ type AppRelayEnvelope<T> = {
 };
 
 async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
-  let accessToken = readAccessToken();
-  if (!accessToken && options.retryAfterRefresh !== false) {
-    const refreshed = await refreshRelaySession();
-    if (refreshed) return requestAppRelay<T>(path, { ...options, retryAfterRefresh: false });
-    accessToken = readAccessToken();
-  }
-  if (!accessToken) {
-    expireRelaySession();
-    throw new RelayApiError("请先登录 USA-Zero", 401);
-  }
+  const accessToken = await requireValidRelayAccessToken();
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -318,10 +383,11 @@ async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {
 
   if (response.status === 401) {
     if (options.retryAfterRefresh !== false) {
-      const refreshed = await refreshRelaySession();
-      if (refreshed) {
+      if (readAccessToken() && readAccessToken() !== accessToken) {
         return requestAppRelay<T>(path, { ...options, retryAfterRefresh: false });
       }
+      const refreshed = await refreshRelaySession();
+      if (refreshed) return requestAppRelay<T>(path, { ...options, retryAfterRefresh: false });
     }
     expireRelaySession();
   }
@@ -344,6 +410,14 @@ async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {
 }
 
 async function refreshRelaySession() {
+  if (refreshRelaySessionPromise) return refreshRelaySessionPromise;
+  refreshRelaySessionPromise = refreshRelaySessionInternal().finally(() => {
+    refreshRelaySessionPromise = null;
+  });
+  return refreshRelaySessionPromise;
+}
+
+async function refreshRelaySessionInternal() {
   const refreshToken = readRefreshToken();
   if (!refreshToken) {
     expireRelaySession();
@@ -367,7 +441,9 @@ async function refreshRelaySession() {
         }),
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) throw new Error("OAuth refresh failed");
+      if (!response.ok) {
+        throw new RelayApiError("OAuth refresh failed", response.status);
+      }
       const tokens = (await response.json()) as RelaySessionTokens;
       saveSession({ ...tokens, auth_kind: "oauth", oauth_client_id: clientId });
       return true;
@@ -379,9 +455,12 @@ async function refreshRelaySession() {
     });
     saveSession(response);
     return true;
-  } catch {
-    expireRelaySession();
-    return false;
+  } catch (error) {
+    if (error instanceof RelayApiError && (error.status === 400 || error.status === 401)) {
+      expireRelaySession();
+      return false;
+    }
+    throw error;
   }
 }
 

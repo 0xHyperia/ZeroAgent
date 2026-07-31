@@ -78,7 +78,7 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
         },
         "./client": {
           RELAY_ORIGIN: "https://usa0.top",
-          getRelayAccessToken: () => "usa-zero-access",
+          getValidRelayAccessToken: async () => "usa-zero-access",
           getRelayCurrentUser: async () => ({ id: 42 }),
         },
         "./installation": { getInstallationID: () => "installation-local" },
@@ -173,7 +173,7 @@ test("a different account receives a new device identity on the same desktop", a
         },
         "./client": {
           RELAY_ORIGIN: "https://usa0.top",
-          getRelayAccessToken: () => "usa-zero-access",
+          getValidRelayAccessToken: async () => "usa-zero-access",
           getRelayCurrentUser: async () => ({ id: 99 }),
         },
         "./installation": { getInstallationID: () => "installation-local" },
@@ -197,6 +197,53 @@ test("a different account receives a new device identity on the same desktop", a
         },
       },
     ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("desktop Gateway requests force one token refresh after a 401", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  let attempt = 0;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    attempt += 1;
+    if (attempt === 1) return Response.json({ error: "expired" }, { status: 401 });
+    return Response.json({ environments: [] });
+  };
+  const tokenRequests = [];
+
+  try {
+    const loader = createTsModuleLoader({
+      mocks: {
+        "@tauri-apps/api/core": {
+          async invoke(command) {
+            if (command === "device_credential_get") return { agentId: "agent-local" };
+            throw new Error(`unexpected invoke: ${command}`);
+          },
+        },
+        "../providers/proxy": {
+          async prepareProxyRequest(_providerId, _baseUrl, headers) {
+            return { baseUrl: "http://127.0.0.1:4567/proxy/codex", headers };
+          },
+        },
+        "./client": {
+          async getValidRelayAccessToken(forceRefresh) {
+            tokenRequests.push(forceRefresh);
+            return forceRefresh ? "refreshed-access" : "expired-access";
+          },
+        },
+      },
+    });
+    const execution = loader.loadModule("src/lib/relay/desktopExecution.ts");
+    await execution.getDesktopEnvironments(settings);
+
+    assert.deepEqual(tokenRequests, [false, false, true]);
+    assert.deepEqual(
+      requests.map((request) => request.init.headers.Authorization),
+      ["Bearer expired-access", "Bearer refreshed-access"],
+    );
   } finally {
     globalThis.fetch = previousFetch;
   }

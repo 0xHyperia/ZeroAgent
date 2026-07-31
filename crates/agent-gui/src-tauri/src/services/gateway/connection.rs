@@ -26,6 +26,45 @@ impl Drop for AbortTaskOnDrop {
     }
 }
 
+impl AbortTaskOnDrop {
+    fn abort(&self) {
+        self.0.abort();
+    }
+}
+
+#[cfg(test)]
+mod task_lifecycle_tests {
+    use super::AbortTaskOnDrop;
+
+    struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for NotifyOnDrop {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn abort_task_guard_stops_child_when_parent_scope_is_dropped() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let guard = AbortTaskOnDrop(tauri::async_runtime::spawn(async move {
+            let _notify = NotifyOnDrop(Some(dropped_tx));
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+
+        started_rx.await.expect("child task should start");
+        drop(guard);
+        tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("aborted child should be dropped promptly")
+            .expect("drop notification should be sent");
+    }
+}
+
 impl GatewayController {
     pub(crate) async fn run(
         self: Arc<Self>,
@@ -133,7 +172,8 @@ impl GatewayController {
             mpsc::channel::<proto::AgentEnvelope>(GATEWAY_OUTBOUND_CONTROL_QUEUE_DEPTH);
         self.set_outbound_control_sender(Some(outbound_control_tx));
         let (terminal_stop_tx, terminal_stop_rx) = watch::channel(false);
-        let terminal_task = self.spawn_terminal_stream_ws(config.clone(), terminal_stop_rx);
+        let terminal_task =
+            AbortTaskOnDrop(self.spawn_terminal_stream_ws(config.clone(), terminal_stop_rx));
 
         let serve_result = async {
             let connected_at = now_unix_seconds();

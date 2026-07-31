@@ -17,6 +17,8 @@ import { initAutomation } from "./lib/automation";
 import {
   getRelayDashboardStats,
   getRelayProfile,
+  getValidRelayAccessToken,
+  installRelaySessionLifecycle,
   RELAY_SESSION_CHANGED_EVENT,
   type RelayDashboardStats,
   type RelayUser,
@@ -239,6 +241,8 @@ export default function App() {
   });
   const [context, setContext] = useState<Context>(() => getDefaultContext());
   const [overlay, setOverlay] = useState<"closed" | "entering" | "open" | "leaving">("closed");
+
+  useEffect(() => installRelaySessionLifecycle(), []);
 
   useEffect(() => {
     const expirations = [...remoteSelectionLeases.values()]
@@ -793,6 +797,7 @@ export default function App() {
   async function handleExecutionSwitch(environment: DesktopEnvironment) {
     const isLocal = environment.device_id === localDeviceId;
     const existingLease = remoteSelectionLeases.get(environment.device_id);
+    if (!isLocal && environment.online) await getValidRelayAccessToken();
     if (!isLocal && environment.online && !isRemoteLeaseValid(existingLease)) {
       const selection = await switchDesktopDevice(settings, environment);
       setRemoteSelectionLeases((current) => {

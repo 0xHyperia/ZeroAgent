@@ -1,6 +1,6 @@
 import { prepareProxyRequest } from "../providers/proxy";
 import type { AppSettings } from "../settings";
-import { getRelayAccessToken } from "./client";
+import { getValidRelayAccessToken } from "./client";
 
 type DesktopRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -27,20 +27,27 @@ export async function desktopRequest<T>(
   init?: DesktopRequestInit,
   searchParams?: URLSearchParams,
 ) {
-  const token = getRelayAccessToken();
-  if (!token) throw new Error("USA-零登录已失效");
-
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-    ...init?.headers,
+  const request = async (forceRefresh: boolean) => {
+    const token = await getValidRelayAccessToken(forceRefresh);
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...init?.headers,
+    };
+    const proxyRequest = await prepareProxyRequest("codex", gatewayBaseURL(settings), headers);
+    const response = await fetch(`${proxyRequest.baseUrl}${requestPath(pathname, searchParams)}`, {
+      ...init,
+      headers: proxyRequest.headers,
+    });
+    return { response, token };
   };
-  const proxyRequest = await prepareProxyRequest("codex", gatewayBaseURL(settings), headers);
-  const response = await fetch(`${proxyRequest.baseUrl}${requestPath(pathname, searchParams)}`, {
-    ...init,
-    headers: proxyRequest.headers,
-  });
+  let attempt = await request(false);
+  if (attempt.response.status === 401) {
+    const currentToken = await getValidRelayAccessToken(false);
+    attempt = await request(currentToken === attempt.token);
+  }
+  const response = attempt.response;
   if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !payload) {
