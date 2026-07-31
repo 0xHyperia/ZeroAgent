@@ -70,7 +70,11 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 	}
 	boundAgentID := strings.TrimSpace(hello.GetAgentId())
 	if verdict.ok && wantRole == gatewayv2.ClientRole_CLIENT_ROLE_BROWSER && s.accounts != nil {
-		session, lease, err := s.accounts.ValidateSelection(context.Background(), controllerSessionID, hello.GetSelectionLease())
+		session, lease, err := s.validateControllerSelection(
+			context.Background(),
+			controllerSessionID,
+			hello,
+		)
 		if err != nil || lease.RuntimeKind != account.RuntimeKindDeviceAgent {
 			verdict = helloVerdict{message: "account login and selection lease required"}
 		} else if device, deviceErr := s.accounts.Device(context.Background(), session.UserID, lease.DeviceID); deviceErr != nil {

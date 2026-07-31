@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,11 +11,98 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/shared"
 	"github.com/liveagent/agent-gateway/internal/session"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestDesktopControllerWebSocketAuthenticatesWithoutGatewayCookie(t *testing.T) {
+	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/auth/me" || r.Header.Get("Authorization") != "Bearer desktop-access" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"id":7,"email":"desktop@example.com"}}`)
+	}))
+	defer usa.Close()
+
+	store := account.NewMemoryStore()
+	accounts := account.NewService(
+		store,
+		account.NewUSAClientWithHTTPClient(usa.URL, usa.Client()),
+		time.Hour,
+		time.Hour,
+	)
+	desktop, err := accounts.DesktopSession(context.Background(), "desktop-access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, _, err := accounts.RegisterDevice(context.Background(), desktop.UserID, account.RegisterDeviceInput{
+		InstallationID: "desktop-controller-device",
+		Name:           "Desktop controller target",
+		Platform:       "windows",
+		Version:        "1.0.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetDevicePresence(context.Background(), device.ID, true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := accounts.SelectTarget(context.Background(), desktop, account.SelectTargetInput{
+		RuntimeKind: account.RuntimeKindDeviceAgent,
+		DeviceID:    device.ID,
+		Scope:       account.SelectionScopeDevice,
+		Target:      account.TargetFingerprint(account.RuntimeKindDeviceAgent, device.ID, ""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(NewHTTPServer(&config.Config{Token: "dev-token"}, session.NewManager(), accounts))
+	defer ts.Close()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws/v2"
+	dialer := websocket.Dialer{Subprotocols: []string{"liveagent.v2.pb"}}
+	conn, _, err := dialer.Dial(wsURL, http.Header{"Origin": []string{ts.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	hello := &gatewayv2.WebClientFrame{
+		RequestId: "auth-desktop-controller",
+		Payload: &gatewayv2.WebClientFrame_Hello{Hello: &gatewayv2.ClientHello{
+			ProtocolVersion: 2,
+			Role:            gatewayv2.ClientRole_CLIENT_ROLE_BROWSER,
+			Token:           "desktop-access",
+			SelectionLease:  lease.ID,
+			RuntimeKind:     string(account.RuntimeKindDeviceAgent),
+			ClientName:      "desktop-controller",
+		}},
+	}
+	data, err := proto.Marshal(hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		t.Fatal(err)
+	}
+	_, responseData, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response gatewayv2.WebServerFrame
+	if err := proto.Unmarshal(responseData, &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.GetHello().GetOk() {
+		t.Fatalf("desktop controller hello rejected: %q", response.GetHello().GetMessage())
+	}
+}
 
 func TestNewHTTPServerServesRootWithoutRedirect(t *testing.T) {
 	handler := NewHTTPServer(&config.Config{Token: "dev-token"}, session.NewManager(), nil)

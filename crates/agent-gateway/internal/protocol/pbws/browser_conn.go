@@ -205,7 +205,11 @@ func (c *browserConn) handshake() bool {
 	hello := frame.GetHello()
 	verdict := c.srv.vetHello(hello, gatewayv2.ClientRole_CLIENT_ROLE_BROWSER)
 	if verdict.ok && c.srv.accounts != nil {
-		session, lease, err := c.srv.accounts.ValidateSelection(context.Background(), c.controllerSessionID, hello.GetSelectionLease())
+		session, lease, err := c.srv.validateControllerSelection(
+			context.Background(),
+			c.controllerSessionID,
+			hello,
+		)
 		if err != nil || lease.RuntimeKind != account.RuntimeKindDeviceAgent {
 			verdict = helloVerdict{message: "account login and selection lease required"}
 		} else if device, deviceErr := c.srv.accounts.Device(context.Background(), session.UserID, lease.DeviceID); deviceErr != nil {

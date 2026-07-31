@@ -1283,6 +1283,7 @@ export class GatewayWebSocketClient {
       token,
       () => this.activeAgentId,
       options.origin,
+      options.desktopAccessToken,
     );
     this.installReconnectWakeups();
   }

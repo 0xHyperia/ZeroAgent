@@ -72,10 +72,10 @@ test("terminal hello carries the selected device lease", () => {
     }),
   ).toString("base64url");
   const frame = decodeTerminalClientFrame(
-    encodeTerminalHelloFrame(`selection.${selection}`, "device-a"),
+    encodeTerminalHelloFrame(`selection.${selection}`, "device-a", "desktop-access-token"),
   );
   assert.equal(frame.payload.case, "hello");
-  assert.equal(frame.payload.value.token, "");
+  assert.equal(frame.payload.value.token, "desktop-access-token");
   assert.equal(frame.payload.value.agentId, "device-a");
   assert.equal(frame.payload.value.selectionLease, "lease-device-a");
 });

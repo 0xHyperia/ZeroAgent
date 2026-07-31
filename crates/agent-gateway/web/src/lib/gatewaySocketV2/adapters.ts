@@ -1746,7 +1746,11 @@ export type TerminalWireHeader = {
 };
 
 // agentId 通过 hello.agent_id 显式绑定终端数据面的目标 Agent。
-export function encodeTerminalHelloFrame(token: string, agentId: string): WireBytes {
+export function encodeTerminalHelloFrame(
+  token: string,
+  agentId: string,
+  desktopAccessToken = "",
+): WireBytes {
   const normalizedAgentId = agentId.trim();
   if (!normalizedAgentId) {
     throw new Error("agent_id is required");
@@ -1758,7 +1762,7 @@ export function encodeTerminalHelloFrame(token: string, agentId: string): WireBy
       value: create(ClientHelloSchema, {
         protocolVersion: GATEWAY_V2_PROTOCOL_VERSION,
         role: ClientRole.BROWSER,
-        token: selection ? "" : token,
+        token: selection ? desktopAccessToken : token,
         agentId: normalizedAgentId,
         selectionLease: selection?.lease ?? "",
         clientName: "webui",

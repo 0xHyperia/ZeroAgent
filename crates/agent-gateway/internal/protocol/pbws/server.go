@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
+	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/shared"
 	"github.com/liveagent/agent-gateway/internal/session"
 )
@@ -147,6 +149,17 @@ func (s *Server) requestTimeout() time.Duration {
 		return s.cfg.RequestTimeout
 	}
 	return 2 * time.Minute
+}
+
+func (s *Server) validateControllerSelection(
+	ctx context.Context,
+	controllerSessionID string,
+	hello *gatewayv2.ClientHello,
+) (*account.Session, *account.SelectionLease, error) {
+	if accessToken := strings.TrimSpace(hello.GetToken()); accessToken != "" {
+		return s.accounts.ValidateDesktopSelection(ctx, accessToken, hello.GetSelectionLease())
+	}
+	return s.accounts.ValidateSelection(ctx, controllerSessionID, hello.GetSelectionLease())
 }
 
 // errorMessage 把内部错误映射为对客户端友好的信息。

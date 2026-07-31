@@ -399,6 +399,7 @@ export class BrowserGatewayTerminalStreamClient implements TerminalStreamClient 
     private readonly token: string,
     private readonly getAgentId: () => string,
     private readonly origin = "",
+    private readonly desktopAccessToken = "",
   ) {}
 
   async attach(
@@ -538,7 +539,9 @@ export class BrowserGatewayTerminalStreamClient implements TerminalStreamClient 
         failAttempt(new Error("Terminal stream connection timed out"));
       }, 15_000);
       socket.onopen = () => {
-        socket.send(encodeTerminalHelloFrame(this.token, this.getAgentId()));
+        socket.send(
+          encodeTerminalHelloFrame(this.token, this.getAgentId(), this.desktopAccessToken),
+        );
       };
       socket.onmessage = (event) => {
         if (typeof event.data === "string") {
