@@ -163,12 +163,24 @@ for (const { label, loader, page } of implementations) {
     assert.doesNotMatch(source, /max-sm:overflow-x-auto max-sm:\[scrollbar-width:none\]/);
     assert.match(source, /max-sm:max-w-\[7\.5rem\] max-sm:px-2/);
     assert.match(source, /relative w-full min-w-0 max-w-md max-sm:flex-1/);
-    assert.match(source, /pb-\[calc\(10rem\+env\(safe-area-inset-bottom\)\)\] sm:pb-24/);
+    const safeAreaBottom =
+      label === "WebUI"
+        ? "var\\(--zeroagent-safe-area-bottom,0px\\)"
+        : "env\\(safe-area-inset-bottom\\)";
+    assert.match(
+      source,
+      new RegExp(`pb-\\[calc\\(10rem\\+${safeAreaBottom}\\)\\] sm:pb-24`),
+    );
     assert.equal(
-      source.match(/max-sm:bottom-\[calc\(1rem\+env\(safe-area-inset-bottom\)\)\]/g)?.length,
+      source.match(
+        new RegExp(`max-sm:bottom-\\[calc\\(1rem\\+${safeAreaBottom}\\)\\]`, "g"),
+      )?.length,
       2,
     );
-    assert.match(source, /max-sm:bottom-\[calc\(0\.75rem\+env\(safe-area-inset-bottom\)\)\]/);
+    assert.match(
+      source,
+      new RegExp(`max-sm:bottom-\\[calc\\(0\\.75rem\\+${safeAreaBottom}\\)\\]`),
+    );
     assert.equal(source.match(/fixed inset-0 z-50 flex justify-end bg-background\/55/g)?.length, 2);
     assert.equal(
       source.match(/hub-panel-enter pointer-events-auto[^"]*bg-background\/95/g)?.length,
