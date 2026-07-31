@@ -16,6 +16,7 @@ use tokio_tungstenite::tungstenite::{
     http::{header as ws_header, HeaderValue},
     protocol::Message,
 };
+use tokio_tungstenite::{connect_async_tls_with_config, Connector};
 
 const SESSION_COOKIE: &str = "zeroagent_session";
 const MAX_CACHE_ENTRIES: usize = 96;
@@ -45,6 +46,7 @@ struct MobileGatewaySockets {
 
 pub struct MobileGatewayState {
     client: Client,
+    websocket_tls: Arc<rustls::ClientConfig>,
     session: Mutex<MobileGatewaySession>,
     sockets: Mutex<MobileGatewaySockets>,
 }
@@ -61,12 +63,13 @@ impl Default for MobileGatewayState {
         .with_root_certificates(roots)
         .with_no_client_auth();
         let client = Client::builder()
-            .tls_backend_preconfigured(tls)
+            .tls_backend_preconfigured(tls.clone())
             .build()
             .expect("ZeroAgent mobile Gateway HTTPS client must initialize");
 
         Self {
             client,
+            websocket_tls: Arc::new(tls),
             session: Mutex::new(MobileGatewaySession::default()),
             sockets: Mutex::new(MobileGatewaySockets::default()),
         }
@@ -319,7 +322,8 @@ pub async fn mobile_gateway_socket_connect(
             );
         }
     }
-    let (socket, _) = tokio_tungstenite::connect_async(handshake)
+    let connector = Connector::Rustls(Arc::clone(&state.websocket_tls));
+    let (socket, _) = connect_async_tls_with_config(handshake, None, false, Some(connector))
         .await
         .map_err(|error| format!("connect Gateway WebSocket: {error}"))?;
     let (mut sink, mut stream) = socket.split();
