@@ -52,6 +52,34 @@ func TestDeviceSessionPresenceFollowsCurrentAgentSession(t *testing.T) {
 	assertDeviceOnline(t, service, false)
 }
 
+func TestSameInstallationCanRegisterIndependentDevicesForDifferentAccounts(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(NewMemoryStore(), nil, time.Hour, time.Hour)
+	first, firstToken, err := service.RegisterDevice(ctx, 1, RegisterDeviceInput{
+		InstallationID: "shared-desktop", Name: "Desktop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, secondToken, err := service.RegisterDevice(ctx, 2, RegisterDeviceInput{
+		InstallationID: "shared-desktop", Name: "Desktop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || firstToken == secondToken {
+		t.Fatalf("accounts shared a device identity: first=%q second=%q", first.ID, second.ID)
+	}
+	for _, pair := range []struct {
+		id    string
+		token string
+	}{{first.ID, firstToken}, {second.ID, secondToken}} {
+		if _, _, err := service.AuthenticateAgent(pair.id, pair.token, "", ""); err != nil {
+			t.Fatalf("registered device %q did not authenticate: %v", pair.id, err)
+		}
+	}
+}
+
 func assertDeviceOnline(t *testing.T, service *Service, want bool) {
 	t.Helper()
 	environments, err := service.Environments(context.Background(), 1, false, "")

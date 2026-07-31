@@ -55,6 +55,7 @@ macro_rules! app_invoke_handler {
             // Chat history
             services::device_credentials::device_credential_get,
             services::device_credentials::device_credential_set,
+            services::device_credentials::device_credential_activate,
             services::device_credentials::device_credential_delete,
             services::device_credentials::device_default_name,
             services::device_credentials::zeroagent_app_version,

@@ -291,6 +291,7 @@ export default function GatewayApp() {
     verifyTwoFactor,
     switchExecutionTarget,
     reloadEnvironments,
+    applyExecutionPresence,
     clearSession,
   } = useGatewaySession(historyShareToken);
   const workspaceSectionLabel = useMemo(() => {
@@ -305,6 +306,12 @@ export default function GatewayApp() {
   useEffect(() => {
     if (api && activeAgentScope) api.setActiveAgent(activeAgentScope);
   }, [activeAgentScope, api]);
+  useEffect(() => {
+    if (!api || !accountUser || historyShareToken) return;
+    const unsubscribe = api.subscribeAgents(applyExecutionPresence);
+    void api.listAgents().catch(() => undefined);
+    return unsubscribe;
+  }, [accountUser, api, applyExecutionPresence, historyShareToken]);
   const [workspaceCloneTasks, setWorkspaceCloneTasks] = useState<WorkspaceCloneTask[]>([]);
   const dismissedWorkspaceCloneTaskIds = useRef(new Set<string>());
   const [status, setStatus] = useState<AgentStatus | null>(null);
@@ -708,7 +715,12 @@ export default function GatewayApp() {
       if (index >= 0) {
         projects = projects.map((project, projectIndex) =>
           projectIndex === index
-            ? { ...project, id: workspace.id, name: workspace.name || project.name, path: workspace.path! }
+            ? {
+                ...project,
+                id: workspace.id,
+                name: workspace.name || project.name,
+                path: workspace.path!,
+              }
             : project,
         );
       } else {

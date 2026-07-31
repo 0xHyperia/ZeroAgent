@@ -20,6 +20,7 @@ const remoteSection = readFileSync(
   new URL("../../src/pages/settings/RemoteSection.tsx", import.meta.url),
   "utf8",
 );
+const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
 
 test("service endpoints are independent from the frontend build mode", () => {
   assert.match(viteConfig, /env\.ZEROAGENT_USA_ZERO_ORIGIN/);
@@ -50,4 +51,13 @@ test("service endpoint controls are not rendered or persisted by the frontend", 
     remoteSection,
     /remote-gateway-url|remoteGatewayPortDraft|gatewayEndpointPreview/,
   );
+});
+
+test("remote access switch is authoritative over stale runtime status", () => {
+  assert.match(
+    remoteSection,
+    /settings\.remote\.enabled\s*&&\s*status\.enabled\s*&&\s*Boolean\(status\.online\)/,
+  );
+  assert.match(app, /prev\.remote\.enabled\s*&&\s*!next\.remote\.enabled/);
+  assert.match(app, /invoke\("gateway_disconnect"\)/);
 });

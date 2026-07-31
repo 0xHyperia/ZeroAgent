@@ -545,6 +545,13 @@ export default function App() {
       );
       settingsRef.current = next;
       setSettingsState(next);
+      if (prev.remote.enabled && !next.remote.enabled) {
+        // Closing remote access is a security-sensitive runtime action and
+        // must not wait behind unrelated settings writes in saveChainRef.
+        void invoke("gateway_disconnect").catch((error) => {
+          console.error("disconnect gateway runtime failed", error);
+        });
+      }
       queueSettingsSave(
         prev,
         next,
@@ -644,8 +651,8 @@ export default function App() {
           break;
         }
         case "gateway-toggle": {
-          // 与设置页远程开关同一条路径：settings 保存链会落库并 apply_config，
-          // DB / 控制器 / 设置页开关三方保持一致（勿改为 Rust 直连开关）。
+          // Keep the tray and settings switch on the same state/persistence
+          // path. The shared setter eagerly disconnects the closing edge.
           setSettings((prev) => ({
             ...prev,
             remote: { ...prev.remote, enabled: !prev.remote.enabled },

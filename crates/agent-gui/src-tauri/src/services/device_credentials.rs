@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 const CREDENTIAL_TARGET: &str = "ZeroAgent/device-credential";
+const MAX_ACCOUNT_SCOPE_LENGTH: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -35,8 +37,33 @@ impl DeviceCredentialRecord {
     }
 }
 
+fn credential_target(account_scope: Option<&str>) -> Result<String, String> {
+    let Some(scope) = account_scope
+        .map(str::trim)
+        .filter(|scope| !scope.is_empty())
+    else {
+        return Ok(CREDENTIAL_TARGET.to_string());
+    };
+    if scope.len() > MAX_ACCOUNT_SCOPE_LENGTH {
+        return Err("device credential account scope is too long".to_string());
+    }
+    let digest = Sha256::digest(scope.as_bytes());
+    let suffix = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(format!("{CREDENTIAL_TARGET}/{suffix}"))
+}
+
 pub fn load_device_credential() -> Result<Option<DeviceCredentialRecord>, String> {
-    let Some(value) = platform_load()? else {
+    load_device_credential_for_scope(None)
+}
+
+pub fn load_device_credential_for_scope(
+    account_scope: Option<&str>,
+) -> Result<Option<DeviceCredentialRecord>, String> {
+    let target = credential_target(account_scope)?;
+    let Some(value) = platform_load(&target)? else {
         return Ok(None);
     };
     let record: DeviceCredentialRecord = serde_json::from_str(&value)
@@ -48,34 +75,67 @@ pub fn load_device_credential() -> Result<Option<DeviceCredentialRecord>, String
 }
 
 pub fn save_device_credential(record: &DeviceCredentialRecord) -> Result<(), String> {
+    save_device_credential_for_scope(record, None)
+}
+
+pub fn save_device_credential_for_scope(
+    record: &DeviceCredentialRecord,
+    account_scope: Option<&str>,
+) -> Result<(), String> {
     if record.agent_id.trim().is_empty() || record.token.trim().is_empty() {
         return Err("agent id and token are required".to_string());
     }
     let value = serde_json::to_string(record)
         .map_err(|error| format!("encode device credential: {error}"))?;
-    platform_save(&value)
+    platform_save(&credential_target(account_scope)?, &value)
 }
 
 #[tauri::command]
-pub fn device_credential_get() -> Result<Option<DeviceCredentialRecord>, String> {
-    load_device_credential()
+pub fn device_credential_get(
+    account_scope: Option<String>,
+) -> Result<Option<DeviceCredentialRecord>, String> {
+    load_device_credential_for_scope(account_scope.as_deref())
 }
 
 #[tauri::command]
 pub async fn device_credential_set(
     record: DeviceCredentialRecord,
+    account_scope: Option<String>,
     gateway_controller: tauri::State<
         '_,
         std::sync::Arc<crate::services::gateway::GatewayController>,
     >,
 ) -> Result<(), String> {
-    save_device_credential(&record)?;
+    save_device_credential_for_scope(&record, account_scope.as_deref())?;
+    // The Gateway runner has one active identity. Keep its legacy target in
+    // sync while retaining per-account records for future account switches.
+    if account_scope
+        .as_deref()
+        .is_some_and(|scope| !scope.trim().is_empty())
+    {
+        save_device_credential(&record)?;
+    }
+    gateway_controller.reload_from_db().await
+}
+
+#[tauri::command]
+pub async fn device_credential_activate(
+    account_scope: String,
+    gateway_controller: tauri::State<
+        '_,
+        std::sync::Arc<crate::services::gateway::GatewayController>,
+    >,
+) -> Result<(), String> {
+    match load_device_credential_for_scope(Some(&account_scope))? {
+        Some(record) => save_device_credential(&record)?,
+        None => platform_delete(CREDENTIAL_TARGET)?,
+    }
     gateway_controller.reload_from_db().await
 }
 
 #[tauri::command]
 pub fn device_credential_delete() -> Result<(), String> {
-    platform_delete()
+    platform_delete(CREDENTIAL_TARGET)
 }
 
 #[tauri::command]
@@ -102,11 +162,11 @@ fn wide(value: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_save(value: &str) -> Result<(), String> {
+fn platform_save(target_name: &str, value: &str) -> Result<(), String> {
     use windows_sys::Win32::Security::Credentials::{
         CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
     };
-    let mut target = wide(CREDENTIAL_TARGET);
+    let mut target = wide(target_name);
     let mut username = wide("ZeroAgent");
     let mut blob = value.as_bytes().to_vec();
     let credential = CREDENTIALW {
@@ -129,11 +189,11 @@ fn platform_save(value: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_load() -> Result<Option<String>, String> {
+fn platform_load(target_name: &str) -> Result<Option<String>, String> {
     use windows_sys::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
     };
-    let target = wide(CREDENTIAL_TARGET);
+    let target = wide(target_name);
     let mut pointer: *mut CREDENTIALW = std::ptr::null_mut();
     let ok = unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut pointer) };
     if ok == 0 {
@@ -158,9 +218,9 @@ fn platform_load() -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_delete() -> Result<(), String> {
+fn platform_delete(target_name: &str) -> Result<(), String> {
     use windows_sys::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
-    let target = wide(CREDENTIAL_TARGET);
+    let target = wide(target_name);
     let ok = unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) };
     if ok == 0 && std::io::Error::last_os_error().raw_os_error() != Some(1168) {
         return Err(format!(
@@ -173,7 +233,9 @@ fn platform_delete() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::DeviceCredentialRecord;
+    use super::{
+        credential_target, DeviceCredentialRecord, CREDENTIAL_TARGET, MAX_ACCOUNT_SCOPE_LENGTH,
+    };
 
     #[test]
     fn legacy_record_remains_usable_during_upgrade() {
@@ -195,10 +257,25 @@ mod tests {
         assert_eq!(record.effective_agent_id(), "agent-new");
         assert_eq!(record.effective_token(), "agt_new");
     }
+
+    #[test]
+    fn account_scopes_use_distinct_opaque_credential_targets() {
+        let first = credential_target(Some("https://usa0.top|user:1")).unwrap();
+        let second = credential_target(Some("https://usa0.top|user:2")).unwrap();
+        assert_ne!(first, second);
+        assert!(first.starts_with("ZeroAgent/device-credential/"));
+        assert!(!first.contains("user:1"));
+        assert_eq!(credential_target(None).unwrap(), CREDENTIAL_TARGET);
+    }
+
+    #[test]
+    fn oversized_account_scope_is_rejected() {
+        assert!(credential_target(Some(&"x".repeat(MAX_ACCOUNT_SCOPE_LENGTH + 1))).is_err());
+    }
 }
 
 #[cfg(target_os = "macos")]
-fn platform_save(value: &str) -> Result<(), String> {
+fn platform_save(target_name: &str, value: &str) -> Result<(), String> {
     let status = std::process::Command::new("security")
         .args([
             "add-generic-password",
@@ -206,7 +283,7 @@ fn platform_save(value: &str) -> Result<(), String> {
             "-a",
             "ZeroAgent",
             "-s",
-            CREDENTIAL_TARGET,
+            target_name,
             "-w",
             value,
         ])
@@ -220,14 +297,14 @@ fn platform_save(value: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_load() -> Result<Option<String>, String> {
+fn platform_load(target_name: &str) -> Result<Option<String>, String> {
     let output = std::process::Command::new("security")
         .args([
             "find-generic-password",
             "-a",
             "ZeroAgent",
             "-s",
-            CREDENTIAL_TARGET,
+            target_name,
             "-w",
         ])
         .output()
@@ -241,28 +318,28 @@ fn platform_load() -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_delete() -> Result<(), String> {
+fn platform_delete(target_name: &str) -> Result<(), String> {
     let _ = std::process::Command::new("security")
         .args([
             "delete-generic-password",
             "-a",
             "ZeroAgent",
             "-s",
-            CREDENTIAL_TARGET,
+            target_name,
         ])
         .status();
     Ok(())
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
-fn platform_save(value: &str) -> Result<(), String> {
+fn platform_save(target_name: &str, value: &str) -> Result<(), String> {
     use std::io::Write;
     let mut child = std::process::Command::new("secret-tool")
         .args([
             "store",
             "--label=ZeroAgent device credential",
             "service",
-            CREDENTIAL_TARGET,
+            target_name,
             "account",
             "ZeroAgent",
         ])
@@ -283,15 +360,9 @@ fn platform_save(value: &str) -> Result<(), String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
-fn platform_load() -> Result<Option<String>, String> {
+fn platform_load(target_name: &str) -> Result<Option<String>, String> {
     let output = std::process::Command::new("secret-tool")
-        .args([
-            "lookup",
-            "service",
-            CREDENTIAL_TARGET,
-            "account",
-            "ZeroAgent",
-        ])
+        .args(["lookup", "service", target_name, "account", "ZeroAgent"])
         .output()
         .map_err(|error| format!("launch Secret Service: {error}"))?;
     if !output.status.success() {
@@ -302,28 +373,22 @@ fn platform_load() -> Result<Option<String>, String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
-fn platform_delete() -> Result<(), String> {
+fn platform_delete(target_name: &str) -> Result<(), String> {
     let _ = std::process::Command::new("secret-tool")
-        .args([
-            "clear",
-            "service",
-            CREDENTIAL_TARGET,
-            "account",
-            "ZeroAgent",
-        ])
+        .args(["clear", "service", target_name, "account", "ZeroAgent"])
         .status();
     Ok(())
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
-fn platform_save(_value: &str) -> Result<(), String> {
+fn platform_save(_target_name: &str, _value: &str) -> Result<(), String> {
     Err("device credential vault is unavailable on the mobile web wrapper".to_string())
 }
 #[cfg(any(target_os = "android", target_os = "ios"))]
-fn platform_load() -> Result<Option<String>, String> {
+fn platform_load(_target_name: &str) -> Result<Option<String>, String> {
     Ok(None)
 }
 #[cfg(any(target_os = "android", target_os = "ios"))]
-fn platform_delete() -> Result<(), String> {
+fn platform_delete(_target_name: &str) -> Result<(), String> {
     Ok(())
 }

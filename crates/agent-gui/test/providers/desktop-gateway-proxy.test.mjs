@@ -17,6 +17,7 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
   const requests = [];
   const proxyCalls = [];
   const credentialWrites = [];
+  const credentialActivations = [];
 
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
@@ -52,10 +53,14 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
             if (command === "device_credential_get") {
               return { agentId: "agent-local", token: "agt-existing" };
             }
+            if (command === "device_credential_activate") {
+              credentialActivations.push(args.accountScope);
+              return undefined;
+            }
             if (command === "device_default_name") return "Desktop";
             if (command === "zeroagent_app_version") return "0.1.0";
             if (command === "device_credential_set") {
-              credentialWrites.push(args.record);
+              credentialWrites.push(args);
               return undefined;
             }
             if (command === "gateway_nudge_connection") return true;
@@ -71,7 +76,11 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
             };
           },
         },
-        "./client": { getRelayAccessToken: () => "usa-zero-access" },
+        "./client": {
+          RELAY_ORIGIN: "https://usa0.top",
+          getRelayAccessToken: () => "usa-zero-access",
+          getRelayCurrentUser: async () => ({ id: 42 }),
+        },
         "./installation": { getInstallationID: () => "installation-local" },
       },
     });
@@ -101,8 +110,18 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
       true,
     );
     assert.deepEqual(credentialWrites, [
-      { agentId: "agent-local", token: "agt-registered", deviceId: "", credential: "" },
-      { agentId: "agent-local", token: "agt-rotated", deviceId: "", credential: "" },
+      {
+        accountScope: "https://usa0.top|user:42",
+        record: { agentId: "agent-local", token: "agt-registered", deviceId: "", credential: "" },
+      },
+      {
+        accountScope: "https://usa0.top|user:42",
+        record: { agentId: "agent-local", token: "agt-rotated", deviceId: "", credential: "" },
+      },
+    ]);
+    assert.deepEqual(credentialActivations, [
+      "https://usa0.top|user:42",
+      "https://usa0.top|user:42",
     ]);
   } finally {
     globalThis.fetch = previousFetch;
@@ -114,5 +133,71 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
         value: previousNavigator,
       });
     }
+  }
+});
+
+test("a different account receives a new device identity on the same desktop", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  const writes = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return Response.json({
+      device: { id: "agent-for-second-account", agent_id: "agent-for-second-account" },
+      agent_id: "agent-for-second-account",
+      agent_token: "agt-second-account",
+    });
+  };
+
+  try {
+    const loader = createTsModuleLoader({
+      mocks: {
+        "@tauri-apps/api/core": {
+          async invoke(command, args) {
+            if (command === "device_credential_get") return null;
+            if (command === "device_credential_activate") return undefined;
+            if (command === "device_default_name") return "Desktop";
+            if (command === "zeroagent_app_version") return "0.1.0";
+            if (command === "device_credential_set") {
+              writes.push(args);
+              return undefined;
+            }
+            if (command === "gateway_nudge_connection") return true;
+            throw new Error(`unexpected invoke: ${command}`);
+          },
+        },
+        "../providers/proxy": {
+          async prepareProxyRequest(_providerId, _upstreamBaseUrl, headers) {
+            return { baseUrl: "http://127.0.0.1:4567/proxy/codex", headers };
+          },
+        },
+        "./client": {
+          RELAY_ORIGIN: "https://usa0.top",
+          getRelayAccessToken: () => "usa-zero-access",
+          getRelayCurrentUser: async () => ({ id: 99 }),
+        },
+        "./installation": { getInstallationID: () => "installation-local" },
+      },
+    });
+    const registration = loader.loadModule("src/lib/relay/deviceRegistration.ts");
+
+    await registration.registerDesktopDevice(settings);
+
+    const payload = JSON.parse(requests[0].init.body);
+    assert.equal(payload.agent_id, "");
+    assert.equal(payload.agent_token, "");
+    assert.deepEqual(writes, [
+      {
+        accountScope: "https://usa0.top|user:99",
+        record: {
+          agentId: "agent-for-second-account",
+          token: "agt-second-account",
+          deviceId: "",
+          credential: "",
+        },
+      },
+    ]);
+  } finally {
+    globalThis.fetch = previousFetch;
   }
 });

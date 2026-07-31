@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../settings";
-import { getRelayAccessToken } from "./client";
+import { getRelayAccessToken, getRelayCurrentUser, RELAY_ORIGIN } from "./client";
 import { desktopRequest } from "./desktopRequest";
 import { getInstallationID } from "./installation";
 
@@ -19,10 +19,24 @@ function effectiveAgentToken(record: CredentialRecord | null) {
   return record?.token?.trim() || record?.credential?.trim() || "";
 }
 
+export function deviceCredentialAccountScope(userId: number) {
+  return `${RELAY_ORIGIN}|user:${userId}`;
+}
+
+async function currentAccountScope() {
+  const user = await getRelayCurrentUser();
+  if (!Number.isInteger(user.id) || user.id <= 0) {
+    throw new Error("USA-Zero account identity is invalid");
+  }
+  return deviceCredentialAccountScope(user.id);
+}
+
 export async function registerDesktopDevice(settings: AppSettings) {
   const accessToken = getRelayAccessToken();
   if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim() || !accessToken) return null;
-  const existing = await invoke<CredentialRecord | null>("device_credential_get");
+  const accountScope = await currentAccountScope();
+  await invoke("device_credential_activate", { accountScope });
+  const existing = await invoke<CredentialRecord | null>("device_credential_get", { accountScope });
   const existingAgentId = effectiveAgentId(existing);
   const existingToken = effectiveAgentToken(existing);
   const hasCanonicalCredential = Boolean(existing?.agentId?.trim() && existing?.token?.trim());
@@ -41,7 +55,9 @@ export async function registerDesktopDevice(settings: AppSettings) {
       name: existing ? "" : defaultName,
       platform: navigator.platform || "desktop",
       version: await invoke<string>("zeroagent_app_version"),
-      agent_id: hasCanonicalCredential ? existingAgentId : existing ? "" : settings.remote.agentId,
+      // A device ID belongs to exactly one account. A first registration for a
+      // different account must let the Gateway allocate a new ID.
+      agent_id: hasCanonicalCredential ? existingAgentId : "",
       agent_token: hasCanonicalCredential ? existingToken : "",
       device_id: hasCanonicalCredential ? "" : existingAgentId,
       device_credential: hasCanonicalCredential ? "" : existingToken,
@@ -59,6 +75,7 @@ export async function registerDesktopDevice(settings: AppSettings) {
   if (!agentId || !token) throw new Error("Gateway did not return or preserve an Agent token");
   await invoke("device_credential_set", {
     record: { agentId, token, deviceId: "", credential: "" },
+    accountScope,
   });
   await invoke("gateway_nudge_connection", {
     reason: "device_registered",
@@ -70,6 +87,8 @@ export async function registerDesktopDevice(settings: AppSettings) {
 export async function rotateDesktopAgentToken(settings: AppSettings, agentId: string) {
   const accessToken = getRelayAccessToken();
   if (!accessToken) throw new Error("USA-Zero login has expired");
+  const accountScope = await currentAccountScope();
+  await invoke("device_credential_activate", { accountScope });
   const payload = await desktopRequest<{
     agent_id?: string;
     agent_token?: string;
@@ -87,5 +106,6 @@ export async function rotateDesktopAgentToken(settings: AppSettings, agentId: st
   }
   await invoke("device_credential_set", {
     record: { agentId: nextAgentId, token: nextToken, deviceId: "", credential: "" },
+    accountScope,
   });
 }

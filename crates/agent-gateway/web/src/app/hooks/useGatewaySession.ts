@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   canReuseDeviceSelection,
+  mergeExecutionPresence,
+  publishExecutionPresence,
   type ExecutionEnvironment,
+  type ExecutionPresence,
   type ExecutionSelection,
   type ExecutionWorkspace,
   encodeSelectionCredential,
@@ -23,6 +26,7 @@ import { createUuid } from "@/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
 const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";
+const EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS = 5_000;
 
 function readHistorySelection(): ExecutionSelection | null {
   const value = window.history.state?.[EXECUTION_SELECTION_HISTORY_KEY] as
@@ -58,6 +62,7 @@ export function useGatewaySession(historyShareToken: string | null) {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [twoFactorToken, setTwoFactorToken] = useState("");
+  const executionPresenceRef = useRef<readonly ExecutionPresence[]>([]);
 
   const applyToken = useCallback((next: string) => {
     // Child effects can issue Gateway requests before parent effects run.
@@ -74,7 +79,7 @@ export function useGatewaySession(historyShareToken: string | null) {
       desktopEmbedded ? "desktop" : "web",
       localDeviceId,
     );
-    setEnvironments(items);
+    setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
     const handoffLease = params.get("selection_lease")?.trim() ?? "";
     const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
     const handoffWorkspace = params.get("workspace_id")?.trim() ?? "";
@@ -151,6 +156,12 @@ export function useGatewaySession(historyShareToken: string | null) {
     return items;
   }, [applyToken]);
 
+  const applyExecutionPresence = useCallback((presence: readonly ExecutionPresence[]) => {
+    executionPresenceRef.current = [...presence];
+    setEnvironments((current) => mergeExecutionPresence(current, presence));
+    publishExecutionPresence(presence);
+  }, []);
+
   useEffect(() => {
     if (historyShareToken) {
       setAuthInitializing(false);
@@ -178,8 +189,19 @@ export function useGatewaySession(historyShareToken: string | null) {
     if (!accountUser || historyShareToken) return;
     const timer = window.setInterval(() => {
       void loadEnvironments().catch(() => undefined);
-    }, 15_000);
-    return () => window.clearInterval(timer);
+    }, EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadEnvironments().catch(() => undefined);
+      }
+    };
+    window.addEventListener("online", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("online", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [accountUser, historyShareToken, loadEnvironments]);
 
   useEffect(() => {
@@ -307,6 +329,7 @@ export function useGatewaySession(historyShareToken: string | null) {
     verifyTwoFactor,
     switchExecutionTarget,
     reloadEnvironments: loadEnvironments,
+    applyExecutionPresence,
     clearSession,
   };
 }

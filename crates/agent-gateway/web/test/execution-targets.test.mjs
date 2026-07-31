@@ -131,6 +131,28 @@ test("a valid device lease is reusable across workspaces on the same device", ()
   );
 });
 
+test("pushed agent presence updates matching devices without changing other environments", () => {
+  const withSecondDevice = [
+    ...environments,
+    {
+      ...environments[1],
+      device_id: "device-b",
+      agent_id: "agent-b",
+      name: "Laptop",
+      online: true,
+    },
+  ];
+
+  const updated = targets.mergeExecutionPresence(withSecondDevice, [
+    { agent_id: "device-a", online: false },
+    { agent_id: "unknown-device", online: false },
+  ]);
+
+  assert.equal(updated[0].online, true);
+  assert.equal(updated[1].online, false);
+  assert.equal(updated[2].online, true);
+});
+
 test("selection restoration is accepted only when the gateway validates the lease", async () => {
   const selection = {
     selection_lease: "lease-3",

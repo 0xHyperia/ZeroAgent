@@ -21,6 +21,51 @@ export type ExecutionEnvironment = {
   capabilities: string[];
 };
 
+export type ExecutionPresence = {
+  agent_id?: string;
+  online: boolean;
+};
+
+export const EXECUTION_PRESENCE_EVENT = "zeroagent:execution-presence";
+
+export function mergeExecutionPresence(
+  environments: readonly ExecutionEnvironment[],
+  presence: readonly ExecutionPresence[],
+): ExecutionEnvironment[] {
+  const onlineByAgent = new Map(
+    presence
+      .map((item) => [item.agent_id?.trim() ?? "", item.online] as const)
+      .filter(([agentId]) => agentId !== ""),
+  );
+  if (onlineByAgent.size === 0) return [...environments];
+  return environments.map((environment) => {
+    if (environment.runtime_kind !== "device_agent") return environment;
+    const agentId = (environment.agent_id ?? environment.device_id ?? "").trim();
+    const online = onlineByAgent.get(agentId);
+    return online === undefined || online === environment.online
+      ? environment
+      : { ...environment, online };
+  });
+}
+
+export function publishExecutionPresence(presence: readonly ExecutionPresence[]) {
+  window.dispatchEvent(
+    new CustomEvent<ExecutionPresence[]>(EXECUTION_PRESENCE_EVENT, {
+      detail: [...presence],
+    }),
+  );
+}
+
+export function subscribeExecutionPresence(
+  listener: (presence: readonly ExecutionPresence[]) => void,
+): () => void {
+  const handle = (event: Event) => {
+    listener((event as CustomEvent<ExecutionPresence[]>).detail ?? []);
+  };
+  window.addEventListener(EXECUTION_PRESENCE_EVENT, handle);
+  return () => window.removeEventListener(EXECUTION_PRESENCE_EVENT, handle);
+}
+
 export type ExecutionSelection = {
   selection_lease: string;
   runtime_kind: "web_chat" | "device_agent";

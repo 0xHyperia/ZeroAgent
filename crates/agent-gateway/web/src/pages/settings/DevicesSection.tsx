@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MonitorSmartphone, Pencil, RefreshCw, Trash2 } from "../../components/icons";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
   type ExecutionEnvironment,
   getExecutionEnvironments,
+  mergeExecutionPresence,
   renameExecutionDevice,
   revokeExecutionDevice,
+  subscribeExecutionPresence,
 } from "../../lib/executionTargets";
 
 function formatLastSeen(value?: string) {
@@ -28,23 +30,47 @@ export function DevicesSection({
   const [editingId, setEditingId] = useState("");
   const [draftName, setDraftName] = useState("");
   const [error, setError] = useState("");
+  const presenceRef = useRef<Parameters<typeof mergeExecutionPresence>[1]>([]);
 
-  const loadDevices = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadDevices = useCallback(async (options: { background?: boolean } = {}) => {
+    if (!options.background) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const environments = await getExecutionEnvironments();
-      setDevices(environments.filter((item) => item.runtime_kind === "device_agent"));
+      setDevices(
+        mergeExecutionPresence(environments, presenceRef.current).filter(
+          (item) => item.runtime_kind === "device_agent",
+        ),
+      );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加载设备失败");
+      if (!options.background) {
+        setError(cause instanceof Error ? cause.message : "加载设备失败");
+      }
     } finally {
-      setLoading(false);
+      if (!options.background) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadDevices();
+    const timer = window.setInterval(() => {
+      void loadDevices({ background: true });
+    }, 5_000);
+    return () => window.clearInterval(timer);
   }, [loadDevices]);
+
+  useEffect(
+    () =>
+      subscribeExecutionPresence((presence) => {
+        presenceRef.current = presence;
+        setDevices((current) => mergeExecutionPresence(current, presence));
+      }),
+    [],
+  );
 
   async function saveName(device: ExecutionEnvironment) {
     const name = draftName.trim();

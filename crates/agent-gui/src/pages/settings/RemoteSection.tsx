@@ -237,7 +237,10 @@ export function RemoteSection(props: SettingsSectionProps) {
     };
   }, []);
 
-  const isConnected = Boolean(status.online);
+  // The settings switch is the user's authoritative intent. Persistence and
+  // the Rust runtime apply asynchronously, so an old online snapshot can
+  // briefly arrive after the switch has already been turned off.
+  const isConnected = settings.remote.enabled && status.enabled && Boolean(status.online);
   const connectedProtocol = status.protocol?.trim();
   const statusText = isConnected
     ? connectedProtocol
