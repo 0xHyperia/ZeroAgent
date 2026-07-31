@@ -133,6 +133,7 @@ jobs:
           set -euo pipefail
           wrapper_properties="gradle/wrapper/gradle-wrapper.properties"
           test -f "$wrapper_properties"
+          chmod +x gradlew
           if grep -q '^networkTimeout=' "$wrapper_properties"; then
             sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$wrapper_properties"
           else

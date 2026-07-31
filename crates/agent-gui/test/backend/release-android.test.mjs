@@ -42,6 +42,7 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
   assert.match(launcherBackground, /#FFFFFF/);
   assert.doesNotMatch(launcherBackground, /transparent/);
   assert.match(workflow, /networkTimeout=120000/);
+  assert.match(workflow, /chmod \+x gradlew/);
   assert.match(workflow, /\.\/gradlew --version --no-daemon/);
   assert.match(workflow, /for attempt in 1 2 3/);
   assert.match(
