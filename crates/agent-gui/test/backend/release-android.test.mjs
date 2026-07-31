@@ -56,6 +56,7 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
 
 test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a site", () => {
   const androidConfig = readRepoFile("crates/agent-gui/src-tauri/tauri.android.conf.json");
+  const tauriConfig = JSON.parse(readRepoFile("crates/agent-gui/src-tauri/tauri.conf.json"));
   const tauriLib = readRepoFile("crates/agent-gui/src-tauri/src/lib.rs");
   const mobileGateway = readRepoFile(
     "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
@@ -72,6 +73,12 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(androidConfig, /"frontendDist": "\.\.\/\.\.\/agent-gateway\/web\/dist"/);
   assert.match(androidConfig, /"url": "index\.html"/);
   assert.doesNotMatch(androidConfig, /usa0\.top/);
+  assert.deepEqual(tauriConfig.plugins["deep-link"].mobile, [
+    {
+      scheme: ["top.usa0.zeroagent"],
+      pathPrefix: ["/oauth/callback"],
+    },
+  ]);
   assert.match(tauriLib, /#\[cfg\(mobile\)\][\s\S]*ZeroAgent mobile WebView/);
   assert.match(tauriLib, /mobile_gateway_socket_connect/);
   assert.match(tauriLib, /#\[cfg\(desktop\)\]\s*pub fn run\(\)/);

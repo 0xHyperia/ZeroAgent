@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -51,8 +51,22 @@ pub struct MobileGatewayState {
 
 impl Default for MobileGatewayState {
     fn default() -> Self {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ZeroAgent TLS protocol versions must be valid")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        let client = Client::builder()
+            .tls_backend_preconfigured(tls)
+            .build()
+            .expect("ZeroAgent mobile Gateway HTTPS client must initialize");
+
         Self {
-            client: Client::new(),
+            client,
             session: Mutex::new(MobileGatewaySession::default()),
             sockets: Mutex::new(MobileGatewaySockets::default()),
         }

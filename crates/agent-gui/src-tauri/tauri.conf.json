@@ -47,8 +47,7 @@
 	  "mobile": [
 		{
 		  "scheme": ["top.usa0.zeroagent"],
-		  "host": "oauth",
-		  "pathPrefix": ["/callback"]
+		  "pathPrefix": ["/oauth/callback"]
 		}
 	  ]
 	},

@@ -697,6 +697,13 @@ fn mobile_app_exit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[cfg(any(mobile, test))]
+fn is_mobile_oauth_callback_url(url: &url::Url) -> bool {
+    url.scheme() == "top.usa0.zeroagent"
+        && url.host_str().is_none()
+        && url.path() == "/oauth/callback"
+}
+
 #[cfg(mobile)]
 #[tauri::mobile_entry_point]
 pub fn run() {
@@ -706,7 +713,11 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
-                if let Some(url) = event.urls().first() {
+                if let Some(url) = event
+                    .urls()
+                    .iter()
+                    .find(|url| is_mobile_oauth_callback_url(url))
+                {
                     let _ = handle.emit("mobile-oauth-callback", url.to_string());
                 }
             });
@@ -726,6 +737,31 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running ZeroAgent mobile WebView");
+}
+
+#[cfg(test)]
+mod mobile_oauth_callback_tests {
+    use super::is_mobile_oauth_callback_url;
+
+    #[test]
+    fn accepts_standard_private_use_uri_callback() {
+        let url = url::Url::parse("top.usa0.zeroagent:/oauth/callback?code=code-1&state=state-1")
+            .expect("valid callback URL");
+
+        assert!(is_mobile_oauth_callback_url(&url));
+    }
+
+    #[test]
+    fn rejects_authority_style_and_unrelated_deep_links() {
+        for raw in [
+            "top.usa0.zeroagent://oauth/callback?code=code-1",
+            "top.usa0.zeroagent:/unrelated?code=code-1",
+            "https://usa0.top/oauth/callback?code=code-1",
+        ] {
+            let url = url::Url::parse(raw).expect("valid test URL");
+            assert!(!is_mobile_oauth_callback_url(&url), "accepted {raw}");
+        }
+    }
 }
 
 #[cfg(desktop)]
