@@ -4619,7 +4619,7 @@ export default function GatewayApp() {
   if (authInitializing) {
     return (
       <main
-        className="flex min-h-screen items-center justify-center bg-background"
+        className="app-auth-restoring flex min-h-dvh items-center justify-center bg-background"
         role="status"
         aria-label="正在恢复登录状态"
       >
@@ -4711,6 +4711,15 @@ export default function GatewayApp() {
           />
 
           <div className="gateway-editor-host">
+            <button
+              type="button"
+              className="gateway-sidebar-backdrop"
+              data-state={sidebarOpen ? "open" : "closed"}
+              aria-label="关闭侧栏"
+              aria-hidden={!sidebarOpen}
+              tabIndex={sidebarOpen ? 0 : -1}
+              onClick={() => setSidebarOpen(false)}
+            />
             <GatewaySidebarContainer
               store={sidebarStore}
               currentConversationId={displayedConversationId}
@@ -4767,6 +4776,7 @@ export default function GatewayApp() {
                   avatarUrl={relayUser.avatar_url}
                   online={status?.online === true}
                   onRefreshAccount={refreshRelayAccount}
+                  onDismissNavigation={() => setSidebarOpen(false)}
                   onOpenSettings={() => openSettings("account")}
                   onLogout={handleLogout}
                 />

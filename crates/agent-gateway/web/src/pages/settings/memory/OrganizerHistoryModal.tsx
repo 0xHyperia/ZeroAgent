@@ -227,14 +227,14 @@ export function OrganizerHistoryModal(props: {
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+        className="mobile-safe-modal-overlay fixed inset-0 z-[70] flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="memory-organizer-history-title"
       >
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-        <div className="relative z-10 flex h-[min(760px,calc(100vh-2rem))] w-full max-w-6xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
-          <div className="flex items-center justify-between gap-3 border-b border-border/50 px-5 py-4">
+        <div className="mobile-viewport-panel organizer-history-panel relative z-10 flex h-[min(760px,calc(100vh-2rem))] w-full max-w-6xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
+          <div className="organizer-history-header flex items-center justify-between gap-3 border-b border-border/50 px-5 py-4">
             <div className="min-w-0">
               <div id="memory-organizer-history-title" className="text-sm font-semibold">
                 {t("settings.memoryOrganizerHistory")}
@@ -254,8 +254,8 @@ export function OrganizerHistoryModal(props: {
             </button>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col border-r border-border/50">
+          <div className="organizer-history-layout grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="organizer-history-list flex min-h-0 flex-col border-r border-border/50">
               <div className="space-y-2 border-b border-border/40 p-3">
                 <div className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
@@ -345,7 +345,7 @@ export function OrganizerHistoryModal(props: {
               </div>
             </aside>
 
-            <section className="min-h-0 overflow-auto p-5">
+            <section className="organizer-history-detail min-h-0 overflow-auto p-5">
               {error ? (
                 <div className="mb-4 whitespace-pre-wrap rounded-lg border border-destructive/20 bg-destructive/[0.05] px-3 py-2 text-xs text-destructive">
                   {error}
@@ -377,7 +377,7 @@ export function OrganizerHistoryModal(props: {
                         {selectedRun.runId}
                       </div>
                     </div>
-                    <div className="grid shrink-0 grid-cols-[auto_minmax(9rem,auto)] gap-x-2 gap-y-1 rounded-md border border-border/50 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="organizer-history-timing grid shrink-0 grid-cols-[auto_minmax(9rem,auto)] gap-x-2 gap-y-1 rounded-md border border-border/50 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
                       <span className="whitespace-nowrap">
                         {t("settings.memoryOrganizerStarted")}
                       </span>
@@ -628,7 +628,7 @@ export function OrganizerHistoryModal(props: {
       </div>
       {clearConfirmOpen ? (
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          className="mobile-safe-modal-overlay fixed inset-0 z-[80] flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="memory-organizer-clear-history-title"

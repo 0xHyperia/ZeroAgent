@@ -62,6 +62,10 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
     "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
   );
   const mobileRuntime = readRepoFile("crates/agent-gateway/web/src/lib/mobileRuntime.ts");
+  const mobileStyles = readRepoFile("crates/agent-gateway/web/src/styles.css");
+  const mainActivity = readRepoFile(
+    "crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt",
+  );
   const mobileUpdate = readRepoFile("crates/agent-gateway/web/src/lib/mobileAppUpdate.ts");
   const gatewayApp = readRepoFile("crates/agent-gateway/web/src/app/GatewayApp.tsx");
   const mobileRelayGate = readRepoFile(
@@ -86,7 +90,55 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileRuntime, /mobile_gateway_socket_connect/);
   assert.match(mobileRuntime, /maximum-scale=1, user-scalable=no/);
   assert.match(mobileRuntime, /visualViewport/);
+  assert.match(mobileRuntime, /zeroagent:native-insets/);
+  assert.match(mobileRuntime, /--zeroagent-safe-area-\$\{edge\}/);
   assert.match(mobileRuntime, /MOBILE_BACK_EVENT/);
+  assert.match(mainActivity, /enableEdgeToEdge\(\)/);
+  assert.match(mainActivity, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
+  assert.match(mainActivity, /LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS/);
+  assert.match(mainActivity, /LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES/);
+  assert.match(mainActivity, /addJavascriptInterface\(AndroidSafeAreaBridge\(\)/);
+  assert.match(mainActivity, /@JavascriptInterface[\s\S]*getSafeAreaInsets/);
+  assert.match(mainActivity, /zeroagent:native-insets/);
+  for (const edge of ["top", "right", "bottom", "left"]) {
+    assert.match(mobileStyles, new RegExp(`--zeroagent-safe-area-${edge}`));
+  }
+  assert.match(mobileStyles, /\.gateway-chat-frame > header[\s\S]*safe-area-top/);
+  assert.match(mobileStyles, /\.gateway-main-shell[\s\S]*safe-area-right[\s\S]*safe-area-left/);
+  assert.match(
+    mobileStyles,
+    /data-zeroagent-platform="android"\] \.gateway-settings-overlay[\s\S]*safe-area-top/,
+  );
+  assert.match(
+    mobileStyles,
+    /data-zeroagent-platform="android"\] \.settings-back-bar\s*\{\s*padding-top: 8px/,
+  );
+  assert.match(mobileStyles, /\.project-tools-panel-inner[\s\S]*safe-area-top[\s\S]*safe-area-bottom/);
+  assert.match(
+    mobileStyles,
+    /\.workspace-code-editor-overlay[\s\S]*\.workspace-ssh-terminal-overlay[\s\S]*safe-area-top[\s\S]*safe-area-right[\s\S]*safe-area-bottom[\s\S]*safe-area-left/,
+  );
+  assert.match(mobileStyles, /\.workspace-overlay-header[\s\S]*min-height: 56px/);
+  assert.match(mobileStyles, /\.chat-history-sidebar-inner[\s\S]*safe-area-bottom/);
+  assert.match(mobileStyles, /:root\s*\{[\s\S]*--zeroagent-safe-area-left/);
+  assert.match(mobileStyles, /\.history-share-frame[\s\S]*safe-area-bottom/);
+  assert.match(
+    mobileStyles,
+    /\.account-login-shell[\s\S]*safe-area-top[\s\S]*safe-area-right[\s\S]*safe-area-bottom[\s\S]*safe-area-left/,
+  );
+  assert.match(mobileStyles, /\.hub-sidebar-trigger[\s\S]*safe-area-top/);
+  assert.match(mobileStyles, /\.hub-scroll[\s\S]*safe-area-bottom/);
+  assert.match(
+    mobileStyles,
+    /\.skills-drawer-panel,[\s\S]*\.skills-drawer-panel-closing[\s\S]*safe-area-left/,
+  );
+  assert.match(
+    mobileStyles,
+    /\.workspace-clone-task-overlay[\s\S]*safe-area-right[\s\S]*safe-area-bottom[\s\S]*safe-area-left/,
+  );
+  assert.match(mobileStyles, /\.app-error-fallback[\s\S]*safe-area-bottom/);
+  assert.match(mobileStyles, /\.mobile-safe-modal-overlay[\s\S]*safe-area-left/);
+  assert.match(mobileStyles, /\.organizer-history-layout[\s\S]*grid-template-columns/);
   assert.match(tauriLib, /mobile_app_exit/);
   assert.match(tauriLib, /mobile_open_external_url/);
   assert.match(gatewayApp, /MOBILE_BACK_EVENT/);

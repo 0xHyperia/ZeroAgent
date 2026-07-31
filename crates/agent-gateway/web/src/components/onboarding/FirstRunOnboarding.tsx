@@ -140,14 +140,14 @@ export function FirstRunOnboarding({
 
   return createPortal(
     <div
-      className="fixed inset-0 isolate flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="mobile-safe-modal-overlay fixed inset-0 isolate flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       style={{ zIndex: 2147483647 }}
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
-        className="relative flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+        className="mobile-viewport-panel relative flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
       >
         <button
           type="button"

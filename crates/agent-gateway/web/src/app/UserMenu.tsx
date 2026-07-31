@@ -24,6 +24,7 @@ type UserMenuProps = {
   avatarUrl?: string;
   online: boolean;
   onRefreshAccount: () => Promise<void>;
+  onDismissNavigation: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
 };
@@ -40,6 +41,7 @@ export function UserMenu(props: UserMenuProps) {
     avatarUrl,
     online,
     onRefreshAccount,
+    onDismissNavigation,
     onOpenSettings,
     onLogout,
   } = props;
@@ -56,6 +58,21 @@ export function UserMenu(props: UserMenuProps) {
       .finally(() => {
         refreshInFlightRef.current = false;
       });
+  };
+
+  const dismissNavigation = () => {
+    onOpenChange(false);
+    onDismissNavigation();
+  };
+
+  const handleOpenSettings = () => {
+    dismissNavigation();
+    onOpenSettings();
+  };
+
+  const handleCheckForUpdates = () => {
+    dismissNavigation();
+    requestMobileAppUpdateCheck();
   };
 
   return (
@@ -126,12 +143,12 @@ export function UserMenu(props: UserMenuProps) {
           </div>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onOpenSettings} className="gap-2 rounded-md">
+        <DropdownMenuItem onSelect={handleOpenSettings} className="gap-2 rounded-md">
           <Settings className="h-4 w-4" />
           设置
         </DropdownMenuItem>
         {isEmbeddedMobileRuntime() ? (
-          <DropdownMenuItem onSelect={requestMobileAppUpdateCheck} className="gap-2 rounded-md">
+          <DropdownMenuItem onSelect={handleCheckForUpdates} className="gap-2 rounded-md">
             <RefreshCw className="h-4 w-4" />
             检查更新
           </DropdownMenuItem>

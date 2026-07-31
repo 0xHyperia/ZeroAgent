@@ -1067,7 +1067,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
 
           <div
             ref={modelScrollContainerRef}
-            className="settings-modal-body min-w-0 flex-1 overflow-y-auto [overflow-anchor:none] px-6 py-5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.875rem+env(safe-area-inset-bottom))] max-[720px]:pt-3.5"
+            className="settings-modal-body min-w-0 flex-1 overflow-y-auto [overflow-anchor:none] px-6 py-5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.875rem+var(--zeroagent-safe-area-bottom,0px))] max-[720px]:pt-3.5"
             onScroll={() => setHeaderSuggest(null)}
           >
             {activePanel === "general" ? (
@@ -2437,7 +2437,7 @@ function ProviderModal({ providerType, initialData, onSave, onClose }: ModalProp
           </div>
         ) : null}
 
-        <div className="settings-modal-footer flex shrink-0 items-center justify-end gap-2 border-t bg-muted/20 px-5 py-3.5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-[720px]:pt-3">
+        <div className="settings-modal-footer flex shrink-0 items-center justify-end gap-2 border-t bg-muted/20 px-5 py-3.5 max-[720px]:px-3.5 max-[720px]:pb-[calc(0.75rem+var(--zeroagent-safe-area-bottom,0px))] max-[720px]:pt-3">
           <Button
             variant="outline"
             onClick={requestClose}

@@ -37,7 +37,7 @@ class ErrorBoundaryInner extends Component<ErrorBoundaryInnerProps, ErrorBoundar
       return this.props.children;
     }
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-background p-8 text-center">
+      <div className="app-error-fallback flex h-full w-full flex-col items-center justify-center gap-4 bg-background p-8 text-center">
         <div className="text-base font-semibold text-foreground">{this.props.labels.title}</div>
         <div className="max-w-md text-sm text-muted-foreground">
           {this.props.labels.description}
@@ -48,7 +48,7 @@ class ErrorBoundaryInner extends Component<ErrorBoundaryInnerProps, ErrorBoundar
             ? `\n${this.state.componentStack}`
             : null}
         </div>
-        <div className="flex gap-2">
+        <div className="app-error-actions flex gap-2">
           <Button onClick={() => window.location.reload()}>{this.props.labels.reload}</Button>
           <Button
             variant="ghost"

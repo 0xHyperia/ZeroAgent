@@ -619,6 +619,15 @@ export function CloudChatPage({
           onChange={(event) => void attachFiles(event)}
         />
         <div className="gateway-editor-host">
+          <button
+            type="button"
+            className="gateway-sidebar-backdrop"
+            data-state={sidebarOpen ? "open" : "closed"}
+            aria-label="关闭侧栏"
+            aria-hidden={!sidebarOpen}
+            tabIndex={sidebarOpen ? 0 : -1}
+            onClick={() => setSidebarOpen(false)}
+          />
           <ChatHistorySidebar
             items={sidebarItems}
             currentConversationId={conversationId}
@@ -680,6 +689,7 @@ export function CloudChatPage({
                 avatarUrl={user.avatar_url}
                 online
                 onRefreshAccount={refreshRelayAccount}
+                onDismissNavigation={() => setSidebarOpen(false)}
                 onOpenSettings={() => setAccountSettingsOpen(true)}
                 onLogout={onLogout}
               />

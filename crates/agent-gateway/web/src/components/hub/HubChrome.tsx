@@ -55,7 +55,7 @@ export function HubHeader(props: {
           size="icon"
           onClick={onOpenSidebar}
           title={t("tooltip.openSidebar")}
-          className="absolute left-3 top-5 h-9 w-9 rounded-lg text-muted-foreground hover:bg-background/70 hover:text-foreground"
+          className="hub-sidebar-trigger absolute left-3 top-5 h-9 w-9 rounded-lg text-muted-foreground hover:bg-background/70 hover:text-foreground"
         >
           <PanelLeft className="h-4.5 w-4.5" />
         </Button>

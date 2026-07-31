@@ -13,10 +13,19 @@ type MobileGatewayResponse = {
   cached?: boolean;
 };
 
+type MobileSafeAreaInsets = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
 declare global {
   const __ZEROAGENT_EMBEDDED_MOBILE__: boolean;
   interface Window {
     __TAURI__?: { core?: TauriCore; event?: TauriEvent };
+    __ZEROAGENT_ANDROID__?: { getSafeAreaInsets(): string };
+    __ZEROAGENT_NATIVE_INSETS__?: MobileSafeAreaInsets;
   }
 }
 
@@ -28,6 +37,7 @@ let socketSequence = 0;
 let lastUnhandledBackAt = 0;
 
 const MOBILE_HISTORY_GUARD = "zeroagent-mobile-history-guard";
+const MOBILE_NATIVE_INSETS_EVENT = "zeroagent:native-insets";
 
 type NativeSocketEvent = {
   id: string;
@@ -64,6 +74,32 @@ function updateMobileViewport() {
   root.style.setProperty("--zeroagent-visual-viewport-offset-top", `${Math.round(offsetTop)}px`);
   root.style.setProperty("--zeroagent-keyboard-inset", `${Math.round(keyboardInset)}px`);
   root.dataset.zeroagentKeyboard = keyboardInset >= 96 ? "open" : "closed";
+}
+
+function applyMobileSafeAreaInsets(value: Partial<MobileSafeAreaInsets> | undefined) {
+  if (!value) return;
+  const root = document.documentElement;
+  for (const edge of ["top", "right", "bottom", "left"] as const) {
+    const inset = Number(value[edge]);
+    if (!Number.isFinite(inset)) continue;
+    root.style.setProperty(`--zeroagent-safe-area-${edge}`, `${Math.max(0, Math.round(inset))}px`);
+  }
+}
+
+function installMobileSafeAreaBridge() {
+  try {
+    const serialized = window.__ZEROAGENT_ANDROID__?.getSafeAreaInsets();
+    applyMobileSafeAreaInsets(
+      serialized
+        ? (JSON.parse(serialized) as MobileSafeAreaInsets)
+        : window.__ZEROAGENT_NATIVE_INSETS__,
+    );
+  } catch {
+    applyMobileSafeAreaInsets(window.__ZEROAGENT_NATIVE_INSETS__);
+  }
+  window.addEventListener(MOBILE_NATIVE_INSETS_EVENT, (event) => {
+    applyMobileSafeAreaInsets((event as CustomEvent<MobileSafeAreaInsets>).detail);
+  });
 }
 
 function syncMobileThemeColor() {
@@ -112,6 +148,7 @@ function installMobileExperience() {
     "content",
     "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
   );
+  installMobileSafeAreaBridge();
   updateMobileViewport();
   window.addEventListener("resize", updateMobileViewport, { passive: true });
   window.visualViewport?.addEventListener("resize", updateMobileViewport, { passive: true });

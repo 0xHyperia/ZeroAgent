@@ -187,7 +187,7 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
 
   if (step === "checking") {
     return (
-      <div className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
+      <div className="relay-access-gate flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         正在连接 USA-零
       </div>
@@ -195,7 +195,7 @@ export function RelayAccessGate({ settings, setSettings, onReady }: Props) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-background px-5 py-8">
+    <div className="relay-access-gate flex h-full w-full items-center justify-center overflow-y-auto bg-background px-5 py-8">
       <div className="w-full max-w-[420px]">
         <div className="mb-6 flex items-center gap-3">
           <div className="h-11 w-11 overflow-hidden rounded-md border bg-white">

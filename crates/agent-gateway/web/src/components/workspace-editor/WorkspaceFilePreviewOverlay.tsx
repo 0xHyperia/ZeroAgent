@@ -427,7 +427,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
       )}
     >
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/45 px-3">
+      <div className="workspace-overlay-header flex h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/45 px-3">
         <PreviewIcon className="h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold leading-tight">
