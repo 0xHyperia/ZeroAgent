@@ -22,7 +22,7 @@ import (
 func TestDesktopControllerWebSocketAuthenticatesWithoutGatewayCookie(t *testing.T) {
 	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/api/v1/auth/me" || r.Header.Get("Authorization") != "Bearer desktop-access" {
+		if r.URL.Path != "/api/v1/auth/me" || (r.Header.Get("Authorization") != "Bearer desktop-access" && r.Header.Get("Authorization") != "Bearer refreshed-desktop-access") {
 			http.NotFound(w, r)
 			return
 		}
@@ -40,6 +40,15 @@ func TestDesktopControllerWebSocketAuthenticatesWithoutGatewayCookie(t *testing.
 	desktop, err := accounts.DesktopSession(context.Background(), "desktop-access")
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A desktop selection must survive an access-token refresh. The lease is
+	// account-owned, whereas DesktopSession.ID is intentionally token-derived.
+	refreshedDesktop, err := accounts.DesktopSession(context.Background(), "refreshed-desktop-access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if desktop.ID == refreshedDesktop.ID {
+		t.Fatal("expected refreshed access token to receive a new desktop session ID")
 	}
 	device, _, err := accounts.RegisterDevice(context.Background(), desktop.UserID, account.RegisterDeviceInput{
 		InstallationID: "desktop-controller-device",
@@ -78,7 +87,7 @@ func TestDesktopControllerWebSocketAuthenticatesWithoutGatewayCookie(t *testing.
 		Payload: &gatewayv2.WebClientFrame_Hello{Hello: &gatewayv2.ClientHello{
 			ProtocolVersion: 2,
 			Role:            gatewayv2.ClientRole_CLIENT_ROLE_BROWSER,
-			Token:           "desktop-access",
+			Token:           "refreshed-desktop-access",
 			SelectionLease:  lease.ID,
 			RuntimeKind:     string(account.RuntimeKindDeviceAgent),
 			ClientName:      "desktop-controller",

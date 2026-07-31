@@ -448,7 +448,11 @@ func (s *Service) ValidateDesktopSelection(ctx context.Context, accessToken, lea
 		return nil, nil, err
 	}
 	lease, err := s.store.GetSelectionLease(ctx, strings.TrimSpace(leaseID))
-	if err != nil || lease.UserID != session.UserID || lease.ControllerID != session.ID {
+	// DesktopSession IDs intentionally include the access-token hash, so they
+	// change when USA-Zero rotates an access token. A desktop selection remains
+	// valid for its TTL as long as the replacement token still authenticates the
+	// same account; requiring ControllerID here incorrectly invalidates it.
+	if err != nil || lease.UserID != session.UserID {
 		return nil, nil, &APIError{Status: http.StatusUnauthorized, Message: "selection lease is invalid or expired"}
 	}
 	return session, lease, nil
