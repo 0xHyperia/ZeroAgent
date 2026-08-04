@@ -430,6 +430,8 @@ export default function GatewayApp() {
   const [activeWorkspaceProjectId, setActiveWorkspaceProjectId] = useState<string>(
     () => settings.system.activeWorkspaceProjectId?.trim() || DEFAULT_WORKSPACE_PROJECT_ID,
   );
+  const mobileNavigationStackRef = useRef<Array<{ projectId: string; conversationId: string }>>([]);
+  const restoringMobileNavigationRef = useRef(false);
   const missingWorkspaceProjectPathKeys = useMemo(
     () => new Set(settings.system.missingWorkspaceProjectPaths.map(workspaceProjectPathKey)),
     [settings.system.missingWorkspaceProjectPaths],
@@ -463,50 +465,6 @@ export default function GatewayApp() {
     return view === "skills-hub" || view === "mcp-hub" ? view : "chat";
   });
   const [rightDockOpen, setRightDockOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isEmbeddedMobileRuntime()) return;
-    const handleMobileBack = (rawEvent: Event) => {
-      if (rawEvent.defaultPrevented) return;
-      let handled = true;
-      if (shareConversation) {
-        setShareConversation(null);
-      } else if (sharedManagerOpen) {
-        setSharedManagerOpen(false);
-      } else if (projectPickerOpen) {
-        setProjectPickerOpen(false);
-      } else if (workspaceCreateModalOpen) {
-        setWorkspaceCreateModalOpen(false);
-      } else if (userMenuOpen) {
-        setUserMenuOpen(false);
-      } else if (settingsOpen) {
-        setOverlay("leaving");
-      } else if (rightDockOpen) {
-        setRightDockOpen(false);
-      } else if (sidebarOpen) {
-        setSidebarOpen(false);
-      } else if (activeView !== "chat") {
-        setActiveView("chat");
-      } else {
-        handled = false;
-      }
-      if (!handled) return;
-      rawEvent.preventDefault();
-      mobileHaptic(8);
-    };
-    window.addEventListener(MOBILE_BACK_EVENT, handleMobileBack);
-    return () => window.removeEventListener(MOBILE_BACK_EVENT, handleMobileBack);
-  }, [
-    activeView,
-    projectPickerOpen,
-    rightDockOpen,
-    settingsOpen,
-    shareConversation,
-    sharedManagerOpen,
-    sidebarOpen,
-    userMenuOpen,
-    workspaceCreateModalOpen,
-  ]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -1381,6 +1339,24 @@ export default function GatewayApp() {
     [api, missingWorkspaceProjectPathKeys, setWorkspaceProjectDirectoryMissing],
   );
 
+  const pushMobileNavigationEntry = useCallback(() => {
+    if (!isEmbeddedMobileRuntime() || restoringMobileNavigationRef.current) return;
+    const entry = {
+      projectId: activeWorkspaceProjectId,
+      conversationId: conversationIdRef.current.trim(),
+    };
+    const stack = mobileNavigationStackRef.current;
+    const previous = stack.at(-1);
+    if (
+      previous?.projectId === entry.projectId &&
+      previous.conversationId === entry.conversationId
+    ) {
+      return;
+    }
+    stack.push(entry);
+    if (stack.length > 50) stack.splice(0, stack.length - 50);
+  }, [activeWorkspaceProjectId]);
+
   const activateWorkspaceProject = useCallback(
     (project: WorkspaceProject, options?: { startConversation?: boolean }) => {
       const pathKey = project.path.trim();
@@ -1458,9 +1434,15 @@ export default function GatewayApp() {
       if (!(await checkWorkspaceProjectDirectory(project))) {
         return;
       }
+      if (project.id !== activeWorkspaceProjectId) pushMobileNavigationEntry();
       activateWorkspaceProject(project);
     },
-    [activateWorkspaceProject, checkWorkspaceProjectDirectory],
+    [
+      activateWorkspaceProject,
+      activeWorkspaceProjectId,
+      checkWorkspaceProjectDirectory,
+      pushMobileNavigationEntry,
+    ],
   );
 
   const handleNewConversationForProject = useCallback(
@@ -1471,9 +1453,10 @@ export default function GatewayApp() {
       if (isMobileSidebarLayout()) {
         setSidebarOpen(false);
       }
+      pushMobileNavigationEntry();
       activateWorkspaceProject(project, { startConversation: true });
     },
-    [activateWorkspaceProject, checkWorkspaceProjectDirectory],
+    [activateWorkspaceProject, checkWorkspaceProjectDirectory, pushMobileNavigationEntry],
   );
 
   const handleBrowseWorkspaceProjectInFileTree = useCallback(
@@ -3286,6 +3269,7 @@ export default function GatewayApp() {
     ) {
       return;
     }
+    pushMobileNavigationEntry();
     startNewConversation({
       workdir: isAgentMode ? activeWorkspaceProjectPath || undefined : undefined,
       preserveCurrentComposerDraft: true,
@@ -3297,6 +3281,7 @@ export default function GatewayApp() {
       setSidebarOpen(false);
     }
     setActiveView("chat");
+    pushMobileNavigationEntry();
     startNewConversation({ workdir: "", preserveCurrentComposerDraft: true });
   }
 
@@ -3313,6 +3298,7 @@ export default function GatewayApp() {
 
     const currentConversationId = getVisibleComposerConversationId().trim();
     if (currentConversationId !== targetConversationId) {
+      pushMobileNavigationEntry();
       prepareComposerForConversationChange();
     }
 
@@ -3431,6 +3417,86 @@ export default function GatewayApp() {
     cacheVisibleComposerDraft();
     setActiveView("mcp-hub");
   }
+
+  function restorePreviousMobileNavigation() {
+    const stack = mobileNavigationStackRef.current;
+    while (stack.length > 0) {
+      const entry = stack.pop();
+      if (!entry) return false;
+      const currentConversationId = conversationIdRef.current.trim();
+      if (
+        entry.projectId === activeWorkspaceProjectId &&
+        entry.conversationId === currentConversationId
+      ) {
+        continue;
+      }
+
+      restoringMobileNavigationRef.current = true;
+      const project = workspaceProjects.find((item) => item.id === entry.projectId);
+      if (project && project.id !== activeWorkspaceProjectId) {
+        activateWorkspaceProject(project);
+      }
+      if (entry.conversationId && entry.conversationId !== currentConversationId) {
+        handleSidebarSelectConversation(entry.conversationId);
+      } else if (!entry.conversationId && currentConversationId) {
+        startNewConversation({
+          workdir: project?.path || undefined,
+          preserveCurrentComposerDraft: true,
+        });
+      }
+      window.queueMicrotask(() => {
+        restoringMobileNavigationRef.current = false;
+      });
+      return true;
+    }
+    return false;
+  }
+
+  useEffect(() => {
+    if (!isEmbeddedMobileRuntime()) return;
+    const handleMobileBack = (rawEvent: Event) => {
+      if (rawEvent.defaultPrevented) return;
+      let handled = true;
+      if (shareConversation) {
+        setShareConversation(null);
+      } else if (sharedManagerOpen) {
+        setSharedManagerOpen(false);
+      } else if (projectPickerOpen) {
+        setProjectPickerOpen(false);
+      } else if (workspaceCreateModalOpen) {
+        setWorkspaceCreateModalOpen(false);
+      } else if (userMenuOpen) {
+        setUserMenuOpen(false);
+      } else if (settingsOpen) {
+        setOverlay("leaving");
+      } else if (rightDockOpen) {
+        setRightDockOpen(false);
+      } else if (sidebarOpen) {
+        setSidebarOpen(false);
+      } else if (activeView !== "chat") {
+        setActiveView("chat");
+      } else {
+        handled = restorePreviousMobileNavigation();
+      }
+      if (!handled) return;
+      rawEvent.preventDefault();
+      mobileHaptic(8);
+    };
+    window.addEventListener(MOBILE_BACK_EVENT, handleMobileBack);
+    return () => window.removeEventListener(MOBILE_BACK_EVENT, handleMobileBack);
+  }, [
+    activeView,
+    activeWorkspaceProjectId,
+    projectPickerOpen,
+    rightDockOpen,
+    settingsOpen,
+    shareConversation,
+    sharedManagerOpen,
+    sidebarOpen,
+    userMenuOpen,
+    workspaceCreateModalOpen,
+    workspaceProjects,
+  ]);
 
   function handleOpenShareModal(item: ChatHistorySummary) {
     setShareConversation(item);

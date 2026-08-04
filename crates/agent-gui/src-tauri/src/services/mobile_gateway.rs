@@ -114,6 +114,27 @@ pub struct MobileGatewayRequest {
     pub body: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileGatewayMultipartRequest {
+    pub path: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub parts: Vec<MobileGatewayMultipartPart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileGatewayMultipartPart {
+    pub name: String,
+    pub value: Option<String>,
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub data: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MobileGatewayResponse {
@@ -498,6 +519,15 @@ pub async fn mobile_gateway_request(
             return Err(format!("Gateway request failed: {error}"));
         }
     };
+    collect_gateway_response(response, &request.path, Some((&method, &key)), &state).await
+}
+
+async fn collect_gateway_response(
+    response: reqwest::Response,
+    request_path: &str,
+    cache_request: Option<(&Method, &str)>,
+    state: &MobileGatewayState,
+) -> Result<MobileGatewayResponse, String> {
     let status = response.status().as_u16();
     let headers = response
         .headers()
@@ -525,7 +555,7 @@ pub async fn mobile_gateway_request(
         .map_err(|_| "mobile gateway state is unavailable")?;
     capture_session(&set_cookies, &mut session);
     if (200..300).contains(&status) {
-        capture_authenticated_user(&request.path, &body, &mut session);
+        capture_authenticated_user(request_path, &body, &mut session);
     }
     let result = MobileGatewayResponse {
         status,
@@ -533,12 +563,86 @@ pub async fn mobile_gateway_request(
         body,
         cached: false,
     };
-    if method == Method::GET && (200..300).contains(&status) && session.user_id.is_some() {
+    if cache_request.is_some_and(|(method, _)| *method == Method::GET)
+        && (200..300).contains(&status)
+        && session.user_id.is_some()
+    {
         if session.cache.len() >= MAX_CACHE_ENTRIES {
             session.cache.pop_first();
         }
-        session.cache.insert(key, result.clone());
+        if let Some((_, key)) = cache_request {
+            session.cache.insert(key.to_string(), result.clone());
+        }
     }
     persist_session(&session)?;
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn mobile_gateway_multipart_request(
+    request: MobileGatewayMultipartRequest,
+    state: tauri::State<'_, MobileGatewayState>,
+) -> Result<MobileGatewayResponse, String> {
+    let method = Method::from_bytes(request.method.as_bytes())
+        .map_err(|_| "Gateway request method is invalid")?;
+    let (origin, session_id) = {
+        let session = state
+            .session
+            .lock()
+            .map_err(|_| "mobile gateway state is unavailable")?;
+        if session.origin.is_empty() {
+            return Err("Configure the Gateway URL before signing in".to_string());
+        }
+        (session.origin.clone(), session.session_id.clone())
+    };
+    let url = request_url(&origin, &request.path)?;
+    let mut builder = state.client.request(method, url);
+    for (name, value) in &request.headers {
+        if name.eq_ignore_ascii_case(header::CONTENT_TYPE.as_str())
+            || name.eq_ignore_ascii_case(header::CONTENT_LENGTH.as_str())
+        {
+            continue;
+        }
+        if let (Ok(name), Ok(value)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            header::HeaderValue::from_str(value),
+        ) {
+            builder = builder.header(name, value);
+        }
+    }
+    if !session_id.is_empty() {
+        builder = builder.header(header::COOKIE, format!("{SESSION_COOKIE}={session_id}"));
+    }
+
+    let mut form = reqwest::multipart::Form::new();
+    for item in request.parts {
+        let name = item.name.trim();
+        if name.is_empty() {
+            return Err("Gateway multipart field name is required".to_string());
+        }
+        if let Some(data) = item.data {
+            let bytes = BASE64
+                .decode(data)
+                .map_err(|_| "Gateway multipart file data is invalid")?;
+            let mut part = reqwest::multipart::Part::bytes(bytes);
+            if let Some(file_name) = item.file_name.filter(|value| !value.trim().is_empty()) {
+                part = part.file_name(file_name);
+            }
+            if let Some(content_type) = item.content_type.filter(|value| !value.trim().is_empty()) {
+                part = part
+                    .mime_str(&content_type)
+                    .map_err(|_| "Gateway multipart content type is invalid")?;
+            }
+            form = form.part(name.to_string(), part);
+        } else {
+            form = form.text(name.to_string(), item.value.unwrap_or_default());
+        }
+    }
+
+    let response = builder
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|error| format!("Gateway multipart request failed: {error}"))?;
+    collect_gateway_response(response, &request.path, None, &state).await
 }

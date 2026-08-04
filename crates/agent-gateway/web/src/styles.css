@@ -25,6 +25,11 @@ html[data-zeroagent-platform="android"] #root {
   overscroll-behavior: none;
 }
 
+html[data-zeroagent-platform="android"] .gateway-shell {
+  height: 100%;
+  min-height: 0;
+}
+
 html[data-zeroagent-platform="android"] body {
   position: fixed;
   top: var(--zeroagent-visual-viewport-offset-top, 0px);

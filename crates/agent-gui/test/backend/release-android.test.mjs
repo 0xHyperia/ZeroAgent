@@ -67,11 +67,15 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   const mainActivity = readRepoFile(
     "crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt",
   );
+  const androidManifest = readRepoFile(
+    "crates/agent-gui/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
+  );
   const mobileUpdate = readRepoFile("crates/agent-gateway/web/src/lib/mobileAppUpdate.ts");
   const gatewayApp = readRepoFile("crates/agent-gateway/web/src/app/GatewayApp.tsx");
   const mobileRelayGate = readRepoFile(
     "crates/agent-gateway/web/src/components/relay/RelayAccessGate.tsx",
   );
+  const accountLoginPage = readRepoFile("crates/agent-gateway/web/src/pages/AccountLoginPage.tsx");
   const gatewayViteConfig = readRepoFile("crates/agent-gateway/web/vite.config.ts");
 
   assert.match(androidConfig, /agent-gateway\/web exec vite build --mode embedded-mobile/);
@@ -88,14 +92,26 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(tauriLib, /mobile_gateway_socket_connect/);
   assert.match(tauriLib, /#\[cfg\(desktop\)\]\s*pub fn run\(\)/);
   assert.match(mobileRuntime, /mobile_gateway_request/);
+  assert.match(mobileRuntime, /body instanceof FormData/);
+  assert.match(mobileRuntime, /mobile_gateway_multipart_request/);
+  assert.match(tauriLib, /mobile_gateway_multipart_request/);
   assert.match(mobileRuntime, /mobile_gateway_socket_connect/);
   assert.match(mobileRuntime, /maximum-scale=1, user-scalable=no/);
   assert.match(mobileRuntime, /visualViewport/);
   assert.match(mobileRuntime, /zeroagent:native-insets/);
   assert.match(mobileRuntime, /--zeroagent-safe-area-\$\{edge\}/);
   assert.match(mobileRuntime, /MOBILE_BACK_EVENT/);
+  assert.match(mobileRuntime, /zeroagent:native-back/);
+  assert.match(mobileRuntime, /imeBottom/);
+  assert.match(mobileRuntime, /moveTaskToBack/);
+  assert.doesNotMatch(mobileRuntime, /addEventListener\("popstate"/);
   assert.match(mainActivity, /enableEdgeToEdge\(\)/);
   assert.match(mainActivity, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
+  assert.match(mainActivity, /WindowInsetsCompat\.Type\.ime\(\)/);
+  assert.match(mainActivity, /OnBackPressedCallback/);
+  assert.match(mainActivity, /zeroagent:native-back/);
+  assert.match(mainActivity, /moveTaskToBack\(true\)/);
+  assert.match(androidManifest, /android:windowSoftInputMode="adjustResize"/);
   assert.match(mainActivity, /LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS/);
   assert.match(mainActivity, /LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES/);
   assert.match(mainActivity, /addJavascriptInterface\(AndroidSafeAreaBridge\(\)/);
@@ -122,6 +138,10 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileStyles, /\.workspace-overlay-header[\s\S]*min-height: 56px/);
   assert.match(mobileStyles, /\.chat-history-sidebar-inner[\s\S]*safe-area-bottom/);
   assert.match(mobileStyles, /:root\s*\{[\s\S]*--zeroagent-safe-area-left/);
+  assert.match(
+    mobileStyles,
+    /data-zeroagent-platform="android"\] \.gateway-shell\s*\{\s*height: 100%;\s*min-height: 0;/,
+  );
   assert.match(mobileStyles, /\.history-share-frame[\s\S]*safe-area-bottom/);
   assert.match(
     mobileStyles,
@@ -140,9 +160,21 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileStyles, /\.app-error-fallback[\s\S]*safe-area-bottom/);
   assert.match(mobileStyles, /\.mobile-safe-modal-overlay[\s\S]*safe-area-left/);
   assert.match(mobileStyles, /\.organizer-history-layout[\s\S]*grid-template-columns/);
-  assert.match(tauriLib, /mobile_app_exit/);
+  assert.doesNotMatch(tauriLib, /mobile_app_exit/);
   assert.match(tauriLib, /mobile_open_external_url/);
+  assert.match(mainActivity, /pending-mobile-oauth-callback/);
+  assert.match(mainActivity, /persistOAuthCallback\(intent\)/);
+  assert.match(mainActivity, /override fun onNewIntent/);
+  assert.match(mainActivity, /getPendingOAuthCallback/);
+  assert.match(mainActivity, /acknowledgeOAuthCallback/);
+  assert.match(mobileRuntime, /getPendingOAuthCallback/);
+  assert.match(mobileRuntime, /acknowledgeOAuthCallback/);
+  assert.match(accountLoginPage, /visibilitychange/);
+  assert.match(accountLoginPage, /window\.addEventListener\("focus", drainPendingOAuth\)/);
+  assert.match(accountLoginPage, /window\.addEventListener\("pageshow", drainPendingOAuth\)/);
+  assert.doesNotMatch(tauriLib, /deep_link\(\)\s*\.get_current\(\)/);
   assert.match(gatewayApp, /MOBILE_BACK_EVENT/);
+  assert.match(gatewayApp, /mobileNavigationStackRef/);
   assert.match(mobileUpdate, /Android-arm64\.apk/);
   assert.match(mobileUpdate, /__ZEROAGENT_APP_VERSION__/);
   assert.doesNotMatch(mobileRuntime, /mobile-session/);

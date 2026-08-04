@@ -13,31 +13,49 @@ type MobileGatewayResponse = {
   cached?: boolean;
 };
 
+type MobileGatewayMultipartPart = {
+  name: string;
+  value?: string;
+  fileName?: string;
+  contentType?: string;
+  data?: string;
+};
+
 type MobileSafeAreaInsets = {
   top: number;
   right: number;
   bottom: number;
   left: number;
+  imeBottom?: number;
+  imeVisible?: boolean;
 };
 
 declare global {
   const __ZEROAGENT_EMBEDDED_MOBILE__: boolean;
   interface Window {
     __TAURI__?: { core?: TauriCore; event?: TauriEvent };
-    __ZEROAGENT_ANDROID__?: { getSafeAreaInsets(): string };
+    __ZEROAGENT_ANDROID__?: {
+      getSafeAreaInsets(): string;
+      moveTaskToBack(): void;
+      getPendingOAuthCallback(): string | null;
+      acknowledgeOAuthCallback(url: string): void;
+    };
     __ZEROAGENT_NATIVE_INSETS__?: MobileSafeAreaInsets;
   }
 }
 
 export const MOBILE_BACK_EVENT = "zeroagent:mobile-back";
-export const MOBILE_EXIT_HINT_EVENT = "zeroagent:mobile-exit-hint";
 
 let bootstrapped = false;
 let socketSequence = 0;
-let lastUnhandledBackAt = 0;
-
-const MOBILE_HISTORY_GUARD = "zeroagent-mobile-history-guard";
 const MOBILE_NATIVE_INSETS_EVENT = "zeroagent:native-insets";
+const MOBILE_NATIVE_BACK_EVENT = "zeroagent:native-back";
+
+let mobileSafeAreaBottom = 0;
+let mobileImeBottom = 0;
+let mobileImeVisible = false;
+let mobileStableViewportHeight = 0;
+let mobileViewportWidth = 0;
 
 type NativeSocketEvent = {
   id: string;
@@ -66,9 +84,29 @@ function nativeInvoke<T>(command: string, args?: Record<string, unknown>) {
 
 function updateMobileViewport() {
   const viewport = window.visualViewport;
-  const height = viewport?.height ?? window.innerHeight;
+  const rawHeight = viewport?.height ?? window.innerHeight;
+  const width = viewport?.width ?? window.innerWidth;
   const offsetTop = viewport?.offsetTop ?? 0;
-  const keyboardInset = Math.max(0, window.innerHeight - height - offsetTop);
+  if (Math.abs(width - mobileViewportWidth) > 1) {
+    mobileViewportWidth = width;
+    mobileStableViewportHeight = 0;
+  }
+
+  const nativeKeyboardInset = mobileImeVisible
+    ? Math.max(0, mobileImeBottom - mobileSafeAreaBottom)
+    : 0;
+  if (!mobileImeVisible) {
+    mobileStableViewportHeight = Math.max(rawHeight + offsetTop, window.innerHeight);
+  } else if (mobileStableViewportHeight <= 0) {
+    mobileStableViewportHeight = Math.max(
+      window.innerHeight,
+      rawHeight + offsetTop + nativeKeyboardInset,
+    );
+  }
+  const nativeViewportHeight = Math.max(0, mobileStableViewportHeight - nativeKeyboardInset);
+  const height = mobileImeVisible ? Math.min(rawHeight, nativeViewportHeight) : rawHeight;
+  const visualKeyboardInset = Math.max(0, mobileStableViewportHeight - rawHeight - offsetTop);
+  const keyboardInset = Math.max(nativeKeyboardInset, visualKeyboardInset);
   const root = document.documentElement;
   root.style.setProperty("--zeroagent-visual-viewport-height", `${Math.round(height)}px`);
   root.style.setProperty("--zeroagent-visual-viewport-offset-top", `${Math.round(offsetTop)}px`);
@@ -83,7 +121,11 @@ function applyMobileSafeAreaInsets(value: Partial<MobileSafeAreaInsets> | undefi
     const inset = Number(value[edge]);
     if (!Number.isFinite(inset)) continue;
     root.style.setProperty(`--zeroagent-safe-area-${edge}`, `${Math.max(0, Math.round(inset))}px`);
+    if (edge === "bottom") mobileSafeAreaBottom = Math.max(0, inset);
   }
+  mobileImeBottom = Math.max(0, Number(value.imeBottom) || 0);
+  mobileImeVisible = value.imeVisible === true;
+  updateMobileViewport();
 }
 
 function installMobileSafeAreaBridge() {
@@ -113,31 +155,16 @@ function syncMobileThemeColor() {
   meta.content = dark ? "#09090B" : "#FFFFFF";
 }
 
-function armMobileHistoryGuard() {
-  const state =
-    window.history.state && typeof window.history.state === "object" ? window.history.state : {};
-  if (state[MOBILE_HISTORY_GUARD]) return;
-  window.history.pushState({ ...state, [MOBILE_HISTORY_GUARD]: true }, "", window.location.href);
-}
-
 function installMobileBackBridge() {
-  armMobileHistoryGuard();
-  window.addEventListener("popstate", () => {
+  window.addEventListener(MOBILE_NATIVE_BACK_EVENT, (nativeEvent) => {
+    nativeEvent.preventDefault();
+    if (document.documentElement.dataset.zeroagentKeyboard === "open") {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) activeElement.blur();
+      return;
+    }
     const handled = !window.dispatchEvent(new Event(MOBILE_BACK_EVENT, { cancelable: true }));
-    if (handled) {
-      lastUnhandledBackAt = 0;
-      armMobileHistoryGuard();
-      return;
-    }
-
-    const now = Date.now();
-    if (now - lastUnhandledBackAt <= 2_000) {
-      void nativeInvoke("mobile_app_exit");
-      return;
-    }
-    lastUnhandledBackAt = now;
-    window.dispatchEvent(new Event(MOBILE_EXIT_HINT_EVENT));
-    armMobileHistoryGuard();
+    if (!handled) window.__ZEROAGENT_ANDROID__?.moveTaskToBack();
   });
 }
 
@@ -303,6 +330,36 @@ function installGatewayFetchBridge() {
 
     const headers = new Headers(init?.headers);
     const body = init?.body;
+    if (body instanceof FormData) {
+      const parts: MobileGatewayMultipartPart[] = [];
+      for (const [name, value] of body.entries()) {
+        if (typeof value === "string") {
+          parts.push({ name, value });
+          continue;
+        }
+        parts.push({
+          name,
+          fileName: value.name,
+          contentType: value.type,
+          data: bytesToBase64(new Uint8Array(await value.arrayBuffer())),
+        });
+      }
+      const response = await nativeInvoke<MobileGatewayResponse>(
+        "mobile_gateway_multipart_request",
+        {
+          request: {
+            path: requestPath(input),
+            method: init?.method ?? "POST",
+            headers: Object.fromEntries(headers.entries()),
+            parts,
+          },
+        },
+      );
+      return new Response(response.body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }
     if (body !== undefined && typeof body !== "string") {
       return browserFetch(input, init);
     }
@@ -374,6 +431,16 @@ export async function openEmbeddedOAuth(url: string): Promise<string> {
       })
       .catch((cause) => finish(cause instanceof Error ? cause : new Error(String(cause))));
   });
+}
+
+export async function getPendingEmbeddedOAuthCallback(): Promise<string | null> {
+  if (!isEmbeddedMobileRuntime()) return null;
+  return window.__ZEROAGENT_ANDROID__?.getPendingOAuthCallback()?.trim() || null;
+}
+
+export async function acknowledgeEmbeddedOAuthCallback(url: string): Promise<void> {
+  if (!isEmbeddedMobileRuntime()) return;
+  window.__ZEROAGENT_ANDROID__?.acknowledgeOAuthCallback(url);
 }
 
 export function isOfflineCacheResponse(response: Response) {

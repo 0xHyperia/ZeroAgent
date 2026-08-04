@@ -691,12 +691,6 @@ fn mobile_open_external_url(app: tauri::AppHandle, url: String) -> Result<(), St
         .map_err(|error| error.to_string())
 }
 
-#[cfg(mobile)]
-#[tauri::command]
-fn mobile_app_exit(app: tauri::AppHandle) {
-    app.exit(0);
-}
-
 #[cfg(any(mobile, test))]
 fn is_mobile_oauth_callback_url(url: &url::Url) -> bool {
     url.scheme() == "top.usa0.zeroagent"
@@ -727,9 +721,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             mobile_oauth_open,
             mobile_open_external_url,
-            mobile_app_exit,
             services::mobile_gateway::mobile_gateway_bootstrap,
             services::mobile_gateway::mobile_gateway_logout,
+            services::mobile_gateway::mobile_gateway_multipart_request,
             services::mobile_gateway::mobile_gateway_request,
             services::mobile_gateway::mobile_gateway_socket_connect,
             services::mobile_gateway::mobile_gateway_socket_send,

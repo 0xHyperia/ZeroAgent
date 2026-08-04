@@ -14,6 +14,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   getRelayPublicSettings,
+  resumeRelayOAuth,
   type RelayPublicSettings,
   sendRelayVerifyCode,
   startRelayOAuth,
@@ -87,6 +88,46 @@ export function AccountLoginPage({
         `${url.pathname}${url.search}${url.hash}`,
       );
     }
+  }, [onSetError]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let draining = false;
+    const drainPendingOAuth = () => {
+      if (cancelled || draining) return;
+      draining = true;
+      void resumeRelayOAuth(() => {
+        if (!cancelled) {
+          onSetError(null);
+          setOAuthSubmitting(true);
+        }
+      })
+        .then((completed) => {
+          if (completed && !cancelled) window.location.reload();
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          onSetError(cause instanceof Error ? cause.message : "认证登录失败，请重试");
+          setOAuthSubmitting(false);
+        })
+        .finally(() => {
+          draining = false;
+        });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") drainPendingOAuth();
+    };
+
+    drainPendingOAuth();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", drainPendingOAuth);
+    window.addEventListener("pageshow", drainPendingOAuth);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", drainPendingOAuth);
+      window.removeEventListener("pageshow", drainPendingOAuth);
+    };
   }, [onSetError]);
 
   async function authorizeLogin() {

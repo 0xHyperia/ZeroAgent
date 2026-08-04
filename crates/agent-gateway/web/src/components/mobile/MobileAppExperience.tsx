@@ -8,12 +8,7 @@ import {
   MOBILE_UPDATE_CHECK_EVENT,
   type MobileAppUpdate,
 } from "../../lib/mobileAppUpdate";
-import {
-  isEmbeddedMobileRuntime,
-  MOBILE_BACK_EVENT,
-  MOBILE_EXIT_HINT_EVENT,
-  mobileHaptic,
-} from "../../lib/mobileRuntime";
+import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT, mobileHaptic } from "../../lib/mobileRuntime";
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const SNOOZE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -40,9 +35,7 @@ export function MobileAppExperience() {
   const [update, setUpdate] = useState<MobileAppUpdate | null>(null);
   const [feedback, setFeedback] = useState<CheckFeedback>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [exitHintVisible, setExitHintVisible] = useState(false);
   const checkInFlight = useRef(false);
-  const exitHintTimer = useRef<number | null>(null);
 
   const runCheck = useCallback(async (manual: boolean) => {
     if (!isEmbeddedMobileRuntime() || checkInFlight.current) return;
@@ -101,20 +94,9 @@ export function MobileAppExperience() {
       setUpdate(null);
       setFeedback(null);
     };
-    const handleExitHint = () => {
-      setExitHintVisible(true);
-      if (exitHintTimer.current !== null) window.clearTimeout(exitHintTimer.current);
-      exitHintTimer.current = window.setTimeout(() => {
-        exitHintTimer.current = null;
-        setExitHintVisible(false);
-      }, 2_000);
-    };
     window.addEventListener(MOBILE_BACK_EVENT, handleBack, { capture: true });
-    window.addEventListener(MOBILE_EXIT_HINT_EVENT, handleExitHint);
     return () => {
       window.removeEventListener(MOBILE_BACK_EVENT, handleBack, { capture: true });
-      window.removeEventListener(MOBILE_EXIT_HINT_EVENT, handleExitHint);
-      if (exitHintTimer.current !== null) window.clearTimeout(exitHintTimer.current);
     };
   }, [feedback, update]);
 
@@ -147,7 +129,10 @@ export function MobileAppExperience() {
                 onClick={() => {
                   localStorage.setItem(
                     SNOOZE_KEY,
-                    JSON.stringify({ version: update.version, until: Date.now() + SNOOZE_INTERVAL_MS }),
+                    JSON.stringify({
+                      version: update.version,
+                      until: Date.now() + SNOOZE_INTERVAL_MS,
+                    }),
                   );
                   setUpdate(null);
                 }}
@@ -164,7 +149,10 @@ export function MobileAppExperience() {
                 onClick={() => {
                   localStorage.setItem(
                     SNOOZE_KEY,
-                    JSON.stringify({ version: update.version, until: Date.now() + SNOOZE_INTERVAL_MS }),
+                    JSON.stringify({
+                      version: update.version,
+                      until: Date.now() + SNOOZE_INTERVAL_MS,
+                    }),
                   );
                   setUpdate(null);
                 }}
@@ -215,8 +203,6 @@ export function MobileAppExperience() {
           <RefreshCw className="h-4 w-4" />
           <span className="min-w-0 truncate">{feedbackMessage}</span>
         </button>
-      ) : exitHintVisible ? (
-        <div className="mobile-runtime-toast">再按一次返回键退出 ZeroAgent</div>
       ) : null}
     </>
   );

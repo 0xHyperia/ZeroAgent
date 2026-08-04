@@ -1,5 +1,7 @@
 import {
+  acknowledgeEmbeddedOAuthCallback,
   clearEmbeddedMobileGatewaySession,
+  getPendingEmbeddedOAuthCallback,
   isEmbeddedMobileRuntime,
   openEmbeddedOAuth,
 } from "../mobileRuntime";
@@ -220,16 +222,48 @@ export async function startRelayOAuth(): Promise<boolean> {
     window.location.assign(response.authorize_url);
     return false;
   }
-  const callback = new URL(await openEmbeddedOAuth(response.authorize_url));
-  await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
-    method: "POST",
-    body: {
-      code: callback.searchParams.get("code") ?? "",
-      state: callback.searchParams.get("state") ?? "",
-      error: callback.searchParams.get("error") ?? "",
-    },
+  const callbackURL = await openEmbeddedOAuth(response.authorize_url);
+  await completeEmbeddedRelayOAuth(callbackURL);
+  return true;
+}
+
+const embeddedOAuthCompletions = new Map<string, Promise<void>>();
+
+async function completeEmbeddedRelayOAuth(callbackURL: string): Promise<void> {
+  const current = embeddedOAuthCompletions.get(callbackURL);
+  if (current) return current;
+  const completion = (async () => {
+    const callback = new URL(callbackURL);
+    try {
+      await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
+        method: "POST",
+        body: {
+          code: callback.searchParams.get("code") ?? "",
+          state: callback.searchParams.get("state") ?? "",
+          error: callback.searchParams.get("error") ?? "",
+        },
+      });
+      markRelaySessionAuthenticated();
+      await acknowledgeEmbeddedOAuthCallback(callbackURL);
+    } catch (cause) {
+      if (cause instanceof RelayApiError && cause.status >= 400 && cause.status < 500) {
+        await acknowledgeEmbeddedOAuthCallback(callbackURL);
+      }
+      throw cause;
+    }
+  })().finally(() => {
+    embeddedOAuthCompletions.delete(callbackURL);
   });
-  markRelaySessionAuthenticated();
+  embeddedOAuthCompletions.set(callbackURL, completion);
+  return completion;
+}
+
+export async function resumeRelayOAuth(onPending?: () => void): Promise<boolean> {
+  if (!isEmbeddedMobileRuntime()) return false;
+  const callbackURL = await getPendingEmbeddedOAuthCallback();
+  if (!callbackURL) return false;
+  onPending?.();
+  await completeEmbeddedRelayOAuth(callbackURL);
   return true;
 }
 
