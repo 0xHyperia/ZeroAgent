@@ -213,14 +213,14 @@ jobs:
           upload_apk() {
             local repository="$1"
             local token="$2"
-            for attempt in $(seq 1 60); do
+            for attempt in $(seq 1 180); do
               if GH_TOKEN="$token" gh release view "$RELEASE_TAG" --repo "$repository" >/dev/null 2>&1; then
                 GH_TOKEN="$token" gh release upload "$RELEASE_TAG" "$APK_PATH" --repo "$repository" --clobber
                 return 0
               fi
               sleep 20
             done
-            echo "Release $repository@$RELEASE_TAG was not available after 20 minutes." >&2
+            echo "Release $repository@$RELEASE_TAG was not available after 60 minutes." >&2
             return 1
           }
 
