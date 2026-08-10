@@ -36,4 +36,3 @@ jobs:
           add-paths: ${{ env.MODEL_CATALOG_PATH }}
           commit-message: "chore(models): refresh model catalog"
           title: "chore(models): refresh model catalog"
-          labels: governance-exempt
