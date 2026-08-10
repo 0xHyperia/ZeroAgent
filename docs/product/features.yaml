@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "features": [
+    {
+      "id": "usa-zero-oauth",
+      "name": "USA-Zero OAuth 登录",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui", "android", "gateway"],
+      "entrypoints": ["crates/agent-gateway/internal/account", "crates/agent-gui/src/lib/relay/client.ts", "crates/agent-gateway/web/src/lib/relay/client.ts"],
+      "tests": ["crates/agent-gateway/internal/account/http_test.go", "crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs"],
+      "security": "OAuth state、回调目标、会话和账户范围均由服务端验证。",
+      "upstream_relation": "replace"
+    },
+    {
+      "id": "managed-provider-keys",
+      "name": "USA-Zero 托管 Provider 与密钥",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui"],
+      "entrypoints": ["crates/agent-gui/src/pages/settings/RelayProvidersSection.tsx", "crates/agent-gateway/web/src/pages/settings/RelayProvidersSection.tsx"],
+      "tests": ["crates/agent-gui/test/providers/relay-settings-refresh.test.mjs", "crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs"],
+      "security": "托管密钥保持遮罩，复制前必须验证 USA-Zero 密码。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "cloud-web-chat",
+      "name": "Cloud Chat 网页对话",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["webui", "gateway"],
+      "entrypoints": ["crates/agent-gateway/web/src/pages/CloudChatPage.tsx", "crates/agent-gateway/internal/server/http.go"],
+      "tests": ["crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs"],
+      "security": "Cloud Chat 不得暴露仅桌面端可用的本地执行控制。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "device-agent",
+      "name": "设备 Agent 执行",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui", "gateway"],
+      "entrypoints": ["crates/agent-gui/src/lib/relay/desktopExecution.ts", "crates/agent-gateway/web/src/lib/executionTargets.ts"],
+      "tests": ["crates/agent-gateway/web/test/execution-targets.test.mjs", "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs"],
+      "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "device-session-management",
+      "name": "设备身份与会话管理",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui", "gateway"],
+      "entrypoints": ["crates/agent-gateway/internal/account/service.go", "crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx"],
+      "tests": ["crates/agent-gateway/internal/account/device_presence_test.go", "crates/agent-gateway/web/test/execution-targets.test.mjs"],
+      "security": "设备注册、在线状态、会话过期、租约所有权和撤销均按账户隔离。",
+      "upstream_relation": "replace"
+    },
+    {
+      "id": "desktop-local-tools",
+      "name": "桌面本地工具",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": ["desktop"],
+      "entrypoints": ["crates/agent-gui/src-tauri/src/commands/runtime", "crates/agent-gui/src-tauri/src/runtime/shell_runner.rs"],
+      "tests": ["crates/agent-gui/test/chat/agent-runner.test.mjs", "crates/agent-gui/test/backend/cargo-smoke.test.mjs"],
+      "security": "本地能力遵循工具策略，并且对 Cloud Chat 不可用。",
+      "upstream_relation": "adopt"
+    },
+    {
+      "id": "workspace-history-sync",
+      "name": "工作区与历史同步",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": ["desktop", "webui", "gateway"],
+      "entrypoints": ["crates/agent-gui/src/lib/chat/history/chatHistory.ts", "crates/agent-gateway/web/src/lib/chat/chatHistory.ts"],
+      "tests": ["crates/agent-gui/test/chat/chat-history-persist-queue.test.mjs", "crates/agent-gateway/web/test/sidebar-store.test.mjs"],
+      "security": "历史记录和工作区标识必须限定在已认证账户范围内。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "android-client",
+      "name": "Android 客户端",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["android", "webui"],
+      "entrypoints": ["crates/agent-gui/src-tauri/tauri.android.conf.json", ".github/workflows/android-release.yml"],
+      "tests": ["crates/agent-gui/test/backend/release-android.test.mjs", "crates/agent-gateway/web/test/mobile-app-update.test.mjs"],
+      "security": "OAuth 回调和持久化凭据必须使用受支持的移动端安全边界。",
+      "upstream_relation": "replace"
+    },
+    {
+      "id": "gateway-isolation-readiness",
+      "name": "Gateway 账户隔离与就绪检查",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["gateway"],
+      "entrypoints": ["crates/agent-gateway/internal/account", "deploy/production/smoke.sh"],
+      "tests": ["crates/agent-gateway/internal/account/workspace_snapshot_test.go", "deploy/production/validate.sh"],
+      "security": "全部租户数据和设备路由按账户隔离；就绪检查必须验证必要依赖。",
+      "upstream_relation": "replace"
+    },
+    {
+      "id": "dual-repository-release",
+      "name": "双仓库发布",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["release"],
+      "entrypoints": [".github/workflows/desktop-release.yml", ".github/workflows/android-release.yml"],
+      "tests": ["crates/agent-gui/test/backend/release-notes.test.mjs", "crates/agent-gui/test/backend/release-branding.test.mjs"],
+      "security": "公开产物不得包含源码归档、Secret、镜像细节和私有拓扑。",
+      "upstream_relation": "replace"
+    },
+    {
+      "id": "gateway-image-deployment",
+      "name": "Gateway 镜像与生产部署",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["gateway", "operations"],
+      "entrypoints": [".github/workflows/gateway-docker.yml", "deploy/production/deploy.sh"],
+      "tests": ["deploy/production/validate.sh", "deploy/production/smoke.sh"],
+      "security": "生产环境只能部署审核通过且不可变的镜像 digest。",
+      "upstream_relation": "replace"
+    }
+  ]
+}

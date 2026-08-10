@@ -5,6 +5,7 @@
   "scripts": {
     "build:gui": "pnpm --filter zeroagent build",
     "build:webui": "pnpm --filter @liveagent/gateway-webui build",
+    "check:product-contract": "node scripts/check-zeroagent-product-contract.mjs",
     "check:ui-boundaries": "node scripts/check-ui-boundaries.mjs",
     "lint:ui": "pnpm --filter @liveagent/ui lint",
     "lint:gui": "pnpm --filter zeroagent lint",

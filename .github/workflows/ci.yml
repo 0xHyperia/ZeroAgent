@@ -13,6 +13,15 @@ env:
   NODE_VERSION: 22.19.0
 
 jobs:
+  product-contract:
+    name: ZeroAgent Product Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: node scripts/check-zeroagent-product-contract.mjs
+
   deployment:
     name: Deployment Contract
     runs-on: ubuntu-latest
@@ -155,7 +164,7 @@ jobs:
         run: npm install -g pnpm@10.32.1
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter liveagent...
+        run: pnpm install --frozen-lockfile --filter zeroagent...
 
       - name: Typecheck and build GUI frontend
         working-directory: crates/agent-gui
