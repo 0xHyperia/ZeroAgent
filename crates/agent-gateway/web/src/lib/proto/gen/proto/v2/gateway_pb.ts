@@ -1513,7 +1513,7 @@ export type ManagedProcessRecord = Message<"liveagent.gateway.v2.ManagedProcessR
   running: boolean;
 
   /**
-   * survives LiveAgent exit
+   * survives ZeroAgent exit
    *
    * @generated from field: bool isolated = 12;
    */

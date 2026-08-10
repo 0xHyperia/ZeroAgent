@@ -467,12 +467,12 @@ test("builtin agent skills stay selected and sort first", () => {
       { name: "z-skill" },
       { name: "skills-installer" },
       { name: "a-skill" },
-      { name: "liveagent-code-review" },
+      { name: "zeroagent-code-review" },
       { name: "skills-creator" },
     ]).map((skill) => skill.name),
-    ["skills-creator", "skills-installer", "a-skill", "liveagent-code-review", "z-skill"],
+    ["skills-creator", "skills-installer", "a-skill", "z-skill", "zeroagent-code-review"],
   );
-  assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("liveagent-code-review"), true);
+  assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("zeroagent-code-review"), true);
   assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("skills-creator"), false);
   assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("workflow-skill"), true);
 });
@@ -1244,10 +1244,10 @@ test("file tools block direct mutations inside backend-verified built-in Skills"
     skillsRootEnabled: true,
     skillsRootDir: "/Users/me/.liveagent/skills",
     skillAccessPolicy: {
-      allowedSkillNames: ["liveagent-code-review"],
-      allowedSkillBaseDirs: ["liveagent-code-review"],
-      protectedSkillNames: ["liveagent-code-review"],
-      protectedSkillBaseDirs: ["liveagent-code-review"],
+      allowedSkillNames: ["zeroagent-code-review"],
+      allowedSkillBaseDirs: ["zeroagent-code-review"],
+      protectedSkillNames: ["zeroagent-code-review"],
+      protectedSkillBaseDirs: ["zeroagent-code-review"],
       allowSkillMutation: true,
     },
     fileState: fileToolState.createFileToolState(),
@@ -1258,13 +1258,13 @@ test("file tools block direct mutations inside backend-verified built-in Skills"
     id: "blocked-builtin-skill-write",
     name: "Write",
     arguments: {
-      path: "skill://liveagent-code-review/SKILL.md",
-      content: "---\nname: liveagent-code-review\ndescription: Changed\n---\n",
+      path: "skill://zeroagent-code-review/SKILL.md",
+      content: "---\nname: zeroagent-code-review\ndescription: Changed\n---\n",
     },
   });
 
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /built-in Skill "liveagent-code-review" is protected/);
+  assert.match(result.content[0].text, /built-in Skill "zeroagent-code-review" is protected/);
   assert.match(result.content[0].text, /cannot be modified by the model/);
   assert.deepEqual(invocations, []);
 });
@@ -1710,7 +1710,7 @@ test("SkillsManager read accepts explicit skill entry paths", async () => {
   assert.equal(result.details.path, "skills-installer/SKILL.md");
   assert.equal(result.details.startLine, 3);
   assert.equal(result.details.numLines, 2);
-  assert.match(result.content[0].text, /<LiveAgentSkillFileRules>/);
+  assert.match(result.content[0].text, /<ZeroAgentSkillFileRules>/);
   assert.match(result.content[0].text, /skill:\/\/skills-installer\/\.\.\./);
   assert.match(result.content[0].text, /path="skill:\/\/skills-installer\/\.\.\."/);
   assert.match(result.content[0].text, /Do not use Bash/);
@@ -1918,10 +1918,10 @@ test("SkillsManager blocks built-in Skill create/install targets before backend 
   const skillTools = skillLoader.loadModule("src/lib/tools/skillTools.ts");
   const bundle = skillTools.createSkillTools({
     skillAccessPolicy: {
-      allowedSkillNames: ["skills-creator", "skills-installer", "liveagent-code-review"],
-      allowedSkillBaseDirs: ["skills-creator", "skills-installer", "liveagent-code-review"],
-      protectedSkillNames: ["liveagent-code-review"],
-      protectedSkillBaseDirs: ["liveagent-code-review"],
+      allowedSkillNames: ["skills-creator", "skills-installer", "zeroagent-code-review"],
+      allowedSkillBaseDirs: ["skills-creator", "skills-installer", "zeroagent-code-review"],
+      protectedSkillNames: ["zeroagent-code-review"],
+      protectedSkillBaseDirs: ["zeroagent-code-review"],
       allowSkillManagement: true,
     },
   });
@@ -1961,11 +1961,11 @@ test("SkillsManager blocks built-in Skill create/install targets before backend 
     name: "SkillsManager",
     arguments: {
       action: "delete",
-      name: "liveagent-code-review",
+      name: "zeroagent-code-review",
     },
   });
   assert.equal(deleteResult.isError, true);
-  assert.match(deleteResult.content[0].text, /built-in Skill "liveagent-code-review" is protected/);
+  assert.match(deleteResult.content[0].text, /built-in Skill "zeroagent-code-review" is protected/);
   assert.deepEqual(invocations, []);
 });
 

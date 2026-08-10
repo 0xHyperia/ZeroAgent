@@ -237,7 +237,7 @@ function validateBashBackgroundStdio(command: string) {
   throw new Error(
     [
       "Background Bash commands must detach stdout and stderr before using `&`.",
-      "Long-running processes that inherit LiveAgent's tool pipes can keep the Bash task running forever.",
+      "Long-running processes that inherit ZeroAgent's tool pipes can keep the Bash task running forever.",
       "Redirect output to a log file, for example: `nohup command > /tmp/liveagent-task.log 2>&1 < /dev/null &`.",
       "For dev servers or watchers, prefer a dedicated terminal or managed process workflow.",
     ].join(" "),
@@ -630,7 +630,7 @@ export function createShellTools(params: {
 
   const toolManagedProcess: Tool = {
     name: "ManagedProcess",
-    description: `Start, inspect, read logs for, or stop a long-running local process such as a dev server, watcher, or preview server. Runtime platform: ${platformLabel}; commands use the same platform shell policy as Bash. Use this instead of detached shell/background syntax, but never use it to intentionally delete workspace or enabled Skill paths; use Delete so LiveAgent can track the deletion. action="start" runs a foreground command under LiveAgent process management, redirects stdout/stderr to a log file, and returns immediately with process_id, pid, and log_path. By default managed processes are terminated automatically when LiveAgent exits; pass isolated=true only when the user explicitly wants the service to outlive LiveAgent. Use action="status" to list or inspect processes, action="read_log" to read recent log output, and action="stop" to terminate the process tree.`,
+    description: `Start, inspect, read logs for, or stop a long-running local process such as a dev server, watcher, or preview server. Runtime platform: ${platformLabel}; commands use the same platform shell policy as Bash. Use this instead of detached shell/background syntax, but never use it to intentionally delete workspace or enabled Skill paths; use Delete so ZeroAgent can track the deletion. action="start" runs a foreground command under ZeroAgent process management, redirects stdout/stderr to a log file, and returns immediately with process_id, pid, and log_path. By default managed processes are terminated automatically when ZeroAgent exits; pass isolated=true only when the user explicitly wants the service to outlive ZeroAgent. Use action="status" to list or inspect processes, action="read_log" to read recent log output, and action="stop" to terminate the process tree.`,
     parameters: strictToolParameters({
       action: Type.Union(
         [
@@ -664,7 +664,7 @@ export function createShellTools(params: {
       isolated: Type.Optional(
         Type.Boolean({
           description:
-            'Only for action="start". Default false: the process is terminated automatically when LiveAgent exits. Set true ONLY when the user explicitly asks for the service to keep running after LiveAgent quits; it then detaches from the LiveAgent lifecycle and must be stopped manually from the background tasks panel.',
+            'Only for action="start". Default false: the process is terminated automatically when ZeroAgent exits. Set true ONLY when the user explicitly asks for the service to keep running after ZeroAgent quits; it then detaches from the ZeroAgent lifecycle and must be stopped manually from the background tasks panel.',
         }),
       ),
       process_id: Type.Optional(

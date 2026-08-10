@@ -600,7 +600,7 @@ mod tests {
             tag_name: tag_name.to_string(),
             title: Some(format!("ZeroAgent {tag_name}")),
             html_url: Some(format!(
-                "https://github.com/tkxs/ZeroAgent/releases/tag/{tag_name}"
+                "https://github.com/USA-Zero/ZeroAgent/releases/tag/{tag_name}"
             )),
             updated: Some("2026-05-25T12:27:41Z".to_string()),
         }
@@ -613,7 +613,7 @@ mod tests {
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <updated>2026-05-25T16:00:34Z</updated>
-    <link rel="alternate" type="text/html" href="https://github.com/tkxs/ZeroAgent/releases/tag/v0.1.2"/>
+    <link rel="alternate" type="text/html" href="https://github.com/USA-Zero/ZeroAgent/releases/tag/v0.1.2"/>
     <title>ZeroAgent v0.1.2</title>
   </entry>
 </feed>"#,
@@ -625,7 +625,7 @@ mod tests {
             vec![ReleaseFeedEntry {
                 tag_name: "v0.1.2".to_string(),
                 title: Some("ZeroAgent v0.1.2".to_string()),
-                html_url: Some("https://github.com/tkxs/ZeroAgent/releases/tag/v0.1.2".to_string()),
+                html_url: Some("https://github.com/USA-Zero/ZeroAgent/releases/tag/v0.1.2".to_string()),
                 updated: Some("2026-05-25T16:00:34Z".to_string()),
             }]
         );
@@ -655,7 +655,7 @@ mod tests {
         assert_eq!(selected[0].tag_name, "v0.1.2-beta.1");
         assert_eq!(
             selected[0].manifest_url,
-            "https://github.com/tkxs/ZeroAgent/releases/download/v0.1.2-beta.1/latest.json"
+            "https://github.com/USA-Zero/ZeroAgent/releases/download/v0.1.2-beta.1/latest.json"
         );
         assert!(selected[0].prerelease);
     }

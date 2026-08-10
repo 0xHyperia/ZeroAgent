@@ -37,7 +37,7 @@ const GENERAL_SCRIPT: &str = r#"({
     method: "GET",
     headers: {
       "Authorization": "Bearer {{apiKey}}",
-      "User-Agent": "LiveAgent/1.0"
+      "User-Agent": "ZeroAgent/1.0"
     }
   },
   extractor: function(response) {
@@ -56,7 +56,7 @@ const NEWAPI_SCRIPT: &str = r#"({
     headers: {
       "Content-Type": "application/json",
       "Authorization": "Bearer {{accessToken}}",
-      "User-Agent": "LiveAgent/1.0",
+      "User-Agent": "ZeroAgent/1.0",
       "New-Api-User": "{{userId}}"
     },
   },
@@ -2680,7 +2680,7 @@ mod tests {
                 .headers
                 .get("User-Agent")
                 .map(String::as_str),
-            Some("LiveAgent/1.0"),
+            Some("ZeroAgent/1.0"),
         );
 
         let mut newapi = test_provider("newapi", "https://api.example.test/v1");
@@ -2760,7 +2760,7 @@ mod tests {
             "unexpected request line: {raw_request}",
         );
         assert!(raw_request.contains("authorization: bearer query-secret"));
-        assert!(raw_request.contains("user-agent: liveagent/1.0"));
+        assert!(raw_request.contains("user-agent: zeroagent/1.0"));
         assert!(
             !raw_request.contains("{{"),
             "unreplaced placeholder reached the wire"

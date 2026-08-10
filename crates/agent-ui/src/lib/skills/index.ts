@@ -22,7 +22,7 @@ export type SkillSummary = {
   skillFile: string;
   /** relative directory of the skill (from app skills root) */
   baseDir: string;
-  /** true only when the backend verified LiveAgent ownership metadata */
+  /** true only when the backend verified ZeroAgent ownership metadata */
   builtIn?: boolean;
   /** skill directory creation/modification time in epoch milliseconds */
   installedAt?: number | null;

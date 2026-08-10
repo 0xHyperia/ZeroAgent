@@ -34,9 +34,9 @@ pub async fn settings_list_ccswitch_providers() -> Result<CcsProvidersResponse, 
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
                 .join("；");
-            format!("未发现 ccswitch LiveAgent 供应商，已检查：{checked}")
+            format!("未发现 ccswitch ZeroAgent 供应商，已检查：{checked}")
         } else {
-            format!("发现 {} 个 ccswitch LiveAgent 供应商", providers.len())
+            format!("发现 {} 个 ccswitch ZeroAgent 供应商", providers.len())
         };
         Ok(CcsProvidersResponse {
             status: "success".to_string(),
@@ -189,7 +189,7 @@ fn ccs_provider_from_value(
         base_url,
         api_key,
         request_format: if provider_type == "xai" {
-            // Grok / xAI 在 LiveAgent 固定 Responses。
+            // Grok / xAI 在 ZeroAgent 固定 Responses。
             "openai-responses".to_string()
         } else if provider_type == "codex" && ccs_is_chat_protocol(config) {
             "openai-completions".to_string()

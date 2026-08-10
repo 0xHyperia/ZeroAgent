@@ -48,7 +48,7 @@ export const USAGE_QUERY_PRESET_SCRIPTS: Partial<Record<UsageQueryMode, string>>
     method: "GET",
     headers: {
       "Authorization": "Bearer {{apiKey}}",
-      "User-Agent": "LiveAgent/1.0"
+      "User-Agent": "ZeroAgent/1.0"
     }
   },
   extractor: function(response) {
@@ -66,7 +66,7 @@ export const USAGE_QUERY_PRESET_SCRIPTS: Partial<Record<UsageQueryMode, string>>
     headers: {
       "Content-Type": "application/json",
       "Authorization": "Bearer {{accessToken}}",
-      "User-Agent": "LiveAgent/1.0",
+      "User-Agent": "ZeroAgent/1.0",
       "New-Api-User": "{{userId}}"
     },
   },

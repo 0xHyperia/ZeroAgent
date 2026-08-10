@@ -239,7 +239,7 @@ export function buildToolsSuffix(
     if (has("Delete")) {
       lines.push(
         "- Every intentional deletion of a file or directory inside the workspace or an enabled Skill MUST use Delete with the exact path, preferably workspace-relative or skill://. Use one Delete call per target; deleting a directory is recursive.",
-        "- NEVER perform such a deletion through Bash, ManagedProcess, a shell script, or a deletion-oriented CLI, including `rm`, `rmdir`, `unlink`, `find -delete`, `git rm`, `git clean`, PowerShell `Remove-Item`, or cmd `del` / `erase` / `rd`. Structured Delete calls are required so LiveAgent can record the path in Edited Files and the file ledger.",
+        "- NEVER perform such a deletion through Bash, ManagedProcess, a shell script, or a deletion-oriented CLI, including `rm`, `rmdir`, `unlink`, `find -delete`, `git rm`, `git clean`, PowerShell `Remove-Item`, or cmd `del` / `erase` / `rd`. Structured Delete calls are required so ZeroAgent can record the path in Edited Files and the file ledger.",
         "- If a deleted workspace path is tracked by Git and staging is required, call Delete first, then stage only that path with `git add -u -- <exact-workspace-relative-path>`.",
       );
     }

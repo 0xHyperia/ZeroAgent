@@ -930,7 +930,7 @@ fn cleanup_worktree_target_blocking(
     };
     if !is_liveagent_subagent_worktree(&worktree_root) {
         item.error = Some(format!(
-            "refusing to cleanup non-LiveAgent subagent worktree: {}",
+            "refusing to cleanup non-ZeroAgent subagent worktree: {}",
             display_path(&worktree_root)
         ));
         return item;
