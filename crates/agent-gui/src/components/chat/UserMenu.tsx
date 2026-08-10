@@ -1,3 +1,12 @@
+import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@liveagent/ui/components/ui/dropdown-menu";
 import { useRef } from "react";
 import {
   formatRelayBalance,
@@ -6,15 +15,6 @@ import {
   type RelayUser,
 } from "../../lib/relay/client";
 import { ChevronUp, LogOut, Settings } from "../icons";
-import { Button } from "../ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
 
 type UserMenuProps = {
   user: RelayUser;
@@ -39,9 +39,7 @@ export function UserMenu({
     if (!open || refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     void onRefreshAccount()
-      .catch(() => {
-        // Keep the cached account values when the refresh is temporarily unavailable.
-      })
+      .catch(() => undefined)
       .finally(() => {
         refreshInFlightRef.current = false;
       });

@@ -3,9 +3,9 @@ import { CheckCircle2, Copy, Key, Loader2, Plus, RefreshCw } from "@/components/
 import { GroupMultiSelect } from "@/components/relay/GroupMultiSelect";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
 import { ZeroAgentLogo } from "@/components/relay/ZeroAgentLogo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Label } from "@liveagent/ui/components/ui/label";
 import {
   createRelayApiKeys,
   getRelayCurrentUser,

@@ -76,6 +76,17 @@ func (c *browserConn) handleAgentList(requestID string) {
 // handleChatPrepare 处理 chat.prepare：探活/唤醒目标桌面运行时后返回与 status_get
 // 同构的状态（客户端共享一个状态归一化器）。
 func (c *browserConn) handleChatPrepare(requestID, agentID string, _ *gatewayv2.ChatPrepareRequest) {
+	if c.sm.IsOnline(agentID) && !c.sm.ChatIngressV1Ready(agentID) {
+		status := c.sm.Status(agentID)
+		_ = c.send(wscore.FrameControl, "status", &gatewayv2.WebServerFrame{
+			RequestId: requestID,
+			AgentId:   status.AgentID,
+			Payload: &gatewayv2.WebServerFrame_Status{
+				Status: statusEvent(status),
+			},
+		})
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), chatcmd.PrepareTimeout(c.cfg))
 	defer cancel()
 	if err := chatcmd.ProbeRuntime(ctx, c.sm, agentID); err != nil {
@@ -144,7 +155,7 @@ func (c *browserConn) handleChatCommand(requestID, agentID string, cmd *gatewayv
 		_ = c.sendLocalError(requestID, err.Error())
 		return
 	}
-	if err := c.vetPlainChat(body.ExecutionMode, body.Workdir, body.SelectedSystemTools); err != nil {
+	if err := c.vetPlainChat(body.ExecutionMode, body.Workdir, nil); err != nil {
 		_ = c.sendLocalError(requestID, err.Error())
 		return
 	}

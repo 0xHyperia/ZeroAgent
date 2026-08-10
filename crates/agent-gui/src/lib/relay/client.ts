@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { prepareProxyRequest } from "../providers/proxy";
+import { prepareProxyRequest } from "@liveagent/ui/lib/providers/proxy";
 import { getInstallationID } from "./installation";
 
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";

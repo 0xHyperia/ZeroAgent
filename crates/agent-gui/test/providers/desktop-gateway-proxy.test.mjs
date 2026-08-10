@@ -67,7 +67,7 @@ test("desktop Gateway APIs preserve query parameters and use the local proxy", a
             throw new Error(`unexpected invoke: ${command}`);
           },
         },
-        "../providers/proxy": {
+        "@liveagent/ui/lib/providers/proxy": {
           async prepareProxyRequest(providerId, upstreamBaseUrl, headers) {
             proxyCalls.push({ providerId, upstreamBaseUrl, headers });
             return {
@@ -166,7 +166,7 @@ test("a different account receives a new device identity on the same desktop", a
             throw new Error(`unexpected invoke: ${command}`);
           },
         },
-        "../providers/proxy": {
+        "@liveagent/ui/lib/providers/proxy": {
           async prepareProxyRequest(_providerId, _upstreamBaseUrl, headers) {
             return { baseUrl: "http://127.0.0.1:4567/proxy/codex", headers };
           },
@@ -223,7 +223,7 @@ test("desktop Gateway requests force one token refresh after a 401", async () =>
             throw new Error(`unexpected invoke: ${command}`);
           },
         },
-        "../providers/proxy": {
+        "@liveagent/ui/lib/providers/proxy": {
           async prepareProxyRequest(_providerId, _baseUrl, headers) {
             return { baseUrl: "http://127.0.0.1:4567/proxy/codex", headers };
           },

@@ -1,8 +1,16 @@
 import type { Context } from "@earendil-works/pi-ai";
+import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
+import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
+import { initAutomation } from "@liveagent/ui/lib/automation/index";
+import {
+  applyGatewaySettingsSyncPayload,
+  buildGatewaySettingsSyncPayload,
+  type GatewaySettingsSyncPayload,
+} from "@liveagent/ui/lib/settings/sync";
+import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CronPromptRunner } from "./components/cron/CronPromptRunner";
 import { DesktopExecutionSwitcher } from "./components/DesktopExecutionSwitcher";
 import { Pin } from "./components/icons";
@@ -11,9 +19,7 @@ import { MemoryOrganizerHost } from "./components/memory/useMemoryOrganizer";
 import { FirstRunOnboarding } from "./components/onboarding/FirstRunOnboarding";
 import { RelayAccessGate } from "./components/relay/RelayAccessGate";
 import { WindowsTitleBar } from "./components/WindowsTitleBar";
-import { LocaleContext, t as translate } from "./i18n";
 import { useAppUpdateController } from "./lib/appUpdates";
-import { initAutomation } from "./lib/automation";
 import {
   getRelayDashboardStats,
   getRelayProfile,
@@ -47,16 +53,10 @@ import {
   publishGatewaySettingsSync,
   type SettingsSaveState,
 } from "./lib/settings/storage";
-import {
-  applyGatewaySettingsSyncPayload,
-  buildGatewaySettingsSyncPayload,
-  type GatewaySettingsSyncPayload,
-} from "./lib/settings/sync";
 import { applyStoredGlobalShortcuts } from "./lib/shortcuts/globalShortcuts";
 import { applyFontFamilies } from "./lib/system/fontFamily";
 import { ChatPage } from "./pages/ChatPage";
 import { RemoteDeviceChatPage } from "./pages/RemoteDeviceChatPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import type { SectionId } from "./pages/settings/types";
 
 function getDefaultContext(): Context {
@@ -225,6 +225,7 @@ function applyRuntimeSystemDefaults(settings: AppSettings, defaultWorkdir: strin
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId>("system");
+  const [settingsProviderId, setSettingsProviderId] = useState<string>();
   const [settingsReady, setSettingsReady] = useState(false);
   const [relayReady, setRelayReady] = useState(false);
   const [relayUser, setRelayUser] = useState<RelayUser | null>(null);
@@ -570,6 +571,7 @@ export default function App() {
   // synchronously by setSettings, so read-modify-write sequences that stay in
   // one synchronous segment can never observe a stale snapshot.
   const getMcpSettings = useCallback(() => settingsRef.current.mcp, []);
+  const getToolPolicies = useCallback(() => settingsRef.current.system.toolPolicies, []);
 
   const reloadPersistedSettings = useCallback(async () => {
     await saveChainRef.current.catch(() => undefined);
@@ -597,8 +599,9 @@ export default function App() {
   );
 
   const openSettings = useCallback(
-    (section: SectionId = "system") => {
+    (section: SectionId = "system", providerId?: string) => {
       setSettingsSection(section);
+      setSettingsProviderId(section === "providers" ? providerId : undefined);
       setSettingsOpen(true);
       setOverlay("entering");
       requestAnimationFrame(() => requestAnimationFrame(() => setOverlay("open")));
@@ -851,6 +854,7 @@ export default function App() {
               settings={settings}
               setSettings={setSettings}
               getMcpSettings={getMcpSettings}
+              getToolPolicies={getToolPolicies}
               context={context}
               setContext={setContext}
               onOpenSettings={openSettings}
@@ -885,6 +889,7 @@ export default function App() {
                 saveState={settingsSaveState}
                 onBack={closeSettings}
                 initialSection={settingsSection}
+                initialProviderId={settingsProviderId}
                 appUpdate={appUpdate}
                 relayUser={relayUser}
                 relayStats={relayStats}

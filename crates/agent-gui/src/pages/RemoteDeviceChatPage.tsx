@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Markdown } from "../components/Markdown";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Markdown } from "@liveagent/ui/components/Markdown";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { ConfirmDeletePopover } from "@liveagent/ui/components/ui/confirm-action-popover";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Textarea } from "@liveagent/ui/components/ui/textarea";
+import { cn } from "@liveagent/ui/lib/shared/utils";
 import { Bot, Edit3, Loader2, MessageSquare, Pin, Square, Trash2 } from "../components/icons";
 import type { AppSettings } from "../lib/settings";
-import { ConfirmDeletePopover } from "../components/ui/confirm-action-popover";
 import {
   desktopGatewayOrigin,
   type DesktopConversationRoute,
@@ -19,8 +21,6 @@ import {
   remoteProjectStorageKey,
 } from "../lib/relay/remoteDeviceState";
 import { getRelayAccessToken, RELAY_TOKEN_CHANGED_EVENT } from "../lib/relay/client";
-import { cn } from "../lib/shared/utils";
-import { Textarea } from "../components/ui/textarea";
 import { GatewayWebSocketClient } from "@/lib/gatewaySocket";
 import type { ConversationSummary, ChatQueueSnapshot } from "@/lib/gatewayTypes";
 import type {
@@ -437,7 +437,6 @@ export function RemoteDeviceChatPage({
         systemSettings: {
           executionMode: activeProject ? "tools" : "text",
           workdir: activeProject?.path ?? "",
-          selectedSystemTools: [],
         },
         queuePolicy: wasRunning ? "append" : "auto",
       });

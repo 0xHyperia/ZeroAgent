@@ -7,7 +7,7 @@ const sidebarContainerSource = readFileSync(
   "utf8",
 );
 const sidebarSource = readFileSync(
-  new URL("../src/components/chat/ChatHistorySidebar.tsx", import.meta.url),
+  new URL("../../../agent-ui/src/components/chat/ChatHistorySidebar.tsx", import.meta.url),
   "utf8",
 );
 const cloudChatSource = readFileSync(

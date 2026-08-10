@@ -5,7 +5,7 @@ import {
   isEmbeddedMobileRuntime,
   openEmbeddedOAuth,
 } from "../mobileRuntime";
-import { createUuid } from "../shared/id";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";

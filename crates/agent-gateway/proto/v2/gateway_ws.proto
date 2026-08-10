@@ -51,6 +51,9 @@ message ClientHello {
   string selection_lease = 13;
   string workspace_id = 14;
   string runtime_kind = 15;
+  // Optional feature identifiers supported by this client. Reliable desktop
+  // chat ingress is negotiated with "CHAT_INGRESS_V1".
+  repeated string capabilities = 16;
 }
 
 // ServerHello 是服务端对 ClientHello 的应答；ok=false 时随即关闭连接。
@@ -70,6 +73,8 @@ message ServerHello {
   string runtime_kind = 10;
   // Canonical account-owned Agent identifier. device_id is retained for one migration release.
   string agent_id = 11;
+  // Feature identifiers supported by the gateway.
+  repeated string capabilities = 12;
 }
 
 // PingFrame / PongFrame 是应用层心跳：WS 控制帧 ping 探测网络栈，本帧探测页面 JS/事件循环存活。

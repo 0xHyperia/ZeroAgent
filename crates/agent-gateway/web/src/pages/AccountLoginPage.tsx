@@ -10,8 +10,8 @@ import {
   Shield,
   User,
 } from "../components/icons";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
 import {
   getRelayPublicSettings,
   resumeRelayOAuth,

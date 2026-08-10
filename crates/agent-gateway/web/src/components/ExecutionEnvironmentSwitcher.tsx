@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Cloud, MonitorSmartphone } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { Button } from "@liveagent/ui/components/ui/button";
 import {
   type ExecutionEnvironment,
   type ExecutionSelection,
