@@ -171,8 +171,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.runtime.tunnelSettingsSyncing": "正在同步桌面端设置",
     "chat.runtime.settingsSyncTitle": "正在同步桌面端设置",
     "chat.runtime.protocolIncompatible":
-      "桌面端版本不支持可靠聊天同步。请更新 LiveAgent 桌面端后再使用 WebUI 聊天。",
-    "chat.runtime.protocolIncompatiblePlaceholder": "请先更新 LiveAgent 桌面端",
+      "桌面端版本不支持可靠聊天同步。请更新 ZeroAgent 桌面端后再使用网页对话。",
+    "chat.runtime.protocolIncompatiblePlaceholder": "请先更新 ZeroAgent 桌面端",
     "chat.runtime.reasoning": "思考程度",
     "chat.emptyRound": "（无回复）",
     "chat.inputHint": "输入消息，@ 引用文件，提示词可队列发送...",
@@ -1281,16 +1281,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.workdirOpenFailed": "打开目录选择器失败：",
     "settings.systemTools": "系统工具",
     "settings.systemToolsDesc":
-      "查看 ZeroAgent 在 Agent 模式下注册的内置与自定义工具，并为每个工具设置允许、执行前询问或拒绝。",
-    "settings.noSystemTools": "暂无可用的系统工具",
-    "settings.systemToolsTabBuiltin": "内置工具",
-    "settings.systemToolsTabCustom": "自定义工具",
-    "settings.systemToolsBuiltinDesc":
-      "ZeroAgent 在 Agent 模式下自动注册的内置工具，此处仅供查阅。",
-    "settings.systemToolsCustomDesc":
-      "可按需启用的自定义系统工具；启用后会在 Agent 模式下注册，供模型在对话中调用。",
-    "settings.systemToolsViewDetail": "查看详情",
-    "settings.noCustomSystemTools": "暂无可用的自定义工具",
+      "查看 ZeroAgent 在 Agent 模式下注册的内置工具，并为每个工具设置允许、执行前询问或拒绝。",
     "settings.builtinToolCategory.fs": "文件系统",
     "settings.builtinToolCategory.process": "终端与进程",
     "settings.builtinToolCategory.intelligence": "智能与记忆",
@@ -2421,8 +2412,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "chat.runtime.tunnelSettingsSyncing": "Syncing desktop settings",
     "chat.runtime.settingsSyncTitle": "Syncing desktop settings",
     "chat.runtime.protocolIncompatible":
-      "This desktop version does not support reliable chat sync. Update LiveAgent desktop before using WebUI chat.",
-    "chat.runtime.protocolIncompatiblePlaceholder": "Update LiveAgent desktop to continue",
+      "This desktop version does not support reliable chat sync. Update ZeroAgent desktop before using web chat.",
+    "chat.runtime.protocolIncompatiblePlaceholder": "Update ZeroAgent desktop to continue",
     "chat.runtime.reasoning": "Thinking effort",
     "chat.emptyRound": "(No reply)",
     "chat.inputHint": "Type a message, @ to reference files, prompts can be queued...",
@@ -3573,16 +3564,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "settings.workdirOpenFailed": "Failed to open directory picker: ",
     "settings.systemTools": "System Tools",
     "settings.systemToolsDesc":
-      "View the built-in and custom tools registered by ZeroAgent in Agent mode, and set each tool to allow, ask before running, or deny.",
-    "settings.noSystemTools": "No system tools available",
-    "settings.systemToolsTabBuiltin": "Built-in",
-    "settings.systemToolsTabCustom": "Custom",
-    "settings.systemToolsBuiltinDesc":
-      "Built-in tools that ZeroAgent registers automatically in Agent mode. Read-only list; click the eye icon for details.",
-    "settings.systemToolsCustomDesc":
-      "Optional custom system tools. Enabled tools are registered in Agent mode for the model to call during conversations.",
-    "settings.systemToolsViewDetail": "View details",
-    "settings.noCustomSystemTools": "No custom tools available",
+      "View the built-in tools registered by ZeroAgent in Agent mode, and set each tool to allow, ask before running, or deny.",
     "settings.builtinToolCategory.fs": "File System",
     "settings.builtinToolCategory.process": "Terminal & Processes",
     "settings.builtinToolCategory.intelligence": "Intelligence & Memory",

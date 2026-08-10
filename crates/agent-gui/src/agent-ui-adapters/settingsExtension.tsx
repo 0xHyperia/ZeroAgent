@@ -1,9 +1,11 @@
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
+import type { ReactNode } from "react";
 import { Info, Keyboard, Shield } from "../components/icons";
 import { isMacOsTauri, MacOsTitleBarSpacer } from "../components/MacOsTitleBarSpacer";
 import { AboutSection } from "../pages/settings/AboutSection";
 import { AccountSection } from "../pages/settings/AccountSection";
 import { GlobalShortcutsSection } from "../pages/settings/GlobalShortcutsSection";
+import { RelayProvidersSection } from "../pages/settings/RelayProvidersSection";
 import type { SettingsPageProps } from "../pages/settings/types";
 
 export function createSettingsExtension(props: SettingsPageProps): {
@@ -11,6 +13,10 @@ export function createSettingsExtension(props: SettingsPageProps): {
   iconClassName: string;
   slots: UiExtensionSlots;
   sections: SettingsSectionDefinition<void>[];
+  renderProviders: (options: {
+    initialProviderId?: string;
+    onInitialProviderHandled: () => void;
+  }) => ReactNode;
 } {
   const {
     settings,
@@ -30,6 +36,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
       ) : null,
       mainLeading: <MacOsTitleBarSpacer />,
     },
+    renderProviders: () => <RelayProvidersSection settings={settings} setSettings={setSettings} />,
     sections: [
       {
         id: "account",

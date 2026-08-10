@@ -161,8 +161,11 @@ function SegmentedButton({ selected, label, icon, onClick }: SegmentedButtonProp
   );
 }
 
-export function SystemSettingsForm(props: SettingsSectionProps) {
+export function SystemSettingsForm(
+  props: SettingsSectionProps & { showLocalRuntimeSettings?: boolean },
+) {
   const { settings, setSettings } = props;
+  const showLocalRuntimeSettings = props.showLocalRuntimeSettings !== false;
   const { t } = useLocale();
 
   const executionMode = settings.system.executionMode;
@@ -185,7 +188,9 @@ export function SystemSettingsForm(props: SettingsSectionProps) {
   const fontScaleZones: Array<{ key: keyof FontScaleSettings; label: string }> = [
     { key: "sidebar", label: t("settings.fontSizeSidebar") },
     { key: "chat", label: t("settings.fontSizeChat") },
-    { key: "rightDock", label: t("settings.fontSizeRightDock") },
+    ...(showLocalRuntimeSettings
+      ? [{ key: "rightDock" as const, label: t("settings.fontSizeRightDock") }]
+      : []),
   ];
 
   function getFontScaleLabel(value: number) {
@@ -353,39 +358,45 @@ export function SystemSettingsForm(props: SettingsSectionProps) {
 
   return (
     <div className="settings-system-section space-y-9 pb-10">
-      <SettingsGroup title={t("settings.executionMode")}>
-        <fieldset aria-label={t("settings.executionMode")} className="m-0 min-w-0 border-0 p-0">
-          <SettingsChoiceRow
-            icon={<MessageSquare className="h-4.5 w-4.5" />}
-            title={t("settings.chatMode")}
-            description={t("settings.chatModeDesc")}
-            selected={executionMode === "text"}
-            onClick={() =>
-              setSettings((prev) => updateSystem(prev, { executionMode: "text" as ExecutionMode }))
-            }
-          />
-          <SettingsChoiceRow
-            icon={<Wrench className="h-4.5 w-4.5" />}
-            title={t("settings.agentMode")}
-            description={t("settings.agentModeDesc")}
-            selected={isClassicAgentMode}
-            onClick={() =>
-              setSettings((prev) => updateSystem(prev, { executionMode: "tools" as ExecutionMode }))
-            }
-          />
-          <SettingsChoiceRow
-            icon={<Cpu className="h-4.5 w-4.5" />}
-            title={t("settings.agentDevMode")}
-            description={t("settings.agentDevModeDesc")}
-            selected={isAgentDevMode}
-            onClick={() =>
-              setSettings((prev) =>
-                updateSystem(prev, { executionMode: "agent-dev" as ExecutionMode }),
-              )
-            }
-          />
-        </fieldset>
-      </SettingsGroup>
+      {showLocalRuntimeSettings ? (
+        <SettingsGroup title={t("settings.executionMode")}>
+          <fieldset aria-label={t("settings.executionMode")} className="m-0 min-w-0 border-0 p-0">
+            <SettingsChoiceRow
+              icon={<MessageSquare className="h-4.5 w-4.5" />}
+              title={t("settings.chatMode")}
+              description={t("settings.chatModeDesc")}
+              selected={executionMode === "text"}
+              onClick={() =>
+                setSettings((prev) =>
+                  updateSystem(prev, { executionMode: "text" as ExecutionMode }),
+                )
+              }
+            />
+            <SettingsChoiceRow
+              icon={<Wrench className="h-4.5 w-4.5" />}
+              title={t("settings.agentMode")}
+              description={t("settings.agentModeDesc")}
+              selected={isClassicAgentMode}
+              onClick={() =>
+                setSettings((prev) =>
+                  updateSystem(prev, { executionMode: "tools" as ExecutionMode }),
+                )
+              }
+            />
+            <SettingsChoiceRow
+              icon={<Cpu className="h-4.5 w-4.5" />}
+              title={t("settings.agentDevMode")}
+              description={t("settings.agentDevModeDesc")}
+              selected={isAgentDevMode}
+              onClick={() =>
+                setSettings((prev) =>
+                  updateSystem(prev, { executionMode: "agent-dev" as ExecutionMode }),
+                )
+              }
+            />
+          </fieldset>
+        </SettingsGroup>
+      ) : null}
 
       <SettingsGroup title={t("settings.groupGeneral")}>
         <div>
@@ -436,161 +447,169 @@ export function SystemSettingsForm(props: SettingsSectionProps) {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.systemProxy")}>
-        <div>
-          <ProxySettingsRow
-            title={t("settings.systemProxyEnable")}
-            description={
-              systemProxy.enabled && proxyConfigValid
-                ? `${systemProxy.type === "socks5" ? "SOCKS5" : "HTTP"} · ${effectiveProxyHost}:${effectiveProxyPort}`
-                : systemProxy.enabled
-                  ? t("settings.systemProxyInvalid")
-                  : t("settings.systemProxyDisabled")
-            }
-            actionLabel={
-              proxyDetailsOpen ? t("settings.systemProxyDone") : t("settings.systemProxySettings")
-            }
-            expanded={proxyDetailsOpen}
-            onToggleDetails={() => setProxyDetailsOpen((open) => !open)}
-            switchControl={
-              <AgentActivationSwitch
-                checked={systemProxy.enabled}
-                title={t("settings.systemProxyEnable")}
-                disabled={proxyToggleDisabled}
-                onToggle={() => patchSystemProxy({ enabled: !systemProxy.enabled })}
-              />
-            }
-          />
-
-          {proxyDetailsOpen ? (
-            <div
-              id="system-proxy-details"
-              className="animate-in fade-in slide-in-from-top-1 bg-muted/10 px-5 py-4 duration-150"
-            >
-              <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-                {t("settings.systemProxyDesc")}
-              </p>
-              {systemProxyInvalid || proxyToggleDisabled ? (
-                <p
-                  className={cn(
-                    "mb-4 text-xs leading-relaxed",
-                    systemProxyInvalid ? "text-destructive" : "text-muted-foreground",
-                  )}
-                >
-                  {systemProxyInvalid
+      {showLocalRuntimeSettings ? (
+        <SettingsGroup title={t("settings.systemProxy")}>
+          <div>
+            <ProxySettingsRow
+              title={t("settings.systemProxyEnable")}
+              description={
+                systemProxy.enabled && proxyConfigValid
+                  ? `${systemProxy.type === "socks5" ? "SOCKS5" : "HTTP"} · ${effectiveProxyHost}:${effectiveProxyPort}`
+                  : systemProxy.enabled
                     ? t("settings.systemProxyInvalid")
-                    : t("settings.systemProxyEnableHint")}
+                    : t("settings.systemProxyDisabled")
+              }
+              actionLabel={
+                proxyDetailsOpen ? t("settings.systemProxyDone") : t("settings.systemProxySettings")
+              }
+              expanded={proxyDetailsOpen}
+              onToggleDetails={() => setProxyDetailsOpen((open) => !open)}
+              switchControl={
+                <AgentActivationSwitch
+                  checked={systemProxy.enabled}
+                  title={t("settings.systemProxyEnable")}
+                  disabled={proxyToggleDisabled}
+                  onToggle={() => patchSystemProxy({ enabled: !systemProxy.enabled })}
+                />
+              }
+            />
+
+            {proxyDetailsOpen ? (
+              <div
+                id="system-proxy-details"
+                className="animate-in fade-in slide-in-from-top-1 bg-muted/10 px-5 py-4 duration-150"
+              >
+                <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+                  {t("settings.systemProxyDesc")}
                 </p>
-              ) : null}
+                {systemProxyInvalid || proxyToggleDisabled ? (
+                  <p
+                    className={cn(
+                      "mb-4 text-xs leading-relaxed",
+                      systemProxyInvalid ? "text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    {systemProxyInvalid
+                      ? t("settings.systemProxyInvalid")
+                      : t("settings.systemProxyEnableHint")}
+                  </p>
+                ) : null}
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)_7rem] sm:items-start">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    {t("settings.systemProxyType")}
-                  </Label>
-                  <Select
-                    value={systemProxy.type}
-                    onValueChange={(value) => patchSystemProxy({ type: value as SystemProxyType })}
-                  >
-                    <SettingsSelectTrigger className="rounded-lg">
-                      <SelectValue>{systemProxy.type === "socks5" ? "SOCKS5" : "HTTP"}</SelectValue>
-                    </SettingsSelectTrigger>
-                    <SettingsSelectContent>
-                      <SelectItem value="http">HTTP</SelectItem>
-                      <SelectItem value="socks5">SOCKS5</SelectItem>
-                    </SettingsSelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)_7rem] sm:items-start">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {t("settings.systemProxyType")}
+                    </Label>
+                    <Select
+                      value={systemProxy.type}
+                      onValueChange={(value) =>
+                        patchSystemProxy({ type: value as SystemProxyType })
+                      }
+                    >
+                      <SettingsSelectTrigger className="rounded-lg">
+                        <SelectValue>
+                          {systemProxy.type === "socks5" ? "SOCKS5" : "HTTP"}
+                        </SelectValue>
+                      </SettingsSelectTrigger>
+                      <SettingsSelectContent>
+                        <SelectItem value="http">HTTP</SelectItem>
+                        <SelectItem value="socks5">SOCKS5</SelectItem>
+                      </SettingsSelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="system-proxy-host"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {t("settings.systemProxyHost")}
+                    </Label>
+                    <Input
+                      id="system-proxy-host"
+                      className="rounded-lg"
+                      value={proxyHostDraft ?? systemProxy.host}
+                      placeholder="127.0.0.1"
+                      onChange={(event) => setProxyHostDraft(event.currentTarget.value)}
+                      onBlur={commitProxyHostDraft}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="system-proxy-port"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {t("settings.systemProxyPort")}
+                    </Label>
+                    <Input
+                      id="system-proxy-port"
+                      className="rounded-lg"
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={
+                        proxyPortDraft ?? (systemProxy.port > 0 ? String(systemProxy.port) : "")
+                      }
+                      placeholder={systemProxy.type === "socks5" ? "1080" : "7890"}
+                      onChange={(event) => setProxyPortDraft(event.currentTarget.value)}
+                      onBlur={commitProxyPortDraft}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="system-proxy-host"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("settings.systemProxyHost")}
-                  </Label>
-                  <Input
-                    id="system-proxy-host"
-                    className="rounded-lg"
-                    value={proxyHostDraft ?? systemProxy.host}
-                    placeholder="127.0.0.1"
-                    onChange={(event) => setProxyHostDraft(event.currentTarget.value)}
-                    onBlur={commitProxyHostDraft}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="system-proxy-port"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("settings.systemProxyPort")}
-                  </Label>
-                  <Input
-                    id="system-proxy-port"
-                    className="rounded-lg"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={proxyPortDraft ?? (systemProxy.port > 0 ? String(systemProxy.port) : "")}
-                    placeholder={systemProxy.type === "socks5" ? "1080" : "7890"}
-                    onChange={(event) => setProxyPortDraft(event.currentTarget.value)}
-                    onBlur={commitProxyPortDraft}
-                  />
+
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="system-proxy-username"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {t("settings.systemProxyUsername")}
+                    </Label>
+                    <Input
+                      id="system-proxy-username"
+                      className="rounded-lg"
+                      value={proxyUsernameDraft ?? systemProxy.username}
+                      onChange={(event) => setProxyUsernameDraft(event.currentTarget.value)}
+                      onBlur={commitProxyUsernameDraft}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="system-proxy-password"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {t("settings.systemProxyPassword")}
+                    </Label>
+                    <Input
+                      id="system-proxy-password"
+                      className="rounded-lg"
+                      type="password"
+                      value={proxyPasswordDraft ?? systemProxy.password}
+                      onChange={(event) => setProxyPasswordDraft(event.currentTarget.value)}
+                      onBlur={commitProxyPasswordDraft}
+                    />
+                    {systemProxy.passwordConfigured &&
+                    !(proxyPasswordDraft ?? systemProxy.password).trim() ? (
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{t("settings.systemProxyPasswordConfigured")}</span>
+                        <button
+                          type="button"
+                          className="underline-offset-2 hover:text-foreground hover:underline"
+                          onClick={() => {
+                            setProxyPasswordDraft(null);
+                            patchSystemProxy({ password: "", passwordConfigured: false });
+                          }}
+                        >
+                          {t("settings.systemProxyPasswordClear")}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="system-proxy-username"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("settings.systemProxyUsername")}
-                  </Label>
-                  <Input
-                    id="system-proxy-username"
-                    className="rounded-lg"
-                    value={proxyUsernameDraft ?? systemProxy.username}
-                    onChange={(event) => setProxyUsernameDraft(event.currentTarget.value)}
-                    onBlur={commitProxyUsernameDraft}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="system-proxy-password"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("settings.systemProxyPassword")}
-                  </Label>
-                  <Input
-                    id="system-proxy-password"
-                    className="rounded-lg"
-                    type="password"
-                    value={proxyPasswordDraft ?? systemProxy.password}
-                    onChange={(event) => setProxyPasswordDraft(event.currentTarget.value)}
-                    onBlur={commitProxyPasswordDraft}
-                  />
-                  {systemProxy.passwordConfigured &&
-                  !(proxyPasswordDraft ?? systemProxy.password).trim() ? (
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span>{t("settings.systemProxyPasswordConfigured")}</span>
-                      <button
-                        type="button"
-                        className="underline-offset-2 hover:text-foreground hover:underline"
-                        onClick={() => {
-                          setProxyPasswordDraft(null);
-                          patchSystemProxy({ password: "", passwordConfigured: false });
-                        }}
-                      >
-                        {t("settings.systemProxyPasswordClear")}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </SettingsGroup>
+            ) : null}
+          </div>
+        </SettingsGroup>
+      ) : null}
 
       <SystemSettingsExtensions settings={settings} setSettings={setSettings} />
 

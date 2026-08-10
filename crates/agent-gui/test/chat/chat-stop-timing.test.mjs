@@ -404,7 +404,7 @@ test("gateway tool_answer forwards validated JSON with conversation isolation", 
   hookHarness.render(() =>
     useChatTurnQueue({
       settings: {
-        system: { executionMode: "chat", workdir: "", selectedSystemTools: [] },
+        system: { executionMode: "chat", workdir: "" },
         chatRuntimeControls: {},
       },
       currentConversationId: "conversation-owner",

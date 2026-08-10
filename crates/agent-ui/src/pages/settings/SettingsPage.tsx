@@ -17,7 +17,6 @@ import { AgentsSection } from "./AgentsSection";
 import { CronSection } from "./CronSection";
 import { HooksSection } from "./HooksSection";
 import { MemoryPanel } from "./memory/MemoryPanel";
-import { ProvidersSection } from "./ProvidersSection";
 import { RemoteSection } from "./RemoteSection";
 import { SettingsShell } from "./SettingsShell";
 import { SshSection } from "./SshSection";
@@ -51,7 +50,13 @@ export function SettingsPage(props: SettingsPageProps) {
         order: 10,
         labelKey: "settings.navSystem",
         icon: <Settings2 className={extension.iconClassName} />,
-        render: () => <SystemSettingsForm settings={settings} setSettings={setSettings} />,
+        render: () => (
+          <SystemSettingsForm
+            settings={settings}
+            setSettings={setSettings}
+            showLocalRuntimeSettings={!("runtimeKind" in props && props.runtimeKind === "web_chat")}
+          />
+        ),
       },
       {
         id: "providers",
@@ -61,14 +66,11 @@ export function SettingsPage(props: SettingsPageProps) {
         labelKey: "settings.navProviders",
         icon: <Cpu className={extension.iconClassName} />,
         contentMode: "fill",
-        render: () => (
-          <ProvidersSection
-            settings={settings}
-            setSettings={setSettings}
-            initialProviderId={pendingProviderId}
-            onInitialProviderHandled={() => setPendingProviderId(undefined)}
-          />
-        ),
+        render: () =>
+          extension.renderProviders({
+            initialProviderId: pendingProviderId,
+            onInitialProviderHandled: () => setPendingProviderId(undefined),
+          }),
       },
       {
         id: "agents",

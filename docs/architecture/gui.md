@@ -12,7 +12,7 @@
 | UI 组件 | `crates/agent-ui/src/components/*`、`crates/agent-gui/src/components/*` | 公共 Sidebar、Markdown、ImagePreview 和基础组件位于 `agent-ui`；GUI 目录保留桌面独有组件。 |
 | 前端设置库 | `src/lib/settings/*` | 默认值、normalize、storage、Gateway sync snapshot、provider redaction。 |
 | 模型层 | `src/lib/providers/llm.ts` | provider 到具体模型 API 的映射、headers、Responses/Anthropic/Gemini stream、thinking/cache/search。 |
-| 工具层 | `src/lib/tools/*`、`src/lib/subagents/*` | builtin tool registry、FS、Shell、MCP、Skills、Cron、Memory、custom system tools；subagents 域提供 `Agent`/`SendMessage` 委托工具。 |
+| 工具层 | `src/lib/tools/*`、`src/lib/subagents/*` | builtin tool registry、FS、Shell、MCP、Skills、Cron、Memory；subagents 域提供 `Agent`/`SendMessage` 委托工具。 |
 | Tauri 后端 | `src-tauri/src` | 系统命令、SQLite、MCP runtime、MemoryStore、GatewayController、CronManager、代理服务。 |
 
 ## App Shell

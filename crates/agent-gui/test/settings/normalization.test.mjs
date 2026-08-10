@@ -200,6 +200,17 @@ test("settings normalization drops stale selected models and preserves valid sel
   assert.deepEqual(valid.selectedModel, { customProviderId: "provider-1", model: "gpt-5" });
 });
 
+test("settings normalization safely drops legacy custom system tool selections", () => {
+  const normalized = settings.normalizeSettings({
+    system: {
+      selectedSystemTools: ["HttpGetTest"],
+    },
+  });
+
+  assert.equal(Object.hasOwn(normalized.system, "selectedSystemTools"), false);
+  assert.equal(JSON.stringify(normalized).includes("HttpGetTest"), false);
+});
+
 test("custom settings migrate the legacy font family and normalize each typography role", () => {
   const defaults = settings.normalizeSettings({}).customSettings;
   assert.equal(defaults.interfaceFontFamily, "");

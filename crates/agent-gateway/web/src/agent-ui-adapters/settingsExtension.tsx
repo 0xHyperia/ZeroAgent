@@ -1,7 +1,9 @@
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
+import type { ReactNode } from "react";
 import { MonitorSmartphone, Shield } from "../components/icons";
 import { AccountSection } from "../pages/settings/AccountSection";
 import { DevicesSection } from "../pages/settings/DevicesSection";
+import { RelayProvidersSection } from "../pages/settings/RelayProvidersSection";
 import type { SettingsPageProps } from "../pages/settings/types";
 
 export function createSettingsExtension(props: SettingsPageProps): {
@@ -9,11 +11,18 @@ export function createSettingsExtension(props: SettingsPageProps): {
   iconClassName: string;
   slots: UiExtensionSlots;
   sections: SettingsSectionDefinition<void>[];
+  renderProviders: (options: {
+    initialProviderId?: string;
+    onInitialProviderHandled: () => void;
+  }) => ReactNode;
 } {
   return {
     surface: "web",
     iconClassName: "h-4 w-4",
     slots: {},
+    renderProviders: () => (
+      <RelayProvidersSection settings={props.settings} setSettings={props.setSettings} />
+    ),
     sections: [
       {
         id: "account",
