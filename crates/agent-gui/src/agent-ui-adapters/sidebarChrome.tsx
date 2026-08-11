@@ -1,4 +1,3 @@
-import iconSimpleUrl from "../../src-tauri/icons/icon-simple.png";
 import { AppUpdateButton } from "../components/AppUpdateButton";
 import { isMacOsTauri, MacOsTitleBarSpacer } from "../components/MacOsTitleBarSpacer";
 import type { AppUpdateController } from "../lib/appUpdates";
@@ -11,14 +10,14 @@ export function DesktopSidebarBrand() {
   return (
     <div className="flex min-w-0 -translate-y-0.5 items-center gap-2">
       <img
-        src={iconSimpleUrl}
+        src="/zeroagent-logo.png"
         alt=""
         aria-hidden="true"
         draggable={false}
         className="h-8 w-8 shrink-0 select-none rounded-xl object-contain"
       />
       <div className="min-w-0">
-        <div className="truncate font-semibold tracking-tight">Live Agent</div>
+        <div className="truncate font-semibold tracking-tight">ZeroAgent</div>
       </div>
     </div>
   );

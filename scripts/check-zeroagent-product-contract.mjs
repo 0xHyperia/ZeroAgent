@@ -250,6 +250,20 @@ requireMatch("crates/agent-ui/src/pages/settings/providerUtils.ts", /ZeroAgent\/
 requireMatch("crates/agent-gui/src-tauri/src/services/provider_usage.rs", /ZeroAgent\/1\.0/, "Rust Provider 预设仍暴露上游 User-Agent");
 requireMatch("crates/agent-gui/src-tauri/src/commands/integration/mcp.rs", /"name": "ZeroAgent"/, "MCP 客户端身份不是 ZeroAgent");
 requireMatch("crates/agent-gui/src-tauri/src/services/skills/builtin.rs", /name: "zeroagent-code-review"/, "内置 Code Review Skill 未使用 ZeroAgent 身份");
+for (const path of [
+  "crates/agent-gui/src/agent-ui-adapters/assistantAvatar.ts",
+  "crates/agent-gateway/web/src/agent-ui-adapters/assistantAvatar.ts",
+]) {
+  requireMatch(path, /\/zeroagent-logo\.png/, "对话助手头像未使用 ZeroAgent Logo");
+  if (/icon-simple\.png|iconSimpleUrl/.test(read(path))) {
+    failures.push(`${path}：对话助手头像仍引用上游 Logo`);
+  }
+}
+requireMatch(
+  "crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx",
+  /\/zeroagent-logo\.png[\s\S]*ZeroAgent/,
+  "Desktop 对话侧栏未使用 ZeroAgent 品牌",
+);
 
 for (const path of [
   "crates/agent-gateway/web/src/i18n/config.ts",
@@ -271,7 +285,7 @@ for (const path of trackedFiles.filter(
       path === "crates/agent-gateway/proto/v2/gateway.proto") &&
     /\.(?:ts|tsx|proto)$/.test(path),
 )) {
-  if (/LiveAgent/.test(read(path))) {
+  if (/LiveAgent|Live Agent/.test(read(path))) {
     failures.push(`${path}：运行时源码仍包含上游产品身份 LiveAgent`);
   }
 }
