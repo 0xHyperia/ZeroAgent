@@ -22,7 +22,7 @@ import {
   type RelayUser,
   registerRelay,
 } from "@/lib/relay/client";
-import { createUuid } from "@/lib/shared/id";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
 const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";

@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => ({
     dedupe: ["react", "react-dom"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@liveagent/app": path.resolve(__dirname, "./src"),
+      "@liveagent/adapters": path.resolve(__dirname, "./src/agent-ui-adapters"),
+      "@liveagent/ui": path.resolve(__dirname, "../../agent-ui/src"),
       "@tauri-apps/api/core": path.resolve(__dirname, "./src/shims/tauriCore.ts"),
       "@tauri-apps/api/event": path.resolve(__dirname, "./src/shims/tauriEvent.ts"),
       "@tauri-apps/plugin-opener": path.resolve(__dirname, "./src/shims/tauriOpener.ts"),

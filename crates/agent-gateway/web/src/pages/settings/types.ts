@@ -24,6 +24,7 @@ export type SettingsPageProps = {
   onBack: () => void;
   initialSection?: SectionId;
   onSectionChange?: (section: SectionId) => void;
+  initialProviderId?: string;
   hiddenSections?: SectionId[];
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;

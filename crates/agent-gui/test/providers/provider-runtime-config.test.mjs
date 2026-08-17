@@ -36,6 +36,7 @@ test("createProviderRuntimeConfig carries every provider transport field", () =>
 
   assert.equal(runtime.baseUrl, "https://relay.example/v1");
   assert.equal(runtime.apiKey, "test-key");
+  // User-defined headers pass through without a built-in identity header.
   assert.deepEqual(runtime.customHeaders, [{ key: "X-Trace-Id", value: "abc" }]);
   assert.equal(runtime.promptCachingEnabled, true);
   assert.equal(runtime.promptCacheRetention, "long");

@@ -1,8 +1,8 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, RefreshCw, Shield, Upload, Wallet } from "../../components/icons";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Label } from "@liveagent/ui/components/ui/label";
 import {
   bindRelayEmail,
   changeRelayPassword,

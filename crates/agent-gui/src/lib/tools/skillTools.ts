@@ -1,8 +1,8 @@
 import type { Tool, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
+import { isAlwaysEnabledSkillName } from "@liveagent/ui/lib/skills/builtin";
 
-import { manageSkill, notifySkillsDiscoveryUpdated } from "../skills";
-import { isAlwaysEnabledSkillName } from "../skills/builtin";
+import { manageSkill, notifySkillsDiscoveryUpdated } from "@liveagent/ui/lib/skills/index";
+import { Type } from "typebox";
 import {
   type BuiltinToolBundle,
   createBuiltinMetadataMap,
@@ -292,11 +292,11 @@ function buildSkillReadPathRules(path: string) {
   const baseDir = skillBaseDirFromPath(path);
   return [
     "",
-    "<LiveAgentSkillFileRules>",
+    "<ZeroAgentSkillFileRules>",
     `- This Skill file was read from skill://${baseDir}/... . For sibling files, use file tools with paths that start with skill://${baseDir}/.`,
     "- If the Skill text includes shell snippets that read Skill files with cat/ls/find/grep, use the dedicated file tools for those reads.",
     `- Use Read/List/Glob/Grep with path="skill://${baseDir}/..." to read or locate Skill files. Do not use Bash for those file operations.`,
-    "</LiveAgentSkillFileRules>",
+    "</ZeroAgentSkillFileRules>",
   ].join("\n");
 }
 
@@ -597,7 +597,7 @@ export function createSkillTools(
     workdir?: string;
     skillAccessPolicy?: SkillAccessPolicy;
     onManagedSkillsChanged?: (change: {
-      action: "install" | "create";
+      action: "install" | "create" | "delete";
       names: string[];
       baseDirs: string[];
     }) => void | Promise<void>;
@@ -607,7 +607,7 @@ export function createSkillTools(
   const toolSkillsManager: Tool = {
     name: "SkillsManager",
     description:
-      "Read and manage Skills in LiveAgent's fixed user Skills directory. Use action=read to read a Skill entry file, action=list to inspect the enabled Skills visible to this chat, action=install to import a local directory/archive/HTTP(S) download/GitHub URL, action=clawhub_search to search or browse ClawHub, action=clawhub_install with a ClawHub slug to download and install a Skill from ClawHub, action=create to create a new Skill from a summarized workflow, action=validate to check an enabled managed Skill, action=package to create a .skill archive, and action=delete to permanently delete an installed user Skill. For files referenced inside an enabled Skill, use Read/List/Grep/Glob/Write/Edit/Delete with skill://<baseDir>/... paths; this allows maintaining or optimizing enabled Skills.",
+      "Read and manage Skills in ZeroAgent's fixed user Skills directory. Use action=read to read a Skill entry file, action=list to inspect the enabled Skills visible to this chat, action=install to import a local directory/archive/HTTP(S) download/GitHub URL, action=clawhub_search to search or browse ClawHub, action=clawhub_install with a ClawHub slug to download and install a Skill from ClawHub, action=create to create a new Skill from a summarized workflow, action=validate to check an enabled managed Skill, action=package to create a .skill archive, and action=delete to permanently delete an installed user Skill. For files referenced inside an enabled Skill, use Read/List/Grep/Glob/Write/Edit/Delete with skill://<baseDir>/... paths; this allows maintaining or optimizing enabled Skills.",
     parameters: SKILL_MANAGER_PARAMETERS,
   };
 
@@ -646,6 +646,7 @@ export function createSkillTools(
         { workdir: params.workdir },
       );
       enforceSkillManagerAccessPolicy(payload, skillAccessPolicy);
+
       const result = await manageSkill(payload);
       const visibleResult = filterManageSkillResult(result, skillAccessPolicy);
       if (
@@ -669,6 +670,18 @@ export function createSkillTools(
         notifySkillsDiscoveryUpdated();
       }
       if (result.action === "delete") {
+        const deletedName = typeof payload.name === "string" ? payload.name.trim() : "";
+        if (deletedName) {
+          try {
+            await params.onManagedSkillsChanged?.({
+              action: "delete",
+              names: [deletedName],
+              baseDirs: [],
+            });
+          } catch (error) {
+            console.warn("Failed to remove deleted Skill from settings", error);
+          }
+        }
         notifySkillsDiscoveryUpdated();
       }
 

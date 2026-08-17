@@ -38,6 +38,9 @@ export default defineConfig(async () => {
         new URL("./node_modules/@sinclair/typebox/build/esm/index.mjs", import.meta.url),
       ),
       "@": fileURLToPath(new URL("../agent-gateway/web/src", import.meta.url)),
+      "@liveagent/app": fileURLToPath(new URL("./src", import.meta.url)),
+      "@liveagent/adapters": fileURLToPath(new URL("./src/agent-ui-adapters", import.meta.url)),
+      "@liveagent/ui": fileURLToPath(new URL("../agent-ui/src", import.meta.url)),
     },
   },
   define: {

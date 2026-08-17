@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Label } from "@liveagent/ui/components/ui/label";
 import { Check, Key, Loader2, Sparkles, X } from "../icons";
 import { GroupMultiSelect } from "../relay/GroupMultiSelect";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 import {
   createRelayApiKeys,
   listRelayApiKeys,

@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,7 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@liveagent/ui/components/ui/dropdown-menu";
 import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
 import { requestMobileAppUpdateCheck } from "@/lib/mobileAppUpdate";
 import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";

@@ -161,8 +161,11 @@ type ClientHello struct {
 	SelectionLease string `protobuf:"bytes,13,opt,name=selection_lease,json=selectionLease,proto3" json:"selection_lease,omitempty"`
 	WorkspaceId    string `protobuf:"bytes,14,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	RuntimeKind    string `protobuf:"bytes,15,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Optional feature identifiers supported by this client. Reliable desktop
+	// chat ingress is negotiated with "CHAT_INGRESS_V1".
+	Capabilities  []string `protobuf:"bytes,16,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClientHello) Reset() {
@@ -300,6 +303,13 @@ func (x *ClientHello) GetRuntimeKind() string {
 	return ""
 }
 
+func (x *ClientHello) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 // ServerHello 是服务端对 ClientHello 的应答；ok=false 时随即关闭连接。
 type ServerHello struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -317,7 +327,9 @@ type ServerHello struct {
 	WorkspaceId            string `protobuf:"bytes,9,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	RuntimeKind            string `protobuf:"bytes,10,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"`
 	// Canonical account-owned Agent identifier. device_id is retained for one migration release.
-	AgentId       string `protobuf:"bytes,11,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	AgentId string `protobuf:"bytes,11,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// Feature identifiers supported by the gateway.
+	Capabilities  []string `protobuf:"bytes,12,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -427,6 +439,13 @@ func (x *ServerHello) GetAgentId() string {
 		return x.AgentId
 	}
 	return ""
+}
+
+func (x *ServerHello) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
 }
 
 // PingFrame / PongFrame 是应用层心跳：WS 控制帧 ping 探测网络栈，本帧探测页面 JS/事件循环存活。
@@ -2920,7 +2939,7 @@ const file_proto_v2_gateway_ws_proto_rawDesc = "" +
 	"\x0fDeviceWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x03 \x01(\tR\x04path\"\xc9\x04\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\"\xed\x04\n" +
 	"\vClientHello\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x124\n" +
 	"\x04role\x18\x02 \x01(\x0e2 .liveagent.gateway.v2.ClientRoleR\x04role\x12\x14\n" +
@@ -2941,7 +2960,8 @@ const file_proto_v2_gateway_ws_proto_rawDesc = "" +
 	"workspaces\x12'\n" +
 	"\x0fselection_lease\x18\r \x01(\tR\x0eselectionLease\x12!\n" +
 	"\fworkspace_id\x18\x0e \x01(\tR\vworkspaceId\x12!\n" +
-	"\fruntime_kind\x18\x0f \x01(\tR\vruntimeKind\"\xf4\x02\n" +
+	"\fruntime_kind\x18\x0f \x01(\tR\vruntimeKind\x12\"\n" +
+	"\fcapabilities\x18\x10 \x03(\tR\fcapabilities\"\x98\x03\n" +
 	"\vServerHello\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1d\n" +
@@ -2956,7 +2976,8 @@ const file_proto_v2_gateway_ws_proto_rawDesc = "" +
 	"\fworkspace_id\x18\t \x01(\tR\vworkspaceId\x12!\n" +
 	"\fruntime_kind\x18\n" +
 	" \x01(\tR\vruntimeKind\x12\x19\n" +
-	"\bagent_id\x18\v \x01(\tR\aagentId\")\n" +
+	"\bagent_id\x18\v \x01(\tR\aagentId\x12\"\n" +
+	"\fcapabilities\x18\f \x03(\tR\fcapabilities\")\n" +
 	"\tPingFrame\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\")\n" +
 	"\tPongFrame\x12\x1c\n" +

@@ -813,13 +813,13 @@ pub(crate) fn run_shell_script_with_envs(
         }
         if shell_profile.platform == "windows" {
             stderr_str.push_str(
-                "LiveAgent warning: command exited, but stdout/stderr remained open after exit. \
+                "ZeroAgent warning: command exited, but stdout/stderr remained open after exit. \
 This usually means a background process inherited the tool pipes. Use ManagedProcess for \
-long-running Windows commands so LiveAgent can capture logs and stop the process tree.",
+long-running Windows commands so ZeroAgent can capture logs and stop the process tree.",
             );
         } else {
             stderr_str.push_str(
-                "LiveAgent warning: command exited, but stdout/stderr remained open after exit. \
+                "ZeroAgent warning: command exited, but stdout/stderr remained open after exit. \
 This usually means a background process inherited the tool pipes. Redirect long-running \
 process output to a log file, for example: `nohup command > /tmp/liveagent-task.log 2>&1 < /dev/null &`.",
             );
@@ -1046,7 +1046,7 @@ mod tests {
         let started = Instant::now();
         let result = run_shell_script(
             temp_dir.display().to_string(),
-            "sleep 5 & echo ready".to_string(),
+            "sleep 15 & background_pid=$!; echo ready:$background_pid".to_string(),
             None,
             Some(60_000),
             None,
@@ -1054,16 +1054,26 @@ mod tests {
             None,
         )
         .expect("shell run should return a response");
+        let elapsed = started.elapsed();
+        let background_pid = result
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("ready:"))
+            .expect("shell should report the background process id")
+            .trim();
+        let _ = std::process::Command::new("kill")
+            .arg(background_pid)
+            .status();
 
         let _ = fs::remove_dir_all(&temp_dir);
 
         assert_eq!(result.exit_code, 0);
         assert!(result.stdio_open_after_exit);
-        assert!(result.stdout.contains("ready"));
+        assert!(result.stdout.contains("ready:"));
         assert!(result.stderr.contains("stdout/stderr remained open"));
         assert!(
-            started.elapsed() < Duration::from_secs(3),
-            "background stdio leak should not block until the background process exits"
+            elapsed < Duration::from_secs(10),
+            "background stdio leak should not block until the background process exits; elapsed: {elapsed:?}"
         );
     }
 

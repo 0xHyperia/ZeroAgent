@@ -7,8 +7,8 @@ import {
   ORGANIZER_GLOBAL_INVENTORY_CHARS,
   ORGANIZER_META_BODY_EXCERPT_CHARS,
   ORGANIZER_TOPIC_CLUSTER_SIZE,
-} from "../config";
-import type { OrganizerMode } from "../schema";
+} from "@liveagent/ui/lib/memory/config";
+import type { OrganizerMode } from "@liveagent/ui/lib/memory/schema";
 
 export const ORGANIZER_PLAN_TOOL_NAME = "SubmitMemoryOrganizePlan";
 export const ORGANIZER_TOPIC_TOOL_NAME = "SubmitMemoryTopicClusters";
@@ -22,9 +22,9 @@ export const ORGANIZER_MODE_DESCRIPTIONS: Record<OrganizerMode, string> = {
     "Actively consolidate topically related fragments. Cross-scope and cross-type merges are allowed when the unified note preserves all evidence. Reviewed entries can be merged, rewritten, or superseded. Emit at least 30% non-keep decisions when redundancy is visible.",
 };
 
-export const ORGANIZER_SYSTEM_PROMPT = `# LiveAgent Memory Organizer
+export const ORGANIZER_SYSTEM_PROMPT = `# ZeroAgent Memory Organizer
 
-You are running an offline memory organization pass for LiveAgent.
+You are running an offline memory organization pass for ZeroAgent.
 
 You ONLY organize existing persistent memories supplied by the client. Do not extract new facts from conversations. Do not create facts from inference. Do not modify, merge, rewrite, or delete daily memories.
 
@@ -82,7 +82,7 @@ Before per-cluster work, you receive a Global inventory block listing all cluste
 
 Every tool submission summary must include compression data so the user can see expected reduction.`;
 
-export const TOPIC_CLUSTER_SYSTEM_PROMPT = `You are grouping existing LiveAgent memories for an offline organization pass.
+export const TOPIC_CLUSTER_SYSTEM_PROMPT = `You are grouping existing ZeroAgent memories for an offline organization pass.
 
 Do not propose edits. Do not create, update, or delete memories. Only group supplied slugs by semantic topic so a later pass can compare related memories.
 

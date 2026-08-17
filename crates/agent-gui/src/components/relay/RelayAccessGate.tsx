@@ -1,4 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Label } from "@liveagent/ui/components/ui/label";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import {
   createRelayApiKeys,
@@ -33,9 +36,6 @@ import {
   RefreshCw,
   Shield,
 } from "../icons";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 import { GroupMultiSelect } from "./GroupMultiSelect";
 import { ZeroAgentLogo } from "./ZeroAgentLogo";
 

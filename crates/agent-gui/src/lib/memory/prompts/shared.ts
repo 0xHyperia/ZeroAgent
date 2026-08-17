@@ -2,7 +2,7 @@
 // the injection prompt, the extraction prompt, and the MemoryManager tool
 // schema all compose from here, so wording can never drift between audiences.
 
-import { CONFIDENCE_CONTRACT } from "../schema";
+import { CONFIDENCE_CONTRACT } from "@liveagent/ui/lib/memory/schema";
 
 export const MEMORY_SLUG_POLICY =
   "Slugs are stable internal IDs. Never include the user's current name, old name, nickname, or persona label in slugs; use semantic IDs like user-name, user-communication-style, user-investment, project-purpose, or reference-api-contract.";
@@ -87,7 +87,7 @@ export const MEMORY_WRITE_EVIDENCE_POLICY = [
   "- source_quote: a verbatim user quote, max 80 characters",
   "- reasoning: one short sentence explaining why this is durable",
   "- supersedes / conflicts_with / override_reject when replacing, conflicting with, or overriding previous memory.",
-  "LiveAgent stores these fields as a structured evidence block alongside the memory body.",
+  "ZeroAgent stores these fields as a structured evidence block alongside the memory body.",
 ].join("\n");
 
-export const MEMORY_CONFIDENCE_CONTRACT_LINE = `confidence=high requires source_quote of >=${CONFIDENCE_CONTRACT.highMinQuoteChars} characters. LiveAgent auto-downgrades high→medium when the quote is shorter, and medium→low when the quote is empty; the stored evidence records auto_downgraded: true so your self-rating remains auditable.`;
+export const MEMORY_CONFIDENCE_CONTRACT_LINE = `confidence=high requires source_quote of >=${CONFIDENCE_CONTRACT.highMinQuoteChars} characters. ZeroAgent auto-downgrades high→medium when the quote is shorter, and medium→low when the quote is empty; the stored evidence records auto_downgraded: true so your self-rating remains auditable.`;

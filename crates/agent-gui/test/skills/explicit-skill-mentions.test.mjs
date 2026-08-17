@@ -3,7 +3,7 @@ import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const loader = createTsModuleLoader();
-const skills = loader.loadModule("src/lib/skills/index.ts");
+const skills = loader.loadModule("@liveagent/ui/lib/skills/index.ts");
 
 const enabledSkills = [
   {
@@ -27,8 +27,8 @@ test("extractSkillMentionNamesFromText finds explicit skill tokens without treat
     ),
     ["code-review", "release_notes"],
   );
-  assert.deepEqual(skills.extractSkillMentionNamesFromText("/liveagent-code-review"), [
-    "liveagent-code-review",
+  assert.deepEqual(skills.extractSkillMentionNamesFromText("/zeroagent-code-review"), [
+    "zeroagent-code-review",
   ]);
   // "$" is no longer a skill mention marker.
   assert.deepEqual(

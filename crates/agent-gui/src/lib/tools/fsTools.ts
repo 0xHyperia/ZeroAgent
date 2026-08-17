@@ -5,6 +5,7 @@ import type {
   ToolCall,
   ToolResultMessage,
 } from "@earendil-works/pi-ai";
+import { invokeFs, isFsBackendError } from "@liveagent/ui/lib/tools/fsBackend";
 import { invoke } from "@tauri-apps/api/core";
 import { Type } from "typebox";
 import {
@@ -27,7 +28,6 @@ import {
   type WriteResultDetails,
 } from "./builtinTypes";
 import type { FileToolState } from "./fileToolState";
-import { invokeFs, isFsBackendError } from "./fsBackend";
 import { buildFsErrorText, buildRequiresFullReadText, buildWriteDirectoryText } from "./pathErrors";
 import { formatResolvedTarget, type ResolvedPath, ToolPathResolver } from "./pathUtils";
 import type { SkillAccessPolicy } from "./skillAccessPolicy";
@@ -574,7 +574,7 @@ export function createFsTools(params: {
   const toolDelete: Tool = {
     name: "Delete",
     description:
-      "The structured, tracked way to intentionally delete a workspace or enabled Skill file/directory. Directories are removed recursively; use one Delete call per target. Always use this instead of Bash, ManagedProcess, shell scripts, or deletion-oriented CLIs such as rm/rmdir/unlink/find -delete/git rm/git clean/PowerShell Remove-Item/cmd del, erase, or rd. Delete results feed LiveAgent's Edited Files and file-ledger tracking.",
+      "The structured, tracked way to intentionally delete a workspace or enabled Skill file/directory. Directories are removed recursively; use one Delete call per target. Always use this instead of Bash, ManagedProcess, shell scripts, or deletion-oriented CLIs such as rm/rmdir/unlink/find -delete/git rm/git clean/PowerShell Remove-Item/cmd del, erase, or rd. Delete results feed ZeroAgent's Edited Files and file-ledger tracking.",
     parameters: strictToolParameters({
       path: Type.String({
         description:

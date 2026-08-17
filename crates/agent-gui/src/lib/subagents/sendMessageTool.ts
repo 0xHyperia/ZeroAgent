@@ -1,10 +1,9 @@
 import type { Tool, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { SubagentMessageDetails } from "@liveagent/ui/lib/subagents/protocol";
 import { Type } from "typebox";
-
 import { type BuiltinToolBundle, createBuiltinMetadataMap } from "../tools/builtinTypes";
 import { displayRecipientLabel } from "./bus";
 import { toolErrorResult } from "./errors";
-import type { SubagentMessageDetails } from "./protocol";
 import type { SubagentConversationStore } from "./store";
 import {
   SEND_MESSAGE_TOOL_NAME,
@@ -67,7 +66,7 @@ export function createSendMessageTools(params: {
   const toolSendMessage: Tool = {
     name: SEND_MESSAGE_TOOL_NAME,
     description: [
-      "Send a Markdown message through the LiveAgent Message Bus to the parent agent, all agents, or one stable delegated-agent id.",
+      "Send a Markdown message through the ZeroAgent Message Bus to the parent agent, all agents, or one stable delegated-agent id.",
       "Use to=parent for the main agent, to=* for a shared broadcast, or to=<stable_agent_id> for a direct inbox message. Unknown recipients are rejected.",
       "Messages sent to parent are private to the parent. If other agents need to read the report, send a concise Markdown copy or summary to to=*.",
       "Use channel=question for questions that need a reply and channel=decision for durable shared decisions. The message body must be concise Markdown.",
@@ -186,7 +185,7 @@ export function createSendMessageTools(params: {
         {
           type: "text",
           text: [
-            `Message sent to ${displayRecipientLabel(record.recipientId)} via LiveAgent Message Bus.`,
+            `Message sent to ${displayRecipientLabel(record.recipientId)} via ZeroAgent Message Bus.`,
             `seq=${record.seq}`,
             `channel=${record.channel}`,
           ].join("\n"),

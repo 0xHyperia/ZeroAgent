@@ -141,6 +141,11 @@ html[data-zeroagent-platform="android"] [contenteditable="true"] {
   }
 }
 
+html[data-liveagent-webui="gateway"] .settings-skills-search,
+html[data-liveagent-webui="gateway"] .git-branch-selector-input {
+  font-size: 0.75rem;
+}
+
 html[data-liveagent-webui="gateway"] .chat-history-new-conversation-button {
   font-size: 14px;
   line-height: 20px;
@@ -1125,6 +1130,9 @@ html[data-liveagent-webui="gateway"] [role="textbox"]:focus-visible {
 }
 
 @media (hover: none), (pointer: coarse) {
+  html[data-liveagent-webui="gateway"] .changed-file-row-action {
+    display: none;
+  }
   .chat-user-bubble-actions,
   .chat-assistant-actions {
     opacity: 1 !important;
@@ -2194,7 +2202,6 @@ html[data-liveagent-webui="gateway"] .settings-tools-view-enter {
   display: block;
   width: 60px;
   height: 60px;
-  border-radius: 16px;
   filter: drop-shadow(0 6px 14px hsl(206 45% 28% / 0.18));
   user-select: none;
 }

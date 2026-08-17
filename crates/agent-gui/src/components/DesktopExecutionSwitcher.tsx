@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@liveagent/ui/components/ui/button";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
 import { ChevronDown, Loader2, MonitorSmartphone, X } from "./icons";
-import { Button } from "./ui/button";
 
 type Props = {
   environments: DesktopEnvironment[];

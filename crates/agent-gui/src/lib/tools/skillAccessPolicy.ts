@@ -1,4 +1,4 @@
-import { isAlwaysEnabledSkillName } from "../skills/builtin";
+import { isAlwaysEnabledSkillName } from "@liveagent/ui/lib/skills/builtin";
 
 export type SkillAccessPolicy = {
   allowedSkillNames?: readonly string[];
@@ -235,7 +235,7 @@ export function assertSkillMutationAllowed(
     throw new Error(
       [
         `${operation} is blocked: built-in Skill "${baseDir}" is protected and cannot be modified by the model.`,
-        "Built-in Skills may be read and used, but their files are managed by LiveAgent.",
+        "Built-in Skills may be read and used, but their files are managed by ZeroAgent.",
         "Create or update a separate user Skill instead.",
       ].join(" "),
     );

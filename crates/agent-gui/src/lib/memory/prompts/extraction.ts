@@ -3,8 +3,11 @@
 // one forced SubmitMemoryPlan tool call. No fenced-block output, no sentinel
 // status strings — status text is rendered by the caller through i18n.
 
-import type { MemoryConfidence, MemoryReviewerMode } from "../schema";
-import { DEFAULT_MEMORY_REVIEWER_MODE, EXTRACTION_PLAN_ACTIONS } from "../schema";
+import type { MemoryConfidence, MemoryReviewerMode } from "@liveagent/ui/lib/memory/schema";
+import {
+  DEFAULT_MEMORY_REVIEWER_MODE,
+  EXTRACTION_PLAN_ACTIONS,
+} from "@liveagent/ui/lib/memory/schema";
 import {
   MEMORY_CONFIDENCE_CONTRACT_LINE,
   MEMORY_CONFIDENCE_RUBRIC,
@@ -17,7 +20,7 @@ import {
 export const EXTRACTION_SYSTEM_PROMPT = [
   "# Post-Turn Memory Extraction",
   "",
-  "You are LiveAgent's hidden post-turn memory extractor. The user never sees this exchange; only concise status text and MemoryManager tool traces may surface in developer views.",
+  "You are ZeroAgent's hidden post-turn memory extractor. The user never sees this exchange; only concise status text and MemoryManager tool traces may surface in developer views.",
   "Your only job is to decide which durable memories the just-finished turn justifies, then submit that decision.",
   "Rules:",
   "- Do not answer the user's original request.",

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
@@ -30,12 +29,9 @@ test("failed desktop token refresh clears credentials and returns to the login g
     });
 
   try {
-    const proxyPath = fileURLToPath(
-      new URL("../../src/lib/providers/proxy.ts", import.meta.url),
-    );
     const loader = createTsModuleLoader({
       mocks: {
-        [proxyPath]: {
+        "@liveagent/ui/lib/providers/proxy": {
           prepareProxyRequest: async (_providerId, baseUrl, headers) => ({ baseUrl, headers }),
         },
       },
@@ -85,12 +81,9 @@ test("an HTML 401 response still clears the desktop session before its body is p
   globalThis.fetch = async () => new Response("<h1>Unauthorized</h1>", { status: 401 });
 
   try {
-    const proxyPath = fileURLToPath(
-      new URL("../../src/lib/providers/proxy.ts", import.meta.url),
-    );
     const loader = createTsModuleLoader({
       mocks: {
-        [proxyPath]: {
+        "@liveagent/ui/lib/providers/proxy": {
           prepareProxyRequest: async (_providerId, baseUrl, headers) => ({ baseUrl, headers }),
         },
       },

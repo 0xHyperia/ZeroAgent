@@ -1,8 +1,8 @@
 import { type FormEvent, useState } from "react";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Input } from "@liveagent/ui/components/ui/input";
+import { Label } from "@liveagent/ui/components/ui/label";
 import { Copy, Loader2, Lock, X } from "../icons";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 
 type RelayKeyCopyDialogProps = {
   keyName: string | null;

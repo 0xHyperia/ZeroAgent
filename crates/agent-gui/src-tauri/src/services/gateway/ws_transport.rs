@@ -24,6 +24,8 @@ use super::gateway_proto::v2;
 pub(crate) const GATEWAY_WS_SUBPROTOCOL: &str = "liveagent.v2.pb";
 /// v2 协议版本号（`ClientHello.protocol_version`）。
 pub(crate) const GATEWAY_WS_PROTOCOL_VERSION: u32 = 2;
+/// 可靠聊天入口协议的能力标识。
+pub(crate) const CHAT_INGRESS_V1_CAPABILITY: &str = "CHAT_INGRESS_V1";
 /// 桌面端主链路路径。
 pub(crate) const GATEWAY_WS_AGENT_PATH: &str = "/ws/v2/agent";
 /// 终端数据面路径。
@@ -88,6 +90,7 @@ pub(crate) fn build_client_hello(
         selection_lease: String::new(),
         workspace_id: String::new(),
         runtime_kind: String::new(),
+        capabilities: vec![CHAT_INGRESS_V1_CAPABILITY.to_string()],
     }
 }
 

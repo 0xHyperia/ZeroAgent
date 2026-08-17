@@ -1,4 +1,4 @@
-import { createUuid } from "../shared/id";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 
 const INSTALLATION_ID_KEY = "zeroagent.installation-id";
 

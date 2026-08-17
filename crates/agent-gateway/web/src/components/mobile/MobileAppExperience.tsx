@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw, X } from "../icons";
-import { Button } from "../ui/button";
+import { Button } from "@liveagent/ui/components/ui/button";
 import {
   checkMobileAppUpdate,
   downloadMobileAppUpdate,

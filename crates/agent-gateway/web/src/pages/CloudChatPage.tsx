@@ -9,17 +9,18 @@ import {
 } from "react";
 import { buildTextFromComposerDraft } from "@/app/chatDraft";
 import { UserMenu } from "@/app/UserMenu";
-import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
+import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import {
   ChatHistorySidebar,
   type ChatHistorySidebarMutationKind,
-} from "@/components/chat/ChatHistorySidebar";
-import type { MentionComposerHandle } from "@/components/chat/MentionComposer";
+} from "@liveagent/ui/components/chat/ChatHistorySidebar";
+import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useLocale } from "@/i18n";
+import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
+import { useLocale } from "@liveagent/ui/i18n/index";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
 import type { PendingUploadedFile } from "@/lib/chat/uploadedFiles";
@@ -51,16 +52,15 @@ import {
   getNextTheme,
   type ReasoningLevel,
 } from "@/lib/settings";
-import { createUuid } from "@/lib/shared/id";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
   deleteSidebarConversations,
   type SidebarBatchDeleteOptions,
-} from "@/lib/sidebar/batchDelete";
-import type { SidebarConversation } from "@/lib/sidebar/types";
+} from "@liveagent/ui/lib/sidebar/batchDelete";
+import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { WebSettingsSaveState } from "@/lib/webSettings";
-import { ChatComposerBar } from "@/pages/chat/ChatComposerBar";
-import { ChatHeader } from "@/pages/chat/ChatHeader";
-import { SettingsPage } from "@/pages/SettingsPage";
+import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
+import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import type { SectionId } from "@/pages/settings/types";
 
 type Conversation = {
@@ -677,6 +677,7 @@ export function CloudChatPage({
             onDeleteConversations={removeConversations}
             onLoadMore={() => undefined}
             onCloseSidebar={() => setSidebarOpen(false)}
+            onOpenSettings={() => setAccountSettingsOpen(true)}
             accountMenu={
               <UserMenu
                 open={userMenuOpen}
@@ -698,29 +699,37 @@ export function CloudChatPage({
 
           <main className="gateway-main-shell">
             <div className="gateway-main-backdrop" />
-            <div
-              className="gateway-chat-frame zone-font-scale"
-              style={
-                { "--zone-font-scale": settings.customSettings.fontScale.chat } as CSSProperties
-              }
-            >
-              <ChatHeader
-                settings={settings}
-                hasModels={modelOptions.length > 0}
-                currentModelLabel={model}
-                modelOptions={modelOptions}
-                selectedValue={selectedModelValue}
-                modelsLoading={modelsLoading}
-                modelsRefreshing={modelsLoading}
-                emptyModelAction={{
+            <ApplicationView
+              activeView="chat"
+              settings={settings}
+              setSettings={setSettings}
+              isAgentMode={false}
+              sidebarOpen={sidebarOpen}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              className="contents"
+              chat={{
+                containerProps: {
+                  className: "gateway-chat-frame zone-font-scale",
+                  style: {
+                    "--zone-font-scale": settings.customSettings.fontScale.chat,
+                  } as CSSProperties,
+                },
+                hasModels: modelOptions.length > 0,
+                currentModelLabel: model,
+                modelOptions,
+                selectedValue: selectedModelValue,
+                modelsLoading,
+                modelsRefreshing: modelsLoading,
+                emptyModelAction: {
                   label: t("chat.createApiKey"),
                   onSelect: () => {
                     setSettingsSection("providers");
                     setAccountSettingsOpen(true);
                   },
-                }}
-                sidebarOpen={sidebarOpen}
-                onSelectModel={(next) => {
+                },
+                onSelectExecutionMode: () => undefined,
+                sidebarOpen,
+                onSelectModel: (next) => {
                   const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
                   setModel(next.model);
                   setProviderKeyId(nextProviderKeyId);
@@ -731,101 +740,109 @@ export function CloudChatPage({
                   void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch((cause) =>
                     setError(String(cause)),
                   );
-                }}
-                onRefreshModels={refreshModels}
-                onOpenSettings={(section) => {
+                },
+                onRefreshModels: refreshModels,
+                onOpenSettings: (section) => {
                   if (section) setSettingsSection(section);
                   setAccountSettingsOpen(true);
-                }}
-                onToggleTheme={() =>
-                  setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) }))
-                }
-                onOpenSidebar={() => setSidebarOpen(true)}
-                preThemeActions={
+                },
+                onToggleTheme: () =>
+                  setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) })),
+                onOpenSidebar: () => setSidebarOpen(true),
+                preThemeActions: (
                   <ExecutionEnvironmentSwitcher
                     environments={environments}
                     selection={selection}
                     disabled={streaming}
                     onSwitch={onSwitch}
                   />
-                }
-              />
-              {error && transcriptRows.length === 0 ? (
-                <div className="gateway-banner-error">{error}</div>
-              ) : null}
-              <section className="gateway-transcript-stage">
-                <div className="gateway-transcript-scroll-shell">
-                  <ScrollArea
-                    viewportRef={setTranscriptViewport}
-                    className="gateway-transcript-scroll"
-                  >
-                    <GatewayTranscript
-                      conversationId={conversationId}
-                      rows={transcriptRows}
-                      liveStartIndex={streaming ? Math.max(0, transcriptRows.length - 1) : -1}
-                      activeTurnKey={streaming ? messages.at(-1)?.id : null}
-                      error={error || null}
-                      toolStatus={streaming ? "Vibing..." : null}
-                      isStreaming={streaming}
-                      isLoading={historyLoading}
-                      hasModels={modelOptions.length > 0}
-                      isAgentMode={false}
-                      onOpenSettings={() => {
-                        setSettingsSection("providers");
-                        setAccountSettingsOpen(true);
-                      }}
-                      onSuggestionSelect={(text) => {
-                        composerRef.current?.setText(text);
-                        composerRef.current?.focus();
-                      }}
-                    />
-                  </ScrollArea>
-                </div>
-                <ChatComposerBar
-                  composerRef={composerRef}
-                  isSending={streaming}
-                  isUploadingFiles={false}
-                  isInputDisabled={historyLoading || modelsLoading || modelOptions.length === 0}
-                  allowUploadsWithoutWorkspace
-                  inputPlaceholder="发送消息"
-                  workdir=""
-                  enabledSkills={[]}
-                  isAgentMode={false}
-                  chatRuntimeControls={runtimeControls}
-                  reasoningOptions={["low", "medium", "high"]}
-                  thinkingAlwaysOn={false}
-                  onSend={() => void send()}
-                  onStop={() => abortRef.current?.abort()}
-                  onComposerBusyChange={() => undefined}
-                  onChatRuntimeControlsChange={(patch) => {
-                    setRuntimeControls((current) => ({ ...current, ...patch }));
-                    if (patch.reasoning) {
-                      setReasoning(patch.reasoning);
-                      void saveWebSettings(model, patch.reasoning).catch((cause) =>
-                        setError(String(cause)),
-                      );
-                    }
-                  }}
-                  onPickReadableFiles={() => fileRef.current?.click()}
-                  onPasteFiles={(files) => void attachFileList(files)}
-                  loadHistoryPrompts={() =>
-                    messages
-                      .filter((message) => message.role === "user")
-                      .map((message) => messageText(message.content))
-                      .filter(Boolean)
-                  }
-                  pendingUploadedFiles={pendingUploadedFiles}
-                  onRemovePendingUpload={(id) =>
-                    setAttachments((current) => current.filter((item) => item.id !== id))
-                  }
-                  queuedTurns={[]}
-                  onRunQueuedTurnNow={() => undefined}
-                  onMoveQueuedTurnUp={() => undefined}
-                  onEditQueuedTurn={() => undefined}
-                  onRemoveQueuedTurn={() => undefined}
-                />
-              </section>
-            </div>
+                ),
+                content: (
+                  <>
+                    {error && transcriptRows.length === 0 ? (
+                      <div className="gateway-banner-error">{error}</div>
+                    ) : null}
+                    <section className="gateway-transcript-stage">
+                      <div className="gateway-transcript-scroll-shell">
+                        <ScrollArea
+                          viewportRef={setTranscriptViewport}
+                          className="gateway-transcript-scroll"
+                        >
+                          <GatewayTranscript
+                            conversationId={conversationId}
+                            rows={transcriptRows}
+                            liveStartIndex={
+                              streaming ? Math.max(0, transcriptRows.length - 1) : -1
+                            }
+                            activeTurnKey={streaming ? messages.at(-1)?.id : null}
+                            error={error || null}
+                            toolStatus={streaming ? "Vibing..." : null}
+                            isStreaming={streaming}
+                            isLoading={historyLoading}
+                            hasModels={modelOptions.length > 0}
+                            isAgentMode={false}
+                            onOpenSettings={() => {
+                              setSettingsSection("providers");
+                              setAccountSettingsOpen(true);
+                            }}
+                            onSuggestionSelect={(text) => {
+                              composerRef.current?.setText(text);
+                              composerRef.current?.focus();
+                            }}
+                          />
+                        </ScrollArea>
+                      </div>
+                      <ChatComposerBar
+                        surface="web"
+                        composerRef={composerRef}
+                        isSending={streaming}
+                        isUploadingFiles={false}
+                        isInputDisabled={
+                          historyLoading || modelsLoading || modelOptions.length === 0
+                        }
+                        allowUploadsWithoutWorkspace
+                        inputPlaceholder="发送消息"
+                        workdir=""
+                        enabledSkills={[]}
+                        isAgentMode={false}
+                        chatRuntimeControls={runtimeControls}
+                        reasoningOptions={["low", "medium", "high"]}
+                        thinkingAlwaysOn={false}
+                        onSend={() => void send()}
+                        onStop={() => abortRef.current?.abort()}
+                        onComposerBusyChange={() => undefined}
+                        onChatRuntimeControlsChange={(patch) => {
+                          setRuntimeControls((current) => ({ ...current, ...patch }));
+                          if (patch.reasoning) {
+                            setReasoning(patch.reasoning);
+                            void saveWebSettings(model, patch.reasoning).catch((cause) =>
+                              setError(String(cause)),
+                            );
+                          }
+                        }}
+                        onPickReadableFiles={() => fileRef.current?.click()}
+                        onPasteFiles={(files) => void attachFileList(files)}
+                        loadHistoryPrompts={() =>
+                          messages
+                            .filter((message) => message.role === "user")
+                            .map((message) => messageText(message.content))
+                            .filter(Boolean)
+                        }
+                        pendingUploadedFiles={pendingUploadedFiles}
+                        onRemovePendingUpload={(id) =>
+                          setAttachments((current) => current.filter((item) => item.id !== id))
+                        }
+                        queuedTurns={[]}
+                        onRunQueuedTurnNow={() => undefined}
+                        onMoveQueuedTurnUp={() => undefined}
+                        onEditQueuedTurn={() => undefined}
+                        onRemoveQueuedTurn={() => undefined}
+                      />
+                    </section>
+                  </>
+                ),
+              }}
+            />
           </main>
         </div>
 

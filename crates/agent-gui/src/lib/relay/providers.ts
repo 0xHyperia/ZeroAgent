@@ -1,4 +1,4 @@
-import { fetchModelsFromApi } from "../../pages/settings/providerUtils";
+import { fetchModelsFromApi } from "@liveagent/ui/pages/settings/providerUtils";
 import {
   getDefaultUsageQueryConfig,
   type AppSettings,

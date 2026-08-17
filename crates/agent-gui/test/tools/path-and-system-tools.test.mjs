@@ -5,9 +5,7 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const loader = createTsModuleLoader();
 const pathUtils = loader.loadModule("src/lib/tools/pathUtils.ts");
-const systemTools = loader.loadModule("src/lib/tools/customSystemTools.ts");
-const systemToolOptions = loader.loadModule("src/lib/tools/systemToolOptions.ts");
-const skillBuiltinHelpers = loader.loadModule("src/lib/skills/builtin.ts");
+const skillBuiltinHelpers = loader.loadModule("@liveagent/ui/lib/skills/builtin.ts");
 
 test("ToolPathResolver accepts broad workspace path inputs", async () => {
   const resolver = new pathUtils.ToolPathResolver({ workdir: "/workspace/project" });
@@ -469,12 +467,12 @@ test("builtin agent skills stay selected and sort first", () => {
       { name: "z-skill" },
       { name: "skills-installer" },
       { name: "a-skill" },
-      { name: "liveagent-code-review" },
+      { name: "zeroagent-code-review" },
       { name: "skills-creator" },
     ]).map((skill) => skill.name),
-    ["skills-creator", "skills-installer", "a-skill", "liveagent-code-review", "z-skill"],
+    ["skills-creator", "skills-installer", "a-skill", "z-skill", "zeroagent-code-review"],
   );
-  assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("liveagent-code-review"), true);
+  assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("zeroagent-code-review"), true);
   assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("skills-creator"), false);
   assert.equal(skillBuiltinHelpers.isUserSelectableSkillName("workflow-skill"), true);
 });
@@ -1246,10 +1244,10 @@ test("file tools block direct mutations inside backend-verified built-in Skills"
     skillsRootEnabled: true,
     skillsRootDir: "/Users/me/.liveagent/skills",
     skillAccessPolicy: {
-      allowedSkillNames: ["liveagent-code-review"],
-      allowedSkillBaseDirs: ["liveagent-code-review"],
-      protectedSkillNames: ["liveagent-code-review"],
-      protectedSkillBaseDirs: ["liveagent-code-review"],
+      allowedSkillNames: ["zeroagent-code-review"],
+      allowedSkillBaseDirs: ["zeroagent-code-review"],
+      protectedSkillNames: ["zeroagent-code-review"],
+      protectedSkillBaseDirs: ["zeroagent-code-review"],
       allowSkillMutation: true,
     },
     fileState: fileToolState.createFileToolState(),
@@ -1260,13 +1258,13 @@ test("file tools block direct mutations inside backend-verified built-in Skills"
     id: "blocked-builtin-skill-write",
     name: "Write",
     arguments: {
-      path: "skill://liveagent-code-review/SKILL.md",
-      content: "---\nname: liveagent-code-review\ndescription: Changed\n---\n",
+      path: "skill://zeroagent-code-review/SKILL.md",
+      content: "---\nname: zeroagent-code-review\ndescription: Changed\n---\n",
     },
   });
 
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /built-in Skill "liveagent-code-review" is protected/);
+  assert.match(result.content[0].text, /built-in Skill "zeroagent-code-review" is protected/);
   assert.match(result.content[0].text, /cannot be modified by the model/);
   assert.deepEqual(invocations, []);
 });
@@ -1712,7 +1710,7 @@ test("SkillsManager read accepts explicit skill entry paths", async () => {
   assert.equal(result.details.path, "skills-installer/SKILL.md");
   assert.equal(result.details.startLine, 3);
   assert.equal(result.details.numLines, 2);
-  assert.match(result.content[0].text, /<LiveAgentSkillFileRules>/);
+  assert.match(result.content[0].text, /<ZeroAgentSkillFileRules>/);
   assert.match(result.content[0].text, /skill:\/\/skills-installer\/\.\.\./);
   assert.match(result.content[0].text, /path="skill:\/\/skills-installer\/\.\.\."/);
   assert.match(result.content[0].text, /Do not use Bash/);
@@ -1920,10 +1918,10 @@ test("SkillsManager blocks built-in Skill create/install targets before backend 
   const skillTools = skillLoader.loadModule("src/lib/tools/skillTools.ts");
   const bundle = skillTools.createSkillTools({
     skillAccessPolicy: {
-      allowedSkillNames: ["skills-creator", "skills-installer", "liveagent-code-review"],
-      allowedSkillBaseDirs: ["skills-creator", "skills-installer", "liveagent-code-review"],
-      protectedSkillNames: ["liveagent-code-review"],
-      protectedSkillBaseDirs: ["liveagent-code-review"],
+      allowedSkillNames: ["skills-creator", "skills-installer", "zeroagent-code-review"],
+      allowedSkillBaseDirs: ["skills-creator", "skills-installer", "zeroagent-code-review"],
+      protectedSkillNames: ["zeroagent-code-review"],
+      protectedSkillBaseDirs: ["zeroagent-code-review"],
       allowSkillManagement: true,
     },
   });
@@ -1963,11 +1961,11 @@ test("SkillsManager blocks built-in Skill create/install targets before backend 
     name: "SkillsManager",
     arguments: {
       action: "delete",
-      name: "liveagent-code-review",
+      name: "zeroagent-code-review",
     },
   });
   assert.equal(deleteResult.isError, true);
-  assert.match(deleteResult.content[0].text, /built-in Skill "liveagent-code-review" is protected/);
+  assert.match(deleteResult.content[0].text, /built-in Skill "zeroagent-code-review" is protected/);
   assert.deepEqual(invocations, []);
 });
 
@@ -2006,6 +2004,17 @@ test("SkillsManager management can auto-enable installed Skills without exposing
               truncated: false,
               startLine: 1,
               numLines: 4,
+            };
+          }
+          if (action === "delete") {
+            assert.equal(args.payload.name, "new-skill");
+            return {
+              action: "delete",
+              rootDir: "/Users/me/.liveagent/skills",
+              deleted: {
+                name: "new-skill",
+                target: "/Users/me/.liveagent/skills/new-skill",
+              },
             };
           }
           if (action === "list") {
@@ -2130,7 +2139,22 @@ test("SkillsManager management can auto-enable installed Skills without exposing
     });
     assert.equal(readResult.isError, false);
     assert.equal(readResult.details.path, "new-skill/SKILL.md");
-    assert.deepEqual(events, ["liveagent:skills-discovery-updated"]);
+    const deleteResult = await bundle.executeToolCall({
+      type: "toolCall",
+      id: "delete-new-skill",
+      name: "SkillsManager",
+      arguments: { action: "delete", name: " new-skill " },
+    });
+    assert.equal(deleteResult.isError, false);
+    assert.deepEqual(changes.at(-1), {
+      action: "delete",
+      names: ["new-skill"],
+      baseDirs: [],
+    });
+    assert.deepEqual(events, [
+      "liveagent:skills-discovery-updated",
+      "liveagent:skills-discovery-updated",
+    ]);
   } finally {
     if (typeof previousWindow === "undefined") {
       delete globalThis.window;
@@ -2960,58 +2984,6 @@ test("Image generic source infers raw base64 image input", async () => {
     invocations.map((call) => [call.command, call.args.source_type, call.args.mime_type]),
     [["fs_read_image_source", "base64", "image/png"]],
   );
-});
-
-test("custom system tools expose only selected tools for the requested runtime scope", async () => {
-  const bundle = systemTools.createCustomSystemTools({
-    selectedToolIds: ["http_get_test"],
-    runtimeScope: "chat",
-    currentChatModel: { customProviderId: "p", model: "m" },
-  });
-
-  assert.equal(bundle.groupId, "system");
-  assert.deepEqual(bundle.tools.map((tool) => tool.name), ["HttpGetTest"]);
-  assert.equal(bundle.metadataByName.get("HttpGetTest").isReadOnly, true);
-  assert.equal(bundle.metadataByName.get("HttpGetTest").displayCategory, "system");
-
-  const aborted = new AbortController();
-  aborted.abort();
-  const abortedResult = await bundle.executeToolCall(
-    { id: "call-1", name: "HttpGetTest", arguments: {} },
-    aborted.signal,
-  );
-  assert.equal(abortedResult.isError, true);
-  assert.equal(abortedResult.content[0].text, "Cancelled");
-
-  const unknownResult = await bundle.executeToolCall({
-    id: "call-2",
-    name: "MissingTool",
-    arguments: {},
-  });
-  assert.equal(unknownResult.isError, true);
-  assert.match(unknownResult.content[0].text, /Unknown tool/);
-});
-
-test("custom system tool options remain in sync with selectable definitions", () => {
-  assert.deepEqual(systemTools.CUSTOM_SYSTEM_TOOL_OPTIONS, [
-    {
-      id: "http_get_test",
-      label: "本地 HTTP Test",
-      description: "Call the network test endpoint and return the response body.",
-    },
-  ]);
-});
-
-test("system tool options include user-selectable tools", () => {
-  assert.deepEqual(systemToolOptions.SYSTEM_TOOL_OPTIONS, [
-    {
-      id: "http_get_test",
-      label: "本地 HTTP Test",
-      description: "Call the network test endpoint and return the response body.",
-      kind: "custom",
-      runtimeScopes: ["chat", "cron_auto_prompt"],
-    },
-  ]);
 });
 
 test("Write rejection for external paths echoes the resolved path and a corrected example", async () => {

@@ -1,4 +1,4 @@
-import { prepareProxyRequest } from "../providers/proxy";
+import { prepareProxyRequest } from "@liveagent/ui/lib/providers/proxy";
 import type { AppSettings } from "../settings";
 import { getValidRelayAccessToken } from "./client";
 

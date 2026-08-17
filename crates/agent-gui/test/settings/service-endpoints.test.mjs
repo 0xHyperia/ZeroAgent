@@ -17,7 +17,7 @@ const relayAccessGate = readFileSync(
   "utf8",
 );
 const remoteSection = readFileSync(
-  new URL("../../src/pages/settings/RemoteSection.tsx", import.meta.url),
+  new URL("../../../agent-ui/src/pages/settings/RemoteSection.tsx", import.meta.url),
   "utf8",
 );
 const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");

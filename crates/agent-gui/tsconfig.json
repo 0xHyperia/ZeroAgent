@@ -21,7 +21,10 @@
       "@sinclair/typebox": ["./node_modules/@sinclair/typebox/build/esm/index.d.mts"],
       "@tauri-apps/api/core": ["./node_modules/@tauri-apps/api/core"],
       "@tauri-apps/api/event": ["./node_modules/@tauri-apps/api/event"],
-      "@tauri-apps/plugin-opener": ["./node_modules/@tauri-apps/plugin-opener"]
+      "@tauri-apps/plugin-opener": ["./node_modules/@tauri-apps/plugin-opener"],
+      "@liveagent/app/*": ["./src/*"],
+      "@liveagent/adapters/*": ["./src/agent-ui-adapters/*"],
+      "@liveagent/ui/*": ["../agent-ui/src/*"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
