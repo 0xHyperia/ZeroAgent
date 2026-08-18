@@ -10,6 +10,7 @@ import {
 import { buildTextFromComposerDraft } from "@/app/chatDraft";
 import { UserMenu } from "@/app/UserMenu";
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
+import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import {
   ChatHistorySidebar,
@@ -23,7 +24,7 @@ import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
-import type { PendingUploadedFile } from "@/lib/chat/uploadedFiles";
+import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import type {
   ExecutionEnvironment,
   ExecutionSelection,
@@ -669,6 +670,8 @@ export function CloudChatPage({
                 return next;
               })
             }
+            onMoveToWorkspace={() => undefined}
+            onMoveConversationsToWorkspace={async (ids) => ids}
             canShareConversations={false}
             sharedConversationCount={0}
             onShareConversation={() => undefined}
@@ -699,6 +702,26 @@ export function CloudChatPage({
 
           <main className="gateway-main-shell">
             <div className="gateway-main-backdrop" />
+            <AppWorkbenchChrome
+              settings={settings}
+              sidebarOpen={sidebarOpen}
+              onOpenSettings={(section) => {
+                if (section) setSettingsSection(section);
+                setAccountSettingsOpen(true);
+              }}
+              onToggleTheme={() =>
+                setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) }))
+              }
+              onOpenSidebar={() => setSidebarOpen(true)}
+              preThemeActions={
+                <ExecutionEnvironmentSwitcher
+                  environments={environments}
+                  selection={selection}
+                  disabled={streaming}
+                  onSwitch={onSwitch}
+                />
+              }
+            />
             <ApplicationView
               activeView="chat"
               settings={settings}
@@ -714,49 +737,6 @@ export function CloudChatPage({
                     "--zone-font-scale": settings.customSettings.fontScale.chat,
                   } as CSSProperties,
                 },
-                hasModels: modelOptions.length > 0,
-                currentModelLabel: model,
-                modelOptions,
-                selectedValue: selectedModelValue,
-                modelsLoading,
-                modelsRefreshing: modelsLoading,
-                emptyModelAction: {
-                  label: t("chat.createApiKey"),
-                  onSelect: () => {
-                    setSettingsSection("providers");
-                    setAccountSettingsOpen(true);
-                  },
-                },
-                onSelectExecutionMode: () => undefined,
-                sidebarOpen,
-                onSelectModel: (next) => {
-                  const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
-                  setModel(next.model);
-                  setProviderKeyId(nextProviderKeyId);
-                  setSettings((current) => ({
-                    ...current,
-                    selectedModel: next,
-                  }));
-                  void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch((cause) =>
-                    setError(String(cause)),
-                  );
-                },
-                onRefreshModels: refreshModels,
-                onOpenSettings: (section) => {
-                  if (section) setSettingsSection(section);
-                  setAccountSettingsOpen(true);
-                },
-                onToggleTheme: () =>
-                  setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) })),
-                onOpenSidebar: () => setSidebarOpen(true),
-                preThemeActions: (
-                  <ExecutionEnvironmentSwitcher
-                    environments={environments}
-                    selection={selection}
-                    disabled={streaming}
-                    onSwitch={onSwitch}
-                  />
-                ),
                 content: (
                   <>
                     {error && transcriptRows.length === 0 ? (
@@ -780,7 +760,6 @@ export function CloudChatPage({
                             isStreaming={streaming}
                             isLoading={historyLoading}
                             hasModels={modelOptions.length > 0}
-                            isAgentMode={false}
                             onOpenSettings={() => {
                               setSettingsSection("providers");
                               setAccountSettingsOpen(true);
@@ -804,13 +783,31 @@ export function CloudChatPage({
                         inputPlaceholder="发送消息"
                         workdir=""
                         enabledSkills={[]}
-                        isAgentMode={false}
+                        executionMode="text"
+                        hasModels={modelOptions.length > 0}
+                        currentModelLabel={model}
+                        modelOptions={modelOptions}
+                        selectedValue={selectedModelValue}
                         chatRuntimeControls={runtimeControls}
                         reasoningOptions={["low", "medium", "high"]}
                         thinkingAlwaysOn={false}
                         onSend={() => void send()}
                         onStop={() => abortRef.current?.abort()}
                         onComposerBusyChange={() => undefined}
+                        onSelectModel={(next) => {
+                          const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
+                          setModel(next.model);
+                          setProviderKeyId(nextProviderKeyId);
+                          setSettings((current) => ({ ...current, selectedModel: next }));
+                          void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch(
+                            (cause) => setError(String(cause)),
+                          );
+                        }}
+                        onSelectExecutionMode={() => undefined}
+                        onOpenSettings={(section) => {
+                          if (section) setSettingsSection(section);
+                          setAccountSettingsOpen(true);
+                        }}
                         onChatRuntimeControlsChange={(patch) => {
                           setRuntimeControls((current) => ({ ...current, ...patch }));
                           if (patch.reasoning) {

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, MonitorSmartphone, Pencil, RefreshCw, Trash2 } from "../../components/icons";
+import {
+  Loader2,
+  MonitorSmartphone,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import {

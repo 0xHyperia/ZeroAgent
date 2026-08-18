@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { ChevronDown, Loader2, MonitorSmartphone, X } from "@liveagent/ui/components/IconSet";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
-import { ChevronDown, Loader2, MonitorSmartphone, X } from "./icons";
 
 type Props = {
   environments: DesktopEnvironment[];
@@ -76,7 +76,7 @@ export function DesktopExecutionSwitcher({
           <ChevronDown className="h-3.5 w-3.5 max-[900px]:hidden" />
         </Button>
         {open && (
-          <div className="absolute left-0 z-[70] mt-2 max-h-[60vh] w-[min(380px,90vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
+          <div className="layer-popover absolute left-0 mt-2 max-h-[60vh] w-[min(380px,90vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
             {environments.map((environment) => (
               <button
                 type="button"
@@ -121,7 +121,7 @@ export function DesktopExecutionSwitcher({
         )}
       </div>
       {pending && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
+        <div className="layer-modal fixed inset-0 flex items-center justify-center bg-black/45 p-4">
           <div className="w-full max-w-[380px] rounded-md border bg-background p-5 shadow-2xl">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">

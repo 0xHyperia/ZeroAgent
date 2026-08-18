@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown } from "@liveagent/ui/components/IconSet";
 import type { RelayGroup } from "../../lib/relay/client";
 import { relayProviderTypeForPlatform } from "../../lib/relay/providers";
-import { Check, ChevronDown } from "../icons";
 
 type GroupMultiSelectProps = {
   groups: RelayGroup[];
@@ -78,7 +78,7 @@ export function GroupMultiSelect({
         <div
           role="listbox"
           aria-multiselectable="true"
-          className="absolute z-[100] mt-1 max-h-72 w-full min-w-64 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          className="layer-popover absolute mt-1 max-h-72 w-full min-w-64 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {groups.length === 0 ? (
             <p className="px-2 py-3 text-xs text-muted-foreground">暂无可用分组</p>

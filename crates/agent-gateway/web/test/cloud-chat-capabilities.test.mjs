@@ -14,8 +14,8 @@ const systemSettingsSource = readFileSync(
   new URL("../../../agent-ui/src/pages/settings/SystemSettingsForm.tsx", import.meta.url),
   "utf8",
 );
-const deviceAgentSource = readFileSync(
-  new URL("../src/app/GatewayApp.tsx", import.meta.url),
+const deviceAgentViewSource = readFileSync(
+  new URL("../src/app/GatewayAppView.tsx", import.meta.url),
   "utf8",
 );
 
@@ -26,13 +26,13 @@ test("Cloud Chat declares its runtime and hides unsupported local capability sec
     /hiddenSections=\{\["systemTools", "agents", "ssh", "memory", "hooks", "cron", "remote"\]\}/,
   );
   assert.match(settingsPageSource, /props\.runtimeKind === "web_chat"/);
-  assert.match(systemSettingsSource, /showLocalRuntimeSettings \? \(/);
+  assert.match(systemSettingsSource, /\.\.\.\(showLocalRuntimeSettings/);
   assert.match(systemSettingsSource, /key: "rightDock" as const/);
   assert.match(systemSettingsSource, /settings\.executionMode/);
   assert.match(systemSettingsSource, /settings\.systemProxy/);
 });
 
 test("Device Agent keeps desktop runtime settings while hiding only remote self-management", () => {
-  assert.match(deviceAgentSource, /hiddenSections=\{\["remote"\]\}/);
-  assert.doesNotMatch(deviceAgentSource, /runtimeKind="web_chat"/);
+  assert.match(deviceAgentViewSource, /hiddenSections=\{\["remote"\]\}/);
+  assert.doesNotMatch(deviceAgentViewSource, /runtimeKind="web_chat"/);
 });

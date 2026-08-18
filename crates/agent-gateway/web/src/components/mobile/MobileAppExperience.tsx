@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Loader2, RefreshCw, X } from "../icons";
+import { Download, Loader2, RefreshCw } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@liveagent/ui/components/ui/dialog";
 import {
   checkMobileAppUpdate,
   downloadMobileAppUpdate,
@@ -102,43 +107,39 @@ export function MobileAppExperience() {
 
   if (!isEmbeddedMobileRuntime()) return null;
 
+  const snoozeUpdate = () => {
+    if (!update) return;
+    localStorage.setItem(
+      SNOOZE_KEY,
+      JSON.stringify({
+        version: update.version,
+        until: Date.now() + SNOOZE_INTERVAL_MS,
+      }),
+    );
+    setUpdate(null);
+  };
+
   return (
     <>
-      {update ? (
-        <div className="mobile-update-backdrop" role="presentation">
-          <section
+      <Dialog open={Boolean(update)} onOpenChange={(open) => !open && snoozeUpdate()}>
+        {update ? (
+          <DialogContent
+            layout="bottom-sheet-mobile"
             className="mobile-update-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="mobile-update-title"
+            closeDisabled={downloading}
+            closeLabel="稍后更新"
+            showCloseButton
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
+              <div className="min-w-0 pr-10">
                 <p className="text-xs font-medium text-primary">发现新版本 v{update.version}</p>
-                <h2 id="mobile-update-title" className="mt-1 truncate text-base font-semibold">
+                <DialogTitle className="mt-1 truncate text-base leading-normal">
                   {update.title}
-                </h2>
+                </DialogTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   当前版本 v{update.currentVersion}
                 </p>
               </div>
-              <button
-                type="button"
-                className="mobile-native-icon-button"
-                aria-label="稍后更新"
-                onClick={() => {
-                  localStorage.setItem(
-                    SNOOZE_KEY,
-                    JSON.stringify({
-                      version: update.version,
-                      until: Date.now() + SNOOZE_INTERVAL_MS,
-                    }),
-                  );
-                  setUpdate(null);
-                }}
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
             <div className="mobile-update-notes">{update.notes}</div>
             <div className="mt-5 flex gap-3">
@@ -146,16 +147,7 @@ export function MobileAppExperience() {
                 type="button"
                 variant="outline"
                 className="h-11 flex-1"
-                onClick={() => {
-                  localStorage.setItem(
-                    SNOOZE_KEY,
-                    JSON.stringify({
-                      version: update.version,
-                      until: Date.now() + SNOOZE_INTERVAL_MS,
-                    }),
-                  );
-                  setUpdate(null);
-                }}
+                onClick={snoozeUpdate}
               >
                 稍后
               </Button>
@@ -185,9 +177,9 @@ export function MobileAppExperience() {
                 {downloading ? "正在打开" : "下载更新"}
               </Button>
             </div>
-          </section>
-        </div>
-      ) : null}
+          </DialogContent>
+        ) : null}
+      </Dialog>
 
       {checking ? (
         <div className="mobile-runtime-toast">

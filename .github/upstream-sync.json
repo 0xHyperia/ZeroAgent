@@ -1,6 +1,6 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v1.2.4",
-  "base_commit": "0e8845181eb5ef808e1e7579be3d67e2f57209bc",
-  "commit": "d5a27420633390aa53b72c0fade011f69ad8be4b"
+  "tag": "v1.2.5",
+  "base_commit": "d5a27420633390aa53b72c0fade011f69ad8be4b",
+  "commit": "d3020fd853f23a6a5d8182ee1bd049a632654cc2"
 }

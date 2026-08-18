@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { Check, Key, Loader2, Sparkles } from "@liveagent/ui/components/IconSet";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
-import { Check, Key, Loader2, Sparkles, X } from "../icons";
 import { GroupMultiSelect } from "../relay/GroupMultiSelect";
 import {
   createRelayApiKeys,
@@ -117,29 +121,13 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
     }
   }
 
-  if (!open || typeof document === "undefined") return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 isolate flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      style={{ zIndex: 2147483647 }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="onboarding-title"
-        className="relative flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && complete()}>
+      <DialogContent
+        className="flex max-h-[min(680px,calc(100vh-2rem))] max-w-xl flex-col overflow-hidden p-0"
+        closeLabel="跳过引导"
+        showCloseButton
       >
-        <button
-          type="button"
-          title="跳过引导"
-          aria-label="跳过引导"
-          className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={complete}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
         <div className="min-h-0 overflow-y-auto px-6 py-7 sm:px-8">
           {step === "welcome" ? (
             <div className="space-y-7">
@@ -147,9 +135,9 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Sparkles className="h-5 w-5" />
                 </div>
-                <h1 id="onboarding-title" className="text-2xl font-semibold">
+                <DialogTitle className="text-2xl leading-normal">
                   开始使用 ZeroAgent
-                </h1>
+                </DialogTitle>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   完成一次基础设置后，就可以在网页端、桌面端和已连接设备之间继续工作。
                 </p>
@@ -182,9 +170,9 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Key className="h-5 w-5" />
                 </div>
-                <h1 id="onboarding-title" className="text-xl font-semibold">
+                <DialogTitle className="text-xl leading-normal">
                   创建第一个分组密钥
-                </h1>
+                </DialogTitle>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   选择需要使用的模型分组。创建完成后，模型会自动加入模型选择器。
                 </p>
@@ -215,9 +203,9 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
                 <Check className="h-6 w-6" />
               </div>
               <div>
-                <h1 id="onboarding-title" className="text-xl font-semibold">
+                <DialogTitle className="text-xl leading-normal">
                   设置完成
-                </h1>
+                </DialogTitle>
                 <p className="mt-2 text-sm text-muted-foreground">
                   分组模型已经可以在模型选择器中使用。
                 </p>
@@ -256,8 +244,7 @@ export function FirstRunOnboarding({ userId, onSyncKeys }: FirstRunOnboardingPro
             <Button onClick={complete}>进入 ZeroAgent</Button>
           )}
         </footer>
-      </section>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }

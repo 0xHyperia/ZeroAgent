@@ -18,6 +18,8 @@ export function relayProviderTypeForPlatform(platform: string): ProviderId | nul
       return "codex";
     case "grok":
       return "xai";
+    case "deepseek":
+      return "deepseek";
     case "gemini":
     case "antigravity":
       return "gemini";
@@ -122,6 +124,7 @@ export async function buildRelayProviders(
           name: `${group.name} / ${key.name}`,
           type,
           baseUrl: relayProviderBaseUrl(type),
+          isFullUrl: false,
           apiKey: key.key,
           apiKeyConfigured: Boolean(key.key.trim()),
           customHeaders: [],

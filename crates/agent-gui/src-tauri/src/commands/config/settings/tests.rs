@@ -47,6 +47,14 @@ mod tests {
     }
 
     #[test]
+    fn ssh_patch_conflict_gateway_message_is_a_stable_code() {
+        assert_eq!(
+            SshPatchConflictCode::SettingsChanged.gateway_message(),
+            "settings_changed"
+        );
+    }
+
+    #[test]
     fn initialize_schema_creates_columnar_ssh_settings_table() {
         let conn = open_memory_db();
         let columns = table_columns(&conn, SSH_SETTINGS_TABLE);
@@ -108,77 +116,23 @@ mod tests {
 
     #[test]
     fn normalize_remote_settings_repairs_single_slash_gateway_url() {
-        let normalized = normalize_remote_settings_payload_with_overrides(
-            RemoteSettingsPayload {
-                enabled: true,
-                gateway_url: "https://persisted.example.com".to_string(),
-                gateway_port: 8443,
-                token: " agent-token-dev ".to_string(),
-                agent_id: " mac-mini ".to_string(),
-                auto_reconnect: true,
-                heartbeat_interval: 30,
-                enable_web_terminal: false,
-                enable_web_ssh_terminal: false,
-                enable_web_git: false,
-                enable_web_tunnels: false,
-            },
-            Some(" https:/agent.cnweb.org/ "),
-            None,
-        );
+        let normalized = normalize_remote_settings_payload(RemoteSettingsPayload {
+            enabled: true,
+            gateway_url: " https:/agent.cnweb.org/ ".to_string(),
+            gateway_port: 443,
+            token: " agent-token-dev ".to_string(),
+            agent_id: " mac-mini ".to_string(),
+            auto_reconnect: true,
+            heartbeat_interval: 30,
+            enable_web_terminal: false,
+            enable_web_ssh_terminal: false,
+            enable_web_git: false,
+            enable_web_tunnels: false,
+        });
 
         assert_eq!(normalized.gateway_url, "https://agent.cnweb.org");
-        assert_eq!(normalized.gateway_port, 443);
         assert_eq!(normalized.token, "agent-token-dev");
         assert_eq!(normalized.agent_id, "mac-mini");
-    }
-
-    #[test]
-    fn startup_gateway_environment_overrides_persisted_address() {
-        let normalized = normalize_remote_settings_payload_with_overrides(
-            RemoteSettingsPayload {
-                gateway_url: "https://persisted.example.com".to_string(),
-                gateway_port: 443,
-                ..RemoteSettingsPayload::default()
-            },
-            Some(" http:/172.16.0.121/ "),
-            Some("50052"),
-        );
-
-        assert_eq!(normalized.gateway_url, "http://172.16.0.121");
-        assert_eq!(normalized.gateway_port, 50052);
-    }
-
-    #[test]
-    fn missing_gateway_environment_uses_official_address() {
-        let normalized = normalize_remote_settings_payload_with_overrides(
-            RemoteSettingsPayload {
-                gateway_url: "https://persisted.example.com/".to_string(),
-                gateway_port: 8443,
-                ..RemoteSettingsPayload::default()
-            },
-            None,
-            None,
-        );
-
-        assert_eq!(normalized.gateway_url, OFFICIAL_GATEWAY_URL);
-        assert_eq!(normalized.gateway_port, 443);
-    }
-
-    #[test]
-    fn normalize_remote_settings_clamps_heartbeat_interval() {
-        let mut fast = RemoteSettingsPayload::default();
-        fast.heartbeat_interval = 1;
-        let mut slow = RemoteSettingsPayload::default();
-        slow.heartbeat_interval = 999;
-
-        assert_eq!(
-            normalize_remote_settings_payload(fast).heartbeat_interval,
-            MIN_REMOTE_HEARTBEAT_INTERVAL_SECONDS
-        );
-        assert_eq!(
-            normalize_remote_settings_payload(slow).heartbeat_interval,
-            MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS
-        );
     }
 
     #[test]
@@ -211,12 +165,10 @@ mod tests {
             )
             .expect("load stored remote payload");
 
-        assert_eq!(migrated.gateway_url, OFFICIAL_GATEWAY_URL);
-        assert_eq!(migrated.gateway_port, 443);
+        assert_eq!(migrated.gateway_port, 8443);
         assert!(is_generated_agent_id(&migrated.agent_id));
-        assert!(stored_json.contains("\"gatewayPort\":443"));
+        assert!(stored_json.contains("\"gatewayPort\":8443"));
         assert!(!stored_json.contains("grpcPort"));
-        assert!(!stored_json.contains("gateway-token"));
     }
 
     #[test]
@@ -233,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_remote_agent_id_replaces_manual_id_without_persisting_token() {
+    fn ensure_remote_agent_id_replaces_manual_id_and_preserves_remote_settings() {
         let mut conn = open_memory_db();
         persist_remote_settings(
             &conn,
@@ -258,9 +210,9 @@ mod tests {
 
         assert!(is_generated_agent_id(&generated));
         assert_eq!(stored.agent_id, generated);
-        assert_eq!(stored.gateway_url, OFFICIAL_GATEWAY_URL);
-        assert_eq!(stored.gateway_port, 443);
-        assert!(stored.token.is_empty());
+        assert_eq!(stored.gateway_url, "https://gateway.example.com");
+        assert_eq!(stored.gateway_port, 8443);
+        assert_eq!(stored.token, "gateway-token");
         assert!(!stored.auto_reconnect);
         assert_eq!(stored.heartbeat_interval, 45);
         assert!(stored.enable_web_terminal);
@@ -279,7 +231,7 @@ mod tests {
             json!({
                 "enabled": true,
                 "gatewayUrl": "https://gateway.example.com",
-                "gatewayPort": 8443,
+                "gatewayPort": 443,
                 "token": "gateway-token",
                 "agentId": "attacker-controlled",
                 "autoReconnect": true,
@@ -291,10 +243,6 @@ mod tests {
 
         assert_eq!(saved.agent_id, generated);
         assert_eq!(stored.agent_id, generated);
-        assert_eq!(saved.gateway_url, OFFICIAL_GATEWAY_URL);
-        assert_eq!(saved.gateway_port, 443);
-        assert_eq!(stored.gateway_url, OFFICIAL_GATEWAY_URL);
-        assert_eq!(stored.gateway_port, 443);
     }
 
     #[test]
@@ -396,18 +344,12 @@ mod tests {
             load_gateway_settings_sync_snapshot(&conn).expect("load gateway settings snapshot");
         assert_eq!(snapshot["customProviders"][0]["apiKey"], Value::Null);
         assert_eq!(snapshot["customProviders"][0]["apiKeyConfigured"], true);
-        assert_eq!(
-            snapshot["customProviders"][0]["usageQuery"]["apiKey"],
-            Value::Null
-        );
+        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["apiKey"], Value::Null);
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["apiKeyConfigured"],
             true
         );
-        assert_eq!(
-            snapshot["customProviders"][0]["usageQuery"]["accessToken"],
-            Value::Null
-        );
+        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["accessToken"], Value::Null);
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["accessTokenConfigured"],
             true
@@ -838,8 +780,8 @@ mod tests {
         .expect("apply patch");
 
         assert_eq!(
-            response.conflict.as_deref(),
-            Some(SSH_SYNC_CONFLICT_MESSAGE)
+            response.conflict,
+            Some(SshPatchConflictCode::SettingsChanged)
         );
         assert_eq!(response.ssh["hosts"][0]["name"], "Prod New");
     }
@@ -923,8 +865,8 @@ mod tests {
         .expect("apply patch");
 
         assert_eq!(
-            response.conflict.as_deref(),
-            Some(SSH_SYNC_CONFLICT_MESSAGE)
+            response.conflict,
+            Some(SshPatchConflictCode::SettingsChanged)
         );
     }
 
@@ -1187,7 +1129,7 @@ mod tests {
         };
         let loaded = load_system(&conn).expect("load system");
 
-        assert_eq!(row_count, 10);
+        assert_eq!(row_count, 11);
         assert_eq!(
             keys,
             vec![
@@ -1199,6 +1141,7 @@ mod tests {
                 SYSTEM_SYSTEM_PROXY_KEY.to_string(),
                 SYSTEM_TOOL_POLICIES_KEY.to_string(),
                 SYSTEM_WORKDIR_KEY.to_string(),
+                SYSTEM_WORKSPACE_PROJECT_GROUPS_KEY.to_string(),
                 SYSTEM_WORKSPACE_PROJECTS_KEY.to_string(),
                 SYSTEM_WORKSPACE_RESOURCE_SETTINGS_KEY.to_string(),
             ]
@@ -1215,6 +1158,7 @@ mod tests {
                 "systemProxy": default_system_proxy_json(),
                 "workdir": default_workdir.clone(),
                 "toolPolicies": { "Bash": "ask", "server:docs-mcp": "deny" },
+                "workspaceProjectGroups": null,
                 "workspaceProjects": [
                     {
                         "id": DEFAULT_WORKSPACE_PROJECT_ID,
@@ -1254,6 +1198,49 @@ mod tests {
         assert_eq!(
             loaded.get(SYSTEM_ARCHIVED_WORKSPACE_PROJECT_PATHS_KEY),
             Some(&json!(["/tmp/project-a"]))
+        );
+    }
+
+    #[test]
+    fn save_system_round_trips_workspace_project_groups() {
+        let mut conn = open_memory_db();
+        save_system_with_default_workdir(
+            &mut conn,
+            json!({
+                "executionMode": "tools",
+                "workdir": "/tmp/liveagent-default-project",
+                "workspaceProjectGroups": [
+                    {
+                        "id": "g1",
+                        "name": "LiveAgent",
+                        "projectPaths": ["/tmp/repo", "/tmp/wt"],
+                        "sourceProjectPath": "/tmp/repo",
+                        "collapsed": true,
+                        "createdAt": 100,
+                        "updatedAt": 100
+                    }
+                ]
+            }),
+            "/tmp/liveagent-default-project",
+        )
+        .expect("save system");
+
+        let loaded = load_system(&conn)
+            .expect("load system")
+            .expect("system settings");
+        assert_eq!(
+            loaded.get(SYSTEM_WORKSPACE_PROJECT_GROUPS_KEY),
+            Some(&json!([
+                {
+                    "id": "g1",
+                    "name": "LiveAgent",
+                    "projectPaths": ["/tmp/repo", "/tmp/wt"],
+                    "sourceProjectPath": "/tmp/repo",
+                    "collapsed": true,
+                    "createdAt": 100,
+                    "updatedAt": 100
+                }
+            ]))
         );
     }
 
@@ -1469,6 +1456,7 @@ mod tests {
                 "systemProxy": default_system_proxy_json(),
                 "workdir": "/tmp/liveagent-default-project",
                 "toolPolicies": null,
+                "workspaceProjectGroups": null,
                 "workspaceProjects": [
                     {
                         "id": DEFAULT_WORKSPACE_PROJECT_ID,
@@ -1521,6 +1509,7 @@ mod tests {
                 "systemProxy": default_system_proxy_json(),
                 "workdir": "/tmp/liveagent-default-project",
                 "toolPolicies": null,
+                "workspaceProjectGroups": null,
                 "workspaceProjects": [
                     {
                         "id": DEFAULT_WORKSPACE_PROJECT_ID,
@@ -1699,11 +1688,106 @@ mod tests {
     }
 
     #[test]
+    fn cherry_v1_routes_official_deepseek_chat_to_deepseek_provider() {
+        let provider = json!({
+            "id": "official-deepseek",
+            "name": "DeepSeek Official",
+            "type": "openai",
+            "apiKey": "secret",
+            "apiHost": "https://api.deepseek.com/v1/chat/completions#",
+            "models": [
+                { "id": "deepseek-chat", "endpoint_type": "openai-chat-completions", "type": ["text"] }
+            ]
+        });
+        let mut imported = Vec::new();
+
+        cherry_append_v1_provider(&provider, "1.9.9", &mut imported);
+
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].provider_type, "deepseek");
+        assert_eq!(imported[0].request_format, "openai-completions");
+        assert_eq!(imported[0].base_url, "https://api.deepseek.com/v1");
+    }
+
+    #[test]
+    fn cherry_v1_keeps_third_party_deepseek_model_in_codex_provider() {
+        let provider = json!({
+            "id": "aggregate-gateway",
+            "name": "Aggregate Gateway",
+            "type": "openai",
+            "apiKey": "secret",
+            "apiHost": "https://relay.example.test/v1",
+            "models": [
+                { "id": "deepseek-chat", "endpoint_type": "openai-chat-completions", "type": ["text"] }
+            ]
+        });
+        let mut imported = Vec::new();
+
+        cherry_append_v1_provider(&provider, "1.9.9", &mut imported);
+
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].provider_type, "codex");
+        assert_eq!(imported[0].request_format, "openai-completions");
+    }
+
+    #[test]
     fn ccs_maps_grokbuild_app_type_to_xai() {
-        assert_eq!(ccs_provider_type_from_app_type("grokbuild"), Some("xai"));
+        assert_eq!(
+            ccs_provider_type_from_app_type("grokbuild"),
+            Some("xai")
+        );
         assert_eq!(ccs_provider_type_from_app_type("grok"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("xai"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("Grok-Build"), Some("xai"));
+    }
+
+    #[test]
+    fn ccs_imports_deepseek_app_type_and_environment_fields() {
+        let config = json!({
+            "env": {
+                "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1/",
+                "DEEPSEEK_API_KEY": "sk-deepseek",
+                "DEEPSEEK_MODEL": "deepseek-chat",
+                "DEEPSEEK_REASONER_MODEL": "deepseek-reasoner"
+            }
+        });
+        let item = ccs_provider_from_value(
+            "deepseek-official",
+            "deepseek",
+            "DeepSeek Official",
+            &config,
+        )
+        .expect("deepseek provider should import");
+
+        assert_eq!(item.provider_type, "deepseek");
+        assert_eq!(item.base_url, "https://api.deepseek.com/v1");
+        assert_eq!(item.api_key, "sk-deepseek");
+        assert_eq!(item.request_format, "openai-completions");
+        assert_eq!(item.models, vec!["deepseek-chat", "deepseek-reasoner"]);
+    }
+
+    #[test]
+    fn ccs_reclassifies_only_official_deepseek_codex_chat_configs() {
+        let official = json!({
+            "auth": { "OPENAI_API_KEY": "sk-official" },
+            "config": "model = \"deepseek-chat\"\nmodel_provider = \"deepseek\"\n\n[model_providers.deepseek]\nbase_url = \"https://api.deepseek.com/v1\"\nwire_api = \"chat\"\n"
+        });
+        let aggregate = json!({
+            "auth": { "OPENAI_API_KEY": "sk-relay" },
+            "config": "model = \"deepseek-chat\"\nmodel_provider = \"relay\"\n\n[model_providers.relay]\nbase_url = \"https://relay.example.test/v1\"\nwire_api = \"chat\"\n"
+        });
+
+        let official_item =
+            ccs_provider_from_value("official", "codex", "Official", &official)
+                .expect("official config should import");
+        let aggregate_item =
+            ccs_provider_from_value("aggregate", "codex", "Aggregate", &aggregate)
+                .expect("aggregate config should import");
+
+        assert_eq!(official_item.provider_type, "deepseek");
+        assert_eq!(official_item.request_format, "openai-completions");
+        assert_eq!(aggregate_item.provider_type, "codex");
+        assert_eq!(aggregate_item.request_format, "openai-completions");
     }
 
     #[test]
@@ -1713,8 +1797,13 @@ mod tests {
         let config = json!({
             "config": "[models]\ndefault = \"grok-4.5\"\n\n[model]\n[model.\"grok-4.5\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://api.x.ai/v1\"\nname = \"packy\"\napi_backend = \"responses\"\ncontext_window = 500000\napi_key = \"sk-test-key\"\n"
         });
-        let item = ccs_provider_from_value("d262e762-test", "grokbuild", "PackyCode", &config)
-            .expect("grokbuild provider should import");
+        let item = ccs_provider_from_value(
+            "d262e762-test",
+            "grokbuild",
+            "PackyCode",
+            &config,
+        )
+        .expect("grokbuild provider should import");
 
         assert_eq!(item.provider_type, "xai");
         assert_eq!(item.app_type, "grokbuild");
@@ -1727,9 +1816,13 @@ mod tests {
     #[test]
     fn ccs_imports_empty_official_grokbuild_seed() {
         let config = json!({ "config": "" });
-        let item =
-            ccs_provider_from_value("grokbuild-official", "grokbuild", "Grok Official", &config)
-                .expect("official grok seed should still map");
+        let item = ccs_provider_from_value(
+            "grokbuild-official",
+            "grokbuild",
+            "Grok Official",
+            &config,
+        )
+        .expect("official grok seed should still map");
         assert_eq!(item.provider_type, "xai");
         assert_eq!(item.base_url, "");
         assert_eq!(item.api_key, "");

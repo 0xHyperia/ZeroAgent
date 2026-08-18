@@ -1,4 +1,5 @@
 import { Button } from "@liveagent/ui/components/ui/button";
+import { ChevronUp, LogOut, Settings } from "@liveagent/ui/components/IconSet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +15,6 @@ import {
   type RelayDashboardStats,
   type RelayUser,
 } from "../../lib/relay/client";
-import { ChevronUp, LogOut, Settings } from "../icons";
 
 type UserMenuProps = {
   user: RelayUser;

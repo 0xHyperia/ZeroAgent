@@ -1,5 +1,17 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Key,
+  Loader2,
+  Lock,
+  Mail,
+  RefreshCw,
+  Shield,
+} from "@liveagent/ui/components/IconSet";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
 import type { AppUpdateController } from "../../lib/appUpdates";
@@ -24,18 +36,6 @@ import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "../../lib
 import type { AppSettings } from "../../lib/settings";
 import { AppUpdateButton } from "../AppUpdateButton";
 import { CodeFlowBackground } from "../CodeFlowBackground";
-import {
-  CheckCircle2,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Key,
-  Loader2,
-  Lock,
-  Mail,
-  RefreshCw,
-  Shield,
-} from "../icons";
 import { GroupMultiSelect } from "./GroupMultiSelect";
 import { ZeroAgentLogo } from "./ZeroAgentLogo";
 

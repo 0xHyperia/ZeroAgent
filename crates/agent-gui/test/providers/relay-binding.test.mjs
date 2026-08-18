@@ -10,6 +10,7 @@ test("relay platform mapping and endpoints are fixed", () => {
   assert.equal(relay.relayProviderTypeForPlatform("anthropic"), "claude_code");
   assert.equal(relay.relayProviderTypeForPlatform("openai"), "codex");
   assert.equal(relay.relayProviderTypeForPlatform("grok"), "xai");
+  assert.equal(relay.relayProviderTypeForPlatform("deepseek"), "deepseek");
   assert.equal(relay.relayProviderTypeForPlatform("gemini"), "gemini");
   assert.equal(relay.relayProviderTypeForPlatform("antigravity"), "gemini");
   assert.equal(relay.relayProviderTypeForPlatform("unsupported"), null);
@@ -23,6 +24,8 @@ test("built-in provider defaults cannot point to third-party endpoints", () => {
   assert.deepEqual(
     Array.from(providers, (provider) => provider.baseUrl),
     [
+      "https://usa0.top",
+      "https://usa0.top",
       "https://usa0.top",
       "https://usa0.top",
       "https://usa0.top",

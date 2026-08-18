@@ -1,5 +1,5 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
-import { Loader2, Lock, RefreshCw, Shield, Upload, Wallet } from "../../components/icons";
+import { Loader2, Lock, RefreshCw, Shield, Upload, Wallet } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";

@@ -1,6 +1,6 @@
+import { Info, Keyboard, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
 import type { ReactNode } from "react";
-import { Info, Keyboard, Shield } from "../components/icons";
 import { isMacOsTauri, MacOsTitleBarSpacer } from "../components/MacOsTitleBarSpacer";
 import { AboutSection } from "../pages/settings/AboutSection";
 import { AccountSection } from "../pages/settings/AccountSection";

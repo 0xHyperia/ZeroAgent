@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@/components/icons";
+import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { useLocale } from "@liveagent/ui/i18n/index";
 import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
 import { requestMobileAppUpdateCheck } from "@/lib/mobileAppUpdate";
 import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
@@ -30,6 +31,7 @@ type UserMenuProps = {
 };
 
 export function UserMenu(props: UserMenuProps) {
+  const { t } = useLocale();
   const {
     open,
     onOpenChange,
@@ -82,7 +84,7 @@ export function UserMenu(props: UserMenuProps) {
           <Button
             variant="ghost"
             className="h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-foreground shadow-none hover:bg-foreground/[0.08]"
-            title="用户菜单"
+            title={t("account.userMenu")}
           />
         }
       >
@@ -126,31 +128,33 @@ export function UserMenu(props: UserMenuProps) {
         </DropdownMenuLabel>
         <div className="mx-1 mb-1 space-y-1 rounded-md bg-muted/55 px-2.5 py-2 text-xs">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">余额</span>
+            <span className="text-muted-foreground">{t("account.balance")}</span>
             <span className="max-w-[150px] truncate font-medium text-foreground">
               {formatRelayBalance(balance)}
             </span>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">今日 Token</span>
+            <span className="text-muted-foreground">{t("account.todayTokens")}</span>
             <span className="max-w-[150px] truncate font-medium text-foreground">
               {formatRelayTokenCount(todayTokens)}
             </span>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">状态</span>
-            <span className="font-medium text-foreground">{online ? "在线" : "离线"}</span>
+            <span className="text-muted-foreground">{t("account.status")}</span>
+            <span className="font-medium text-foreground">
+              {online ? t("account.online") : t("account.offline")}
+            </span>
           </div>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={handleOpenSettings} className="gap-2 rounded-md">
           <Settings className="h-4 w-4" />
-          设置
+          {t("tooltip.settings")}
         </DropdownMenuItem>
         {isEmbeddedMobileRuntime() ? (
           <DropdownMenuItem onSelect={handleCheckForUpdates} className="gap-2 rounded-md">
             <RefreshCw className="h-4 w-4" />
-            检查更新
+            {t("app.checkForUpdates")}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem
@@ -158,7 +162,7 @@ export function UserMenu(props: UserMenuProps) {
           className="gap-2 rounded-md text-destructive focus:bg-destructive/10 focus:text-destructive"
         >
           <LogOut className="h-4 w-4" />
-          退出账户
+          {t("common.logout")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

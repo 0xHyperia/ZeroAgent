@@ -1,6 +1,11 @@
 import { type FormEvent, useState } from "react";
-import { Copy, Loader2, Lock, X } from "@/components/icons";
+import { Copy, Loader2, Lock } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
 
@@ -32,53 +37,48 @@ export function RelayKeyCopyDialog({ keyName, onClose, onConfirm }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
-      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onClose} />
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="relay-copy-title"
-        className="relative z-10 w-full max-w-sm rounded-lg border border-border bg-background p-5 shadow-2xl"
-        onSubmit={submit}
+    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent
+        className="max-w-sm p-0"
+        closeDisabled={busy}
+        closeLabel="关闭"
+        showCloseButton
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
+        <form className="p-5" onSubmit={submit}>
+          <div className="flex min-w-0 items-start gap-3 pr-10">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
               <Lock className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <h2 id="relay-copy-title" className="text-sm font-semibold">
+              <DialogTitle className="text-sm leading-normal">
                 验证密码后复制
-              </h2>
+              </DialogTitle>
               <p className="mt-1 truncate text-xs text-muted-foreground">{keyName}</p>
             </div>
           </div>
-          <Button type="button" variant="ghost" size="icon" title="关闭" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="mt-5 space-y-2">
-          <Label htmlFor="relay-copy-password">USA-零 账户密码</Label>
-          <Input
-            id="relay-copy-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoFocus
-          />
-        </div>
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button type="submit" disabled={busy || !password}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
-            验证并复制
-          </Button>
-        </div>
-      </form>
-    </div>
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="relay-copy-password">USA-零 账户密码</Label>
+            <Input
+              id="relay-copy-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoFocus
+            />
+          </div>
+          {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              取消
+            </Button>
+            <Button type="submit" disabled={busy || !password}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+              验证并复制
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

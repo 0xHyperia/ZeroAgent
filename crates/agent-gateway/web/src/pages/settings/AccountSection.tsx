@@ -7,7 +7,7 @@ import {
   Shield,
   Upload,
   Wallet,
-} from "../../components/icons";
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";

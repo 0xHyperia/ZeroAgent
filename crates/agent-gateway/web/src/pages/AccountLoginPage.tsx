@@ -9,7 +9,7 @@ import {
   Lock,
   Shield,
   User,
-} from "../components/icons";
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import {

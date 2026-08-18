@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Cloud, MonitorSmartphone } from "@/components/icons";
+import { Check, ChevronDown, Cloud, MonitorSmartphone } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   type ExecutionEnvironment,
@@ -149,7 +149,7 @@ export function ExecutionEnvironmentSwitcher({
           ? createPortal(
               <div
                 ref={menuRef}
-                className="fixed z-[1000] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl"
+                className="layer-popover fixed overflow-y-auto rounded-md border bg-popover p-1 shadow-xl"
                 style={menuPosition}
               >
                 {environments.map((environment) => {

@@ -20,6 +20,7 @@
     {"glob": "**/i18n/**", "ownership": "adapted", "risk": "medium", "checks": ["ZeroAgent 品牌与翻译测试"]},
     {"glob": "crates/agent-ui/src/components/**", "ownership": "upstream_owned", "risk": "medium", "checks": ["共享 UI 测试", "UI 边界检查"]},
     {"glob": ".github/**", "ownership": "adapted", "risk": "high", "checks": ["仓库治理与工作流审计"]},
+    {"glob": ".gitignore", "ownership": "adapted", "risk": "medium", "checks": ["仓库忽略规则审计"]},
     {"glob": "crates/agent-gateway/**", "ownership": "adapted", "risk": "high", "checks": ["Gateway、协议和 WebUI 测试"]},
     {"glob": "crates/agent-gui/**", "ownership": "adapted", "risk": "high", "checks": ["GUI、Tauri 与移动端测试"]},
     {"glob": "crates/agent-ui/**", "ownership": "upstream_owned", "risk": "medium", "checks": ["共享 UI 测试与边界检查"]},

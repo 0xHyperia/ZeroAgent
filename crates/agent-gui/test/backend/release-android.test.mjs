@@ -65,7 +65,14 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
     "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
   );
   const mobileRuntime = readRepoFile("crates/agent-gateway/web/src/lib/mobileRuntime.ts");
-  const mobileStyles = readRepoFile("crates/agent-gateway/web/src/styles.css");
+  const mobileStyles = [
+    readRepoFile("crates/agent-gateway/web/src/styles.css"),
+    readRepoFile("crates/agent-gateway/web/src/styles/base-chat.css"),
+    readRepoFile("crates/agent-gateway/web/src/styles/login.css"),
+    readRepoFile("crates/agent-gateway/web/src/styles/responsive.css"),
+    readRepoFile("crates/agent-gateway/web/src/styles/status-board.css"),
+    readRepoFile("crates/agent-gateway/web/src/styles/zeroagent.css"),
+  ].join("\n");
   const mainActivity = readRepoFile(
     "crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt",
   );
@@ -160,8 +167,7 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
     /\.workspace-clone-task-overlay[\s\S]*safe-area-right[\s\S]*safe-area-bottom[\s\S]*safe-area-left/,
   );
   assert.match(mobileStyles, /\.app-error-fallback[\s\S]*safe-area-bottom/);
-  assert.match(mobileStyles, /\.mobile-safe-modal-overlay[\s\S]*safe-area-left/);
-  assert.match(mobileStyles, /\.organizer-history-layout[\s\S]*grid-template-columns/);
+  assert.match(mobileStyles, /data-slot="dialog-viewport"[\s\S]*safe-area-left/);
   assert.doesNotMatch(tauriLib, /mobile_app_exit/);
   assert.match(tauriLib, /mobile_open_external_url/);
   assert.match(mainActivity, /pending-mobile-oauth-callback/);

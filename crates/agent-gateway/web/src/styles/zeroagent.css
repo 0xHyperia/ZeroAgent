@@ -1,0 +1,239 @@
+:root {
+  --zeroagent-safe-area-top: env(safe-area-inset-top, 0px);
+  --zeroagent-safe-area-right: env(safe-area-inset-right, 0px);
+  --zeroagent-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --zeroagent-safe-area-left: env(safe-area-inset-left, 0px);
+}
+
+html[data-zeroagent-platform="android"],
+html[data-zeroagent-platform="android"] body,
+html[data-zeroagent-platform="android"] #root {
+  height: var(--zeroagent-visual-viewport-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html[data-zeroagent-platform="android"] {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-zeroagent-platform="android"] body {
+  position: fixed;
+  top: var(--zeroagent-visual-viewport-offset-top, 0px);
+  inset-inline: 0;
+  width: 100%;
+}
+
+html[data-zeroagent-platform="android"] .gateway-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+html[data-zeroagent-platform="android"] button,
+html[data-zeroagent-platform="android"] a,
+html[data-zeroagent-platform="android"] [role="button"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html[data-zeroagent-platform="android"] input,
+html[data-zeroagent-platform="android"] textarea,
+html[data-zeroagent-platform="android"] [contenteditable="true"] {
+  font-size: max(16px, 1em);
+}
+
+.mobile-update-sheet {
+  width: 100%;
+  max-height: min(78dvh, 680px);
+  overflow: hidden;
+  border-top: 1px solid hsl(var(--border));
+  border-radius: 16px 16px 0 0;
+  background: hsl(var(--background));
+  padding: 20px max(20px, var(--zeroagent-safe-area-right))
+    max(20px, var(--zeroagent-safe-area-bottom)) max(20px, var(--zeroagent-safe-area-left));
+  box-shadow: 0 -16px 48px rgb(0 0 0 / 0.2);
+  animation: mobile-sheet-enter 180ms ease-out;
+}
+
+.mobile-update-notes {
+  margin-top: 16px;
+  max-height: 34dvh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.45);
+  padding: 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.55;
+  overscroll-behavior: contain;
+}
+
+.mobile-runtime-toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, calc(var(--zeroagent-safe-area-bottom) + 16px));
+  z-index: var(--layer-toast);
+  display: flex;
+  max-width: calc(100vw - var(--zeroagent-safe-area-left) - var(--zeroagent-safe-area-right) - 32px);
+  min-height: 40px;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--popover) / 0.96);
+  padding: 9px 16px;
+  color: hsl(var(--popover-foreground));
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+  backdrop-filter: blur(12px);
+}
+
+@keyframes mobile-sheet-enter {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.gateway-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .gateway-main-shell {
+    padding-right: var(--zeroagent-safe-area-right);
+    padding-left: var(--zeroagent-safe-area-left);
+  }
+
+  .gateway-editor-host > .gateway-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    display: block;
+    border: 0;
+    background: hsl(220 22% 10% / 0.18);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 180ms ease, visibility 0s linear 180ms;
+  }
+
+  .gateway-editor-host > .gateway-sidebar-backdrop[data-state="open"] {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 180ms ease, visibility 0s linear 0s;
+  }
+
+  .gateway-chat-frame {
+    --gateway-chat-composer-bottom: max(12px, var(--zeroagent-safe-area-bottom));
+  }
+
+  .account-login-shell,
+  .relay-access-gate,
+  .app-auth-restoring,
+  .app-error-fallback {
+    box-sizing: border-box;
+    min-height: var(--zeroagent-visual-viewport-height, 100dvh);
+    padding: max(24px, var(--zeroagent-safe-area-top))
+      max(16px, var(--zeroagent-safe-area-right))
+      max(24px, var(--zeroagent-safe-area-bottom))
+      max(16px, var(--zeroagent-safe-area-left));
+  }
+
+  .mobile-safe-modal-overlay {
+    box-sizing: border-box;
+    padding: max(16px, var(--zeroagent-safe-area-top))
+      max(16px, var(--zeroagent-safe-area-right))
+      max(16px, var(--zeroagent-safe-area-bottom))
+      max(16px, var(--zeroagent-safe-area-left));
+  }
+
+  .mobile-viewport-panel {
+    max-height: calc(
+      var(--zeroagent-visual-viewport-height, 100dvh) - var(--zeroagent-safe-area-top) -
+        var(--zeroagent-safe-area-bottom) - 32px
+    );
+  }
+}
+
+html[data-zeroagent-platform="android"] .gateway-main-shell {
+  padding-right: var(--zeroagent-safe-area-right);
+  padding-left: var(--zeroagent-safe-area-left);
+}
+
+html[data-zeroagent-platform="android"] .project-tools-panel-inner,
+html[data-zeroagent-platform="android"] .workspace-code-editor-overlay,
+html[data-zeroagent-platform="android"] .workspace-file-preview-overlay,
+html[data-zeroagent-platform="android"] .workspace-image-preview-overlay,
+html[data-zeroagent-platform="android"] .workspace-ssh-terminal-overlay,
+html[data-zeroagent-platform="android"] .gateway-settings-overlay {
+  box-sizing: border-box;
+  padding: var(--zeroagent-safe-area-top) var(--zeroagent-safe-area-right)
+    var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
+}
+
+html[data-zeroagent-platform="android"] .gateway-chat-frame > header {
+  padding-top: calc(10px + var(--zeroagent-safe-area-top));
+}
+
+html[data-zeroagent-platform="android"] .settings-back-bar {
+  padding-top: 8px;
+}
+
+html[data-zeroagent-platform="android"] .workspace-overlay-header {
+  min-height: 56px;
+}
+
+html[data-zeroagent-platform="android"] .history-share-frame {
+  padding-bottom: var(--zeroagent-safe-area-bottom);
+}
+
+html[data-zeroagent-platform="android"] .hub-sidebar-trigger {
+  top: calc(12px + var(--zeroagent-safe-area-top));
+}
+
+html[data-zeroagent-platform="android"] .hub-scroll {
+  padding-bottom: max(24px, var(--zeroagent-safe-area-bottom));
+}
+
+html[data-zeroagent-platform="android"] .skills-drawer-panel,
+html[data-zeroagent-platform="android"] .skills-drawer-panel-closing {
+  box-sizing: border-box;
+  padding: var(--zeroagent-safe-area-top) var(--zeroagent-safe-area-right)
+    var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
+}
+
+html[data-zeroagent-platform="android"] .workspace-clone-task-overlay {
+  right: max(16px, var(--zeroagent-safe-area-right));
+  bottom: max(16px, var(--zeroagent-safe-area-bottom));
+  left: max(16px, var(--zeroagent-safe-area-left));
+}
+
+html[data-zeroagent-platform="android"] [data-slot="dialog-viewport"] {
+  padding: max(16px, var(--zeroagent-safe-area-top))
+    max(16px, var(--zeroagent-safe-area-right)) max(16px, var(--zeroagent-safe-area-bottom))
+    max(16px, var(--zeroagent-safe-area-left));
+}
+
+@media (max-width: 640px) {
+  html[data-zeroagent-platform="android"] .gateway-chat-frame > header {
+    padding-top: calc(8px + var(--zeroagent-safe-area-top));
+  }
+}
+
+html[data-zeroagent-platform="android"]
+  .gateway-editor-host > .chat-history-sidebar > .chat-history-sidebar-inner {
+  padding-top: var(--zeroagent-safe-area-top);
+  padding-bottom: var(--zeroagent-safe-area-bottom);
+  padding-left: var(--zeroagent-safe-area-left);
+}

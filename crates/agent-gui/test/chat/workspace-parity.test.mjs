@@ -11,7 +11,7 @@ function readSource(root, relativePath) {
 
 test("desktop and WebUI expose workspaces whenever Agent mode is active", () => {
   const desktop = readSource(guiRoot, "src/pages/ChatPage.tsx");
-  const web = readSource(repoRoot, "crates/agent-gateway/web/src/app/GatewayApp.tsx");
+  const web = readSource(repoRoot, "crates/agent-gateway/web/src/app/GatewayAppView.tsx");
 
   assert.match(desktop, /showProjects=\{isAgentMode\}/);
   assert.match(web, /showProjects=\{isAgentMode\}/);

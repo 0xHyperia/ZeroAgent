@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  CheckCircle2,
-  Copy,
-  Key,
-  Loader2,
-  Plus,
-} from "../../components/icons";
+import { CheckCircle2, Copy, Key, Loader2, Plus } from "@liveagent/ui/components/IconSet";
 import { GroupMultiSelect } from "../../components/relay/GroupMultiSelect";
 import { RelayKeyCopyDialog } from "../../components/relay/RelayKeyCopyDialog";
 import { Button } from "@liveagent/ui/components/ui/button";

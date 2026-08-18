@@ -24,6 +24,10 @@ const gatewaySocketSource = readFileSync(
   new URL("../src/lib/gatewaySocket.ts", import.meta.url),
   "utf8",
 );
+const gatewaySocketTransportSource = readFileSync(
+  new URL("../src/lib/gatewaySocketTransport.ts", import.meta.url),
+  "utf8",
+);
 const cloudChatSource = readFileSync(
   new URL("../src/pages/CloudChatPage.tsx", import.meta.url),
   "utf8",
@@ -86,9 +90,9 @@ test("gateway credential is published before token state mounts websocket consum
     gatewaySessionSource,
     /addEventListener\(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection\)/,
   );
-  assert.match(gatewaySocketSource, /message\.includes\("selection lease"\)/);
+  assert.match(gatewaySocketTransportSource, /message\.includes\("selection lease"\)/);
   assert.match(
-    gatewaySocketSource,
+    gatewaySocketTransportSource,
     /dispatchEvent\(new Event\(GATEWAY_SELECTION_INVALID_EVENT\)\)/,
   );
   assert.match(
@@ -104,10 +108,11 @@ test("execution target switching does not request a second password verification
   assert.match(executionTargetsSource, /"\/api\/execution-target\/select"/);
 });
 
-test("first-run onboarding renders above application stacking contexts", () => {
-  assert.match(onboardingSource, /createPortal\(/);
-  assert.match(onboardingSource, /zIndex:\s*2147483647/);
-  assert.match(onboardingSource, /document\.body/);
+test("first-run onboarding uses the shared modal layer", () => {
+  assert.match(onboardingSource, /from "@liveagent\/ui\/components\/ui\/dialog"/);
+  assert.match(onboardingSource, /<Dialog open=\{open\}/);
+  assert.match(onboardingSource, /<DialogContent/);
+  assert.doesNotMatch(onboardingSource, /createPortal|role="dialog"|zIndex:/);
 });
 
 test("desktop onboarding uses the desktop relay client", () => {

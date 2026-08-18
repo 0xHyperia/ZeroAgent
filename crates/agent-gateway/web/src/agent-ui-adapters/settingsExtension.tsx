@@ -1,6 +1,6 @@
+import { MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
 import type { ReactNode } from "react";
-import { MonitorSmartphone, Shield } from "../components/icons";
 import { AccountSection } from "../pages/settings/AccountSection";
 import { DevicesSection } from "../pages/settings/DevicesSection";
 import { RelayProvidersSection } from "../pages/settings/RelayProvidersSection";

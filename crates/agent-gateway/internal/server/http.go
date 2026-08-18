@@ -56,9 +56,11 @@ func NewHTTPServerWithReadiness(
 	if accounts != nil {
 		rootMux.Handle("/api/status", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("/api/files/import", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("/api/files/import-directory", protectedAPIHandler(cfg, sm, accounts))
 	} else {
 		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
 		rootMux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(sm, cfg.RequestTimeout))
+		rootMux.HandleFunc("POST /api/files/import-directory", handler.ImportDirectory(sm, cfg.RequestTimeout))
 	}
 	// Agent 目录与凭证管理，仅管理 token 可访问。
 
@@ -151,6 +153,11 @@ func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *acco
 			query.Set("agent_id", agentID)
 			r.URL.RawQuery = query.Encode()
 			handler.ImportReadableFiles(sm, cfg.RequestTimeout).ServeHTTP(w, r)
+		case "/api/files/import-directory":
+			query := r.URL.Query()
+			query.Set("agent_id", agentID)
+			r.URL.RawQuery = query.Encode()
+			handler.ImportDirectory(sm, cfg.RequestTimeout).ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}

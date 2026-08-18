@@ -18,11 +18,12 @@ const cloudChatSource = readFileSync(
 test("gateway sidebar separates workspace and unscoped conversations", () => {
   assert.match(
     sidebarContainerSource,
-    /Array\.from\(conversationsById\.values\(\)\)\.filter\(\(item\) => !item\.cwd\?\.trim\(\)\)/,
+    /Array\.from\(conversationIndex\.values\(\)\)\.filter\(\(item\) => !item\.cwd\?\.trim\(\)\)/,
   );
-  assert.match(sidebarContainerSource, /items=\{items\}[\s\S]*?taskItems=\{taskItems\}/);
-  assert.match(sidebarSource, /const isExpanded = activeScopedProject\?\.id === project\.id/);
-  assert.match(sidebarSource, /return \[\.\.\.visible, selectedProject\]/);
+  assert.match(sidebarContainerSource, /buildChatHistorySidebarBaseProps\(props, \{[\s\S]*?items,[\s\S]*?taskItems,/);
+  assert.match(sidebarSource, /activeScopedProject\?\.id !== project\.id/);
+  assert.match(sidebarSource, /selectedProjectIsHidden \? projectSections : slicedSections\.sections/);
+  assert.match(sidebarSource, /onNewConversationForProject=\{onNewConversationForProject\}/);
   assert.match(sidebarSource, /\{items\.map\(\(item\) => renderHistoryRow\(item\)\)\}/);
   assert.match(sidebarSource, /const item = taskItems\[virtualRow\.index\]/);
 });

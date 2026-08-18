@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "@liveagent/ui/components/Markdown";
+import { Bot, Edit3, Loader2, MessageSquare, Pin, Square, Trash2 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ConfirmDeletePopover } from "@liveagent/ui/components/ui/confirm-action-popover";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Textarea } from "@liveagent/ui/components/ui/textarea";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { Bot, Edit3, Loader2, MessageSquare, Pin, Square, Trash2 } from "../components/icons";
 import type { AppSettings } from "../lib/settings";
 import {
   desktopGatewayOrigin,
@@ -696,7 +696,7 @@ export function RemoteDeviceChatPage({
         </div>
       </main>
       {renaming ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
+        <div className="layer-modal fixed inset-0 flex items-center justify-center bg-black/45 p-4">
           <form
             className="w-full max-w-sm rounded-md border bg-background p-5 shadow-2xl"
             onSubmit={(event) => {
