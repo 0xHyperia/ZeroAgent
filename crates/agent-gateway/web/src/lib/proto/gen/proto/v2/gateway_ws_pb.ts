@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file proto/v2/gateway_ws.proto.
  */
 export const file_proto_v2_gateway_ws: GenFile = /*@__PURE__*/
-  fileDesc("Chlwcm90by92Mi9nYXRld2F5X3dzLnByb3RvEhRsaXZlYWdlbnQuZ2F0ZXdheS52MiI5Cg9EZXZpY2VXb3Jrc3BhY2USCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRwYXRoGAMgASgJIqcDCgtDbGllbnRIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEi4KBHJvbGUYAiABKA4yIC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DbGllbnRSb2xlEg0KBXRva2VuGAMgASgJEhAKCGFnZW50X2lkGAQgASgJEhUKDWFnZW50X3ZlcnNpb24YBSABKAkSEwoLY2xpZW50X25hbWUYBiABKAkSFgoOY2xpZW50X3ZlcnNpb24YByABKAkSEQoJZGV2aWNlX2lkGAggASgJEhkKEWRldmljZV9jcmVkZW50aWFsGAkgASgJEhMKC2RldmljZV9uYW1lGAogASgJEhAKCHBsYXRmb3JtGAsgASgJEjkKCndvcmtzcGFjZXMYDCADKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5EZXZpY2VXb3Jrc3BhY2USFwoPc2VsZWN0aW9uX2xlYXNlGA0gASgJEhQKDHdvcmtzcGFjZV9pZBgOIAEoCRIUCgxydW50aW1lX2tpbmQYDyABKAkSFAoMY2FwYWJpbGl0aWVzGBAgAygJIogCCgtTZXJ2ZXJIZWxsbxIKCgJvaxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEwoLc2VydmVyX3RpbWUYBCABKAMSIAoYaGVhcnRiZWF0X3BlcmlvZF9zZWNvbmRzGAUgASgNEhkKEW1heF9tZXNzYWdlX2J5dGVzGAYgASgEEg8KB3VzZXJfaWQYByABKAMSEQoJZGV2aWNlX2lkGAggASgJEhQKDHdvcmtzcGFjZV9pZBgJIAEoCRIUCgxydW50aW1lX2tpbmQYCiABKAkSEAoIYWdlbnRfaWQYCyABKAkSFAoMY2FwYWJpbGl0aWVzGAwgAygJIh4KCVBpbmdGcmFtZRIRCgl0aW1lc3RhbXAYASABKAMiHgoJUG9uZ0ZyYW1lEhEKCXRpbWVzdGFtcBgBIAEoAyIXCglBY2tSZXN1bHQSCgoCb2sYASABKAgi4gYKDldlYkNsaWVudEZyYW1lEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIYWdlbnRfaWQYDSABKAkSMgoFaGVsbG8YAiABKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DbGllbnRIZWxsb0gAEj4KDWFnZW50X3JlcXVlc3QYAyABKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5HYXRld2F5RW52ZWxvcGVIABI8CgpzdGF0dXNfZ2V0GAQgASgLMiYubGl2ZWFnZW50LmdhdGV3YXkudjIuU3RhdHVzR2V0UmVxdWVzdEgAEkAKDGNoYXRfY29tbWFuZBgFIAEoCzIoLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRDb21tYW5kUmVxdWVzdEgAEkAKDGNoYXRfcHJlcGFyZRgGIAEoCzIoLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRQcmVwYXJlUmVxdWVzdEgAEkQKDmNoYXRfc3Vic2NyaWJlGAcgASgLMioubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFN1YnNjcmliZVJlcXVlc3RIABJIChBjaGF0X3Vuc3Vic2NyaWJlGAggASgLMiwubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFVuc3Vic2NyaWJlUmVxdWVzdEgAEkYKD2NoYXRfYWN0aXZpdGllcxgJIAEoCzIrLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRBY3Rpdml0aWVzUmVxdWVzdEgAEk4KE3dvcmtzcGFjZV9zdWJzY3JpYmUYCiABKAsyLy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5Xb3Jrc3BhY2VTdWJzY3JpYmVSZXF1ZXN0SAASUgoVd29ya3NwYWNlX3Vuc3Vic2NyaWJlGAsgASgLMjEubGl2ZWFnZW50LmdhdGV3YXkudjIuV29ya3NwYWNlVW5zdWJzY3JpYmVSZXF1ZXN0SAASLwoEcG9uZxgMIAEoCzIfLmxpdmVhZ2VudC5nYXRld2F5LnYyLlBvbmdGcmFtZUgAEjwKCmFnZW50X2xpc3QYDiABKAsyJi5saXZlYWdlbnQuZ2F0ZXdheS52Mi5BZ2VudExpc3RSZXF1ZXN0SABCCQoHcGF5bG9hZCL/CwoOV2ViU2VydmVyRnJhbWUSEgoKcmVxdWVzdF9pZBgBIAEoCRIQCghhZ2VudF9pZBgQIAEoCRIyCgVoZWxsbxgCIAEoCzIhLmxpdmVhZ2VudC5nYXRld2F5LnYyLlNlcnZlckhlbGxvSAASPQoOYWdlbnRfcmVzcG9uc2UYAyABKAsyIy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5BZ2VudEVudmVsb3BlSAASOgoLbG9jYWxfZXJyb3IYBCABKAsyIy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5FcnJvclJlc3BvbnNlSAASLwoEcGluZxgFIAEoCzIfLmxpdmVhZ2VudC5nYXRld2F5LnYyLlBpbmdGcmFtZUgAEjMKBnN0YXR1cxgGIAEoCzIhLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0YXR1c0V2ZW50SAASRAoPY2hhdF9zdWJzY3JpYmVkGAcgASgLMikubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFN1YnNjcmliZVJlc3VsdEgAEkIKDWNoYXRfYWNjZXB0ZWQYCCABKAsyKS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0Q29tbWFuZEFjY2VwdGVkSAASRQoPY2hhdF9hY3Rpdml0aWVzGAkgASgLMioubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdEFjdGl2aXRpZXNSZXN1bHRIABI7CgpjaGF0X2V2ZW50GAogASgLMiUubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFN0cmVhbUV2ZW50SAASRgoTY2hhdF9jb21tYW5kX3VwZGF0ZRgLIAEoCzInLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRDb21tYW5kVXBkYXRlSAASTgoXY2hhdF9zdWJzY3JpcHRpb25fcmVzZXQYDCABKAsyKy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0U3Vic2NyaXB0aW9uUmVzZXRIABJACg1jaGF0X2FjdGl2aXR5GA0gASgLMicubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdEFjdGl2aXR5RXZlbnRIABIuCgNhY2sYDiABKAsyHy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5BY2tSZXN1bHRIABJACg5jaGF0X2NhbmNlbGxlZBgPIAEoCzImLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRDYW5jZWxSZXN1bHRIABI7CgphZ2VudF9saXN0GBEgASgLMiUubGl2ZWFnZW50LmdhdGV3YXkudjIuQWdlbnRMaXN0UmVzdWx0SAASPwoNaGlzdG9yeV9ldmVudBgUIAEoCzImLmxpdmVhZ2VudC5nYXRld2F5LnYyLkhpc3RvcnlTeW5jRXZlbnRIABJBCg5zZXR0aW5nc19ldmVudBgVIAEoCzInLmxpdmVhZ2VudC5nYXRld2F5LnYyLlNldHRpbmdzU3luY0V2ZW50SAASPQoOdGVybWluYWxfZXZlbnQYFiABKAsyIy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5UZXJtaW5hbEV2ZW50SAASNQoKc2Z0cF9ldmVudBgXIAEoCzIfLmxpdmVhZ2VudC5nYXRld2F5LnYyLlNmdHBFdmVudEgAEkAKEGNoYXRfcXVldWVfZXZlbnQYGCABKAsyJC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0UXVldWVFdmVudEgAEkEKDHR1bm5lbF9zdGF0ZRgZIAEoCzIpLmxpdmVhZ2VudC5nYXRld2F5LnYyLlR1bm5lbFN0YXRlU25hcHNob3RIABJFCg1wcm9jZXNzX3N0YXRlGBogASgLMiwubGl2ZWFnZW50LmdhdGV3YXkudjIuTWFuYWdlZFByb2Nlc3NTbmFwc2hvdEgAEkoKEndvcmtzcGFjZV9hY3Rpdml0eRgbIAEoCzIsLmxpdmVhZ2VudC5nYXRld2F5LnYyLldvcmtzcGFjZUFjdGl2aXR5RXZlbnRIAEIJCgdwYXlsb2FkIhIKEEFnZW50TGlzdFJlcXVlc3QiRAoPQWdlbnRMaXN0UmVzdWx0EjEKBmFnZW50cxgBIAMoCzIhLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0YXR1c0V2ZW50IooBChBBZ2VudENsaWVudEZyYW1lEjIKBWhlbGxvGAEgASgLMiEubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2xpZW50SGVsbG9IABI3CghlbnZlbG9wZRgCIAEoCzIjLmxpdmVhZ2VudC5nYXRld2F5LnYyLkFnZW50RW52ZWxvcGVIAEIJCgdwYXlsb2FkIowBChBBZ2VudFNlcnZlckZyYW1lEjIKBWhlbGxvGAEgASgLMiEubGl2ZWFnZW50LmdhdGV3YXkudjIuU2VydmVySGVsbG9IABI5CghlbnZlbG9wZRgCIAEoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkdhdGV3YXlFbnZlbG9wZUgAQgkKB3BheWxvYWQikAEKE1Rlcm1pbmFsQ2xpZW50RnJhbWUSMgoFaGVsbG8YASABKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DbGllbnRIZWxsb0gAEjoKBWZyYW1lGAIgASgLMikubGl2ZWFnZW50LmdhdGV3YXkudjIuVGVybWluYWxTdHJlYW1GcmFtZUgAQgkKB3BheWxvYWQikAEKE1Rlcm1pbmFsU2VydmVyRnJhbWUSMgoFaGVsbG8YASABKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TZXJ2ZXJIZWxsb0gAEjoKBWZyYW1lGAIgASgLMikubGl2ZWFnZW50LmdhdGV3YXkudjIuVGVybWluYWxTdHJlYW1GcmFtZUgAQgkKB3BheWxvYWQiEgoQU3RhdHVzR2V0UmVxdWVzdCLXAgoLU3RhdHVzRXZlbnQSDgoGb25saW5lGAEgASgIEhMKC2FnZW50X3JlYWR5GAIgASgIEhoKEmNoYXRfcnVudGltZV9yZWFkeRgDIAEoCBIQCghhZ2VudF9pZBgEIAEoCRIVCg1hZ2VudF92ZXJzaW9uGAUgASgJEhIKCnNlc3Npb25faWQYBiABKAkSFwoPY29ubmVjdGVkX3NpbmNlGAcgASgDEhYKDmxhc3RfaGVhcnRiZWF0GAggASgDEhUKDXJ1bnRpbWVfc3RhdGUYCSABKAkSHgoWcnVudGltZV9sYXN0X2hlYXJ0YmVhdBgKIAEoAxIZChFydW50aW1lX3dvcmtlcl9pZBgLIAEoCRIXCg9ydW50aW1lX3Zpc2libGUYDCABKAgSIAoYcnVudGltZV9hY3RpdmVfcnVuX2NvdW50GA0gASgNEgwKBG5hbWUYDiABKAkiJAoSQ2hhdFByZXBhcmVSZXF1ZXN0Eg4KBnJlYXNvbhgBIAEoCSJYChRDaGF0U3Vic2NyaWJlUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEQoJYWZ0ZXJfc2VxGAIgASgDEhQKDHN0cmVhbV9lcG9jaBgDIAEoCSLrAQoPQ2hhdFJ1bkFjdGl2aXR5Eg4KBnJ1bl9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRITCgtzdGFydGVkX3NlcRgDIAEoAxIVCg11cGRhdGVkX2F0X21zGAQgASgDEhMKC3Rvb2xfc3RhdHVzGAUgASgJEiEKGXRvb2xfc3RhdHVzX2lzX2NvbXBhY3Rpb24YBiABKAgSGQoRY2xpZW50X3JlcXVlc3RfaWQYByABKAkSFwoPY29udmVyc2F0aW9uX2lkGAggASgJEg8KB3dvcmtkaXIYCSABKAkSEAoIYWdlbnRfaWQYCiABKAkilAEKD0NoYXRSdW5TbmFwc2hvdBIOCgZydW5faWQYASABKAkSEAoIcmV2aXNpb24YAiABKAMSFAoMZW50cmllc19qc29uGAMgASgJEhMKC3Rvb2xfc3RhdHVzGAQgASgJEiEKGXRvb2xfc3RhdHVzX2lzX2NvbXBhY3Rpb24YBSABKAgSEQoJYXNfb2Zfc2VxGAYgASgDIu4BChNDaGF0U3Vic2NyaWJlUmVzdWx0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIUCgxzdHJlYW1fZXBvY2gYAiABKAkSEgoKbGF0ZXN0X3NlcRgDIAEoAxINCgVyZXNldBgEIAEoCBI3CghhY3Rpdml0eRgFIAEoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRSdW5BY3Rpdml0eRI3CghzbmFwc2hvdBgGIAEoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRSdW5TbmFwc2hvdBITCgtldmVudHNfanNvbhgHIAMoDCIxChZDaGF0VW5zdWJzY3JpYmVSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSIXChVDaGF0QWN0aXZpdGllc1JlcXVlc3QiXAoUQ2hhdEFjdGl2aXRpZXNSZXN1bHQSRAoVcnVubmluZ19jb252ZXJzYXRpb25zGAEgAygLMiUubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFJ1bkFjdGl2aXR5Ik0KD0NoYXRTdHJlYW1FdmVudBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSCwoDc2VxGAIgASgDEhQKDHBheWxvYWRfanNvbhgDIAEoDCJlChNDaGF0Q29tbWFuZEFjY2VwdGVkEg4KBnJ1bl9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSFAoMYWNjZXB0ZWRfc2VxGAMgASgDEg8KB2RlZHVwZWQYBCABKAgiiwEKEUNoYXRDb21tYW5kVXBkYXRlEg4KBnJ1bl9pZBgBIAEoCRIZChFjbGllbnRfcmVxdWVzdF9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSDQoFcGhhc2UYBCABKAkSEgoKZXJyb3JfY29kZRgFIAEoCRIPCgdtZXNzYWdlGAYgASgJIjAKFUNoYXRTdWJzY3JpcHRpb25SZXNldBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiRwoQQ2hhdENhbmNlbFJlc3VsdBIKCgJvaxgBIAEoCBIOCgZydW5faWQYAiABKAkSFwoPY29udmVyc2F0aW9uX2lkGAMgASgJIp8BChFDaGF0QWN0aXZpdHlFdmVudBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhkKEWNsaWVudF9yZXF1ZXN0X2lkGAMgASgJEg8KB3J1bm5pbmcYBCABKAgSDQoFc3RhdGUYBSABKAkSDwoHd29ya2RpchgGIAEoCRIVCg11cGRhdGVkX2F0X21zGAcgASgDIiwKGVdvcmtzcGFjZVN1YnNjcmliZVJlcXVlc3QSDwoHd29ya2RpchgBIAEoCSIuChtXb3Jrc3BhY2VVbnN1YnNjcmliZVJlcXVlc3QSDwoHd29ya2RpchgBIAEoCSpZCgpDbGllbnRSb2xlEhsKF0NMSUVOVF9ST0xFX1VOU1BFQ0lGSUVEEAASFwoTQ0xJRU5UX1JPTEVfQlJPV1NFUhABEhUKEUNMSUVOVF9ST0xFX0FHRU5UEAJCQFo+Z2l0aHViLmNvbS9saXZlYWdlbnQvYWdlbnQtZ2F0ZXdheS9pbnRlcm5hbC9wcm90by92MjtnYXRld2F5djJiBnByb3RvMw", [file_proto_v2_gateway]);
+  fileDesc("Chlwcm90by92Mi9nYXRld2F5X3dzLnByb3RvEhRsaXZlYWdlbnQuZ2F0ZXdheS52MiI5Cg9EZXZpY2VXb3Jrc3BhY2USCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRwYXRoGAMgASgJIqcDCgtDbGllbnRIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEi4KBHJvbGUYAiABKA4yIC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DbGllbnRSb2xlEg0KBXRva2VuGAMgASgJEhAKCGFnZW50X2lkGAQgASgJEhUKDWFnZW50X3ZlcnNpb24YBSABKAkSEwoLY2xpZW50X25hbWUYBiABKAkSFgoOY2xpZW50X3ZlcnNpb24YByABKAkSEQoJZGV2aWNlX2lkGAggASgJEhkKEWRldmljZV9jcmVkZW50aWFsGAkgASgJEhMKC2RldmljZV9uYW1lGAogASgJEhAKCHBsYXRmb3JtGAsgASgJEjkKCndvcmtzcGFjZXMYDCADKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5EZXZpY2VXb3Jrc3BhY2USFwoPc2VsZWN0aW9uX2xlYXNlGA0gASgJEhQKDHdvcmtzcGFjZV9pZBgOIAEoCRIUCgxydW50aW1lX2tpbmQYDyABKAkSFAoMY2FwYWJpbGl0aWVzGBAgAygJIogCCgtTZXJ2ZXJIZWxsbxIKCgJvaxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEwoLc2VydmVyX3RpbWUYBCABKAMSIAoYaGVhcnRiZWF0X3BlcmlvZF9zZWNvbmRzGAUgASgNEhkKEW1heF9tZXNzYWdlX2J5dGVzGAYgASgEEg8KB3VzZXJfaWQYByABKAMSEQoJZGV2aWNlX2lkGAggASgJEhQKDHdvcmtzcGFjZV9pZBgJIAEoCRIUCgxydW50aW1lX2tpbmQYCiABKAkSEAoIYWdlbnRfaWQYCyABKAkSFAoMY2FwYWJpbGl0aWVzGAwgAygJIh4KCVBpbmdGcmFtZRIRCgl0aW1lc3RhbXAYASABKAMiHgoJUG9uZ0ZyYW1lEhEKCXRpbWVzdGFtcBgBIAEoAyIXCglBY2tSZXN1bHQSCgoCb2sYASABKAgiOQoOU3R0Q2xpZW50SGVsbG8SGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRINCgV0b2tlbhgCIAEoCSIwCghTdHRTdGFydBISCgpzZXNzaW9uX2lkGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJIj0KCFN0dEF1ZGlvEhIKCnNlc3Npb25faWQYASABKAkSEAoIc2VxdWVuY2UYAiABKA0SCwoDcGNtGAMgASgMIicKEVN0dFNlc3Npb25Db250cm9sEhIKCnNlc3Npb25faWQYASABKAkiqAIKDlN0dENsaWVudEZyYW1lEjUKBWhlbGxvGAEgASgLMiQubGl2ZWFnZW50LmdhdGV3YXkudjIuU3R0Q2xpZW50SGVsbG9IABIvCgVzdGFydBgCIAEoCzIeLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0dFN0YXJ0SAASLwoFYXVkaW8YAyABKAsyHi5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdHRBdWRpb0gAEjcKBHN0b3AYBCABKAsyJy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdHRTZXNzaW9uQ29udHJvbEgAEjkKBmNhbmNlbBgFIAEoCzInLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0dFNlc3Npb25Db250cm9sSABCCQoHcGF5bG9hZCItCg5TdHRTZXJ2ZXJIZWxsbxIKCgJvaxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJIjAKDFN0dFRleHRFdmVudBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiPQoIU3R0RXJyb3ISEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRjb2RlGAIgASgJEg8KB21lc3NhZ2UYAyABKAkiHwoJU3R0Q2xvc2VkEhIKCnNlc3Npb25faWQYASABKAki1wIKDlN0dFNlcnZlckZyYW1lEjUKBWhlbGxvGAEgASgLMiQubGl2ZWFnZW50LmdhdGV3YXkudjIuU3R0U2VydmVySGVsbG9IABIzCgVyZWFkeRgCIAEoCzIiLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0dFRleHRFdmVudEgAEjUKB3BhcnRpYWwYAyABKAsyIi5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdHRUZXh0RXZlbnRIABIzCgVmaW5hbBgEIAEoCzIiLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0dFRleHRFdmVudEgAEi8KBWVycm9yGAUgASgLMh4ubGl2ZWFnZW50LmdhdGV3YXkudjIuU3R0RXJyb3JIABIxCgZjbG9zZWQYBiABKAsyHy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdHRDbG9zZWRIAEIJCgdwYXlsb2FkIuIGCg5XZWJDbGllbnRGcmFtZRISCgpyZXF1ZXN0X2lkGAEgASgJEhAKCGFnZW50X2lkGA0gASgJEjIKBWhlbGxvGAIgASgLMiEubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2xpZW50SGVsbG9IABI+Cg1hZ2VudF9yZXF1ZXN0GAMgASgLMiUubGl2ZWFnZW50LmdhdGV3YXkudjIuR2F0ZXdheUVudmVsb3BlSAASPAoKc3RhdHVzX2dldBgEIAEoCzImLmxpdmVhZ2VudC5nYXRld2F5LnYyLlN0YXR1c0dldFJlcXVlc3RIABJACgxjaGF0X2NvbW1hbmQYBSABKAsyKC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0Q29tbWFuZFJlcXVlc3RIABJACgxjaGF0X3ByZXBhcmUYBiABKAsyKC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0UHJlcGFyZVJlcXVlc3RIABJECg5jaGF0X3N1YnNjcmliZRgHIAEoCzIqLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRTdWJzY3JpYmVSZXF1ZXN0SAASSAoQY2hhdF91bnN1YnNjcmliZRgIIAEoCzIsLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRVbnN1YnNjcmliZVJlcXVlc3RIABJGCg9jaGF0X2FjdGl2aXRpZXMYCSABKAsyKy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0QWN0aXZpdGllc1JlcXVlc3RIABJOChN3b3Jrc3BhY2Vfc3Vic2NyaWJlGAogASgLMi8ubGl2ZWFnZW50LmdhdGV3YXkudjIuV29ya3NwYWNlU3Vic2NyaWJlUmVxdWVzdEgAElIKFXdvcmtzcGFjZV91bnN1YnNjcmliZRgLIAEoCzIxLmxpdmVhZ2VudC5nYXRld2F5LnYyLldvcmtzcGFjZVVuc3Vic2NyaWJlUmVxdWVzdEgAEi8KBHBvbmcYDCABKAsyHy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5Qb25nRnJhbWVIABI8CgphZ2VudF9saXN0GA4gASgLMiYubGl2ZWFnZW50LmdhdGV3YXkudjIuQWdlbnRMaXN0UmVxdWVzdEgAQgkKB3BheWxvYWQi/wsKDldlYlNlcnZlckZyYW1lEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIYWdlbnRfaWQYECABKAkSMgoFaGVsbG8YAiABKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TZXJ2ZXJIZWxsb0gAEj0KDmFnZW50X3Jlc3BvbnNlGAMgASgLMiMubGl2ZWFnZW50LmdhdGV3YXkudjIuQWdlbnRFbnZlbG9wZUgAEjoKC2xvY2FsX2Vycm9yGAQgASgLMiMubGl2ZWFnZW50LmdhdGV3YXkudjIuRXJyb3JSZXNwb25zZUgAEi8KBHBpbmcYBSABKAsyHy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5QaW5nRnJhbWVIABIzCgZzdGF0dXMYBiABKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdGF0dXNFdmVudEgAEkQKD2NoYXRfc3Vic2NyaWJlZBgHIAEoCzIpLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRTdWJzY3JpYmVSZXN1bHRIABJCCg1jaGF0X2FjY2VwdGVkGAggASgLMikubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdENvbW1hbmRBY2NlcHRlZEgAEkUKD2NoYXRfYWN0aXZpdGllcxgJIAEoCzIqLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRBY3Rpdml0aWVzUmVzdWx0SAASOwoKY2hhdF9ldmVudBgKIAEoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRTdHJlYW1FdmVudEgAEkYKE2NoYXRfY29tbWFuZF91cGRhdGUYCyABKAsyJy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0Q29tbWFuZFVwZGF0ZUgAEk4KF2NoYXRfc3Vic2NyaXB0aW9uX3Jlc2V0GAwgASgLMisubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFN1YnNjcmlwdGlvblJlc2V0SAASQAoNY2hhdF9hY3Rpdml0eRgNIAEoCzInLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRBY3Rpdml0eUV2ZW50SAASLgoDYWNrGA4gASgLMh8ubGl2ZWFnZW50LmdhdGV3YXkudjIuQWNrUmVzdWx0SAASQAoOY2hhdF9jYW5jZWxsZWQYDyABKAsyJi5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0Q2FuY2VsUmVzdWx0SAASOwoKYWdlbnRfbGlzdBgRIAEoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkFnZW50TGlzdFJlc3VsdEgAEj8KDWhpc3RvcnlfZXZlbnQYFCABKAsyJi5saXZlYWdlbnQuZ2F0ZXdheS52Mi5IaXN0b3J5U3luY0V2ZW50SAASQQoOc2V0dGluZ3NfZXZlbnQYFSABKAsyJy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TZXR0aW5nc1N5bmNFdmVudEgAEj0KDnRlcm1pbmFsX2V2ZW50GBYgASgLMiMubGl2ZWFnZW50LmdhdGV3YXkudjIuVGVybWluYWxFdmVudEgAEjUKCnNmdHBfZXZlbnQYFyABKAsyHy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TZnRwRXZlbnRIABJAChBjaGF0X3F1ZXVlX2V2ZW50GBggASgLMiQubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2hhdFF1ZXVlRXZlbnRIABJBCgx0dW5uZWxfc3RhdGUYGSABKAsyKS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5UdW5uZWxTdGF0ZVNuYXBzaG90SAASRQoNcHJvY2Vzc19zdGF0ZRgaIAEoCzIsLmxpdmVhZ2VudC5nYXRld2F5LnYyLk1hbmFnZWRQcm9jZXNzU25hcHNob3RIABJKChJ3b3Jrc3BhY2VfYWN0aXZpdHkYGyABKAsyLC5saXZlYWdlbnQuZ2F0ZXdheS52Mi5Xb3Jrc3BhY2VBY3Rpdml0eUV2ZW50SABCCQoHcGF5bG9hZCISChBBZ2VudExpc3RSZXF1ZXN0IkQKD0FnZW50TGlzdFJlc3VsdBIxCgZhZ2VudHMYASADKAsyIS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5TdGF0dXNFdmVudCKKAQoQQWdlbnRDbGllbnRGcmFtZRIyCgVoZWxsbxgBIAEoCzIhLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNsaWVudEhlbGxvSAASNwoIZW52ZWxvcGUYAiABKAsyIy5saXZlYWdlbnQuZ2F0ZXdheS52Mi5BZ2VudEVudmVsb3BlSABCCQoHcGF5bG9hZCKMAQoQQWdlbnRTZXJ2ZXJGcmFtZRIyCgVoZWxsbxgBIAEoCzIhLmxpdmVhZ2VudC5nYXRld2F5LnYyLlNlcnZlckhlbGxvSAASOQoIZW52ZWxvcGUYAiABKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5HYXRld2F5RW52ZWxvcGVIAEIJCgdwYXlsb2FkIpABChNUZXJtaW5hbENsaWVudEZyYW1lEjIKBWhlbGxvGAEgASgLMiEubGl2ZWFnZW50LmdhdGV3YXkudjIuQ2xpZW50SGVsbG9IABI6CgVmcmFtZRgCIAEoCzIpLmxpdmVhZ2VudC5nYXRld2F5LnYyLlRlcm1pbmFsU3RyZWFtRnJhbWVIAEIJCgdwYXlsb2FkIpABChNUZXJtaW5hbFNlcnZlckZyYW1lEjIKBWhlbGxvGAEgASgLMiEubGl2ZWFnZW50LmdhdGV3YXkudjIuU2VydmVySGVsbG9IABI6CgVmcmFtZRgCIAEoCzIpLmxpdmVhZ2VudC5nYXRld2F5LnYyLlRlcm1pbmFsU3RyZWFtRnJhbWVIAEIJCgdwYXlsb2FkIhIKEFN0YXR1c0dldFJlcXVlc3Qi1wIKC1N0YXR1c0V2ZW50Eg4KBm9ubGluZRgBIAEoCBITCgthZ2VudF9yZWFkeRgCIAEoCBIaChJjaGF0X3J1bnRpbWVfcmVhZHkYAyABKAgSEAoIYWdlbnRfaWQYBCABKAkSFQoNYWdlbnRfdmVyc2lvbhgFIAEoCRISCgpzZXNzaW9uX2lkGAYgASgJEhcKD2Nvbm5lY3RlZF9zaW5jZRgHIAEoAxIWCg5sYXN0X2hlYXJ0YmVhdBgIIAEoAxIVCg1ydW50aW1lX3N0YXRlGAkgASgJEh4KFnJ1bnRpbWVfbGFzdF9oZWFydGJlYXQYCiABKAMSGQoRcnVudGltZV93b3JrZXJfaWQYCyABKAkSFwoPcnVudGltZV92aXNpYmxlGAwgASgIEiAKGHJ1bnRpbWVfYWN0aXZlX3J1bl9jb3VudBgNIAEoDRIMCgRuYW1lGA4gASgJIiQKEkNoYXRQcmVwYXJlUmVxdWVzdBIOCgZyZWFzb24YASABKAkiWAoUQ2hhdFN1YnNjcmliZVJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhEKCWFmdGVyX3NlcRgCIAEoAxIUCgxzdHJlYW1fZXBvY2gYAyABKAki6wEKD0NoYXRSdW5BY3Rpdml0eRIOCgZydW5faWQYASABKAkSDQoFc3RhdGUYAiABKAkSEwoLc3RhcnRlZF9zZXEYAyABKAMSFQoNdXBkYXRlZF9hdF9tcxgEIAEoAxITCgt0b29sX3N0YXR1cxgFIAEoCRIhChl0b29sX3N0YXR1c19pc19jb21wYWN0aW9uGAYgASgIEhkKEWNsaWVudF9yZXF1ZXN0X2lkGAcgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgIIAEoCRIPCgd3b3JrZGlyGAkgASgJEhAKCGFnZW50X2lkGAogASgJIpQBCg9DaGF0UnVuU25hcHNob3QSDgoGcnVuX2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgDEhQKDGVudHJpZXNfanNvbhgDIAEoCRITCgt0b29sX3N0YXR1cxgEIAEoCRIhChl0b29sX3N0YXR1c19pc19jb21wYWN0aW9uGAUgASgIEhEKCWFzX29mX3NlcRgGIAEoAyLuAQoTQ2hhdFN1YnNjcmliZVJlc3VsdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSFAoMc3RyZWFtX2Vwb2NoGAIgASgJEhIKCmxhdGVzdF9zZXEYAyABKAMSDQoFcmVzZXQYBCABKAgSNwoIYWN0aXZpdHkYBSABKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0UnVuQWN0aXZpdHkSNwoIc25hcHNob3QYBiABKAsyJS5saXZlYWdlbnQuZ2F0ZXdheS52Mi5DaGF0UnVuU25hcHNob3QSEwoLZXZlbnRzX2pzb24YByADKAwiMQoWQ2hhdFVuc3Vic2NyaWJlUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiFwoVQ2hhdEFjdGl2aXRpZXNSZXF1ZXN0IlwKFENoYXRBY3Rpdml0aWVzUmVzdWx0EkQKFXJ1bm5pbmdfY29udmVyc2F0aW9ucxgBIAMoCzIlLmxpdmVhZ2VudC5nYXRld2F5LnYyLkNoYXRSdW5BY3Rpdml0eSJNCg9DaGF0U3RyZWFtRXZlbnQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxwYXlsb2FkX2pzb24YAyABKAwiZQoTQ2hhdENvbW1hbmRBY2NlcHRlZBIOCgZydW5faWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEhQKDGFjY2VwdGVkX3NlcRgDIAEoAxIPCgdkZWR1cGVkGAQgASgIIosBChFDaGF0Q29tbWFuZFVwZGF0ZRIOCgZydW5faWQYASABKAkSGQoRY2xpZW50X3JlcXVlc3RfaWQYAiABKAkSFwoPY29udmVyc2F0aW9uX2lkGAMgASgJEg0KBXBoYXNlGAQgASgJEhIKCmVycm9yX2NvZGUYBSABKAkSDwoHbWVzc2FnZRgGIAEoCSIwChVDaGF0U3Vic2NyaXB0aW9uUmVzZXQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIkcKEENoYXRDYW5jZWxSZXN1bHQSCgoCb2sYASABKAgSDgoGcnVuX2lkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCSKfAQoRQ2hhdEFjdGl2aXR5RXZlbnQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIZChFjbGllbnRfcmVxdWVzdF9pZBgDIAEoCRIPCgdydW5uaW5nGAQgASgIEg0KBXN0YXRlGAUgASgJEg8KB3dvcmtkaXIYBiABKAkSFQoNdXBkYXRlZF9hdF9tcxgHIAEoAyIsChlXb3Jrc3BhY2VTdWJzY3JpYmVSZXF1ZXN0Eg8KB3dvcmtkaXIYASABKAkiLgobV29ya3NwYWNlVW5zdWJzY3JpYmVSZXF1ZXN0Eg8KB3dvcmtkaXIYASABKAkqWQoKQ2xpZW50Um9sZRIbChdDTElFTlRfUk9MRV9VTlNQRUNJRklFRBAAEhcKE0NMSUVOVF9ST0xFX0JST1dTRVIQARIVChFDTElFTlRfUk9MRV9BR0VOVBACQkBaPmdpdGh1Yi5jb20vbGl2ZWFnZW50L2FnZW50LWdhdGV3YXkvaW50ZXJuYWwvcHJvdG8vdjI7Z2F0ZXdheXYyYgZwcm90bzM", [file_proto_v2_gateway]);
 
 /**
  * @generated from message liveagent.gateway.v2.DeviceWorkspace
@@ -296,6 +296,282 @@ export const AckResultSchema: GenMessage<AckResult> = /*@__PURE__*/
   messageDesc(file_proto_v2_gateway_ws, 5);
 
 /**
+ * @generated from message liveagent.gateway.v2.SttClientHello
+ */
+export type SttClientHello = Message<"liveagent.gateway.v2.SttClientHello"> & {
+  /**
+   * @generated from field: uint32 protocol_version = 1;
+   */
+  protocolVersion: number;
+
+  /**
+   * @generated from field: string token = 2;
+   */
+  token: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttClientHello.
+ * Use `create(SttClientHelloSchema)` to create a new message.
+ */
+export const SttClientHelloSchema: GenMessage<SttClientHello> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 6);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttStart
+ */
+export type SttStart = Message<"liveagent.gateway.v2.SttStart"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string provider = 2;
+   */
+  provider: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttStart.
+ * Use `create(SttStartSchema)` to create a new message.
+ */
+export const SttStartSchema: GenMessage<SttStart> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 7);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttAudio
+ */
+export type SttAudio = Message<"liveagent.gateway.v2.SttAudio"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint32 sequence = 2;
+   */
+  sequence: number;
+
+  /**
+   * @generated from field: bytes pcm = 3;
+   */
+  pcm: Uint8Array;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttAudio.
+ * Use `create(SttAudioSchema)` to create a new message.
+ */
+export const SttAudioSchema: GenMessage<SttAudio> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 8);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttSessionControl
+ */
+export type SttSessionControl = Message<"liveagent.gateway.v2.SttSessionControl"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttSessionControl.
+ * Use `create(SttSessionControlSchema)` to create a new message.
+ */
+export const SttSessionControlSchema: GenMessage<SttSessionControl> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 9);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttClientFrame
+ */
+export type SttClientFrame = Message<"liveagent.gateway.v2.SttClientFrame"> & {
+  /**
+   * @generated from oneof liveagent.gateway.v2.SttClientFrame.payload
+   */
+  payload: {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttClientHello hello = 1;
+     */
+    value: SttClientHello;
+    case: "hello";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttStart start = 2;
+     */
+    value: SttStart;
+    case: "start";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttAudio audio = 3;
+     */
+    value: SttAudio;
+    case: "audio";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttSessionControl stop = 4;
+     */
+    value: SttSessionControl;
+    case: "stop";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttSessionControl cancel = 5;
+     */
+    value: SttSessionControl;
+    case: "cancel";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttClientFrame.
+ * Use `create(SttClientFrameSchema)` to create a new message.
+ */
+export const SttClientFrameSchema: GenMessage<SttClientFrame> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 10);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttServerHello
+ */
+export type SttServerHello = Message<"liveagent.gateway.v2.SttServerHello"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttServerHello.
+ * Use `create(SttServerHelloSchema)` to create a new message.
+ */
+export const SttServerHelloSchema: GenMessage<SttServerHello> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 11);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttTextEvent
+ */
+export type SttTextEvent = Message<"liveagent.gateway.v2.SttTextEvent"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string text = 2;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttTextEvent.
+ * Use `create(SttTextEventSchema)` to create a new message.
+ */
+export const SttTextEventSchema: GenMessage<SttTextEvent> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 12);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttError
+ */
+export type SttError = Message<"liveagent.gateway.v2.SttError"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string code = 2;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttError.
+ * Use `create(SttErrorSchema)` to create a new message.
+ */
+export const SttErrorSchema: GenMessage<SttError> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 13);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttClosed
+ */
+export type SttClosed = Message<"liveagent.gateway.v2.SttClosed"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttClosed.
+ * Use `create(SttClosedSchema)` to create a new message.
+ */
+export const SttClosedSchema: GenMessage<SttClosed> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 14);
+
+/**
+ * @generated from message liveagent.gateway.v2.SttServerFrame
+ */
+export type SttServerFrame = Message<"liveagent.gateway.v2.SttServerFrame"> & {
+  /**
+   * @generated from oneof liveagent.gateway.v2.SttServerFrame.payload
+   */
+  payload: {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttServerHello hello = 1;
+     */
+    value: SttServerHello;
+    case: "hello";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttTextEvent ready = 2;
+     */
+    value: SttTextEvent;
+    case: "ready";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttTextEvent partial = 3;
+     */
+    value: SttTextEvent;
+    case: "partial";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttTextEvent final = 4;
+     */
+    value: SttTextEvent;
+    case: "final";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttError error = 5;
+     */
+    value: SttError;
+    case: "error";
+  } | {
+    /**
+     * @generated from field: liveagent.gateway.v2.SttClosed closed = 6;
+     */
+    value: SttClosed;
+    case: "closed";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message liveagent.gateway.v2.SttServerFrame.
+ * Use `create(SttServerFrameSchema)` to create a new message.
+ */
+export const SttServerFrameSchema: GenMessage<SttServerFrame> = /*@__PURE__*/
+  messageDesc(file_proto_v2_gateway_ws, 15);
+
+/**
  * WebClientFrame 为浏览器 → 网关方向的帧。除 agent_request 直通臂外，其余臂均为
  * 网关本地操作（由网关自身状态应答，不经桌面端往返）。
  *
@@ -404,7 +680,7 @@ export type WebClientFrame = Message<"liveagent.gateway.v2.WebClientFrame"> & {
  * Use `create(WebClientFrameSchema)` to create a new message.
  */
 export const WebClientFrameSchema: GenMessage<WebClientFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 6);
+  messageDesc(file_proto_v2_gateway_ws, 16);
 
 /**
  * WebServerFrame 为网关 → 浏览器方向的帧。
@@ -585,7 +861,7 @@ export type WebServerFrame = Message<"liveagent.gateway.v2.WebServerFrame"> & {
  * Use `create(WebServerFrameSchema)` to create a new message.
  */
 export const WebServerFrameSchema: GenMessage<WebServerFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 7);
+  messageDesc(file_proto_v2_gateway_ws, 17);
 
 /**
  * AgentListRequest 查询 Agent 目录；响应为 AgentListResult。
@@ -600,7 +876,7 @@ export type AgentListRequest = Message<"liveagent.gateway.v2.AgentListRequest"> 
  * Use `create(AgentListRequestSchema)` to create a new message.
  */
 export const AgentListRequestSchema: GenMessage<AgentListRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 8);
+  messageDesc(file_proto_v2_gateway_ws, 18);
 
 /**
  * AgentListResult 返回全部已登记 Agent 的状态（含离线项，供目录渲染），
@@ -620,7 +896,7 @@ export type AgentListResult = Message<"liveagent.gateway.v2.AgentListResult"> & 
  * Use `create(AgentListResultSchema)` to create a new message.
  */
 export const AgentListResultSchema: GenMessage<AgentListResult> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 9);
+  messageDesc(file_proto_v2_gateway_ws, 19);
 
 /**
  * AgentClientFrame 为桌面端 → 网关方向的帧。
@@ -651,7 +927,7 @@ export type AgentClientFrame = Message<"liveagent.gateway.v2.AgentClientFrame"> 
  * Use `create(AgentClientFrameSchema)` to create a new message.
  */
 export const AgentClientFrameSchema: GenMessage<AgentClientFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 10);
+  messageDesc(file_proto_v2_gateway_ws, 20);
 
 /**
  * AgentServerFrame 为网关 → 桌面端方向的帧。
@@ -682,7 +958,7 @@ export type AgentServerFrame = Message<"liveagent.gateway.v2.AgentServerFrame"> 
  * Use `create(AgentServerFrameSchema)` to create a new message.
  */
 export const AgentServerFrameSchema: GenMessage<AgentServerFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 11);
+  messageDesc(file_proto_v2_gateway_ws, 21);
 
 /**
  * TerminalClientFrame 为客户端（浏览器或桌面端）→ 网关方向的帧。
@@ -713,7 +989,7 @@ export type TerminalClientFrame = Message<"liveagent.gateway.v2.TerminalClientFr
  * Use `create(TerminalClientFrameSchema)` to create a new message.
  */
 export const TerminalClientFrameSchema: GenMessage<TerminalClientFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 12);
+  messageDesc(file_proto_v2_gateway_ws, 22);
 
 /**
  * TerminalServerFrame 为网关 → 客户端方向的帧。
@@ -744,7 +1020,7 @@ export type TerminalServerFrame = Message<"liveagent.gateway.v2.TerminalServerFr
  * Use `create(TerminalServerFrameSchema)` to create a new message.
  */
 export const TerminalServerFrameSchema: GenMessage<TerminalServerFrame> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 13);
+  messageDesc(file_proto_v2_gateway_ws, 23);
 
 /**
  * StatusGetRequest 请求网关侧运行状态快照（操作类型："status.get"）。
@@ -759,7 +1035,7 @@ export type StatusGetRequest = Message<"liveagent.gateway.v2.StatusGetRequest"> 
  * Use `create(StatusGetRequestSchema)` to create a new message.
  */
 export const StatusGetRequestSchema: GenMessage<StatusGetRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 14);
+  messageDesc(file_proto_v2_gateway_ws, 24);
 
 /**
  * StatusEvent 镜像 session.Status 的 JSON 形状（字段一一对应）。
@@ -845,7 +1121,7 @@ export type StatusEvent = Message<"liveagent.gateway.v2.StatusEvent"> & {
  * Use `create(StatusEventSchema)` to create a new message.
  */
 export const StatusEventSchema: GenMessage<StatusEvent> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 15);
+  messageDesc(file_proto_v2_gateway_ws, 25);
 
 /**
  * ChatPrepareRequest 唤醒/探活桌面端 chat 运行时（操作类型："chat.prepare"）；响应为 StatusEvent。
@@ -864,7 +1140,7 @@ export type ChatPrepareRequest = Message<"liveagent.gateway.v2.ChatPrepareReques
  * Use `create(ChatPrepareRequestSchema)` to create a new message.
  */
 export const ChatPrepareRequestSchema: GenMessage<ChatPrepareRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 16);
+  messageDesc(file_proto_v2_gateway_ws, 26);
 
 /**
  * ChatSubscribeRequest 订阅会话事件流（操作类型："chat.subscribe"）；外层 WebClientFrame.agent_id 必须非空，
@@ -895,7 +1171,7 @@ export type ChatSubscribeRequest = Message<"liveagent.gateway.v2.ChatSubscribeRe
  * Use `create(ChatSubscribeRequestSchema)` to create a new message.
  */
 export const ChatSubscribeRequestSchema: GenMessage<ChatSubscribeRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 17);
+  messageDesc(file_proto_v2_gateway_ws, 27);
 
 /**
  * ChatRunActivity 镜像 session.RunActivity 的 JSON 形状。
@@ -963,7 +1239,7 @@ export type ChatRunActivity = Message<"liveagent.gateway.v2.ChatRunActivity"> & 
  * Use `create(ChatRunActivitySchema)` to create a new message.
  */
 export const ChatRunActivitySchema: GenMessage<ChatRunActivity> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 18);
+  messageDesc(file_proto_v2_gateway_ws, 28);
 
 /**
  * ChatRunSnapshot 镜像 session.RunSnapshot 的 JSON 形状。
@@ -1009,7 +1285,7 @@ export type ChatRunSnapshot = Message<"liveagent.gateway.v2.ChatRunSnapshot"> & 
  * Use `create(ChatRunSnapshotSchema)` to create a new message.
  */
 export const ChatRunSnapshotSchema: GenMessage<ChatRunSnapshot> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 19);
+  messageDesc(file_proto_v2_gateway_ws, 29);
 
 /**
  * ChatSubscribeResult 是 chat_subscribe 的响应。
@@ -1061,7 +1337,7 @@ export type ChatSubscribeResult = Message<"liveagent.gateway.v2.ChatSubscribeRes
  * Use `create(ChatSubscribeResultSchema)` to create a new message.
  */
 export const ChatSubscribeResultSchema: GenMessage<ChatSubscribeResult> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 20);
+  messageDesc(file_proto_v2_gateway_ws, 30);
 
 /**
  * ChatUnsubscribeRequest 取消订阅（操作类型："chat.unsubscribe"）；响应 AckResult。
@@ -1080,7 +1356,7 @@ export type ChatUnsubscribeRequest = Message<"liveagent.gateway.v2.ChatUnsubscri
  * Use `create(ChatUnsubscribeRequestSchema)` to create a new message.
  */
 export const ChatUnsubscribeRequestSchema: GenMessage<ChatUnsubscribeRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 21);
+  messageDesc(file_proto_v2_gateway_ws, 31);
 
 /**
  * ChatActivitiesRequest 查询运行中会话（操作类型："chat.activities"）；仅由网关状态应答，桌面端离线时亦可用。
@@ -1095,7 +1371,7 @@ export type ChatActivitiesRequest = Message<"liveagent.gateway.v2.ChatActivities
  * Use `create(ChatActivitiesRequestSchema)` to create a new message.
  */
 export const ChatActivitiesRequestSchema: GenMessage<ChatActivitiesRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 22);
+  messageDesc(file_proto_v2_gateway_ws, 32);
 
 /**
  * @generated from message liveagent.gateway.v2.ChatActivitiesResult
@@ -1112,7 +1388,7 @@ export type ChatActivitiesResult = Message<"liveagent.gateway.v2.ChatActivitiesR
  * Use `create(ChatActivitiesResultSchema)` to create a new message.
  */
 export const ChatActivitiesResultSchema: GenMessage<ChatActivitiesResult> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 23);
+  messageDesc(file_proto_v2_gateway_ws, 33);
 
 /**
  * ChatStreamEvent 是订阅后推送的单条会话事件。
@@ -1143,7 +1419,7 @@ export type ChatStreamEvent = Message<"liveagent.gateway.v2.ChatStreamEvent"> & 
  * Use `create(ChatStreamEventSchema)` to create a new message.
  */
 export const ChatStreamEventSchema: GenMessage<ChatStreamEvent> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 24);
+  messageDesc(file_proto_v2_gateway_ws, 34);
 
 /**
  * ChatCommandAccepted 是 chat_command 提交被接受的响应（chat_command 的接受应答）。
@@ -1177,7 +1453,7 @@ export type ChatCommandAccepted = Message<"liveagent.gateway.v2.ChatCommandAccep
  * Use `create(ChatCommandAcceptedSchema)` to create a new message.
  */
 export const ChatCommandAcceptedSchema: GenMessage<ChatCommandAccepted> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 25);
+  messageDesc(file_proto_v2_gateway_ws, 35);
 
 /**
  * ChatCommandUpdate 推送命令的前置阶段结果（bound / queued_in_gui / failed），镜像 session.ChatCommandUpdate。
@@ -1221,7 +1497,7 @@ export type ChatCommandUpdate = Message<"liveagent.gateway.v2.ChatCommandUpdate"
  * Use `create(ChatCommandUpdateSchema)` to create a new message.
  */
 export const ChatCommandUpdateSchema: GenMessage<ChatCommandUpdate> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 26);
+  messageDesc(file_proto_v2_gateway_ws, 36);
 
 /**
  * ChatSubscriptionReset 通知客户端某会话流已被限流丢弃，需重新订阅（after_seq 断点续传）。
@@ -1240,7 +1516,7 @@ export type ChatSubscriptionReset = Message<"liveagent.gateway.v2.ChatSubscripti
  * Use `create(ChatSubscriptionResetSchema)` to create a new message.
  */
 export const ChatSubscriptionResetSchema: GenMessage<ChatSubscriptionReset> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 27);
+  messageDesc(file_proto_v2_gateway_ws, 37);
 
 /**
  * ChatCancelResult 是 chat.cancel 的响应。
@@ -1269,7 +1545,7 @@ export type ChatCancelResult = Message<"liveagent.gateway.v2.ChatCancelResult"> 
  * Use `create(ChatCancelResultSchema)` to create a new message.
  */
 export const ChatCancelResultSchema: GenMessage<ChatCancelResult> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 28);
+  messageDesc(file_proto_v2_gateway_ws, 38);
 
 /**
  * ChatActivityEvent 广播会话活动状态变化，镜像 session.ConversationActivityEvent。
@@ -1318,7 +1594,7 @@ export type ChatActivityEvent = Message<"liveagent.gateway.v2.ChatActivityEvent"
  * Use `create(ChatActivityEventSchema)` to create a new message.
  */
 export const ChatActivityEventSchema: GenMessage<ChatActivityEvent> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 29);
+  messageDesc(file_proto_v2_gateway_ws, 39);
 
 /**
  * WorkspaceSubscribeRequest 订阅工作区活动（操作类型："workspace.subscribe"）；响应 AckResult，事件经 workspace_activity 臂广播。
@@ -1337,7 +1613,7 @@ export type WorkspaceSubscribeRequest = Message<"liveagent.gateway.v2.WorkspaceS
  * Use `create(WorkspaceSubscribeRequestSchema)` to create a new message.
  */
 export const WorkspaceSubscribeRequestSchema: GenMessage<WorkspaceSubscribeRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 30);
+  messageDesc(file_proto_v2_gateway_ws, 40);
 
 /**
  * WorkspaceUnsubscribeRequest 取消订阅；响应 AckResult。
@@ -1356,7 +1632,7 @@ export type WorkspaceUnsubscribeRequest = Message<"liveagent.gateway.v2.Workspac
  * Use `create(WorkspaceUnsubscribeRequestSchema)` to create a new message.
  */
 export const WorkspaceUnsubscribeRequestSchema: GenMessage<WorkspaceUnsubscribeRequest> = /*@__PURE__*/
-  messageDesc(file_proto_v2_gateway_ws, 31);
+  messageDesc(file_proto_v2_gateway_ws, 41);
 
 /**
  * ClientRole 区分 /ws/v2/terminal 上连接的所属端（该链路两端共用一条路径，靠 hello.role 区分）。

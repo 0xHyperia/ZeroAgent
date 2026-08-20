@@ -214,6 +214,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onNewConversation,
     onNewRecentConversation,
     onSelectConversation,
+    onConversationWorkbenchDragIntent,
+    onConversationOpenInWorkbenchSplit,
+    onProjectWorkbenchDragIntent,
     onStartRenaming,
     onRenameDraftChange,
     onCommitRename,
@@ -1154,6 +1157,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         menuOpen={!sectionsDisabled && openMenuId === item.id}
         menuSide={menuSide}
         onMenuOpenChange={handleMenuOpenChange}
+        onWorkbenchDragIntent={onConversationWorkbenchDragIntent}
+        onOpenInWorkbenchSplit={onConversationOpenInWorkbenchSplit}
       />
     ),
     [
@@ -1165,6 +1170,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       handleMenuOpenChange,
       handleRenameDraftChange,
       handleSelectConversation,
+      onConversationWorkbenchDragIntent,
+      onConversationOpenInWorkbenchSplit,
       handleMoveToWorkspace,
       handleSetPinned,
       handleSetPendingDelete,
@@ -1526,6 +1533,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                                   }
                                   isInteractionDisabled={sectionsDisabled}
                                   onSelectProject={handleSelectProject}
+                                  onWorkbenchDragIntent={onProjectWorkbenchDragIntent}
                                   onBrowseProjectInFileTree={
                                     onBrowseProjectInFileTree
                                       ? handleBrowseProjectInFileTree
@@ -1594,6 +1602,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                               }
                               isInteractionDisabled={sectionsDisabled}
                               onSelectProject={handleSelectProject}
+                              onWorkbenchDragIntent={onProjectWorkbenchDragIntent}
                               onBrowseProjectInFileTree={
                                 onBrowseProjectInFileTree
                                   ? handleBrowseProjectInFileTree

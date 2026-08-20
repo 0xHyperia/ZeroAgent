@@ -62,6 +62,7 @@ import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { WebSettingsSaveState } from "@/lib/webSettings";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
+import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import type { SectionId } from "@/pages/settings/types";
 
 type Conversation = {
@@ -140,6 +141,18 @@ export function CloudChatPage({
   onSwitch,
   onLogout,
 }: Props) {
+  const disabledSttSettingsService = useMemo<SttSettingsService>(
+    () => ({
+      runtimeLabel: "Cloud Chat",
+      get: async () => settings.stt,
+      update: async () => settings.stt,
+      test: async () => ({
+        result: "network_failed",
+        message: "Cloud Chat 暂不提供语音输入配置",
+      }),
+    }),
+    [settings.stt],
+  );
   const requestedSettingsSection = new URLSearchParams(window.location.search).get(
     "settings",
   ) as SectionId | null;
@@ -773,6 +786,7 @@ export function CloudChatPage({
                       </div>
                       <ChatComposerBar
                         surface="web"
+                        conversationId={conversationId}
                         composerRef={composerRef}
                         isSending={streaming}
                         isUploadingFiles={false}
@@ -852,12 +866,22 @@ export function CloudChatPage({
               onBack={() => setAccountSettingsOpen(false)}
               initialSection={settingsSection}
               onSectionChange={setSettingsSection}
-              hiddenSections={["systemTools", "agents", "ssh", "memory", "hooks", "cron", "remote"]}
+              hiddenSections={[
+                "systemTools",
+                "stt",
+                "agents",
+                "ssh",
+                "memory",
+                "hooks",
+                "cron",
+                "remote",
+              ]}
               relayUser={user}
               relayStats={accountStats}
               onRelayUserChange={onUserChange}
               onRelayStatsChange={setAccountStats}
               runtimeKind="web_chat"
+              sttSettingsService={disabledSttSettingsService}
             />
           </div>
         ) : null}

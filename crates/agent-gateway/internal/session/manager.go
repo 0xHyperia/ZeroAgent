@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -10,10 +12,9 @@ import (
 
 var ErrAgentIDRequired = errors.New("agent_id is required")
 var ErrAgentOffline = errors.New("agent offline")
-var ErrChatProtocolIncompatible = errors.New("desktop chat protocol is incompatible; update LiveAgent desktop")
+var ErrChatProtocolIncompatible = errors.New("desktop chat protocol is incompatible; update ZeroAgent desktop")
 var ErrTunnelNotFound = errors.New("tunnel not found")
 var ErrTunnelExpired = errors.New("tunnel expired")
-var ErrTunnelOverLimit = errors.New("tunnel connection limit exceeded")
 
 const (
 	chatRuntimeReadyTTL      = 15 * time.Second
@@ -37,6 +38,7 @@ type Manager struct {
 	statusSubs        *statusSubscriberHub
 	historyObserverMu sync.RWMutex
 	historyObserver   HistoryObserver
+	sttSettingsSync   func(context.Context, json.RawMessage) (any, error)
 }
 
 type HistoryObserver func(agentID string, event *gatewayv2.HistorySyncEvent)

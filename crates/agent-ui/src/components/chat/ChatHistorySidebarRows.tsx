@@ -8,6 +8,7 @@ import {
   ArchiveRestore,
   Check,
   ChevronRight,
+  Columns2,
   Edit3,
   Folder,
   FolderClosed,
@@ -97,6 +98,17 @@ type HistoryRowProps = {
   menuOpen: boolean;
   menuSide: "bottom" | "right";
   onMenuOpenChange: (id: string, open: boolean) => void;
+  /**
+   * Workbench pointer-drag intent from the row title area (desktop only).
+   * The drag session activates after a movement threshold, so plain clicks
+   * keep their existing select semantics.
+   */
+  onWorkbenchDragIntent?: (
+    item: SidebarConversation,
+    event: { pointerId: number; clientX: number; clientY: number },
+  ) => void;
+  /** Menu alternative to dragging: open the conversation in a split pane. */
+  onOpenInWorkbenchSplit?: (item: SidebarConversation) => void;
 };
 
 function areRenderedHistoryItemsEqual(previous: SidebarConversation, next: SidebarConversation) {
@@ -141,7 +153,9 @@ function areHistoryRowPropsEqual(previous: HistoryRowProps, next: HistoryRowProp
     previous.onSetPendingDelete === next.onSetPendingDelete &&
     previous.onSelectForBulk === next.onSelectForBulk &&
     previous.onEnterSelectionMode === next.onEnterSelectionMode &&
-    previous.onMenuOpenChange === next.onMenuOpenChange
+    previous.onMenuOpenChange === next.onMenuOpenChange &&
+    previous.onWorkbenchDragIntent === next.onWorkbenchDragIntent &&
+    previous.onOpenInWorkbenchSplit === next.onOpenInWorkbenchSplit
   );
 }
 
@@ -177,6 +191,8 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
     menuOpen,
     menuSide,
     onMenuOpenChange,
+    onWorkbenchDragIntent,
+    onOpenInWorkbenchSplit,
   } = props;
   const { t } = useLocale();
 
@@ -345,6 +361,26 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
 
   const handleTitlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
+      // Desktop: arm a workbench pane drag from the title area. Touch keeps
+      // the long-press menu; renaming/selection/menu states never drag.
+      if (
+        onWorkbenchDragIntent &&
+        !isMobileMenuLayout &&
+        !isInteractionDisabled &&
+        !isSelectionMode &&
+        !isRenaming &&
+        !isPendingDelete &&
+        !menuOpen &&
+        event.pointerType !== "touch" &&
+        event.button === 0 &&
+        !item.isPending
+      ) {
+        onWorkbenchDragIntent(item, {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        });
+      }
       if (isInteractionDisabled || isSelectionMode || !isMobileMenuLayout || isBusy) {
         return;
       }
@@ -366,8 +402,13 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
       clearLongPressTimer,
       isBusy,
       isInteractionDisabled,
+      isPendingDelete,
+      isRenaming,
       isSelectionMode,
       isMobileMenuLayout,
+      item,
+      menuOpen,
+      onWorkbenchDragIntent,
       openMobileMenuFromLongPress,
     ],
   );
@@ -753,6 +794,16 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
                   <ListChecks className="h-3.5 w-3.5" />
                   {t("chat.conversationBulkSelect")}
                 </DropdownMenuItem>
+                {onOpenInWorkbenchSplit && !item.isPending ? (
+                  <DropdownMenuItem
+                    disabled={isInteractionDisabled}
+                    onSelect={() => onOpenInWorkbenchSplit(item)}
+                    className="gap-2"
+                  >
+                    <Columns2 className="h-3.5 w-3.5" />
+                    {t("workbench.openInSplit")}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   disabled={isInteractionDisabled}
                   onSelect={handleStartRenamingFromMenu}
@@ -949,6 +1000,15 @@ export const ProjectRow = memo(function ProjectRow(props: {
   onMoveProjectToGroup?: (projectPath: string, groupId: string | null) => void;
   menuOpen: boolean;
   onMenuOpenChange: (projectId: string, open: boolean) => void;
+  /**
+   * Workbench pointer-drag intent from the project title (desktop only):
+   * dragging a workspace into the pane canvas creates a new conversation for
+   * it at the drop position. Never armed for archived or missing projects.
+   */
+  onWorkbenchDragIntent?: (
+    project: WorkspaceProject,
+    event: { pointerId: number; clientX: number; clientY: number },
+  ) => void;
 }) {
   const {
     project,
@@ -974,6 +1034,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
     onMoveProjectToGroup,
     menuOpen,
     onMenuOpenChange,
+    onWorkbenchDragIntent,
   } = props;
   const { t } = useLocale();
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -1189,6 +1250,25 @@ export const ProjectRow = memo(function ProjectRow(props: {
                 if (!isArchived) {
                   onSelectProject(project);
                 }
+              }}
+              onPointerDown={(event) => {
+                if (
+                  !onWorkbenchDragIntent ||
+                  isArchived ||
+                  isMissing ||
+                  isInteractionDisabled ||
+                  menuOpen ||
+                  pendingAction !== null ||
+                  event.pointerType === "touch" ||
+                  event.button !== 0
+                ) {
+                  return;
+                }
+                onWorkbenchDragIntent(project, {
+                  pointerId: event.pointerId,
+                  clientX: event.clientX,
+                  clientY: event.clientY,
+                });
               }}
               onDoubleClick={(event) => {
                 event.preventDefault();

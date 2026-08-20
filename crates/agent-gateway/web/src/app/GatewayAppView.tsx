@@ -2,6 +2,7 @@ import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
+import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
 import { NotifyToast } from "@liveagent/ui/components/chat/NotifyToast";
@@ -13,6 +14,7 @@ import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/Wor
 import { ChevronDown } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
+import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
@@ -25,6 +27,8 @@ import {
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { mergePendingUploadedFiles } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { toTrajectoryMessages } from "@liveagent/ui/lib/trajectory/transcriptMessages";
+import { useConversationViewState } from "@liveagent/ui/lib/trajectory/useConversationViewState";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
 import { FloorNavRail } from "@liveagent/ui/pages/chat/transcript/FloorNavRail";
 import {
@@ -32,7 +36,14 @@ import {
   TranscriptWidthControls,
 } from "@liveagent/ui/pages/chat/transcript/TranscriptWidthControls";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
-import { type CSSProperties, useCallback, useMemo } from "react";
+import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
+import {
+  type CSSProperties,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
+import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
@@ -40,8 +51,14 @@ import { bindRelayKeysToSettings } from "@/lib/relay/providers";
 import {
   getNextTheme,
   updateExecutionModeFromChatSelection,
+  updateSystem,
   updateWorkspaceResourceSettings,
 } from "@/lib/settings";
+import {
+  liveTrajectoryAuthoritativeRevision,
+  liveTrajectoryEvents,
+  subscribeLiveTrajectory,
+} from "@/lib/trajectory/liveTrajectory";
 import { WorkdirPickerModal } from "@/pages/settings/WorkdirPickerModal";
 import { asErrorMessage } from "./chatEventUtils";
 import { CHAT_RUNTIME_FOREGROUND_PREPARE_TIMEOUT_MS } from "./constants";
@@ -314,6 +331,39 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
     workspaceSshTerminalOpen,
     workspaceSshTerminalOpenRequest,
   } = viewModel;
+  const sttSettingsService = useMemo<SttSettingsService>(
+    () => ({
+      runtimeLabel: "设备 WebUI",
+      get: async () => settings.stt,
+      update: async () => settings.stt,
+      test: async () => ({
+        result: "network_failed",
+        message: "设备 WebUI 暂不提供语音输入配置",
+      }),
+    }),
+    [settings.stt],
+  );
+
+  const { activeConversationView, setActiveConversationView } =
+    useConversationViewState(displayedConversationId);
+  const trajectoryHost = useMemo(
+    () => createGatewayTrajectoryHost(api, handleOpenChatFileLink),
+    [api, handleOpenChatFileLink],
+  );
+  // 正文只在切到轨迹页时才需要；转换本身很轻，跟随转录行 memo 即可。
+  const trajectoryMessages = useMemo(() => toTrajectoryMessages(transcriptRows), [transcriptRows]);
+  const hasConversationReply =
+    displayedConversationId !== "" &&
+    !isLocalDraftConversationId(displayedConversationId) &&
+    trajectoryMessages.some((message) => message.role === "assistant");
+  const renderedConversationView = hasConversationReply ? activeConversationView : "conversation";
+  // 实时骨架来自 ChatEvent 流；账本层按事件身份去重，所以与落盘那份合并安全。
+  const liveTrajectory = useSyncExternalStore(subscribeLiveTrajectory, () =>
+    liveTrajectoryEvents(displayedConversationId),
+  );
+  const trajectoryAuthoritativeRevision = useSyncExternalStore(subscribeLiveTrajectory, () =>
+    liveTrajectoryAuthoritativeRevision(displayedConversationId),
+  );
   const handleSelectExecutionMode = useCallback(
     (mode: "text" | "tools") =>
       setSettings((prev) => updateExecutionModeFromChatSelection(prev, mode)),
@@ -500,6 +550,14 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                   }))
                 }
                 onOpenSidebar={() => setSidebarOpen(true)}
+                leadingActions={
+                  activeView === "chat" && hasConversationReply ? (
+                    <ConversationViewTabs
+                      active={renderedConversationView}
+                      onChange={setActiveConversationView}
+                    />
+                  ) : null
+                }
                 trailingActions={
                   <>
                     <ExecutionEnvironmentSwitcher
@@ -589,89 +647,105 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                           } as CSSProperties
                         }
                       >
-                        <div className="gateway-transcript-scroll-shell">
-                          <ScrollArea
-                            ref={setTranscriptScrollAreaRoot}
-                            viewportRef={setTranscriptViewport}
-                            className="gateway-transcript-scroll"
-                          >
-                            <ChangedFilesActionsProvider value={changedFilesActions}>
-                              <CheckpointRewindProvider
-                                client={checkpointClient}
-                                conversationId={displayedConversationId}
-                                disabled={!displayedConversationId || transcriptBusy}
-                                resolveAuthorizedRoots={resolveCheckpointAuthorizedRoots}
-                                onRewound={handleCheckpointRewound}
-                              >
-                                <GatewayTranscript
-                                  conversationId={displayedConversationId}
-                                  rows={transcriptRows}
-                                  liveStartIndex={transcriptLiveStartIndex}
-                                  activeTurnKey={displayedTranscript.activeTurnKey}
-                                  contentWidth={settings.customSettings.chatTranscript.width}
-                                  isViewportFollowing={transcriptFollow.isFollowing}
-                                  viewportFollowing={transcriptFollowing}
-                                  navRef={transcriptNavRef}
-                                  onAnchorUserRowChange={setActiveFloorKey}
-                                  error={transcriptError}
-                                  toolStatus={transcriptToolStatus}
-                                  toolStatusIsCompaction={transcriptToolStatusIsCompaction}
-                                  retryAttempts={displayedTranscript.retryAttempts}
-                                  isStreaming={transcriptBusy}
-                                  isLoading={transcriptHistoryLoading}
-                                  loadingTitle={historyDetailLoadingTitle}
-                                  hasModels={modelOptions.length > 0}
-                                  onOpenSettings={openSettings}
-                                  hasMoreHistory={selectedHistoryHasMore}
-                                  isLoadingMoreHistory={loadingOlderHistory}
-                                  onLoadEarlierHistory={
-                                    selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
-                                  }
-                                  showUsage={isAgentDevExecutionMode}
-                                  usageContextWindow={currentModelContextWindow}
-                                  workspaceRoot={displayedConversationWorkdir}
-                                  onOpenFileLink={handleOpenChatFileLink}
-                                  gitClient={gitClient}
-                                  onLoadUploadedImagePreview={handleLoadUploadedImagePreview}
-                                  onResendFromEdit={handleResendFromEdit}
-                                  onBranchConversation={handleBranchConversation}
-                                  branchPendingMessageId={branchPendingMessageId}
-                                  onSuggestionSelect={handleEmptyStateSuggestion}
-                                  suggestionsDisabled={isSuggestionTyping}
-                                />
-                              </CheckpointRewindProvider>
-                            </ChangedFilesActionsProvider>
-                          </ScrollArea>
-                          <TranscriptWidthControls
-                            hostRef={transcriptStageRef}
-                            width={settings.customSettings.chatTranscript.width}
-                            onWidthChange={handleChatTranscriptWidthChange}
-                            resizeLabel={
-                              settings.locale === "en-US"
-                                ? "Resize conversation content"
-                                : "调整对话正文宽度"
+                        {renderedConversationView === "trajectory" ? (
+                          <TrajectoryView
+                            conversationId={displayedConversationId}
+                            host={trajectoryHost}
+                            messages={trajectoryMessages}
+                            workdir={displayedConversationWorkdir}
+                            hasMoreMessages={selectedHistoryHasMore}
+                            loadEarlierMessages={
+                              selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
                             }
-                            resetLabel={
-                              settings.locale === "en-US"
-                                ? "Double-click to reset"
-                                : "双击恢复默认宽度"
-                            }
+                            liveEvents={liveTrajectory}
+                            authoritativeRevision={trajectoryAuthoritativeRevision}
                           />
-                          {displayedTranscriptRowCount > 0 && !conversationOpenState.showOverlay ? (
-                            <FloorNavRail
-                              conversationId={displayedConversationId}
-                              floors={transcriptFloors}
-                              activeRowKey={activeFloorKey}
-                              bottomOffset="calc(var(--gateway-chat-composer-overlay-height, 176px) + 12px)"
-                              scrollViewport={transcriptViewport}
-                              onJump={handleFloorJump}
+                        ) : (
+                          <div className="gateway-transcript-scroll-shell">
+                            <ScrollArea
+                              ref={setTranscriptScrollAreaRoot}
+                              viewportRef={setTranscriptViewport}
+                              className="gateway-transcript-scroll"
+                            >
+                              <ChangedFilesActionsProvider value={changedFilesActions}>
+                                <CheckpointRewindProvider
+                                  client={checkpointClient}
+                                  conversationId={displayedConversationId}
+                                  disabled={!displayedConversationId || transcriptBusy}
+                                  resolveAuthorizedRoots={resolveCheckpointAuthorizedRoots}
+                                  onRewound={handleCheckpointRewound}
+                                >
+                                  <GatewayTranscript
+                                    conversationId={displayedConversationId}
+                                    rows={transcriptRows}
+                                    liveStartIndex={transcriptLiveStartIndex}
+                                    activeTurnKey={displayedTranscript.activeTurnKey}
+                                    contentWidth={settings.customSettings.chatTranscript.width}
+                                    isViewportFollowing={transcriptFollow.isFollowing}
+                                    viewportFollowing={transcriptFollowing}
+                                    navRef={transcriptNavRef}
+                                    onAnchorUserRowChange={setActiveFloorKey}
+                                    error={transcriptError}
+                                    toolStatus={transcriptToolStatus}
+                                    toolStatusIsCompaction={transcriptToolStatusIsCompaction}
+                                    retryAttempts={displayedTranscript.retryAttempts}
+                                    isStreaming={transcriptBusy}
+                                    isLoading={transcriptHistoryLoading}
+                                    loadingTitle={historyDetailLoadingTitle}
+                                    hasModels={modelOptions.length > 0}
+                                    onOpenSettings={openSettings}
+                                    hasMoreHistory={selectedHistoryHasMore}
+                                    isLoadingMoreHistory={loadingOlderHistory}
+                                    onLoadEarlierHistory={
+                                      selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
+                                    }
+                                    showUsage={isAgentDevExecutionMode}
+                                    usageContextWindow={currentModelContextWindow}
+                                    workspaceRoot={displayedConversationWorkdir}
+                                    onOpenFileLink={handleOpenChatFileLink}
+                                    gitClient={gitClient}
+                                    onLoadUploadedImagePreview={handleLoadUploadedImagePreview}
+                                    onResendFromEdit={handleResendFromEdit}
+                                    onBranchConversation={handleBranchConversation}
+                                    branchPendingMessageId={branchPendingMessageId}
+                                    onSuggestionSelect={handleEmptyStateSuggestion}
+                                    suggestionsDisabled={isSuggestionTyping}
+                                  />
+                                </CheckpointRewindProvider>
+                              </ChangedFilesActionsProvider>
+                            </ScrollArea>
+                            <TranscriptWidthControls
+                              hostRef={transcriptStageRef}
+                              width={settings.customSettings.chatTranscript.width}
+                              onWidthChange={handleChatTranscriptWidthChange}
+                              resizeLabel={
+                                settings.locale === "en-US"
+                                  ? "Resize conversation content"
+                                  : "调整对话正文宽度"
+                              }
+                              resetLabel={
+                                settings.locale === "en-US"
+                                  ? "Double-click to reset"
+                                  : "双击恢复默认宽度"
+                              }
                             />
-                          ) : null}
-                          {conversationOpenState.showOverlay ? (
-                            <HistorySwitchLoadingOverlay locale={settings.locale} />
-                          ) : null}
-                        </div>
-                        {!transcriptFollowing ? (
+                            {displayedTranscriptRowCount > 0 &&
+                            !conversationOpenState.showOverlay ? (
+                              <FloorNavRail
+                                conversationId={displayedConversationId}
+                                floors={transcriptFloors}
+                                activeRowKey={activeFloorKey}
+                                bottomOffset="calc(var(--gateway-chat-composer-overlay-height, 176px) + 12px)"
+                                scrollViewport={transcriptViewport}
+                                onJump={handleFloorJump}
+                              />
+                            ) : null}
+                            {conversationOpenState.showOverlay ? (
+                              <HistorySwitchLoadingOverlay locale={settings.locale} />
+                            ) : null}
+                          </div>
+                        )}
+                        {renderedConversationView === "conversation" && !transcriptFollowing ? (
                           <button
                             type="button"
                             className="gateway-scroll-to-bottom"
@@ -684,6 +758,9 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                         ) : null}
                         <ChatComposerBar
                           surface="web"
+                          conversationId={displayedConversationId}
+                          // 轨迹页是只读分析视图：挂起输入区（保持挂载，草稿不丢）。
+                          hidden={renderedConversationView === "trajectory"}
                           composerRef={composerRef}
                           isSending={composerIsSending}
                           isUploadingFiles={isUploadingFiles}
@@ -697,6 +774,14 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                           modelOptions={modelOptions}
                           selectedValue={selectedValue}
                           chatRuntimeControls={chatRuntimeControlsForCurrentProvider}
+                          commandSafetyMode={settings.system.commandSafetyMode}
+                          onCommandSafetyModeChange={(mode) =>
+                            setSettings((prev) =>
+                              prev.system.commandSafetyMode === mode
+                                ? prev
+                                : updateSystem(prev, { commandSafetyMode: mode }),
+                            )
+                          }
                           reasoningOptions={chatRuntimeReasoningOptions}
                           thinkingAlwaysOn={chatRuntimeThinkingAlwaysOn}
                           contextUsageTokensSource={contextUsageTokensSource}
@@ -977,11 +1062,12 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                 onBack={closeSettings}
                 initialSection={settingsSection}
                 initialProviderId={settingsProviderId}
-                hiddenSections={["remote"]}
+                hiddenSections={["remote", "stt"]}
                 relayUser={relayUser}
                 relayStats={relayStats}
                 onRelayUserChange={() => void refreshRelayAccount()}
                 onRelayStatsChange={() => void refreshRelayAccount()}
+                sttSettingsService={sttSettingsService}
                 onAgentDirectoryChanged={async () => {
                   if (!api) return;
                   await api.listAgents();
