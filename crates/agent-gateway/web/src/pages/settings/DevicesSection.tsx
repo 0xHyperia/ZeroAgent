@@ -146,13 +146,17 @@ export function DevicesSection({
           return (
             <div
               key={id}
-              className="grid min-w-0 gap-3 rounded-md border border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+              className="settings-card-row settings-devices-card-row flex min-w-0 items-center gap-3 rounded-md border border-border/70 p-3"
             >
-              <div className="min-w-0">
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${device.online ? "bg-emerald-500/10" : "bg-muted/60"}`}
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${device.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                />
+              </div>
+              <div className="settings-devices-card-main min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${device.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
-                  />
                   {editing ? (
                     <form
                       className="flex min-w-0 flex-1 gap-2"
@@ -187,7 +191,7 @@ export function DevicesSection({
                   )}
                 </div>
                 {!editing ? (
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-4 text-xs text-muted-foreground">
+                  <div className="settings-devices-card-meta mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>{device.online ? "在线" : "离线"}</span>
                     <span>
                       {[device.platform, device.version].filter(Boolean).join(" · ") || "未知平台"}
@@ -197,7 +201,7 @@ export function DevicesSection({
                 ) : null}
               </div>
               {!editing ? (
-                <div className="flex justify-end gap-1">
+                <div className="settings-devices-card-actions flex shrink-0 flex-wrap items-center justify-end gap-1">
                   <Button
                     type="button"
                     variant="ghost"

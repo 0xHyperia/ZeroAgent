@@ -15,8 +15,11 @@ pub mod provider_models;
 pub mod provider_usage;
 pub mod proxy;
 pub mod skills;
+pub mod stt;
 pub mod system_proxy;
 #[cfg(desktop)]
 pub mod tray;
 pub mod tunnel;
+pub mod webdav;
+pub mod webdav_auto_sync;
 pub mod workspace_watch;

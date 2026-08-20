@@ -2,7 +2,7 @@ import type { Context } from "@earendil-works/pi-ai";
 import type { ReactNode } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import type { RelayDashboardStats, RelayUser } from "../../lib/relay/client";
-import type { AppSettings } from "../../lib/settings";
+import type { AppSettings, SttProviderId } from "../../lib/settings";
 import type { SectionId } from "../settings/types";
 
 export type ChatPageProps = {
@@ -11,6 +11,7 @@ export type ChatPageProps = {
   onRefreshRelayAccount: () => Promise<void>;
   settings: AppSettings;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
+  sttProviderOverride?: SttProviderId | null;
   getMcpSettings: () => AppSettings["mcp"];
   getToolPolicies: () => AppSettings["system"]["toolPolicies"];
   context: Context;

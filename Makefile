@@ -26,6 +26,7 @@ DESKTOP_RELEASE_TAURI_CONFIG_FLAGS ?= --config $(DESKTOP_RELEASE_TAURI_CONFIG) $
 
 DEV_GATEWAY_HTTP_ADDR ?= :50052
 DEV_WEBUI_PROXY_API ?= http://localhost:50052
+DEV_SESSION_WORKBENCH ?= 1
 GATEWAY_DOCKER_IMAGE ?= liveagent-gateway:local
 RELEASE_TAG ?=
 
@@ -68,10 +69,10 @@ dev:
 	    REDIS_URL="redis://:$$ZEROAGENT_REDIS_PASSWORD@127.0.0.1:$${ZEROAGENT_REDIS_PORT:-6380}/0" \
 	    LIVEAGENT_GATEWAY_COOKIE_SECURE=false mise exec -- $(MAKE) dev-gateway) & \
 	  ($(MAKE) wait-dev-gateway && \
-	    DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 mise exec -- $(MAKE) dev-webui) & wait
+	    DEV_WEBUI_PROXY_API=http://127.0.0.1:50052 VITE_LIVEAGENT_SESSION_WORKBENCH=$(DEV_SESSION_WORKBENCH) mise exec -- $(MAKE) dev-webui) & wait
 
 dev-tauri:
-	TAURI_DEV_HOST=0.0.0.0 mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
+	TAURI_DEV_HOST=0.0.0.0 VITE_LIVEAGENT_SESSION_WORKBENCH=$(DEV_SESSION_WORKBENCH) mise exec -- pnpm --dir $(AGENT_GUI_DIR) tauri dev
 
 test:
 	go -C $(AGENT_GATEWAY_DIR) test ./...
@@ -180,7 +181,7 @@ ensure-webui-embed-stub:
 		printf '%s\n' \
 			'<!doctype html>' \
 			'<html lang="en">' \
-			'<head><meta charset="utf-8"><title>LiveAgent Gateway</title></head>' \
+			'<head><meta charset="utf-8"><title>ZeroAgent Gateway</title></head>' \
 			'<body><p>WebUI embed stub. Run <code>make dev-webui</code> for the real SPA.</p></body>' \
 			'</html>' \
 			> "$(AGENT_GATEWAY_WEB_DIR)/dist/index.html"; \
@@ -288,7 +289,8 @@ desktop-verify-macos:
 
 help:
 	@printf "\n%s\n" "Desktop"
-	@printf "  %-34s %s\n" "make / make dev" "启动 Tauri 开发环境"
+	@printf "  %-34s %s\n" "make / make dev" "启动 Tauri 开发环境（Session Workbench 已默认启用）"
+	@printf "  %-34s %s\n" "make dev DEV_SESSION_WORKBENCH=0" "回退旧单会话布局启动 Tauri（逃生开关）"
 	@printf "  %-34s %s\n" "make build" "构建当前平台 Tauri 应用"
 	@printf "  %-34s %s\n" "make desktop-build-macos" "构建当前 Mac 芯片架构"
 	@printf "  %-34s %s\n" "make desktop-build-macos-release" "签名、公证并验证 macOS DMG"
