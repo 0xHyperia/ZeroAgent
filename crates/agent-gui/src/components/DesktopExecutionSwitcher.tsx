@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@liveagent/ui/components/ui/button";
 import { ChevronDown, Loader2, MonitorSmartphone, X } from "@liveagent/ui/components/IconSet";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
 
 type Props = {
@@ -67,6 +67,8 @@ export function DesktopExecutionSwitcher({
           variant="outline"
           className="h-8 max-w-[min(260px,28vw)] gap-2 bg-background/95 px-3 shadow-sm max-[900px]:w-8 max-[900px]:px-0"
           title={current?.name ?? "此电脑"}
+          aria-label={`切换设备，当前：${current?.device_id === localDeviceId ? "此电脑" : (current?.name ?? "此电脑")}`}
+          aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
           <MonitorSmartphone className="h-4 w-4" />
@@ -76,7 +78,7 @@ export function DesktopExecutionSwitcher({
           <ChevronDown className="h-3.5 w-3.5 max-[900px]:hidden" />
         </Button>
         {open && (
-          <div className="layer-popover absolute left-0 mt-2 max-h-[60vh] w-[min(380px,90vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
+          <div className="layer-popover absolute right-0 top-full mt-2 max-h-[60vh] w-[min(380px,90vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
             {environments.map((environment) => (
               <button
                 type="button"
