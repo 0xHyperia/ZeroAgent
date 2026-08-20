@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "../../i18n";
 import { formatUploadedFileSize, type PendingUploadedFile } from "../../lib/chat/uploadedFiles";
 import {
@@ -14,6 +14,7 @@ import {
   ImagePreviewContextMenu,
   type ImagePreviewSlide,
 } from "./ImagePreview";
+import { getCompletedImageLoadState } from "./imageLoadState";
 
 type ImagePreviewMode = "absolutePath" | "imageKind";
 
@@ -69,6 +70,7 @@ function UserImageAttachmentCard(props: {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoadState, setImageLoadState] = useState<{
     src: string | null;
     status: "loaded" | "error";
@@ -86,6 +88,12 @@ function UserImageAttachmentCard(props: {
   const canPreview = Boolean(
     imageSrc && imageLoadState?.src === imageSrc && imageLoadState.status === "loaded",
   );
+
+  useEffect(() => {
+    if (!imageSrc) return;
+    const completedState = getCompletedImageLoadState(imageRef.current);
+    if (completedState) setImageLoadState({ src: imageSrc, status: completedState });
+  }, [imageSrc]);
 
   return (
     <div
@@ -135,6 +143,7 @@ function UserImageAttachmentCard(props: {
               }}
             >
               <img
+                ref={imageRef}
                 src={imageSrc}
                 alt={file.fileName}
                 className={cn(

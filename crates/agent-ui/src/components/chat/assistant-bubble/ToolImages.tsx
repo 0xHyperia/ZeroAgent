@@ -17,6 +17,7 @@ import { prepareImageProxyUrl } from "@liveagent/ui/lib/providers/proxy";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, ImageOff, Loader2 } from "../../IconSet";
+import { getCompletedImageLoadState } from "../imageLoadState";
 import { getBuiltinResultKind } from "./assistantBubbleUtils";
 
 export function getToolResultImages(result?: ToolResultMessage) {
@@ -238,11 +239,6 @@ function getInitialImageLoadState(
   if (status === "error") return "error";
   if (status === "ready" && !src) return "error";
   return "loading";
-}
-
-function getCompletedImageLoadState(image: HTMLImageElement | null): ToolImageLoadState | null {
-  if (!image?.complete) return null;
-  return image.naturalWidth > 0 || image.naturalHeight > 0 ? "loaded" : "error";
 }
 
 function formatDisplayImageLabel(t: (key: string) => string, imageCount: number, index: number) {

@@ -8,11 +8,36 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 const loader = createTsModuleLoader();
 const viewer = loader.loadModule("@liveagent/ui/components/chat/imagePreviewModel.ts");
 const imagePreview = loader.loadModule("@liveagent/ui/components/chat/ImagePreview.tsx");
+const imageLoadState = loader.loadModule("@liveagent/ui/components/chat/imageLoadState.ts");
 const userAttachments = loader.loadModule("@liveagent/ui/components/chat/UserAttachmentCards.tsx");
 
 function approximately(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be close to ${expected}`);
 }
+
+test("cached images are recognized after mounting without another load event", () => {
+  assert.equal(imageLoadState.getCompletedImageLoadState(null), null);
+  assert.equal(
+    imageLoadState.getCompletedImageLoadState({ complete: false, naturalWidth: 0, naturalHeight: 0 }),
+    null,
+  );
+  assert.equal(
+    imageLoadState.getCompletedImageLoadState({ complete: true, naturalWidth: 640, naturalHeight: 480 }),
+    "loaded",
+  );
+  assert.equal(
+    imageLoadState.getCompletedImageLoadState({ complete: true, naturalWidth: 0, naturalHeight: 0 }),
+    "error",
+  );
+  assert.deepEqual(
+    imageLoadState.getLoadedImageSize({ complete: true, naturalWidth: 640, naturalHeight: 480 }),
+    { width: 640, height: 480 },
+  );
+  assert.equal(
+    imageLoadState.getLoadedImageSize({ complete: true, naturalWidth: 0, naturalHeight: 0 }),
+    null,
+  );
+});
 
 test("image viewer clamps scale and uses smooth dynamic wheel increments", () => {
   assert.equal(viewer.clampImageViewerScale(0), viewer.IMAGE_VIEWER_MIN_SCALE);
@@ -273,9 +298,13 @@ test("chat attachment sources preserve verified metadata and keep menus scoped t
   assert.match(composerSource, /attachment: \{/);
   assert.match(composerSource, /className="block h-full w-full object-cover"/);
   assert.match(composerSource, /const \[imageLoadState, setImageLoadState\] = useState<\{/);
+  assert.match(composerSource, /ref=\{imageRef\}/);
+  assert.match(composerSource, /getCompletedImageLoadState\(imageRef\.current\)/);
   assert.match(composerSource, /if \(!canPreview\) return;/);
   assert.match(userImageAttachmentSource, /"block w-full bg-black\/\[0\.02\] dark:bg-white\/5"/);
   assert.match(userImageAttachmentSource, /imageLoadState\?\.src === imageSrc/);
+  assert.match(userImageAttachmentSource, /ref=\{imageRef\}/);
+  assert.match(userImageAttachmentSource, /getCompletedImageLoadState\(imageRef\.current\)/);
   assert.match(userImageAttachmentSource, /disabled=\{!canPreview\}/);
   assert.match(userImageAttachmentSource, /onError=\{\(\) => \{/);
   assert.doesNotMatch(userImageAttachmentSource, /hover:scale/);
@@ -328,6 +357,10 @@ test("chat attachment sources preserve verified metadata and keep menus scoped t
   assert.match(viewerSource, /disabled=\{isSaving\}/);
   assert.match(viewerSource, /<Loader2 className="h-4 w-4 animate-spin" \/>/);
   assert.match(viewerSource, /new WeakMap<ImagePreviewSlide, ReturnType<typeof resolveImagePreviewData>>\(\)/);
+  assert.match(viewerSource, /ref=\{imageRef\}/);
+  assert.match(viewerSource, /setNaturalSize\(getLoadedImageSize\(imageRef\.current\)/);
+  assert.match(viewerSource, /const imageProbe = new Image\(\)/);
+  assert.match(viewerSource, /height: imageSize\.height > 0 \? `\$\{imageSize\.height\}px` : "100%"/);
   assert.match(viewerSource, /const hasInlineImageData = Boolean\(slide\?\.dataBase64\?\.trim\(\) \|\| imageSource\.startsWith\("data:"\)\)/);
   assert.match(viewerSource, /if \(hasInlineImageData\) void resolveCachedImageData\(slide\);/);
   assert.match(viewerSource, /await saveImagePreviewSlide\(slide, resolveCachedImageData\)/);

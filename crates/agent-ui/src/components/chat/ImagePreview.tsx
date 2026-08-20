@@ -7,6 +7,7 @@ import {
   supportsDirectUploadedImageCopy,
   supportsSystemImageOpen,
 } from "@liveagent/adapters/imagePreview";
+import { getLoadedImageSize } from "@liveagent/ui/components/chat/imageLoadState";
 import {
   clampImagePreviewIndex,
   clampImageViewerPan,
@@ -430,6 +431,7 @@ export const ImagePreview = memo(function ImagePreview(props: ImagePreviewProps)
   const [isCopying, setIsCopying] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const resolvedDataRef = useRef(
     new WeakMap<ImagePreviewSlide, ReturnType<typeof resolveImagePreviewData>>(),
@@ -482,14 +484,38 @@ export const ImagePreview = memo(function ImagePreview(props: ImagePreviewProps)
     return resolving;
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || activeSlideKey === null) return;
     setViewerState(resetImageViewerState());
-    setNaturalSize({ width: 0, height: 0 });
+    setNaturalSize(getLoadedImageSize(imageRef.current) ?? { width: 0, height: 0 });
     setShowInfo(false);
     setContextMenu(null);
     setActionError(null);
   }, [activeSlideKey, open]);
+
+  useEffect(() => {
+    if (!open || !imageSource) return;
+
+    let cancelled = false;
+    const imageProbe = new Image();
+    const updateNaturalSize = () => {
+      if (cancelled) return;
+      const loadedSize = getLoadedImageSize(imageProbe);
+      if (loadedSize) setNaturalSize(loadedSize);
+    };
+    imageProbe.onload = updateNaturalSize;
+    imageProbe.onerror = () => {
+      if (!cancelled) setActionError(t("chat.imageViewer.unavailable"));
+    };
+    imageProbe.src = imageSource;
+    updateNaturalSize();
+
+    return () => {
+      cancelled = true;
+      imageProbe.onload = null;
+      imageProbe.onerror = null;
+    };
+  }, [imageSource, open, t]);
 
   useEffect(() => {
     if (!open) {
@@ -885,8 +911,8 @@ export const ImagePreview = memo(function ImagePreview(props: ImagePreviewProps)
             <div
               className="relative shrink-0"
               style={{
-                height: `${imageSize.height}px`,
-                width: `${imageSize.width}px`,
+                height: imageSize.height > 0 ? `${imageSize.height}px` : "100%",
+                width: imageSize.width > 0 ? `${imageSize.width}px` : "100%",
                 transform: `translate(${viewerState.x}px, ${viewerState.y}px) scale(${viewerState.scale})`,
                 transformOrigin: "center",
                 transition: isDragging ? "none" : "transform 120ms ease-out",
@@ -897,16 +923,15 @@ export const ImagePreview = memo(function ImagePreview(props: ImagePreviewProps)
                 style={{ transform: `rotate(${viewerState.rotation}deg)` }}
               >
                 <img
+                  ref={imageRef}
                   key={`${slide.src}:${slide.dataBase64?.length ?? 0}`}
                   className="h-full w-full select-none object-contain"
                   src={imageSource}
                   alt={slide.alt ?? getImagePreviewDisplayName(slide)}
                   draggable={false}
                   onLoad={(event) => {
-                    setNaturalSize({
-                      width: event.currentTarget.naturalWidth,
-                      height: event.currentTarget.naturalHeight,
-                    });
+                    const loadedSize = getLoadedImageSize(event.currentTarget);
+                    if (loadedSize) setNaturalSize(loadedSize);
                     if (
                       supportsDirectUploadedImageCopy &&
                       getImagePreviewMimeType(slide) !== "image/svg+xml" &&

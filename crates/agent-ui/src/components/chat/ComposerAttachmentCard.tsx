@@ -1,6 +1,6 @@
 import { X } from "@liveagent/ui/components/IconSet";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingUploadedFile } from "../../lib/chat/uploadedFiles";
 import {
   ImagePreview,
@@ -8,6 +8,7 @@ import {
   ImagePreviewContextMenu,
   type ImagePreviewSlide,
 } from "./ImagePreview";
+import { getCompletedImageLoadState } from "./imageLoadState";
 
 export function ComposerAttachmentCard(props: {
   file?: PendingUploadedFile;
@@ -40,6 +41,7 @@ export function ComposerAttachmentCard(props: {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoadState, setImageLoadState] = useState<{
     src: string | null;
     status: "loaded" | "error";
@@ -76,6 +78,12 @@ export function ComposerAttachmentCard(props: {
     imageSrc && imageLoadState?.src === imageSrc && imageLoadState.status === "loaded",
   );
 
+  useEffect(() => {
+    if (!imageSrc) return;
+    const completedState = getCompletedImageLoadState(imageRef.current);
+    if (completedState) setImageLoadState({ src: imageSrc, status: completedState });
+  }, [imageSrc]);
+
   // 图片附件：纯缩略图方块，点击放大预览，文件名放悬浮提示，角标删除。
   if (imageSrc || isImageLoading) {
     return (
@@ -101,6 +109,7 @@ export function ComposerAttachmentCard(props: {
             }}
           >
             <img
+              ref={imageRef}
               src={imageSrc}
               alt=""
               draggable={false}
