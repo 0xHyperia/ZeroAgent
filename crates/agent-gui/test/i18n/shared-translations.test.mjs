@@ -30,6 +30,7 @@ const nonTranslationLiterals = new Set([
   "settings.gradle",
   "settings.gradle.kts",
 ]);
+const translationKeyPropertyNames = new Set(["groupKey", "labelKey"]);
 
 function sourceFilesUnder(directory) {
   const files = [];
@@ -110,6 +111,20 @@ function collectTranslationKeys(sourceRoot, collectTranslationLikeLiterals = fal
         for (const literal of collectLiteralTranslationArguments(node.arguments[0])) {
           addReference(directKeys, literal.text, sourceReference(sourceFile, literal));
         }
+      }
+
+      if (
+        ts.isPropertyAssignment(node) &&
+        ts.isIdentifier(node.name) &&
+        translationKeyPropertyNames.has(node.name.text) &&
+        (ts.isStringLiteral(node.initializer) ||
+          ts.isNoSubstitutionTemplateLiteral(node.initializer))
+      ) {
+        addReference(
+          directKeys,
+          node.initializer.text,
+          sourceReference(sourceFile, node.initializer),
+        );
       }
 
       ts.forEachChild(node, visit);

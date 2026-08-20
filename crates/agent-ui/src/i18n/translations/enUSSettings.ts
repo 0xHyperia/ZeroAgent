@@ -1,4 +1,5 @@
 export const EN_US_SETTINGS_TRANSLATIONS = {
+  "settings.navAccount": "Account",
   "settings.navSystem": "System",
   "settings.navSystemTools": "System Tools",
   "settings.navStt": "Speech to Text",

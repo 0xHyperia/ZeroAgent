@@ -81,3 +81,8 @@ test("usage query labels exist in both locales", () => {
     assert.ok(i18n.translations[locale]["settings.providerUsageTest"]);
   }
 });
+
+test("account settings navigation is localized in both locales", () => {
+  assert.equal(i18n.t("settings.navAccount", "zh-CN"), "账号");
+  assert.equal(i18n.t("settings.navAccount", "en-US"), "Account");
+});

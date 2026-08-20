@@ -1,4 +1,5 @@
 export const ZH_CN_SETTINGS_TRANSLATIONS = {
+  "settings.navAccount": "账号",
   "settings.navSystem": "系统设置",
   "settings.navSystemTools": "系统工具",
   "settings.navStt": "语音输入",
