@@ -16,6 +16,27 @@ const resizeHandleSource = readFileSync(
   new URL("details/DetailsResizeHandle.tsx", sharedTrajectoryRoot),
   "utf8",
 );
+const gatewayAppViewSource = readFileSync(
+  new URL("../src/app/GatewayAppView.tsx", import.meta.url),
+  "utf8",
+);
+const gatewayChatStyles = readFileSync(
+  new URL("../src/styles/base-chat.css", import.meta.url),
+  "utf8",
+);
+
+test("gateway host constrains the shared trajectory scroll surface", () => {
+  assert.match(
+    gatewayAppViewSource,
+    /<div className="gateway-trajectory-shell">[\s\S]*?<TrajectoryView/,
+  );
+  const shellRule = gatewayChatStyles.match(/\.gateway-trajectory-shell \{[\s\S]*?\}/);
+  assert.ok(shellRule, ".gateway-trajectory-shell rule not found");
+  assert.match(shellRule[0], /display: flex/);
+  assert.match(shellRule[0], /height: 100%/);
+  assert.match(shellRule[0], /min-height: 0/);
+  assert.match(shellRule[0], /overflow: hidden/);
+});
 
 test("narrow trajectory container keeps empty details beside the list", () => {
   assert.match(trajectoryViewSource, /className="@container flex min-h-0 flex-1 flex-col"/);

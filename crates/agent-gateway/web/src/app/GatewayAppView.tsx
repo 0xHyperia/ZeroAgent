@@ -27,6 +27,7 @@ import {
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { mergePendingUploadedFiles } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import { toTrajectoryMessages } from "@liveagent/ui/lib/trajectory/transcriptMessages";
 import { useConversationViewState } from "@liveagent/ui/lib/trajectory/useConversationViewState";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
@@ -36,16 +37,10 @@ import {
   TranscriptWidthControls,
 } from "@liveagent/ui/pages/chat/transcript/TranscriptWidthControls";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
-import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
-import {
-  type CSSProperties,
-  useCallback,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
+import { type CSSProperties, useCallback, useMemo, useSyncExternalStore } from "react";
 import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
-import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
+import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { bindRelayKeysToSettings } from "@/lib/relay/providers";
 import {
@@ -648,18 +643,20 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                         }
                       >
                         {renderedConversationView === "trajectory" ? (
-                          <TrajectoryView
-                            conversationId={displayedConversationId}
-                            host={trajectoryHost}
-                            messages={trajectoryMessages}
-                            workdir={displayedConversationWorkdir}
-                            hasMoreMessages={selectedHistoryHasMore}
-                            loadEarlierMessages={
-                              selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
-                            }
-                            liveEvents={liveTrajectory}
-                            authoritativeRevision={trajectoryAuthoritativeRevision}
-                          />
+                          <div className="gateway-trajectory-shell">
+                            <TrajectoryView
+                              conversationId={displayedConversationId}
+                              host={trajectoryHost}
+                              messages={trajectoryMessages}
+                              workdir={displayedConversationWorkdir}
+                              hasMoreMessages={selectedHistoryHasMore}
+                              loadEarlierMessages={
+                                selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
+                              }
+                              liveEvents={liveTrajectory}
+                              authoritativeRevision={trajectoryAuthoritativeRevision}
+                            />
+                          </div>
                         ) : (
                           <div className="gateway-transcript-scroll-shell">
                             <ScrollArea
