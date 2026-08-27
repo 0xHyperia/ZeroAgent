@@ -83,7 +83,7 @@ export function UserMenu(props: UserMenuProps) {
         render={
           <Button
             variant="ghost"
-            className="h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-foreground shadow-none hover:bg-foreground/[0.08]"
+            className="account-user-menu-trigger h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-foreground shadow-none hover:bg-foreground/[0.08]"
             title={t("account.userMenu")}
           />
         }
@@ -95,7 +95,7 @@ export function UserMenu(props: UserMenuProps) {
             userAvatarLabel || <User className="h-3.5 w-3.5" />
           )}
         </span>
-        <span className="min-w-0 flex-1 text-left">
+        <span className="account-user-menu-details min-w-0 flex-1 text-left">
           <span className="block truncate text-[calc(13px*var(--zone-font-scale,1))] font-medium">
             {userMenuLabel}
           </span>
@@ -103,7 +103,7 @@ export function UserMenu(props: UserMenuProps) {
             {email}
           </span>
         </span>
-        <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <ChevronUp className="account-user-menu-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"

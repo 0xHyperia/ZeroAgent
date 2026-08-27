@@ -43,6 +43,7 @@ import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentS
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { bindRelayKeysToSettings } from "@/lib/relay/providers";
+import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
 import {
   getNextTheme,
   updateExecutionModeFromChatSelection,
@@ -66,6 +67,7 @@ import { UserMenu } from "./UserMenu";
 
 export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }) {
   useWindowFileDropGuard();
+  const embeddedMobile = isEmbeddedMobileRuntime();
   const {
     activeFloorKey,
     activeView,
@@ -406,6 +408,25 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
     },
     [addNotify, settings.locale],
   );
+  const accountMenu = (
+    <UserMenu
+      open={userMenuOpen}
+      onOpenChange={setUserMenuOpen}
+      userMenuLabel={userMenuLabel}
+      userAvatarLabel={userAvatarLabel}
+      email={relayUser?.email ?? ""}
+      balance={relayUser?.balance}
+      todayTokens={relayStats?.today_tokens}
+      avatarUrl={relayUser?.avatar_url}
+      online={status?.online === true}
+      onRefreshAccount={refreshRelayAccount}
+      onDismissNavigation={() => {
+        if (embeddedMobile) setSidebarOpen(false);
+      }}
+      onOpenSettings={openSettings}
+      onLogout={handleLogout}
+    />
+  );
   return (
     <LocaleContext.Provider value={localeContextValue}>
       <AppErrorBoundary>
@@ -473,6 +494,7 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
               onOpenSettings={() => openSettings()}
               onOpenSkillsHub={handleSidebarOpenSkillsHub}
               onOpenMcpHub={handleSidebarOpenMcpHub}
+              accountMenu={embeddedMobile ? accountMenu : undefined}
             />
 
             {shareConversation ? (
@@ -568,21 +590,7 @@ export function GatewayAppView({ viewModel }: { viewModel: GatewayAppViewModel }
                       className="gateway-project-tools-panel-toggle"
                       onToggle={() => setRightDockOpen((open) => !open)}
                     />
-                    <UserMenu
-                      open={userMenuOpen}
-                      onOpenChange={setUserMenuOpen}
-                      userMenuLabel={userMenuLabel}
-                      userAvatarLabel={userAvatarLabel}
-                      email={relayUser?.email ?? ""}
-                      balance={relayUser?.balance}
-                      todayTokens={relayStats?.today_tokens}
-                      avatarUrl={relayUser?.avatar_url}
-                      online={status?.online === true}
-                      onRefreshAccount={refreshRelayAccount}
-                      onDismissNavigation={() => undefined}
-                      onOpenSettings={openSettings}
-                      onLogout={handleLogout}
-                    />
+                    {embeddedMobile ? null : accountMenu}
                   </>
                 }
                 overlay={

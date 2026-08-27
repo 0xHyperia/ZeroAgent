@@ -46,6 +46,18 @@ export default defineConfig(({ mode }) => ({
     __ZEROAGENT_APP_VERSION__: JSON.stringify(appVersion),
   },
   server: {
+    host: mode === "embedded-mobile" ? process.env.TAURI_DEV_HOST || false : undefined,
+    port: mode === "embedded-mobile" ? 2120 : undefined,
+    strictPort: mode === "embedded-mobile",
+    hmr:
+      mode === "embedded-mobile"
+        ? {
+            protocol: "ws",
+            host: process.env.TAURI_DEV_HOST || "localhost",
+            port: 2120,
+            clientPort: 2120,
+          }
+        : undefined,
     proxy: {
       "/api": {
         target: resolveProxyTarget(),

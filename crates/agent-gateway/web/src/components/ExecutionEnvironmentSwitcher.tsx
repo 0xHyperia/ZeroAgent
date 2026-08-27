@@ -130,8 +130,10 @@ export function ExecutionEnvironmentSwitcher({
           ref={triggerRef}
           type="button"
           variant="ghost"
-          className="h-8 max-w-[min(18rem,42vw)] gap-1.5 rounded-lg px-2 text-muted-foreground hover:text-foreground"
+          className="execution-environment-trigger h-8 max-w-[min(18rem,42vw)] gap-1.5 rounded-lg px-2 text-muted-foreground hover:text-foreground"
           disabled={disabled}
+          title={current?.name ?? "选择设备"}
+          aria-label={current?.name ?? "选择设备"}
           onClick={() => setOpen((value) => !value)}
         >
           {current?.runtime_kind === "web_chat" ? (
@@ -139,10 +141,10 @@ export function ExecutionEnvironmentSwitcher({
           ) : (
             <MonitorSmartphone className="h-4 w-4 shrink-0" />
           )}
-          <span className="truncate text-xs font-medium">
+          <span className="execution-environment-label truncate text-xs font-medium">
             {current?.name ?? "选择设备"}
           </span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ChevronDown className="execution-environment-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </Button>
 
         {open && menuPosition

@@ -88,6 +88,8 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   const gatewayViteConfig = readRepoFile("crates/agent-gateway/web/vite.config.ts");
 
   assert.match(androidConfig, /agent-gateway\/web exec vite build --mode embedded-mobile/);
+  assert.match(androidConfig, /agent-gateway\/web exec vite --mode embedded-mobile/);
+  assert.match(androidConfig, /"devUrl": "http:\/\/localhost:2120"/);
   assert.match(androidConfig, /"frontendDist": "\.\.\/\.\.\/agent-gateway\/web\/dist"/);
   assert.match(androidConfig, /"url": "index\.html"/);
   assert.doesNotMatch(androidConfig, /usa0\.top/);
@@ -105,6 +107,10 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileRuntime, /mobile_gateway_multipart_request/);
   assert.match(tauriLib, /mobile_gateway_multipart_request/);
   assert.match(mobileRuntime, /mobile_gateway_socket_connect/);
+  assert.match(mobileRuntime, /const BrowserWebSocket = window\.WebSocket/);
+  assert.match(mobileRuntime, /url\.pathname === "\/ws\/v2"/);
+  assert.match(mobileRuntime, /url\.pathname\.startsWith\("\/ws\/v2\/"\)/);
+  assert.match(mobileRuntime, /new BrowserWebSocket\(url/);
   assert.match(mobileRuntime, /maximum-scale=1, user-scalable=no/);
   assert.match(mobileRuntime, /visualViewport/);
   assert.match(mobileRuntime, /zeroagent:native-insets/);
@@ -130,6 +136,14 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
     assert.match(mobileStyles, new RegExp(`--zeroagent-safe-area-${edge}`));
   }
   assert.match(mobileStyles, /\.gateway-chat-frame > header[\s\S]*safe-area-top/);
+  assert.match(
+    mobileStyles,
+    /gateway-main-shell[\s\S]*> \[data-app-workbench-chrome\][\s\S]*> header[\s\S]*safe-area-top/,
+  );
+  assert.match(
+    mobileStyles,
+    /gateway-main-shell > \[data-app-workbench-chrome\][\s\S]*height: calc\(48px/,
+  );
   assert.match(mobileStyles, /\.gateway-main-shell[\s\S]*safe-area-right[\s\S]*safe-area-left/);
   assert.match(
     mobileStyles,
@@ -194,6 +208,10 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.doesNotMatch(mobileRuntime, /configureEmbeddedMobileGateway/);
   assert.doesNotMatch(mobileRelayGate, /mobile-gateway-origin|Gateway 服务地址|RELAY_ORIGIN/);
   assert.match(gatewayViteConfig, /mode === "embedded-mobile"/);
+  assert.match(gatewayViteConfig, /process\.env\.TAURI_DEV_HOST/);
+  assert.match(gatewayViteConfig, /mode === "embedded-mobile" \? 2120/);
+  assert.match(gatewayViteConfig, /host: process\.env\.TAURI_DEV_HOST \|\| "localhost"/);
+  assert.match(gatewayViteConfig, /clientPort: 2120/);
   assert.match(gatewayViteConfig, /LIVEAGENT_APP_VERSION/);
   assert.equal(existsSync(path.join(guiRoot, "mobile.html")), false);
   assert.equal(existsSync(path.join(guiRoot, "src/mobile.ts")), false);
@@ -245,6 +263,31 @@ test("Android excludes desktop-only global shortcut commands", () => {
     systemCommands,
     /#\[tauri::command\]\s*#\[cfg\(desktop\)\]\s*pub async fn system_clipboard_read_text/,
   );
+  for (const command of [
+    "system_save_preview_file",
+    "system_clipboard_write_image",
+    "system_prepare_preview_file_save",
+    "system_write_preview_file",
+    "system_prepare_uploaded_image_clipboard",
+    "system_clipboard_write_uploaded_image",
+    "system_pick_readable_files",
+  ]) {
+    assert.match(
+      systemCommands,
+      new RegExp(
+        `#\\[tauri::command(?:\\([^\\n]*\\))?\\]\\s*#\\[cfg\\(desktop\\)\\]\\s*pub async fn ${command}`,
+      ),
+    );
+  }
+  assert.match(systemCommands, /#\[cfg\(desktop\)\]\s*use rfd::FileDialog;/);
+  assert.match(
+    systemCommands,
+    /#\[cfg\(desktop\)\]\s*fn decode_image_preview_rgba_bytes/,
+  );
+  const settingsModule = readRepoFile(
+    "crates/agent-gui/src-tauri/src/commands/config/settings/mod.rs",
+  );
+  assert.match(settingsModule, /#\[cfg\(desktop\)\]\s*include!\("backup_io\.rs"\);/);
   assert.match(
     tauriLib,
     /#\[cfg\(desktop\)\]\s*pub\(crate\) const WINDOW_STATE_FLAGS/,

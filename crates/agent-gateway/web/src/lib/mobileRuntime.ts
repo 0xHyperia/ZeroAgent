@@ -210,9 +210,14 @@ function nextSocketId() {
   return `mobile-${Date.now()}-${socketSequence}`;
 }
 
+function isNativeGatewaySocketURL(url: URL) {
+  return url.pathname === "/ws/v2" || url.pathname.startsWith("/ws/v2/");
+}
+
 function installGatewayWebSocketBridge() {
   const eventApi = window.__TAURI__?.event;
   if (!eventApi) throw new Error("Android native event bridge is unavailable");
+  const BrowserWebSocket = window.WebSocket;
   return eventApi
     .listen<NativeSocketEvent>("mobile-gateway-socket", ({ payload }) => {
       nativeSocketHandlers.get(payload.id)?.(payload);
@@ -305,7 +310,26 @@ function installGatewayWebSocketBridge() {
           });
         }
       }
-      window.WebSocket = NativeGatewayWebSocket as unknown as typeof WebSocket;
+      const RoutedWebSocket = function (
+        this: unknown,
+        url: string | URL,
+        protocols?: string | string[],
+      ) {
+        const parsed = new URL(url.toString(), window.location.href);
+        if (!isNativeGatewaySocketURL(parsed)) {
+          return protocols === undefined
+            ? new BrowserWebSocket(url)
+            : new BrowserWebSocket(url, protocols);
+        }
+        return new NativeGatewayWebSocket(parsed, protocols);
+      } as unknown as typeof WebSocket;
+      Object.defineProperties(RoutedWebSocket, {
+        CONNECTING: { value: BrowserWebSocket.CONNECTING },
+        OPEN: { value: BrowserWebSocket.OPEN },
+        CLOSING: { value: BrowserWebSocket.CLOSING },
+        CLOSED: { value: BrowserWebSocket.CLOSED },
+      });
+      window.WebSocket = RoutedWebSocket;
     });
 }
 

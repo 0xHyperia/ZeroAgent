@@ -1062,9 +1062,70 @@
     --gateway-chat-composer-overlay-height: 168px;
   }
 
+  .chat-image-preview-dialog .chat-image-preview-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    background: rgb(0 0 0 / 0.72);
+  }
+
+  .gateway-trajectory-shell .trajectory-content {
+    position: relative;
+  }
+
+  .gateway-trajectory-shell .trajectory-content > .trajectory-details-panel {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    height: min(58%, 420px);
+    border-top: 1px solid hsl(var(--border) / 0.75);
+    border-left: 0;
+    box-shadow: 0 -10px 26px rgb(0 0 0 / 0.12);
+  }
+
+  .gateway-trajectory-shell .trajectory-content > .trajectory-details-panel-empty {
+    display: none;
+  }
+
   .gateway-main-shell [data-app-workbench-chrome] > header {
     gap: 6px;
     padding: 8px 10px;
+  }
+
+  .gateway-main-shell .account-user-menu-trigger {
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .gateway-main-shell .account-user-menu-details,
+  .gateway-main-shell .account-user-menu-chevron {
+    display: none;
+  }
+
+  .gateway-main-shell .execution-environment-trigger {
+    width: 32px;
+    max-width: 32px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .gateway-main-shell .execution-environment-label,
+  .gateway-main-shell .execution-environment-chevron {
+    display: none;
+  }
+
+  .gateway-main-shell [role="tablist"] {
+    min-width: max-content;
   }
 
   .gateway-banner-error {

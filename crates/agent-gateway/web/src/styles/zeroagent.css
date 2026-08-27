@@ -117,10 +117,13 @@ html[data-zeroagent-platform="android"] [contenteditable="true"] {
   .gateway-editor-host > .gateway-sidebar-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 44;
+    /* Keep the dismiss target above the page, but below the drawer itself.
+       Otherwise the transparent full-screen button intercepts every tap on
+       projects and conversations inside the visible mobile sidebar. */
+    z-index: calc(var(--layer-panel) - 1);
     display: block;
     border: 0;
-    background: hsl(220 22% 10% / 0.18);
+    background: transparent;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -182,8 +185,17 @@ html[data-zeroagent-platform="android"] .gateway-settings-overlay {
     var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
 }
 
-html[data-zeroagent-platform="android"] .gateway-chat-frame > header {
+html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
+html[data-zeroagent-platform="android"]
+  .gateway-main-shell
+  > [data-app-workbench-chrome]
+  > header {
+  box-sizing: border-box;
   padding-top: calc(10px + var(--zeroagent-safe-area-top));
+}
+
+html[data-zeroagent-platform="android"] .gateway-main-shell > [data-app-workbench-chrome] {
+  height: calc(48px + var(--zeroagent-safe-area-top));
 }
 
 html[data-zeroagent-platform="android"] .settings-back-bar {
@@ -226,7 +238,11 @@ html[data-zeroagent-platform="android"] [data-slot="dialog-viewport"] {
 }
 
 @media (max-width: 640px) {
-  html[data-zeroagent-platform="android"] .gateway-chat-frame > header {
+  html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
+  html[data-zeroagent-platform="android"]
+    .gateway-main-shell
+    > [data-app-workbench-chrome]
+    > header {
     padding-top: calc(8px + var(--zeroagent-safe-area-top));
   }
 }

@@ -837,7 +837,7 @@ export const ImagePreview = memo(function ImagePreview(props: ImagePreviewProps)
               {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </ImagePreviewToolButton>
             <DialogClose
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/10 hover:text-white"
+              className="chat-image-preview-close inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/10 hover:text-white"
               title={closeLabel}
               aria-label={closeLabel}
             >

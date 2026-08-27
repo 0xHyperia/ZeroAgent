@@ -148,7 +148,7 @@ export function DetailsPanel(props: {
   if (record === null) {
     return (
       <aside
-        className="relative flex min-w-[160px] max-w-[calc(100%-140px)] w-[var(--trajectory-details-width)] shrink-0 items-center justify-center border-l border-border/60 p-6 text-center text-[12px] text-muted-foreground @max-[520px]:p-3"
+        className="trajectory-details-panel trajectory-details-panel-empty relative flex min-w-[160px] max-w-[calc(100%-140px)] w-[var(--trajectory-details-width)] shrink-0 items-center justify-center border-l border-border/60 p-6 text-center text-[12px] text-muted-foreground @max-[520px]:p-3"
         style={{ "--trajectory-details-width": `${props.width}px` } as CSSProperties}
       >
         <DetailsResizeHandle
@@ -182,7 +182,7 @@ export function DetailsPanel(props: {
 
   return (
     <aside
-      className="relative flex min-w-[160px] max-w-[calc(100%-140px)] w-[var(--trajectory-details-width)] shrink-0 flex-col border-l border-border/60 bg-background"
+      className="trajectory-details-panel relative flex min-w-[160px] max-w-[calc(100%-140px)] w-[var(--trajectory-details-width)] shrink-0 flex-col border-l border-border/60 bg-background"
       style={{ "--trajectory-details-width": `${props.width}px` } as CSSProperties}
     >
       <DetailsResizeHandle

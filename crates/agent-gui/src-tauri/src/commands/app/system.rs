@@ -1,15 +1,20 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+#[cfg(desktop)]
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(desktop)]
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::future::Future;
-use std::io::{BufReader, Cursor, Read, Write};
+#[cfg(desktop)]
+use std::io::Cursor;
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(desktop)]
 use uuid::Uuid;
 
 use crate::runtime::platform::expand_tilde_path;
@@ -20,25 +25,33 @@ pub use crate::services::skills::{
 };
 
 const UPLOADED_IMAGE_PREVIEW_MAX_BYTES: usize = 5 * 1024 * 1024; // 5MB
+#[cfg(desktop)]
 const IMAGE_PREVIEW_DATA_MAX_BYTES: usize = 25 * 1024 * 1024; // Keep preview actions bounded.
+#[cfg(desktop)]
 const IMAGE_PREVIEW_MAX_DIMENSION: u32 = 8_192;
+#[cfg(desktop)]
 const IMAGE_PREVIEW_MAX_ALLOC_BYTES: u64 = 64 * 1024 * 1024;
+#[cfg(desktop)]
 const IMAGE_PREVIEW_CLIPBOARD_CACHE_TTL: Duration = Duration::from_secs(2 * 60);
+#[cfg(desktop)]
 const IMAGE_PREVIEW_SAVE_TARGET_TTL: Duration = Duration::from_secs(5 * 60);
 const UPLOADED_NATIVE_ATTACHMENT_MAX_BYTES: u64 = 25 * 1024 * 1024; // 25MB
 
+#[cfg(desktop)]
 #[derive(Debug)]
 struct PendingImagePreviewSaveTarget {
     target: PathBuf,
     created_at: SystemTime,
 }
 
+#[cfg(desktop)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ImagePreviewFileSignature {
     len: u64,
     modified_at: Option<SystemTime>,
 }
 
+#[cfg(desktop)]
 #[derive(Debug)]
 struct PreparedImagePreviewClipboard {
     target: PathBuf,
@@ -49,18 +62,22 @@ struct PreparedImagePreviewClipboard {
     rgba: Vec<u8>,
 }
 
+#[cfg(desktop)]
 static PENDING_IMAGE_PREVIEW_SAVE_TARGETS: OnceLock<
     Mutex<HashMap<String, PendingImagePreviewSaveTarget>>,
 > = OnceLock::new();
 
+#[cfg(desktop)]
 static PREPARED_IMAGE_PREVIEW_CLIPBOARD: OnceLock<Mutex<Option<PreparedImagePreviewClipboard>>> =
     OnceLock::new();
 
+#[cfg(desktop)]
 fn pending_image_preview_save_targets(
 ) -> &'static Mutex<HashMap<String, PendingImagePreviewSaveTarget>> {
     PENDING_IMAGE_PREVIEW_SAVE_TARGETS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(desktop)]
 fn prepared_image_preview_clipboard() -> &'static Mutex<Option<PreparedImagePreviewClipboard>> {
     PREPARED_IMAGE_PREVIEW_CLIPBOARD.get_or_init(|| Mutex::new(None))
 }
@@ -877,6 +894,7 @@ fn resolve_uploaded_image_target(
     Ok((target, mime_type))
 }
 
+#[cfg(desktop)]
 fn decode_image_preview_base64(data_base64: &str) -> Result<Vec<u8>, String> {
     let encoded = data_base64.trim();
     if encoded.is_empty() {
@@ -898,6 +916,7 @@ fn decode_image_preview_base64(data_base64: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+#[cfg(desktop)]
 fn decode_image_preview_rgba_bytes(bytes: Vec<u8>) -> Result<(usize, usize, Vec<u8>), String> {
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
@@ -915,10 +934,12 @@ fn decode_image_preview_rgba_bytes(bytes: Vec<u8>) -> Result<(usize, usize, Vec<
     Ok((width as usize, height as usize, rgba.into_raw()))
 }
 
+#[cfg(desktop)]
 fn decode_image_preview_rgba(data_base64: &str) -> Result<(usize, usize, Vec<u8>), String> {
     decode_image_preview_rgba_bytes(decode_image_preview_base64(data_base64)?)
 }
 
+#[cfg(desktop)]
 fn write_image_to_clipboard_data(
     width: usize,
     height: usize,
@@ -935,10 +956,12 @@ fn write_image_to_clipboard_data(
         .map_err(|error| format!("clipboard image write failed: {error}"))
 }
 
+#[cfg(desktop)]
 fn write_image_to_clipboard(width: usize, height: usize, bytes: Vec<u8>) -> Result<(), String> {
     write_image_to_clipboard_data(width, height, Cow::Owned(bytes))
 }
 
+#[cfg(desktop)]
 fn image_preview_file_signature(target: &Path) -> Result<ImagePreviewFileSignature, String> {
     let metadata = fs::metadata(target).map_err(|error| {
         format!(
@@ -958,6 +981,7 @@ fn image_preview_file_signature(target: &Path) -> Result<ImagePreviewFileSignatu
     })
 }
 
+#[cfg(desktop)]
 fn prepared_image_preview_clipboard_matches(
     prepared: &PreparedImagePreviewClipboard,
     target: &Path,
@@ -972,6 +996,7 @@ fn prepared_image_preview_clipboard_matches(
             .unwrap_or(false)
 }
 
+#[cfg(desktop)]
 fn prepare_uploaded_image_preview_clipboard_target(target: &Path) -> Result<(), String> {
     let signature = image_preview_file_signature(target)?;
     let now = SystemTime::now();
@@ -1007,6 +1032,7 @@ fn prepare_uploaded_image_preview_clipboard_target(target: &Path) -> Result<(), 
     Ok(())
 }
 
+#[cfg(desktop)]
 fn remember_image_preview_save_target(target: PathBuf) -> Result<String, String> {
     let save_token = Uuid::new_v4().to_string();
     let mut targets = pending_image_preview_save_targets()
@@ -1028,6 +1054,7 @@ fn remember_image_preview_save_target(target: PathBuf) -> Result<String, String>
     Ok(save_token)
 }
 
+#[cfg(desktop)]
 fn take_image_preview_save_target(save_token: &str) -> Result<PathBuf, String> {
     let mut targets = pending_image_preview_save_targets()
         .lock()
@@ -1046,6 +1073,7 @@ fn take_image_preview_save_target(save_token: &str) -> Result<PathBuf, String> {
     Ok(pending.target)
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_prepare_preview_file_save_sync(
     file_name: String,
 ) -> Result<Option<String>, String> {
@@ -1054,6 +1082,7 @@ pub(crate) fn system_prepare_preview_file_save_sync(
     target.map(remember_image_preview_save_target).transpose()
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_write_preview_file_sync(
     save_token: String,
     data_base64: String,
@@ -1067,6 +1096,7 @@ pub(crate) fn system_write_preview_file_sync(
         .map_err(|error| format!("Unable to save image preview {}: {error}", target.display()))
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_save_preview_file_sync(
     data_base64: String,
     file_name: String,
@@ -1079,6 +1109,7 @@ pub(crate) fn system_save_preview_file_sync(
     Ok(true)
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_clipboard_write_image_sync(
     data_base64: String,
     _mime_type: String,
@@ -1144,6 +1175,7 @@ fn infer_native_attachment_mime(path: &Path, kind: Option<&str>) -> String {
     }
 }
 
+#[cfg(desktop)]
 fn system_pick_readable_files_sync(
     workdir: String,
     max_files: Option<usize>,
@@ -1434,6 +1466,7 @@ pub(crate) fn system_open_uploaded_image_sync(
     crate::commands::fs::spawn_workspace_open_command(&target, "open")
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_prepare_uploaded_image_clipboard_sync(
     workdir: String,
     absolute_path: String,
@@ -1442,6 +1475,7 @@ pub(crate) fn system_prepare_uploaded_image_clipboard_sync(
     prepare_uploaded_image_preview_clipboard_target(&target)
 }
 
+#[cfg(desktop)]
 pub(crate) fn system_clipboard_write_uploaded_image_sync(
     workdir: String,
     absolute_path: String,
@@ -2572,6 +2606,7 @@ pub async fn system_pick_file(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_save_preview_file(
     file_name: String,
     mime_type: Option<String>,
@@ -2585,6 +2620,7 @@ pub async fn system_save_preview_file(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_clipboard_write_image(
     mime_type: Option<String>,
     data_base64: String,
@@ -2611,6 +2647,7 @@ pub async fn system_create_project_folder(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_pick_readable_files(
     workdir: String,
     max_files: Option<usize>,
@@ -2693,6 +2730,7 @@ pub async fn system_open_uploaded_image(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_prepare_preview_file_save(file_name: String) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || system_prepare_preview_file_save_sync(file_name))
         .await
@@ -2700,6 +2738,7 @@ pub async fn system_prepare_preview_file_save(file_name: String) -> Result<Optio
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_write_preview_file(
     save_token: String,
     data_base64: String,
@@ -2713,6 +2752,7 @@ pub async fn system_write_preview_file(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_prepare_uploaded_image_clipboard(
     workdir: String,
     absolute_path: String,
@@ -2725,6 +2765,7 @@ pub async fn system_prepare_uploaded_image_clipboard(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[cfg(desktop)]
 pub async fn system_clipboard_write_uploaded_image(
     workdir: String,
     absolute_path: String,

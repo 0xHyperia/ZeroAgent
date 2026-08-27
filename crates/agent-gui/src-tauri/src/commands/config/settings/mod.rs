@@ -177,6 +177,7 @@ include!("model_failover.rs");
 include!("stt.rs");
 include!("gateway_sync.rs");
 include!("backup_snapshot.rs");
+#[cfg(desktop)]
 include!("backup_io.rs");
 include!("webdav_sync.rs");
 include!("ssh/mod.rs");
