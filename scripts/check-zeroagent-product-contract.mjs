@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { matchesGlob, resolve } from "node:path";
+import { validateUpstreamRelease } from "./upstream-release.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const failures = [];
@@ -174,8 +175,8 @@ for (const field of ["base_commit", "commit"]) {
     failures.push(`.github/upstream-sync.json：${field} 必须是完整的 40 位 Commit SHA`);
   }
 }
-if (upstreamSync.repository !== "Stack-Cairn/LiveAgent" || !/^v\d+\.\d+\.\d+$/.test(upstreamSync.tag ?? "")) {
-  failures.push(".github/upstream-sync.json：上游仓库或 Release Tag 无效");
+for (const error of validateUpstreamRelease(upstreamSync)) {
+  failures.push(`.github/upstream-sync.json：${error}`);
 }
 if (/^[0-9a-f]{40}$/.test(upstreamSync.commit ?? "")) {
   git(["merge-base", "--is-ancestor", upstreamSync.commit, "HEAD"]);

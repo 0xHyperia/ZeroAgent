@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "rules": [
+    {"glob": "skills/sync-liveagent-release/**", "ownership": "zeroagent_owned", "risk": "high", "checks": ["技能验证", "Release 来源校验测试"]},
     {"glob": "crates/agent-gateway/internal/account/**", "ownership": "zeroagent_owned", "risk": "critical", "checks": ["Gateway 账户测试", "OAuth 与租户隔离"]},
     {"glob": "crates/agent-gui/src/lib/relay/**", "ownership": "zeroagent_owned", "risk": "critical", "checks": ["Relay 客户端测试", "托管密钥安全"]},
     {"glob": "crates/agent-gateway/web/src/lib/relay/**", "ownership": "zeroagent_owned", "risk": "critical", "checks": ["Relay 客户端测试", "OAuth 会话测试"]},

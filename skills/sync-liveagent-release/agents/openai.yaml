@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync LiveAgent Release"
+  short_description: "Sync published LiveAgent releases into ZeroAgent safely"
+  default_prompt: "Use $sync-liveagent-release to integrate the selected published LiveAgent release into ZeroAgent and verify the product contracts."
