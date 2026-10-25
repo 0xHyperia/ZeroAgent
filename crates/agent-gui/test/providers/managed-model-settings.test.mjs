@@ -61,7 +61,8 @@ for (const surface of ["desktop", "web"]) {
     assert.equal(refreshed.isFullUrl, false); assert.equal(refreshed.modelsUrl, undefined); assert.equal(refreshed.customHeaders.length, 0); assert.equal(refreshed.useSystemProxy, false);
     assert.equal(refreshed.baseUrl, surface === "desktop" ? binding.baseUrl : "https://usa0.top");
     const settings = { ...settingsModule.getDefaultSettings(), customProviders: [refreshed], selectedModel: { customProviderId: refreshed.id, model: "manual-alias" } };
-    const edited = mod.applyRelayProviderModelSettings(settings, refreshed.id, { ...refreshed, models: refreshed.models, activeModels: [], baseUrl: "https://attacker.invalid", apiKey: "attacker", customHeaders: [{key:"X-Injected",value:"1"}] });
+    const edited = mod.applyRelayProviderModelSettings(settings, refreshed.id, { ...refreshed, promptCacheHintMode: "none", promptCachingEnabled: false, models: refreshed.models, activeModels: [], baseUrl: "https://attacker.invalid", apiKey: "attacker", customHeaders: [{key:"X-Injected",value:"1"}] });
+    assert.equal(edited.customProviders[0].promptCacheHintMode, "none"); assert.equal(edited.customProviders[0].promptCachingEnabled, false); assert.ok(edited.customProviders[0].models.every(model => model.promptCacheHintMode === undefined));
     assert.equal(edited.selectedModel, undefined); assert.equal(edited.customProviders[0].baseUrl, refreshed.baseUrl); assert.equal(edited.customProviders[0].apiKey, refreshed.apiKey); assert.equal(edited.customProviders[0].customHeaders.length, 0);
     assert.throws(() => mod.applyRelayProviderModelSettings(settings, "external", refreshed));
     const [again] = await mod.buildRelayProviders(edited.customProviders, [key], [group], true);
@@ -80,4 +81,34 @@ test("Web managed catalog discovery uses owned-key HTTP and ignores draft endpoi
   const {discoverProviderModels}=loader.loadModule(web("agent-ui-adapters/providerSettings.tsx"));
   const models=await discoverProviderModels({providerId:"relay-key-1",type:"codex",baseUrl:"https://injected.invalid",apiKey:"injected",modelsUrl:"https://injected.invalid/models",customHeaders:[{key:"X-Injected",value:"1"}]});
   assert.deepEqual(calls,[1]);assert.equal(models[0].id,"Kimi-K2.5");
+});
+
+test("desktop restart hydration preserves persisted activation and selection until managed credentials register", async () => {
+  for (const enabled of [true, false]) {
+    const bindings = new Map();
+    const loader = createTsModuleLoader({ mocks: {
+      [gui("lib/relay/client.ts")]: { RELAY_ORIGIN: "https://usa0.top" },
+      [gui("lib/kbrain/client.ts")]: { createKBrainClient: () => ({ discoverProviderModels: async () => { throw new Error("a persisted catalog needs no discovery"); } }) },
+      [gui("lib/relay/managedCredentials.ts")]: { managedModelBinding: id => bindings.get(id), replaceManagedModelCredentials: async () => { bindings.set(binding.providerId, binding); return new Map(bindings); } },
+    } });
+    const providers = loader.loadModule("src/lib/relay/providers.ts");
+    const adapter = loader.loadModule("src/lib/kbrain/providerSettings.ts");
+    const document = JSON.parse(JSON.stringify({ version: "kbrain.agent.v1", defaultProvider: enabled ? "relay-key-1" : "", defaultModel: enabled ? "Kimi-K2.5" : "", providers: [{ id: "relay-key-1", name: "USA0", type: "codex", api: "openai-responses", apiKeyConfigured: true, models: [{ id: "Kimi-K2.5", displayName: "My Kimi", contextWindow: 300000, maxOutputToken: 20000, limitsSource: "user", inputModalities: ["text", "image"] }, { id: "GLM-5", contextWindow: 200000, maxOutputToken: 8192 }], activeModels: enabled ? ["Kimi-K2.5"] : [], modelOrder: ["GLM-5", "Kimi-K2.5"], requestFormat: "openai-responses" }] }));
+    const restored = { ...settingsModule.getDefaultSettings(), customProviders: adapter.appProvidersFromKBrain(document), selectedModel: enabled ? { customProviderId: "relay-key-1", model: "Kimi-K2.5" } : undefined };
+    const hydrated = providers.enforceRelayProviderConstraint(settingsModule.normalizeSettings(restored));
+    assert.deepEqual([...hydrated.customProviders[0].activeModels], document.providers[0].activeModels, "missing runtime credentials must not mean a user disabled every model");
+    assert.deepEqual(hydrated.selectedModel, restored.selectedModel);
+    assert.equal(hydrated.customProviders[0].baseUrl, ""); assert.equal(hydrated.customProviders[0].apiKey, ""); assert.equal(hydrated.customProviders[0].apiKeyConfigured, false);
+    const registered = await providers.bindRelayKeysToSettings(hydrated, [key], [group], false);
+    assert.deepEqual([...registered.customProviders[0].activeModels], document.providers[0].activeModels);
+    assert.deepEqual(registered.selectedModel, restored.selectedModel);
+    assert.equal(registered.customProviders[0].baseUrl, binding.baseUrl);
+    const kimi = registered.customProviders[0].models.find(model => model.id === "Kimi-K2.5");
+    assert.equal(kimi.displayName, "My Kimi"); assert.equal(kimi.contextWindow, 300000); assert.equal(kimi.maxOutputToken, 20000); assert.deepEqual([...kimi.inputModalities], ["text", "image"]);
+    assert.deepEqual([...registered.customProviders[0].modelOrder], ["GLM-5", "Kimi-K2.5"]);
+    bindings.clear();
+    const unregistered = providers.enforceRelayProviderConstraint(registered);
+    assert.deepEqual([...unregistered.customProviders[0].activeModels], document.providers[0].activeModels);
+    assert.equal(unregistered.customProviders[0].apiKey, ""); assert.equal(unregistered.customProviders[0].apiKeyConfigured, false);
+  }
 });

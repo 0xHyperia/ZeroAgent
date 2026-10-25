@@ -221,3 +221,16 @@ test("provider settings expose real HTTP failures", async () => {
     runtime.clearKBrainRuntimeConnection();
   }
 });
+
+test("canonical model serialization excludes TS-only model cache hints and preserves supported provider hints", () => {
+  const loader = createTsModuleLoader();
+  const { getDefaultSettings, normalizeCustomProvider } = loader.loadModule("src/lib/settings/index.ts");
+  const { kBrainSettingsUpdateFromAppSettings } = loader.loadModule("src/lib/kbrain/providerSettings.ts");
+  const previous = getDefaultSettings();
+  const provider = normalizeCustomProvider({id:"relay-key-1",name:"USA0",type:"codex",baseUrl:"http://127.0.0.1:9",apiKey:"synthetic-only",models:[{id:"Kimi-K2.5",displayName:"My Kimi",contextWindow:300000,maxOutputToken:20000,limitsSource:"user",inputModalities:["text","image"],promptCacheHintMode:"openai-key"}],activeModels:["Kimi-K2.5"],promptCacheHintMode:"none",promptCachingEnabled:false});
+  const update = kBrainSettingsUpdateFromAppSettings(previous,{...previous,customProviders:[provider],selectedModel:{customProviderId:provider.id,model:"Kimi-K2.5"}});
+  const wire = JSON.parse(JSON.stringify(update));
+  assert.equal(wire.providers[0].promptCacheHintMode,"none");assert.equal(wire.providers[0].promptCachingEnabled,false);
+  assert.equal(Object.hasOwn(wire.providers[0].models[0],"promptCacheHintMode"),false);
+  assert.equal(wire.providers[0].models[0].displayName,"My Kimi");assert.equal(wire.providers[0].models[0].contextWindow,300000);assert.deepEqual(wire.providers[0].models[0].inputModalities,["text","image"]);
+});

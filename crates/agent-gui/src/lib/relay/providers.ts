@@ -108,7 +108,6 @@ export function enforceRelayProviderConstraint(settings: AppSettings): AppSettin
       customHeaders: [],
       useSystemProxy: false,
       usageQuery: getDefaultUsageQueryConfig(),
-      activeModels: binding ? provider.activeModels : [],
     };
   });
   const selectedModel = settings.selectedModel;
@@ -240,13 +239,24 @@ export async function bindRelayKeysToSettings(
 export function applyRelayProviderModelSettings(
   settings: AppSettings,
   providerId: string,
-  draft: Pick<CustomProvider, "models" | "activeModels" | "modelOrder" | "requestFormat">,
+  draft: Pick<
+    CustomProvider,
+    | "models"
+    | "activeModels"
+    | "modelOrder"
+    | "requestFormat"
+    | "promptCacheHintMode"
+    | "promptCachingEnabled"
+    | "promptCacheRetention"
+  >,
 ): AppSettings {
   const provider = settings.customProviders.find((item) => item.id === providerId);
   if (!provider || !isRelayProvider(provider) || !managedModelBinding(providerId)) {
     throw new Error("只能配置当前账户已授权的托管模型");
   }
-  const models = normalizeProviderModelConfigs(draft.models, provider.type);
+  const models = normalizeProviderModelConfigs(draft.models, provider.type).map(
+    ({ promptCacheHintMode: _unsupportedModelHint, ...model }) => model,
+  );
   const ids = new Set(models.map((model) => model.id));
   return enforceRelayProviderConstraint({
     ...settings,
@@ -259,6 +269,10 @@ export function applyRelayProviderModelSettings(
             activeModels: draft.activeModels.filter((id) => ids.has(id)),
             modelOrder: draft.modelOrder?.filter((id) => ids.has(id)),
             requestFormat: item.type === "codex" ? draft.requestFormat : item.requestFormat,
+            promptCachingEnabled: draft.promptCachingEnabled,
+            promptCacheHintMode: item.type === "codex" ? draft.promptCacheHintMode : undefined,
+            promptCacheRetention:
+              item.type === "claude_code" ? draft.promptCacheRetention : undefined,
           },
     ),
   });

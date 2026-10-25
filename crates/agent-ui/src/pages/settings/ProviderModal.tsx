@@ -825,7 +825,9 @@ function useProviderModalController({
       apiKey: nextApiKey,
       apiKeyConfigured: nextApiKey.length > 0 || apiKeyIsStoredValue,
       customHeaders: connectionManaged ? [] : customHeaders,
-      models: nextModels,
+      models: connectionManaged
+        ? nextModels.map(({ promptCacheHintMode: _unsupportedModelHint, ...model }) => model)
+        : nextModels,
       modelOrder,
       activeModels: Array.from(activeModels),
       requestFormat:

@@ -104,7 +104,14 @@ function settingsUpdateFromProviders(
       previousById.get(provider.id)?.apiKeyConfigured === true;
     return {
       ...metadata,
-      ...(provider.models ? { models: provider.models.map(withInputModalities) } : {}),
+      ...(provider.models
+        ? {
+            models: provider.models.map(
+              ({ promptCacheHintMode: _unsupportedModelHint, ...model }) =>
+                withInputModalities(model),
+            ),
+          }
+        : {}),
       api: resolveProviderApi(provider.type, provider.requestFormat),
       ...(clearApiKey ? { clearApiKey: true } : apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
     };

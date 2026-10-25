@@ -227,6 +227,77 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
     visibleModels,
   } = viewModel;
   const visibleModelById = new Map(visibleModels.map((model) => [model.id, model]));
+  const providerCacheControls =
+    providerType !== "gemini" && providerType !== "xai" && providerType !== "deepseek" ? (
+      <div className={cn("mt-3 rounded-xl bg-settings-tile px-4 py-3 transition-colors")}>
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">{t("settings.promptCaching")}</div>
+            <div className="text-xs text-muted-foreground">
+              {providerType === "claude_code"
+                ? t("settings.promptCachingDescClaude")
+                : t("settings.promptCachingDescCodex")}
+            </div>
+          </div>
+          {providerType === "claude_code" ? (
+            <Switch
+              checked={promptCachingEnabled}
+              onCheckedChange={setPromptCachingEnabled}
+              aria-label={t("settings.promptCaching")}
+            />
+          ) : null}
+        </div>
+        {providerType === "codex" ? (
+          <div className="mt-3 border-t pt-3">
+            <Select
+              value={promptCacheHintMode}
+              onValueChange={(value) => setPromptCacheHintMode(value as PromptCacheHintMode)}
+            >
+              <SelectTrigger
+                variant="plain"
+                className="h-8 shadow-none"
+                aria-label={t("settings.promptCacheHintMode")}
+              >
+                {/* value≠label：闭合态必须显式渲染本地化标签。 */}
+                <SelectValue>{t(PROMPT_CACHE_HINT_LABEL_KEYS[promptCacheHintMode])}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {PROMPT_CACHE_HINT_MODES.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {t(PROMPT_CACHE_HINT_LABEL_KEYS[mode])}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {providerType === "claude_code" && promptCachingEnabled ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">
+              {t("settings.promptCacheRetention")}
+            </span>
+            <SettingsToggleGroup
+              value={[promptCacheRetention]}
+              onValueChange={(values) => {
+                const nextRetention = values[0] as typeof promptCacheRetention | undefined;
+                if (nextRetention) setPromptCacheRetention(nextRetention);
+              }}
+            >
+              {(
+                [
+                  ["short", "settings.promptCacheRetentionShort"],
+                  ["long", "settings.promptCacheRetentionLong"],
+                ] as const
+              ).map(([value, labelKey]) => (
+                <SettingsToggleGroupItem key={value} value={value}>
+                  {t(labelKey)}
+                </SettingsToggleGroupItem>
+              ))}
+            </SettingsToggleGroup>
+          </div>
+        ) : null}
+      </div>
+    ) : null;
   return (
     <Dialog
       open={dialogOpen}
@@ -469,6 +540,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                   ) : null}
                 </div>
               </div>
+              {connectionManaged && providerCacheControls}
               <div className="grid min-h-0 flex-1 grid-cols-2 items-stretch gap-3 max-[640px]:min-h-96 max-[640px]:grid-cols-1">
                 <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-settings-tile">
                   <div className="flex items-center gap-2 border-b bg-muted/30 p-2.5 max-[720px]:flex-wrap">
@@ -878,7 +950,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                             </FormFieldDescription>
                           </FormField>
                         ) : null}
-                        {providerType === "codex" ? (
+                        {providerType === "codex" && !connectionManaged ? (
                           <FormField>
                             <FormFieldLabel>
                               {t("settings.promptCacheHintModelOverride")}
@@ -1078,86 +1150,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                       </div>
                     ) : null}
                   </div>
-                  {providerType !== "gemini" &&
-                  providerType !== "xai" &&
-                  providerType !== "deepseek" ? (
-                    <div
-                      className={cn("mt-3 rounded-xl bg-settings-tile px-4 py-3 transition-colors")}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{t("settings.promptCaching")}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {providerType === "claude_code"
-                              ? t("settings.promptCachingDescClaude")
-                              : t("settings.promptCachingDescCodex")}
-                          </div>
-                        </div>
-                        {providerType === "claude_code" ? (
-                          <Switch
-                            checked={promptCachingEnabled}
-                            onCheckedChange={setPromptCachingEnabled}
-                            aria-label={t("settings.promptCaching")}
-                          />
-                        ) : null}
-                      </div>
-                      {providerType === "codex" ? (
-                        <div className="mt-3 border-t pt-3">
-                          <Select
-                            value={promptCacheHintMode}
-                            onValueChange={(value) =>
-                              setPromptCacheHintMode(value as PromptCacheHintMode)
-                            }
-                          >
-                            <SelectTrigger
-                              variant="plain"
-                              className="h-8 shadow-none"
-                              aria-label={t("settings.promptCacheHintMode")}
-                            >
-                              {/* value≠label：闭合态必须显式渲染本地化标签。 */}
-                              <SelectValue>
-                                {t(PROMPT_CACHE_HINT_LABEL_KEYS[promptCacheHintMode])}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PROMPT_CACHE_HINT_MODES.map((mode) => (
-                                <SelectItem key={mode} value={mode}>
-                                  {t(PROMPT_CACHE_HINT_LABEL_KEYS[mode])}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : null}
-                      {providerType === "claude_code" && promptCachingEnabled ? (
-                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
-                          <span className="text-xs text-muted-foreground">
-                            {t("settings.promptCacheRetention")}
-                          </span>
-                          <SettingsToggleGroup
-                            value={[promptCacheRetention]}
-                            onValueChange={(values) => {
-                              const nextRetention = values[0] as
-                                | typeof promptCacheRetention
-                                | undefined;
-                              if (nextRetention) setPromptCacheRetention(nextRetention);
-                            }}
-                          >
-                            {(
-                              [
-                                ["short", "settings.promptCacheRetentionShort"],
-                                ["long", "settings.promptCacheRetentionLong"],
-                              ] as const
-                            ).map(([value, labelKey]) => (
-                              <SettingsToggleGroupItem key={value} value={value}>
-                                {t(labelKey)}
-                              </SettingsToggleGroupItem>
-                            ))}
-                          </SettingsToggleGroup>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {providerCacheControls}
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2 max-[720px]:w-full">
                       <span className="text-sm font-semibold">{t("settings.customHeaders")}</span>
