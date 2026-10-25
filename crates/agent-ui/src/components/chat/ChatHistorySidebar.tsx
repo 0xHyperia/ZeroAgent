@@ -1411,7 +1411,6 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
           )}
         >
           {headerTop}
-          {accountMenu}
           <SidebarHeader className="px-3 pb-2 pt-2">
             <div className="flex items-center justify-between gap-2">
               {brand ?? (
@@ -2215,23 +2214,25 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
               "bg-settings-rail px-2.5 pb-3 pt-2",
             )}
           >
-            <Button
-              type="button"
-              variant="ghost"
-              // 与 macOS 标题栏那个设置入口同一个 testid：自动化脚本据此定位，
-              // 不必靠文案或坐标去猜。可读名走 i18n——屏幕阅读器念给用户听的
-              // 东西不该为了脚本方便固定成英文。
-              data-testid="open-settings"
-              onClick={() => onOpenSettings()}
-              className={cn(
-                "sidebar-list-row w-full justify-start gap-2.5 rounded-md px-2.5",
-                "text-sm font-normal text-foreground/75 shadow-none hover:bg-settings-tile-hover hover:text-foreground",
-              )}
-              title={t("tooltip.settings")}
-            >
-              <Settings className="size-4 shrink-0 text-foreground/75" />
-              <span className="truncate">{t("tooltip.settings")}</span>
-            </Button>
+            {accountMenu ?? (
+              <Button
+                type="button"
+                variant="ghost"
+                // 与 macOS 标题栏那个设置入口同一个 testid：自动化脚本据此定位，
+                // 不必靠文案或坐标去猜。可读名走 i18n——屏幕阅读器念给用户听的
+                // 东西不该为了脚本方便固定成英文。
+                data-testid="open-settings"
+                onClick={() => onOpenSettings()}
+                className={cn(
+                  "sidebar-list-row w-full justify-start gap-2.5 rounded-md px-2.5",
+                  "text-sm font-normal text-foreground/75 shadow-none hover:bg-settings-tile-hover hover:text-foreground",
+                )}
+                title={t("tooltip.settings")}
+              >
+                <Settings className="size-4 shrink-0 text-foreground/75" />
+                <span className="truncate">{t("tooltip.settings")}</span>
+              </Button>
+            )}
             {footerTrailing}
           </SidebarFooter>
         </div>

@@ -1,10 +1,14 @@
+// Official public favicon linked from https://chat.z.ai/; retained without redrawing.
+import ZaiLogo from "@liveagent/ui/assets/providers/zai.svg";
 import { type ComponentType, type SVGProps, useId } from "react";
 import McpLogoSource from "~icons/gravity-ui/logo-mcp";
 import ConnectionIconSource from "~icons/gravity-ui/plug-connection";
 import ClaudeSource from "~icons/logos/claude-icon";
 import DeepseekSource from "~icons/logos/deepseek-icon";
 import GrokSource from "~icons/logos/grok-icon";
+import MoonshotSource from "~icons/logos/moonshot-ai-icon";
 import OpenAISource from "~icons/logos/openai-icon";
+import QwenSource from "~icons/logos/qwen-icon";
 import AccessibilitySource from "~icons/lucide/accessibility";
 import ActivitySource from "~icons/lucide/activity";
 import AppWindowSource from "~icons/lucide/app-window";
@@ -488,6 +492,11 @@ export const AlertTriangle = createIcon(AlertTriangleSource);
 export const AlertCircle = createIcon(AlertCircleSource);
 export const ClaudeIcon = createIcon(ClaudeSource);
 export const DeepseekIcon = createIcon(DeepseekSource);
+export const MoonshotIcon = createIcon(MoonshotSource);
+export const QwenIcon = createIcon(QwenSource);
+export function ZaiIcon({ className }: { className?: string }) {
+  return <img src={ZaiLogo} alt="" aria-hidden="true" className={className} />;
+}
 export const GeminiIcon = createIcon(GeminiIconSource);
 /**
  * Grok brand mark from the Iconify `logos` set (`logos:grok-icon`).

@@ -264,7 +264,11 @@ export const ComposerModelControls = memo(function ComposerModelControls(
         }
       >
         {selectedOption ? (
-          <ProviderBrandIcon type={selectedOption.providerType} className="opacity-90" />
+          <ProviderBrandIcon
+            type={selectedOption.providerType}
+            model={selectedOption.model}
+            className="opacity-90"
+          />
         ) : (
           <Layers className="size-4 shrink-0" />
         )}
@@ -598,7 +602,10 @@ export const ComposerModelControls = memo(function ComposerModelControls(
                         </div>
                         <div
                           id={`${executionModeRadioName}-models-${group.id}`}
-                          className="space-y-0.5"
+                          data-model-group-list=""
+                          // 左边线落在标题展开箭头的中线（px-2.5 + 半个 size-3），子行整体右移，
+                          // 让模型与所属供应商形成上下级。
+                          className="ml-4 space-y-0.5 border-l border-border/60 pl-1.5"
                         >
                           {!collapsedProviders.has(group.id) &&
                             group.opts.map((option) => {
@@ -629,6 +636,7 @@ export const ComposerModelControls = memo(function ComposerModelControls(
                                     {/* 12px，比分组标题的 14px 小一档，避免子行图标压过父行。 */}
                                     <ProviderBrandIcon
                                       type={option.providerType}
+                                      model={option.model}
                                       className={cn(
                                         "size-3",
                                         isSelected ? "opacity-80" : "opacity-45",

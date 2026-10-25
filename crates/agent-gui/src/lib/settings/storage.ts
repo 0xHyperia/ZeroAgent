@@ -531,7 +531,8 @@ export async function loadPersistedSettingsWithDefaults(): Promise<PersistedSett
     customSettings: localUi.customSettings,
     updates: localUi.updates,
     selectedModel,
-    modelFailover: (persisted?.modelFailover ?? defaults.modelFailover) as AppSettings["modelFailover"],
+    modelFailover: (persisted?.modelFailover ??
+      defaults.modelFailover) as AppSettings["modelFailover"],
     retryErrorSettings: localUi.retryErrorSettings as AppSettings["retryErrorSettings"],
     theme: localUi.theme as AppSettings["theme"],
     locale: localUi.locale as AppSettings["locale"],
@@ -703,7 +704,8 @@ function projectPromptFields(settings: AppSettings, path: string) {
 async function loadKBrainMcpSettings(settings: AppSettings): Promise<AppSettings> {
   if (!isKBrainBackendEnabled()) return settings;
   try {
-    const document = await createKBrainClient().getMcpSettings();
+    const client = createKBrainClient();
+    const document = await client.getMcpSettings();
     return normalizeSettings({
       ...settings,
       mcp: fromKBrainMcpSettings(document, settings.mcp),

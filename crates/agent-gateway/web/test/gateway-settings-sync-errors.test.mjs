@@ -10,6 +10,70 @@ const loader = createWebModuleLoader({
 const rpc = loader.loadModule("src/lib/gatewaySocketRpc.ts");
 const i18n = loader.loadModule("src/i18n/config.ts");
 const settingsSync = loader.loadModule("src/app/hooks/useGatewaySettingsSync.ts");
+const settingsModule = loader.loadModule("src/lib/settings");
+const syncModule = loader.loadModule("@liveagent/ui/lib/settings/sync.ts");
+
+test("project prompts round-trip without swallowing unrelated system changes", () => {
+  const prev = settingsModule.normalizeSettings({});
+  const next = settingsModule.normalizeSettings({
+    ...prev,
+    system: {
+      ...prev.system,
+      workspaceResourceSettings: {
+        "/project": { projectPrompt: "project instruction", projectPromptStrategy: "replace" },
+      },
+    },
+  });
+  const update = { system: next.system };
+  settingsSync.projectPromptSettingsUpdate(update, prev, next);
+  assert.equal(update.system, undefined);
+  assert.deepEqual(update.projectPrompts, {
+    "/project": { prompt: "project instruction", strategy: "replace" },
+  });
+  const hydrated = syncModule.applyGatewaySettingsSyncPayload(prev, update);
+  assert.equal(hydrated.system.workspaceResourceSettings["/project"].projectPrompt, "project instruction");
+  assert.equal(hydrated.system.workspaceResourceSettings["/project"].projectPromptStrategy, "replace");
+  const cleared = syncModule.applyGatewaySettingsSyncPayload(hydrated, { projectPrompts: {} });
+  assert.equal(cleared.system.workspaceResourceSettings["/project"].projectPrompt, "");
+  const mixed = structuredClone(next);
+  mixed.system.executionMode = "unrecognized-test-mode";
+  const mixedUpdate = { system: mixed.system };
+  settingsSync.projectPromptSettingsUpdate(mixedUpdate, prev, mixed);
+  assert.ok(mixedUpdate.system, "unsupported system changes must reach backend validation");
+  const resourceChange = structuredClone(next);
+  resourceChange.system.workspaceResourceSettings["/project"].mode = "off";
+  const resourceUpdate = { system: resourceChange.system };
+  settingsSync.projectPromptSettingsUpdate(resourceUpdate, prev, resourceChange);
+  assert.ok(resourceUpdate.system, "unsupported project resource selection must be validated");
+  const clear = { system: prev.system };
+  settingsSync.projectPromptSettingsUpdate(clear, next, prev);
+  assert.deepEqual(clear.projectPrompts, { "/project": { prompt: "", strategy: "append" } });
+});
+
+test("Native project prompt edits retain their versioned atomic device batch", () => {
+  const prev = settingsModule.normalizeSettings({
+    settingsSyncProtocol: "zeroagent.settings-sync.v1",
+    configurationRevision: "za-config-v1-read",
+    uiPreferencesRevision: "za-ui-v1-read",
+  });
+  const next = settingsModule.normalizeSettings({
+    ...prev,
+    system: {
+      ...prev.system,
+      workspaceResourceSettings: {
+        "/project": { projectPrompt: "Native project instruction", projectPromptStrategy: "replace" },
+      },
+    },
+  });
+  const update = syncModule.buildGatewaySettingsSyncUpdatePayload(prev, next);
+  const original = structuredClone(update);
+  settingsSync.projectPromptSettingsUpdate(update, prev, next);
+  assert.deepEqual(update, original);
+  assert.equal(update.system.workspaceResourceSettings["/project"].projectPrompt, "Native project instruction");
+  assert.equal(update.configurationRevision, "za-config-v1-read");
+  assert.equal(update.uiPreferencesRevision, "za-ui-v1-read");
+  assert.equal(update.projectPrompts, undefined);
+});
 
 function clientWithSettingsUpdateResponse(response) {
   const client = Object.create(rpc.GatewayWebSocketRpcClient.prototype);

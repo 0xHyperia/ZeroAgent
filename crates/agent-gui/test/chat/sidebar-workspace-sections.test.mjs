@@ -408,3 +408,20 @@ test("Planning opens from the current sidebar and honors shortcut visibility", a
     await act(async () => root.unmount());
   }
 });
+
+
+test("account entry stays in the sidebar footer and replaces only the duplicate settings button", async () => {
+  const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
+  const accountMenu=React.createElement("button", {"data-account-entry":""}, "Zero");
+  try {
+    await act(async()=>root.render(React.createElement(ChatHistorySidebar,{...baseProps,accountMenu})));
+    const footer=container.querySelector('[data-slot="sidebar-footer"]');
+    assert.ok(footer?.contains(container.querySelector('[data-account-entry]')));
+    assert.equal(container.querySelector('[data-testid="open-settings"]'),null);
+    await act(async()=>root.render(React.createElement(ChatHistorySidebar,{...baseProps,accountMenu,isOpen:false})));
+    assert.ok(container.querySelector('[data-slot="sidebar-container"]').hasAttribute("inert"));
+    assert.ok(container.querySelector('[data-slot="sidebar-footer"] [data-account-entry]'));
+    await act(async()=>root.render(React.createElement(ChatHistorySidebar,{...baseProps,accountMenu:undefined})));
+    assert.ok(container.querySelector('[data-slot="sidebar-footer"] [data-testid="open-settings"]'));
+  } finally {await act(async()=>root.unmount());container.remove();}
+});

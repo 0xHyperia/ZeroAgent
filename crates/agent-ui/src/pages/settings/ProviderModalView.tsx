@@ -109,6 +109,7 @@ const MODEL_MODALITY_ICONS = [
 
 export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewModel }) {
   const {
+    connectionManaged,
     activeCodingPlanProvider,
     activeModels,
     activePanel,
@@ -248,7 +249,11 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <DialogTitle className="text-sm leading-normal">
-                {isEditing ? t("settings.editProvider") : t("settings.addProvider")}
+                {connectionManaged
+                  ? t("settings.modelSettings")
+                  : isEditing
+                    ? t("settings.editProvider")
+                    : t("settings.addProvider")}
               </DialogTitle>
               <span className="rounded-full border bg-muted/60 px-2.5 py-0.5 text-xs text-muted-foreground">
                 {typeLabel} {t("settings.compatible")}
@@ -256,16 +261,18 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <div className="mr-auto flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setActivePanel("request")}>
-                <Settings className="size-4" />
-                {t("settings.providerAdvancedSettings")}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setActivePanel("usage")}>
-                <Key className="size-4" />
-                {t("settings.providerUsageQuery")}
-              </Button>
-            </div>
+            {!connectionManaged && (
+              <div className="mr-auto flex items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setActivePanel("request")}>
+                  <Settings className="size-4" />
+                  {t("settings.providerAdvancedSettings")}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setActivePanel("usage")}>
+                  <Key className="size-4" />
+                  {t("settings.providerUsageQuery")}
+                </Button>
+              </div>
+            )}
             <DialogActions>
               <Button
                 variant="outline"
@@ -291,145 +298,155 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
           <DialogBody className="flex min-w-0 flex-col overflow-hidden [overflow-anchor:none] max-[640px]:overflow-y-auto">
             <section key="general" className="flex min-h-0 flex-1 flex-col max-[640px]:min-h-fit">
               <div className="shrink-0 space-y-3 pb-3">
-                <FormField>
-                  <FormFieldLabel>{t("settings.providerServiceType")}</FormFieldLabel>
-                  <Select
-                    value={providerType}
-                    onValueChange={(value) => {
-                      const type = PROVIDER_TABS.find((type) => type === value);
-                      if (type && !isEditing) setProviderType(type);
-                    }}
-                    disabled={isEditing}
-                  >
-                    <SelectTrigger
-                      variant="plain"
-                      className="h-10 w-full"
-                      aria-label={t("settings.providerServiceType")}
-                    >
-                      <SelectValue>
-                        {getProviderLabel(providerType)} {t("settings.compatible")}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROVIDER_TABS.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {getProviderLabel(type)} {t("settings.compatible")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormField>
-                <div className="grid grid-cols-2 items-start gap-3 max-[640px]:grid-cols-1">
+                {connectionManaged ? (
+                  <p className="text-sm font-medium">USA-Zero · {name}</p>
+                ) : null}
+                {!connectionManaged && (
                   <FormField>
-                    <FormFieldLabel htmlFor="modal-name">
-                      {t("settings.providerName")}
-                    </FormFieldLabel>
-                    <Input
-                      variant="plain"
-                      id="modal-name"
-                      className="h-10 shadow-none"
-                      value={name}
-                      onChange={(event) => setName(event.currentTarget.value)}
-                    />
+                    <FormFieldLabel>{t("settings.providerServiceType")}</FormFieldLabel>
+                    <Select
+                      value={providerType}
+                      onValueChange={(value) => {
+                        const type = PROVIDER_TABS.find((type) => type === value);
+                        if (type && !isEditing) setProviderType(type);
+                      }}
+                      disabled={isEditing}
+                    >
+                      <SelectTrigger
+                        variant="plain"
+                        className="h-10 w-full"
+                        aria-label={t("settings.providerServiceType")}
+                      >
+                        <SelectValue>
+                          {getProviderLabel(providerType)} {t("settings.compatible")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROVIDER_TABS.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {getProviderLabel(type)} {t("settings.compatible")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </FormField>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <FormFieldLabel htmlFor="modal-baseurl">
-                        {t("settings.baseUrl")}
+                )}
+                {!connectionManaged && (
+                  <div className="grid grid-cols-2 items-start gap-3 max-[640px]:grid-cols-1">
+                    <FormField>
+                      <FormFieldLabel htmlFor="modal-name">
+                        {t("settings.providerName")}
                       </FormFieldLabel>
-                      <div className="ml-auto flex items-center gap-1.5">
-                        <Link2
-                          className={cn(
-                            "size-3.5",
-                            isFullUrl ? "text-sky-500" : "text-muted-foreground",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "text-xs font-medium",
-                            isFullUrl ? "text-foreground" : "text-muted-foreground",
-                          )}
-                        >
-                          {t("settings.providerFullUrl")}
-                        </span>
-                        <Switch
-                          size="sm"
-                          checked={isFullUrl}
-                          onCheckedChange={setIsFullUrl}
-                          aria-label={t("settings.providerFullUrl")}
-                          title={t("settings.providerFullUrl")}
-                        />
+                      <Input
+                        variant="plain"
+                        id="modal-name"
+                        className="h-10 shadow-none"
+                        value={name}
+                        onChange={(event) => setName(event.currentTarget.value)}
+                      />
+                    </FormField>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <FormFieldLabel htmlFor="modal-baseurl">
+                          {t("settings.baseUrl")}
+                        </FormFieldLabel>
+                        <div className="ml-auto flex items-center gap-1.5">
+                          <Link2
+                            className={cn(
+                              "size-3.5",
+                              isFullUrl ? "text-sky-500" : "text-muted-foreground",
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              isFullUrl ? "text-foreground" : "text-muted-foreground",
+                            )}
+                          >
+                            {t("settings.providerFullUrl")}
+                          </span>
+                          <Switch
+                            size="sm"
+                            checked={isFullUrl}
+                            onCheckedChange={setIsFullUrl}
+                            aria-label={t("settings.providerFullUrl")}
+                            title={t("settings.providerFullUrl")}
+                          />
+                        </div>
                       </div>
+                      <Input
+                        variant="plain"
+                        id="modal-baseurl"
+                        className="h-10 shadow-none"
+                        value={baseUrl}
+                        aria-invalid={baseUrlInvalid ? true : undefined}
+                        aria-describedby={baseUrlInvalid ? "modal-baseurl-error" : undefined}
+                        onChange={(event) => setBaseUrl(event.currentTarget.value)}
+                      />
+                      {baseUrlInvalid ? (
+                        <p
+                          id="modal-baseurl-error"
+                          className="text-xs leading-relaxed text-destructive"
+                          role="alert"
+                        >
+                          {t("settings.providerBaseUrlInvalid")}
+                        </p>
+                      ) : (
+                        <FormFieldDescription
+                          className={cn(!isFullUrl && "invisible")}
+                          aria-hidden={!isFullUrl}
+                        >
+                          {t("settings.providerFullUrlHint")}
+                        </FormFieldDescription>
+                      )}
                     </div>
-                    <Input
-                      variant="plain"
-                      id="modal-baseurl"
-                      className="h-10 shadow-none"
-                      value={baseUrl}
-                      aria-invalid={baseUrlInvalid ? true : undefined}
-                      aria-describedby={baseUrlInvalid ? "modal-baseurl-error" : undefined}
-                      onChange={(event) => setBaseUrl(event.currentTarget.value)}
-                    />
-                    {baseUrlInvalid ? (
-                      <p
-                        id="modal-baseurl-error"
-                        className="text-xs leading-relaxed text-destructive"
-                        role="alert"
-                      >
-                        {t("settings.providerBaseUrlInvalid")}
-                      </p>
-                    ) : (
-                      <FormFieldDescription
-                        className={cn(!isFullUrl && "invisible")}
-                        aria-hidden={!isFullUrl}
-                      >
-                        {t("settings.providerFullUrlHint")}
-                      </FormFieldDescription>
-                    )}
                   </div>
-                </div>
+                )}
                 <div
                   className={cn(
                     "grid items-start gap-3",
-                    providerType === "codex" &&
+                    !connectionManaged &&
+                      providerType === "codex" &&
                       "grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] max-[640px]:grid-cols-1",
                   )}
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center">
-                      <FormFieldLabel htmlFor="modal-apikey">API Key</FormFieldLabel>
+                  {!connectionManaged && (
+                    <div className="space-y-2">
+                      <div className="flex items-center">
+                        <FormFieldLabel htmlFor="modal-apikey">API Key</FormFieldLabel>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          variant="plain"
+                          id="modal-apikey"
+                          type={showApiKey ? "text" : "password"}
+                          value={apiKey}
+                          className="h-10 pr-9 shadow-none"
+                          onChange={(event) => setApiKey(event.currentTarget.value)}
+                          onFocus={(event) => {
+                            if (apiKeyIsRedactedDisplay) event.currentTarget.select();
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                          onClick={() => void toggleShowApiKey()}
+                          disabled={revealingApiKey}
+                          title={showApiKey ? t("settings.hideApiKey") : t("settings.showApiKey")}
+                          aria-label={
+                            showApiKey ? t("settings.hideApiKey") : t("settings.showApiKey")
+                          }
+                        >
+                          {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                        </Button>
+                      </div>
+                      {revealApiKeyError ? (
+                        <p className="text-xs text-destructive">{revealApiKeyError}</p>
+                      ) : null}
                     </div>
-                    <div className="relative">
-                      <Input
-                        variant="plain"
-                        id="modal-apikey"
-                        type={showApiKey ? "text" : "password"}
-                        value={apiKey}
-                        className="h-10 pr-9 shadow-none"
-                        onChange={(event) => setApiKey(event.currentTarget.value)}
-                        onFocus={(event) => {
-                          if (apiKeyIsRedactedDisplay) event.currentTarget.select();
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:bg-transparent hover:text-foreground"
-                        onClick={() => void toggleShowApiKey()}
-                        disabled={revealingApiKey}
-                        title={showApiKey ? t("settings.hideApiKey") : t("settings.showApiKey")}
-                        aria-label={
-                          showApiKey ? t("settings.hideApiKey") : t("settings.showApiKey")
-                        }
-                      >
-                        {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                      </Button>
-                    </div>
-                    {revealApiKeyError ? (
-                      <p className="text-xs text-destructive">{revealApiKeyError}</p>
-                    ) : null}
-                  </div>
+                  )}
                   {providerType === "codex" ? (
                     <FormField>
                       <FormFieldLabel>{t("settings.requestFormat")}</FormFieldLabel>
@@ -745,6 +762,25 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                   {editingModel ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 gap-4">
+                        {connectionManaged && (
+                          <FormField>
+                            <FormFieldLabel htmlFor="model-display-name">
+                              {t("settings.modelDisplayName")}
+                            </FormFieldLabel>
+                            <Input
+                              variant="plain"
+                              id="model-display-name"
+                              value={editingModel.model.displayName ?? ""}
+                              placeholder={editingModel.model.id}
+                              onChange={(event) => {
+                                const displayName = event.currentTarget.value;
+                                setEditingModel((prev) =>
+                                  prev ? { ...prev, model: { ...prev.model, displayName } } : prev,
+                                );
+                              }}
+                            />
+                          </FormField>
+                        )}
                         <FormField>
                           <FormFieldLabel htmlFor="model-context-window">
                             {t("settings.contextWindow")}

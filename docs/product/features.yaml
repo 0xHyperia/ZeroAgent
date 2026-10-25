@@ -115,7 +115,13 @@
         "crates/agent-gui/src-tauri/src/services/managed_model_broker.rs",
         "crates/agent-gui/src/lib/relay/managedCredentials.ts",
         "crates/agent-gui/src-tauri/src/services/account_session/api.rs",
-        "crates/agent-gui/src-tauri/src/services/proxy.rs"
+        "crates/agent-gui/src-tauri/src/services/proxy.rs",
+        "crates/agent-ui/src/pages/settings/ProviderModal.tsx",
+        "crates/agent-ui/src/pages/settings/ProviderModalView.tsx",
+        "crates/agent-gui/src/lib/relay/providers.ts",
+        "crates/agent-gateway/web/src/lib/relay/providers.ts",
+        "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs"
       ],
       "tests": [
         "crates/agent-gui/test/providers/relay-settings-refresh.test.mjs",
@@ -125,9 +131,13 @@
         "crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs",
         "crates/agent-gui/src-tauri/src/services/managed_model_broker.rs",
         "crates/agent-gui/src-tauri/src/services/account_session/tests.rs",
-        "crates/agent-gui/test/providers/native-session.test.mjs"
+        "crates/agent-gui/test/providers/native-session.test.mjs",
+        "crates/agent-gui/test/providers/managed-model-settings.test.mjs",
+        "crates/agent-gui/test/settings/provider-modal-managed.test.mjs",
+        "crates/agent-gui/test/settings/provider-brand-model.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend/managed_model_discovery_tests.rs"
       ],
-      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。",
+      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。 ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。",
       "upstream_relation": "adapt"
     },
     {
@@ -221,7 +231,9 @@
         "patches/kbrain/0003-mcp-credential-history-and-legacy-sse.patch",
         "scripts/release/build-kbrain-source.mjs",
         "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
-        "patches/kbrain/0004-owned-mcp-lifecycle.patch"
+        "patches/kbrain/0004-owned-mcp-lifecycle.patch",
+        "crates/agent-gateway/web/src/agent-ui-adapters/kbrainSkills.ts",
+        "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs"
       ],
       "tests": [
         "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
@@ -239,9 +251,10 @@
         "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_tests.rs",
         "scripts/release/kbrain-patches.test.mjs",
         "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
-        "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs"
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/gateway_skills_tests.rs"
       ],
-      "security": "Go 保持唯一 Agent/MCP 执行器，标准审批与工具策略不向 Cloud Chat 开放。公开连接仅含 Native 代理能力，真实后端令牌不序列化给 renderer，profile 失效取消传输。MCP 凭据桥限制 profile、目标、版本和启用状态，真实令牌由 Native 持有、刷新并脱敏；私有 runtime 管理协议与额外端点兼容退出。保留官方 SDK 标准 SSE 最小接线及已复现的取消/进程树回收修复。补丁绑定精确源码和构建来源；完整应用、真实账号设备、支持端与发布验收尚未完成。",
+      "security": "Go 保持唯一 Agent/MCP 执行器，标准审批与工具策略不向 Cloud Chat 开放。公开连接仅含 Native 代理能力，真实后端令牌不序列化给 renderer，profile 失效取消传输。MCP 凭据桥限制 profile、目标、版本和启用状态，真实令牌由 Native 持有、刷新并脱敏；私有 runtime 管理协议与额外端点兼容退出。保留官方 SDK 标准 SSE 最小接线及已复现的取消/进程树回收修复。补丁绑定精确源码和构建来源；完整应用、真实账号设备、支持端与发布验收尚未完成。 beta21远程Skills复用Go资源和Native公开配置入口，实际读取ETag绑定写入，拒绝无版本、陈旧及跨工作区版本，不再分派到旧Native SkillsManager。",
       "upstream_relation": "adapt"
     },
     {
@@ -258,14 +271,21 @@
         "crates/agent-gui/src/lib/kbrain/history.ts",
         "crates/agent-gateway/web/src/lib/chat/chatHistory.ts",
         "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
-        "crates/agent-gui/src-tauri/src/lib.rs"
+        "crates/agent-gui/src-tauri/src/lib.rs",
+        "crates/agent-gui/src/lib/kbrain/manualHistoryImport.ts",
+        "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+        "crates/agent-gui/src/lib/kbrain/LegacyHistoryImportSettings.tsx",
+        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs"
       ],
       "tests": [
         "crates/agent-gui/test/providers/kbrain-history.test.mjs",
         "crates/agent-gateway/web/test/sidebar-store.test.mjs",
-        "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs"
+        "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs",
+        "crates/agent-gui/test/providers/kbrain-manual-history-import.test.mjs",
+        "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",
+        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs"
       ],
-      "security": "历史记录和工作区标识限定在已认证账户范围内；新安装不自动读取、迁移或清除旧版历史。",
+      "security": "历史记录和工作区限定在已认证账户范围。只通过桌面显式操作只读导入本机旧ZeroAgent会话，操作绑定当前profile/连接；旧内容保留，幂等与删除意图保留，退出/切号后的迟到结果不写入新空间。无启动自动迁移、其他产品扫描或旧供应商/密钥导入。",
       "upstream_relation": "adapt"
     },
     {

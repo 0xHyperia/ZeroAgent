@@ -47,8 +47,6 @@ export function fromKBrainMcpSettings(input: unknown, fallback: McpSettings): Mc
   return {
     ...fallback,
     servers: settings.servers as McpServerConfig[],
-    selected: Array.isArray(settings.selected)
-      ? (settings.selected as string[])
-      : fallback.selected,
+    selected: Array.isArray(settings.selected) ? (settings.selected as string[]) : [],
   };
 }

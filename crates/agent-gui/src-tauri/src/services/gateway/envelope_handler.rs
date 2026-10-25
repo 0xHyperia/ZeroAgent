@@ -1184,7 +1184,7 @@ impl GatewayController {
                 }
             }
             Some(proto::gateway_envelope::Payload::SkillManage(request)) => {
-                match gateway_bridge::handle_skill_manage(request).await {
+                match gateway_bridge::handle_skill_manage(self.app_handle.clone(), request).await {
                     Ok(response) => {
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,

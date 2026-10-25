@@ -41,6 +41,57 @@ export function getGatewaySettingsErrorMessage(error: unknown, fallback: string,
   return asErrorMessage(error, fallback);
 }
 
+export function projectPromptSettingsUpdate(
+  update: GatewaySettingsSyncUpdatePayload,
+  prev: AppSettings,
+  next: AppSettings,
+) {
+  // Native device configuration commits project prompts with the rest of the
+  // versioned batch; only the standalone Gateway uses separate prompt resources.
+  if (update.settingsSyncProtocol === "zeroagent.settings-sync.v1") return;
+  if (!update.system) return;
+  const projects: NonNullable<GatewaySettingsSyncUpdatePayload["projectPrompts"]> = {};
+  const before = prev.system.workspaceResourceSettings;
+  const after = next.system.workspaceResourceSettings;
+  let resourceSelectionChanged = false;
+  for (const path of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const selection = (entry: (typeof before)[string] | undefined) => ({
+      mode: entry?.mode ?? "inherit",
+      skillNames: entry?.skillNames ?? [],
+      mcpServerIds: entry?.mcpServerIds ?? [],
+    });
+    if (JSON.stringify(selection(before[path])) !== JSON.stringify(selection(after[path]))) {
+      resourceSelectionChanged = true;
+    }
+    const prompt = after[path]?.projectPrompt ?? "";
+    const strategy = after[path]?.projectPromptStrategy ?? "append";
+    if (
+      prompt !== (before[path]?.projectPrompt ?? "") ||
+      strategy !== (before[path]?.projectPromptStrategy ?? "append")
+    ) {
+      projects[path] = { prompt, strategy };
+    }
+  }
+  if (Object.keys(projects).length) update.projectPrompts = projects;
+  // Project layout belongs to this browser; unrelated system changes must still be validated.
+  const sharedSystem = (system: AppSettings["system"]) => {
+    const {
+      workspaceProjects: _projects,
+      workspaceResourceSettings: _resources,
+      activeWorkspaceProjectId: _active,
+      ...shared
+    } = system;
+    return shared;
+  };
+  if (
+    JSON.stringify(sharedSystem(prev.system)) === JSON.stringify(sharedSystem(next.system)) &&
+    !resourceSelectionChanged &&
+    update.systemProxyPasswordUpdate === undefined
+  ) {
+    delete update.system;
+  }
+}
+
 export function useGatewaySettingsSync(params: {
   token: string;
   api: GatewayWebSocketClientLike | null;
@@ -56,6 +107,7 @@ export function useGatewaySettingsSync(params: {
   const settingsSaveSequenceRef = useRef(0);
   const settingsSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const saveLineage = useRef(new GatewaySettingsSaveLineage());
+  const backendPromptResourcesRef = useRef(false);
   // Mirrors `settings` so setSettings/applyGatewaySettings can read the latest value
   // synchronously without passing a (side-effecting) function into setSettingsState —
   // React 18 StrictMode double-invokes functional state updaters in development,
@@ -123,6 +175,9 @@ export function useGatewaySettingsSync(params: {
           const target = JSON.stringify([activeAgentId, token]);
           const gatewayUpdate =
             syncGateway && api ? saveLineage.current.prepare(prev, next, target) : null;
+          if (gatewayUpdate && backendPromptResourcesRef.current) {
+            projectPromptSettingsUpdate(gatewayUpdate, prev, next);
+          }
           if (gatewayUpdate && Object.keys(gatewayUpdate).length > 0) {
             const receipt = await api?.updateSettings(gatewayUpdate);
             saveLineage.current.accept(prev, next, target, receipt);
@@ -175,6 +230,7 @@ export function useGatewaySettingsSync(params: {
   );
 
   const applyGatewaySettings = useCallback((payload: GatewaySettingsSyncUpdatePayload) => {
+    if (Object.hasOwn(payload, "projectPrompts")) backendPromptResourcesRef.current = true;
     // Automation snapshots ride along on the settings-sync channel but are
     // desktop-owned state with their own revision — feed them straight into
     // the automation store instead of the settings state.
@@ -230,6 +286,7 @@ export function useGatewaySettingsSync(params: {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: switching the active agent intentionally starts a fresh settings synchronization
   useEffect(() => {
+    backendPromptResourcesRef.current = false;
     if (!api) {
       setSettingsSyncReady(token.trim() === "");
       setSettingsSyncError(null);

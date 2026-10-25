@@ -49,6 +49,11 @@ pub(crate) struct ConfigurationHttpResponse {
 
 pub(crate) trait ConfigurationHttpService: Send + Sync {
     fn request(&self, request: ConfigurationHttpRequest) -> ConfigurationHttpResponse;
+    fn prepare_provider_models(
+        &self,
+        provider_id: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
 }
 
 pub(crate) struct BackendFacade {
@@ -382,7 +387,7 @@ async fn forward_configuration(
     (status, headers, bytes).into_response()
 }
 
-async fn forward_inner(state: Arc<FacadeState>, request: Request) -> Response {
+async fn forward_inner(state: Arc<FacadeState>, mut request: Request) -> Response {
     if !live(&state) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -411,6 +416,37 @@ async fn forward_inner(state: Arc<FacadeState>, request: Request) -> Response {
     if super::configuration_coordinator::configuration_route(&path) {
         if let Some(configuration) = &state.configuration_http {
             return forward_configuration(&state, Arc::clone(configuration), request, path).await;
+        }
+    }
+    if request.method() == Method::POST {
+        if let Some(provider_id) = path
+            .strip_prefix("/v1/settings/providers/")
+            .and_then(|path| path.strip_suffix("/models"))
+        {
+            if provider_id.is_empty() || provider_id.contains('/') {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            let Some(configuration) = &state.configuration_http else {
+                return StatusCode::FORBIDDEN.into_response();
+            };
+            let (parts, body) = request.into_parts();
+            let bytes = match axum::body::to_bytes(body, 1024 * 1024).await {
+                Ok(bytes) => bytes,
+                Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+            };
+            let input = match serde_json::from_slice(&bytes) {
+                Ok(input) => input,
+                Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+            };
+            let projected = match configuration.prepare_provider_models(provider_id, input) {
+                Ok(projected) => projected,
+                Err(_) => return StatusCode::FORBIDDEN.into_response(),
+            };
+            let bytes = match serde_json::to_vec(&projected) {
+                Ok(bytes) => bytes,
+                Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+            request = Request::from_parts(parts, Body::from(bytes));
         }
     }
     let configuration_guard = if super::configuration_coordinator::configuration_gate_route(&path) {

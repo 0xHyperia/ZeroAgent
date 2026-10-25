@@ -4,7 +4,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
@@ -12,7 +11,6 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { useRef } from "react";
 import { requestMobileAppUpdateCheck } from "@/lib/mobileAppUpdate";
 import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
-import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
 
 type UserMenuProps = {
   open: boolean;
@@ -26,6 +24,7 @@ type UserMenuProps = {
   online: boolean;
   onRefreshAccount: () => Promise<void>;
   onDismissNavigation: () => void;
+  onOpenAccount: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
 };
@@ -37,13 +36,10 @@ export function UserMenu(props: UserMenuProps) {
     onOpenChange,
     userMenuLabel,
     userAvatarLabel,
-    email,
-    balance,
-    todayTokens,
     avatarUrl,
-    online,
     onRefreshAccount,
     onDismissNavigation,
+    onOpenAccount,
     onOpenSettings,
     onLogout,
   } = props;
@@ -72,6 +68,11 @@ export function UserMenu(props: UserMenuProps) {
     onOpenSettings();
   };
 
+  const handleOpenAccount = () => {
+    dismissNavigation();
+    onOpenAccount();
+  };
+
   const handleCheckForUpdates = () => {
     dismissNavigation();
     requestMobileAppUpdateCheck();
@@ -95,13 +96,8 @@ export function UserMenu(props: UserMenuProps) {
             userAvatarLabel || <User className="h-3.5 w-3.5" />
           )}
         </span>
-        <span className="account-user-menu-details min-w-0 flex-1 text-left">
-          <span className="block truncate text-[calc(13px*var(--zone-font-scale,1))] font-medium">
-            {userMenuLabel}
-          </span>
-          <span className="block truncate text-[calc(11px*var(--zone-font-scale,1))] font-normal text-muted-foreground">
-            {email}
-          </span>
+        <span className="account-user-menu-details min-w-0 flex-1 truncate text-left text-[calc(13px*var(--zone-font-scale,1))] font-medium">
+          {userMenuLabel}
         </span>
         <ChevronUp className="account-user-menu-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
@@ -109,44 +105,12 @@ export function UserMenu(props: UserMenuProps) {
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[256px] rounded-lg border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-popover/90"
+        className="w-[224px] rounded-lg border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-popover/90"
       >
-        <DropdownMenuLabel className="px-2.5 py-2 font-normal">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-foreground text-sm font-semibold text-background">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                userAvatarLabel || <User className="h-4 w-4" />
-              )}
-            </span>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-foreground">{userMenuLabel}</div>
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">{email}</div>
-            </div>
-          </div>
-        </DropdownMenuLabel>
-        <div className="mx-1 mb-1 space-y-1 rounded-md bg-muted/55 px-2.5 py-2 text-xs">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{t("account.balance")}</span>
-            <span className="max-w-[150px] truncate font-medium text-foreground">
-              {formatRelayBalance(balance)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{t("account.todayTokens")}</span>
-            <span className="max-w-[150px] truncate font-medium text-foreground">
-              {formatRelayTokenCount(todayTokens)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{t("account.status")}</span>
-            <span className="font-medium text-foreground">
-              {online ? t("account.online") : t("account.offline")}
-            </span>
-          </div>
-        </div>
-        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={handleOpenAccount} className="gap-2 rounded-md">
+          <User className="h-4 w-4" />
+          {t("settings.navAccount")}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={handleOpenSettings} className="gap-2 rounded-md">
           <Settings className="h-4 w-4" />
           {t("tooltip.settings")}
@@ -157,6 +121,7 @@ export function UserMenu(props: UserMenuProps) {
             {t("app.checkForUpdates")}
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={onLogout}
           className="gap-2 rounded-md text-destructive focus:bg-destructive/10 focus:text-destructive"

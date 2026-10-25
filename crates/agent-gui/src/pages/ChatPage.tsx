@@ -4404,7 +4404,8 @@ function ChatPageContent(props: ChatPageProps) {
               user={props.relayUser}
               stats={props.relayStats}
               onRefreshAccount={props.onRefreshRelayAccount}
-              onOpenSettings={() => onOpenSettings("account")}
+              onOpenAccount={() => onOpenSettings("account")}
+              onOpenSettings={() => onOpenSettings("system")}
               onLogout={() =>
                 import("../lib/relay/client").then(({ logoutRelay }) => logoutRelay())
               }

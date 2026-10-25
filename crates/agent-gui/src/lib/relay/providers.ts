@@ -1,3 +1,4 @@
+import { mergeManagedModels } from "@liveagent/ui/pages/settings/providerUtils";
 import { createKBrainClient } from "../kbrain/client";
 import {
   type AppSettings,
@@ -55,26 +56,38 @@ function buildRelayProvider(
 ): CustomProvider | null {
   const type = relayProviderTypeForPlatform(group.platform);
   if (!type) return null;
-  const models = fetchedModels ?? existing?.models ?? [];
-  const activeModels = models.map((model) => model.id);
+  const previousModels = existing?.models ?? [];
+  const models = fetchedModels ? mergeManagedModels(fetchedModels, previousModels) : previousModels;
+  const availableIds = new Set(models.map((model) => model.id));
+  const activeModels =
+    existing && previousModels.length > 0
+      ? existing.activeModels.filter((id) => availableIds.has(id))
+      : models.map((model) => model.id);
 
   return {
+    ...existing,
     id: relayProviderId(key.id),
     name: `${group.name} / ${key.name}`,
     type,
     baseUrl: binding?.baseUrl ?? "",
     isFullUrl: false,
+    modelsUrl: undefined,
     apiKey: binding?.apiKey ?? "",
     apiKeyConfigured: Boolean(binding),
     customHeaders: [],
     models,
     activeModels,
-    requestFormat: type === "codex" || type === "xai" ? "openai-responses" : undefined,
+    requestFormat:
+      type === "xai"
+        ? "openai-responses"
+        : type === "codex"
+          ? (existing?.requestFormat ?? "openai-responses")
+          : undefined,
     reasoning: existing?.reasoning ?? "high",
-    promptCachingEnabled: type === "claude_code",
-    nativeWebSearchEnabled: true,
+    promptCachingEnabled: existing?.promptCachingEnabled ?? type === "claude_code",
+    nativeWebSearchEnabled: existing?.nativeWebSearchEnabled ?? true,
     useSystemProxy: false,
-    usageQuery: existing?.usageQuery ?? getDefaultUsageQueryConfig(),
+    usageQuery: getDefaultUsageQueryConfig(),
   };
 }
 
@@ -90,6 +103,11 @@ export function enforceRelayProviderConstraint(settings: AppSettings): AppSettin
       baseUrl: binding?.baseUrl ?? "",
       apiKey: binding?.apiKey ?? "",
       apiKeyConfigured: Boolean(binding),
+      isFullUrl: false,
+      modelsUrl: undefined,
+      customHeaders: [],
+      useSystemProxy: false,
+      usageQuery: getDefaultUsageQueryConfig(),
       activeModels: binding ? provider.activeModels : [],
     };
   });
@@ -159,12 +177,15 @@ export async function buildRelayProviders(
       let models: ProviderModelConfig[] | undefined;
       if (forceModelRefresh || !existing?.models.length) {
         try {
-          const response = await createKBrainClient().discoverProviderModels(undefined, {
-            type,
-            baseUrl: binding.baseUrl,
-            apiKey: binding.apiKey,
-            useSystemProxy: false,
-          });
+          const response = await createKBrainClient().discoverProviderModels(
+            relayProviderId(key.id),
+            {
+              type,
+              baseUrl: binding.baseUrl,
+              apiKey: binding.apiKey,
+              useSystemProxy: false,
+            },
+          );
           const list = Array.isArray(response)
             ? response
             : (response as { models?: unknown })?.models;
@@ -213,4 +234,32 @@ export async function bindRelayKeysToSettings(
     customProviders,
     selectedModel,
   };
+}
+
+/** Model editing never grants the editor control of a managed connection. */
+export function applyRelayProviderModelSettings(
+  settings: AppSettings,
+  providerId: string,
+  draft: Pick<CustomProvider, "models" | "activeModels" | "modelOrder" | "requestFormat">,
+): AppSettings {
+  const provider = settings.customProviders.find((item) => item.id === providerId);
+  if (!provider || !isRelayProvider(provider) || !managedModelBinding(providerId)) {
+    throw new Error("只能配置当前账户已授权的托管模型");
+  }
+  const models = normalizeProviderModelConfigs(draft.models, provider.type);
+  const ids = new Set(models.map((model) => model.id));
+  return enforceRelayProviderConstraint({
+    ...settings,
+    customProviders: settings.customProviders.map((item) =>
+      item.id !== providerId
+        ? item
+        : {
+            ...item,
+            models,
+            activeModels: draft.activeModels.filter((id) => ids.has(id)),
+            modelOrder: draft.modelOrder?.filter((id) => ids.has(id)),
+            requestFormat: item.type === "codex" ? draft.requestFormat : item.requestFormat,
+          },
+    ),
+  });
 }

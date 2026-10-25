@@ -2,7 +2,7 @@ import { MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
 import {
   configureResourceHostCapabilities,
-  nativeResourceHostCapabilities,
+  kbrainResourceHostCapabilities,
 } from "@liveagent/ui/lib/resourceHost";
 import type { GatewaySettingsSyncUpdatePayload } from "@liveagent/ui/lib/settings/sync";
 import type { KBrainSettingsAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
@@ -13,6 +13,7 @@ import { AccountSection } from "../pages/settings/AccountSection";
 import { DevicesSection } from "../pages/settings/DevicesSection";
 import { RelayProvidersSection } from "../pages/settings/RelayProvidersSection";
 import type { SettingsPageProps } from "../pages/settings/types";
+import { gatewaySkillsAdapter } from "./kbrainSkills";
 
 export function createSettingsExtension(props: SettingsPageProps): {
   surface: "web";
@@ -63,7 +64,10 @@ export function createSettingsExtension(props: SettingsPageProps): {
   };
 }
 
-configureResourceHostCapabilities(nativeResourceHostCapabilities);
+configureResourceHostCapabilities({
+  ...kbrainResourceHostCapabilities,
+  skillsAdapter: gatewaySkillsAdapter,
+});
 
 const computerSettingsAdapter: KBrainSettingsAdapter = {
   isKbrain: true,

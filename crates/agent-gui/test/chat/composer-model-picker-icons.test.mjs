@@ -11,8 +11,8 @@ test("model picker shows the provider brand icon on group headers and model rows
     "@liveagent/ui/components/IconSet": new Proxy({}, { get: (_target, name) => (name === "__esModule" ? true : icon) }),
     "@liveagent/ui/components/ProviderBrandIcon": {
       // env 在渲染时已经赋值；替身只在渲染阶段被调用。
-      ProviderBrandIcon: ({ type, className }) =>
-        env.React.createElement("span", { "data-brand-icon": type ?? "", className }),
+      ProviderBrandIcon: ({ type, model, className }) =>
+        env.React.createElement("span", { "data-brand-icon": type ?? "", "data-model-icon": model ?? "", className }),
     },
     "@liveagent/ui/i18n/index": { useLocale: () => ({ t: key => key }) },
   } });
@@ -57,6 +57,7 @@ test("model picker shows the provider brand icon on group headers and model rows
       modelOptions.map(option => option.providerType),
       "each model row carries the brand icon of its provider",
     );
+    assert.deepEqual(rows.map(row => brandIcon(row).getAttribute("data-model-icon")), modelOptions.map(option => option.model), "model identity reaches the icon instead of only its protocol");
     // 行内图标比分组标题小一档；选中行更实，其余更淡。
     const selected = rows.find(row => row.getAttribute("aria-pressed") === "true");
     const unselected = rows.find(row => row.getAttribute("aria-pressed") === "false");
@@ -69,6 +70,15 @@ test("model picker shows the provider brand icon on group headers and model rows
       modelOptions.map(option => option.model),
     );
     assert.ok(rows.every((row, index) => row.textContent.includes(modelOptions[index].label)));
+
+    // 模型行收在供应商下方的缩进容器里，带一条左侧引导线，形成上下级。
+    const lists = [...document.querySelectorAll("[data-model-group-list]")];
+    assert.equal(lists.length, headers.length);
+    for (const list of lists) {
+      assert.match(list.className, /(^|\s)ml-4(\s|$)/);
+      assert.match(list.className, /(^|\s)border-l(\s|$)/);
+    }
+    assert.ok(rows.every(row => row.parentElement.hasAttribute("data-model-group-list")));
   } finally {
     await env.act(async () => root.unmount());
   }

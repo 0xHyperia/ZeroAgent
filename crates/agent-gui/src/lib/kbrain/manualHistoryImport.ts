@@ -1,14 +1,20 @@
 import { isTauriHost } from "../host";
-import { migrateAllHistoryOnce } from "./historyMigration";
+import { migrateLegacyHistoryOnce } from "./historyMigration";
+import {
+  getConfiguredKBrainConnection,
+  subscribeKBrainRuntimeConnection,
+} from "./runtimeConnection";
 
 export type HistoryImportState = {
   running: boolean;
-  result?: Awaited<ReturnType<typeof migrateAllHistoryOnce>>;
+  result?: Awaited<ReturnType<typeof migrateLegacyHistoryOnce>>;
   error?: string;
 };
 
 let state: HistoryImportState = { running: false };
 let pending: Promise<void> | undefined;
+let pendingAbort: AbortController | undefined;
+let generation = 0;
 const listeners = new Set<() => void>();
 const importedListeners = new Set<() => void>();
 export const getHistoryImportState = () => state;
@@ -29,21 +35,43 @@ function update(next: HistoryImportState) {
   for (const listener of listeners) listener();
 }
 
+subscribeKBrainRuntimeConnection(() => {
+  generation++;
+  pendingAbort?.abort();
+  pendingAbort = undefined;
+  pending = undefined;
+  update({ running: false });
+});
+
 export function importOldConversations(): Promise<void> {
   if (pending) return pending;
   if (!isTauriHost())
     return Promise.reject(new Error("Legacy history import requires the desktop app"));
+  const connection = getConfiguredKBrainConnection();
+  if (!connection) return Promise.reject(new Error("ZeroAgent import target is not ready"));
+  const run = ++generation;
+  const controller = new AbortController();
+  pendingAbort = controller;
   update({ running: true });
   pending = (async () => {
     try {
       // An explicit user action retries everything, including known oversized/conflicting ones.
-      const result = await migrateAllHistoryOnce({ retryKnownFailures: true });
+      const result = await migrateLegacyHistoryOnce({
+        retryKnownFailures: true,
+        connection,
+        signal: controller.signal,
+      });
+      if (run !== generation) return;
       update({ running: false, result });
       if (result.results.length) for (const listener of importedListeners) listener();
     } catch (error) {
+      if (run !== generation) return;
       update({ running: false, error: error instanceof Error ? error.message : String(error) });
     } finally {
-      pending = undefined;
+      if (run === generation) {
+        pending = undefined;
+        pendingAbort = undefined;
+      }
     }
   })();
   return pending;

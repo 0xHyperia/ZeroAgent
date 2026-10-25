@@ -694,7 +694,10 @@ export function CloudChatPage({
             onDeleteConversation={(id) => void removeConversation(id)}
             onDeleteConversations={removeConversations}
             onLoadMore={() => undefined}
-            onOpenSettings={() => setAccountSettingsOpen(true)}
+            onOpenSettings={() => {
+              setSettingsSection("system");
+              setAccountSettingsOpen(true);
+            }}
             accountMenu={
               <UserMenu
                 open={userMenuOpen}
@@ -708,7 +711,14 @@ export function CloudChatPage({
                 online
                 onRefreshAccount={refreshRelayAccount}
                 onDismissNavigation={() => setSidebarOpen(false)}
-                onOpenSettings={() => setAccountSettingsOpen(true)}
+                onOpenAccount={() => {
+                  setSettingsSection("account");
+                  setAccountSettingsOpen(true);
+                }}
+                onOpenSettings={() => {
+                  setSettingsSection("system");
+                  setAccountSettingsOpen(true);
+                }}
                 onLogout={onLogout}
               />
             }

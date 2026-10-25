@@ -34,7 +34,9 @@ use crate::services::automation::{
     validate_cron_expression, AutomationApplyInput, AutomationStore,
 };
 use crate::services::gateway::proto;
-use crate::services::kbrain_backend::{KBrainBackendConnection, KBrainBackendState};
+use crate::services::kbrain_backend::{
+    KBrainBackendConnection, KBrainBackendState, PublicBackendConnection,
+};
 use crate::services::memory::{
     MemoryAcceptArgs, MemoryBatchArgs, MemoryDeleteArgs, MemoryDeleteProjectArgs, MemoryListArgs,
     MemoryOrganizeDueClaimArgs, MemoryOrganizeRunCreateArgs, MemoryOrganizeRunListArgs,
@@ -42,7 +44,6 @@ use crate::services::memory::{
     MemoryRecentRejectionsArgs, MemorySearchArgs, MemoryStore, MemoryUpdateArgs, MemoryWriteArgs,
 };
 use crate::services::provider_usage::{ProviderUsageResult, ProviderUsageService};
-use crate::services::skills::system_manage_skill_sync;
 
 const DEFAULT_HISTORY_LIST_PAGE: i32 = 1;
 const DEFAULT_HISTORY_LIST_PAGE_SIZE: i32 = 80;
@@ -548,43 +549,19 @@ pub async fn handle_provider_models(
     })
     .await
     .map_err(|error| format!("K-brain backend startup task failed: {error}"))??;
-    let provider_id = request.provider_id.trim().to_string();
-    let provider_type = request.provider_type.trim().to_string();
-    let request_headers = request.custom_headers.as_ref().map(|headers| {
-        headers
-            .headers
-            .iter()
-            .map(|header| (header.name.clone(), header.value.clone()))
-            .collect::<Vec<_>>()
-    });
-    let config = if request.api_key.trim().is_empty() {
-        let provider_id_for_lookup = provider_id.clone();
-        let provider_type_for_lookup = provider_type.clone();
-        let request_headers_for_lookup = request_headers.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let conn = open_db()?;
-            resolve_stored_provider_models_config(
-                &provider_id_for_lookup,
-                &provider_type_for_lookup,
-                request.is_full_url,
-                request_headers_for_lookup,
-                load_providers(&conn)?,
-            )
-        })
-        .await
-        .map_err(|error| format!("读取供应商 API Key 任务失败：{error}"))??
-    } else {
-        ProviderModelsRequestConfig {
-            provider_type: provider_type.clone(),
-            base_url: request.base_url.trim().to_string(),
-            api_key: request.api_key.trim().to_string(),
-            use_system_proxy: request.use_system_proxy,
-            models_url: request.models_url.trim().to_string(),
-            is_full_url: request.is_full_url.unwrap_or(false),
-            custom_headers: request_headers.unwrap_or_default(),
-        }
-    };
-    let api = match config.provider_type.as_str() {
+    let body = managed_provider_models_body(backend.inner(), request)?;
+    let models = kbrain_provider_models(&connection, body).await?;
+    Ok(proto::ProviderModelsResponse {
+        models_json: serde_json::to_string(&models)
+            .map_err(|error| format!("serialize K-brain model response failed: {error}"))?,
+    })
+}
+
+pub(crate) fn managed_provider_models_body(
+    backend: &KBrainBackendState,
+    request: proto::ProviderModelsRequest,
+) -> Result<Value, String> {
+    let api = match request.provider_type.trim() {
         "gemini" => "google-generative-ai",
         "claude_code" => "anthropic-messages",
         "codex" => match request.request_format.trim() {
@@ -595,34 +572,13 @@ pub async fn handle_provider_models(
         "deepseek" => "openai-completions",
         other => return Err(format!("unsupported provider type: {other}")),
     };
-    let mut body = serde_json::json!({
-        "type": config.provider_type,
-        "api": api,
-        "baseUrl": config.base_url,
-        "apiKey": config.api_key,
-        "isFullUrl": config.is_full_url,
-        "modelsUrl": config.models_url,
-        "useSystemProxy": config.use_system_proxy,
-        "requestFormat": request.request_format.trim(),
-    });
-    if !provider_id.is_empty() {
-        body["providerId"] = Value::String(provider_id);
-    }
-    body["customHeaders"] = serde_json::to_value(
-        config
-            .custom_headers
-            .iter()
-            .map(|(key, value)| json!({ "key": key, "value": value }))
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|error| format!("serialize provider headers failed: {error}"))?;
-    let models = kbrain_provider_models(&connection, body).await?;
-    Ok(proto::ProviderModelsResponse {
-        models_json: serde_json::to_string(&models)
-            .map_err(|error| format!("serialize K-brain model response failed: {error}"))?,
-    })
+    // Native binding owns the connection. Never resolve a stored key into caller-controlled URLs.
+    backend.prepare_provider_models(request.provider_id.trim(), json!({
+        "type": request.provider_type.trim(), "api": api, "requestFormat": request.request_format.trim()
+    }))
 }
 
+#[cfg(test)]
 #[derive(Debug, PartialEq)]
 struct ProviderModelsRequestConfig {
     provider_type: String,
@@ -634,6 +590,7 @@ struct ProviderModelsRequestConfig {
     custom_headers: Vec<(String, String)>,
 }
 
+#[cfg(test)]
 fn resolve_stored_provider_models_config(
     provider_id: &str,
     expected_provider_type: &str,
@@ -895,7 +852,7 @@ fn decode_kbrain_terminal_response(payload: Value) -> Result<proto::TerminalResp
     })
 }
 
-async fn kbrain_provider_models(
+pub(crate) async fn kbrain_provider_models(
     connection: &KBrainBackendConnection,
     body: Value,
 ) -> Result<Value, String> {
@@ -1846,6 +1803,7 @@ pub async fn handle_skill_text_read(
 }
 
 pub async fn handle_skill_manage(
+    app: AppHandle,
     request: proto::SkillManageRequest,
 ) -> Result<proto::SkillManageResponse, String> {
     let payload = if request.payload_json.trim().is_empty() {
@@ -1855,14 +1813,134 @@ pub async fn handle_skill_manage(
             .map_err(|e| format!("invalid skill manage payload JSON: {e}"))?
     };
 
-    tauri::async_runtime::spawn_blocking(move || system_manage_skill_sync(payload))
+    let backend = app
+        .try_state::<Arc<KBrainBackendState>>()
+        .ok_or("K-brain backend state is unavailable")?;
+    // Use the same profile-owned facade as the Desktop renderer: Skills settings
+    // retain its owner checks, configuration gate, read-bound CAS and recovery.
+    let connection =
+        crate::services::kbrain_backend::kbrain_backend_connection(app.clone(), backend).await?;
+    let response = kbrain_skill_manage(&connection, payload).await?;
+    serde_json::to_string(&response)
+        .map(|result_json| proto::SkillManageResponse { result_json })
+        .map_err(|e| format!("serialize skill manage response failed: {e}"))
+}
+
+pub(crate) async fn kbrain_skill_manage(
+    connection: &PublicBackendConnection,
+    payload: Value,
+) -> Result<Value, String> {
+    let mut body = payload
+        .as_object()
+        .cloned()
+        .ok_or("skill payload must be an object")?;
+    let action = body
+        .get("action")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or("skill action is required")?
+        .to_owned();
+    let (method, path, body, version) = match action.as_str() {
+        "list" => {
+            let workdir = body
+                .get("workdir")
+                .map(|value| value.as_str().ok_or("skill workdir must be a string"))
+                .transpose()?
+                .unwrap_or_default();
+            (
+                reqwest::Method::GET,
+                format!("/v1/skills?workdir={}", urlencoding::encode(workdir)),
+                None,
+                None,
+            )
+        }
+        "settings" => {
+            body.remove("action");
+            let version = body
+                .remove("configurationVersion")
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or("skill configurationVersion must be a string")
+                })
+                .transpose()?;
+            (
+                reqwest::Method::PUT,
+                "/v1/skills/settings".to_owned(),
+                Some(Value::Object(body)),
+                version,
+            )
+        }
+        _ => (
+            reqwest::Method::POST,
+            "/v1/skills/manage".to_owned(),
+            Some(Value::Object(body)),
+            None,
+        ),
+    };
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("create K-brain skills HTTP client failed: {error}"))?;
+    let mut request = client
+        .request(
+            method,
+            format!("{}{path}", connection.base_url.trim_end_matches('/')),
+        )
+        .bearer_auth(&connection.token);
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+    if let Some(version) = version {
+        // Preserve the original quoted ETag; never GET a newer baseline here.
+        request = request.header(reqwest::header::IF_MATCH, version);
+    }
+    let response = request
+        .send()
         .await
-        .map_err(|e| format!("gateway skill manage join failed: {e}"))?
-        .and_then(|response| {
-            serde_json::to_string(&response)
-                .map(|result_json| proto::SkillManageResponse { result_json })
-                .map_err(|e| format!("serialize skill manage response failed: {e}"))
-        })
+        .map_err(|error| format!("K-brain skills request failed: {error}"))?;
+    let status = response.status();
+    let configuration = response
+        .headers()
+        .get("x-zeroagent-configuration")
+        .and_then(|value| value.to_str().ok())
+        == Some("zeroagent.configuration.v1");
+    let version = response
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("K-brain skills response failed: {error}"))?;
+    let parsed = serde_json::from_str::<Value>(&text);
+    if !status.is_success() {
+        let message = parsed
+            .as_ref()
+            .ok()
+            .and_then(|body| body.get("error").or_else(|| body.get("message")))
+            .and_then(Value::as_str)
+            .unwrap_or("K-brain skills request rejected");
+        return Err(format!("{message} (HTTP {status})"));
+    }
+    let mut result = parsed.map_err(|error| format!("invalid K-brain skills JSON: {error}"))?;
+    if configuration {
+        let object = result
+            .as_object_mut()
+            .ok_or("invalid K-brain skills configuration document")?;
+        object.remove("configurationVersion");
+        if let Some(version) = version {
+            object.insert("configurationVersion".into(), Value::String(version));
+        }
+        object.insert(
+            "configurationProtocol".into(),
+            Value::String("zeroagent.configuration.v1".into()),
+        );
+    }
+    Ok(result)
 }
 
 fn parse_apply_input(raw: &str) -> Result<AutomationApplyInput, String> {
@@ -2579,6 +2657,49 @@ mod tests {
         )
         .expect_err("missing API key must fail");
         assert!(no_key.contains("API Key"));
+    }
+
+    #[tokio::test]
+    async fn kbrain_mcp_snapshot_reads_authenticated_backend() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let headers = String::from_utf8_lossy(&request).to_lowercase();
+            assert!(headers.starts_with("get /v1/mcp "));
+            assert!(headers.contains("authorization: bearer fixture-token"));
+            let payload = r#"{"settings":{"servers":[{"id":"backend-docs","enabled":true,"transport":"stdio","command":"server"}]},"statuses":[]}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                payload.len(), payload
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+        let connection = KBrainBackendConnection {
+            base_url: format!("http://{address}"),
+            token: "fixture-token".into(),
+            protocol_version: "kbrain.agent.v1".into(),
+            storage_id: "test-storage".into(),
+        };
+        let result =
+            super::kbrain_prompt_request(&connection, reqwest::Method::GET, "/v1/mcp", None)
+                .await
+                .unwrap();
+        let mut snapshot = json!({"mcp": {"servers": [], "selected": ["stale"]}});
+        crate::services::gateway::apply_kbrain_mcp_settings(&mut snapshot, &result).unwrap();
+        assert_eq!(snapshot["mcp"]["servers"][0]["id"], "backend-docs");
+        assert_eq!(snapshot["mcp"]["selected"], json!([]));
+        server.await.unwrap();
     }
 
     #[tokio::test]

@@ -60,6 +60,14 @@ fn configuration_http_etag(
 }
 
 impl ConfigurationHttpService for ProfileConfigurationHttp {
+    fn prepare_provider_models(&self, provider_id: &str, input: Value) -> Result<Value, String> {
+        self.backend
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .ok_or("USA_ZERO_PROFILE_AUTH_REQUIRED")?
+            .prepare_provider_models(provider_id, input)
+    }
+
     fn request(&self, request: ConfigurationHttpRequest) -> ConfigurationHttpResponse {
         match self.request_inner(request) {
             Ok(response) => response,

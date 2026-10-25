@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useEffect, useRef, useState } from "react";
 
@@ -21,6 +22,7 @@ export type ModelPickerOption = {
   providerName: string;
   providerId?: string;
   providerType?: ProviderId;
+  model?: string;
 };
 
 type ModelGroup = {
@@ -58,11 +60,15 @@ const TRIGGER_VARIANTS = {
 } as const;
 
 function ModelOptionItem({
+  model,
+  providerType,
   selected,
   label,
   description,
   onSelect,
 }: {
+  model?: string;
+  providerType?: ProviderId;
   selected: boolean;
   label: string;
   description?: string;
@@ -77,6 +83,9 @@ function ModelOptionItem({
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
+        {model ? (
+          <ProviderBrandIcon type={providerType} model={model} className="size-3.5" />
+        ) : null}
         <span className="min-w-0 truncate">{label}</span>
         {description ? (
           <span className="min-w-0 truncate text-muted-foreground">{description}</span>
@@ -180,6 +189,17 @@ export function ModelPicker({
           )}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            {selectedOption ? (
+              <ProviderBrandIcon
+                type={selectedOption.providerType}
+                model={
+                  selectedOption.model ??
+                  parseModelValue(selectedOption.value)?.model ??
+                  selectedOption.value
+                }
+                className="size-3.5"
+              />
+            ) : null}
             <span className={cn("truncate", !selectedOption && "text-muted-foreground")}>
               {selectedOption ? selectedOption.label : placeholder}
             </span>
@@ -272,6 +292,10 @@ export function ModelPicker({
                             selected={option.value === value}
                             onSelect={() => onChange(option.value)}
                             label={option.label}
+                            model={
+                              option.model ?? parseModelValue(option.value)?.model ?? option.value
+                            }
+                            providerType={option.providerType}
                             description={option.description}
                           />
                         ))

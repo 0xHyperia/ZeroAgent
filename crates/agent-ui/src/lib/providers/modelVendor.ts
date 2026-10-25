@@ -86,7 +86,13 @@ function normalizeModelIdForVendor(modelId: string): string {
       ? normalized.slice(markerIndex + modelPathMarker.length)
       : normalized.replace(/^models\//, "");
   const pathParts = withoutModelPath.split("/").filter(Boolean);
-  return pathParts.at(-1) ?? withoutModelPath;
+  const leaf = pathParts.at(-1) ?? withoutModelPath;
+  // Relay names may carry a provider namespace, e.g. usa0:glm-5.
+  const parts = leaf.split(":");
+  const modelPart = parts.findIndex((part) =>
+    MODEL_ID_PREFIX_RULES.some((rule) => rule.prefixes.some((prefix) => part.startsWith(prefix))),
+  );
+  return modelPart >= 0 ? parts.slice(modelPart).join(":") : leaf;
 }
 
 function ownerMatchesAlias(owner: string, alias: string): boolean {

@@ -1,8 +1,12 @@
-import { normalizeFetchedModels } from "@liveagent/ui/pages/settings/providerUtils";
+import {
+  mergeManagedModels,
+  normalizeFetchedModels,
+} from "@liveagent/ui/pages/settings/providerUtils";
 import {
   type AppSettings,
   type CustomProvider,
   getDefaultUsageQueryConfig,
+  normalizeProviderModelConfigs,
   type ProviderId,
   type ProviderModelConfig,
 } from "@/lib/settings";
@@ -54,6 +58,11 @@ export function enforceRelayProviderConstraint(settings: AppSettings): AppSettin
   const customProviders = settings.customProviders.filter(isRelayProvider).map((provider) => ({
     ...provider,
     baseUrl: relayProviderBaseUrl(provider.type),
+    isFullUrl: false,
+    modelsUrl: undefined,
+    customHeaders: [],
+    useSystemProxy: false,
+    usageQuery: getDefaultUsageQueryConfig(),
   }));
   const selected = settings.selectedModel;
   const selectedProvider = selected
@@ -114,27 +123,41 @@ export async function buildRelayProviders(
                 : Array.isArray(payload?.models)
                   ? payload.models
                   : [];
-            models = normalizeFetchedModels(items, type);
+            models = mergeManagedModels(
+              normalizeFetchedModels(items, type),
+              existing?.models ?? [],
+            );
           } catch {
             models = existing?.models ?? [];
           }
         }
+        const ids = new Set(models.map((model) => model.id));
         return {
+          ...existing,
           id: relayProviderId(key.id),
           name: `${group.name} / ${key.name}`,
           type,
           baseUrl: relayProviderBaseUrl(type),
           isFullUrl: false,
+          modelsUrl: undefined,
           apiKey: key.key,
           apiKeyConfigured: Boolean(key.key.trim()),
           customHeaders: [],
-          usageQuery: existing?.usageQuery ?? getDefaultUsageQueryConfig(),
+          usageQuery: getDefaultUsageQueryConfig(),
           models,
-          activeModels: models.map((model) => model.id),
-          requestFormat: type === "codex" || type === "xai" ? "openai-responses" : undefined,
+          activeModels:
+            existing && existing.models.length > 0
+              ? existing.activeModels.filter((id) => ids.has(id))
+              : models.map((model) => model.id),
+          requestFormat:
+            type === "xai"
+              ? "openai-responses"
+              : type === "codex"
+                ? (existing?.requestFormat ?? "openai-responses")
+                : undefined,
           reasoning: existing?.reasoning ?? "high",
-          promptCachingEnabled: type === "claude_code",
-          nativeWebSearchEnabled: true,
+          promptCachingEnabled: existing?.promptCachingEnabled ?? type === "claude_code",
+          nativeWebSearchEnabled: existing?.nativeWebSearchEnabled ?? true,
           useSystemProxy: false,
         };
       }),
@@ -171,4 +194,32 @@ export async function bindRelayKeysToSettings(
         ? { customProviderId: first.id, model: first.activeModels[0] }
         : undefined,
   };
+}
+
+/** Model editing never grants the editor control of a managed connection. */
+export function applyRelayProviderModelSettings(
+  settings: AppSettings,
+  providerId: string,
+  draft: Pick<CustomProvider, "models" | "activeModels" | "modelOrder" | "requestFormat">,
+): AppSettings {
+  const provider = settings.customProviders.find((item) => item.id === providerId);
+  if (!provider || !isRelayProvider(provider)) {
+    throw new Error("只能配置当前账户的托管模型");
+  }
+  const models = normalizeProviderModelConfigs(draft.models, provider.type);
+  const ids = new Set(models.map((model) => model.id));
+  return enforceRelayProviderConstraint({
+    ...settings,
+    customProviders: settings.customProviders.map((item) =>
+      item.id !== providerId
+        ? item
+        : {
+            ...item,
+            models,
+            activeModels: draft.activeModels.filter((id) => ids.has(id)),
+            modelOrder: draft.modelOrder?.filter((id) => ids.has(id)),
+            requestFormat: item.type === "codex" ? draft.requestFormat : item.requestFormat,
+          },
+    ),
+  });
 }

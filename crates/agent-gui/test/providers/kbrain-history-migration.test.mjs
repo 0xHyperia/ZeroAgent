@@ -24,6 +24,29 @@ function stablePage(id = "recoverable") {
   }] };
 }
 
+test("a late import response cannot create mappings in a newly selected profile", async () => {
+  const values = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)) };
+  const connection = id => ({ baseUrl: `http://${id}.invalid`, token: id, storageId: id, managedLocal: true, protocolVersion: "kbrain.agent.v1" });
+  runtime.setKBrainRuntimeConnection(connection("account-a"));
+  try {
+    const result = await migration.migrateLegacyHistoryPage(stablePage("late-import"), {
+      sessionExists: async () => false,
+      fetch: async (url, init) => {
+        assert.match(String(url), /^http:\/\/account-a\.invalid\//);
+        assert.equal(init.headers.get("Authorization"), "Bearer account-a");
+        runtime.setKBrainRuntimeConnection(connection("account-b"));
+        return new Response(JSON.stringify({ source_id: "late-import", backend_id: "late-import", status: "imported", checkpoint: "not_found", fingerprint: "fixture" }));
+      },
+    });
+    assert.equal(result.results.length, 0);
+    assert.match(result.failures[0].error, /target changed/);
+    assert.equal(mapping.getKBrainSessionId("late-import"), undefined);
+  } finally {
+    runtime.clearKBrainRuntimeConnection();
+  }
+});
+
 test("stable migration verifies existence, repairs only 404, and honors backend deletion", async () => {
   const values = new Map();
   globalThis.localStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)) };

@@ -1,6 +1,8 @@
 import { normalizeProviderModelConfigs } from "@liveagent/ui/lib/settings";
 import type { ProviderModelDiscoveryInput } from "@liveagent/ui/pages/settings/providerSettingsAdapter";
 import { getGatewayWebSocketClient } from "../lib/gatewaySocket";
+import { getRelayProviderModels } from "../lib/relay/client";
+import { relayProviderKeyId } from "../lib/relay/providers";
 import type { AppSettings, CustomProvider, ProviderModelConfig } from "../lib/settings";
 import { loadToken } from "../lib/storage";
 import type { SettingsSectionProps } from "../pages/settings/types";
@@ -8,6 +10,12 @@ import type { SettingsSectionProps } from "../pages/settings/types";
 export async function discoverProviderModels(
   input: ProviderModelDiscoveryInput,
 ): Promise<ProviderModelConfig[]> {
+  const managedKeyId = relayProviderKeyId(input.providerId ?? "");
+  if (managedKeyId > 0) {
+    const models = await getRelayProviderModels(managedKeyId);
+    if (!Array.isArray(models)) throw new Error("Malformed managed model discovery response");
+    return normalizeProviderModelConfigs(models, input.type);
+  }
   const response = await getGatewayWebSocketClient(loadToken().trim()).getProviderModels(
     input.type,
     input.baseUrl,

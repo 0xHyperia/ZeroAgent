@@ -586,10 +586,9 @@ impl KBrainBackendState {
                             .remove("apiKey");
                     }
                 }
-                provider.insert("baseUrl".into(), serde_json::json!(binding.base_url));
-                provider.insert("apiKey".into(), serde_json::json!(binding.api_key));
-                provider.insert("useSystemProxy".into(), serde_json::json!(false));
-                provider.remove("clearApiKey");
+                crate::services::managed_model_broker::constrain_managed_provider(
+                    provider, &binding,
+                )?;
             }
         }
         if let Some(id) = update
@@ -612,6 +611,29 @@ impl KBrainBackendState {
         }
         self.verify_portable_backup(&serde_json::Value::Object(checked))?;
         Ok(serde_json::Value::Object(update))
+    }
+
+    pub(crate) fn prepare_provider_models(
+        &self,
+        provider_id: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        if !self.allows_profile_commands() {
+            return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
+        }
+        let mut provider = input.as_object().cloned().ok_or("服务商配置无效")?;
+        let binding = self
+            .model_broker
+            .lock()
+            .map_err(|_| "托管模型凭据暂不可用")?
+            .as_ref()
+            .ok_or("请先刷新托管模型")?
+            .binding(provider_id)?
+            .ok_or("只能查询当前账户已授权的托管模型")?;
+        provider.insert("id".into(), serde_json::json!(provider_id));
+        provider.insert("providerId".into(), serde_json::json!(provider_id));
+        crate::services::managed_model_broker::constrain_managed_provider(&mut provider, &binding)?;
+        Ok(serde_json::Value::Object(provider))
     }
 
     pub(crate) fn configuration_coordinator(
@@ -1615,6 +1637,42 @@ mod tests {
     use tempfile::TempDir;
     include!("kbrain_backend/mcp_oauth_sse_fixture.rs");
     include!("kbrain_backend/mcp_oauth_tests.rs");
+    include!("kbrain_backend/managed_model_discovery_tests.rs");
+
+    #[test]
+    fn native_configuration_rebinds_managed_transport_and_rejects_external_providers() {
+        let state = KBrainBackendState::default();
+        state.profile_initialized.store(true, Ordering::SeqCst);
+        let broker =
+            ManagedModelBroker::start(configured_origin("https://usa0.top").unwrap()).unwrap();
+        broker
+            .replace(vec![ManagedCredential {
+                provider_id: "relay-key-7".into(),
+                api_key: "synthetic-owned-platform-key".into(),
+            }])
+            .unwrap();
+        *state.model_broker.lock().unwrap() = Some(broker);
+        let input = serde_json::json!({"providers":[{"id":"relay-key-7","api":"openai-responses","baseUrl":"https://external.invalid","modelsUrl":"https://external.invalid/models","apiKey":"external-key","isFullUrl":true,"customHeaders":[{"key":"X-Target","value":"external"}],"useSystemProxy":true,"models":[{"id":"custom/glm-5","displayName":"Alias","contextWindow":131072,"maxOutputToken":8192}],"activeModels":[]}]});
+        let output = state.prepare_configuration_settings(input).unwrap();
+        let binding = state
+            .model_broker
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .binding("relay-key-7")
+            .unwrap()
+            .unwrap();
+        let provider = &output["providers"][0];
+        assert_eq!(provider["baseUrl"], binding.base_url);
+        assert_eq!(provider["apiKey"], binding.api_key);
+        assert_eq!(provider["modelsUrl"], "");
+        assert_eq!(provider["isFullUrl"], false);
+        assert_eq!(provider["customHeaders"], serde_json::json!([]));
+        assert_eq!(provider["activeModels"], serde_json::json!([]));
+        assert_eq!(provider["models"][0]["displayName"], "Alias");
+        assert!(state.prepare_configuration_settings(serde_json::json!({"providers":[{"id":"external","baseUrl":"https://external.invalid"}]})).is_err());
+    }
 
     #[test]
     fn delayed_identity_response_cannot_override_newer_profile_verification() {

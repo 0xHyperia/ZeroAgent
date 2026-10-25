@@ -53,6 +53,7 @@ import {
   type ModelInputModalitiesMode,
   matchBalanceProviders,
   mergeFetchedModels,
+  mergeManagedModels,
   providerSupportsModelInputModalitiesOverride,
   requiresCustomUsageQueryConfirmation,
   serializeUsageQueryDraft,
@@ -69,6 +70,7 @@ import {
 type ModalProps = {
   providerType: ProviderId;
   initialData?: CustomProvider;
+  connectionManaged?: boolean;
   onSave: (data: Omit<CustomProvider, "id">) => void;
   onClose: () => void;
 };
@@ -148,6 +150,7 @@ export function isAcceptedProviderBaseUrl(value: string): boolean {
 function useProviderModalController({
   providerType: defaultProviderType,
   initialData,
+  connectionManaged = false,
   onSave,
   onClose,
 }: ModalProps) {
@@ -170,15 +173,17 @@ function useProviderModalController({
     setBaseUrlValidationSubmitted(false);
   };
   const baseUrlInvalid = baseUrlValidationSubmitted && !isAcceptedProviderBaseUrl(baseUrl);
-  const [isFullUrl, setIsFullUrl] = useState(initialData?.isFullUrl ?? false);
+  const [isFullUrl, setIsFullUrl] = useState(
+    connectionManaged ? false : (initialData?.isFullUrl ?? false),
+  );
   const [modelsUrl, setModelsUrl] = useState(
-    providerType === "gemini" ? "" : (initialData?.modelsUrl ?? ""),
+    connectionManaged || providerType === "gemini" ? "" : (initialData?.modelsUrl ?? ""),
   );
   const [apiKey, setApiKey] = useState(
     initialUsesRedactedApiKey ? REDACTED_API_KEY_DISPLAY : initialApiKey,
   );
   const [customHeaders, setCustomHeaders] = useState(() =>
-    (initialData?.customHeaders ?? []).map((header) => ({ ...header })),
+    (connectionManaged ? [] : (initialData?.customHeaders ?? [])).map((header) => ({ ...header })),
   );
   // 只有真会发出去的头才参与请求与去重 key：半截键名/保留头在 mergeCustomHeaders
   // 里本就会被丢掉，让它们触发重新拉取只是白等 900ms 换回同一份结果。
@@ -218,7 +223,9 @@ function useProviderModalController({
   const [requestFormat, setRequestFormat] = useState<CodexRequestFormat>(
     initialData?.requestFormat ?? "openai-responses",
   );
-  const [useSystemProxy, setUseSystemProxy] = useState(initialData?.useSystemProxy ?? false);
+  const [useSystemProxy, setUseSystemProxy] = useState(
+    connectionManaged ? false : (initialData?.useSystemProxy ?? false),
+  );
   const [streamRetryMode, setStreamRetryMode] = useState<"default" | "off" | "custom">(
     initialData?.retryPolicy?.mode ?? "default",
   );
@@ -242,7 +249,9 @@ function useProviderModalController({
   );
   const [usageQuery, setUsageQuery] = useState(() => {
     const draft = createUsageQueryDraft(
-      initialData?.usageQuery ?? getDefaultUsageQueryConfig(),
+      connectionManaged
+        ? getDefaultUsageQueryConfig()
+        : (initialData?.usageQuery ?? getDefaultUsageQueryConfig()),
       providerCredentialsRedacted,
     );
     // general/newapi 是可编辑脚本预设:脚本为空的存量配置打开时即在编辑器填充预设。
@@ -394,7 +403,9 @@ function useProviderModalController({
           customHeaders: effectiveCustomHeaders,
         });
         if (generation !== modelFetchGeneration.current) return;
-        const mergedModels = mergeFetchedModels(list, modelsRef.current);
+        const mergedModels = connectionManaged
+          ? mergeManagedModels(list, modelsRef.current)
+          : mergeFetchedModels(list, modelsRef.current);
         commitModelsWithNewRowsRef.current(mergedModels);
       } catch (err) {
         if (generation === modelFetchGeneration.current) {
@@ -405,6 +416,7 @@ function useProviderModalController({
       }
     },
     [
+      connectionManaged,
       effectiveCustomHeaders,
       initialData?.id,
       isFullUrl,
@@ -762,7 +774,7 @@ function useProviderModalController({
   }
   async function handleSave() {
     if (!name.trim()) return;
-    if (!isAcceptedProviderBaseUrl(baseUrl)) {
+    if (!connectionManaged && !isAcceptedProviderBaseUrl(baseUrl)) {
       // K-brain would reject the whole save; keep the dialog open with the reason instead.
       setBaseUrlValidationSubmitted(true);
       setActivePanel("general");
@@ -798,16 +810,21 @@ function useProviderModalController({
       if (!confirmed) return;
       setCustomUsageQueryConfirmed(true);
     }
-    const nextApiKey = apiKeyIsStoredValue ? "" : apiKey.trim();
+    const nextApiKey = connectionManaged
+      ? (initialData?.apiKey ?? "")
+      : apiKeyIsStoredValue
+        ? ""
+        : apiKey.trim();
     onSave({
       name: name.trim(),
       type: providerType,
-      baseUrl: baseUrl.trim(),
-      isFullUrl,
-      modelsUrl: providerType === "gemini" ? undefined : modelsUrl.trim() || undefined,
+      baseUrl: connectionManaged ? (initialData?.baseUrl ?? "") : baseUrl.trim(),
+      isFullUrl: connectionManaged ? false : isFullUrl,
+      modelsUrl:
+        connectionManaged || providerType === "gemini" ? undefined : modelsUrl.trim() || undefined,
       apiKey: nextApiKey,
       apiKeyConfigured: nextApiKey.length > 0 || apiKeyIsStoredValue,
-      customHeaders,
+      customHeaders: connectionManaged ? [] : customHeaders,
       models: nextModels,
       modelOrder,
       activeModels: Array.from(activeModels),
@@ -833,9 +850,11 @@ function useProviderModalController({
           ? "long"
           : undefined,
       nativeWebSearchEnabled: initialData?.nativeWebSearchEnabled ?? true,
-      useSystemProxy,
+      useSystemProxy: connectionManaged ? false : useSystemProxy,
       retryPolicy: serializeStreamRetryPolicy(),
-      usageQuery: serializeUsageQueryDraft(usageQuery, providerCredentialsRedacted),
+      usageQuery: connectionManaged
+        ? getDefaultUsageQueryConfig()
+        : serializeUsageQueryDraft(usageQuery, providerCredentialsRedacted),
     });
     requestClose();
   }
@@ -966,6 +985,7 @@ function useProviderModalController({
     ? customHeaderIssueMessage(firstHeaderIssue, t)
     : null;
   const viewModel = {
+    connectionManaged,
     activeCodingPlanProvider,
     activeModels,
     activePanel,

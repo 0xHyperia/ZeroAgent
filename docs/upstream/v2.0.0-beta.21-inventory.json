@@ -1,0 +1,488 @@
+{
+  "at": "2026-10-25T18:41:45.789Z",
+  "release": "v2.0.0-beta.21",
+  "prerelease": true,
+  "publishedAt": "2026-10-24T15:28:01Z",
+  "previous": "47a0d1c3e1f6719975678ca42d4c212c2ba278ec",
+  "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
+  "productBaseline": "1081b9af8d1e2e96baafc8671688498462b46492",
+  "mergeBase": "47a0d1c3e1f6719975678ca42d4c212c2ba278ec",
+  "records": [
+    {
+      "path": "crates/agent-gateway/internal/kbrain/commands.go",
+      "added": "96",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/commands_test.go",
+      "added": "82",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/filesystem.go",
+      "added": "83",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/filesystem_test.go",
+      "added": "58",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/mcp_settings_test.go",
+      "added": "91",
+      "deleted": "0",
+      "decision": "adapt",
+      "reason": "采用上游规范MCP读写与回归，保留标准SSE及当前平台/凭据边界，不静默变更协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/prompts.go",
+      "added": "80",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/prompts_test.go",
+      "added": "102",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/relay.go",
+      "added": "124",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings.go",
+      "added": "32",
+      "deleted": "5",
+      "decision": "adapt",
+      "reason": "采用规范MCP/Skills/prompts读写，保留标准SSE传输及当前账号/配置边界，不做sse到http强制转换。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/skills.go",
+      "added": "62",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/skills_test.go",
+      "added": "63",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "added": "51",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard.go",
+      "added": "2",
+      "deleted": "2",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/aliyun_dashscope.go",
+      "added": "24",
+      "deleted": "12",
+      "decision": "reject",
+      "reason": "本地已无该Gateway STT运行器/消费者，不恢复孤立文件；继续既有Native/Kbrain语音路径。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/aliyun_wire_test.go",
+      "added": "100",
+      "deleted": "0",
+      "decision": "reject",
+      "reason": "本地已无该Gateway STT运行器/消费者，不恢复孤立文件；继续既有Native/Kbrain语音路径。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/http.go",
+      "added": "6",
+      "deleted": "5",
+      "decision": "reject",
+      "reason": "本地已无该Gateway STT运行器/消费者，不恢复孤立文件；继续既有Native/Kbrain语音路径。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/stt_test.go",
+      "added": "1",
+      "deleted": "5",
+      "decision": "reject",
+      "reason": "本地已无该Gateway STT运行器/消费者，不恢复孤立文件；继续既有Native/Kbrain语音路径。"
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_kbrain_commands_test.go",
+      "added": "57",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_kbrain_skills_test.go",
+      "added": "76",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/web-settings.test.mjs",
+      "added": "1",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/kbrainSkills.ts",
+      "added": "33",
+      "deleted": "0",
+      "decision": "adapt",
+      "reason": "Web Skills经过当前Native公开配置入口，沿用Go资源并保留实际读取ETag/CAS；不走旧Native SkillsManager。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "added": "6",
+      "deleted": "2",
+      "decision": "adapt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "added": "6",
+      "deleted": "3",
+      "decision": "adapt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayProjectTools.ts",
+      "added": "10",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
+      "added": "54",
+      "deleted": "0",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/webComposerCommandHost.ts",
+      "added": "1",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/conversation-thinking.test.mjs",
+      "added": "20",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-sync-errors.test.mjs",
+      "added": "39",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/kbrain-skills-adapter.test.mjs",
+      "added": "33",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "added": "20",
+      "deleted": "0",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/tests.rs",
+      "added": "14",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "added": "52",
+      "deleted": "1",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts",
+      "added": "3",
+      "deleted": "13",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/catalog.ts",
+      "added": "11",
+      "deleted": "5",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/mcp.ts",
+      "added": "1",
+      "deleted": "3",
+      "decision": "adapt",
+      "reason": "采用上游规范MCP读写与回归，保留标准SSE及当前平台/凭据边界，不静默变更协议。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/memory.ts",
+      "added": "1",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/legacyMcpImport.ts",
+      "added": "50",
+      "deleted": "0",
+      "decision": "partial",
+      "reason": "保留上游辅助源文件，不接生产自动导入；当前MCP采用规范后端快照，不恢复旧配置兼容。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/storage.ts",
+      "added": "6",
+      "deleted": "1",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-group-indent.test.mjs",
+      "added": "131",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-picker-icons.test.mjs",
+      "added": "9",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-model-select-flicker.test.mjs",
+      "added": "37",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-settings-page-runtime.test.mjs",
+      "added": "5",
+      "deleted": "5",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/settings-entry-consolidation.test.mjs",
+      "added": "18",
+      "deleted": "20",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/memory/backend-organizer.test.mjs",
+      "added": "50",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-mcp-settings.test.mjs",
+      "added": "12",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/normalization.test.mjs",
+      "added": "1",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/storage.test.mjs",
+      "added": "45",
+      "deleted": "2",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "added": "4",
+      "deleted": "1",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "added": "3",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "added": "3",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/memory/api.ts",
+      "added": "20",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "added": "16",
+      "deleted": "2",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "added": "22",
+      "deleted": "3",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ImageSettings.tsx",
+      "added": "2",
+      "deleted": "2",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderImageServices.tsx",
+      "added": "0",
+      "deleted": "61",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "added": "10",
+      "deleted": "42",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/BackendMemoryOrganizer.tsx",
+      "added": "116",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemoryPanel.tsx",
+      "added": "1",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemorySettingsDrawer.tsx",
+      "added": "11",
+      "deleted": "5",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/README.md",
+      "added": "8",
+      "deleted": "8",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/architecture/gui.md",
+      "added": "10",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/2026-10-24-full-acceptance.md",
+      "added": "60",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/2026-10-24-full-capability-audit.md",
+      "added": "96",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/2026-10-24-mcp-display-fix.md",
+      "added": "28",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/2026-10-24-resource-loop-followup.md",
+      "added": "60",
+      "deleted": "0",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/assets/mcp-display-2026-10-24/desktop-mobile.png",
+      "added": "-",
+      "deleted": "-",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "docs/testing/assets/mcp-display-2026-10-24/web-desktop.png",
+      "added": "-",
+      "deleted": "-",
+      "decision": "adopt",
+      "reason": "采用固定上游实现及回归；原有产品边界由外层适配维持。"
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "added": "22",
+      "deleted": "22",
+      "decision": "adapt",
+      "reason": "合入上游能力，同时保留平台Provider、当前profile/CAS/设备落盘ACK；旧配置迁移不重新激活。"
+    }
+  ]
+}

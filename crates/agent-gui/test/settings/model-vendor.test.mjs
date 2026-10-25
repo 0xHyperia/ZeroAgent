@@ -151,3 +151,9 @@ test("model order snapshots stay stable across active changes and append new row
     ["gpt-z", "gpt-a", "claude-z", "gemini-z"],
   );
 });
+
+test("model family wins over misleading protocol owners and supports relay namespaces", () => {
+  for (const [id, expected] of [["usa0:GLM-5-202610", "智谱"], ["usa0:KIMI-K2.5:free", "Moonshot"], ["relay/DeepSeek-V3.2", "DeepSeek"], ["models/Kimi-K2", "Moonshot"], ["relay:Qwen3-Coder-Plus", "Qwen"]]) {
+    assert.equal(modelVendor.resolveModelVendor({ id, ownedBy: "OpenAI" }), expected, id);
+  }
+});

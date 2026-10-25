@@ -216,6 +216,9 @@ export function createTsModuleLoader(options = {}) {
     const filePath = resolveLocal(specifier, isRootRelative ? rootDir : parentDir);
     if (cache.has(filePath)) return cache.get(filePath).exports;
 
+    // Vite imports static SVG files as URL strings; never evaluate asset text as JS.
+    if (filePath.endsWith(".svg")) return { __esModule: true, default: filePath };
+
     if (filePath.endsWith(".json")) {
       const jsonModule = { exports: JSON.parse(fs.readFileSync(filePath, "utf8")) };
       cache.set(filePath, jsonModule);

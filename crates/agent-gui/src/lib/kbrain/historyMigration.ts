@@ -13,7 +13,7 @@ import {
 } from "./historyMigrationFailures";
 import { kBrainStorageScope, setKBrainSessionId } from "./mapping";
 import { getBootProfileScope } from "./profile";
-import { getConfiguredKBrainConnection } from "./runtimeConnection";
+import { getConfiguredKBrainConnection, type KBrainRuntimeConnection } from "./runtimeConnection";
 import { contextToKBrainMessages } from "./turn";
 import type { KBrainMessage, KBrainModelRef } from "./types";
 
@@ -125,6 +125,8 @@ function reportProgress(
 }
 
 export type HistoryMigrationOptions = {
+  /** Captured once for the explicit import; never retarget an in-flight page after a switch. */
+  connection?: KBrainRuntimeConnection;
   onProgress?: (progress: HistoryMigrationProgress) => void;
   progressSource?: HistoryMigrationSource;
   fetch?: typeof globalThis.fetch;
@@ -413,6 +415,19 @@ export function historyErrorStatus(error: unknown): number | undefined {
   return error && typeof error === "object" && "status" in error ? Number(error.status) : undefined;
 }
 
+function assertMigrationConnection(connection: KBrainRuntimeConnection, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const current = getConfiguredKBrainConnection();
+  if (
+    !current ||
+    current.baseUrl !== connection.baseUrl ||
+    current.token !== connection.token ||
+    current.storageId !== connection.storageId ||
+    current.accountScope !== connection.accountScope
+  )
+    throw new Error("ZeroAgent conversation import target changed; retry in the current space");
+}
+
 export async function migrateLegacyHistoryPage(
   page: LegacyPage,
   options: HistoryMigrationOptions = {},
@@ -422,9 +437,12 @@ export async function migrateLegacyHistoryPage(
   nextCursor?: string | null;
   complete: boolean;
 }> {
-  const connection = getConfiguredKBrainConnection();
+  const connection = options.connection ?? getConfiguredKBrainConnection();
   if (!connection) throw new Error("K-brain backend connection is not ready");
+  assertMigrationConnection(connection, options.signal);
   const client = createKBrainClient({
+    baseUrl: connection.baseUrl,
+    token: connection.token,
     fetch: options.fetch,
   });
   const results: MigrationImportResult[] = [];
@@ -438,6 +456,7 @@ export async function migrateLegacyHistoryPage(
   const failedRecords: HistoryMigrationFailureRecord[] = [];
   const succeededIds: string[] = [];
   for (const item of page.conversations) {
+    assertMigrationConnection(connection, options.signal);
     reportProgress(options, "processing");
     let outcome: HistoryMigrationOutcome = "failed";
     let sourceFingerprint = "";
@@ -473,6 +492,7 @@ export async function migrateLegacyHistoryPage(
         !(options.retryKnownFailures && cached.result.checkpoint === "partial");
       if (cached && reusable) {
         if (await sessionExists(cached.result.backend_id)) {
+          assertMigrationConnection(connection, options.signal);
           const cachedResult: MigrationImportResult = {
             ...cached.result,
             status: "already_imported",
@@ -533,8 +553,10 @@ export async function migrateLegacyHistoryPage(
       };
       bodyBytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
       reportProgress(options, "importing");
+      assertMigrationConnection(connection, options.signal);
       importAttempted = true;
       const result = await client.importLegacyHistory(payload, options.signal);
+      assertMigrationConnection(connection, options.signal);
       if (
         result.source_id !== item.id ||
         result.backend_id !== item.id ||
@@ -660,8 +682,10 @@ async function migrateHistorySourceOnce(
   command: "legacy_history_migration_page" | "pi_history_migration_page",
   options: HistoryMigrationOptions = {},
 ) {
+  const connection = options.connection ?? getConfiguredKBrainConnection();
   options = {
     ...options,
+    ...(connection ? { connection } : {}),
     progressSource: command === "legacy_history_migration_page" ? "legacy" : "pi",
   };
   if (!isTauriHost() || !getConfiguredKBrainConnection()) {
@@ -673,8 +697,10 @@ async function migrateHistorySourceOnce(
   const failures: MigrationFailure[] = [];
   try {
     do {
+      if (connection) assertMigrationConnection(connection, options.signal);
       reportProgress(options, "reading");
       const page = await invoke<LegacyPage>(command, { cursor });
+      if (connection) assertMigrationConnection(connection, options.signal);
       const migrated = await migrateLegacyHistoryPage(page, options);
       all.push(...migrated.results);
       failures.push(...migrated.failures);

@@ -34,6 +34,37 @@ pub struct ManagedBinding {
     pub api_key: String,
 }
 
+/// Keep provider-model metadata editable while transport and credential ownership remain Native.
+pub(crate) fn constrain_managed_provider(
+    provider: &mut serde_json::Map<String, serde_json::Value>,
+    binding: &ManagedBinding,
+) -> Result<(), String> {
+    if provider.get("id").and_then(serde_json::Value::as_str) != Some(binding.provider_id.as_str())
+    {
+        return Err("只能配置当前账户已授权的托管模型".into());
+    }
+    if let Some(api) = provider.get("api").and_then(serde_json::Value::as_str) {
+        if !matches!(
+            api,
+            "openai-completions"
+                | "openai-responses"
+                | "anthropic-messages"
+                | "google-generative-ai"
+        ) {
+            return Err("托管模型不支持此请求协议".into());
+        }
+    }
+    provider.insert("baseUrl".into(), serde_json::json!(binding.base_url));
+    provider.insert("apiKey".into(), serde_json::json!(binding.api_key));
+    provider.insert("isFullUrl".into(), serde_json::json!(false));
+    provider.insert("modelsUrl".into(), serde_json::json!(""));
+    provider.insert("customHeaders".into(), serde_json::json!([]));
+    provider.insert("useSystemProxy".into(), serde_json::json!(false));
+    provider.insert("usageQuery".into(), serde_json::json!({"enabled":false}));
+    provider.remove("clearApiKey");
+    Ok(())
+}
+
 #[derive(Clone)]
 struct Credential {
     provider_id: String,
@@ -432,6 +463,48 @@ async fn forward(State(state): State<Arc<BrokerState>>, request: Request) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn managed_provider_projects_transport_and_preserves_model_configuration() {
+        let binding = ManagedBinding {
+            provider_id: "relay-key-7".into(),
+            base_url: "http://127.0.0.1:27".into(),
+            api_key: "za-model-capability".into(),
+        };
+        let models = serde_json::json!([{"id":"custom/kimi-k2","displayName":"My model","contextWindow":131072,"maxOutputToken":8192,"inputModalities":["text","image"],"promptCacheHintMode":"none","limitsSource":"user"}]);
+        let mut value = serde_json::json!({"id":"relay-key-7","api":"openai-completions","baseUrl":"https://external.invalid","apiKey":"other-key","clearApiKey":true,"modelsUrl":"https://external.invalid/models","isFullUrl":true,"customHeaders":[{"key":"Authorization","value":"external"}],"useSystemProxy":true,"usageQuery":{"enabled":true,"url":"https://external.invalid"},"models":models,"activeModels":[],"modelOrder":["custom/kimi-k2"]});
+        constrain_managed_provider(value.as_object_mut().unwrap(), &binding).unwrap();
+        assert_eq!(value["baseUrl"], binding.base_url);
+        assert_eq!(value["apiKey"], binding.api_key);
+        assert_eq!(value["modelsUrl"], "");
+        assert_eq!(value["isFullUrl"], false);
+        assert_eq!(value["customHeaders"], serde_json::json!([]));
+        assert_eq!(value["useSystemProxy"], false);
+        assert_eq!(value["usageQuery"]["enabled"], false);
+        assert!(value.get("clearApiKey").is_none());
+        assert_eq!(value["models"], models);
+        assert_eq!(value["activeModels"], serde_json::json!([]));
+        assert_eq!(value["modelOrder"], serde_json::json!(["custom/kimi-k2"]));
+        assert_eq!(value["api"], "openai-completions");
+    }
+
+    #[test]
+    fn managed_provider_rejects_foreign_identity_and_unsupported_protocol() {
+        let binding = ManagedBinding {
+            provider_id: "relay-key-7".into(),
+            base_url: "http://127.0.0.1:27".into(),
+            api_key: "za-model-capability".into(),
+        };
+        for input in [
+            serde_json::json!({"id":"external","api":"openai-completions"}),
+            serde_json::json!({"id":"relay-key-7","api":"custom-http"}),
+        ] {
+            assert!(
+                constrain_managed_provider(&mut input.as_object().unwrap().clone(), &binding)
+                    .is_err()
+            );
+        }
+    }
+
     #[test]
     fn portable_backups_reject_credential_aliases_after_rotation_revocation_and_shutdown() {
         let broker = ManagedModelBroker::start(Url::parse("https://usa0.top").unwrap()).unwrap();

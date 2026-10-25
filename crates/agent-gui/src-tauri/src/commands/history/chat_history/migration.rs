@@ -412,10 +412,14 @@ fn open_migration_path(path: &std::path::Path) -> Result<Connection, String> {
 #[tauri::command]
 pub async fn legacy_history_migration_page(
     cursor: Option<String>,
+    state: tauri::State<'_, Arc<crate::services::kbrain_backend::KBrainBackendState>>,
 ) -> Result<LegacyMigrationPage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let home =
-            crate::runtime::data_home::home_dir().ok_or_else(|| "cannot locate legacy history home".to_string())?;
+    if !state.allows_profile_commands() {
+        return Err("Verify the ZeroAgent profile before importing conversations".into());
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let home = crate::runtime::data_home::home_dir()
+            .ok_or_else(|| "cannot locate legacy history home".to_string())?;
         let path = home
             .join(format!(".{}", env!("CARGO_PKG_NAME")))
             .join("chat-history.sqlite3");
@@ -433,5 +437,9 @@ pub async fn legacy_history_migration_page(
         migration_page_sync(&tx, cursor.as_deref(), &home)
     })
     .await
-    .map_err(|e| format!("legacy history migration join failed: {e}"))?
+    .map_err(|e| format!("legacy history migration join failed: {e}"))?;
+    if !state.allows_profile_commands() {
+        return Err("ZeroAgent profile ended while reading old conversations".into());
+    }
+    result
 }

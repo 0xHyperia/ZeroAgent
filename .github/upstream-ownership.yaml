@@ -2,6 +2,54 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "模型发现按当前broker binding投影，不读旧SQLite秘密到任意目录地址",
+        "Skills走当前profile的公开facade/coordinator，ETag原值与CAS/撤销保持",
+        "当前账号设备lease在外层dispatch拒绝失效/越范围请求"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/web/src/agent-ui-adapters/kbrainSkills.ts",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "list返回实际读取configurationVersion",
+        "settings传递原baseline，旧读/无版本明确失败，不借用最新GET",
+        "仅新Go资源，Native桥与独立Gateway分别测试"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "固定旧ZeroAgent路径只读，不扫描其他产品，不覆盖原始数据",
+        "受已验证profile全局IPC守卫及读取后失效检查",
+        "多段历史/工具/附件/checkpoint只读夹具与明确失败"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src/lib/kbrain/*HistoryImport*",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "仅用户显式导入旧ZeroAgent会话，不启动全产品迁移",
+        "连接切换取消，迟到结果不污染新账号UI或历史映射"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "整个分页任务捕获连接，实际导入前后核对归属",
+        "上游幂等、tombstone、失败与checkpoint转换语义保留"
+      ]
+    },
+    {
       "glob": "patches/kbrain/**",
       "ownership": "adapted",
       "risk": "critical",

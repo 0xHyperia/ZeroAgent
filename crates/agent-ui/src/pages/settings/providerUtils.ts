@@ -374,6 +374,18 @@ export function mergeFetchedModels(
   return merged;
 }
 
+/** A managed catalog refresh preserves the user's local aliases as well as upstream model limits. */
+export function mergeManagedModels(
+  fetched: ProviderModelConfig[],
+  existing: ProviderModelConfig[],
+): ProviderModelConfig[] {
+  const previous = new Map(existing.map((model) => [model.id, model]));
+  return mergeFetchedModels(fetched, existing).map((model) => {
+    const alias = previous.get(model.id)?.displayName;
+    return alias ? { ...model, displayName: alias } : model;
+  });
+}
+
 // 供“列表总开关”一次性设置一批模型的启用状态：enabled=true 时并集，false 时差集。
 export function applyModelsActiveState(
   activeModels: ReadonlySet<string>,

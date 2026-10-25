@@ -553,7 +553,10 @@ pub(crate) fn temp_write_root_is_safe(path: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        if cmp.components().count() <= 1 {
+        if !cmp
+            .components()
+            .any(|part| matches!(part, std::path::Component::Normal(_)))
+        {
             return false;
         }
     }
@@ -1454,6 +1457,10 @@ mod tests {
     #[test]
     fn temp_write_root_rejects_filesystem_root_and_home() {
         assert!(!temp_write_root_is_safe(Path::new("/")));
+        #[cfg(windows)]
+        for root in [r"C:\", r"D:\"] {
+            assert!(!temp_write_root_is_safe(Path::new(root)));
+        }
         if let Some(home) = crate::runtime::data_home::home_dir() {
             assert!(!temp_write_root_is_safe(&home));
         }

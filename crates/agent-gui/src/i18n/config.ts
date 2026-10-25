@@ -30,7 +30,7 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "historyImport.title": "旧版对话迁移",
     "historyImport.action": "导入旧版对话",
     "historyImport.description":
-      "扫描本机旧版对话并转换为 K-brain 存储格式。保留旧数据，已有对话不覆盖，已明确删除的记录不恢复。",
+      "将本机旧版 ZeroAgent 对话导入当前账号空间，请确认这些对话属于当前账号。保留旧数据，已有对话不覆盖，已明确删除的记录不恢复；不导入供应商、密钥或其他产品的数据。",
     "historyImport.desktopOnly": "请在保存旧数据的桌面端执行导入，浏览器无法读取本机旧版数据。",
     "historyImport.running": "正在导入…",
     "historyImport.runningHint": "正在扫描与转换旧对话，可以继续使用其他功能。",
@@ -364,7 +364,7 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "historyImport.title": "Legacy conversation migration",
     "historyImport.action": "Import old conversations",
     "historyImport.description":
-      "Scan local legacy conversations and convert them to K-brain storage. Originals are preserved, existing conversations are not overwritten, and explicitly deleted records are not restored.",
+      "Import local legacy ZeroAgent conversations into the current account space. Confirm that they belong to this account. Originals are preserved, existing conversations are not overwritten, and deleted records are not restored. Providers, credentials and other products are excluded.",
     "historyImport.desktopOnly":
       "Import from the desktop app that holds your old data. The browser cannot read local legacy files.",
     "historyImport.running": "Importing…",

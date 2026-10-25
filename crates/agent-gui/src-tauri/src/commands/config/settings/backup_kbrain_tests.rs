@@ -3,6 +3,7 @@ mod canonical_backup_tests {
     use crate::services::kbrain_backend::{KBrainBackendConnection, KBrainBackendManager};
     include!("device_configuration_tests.rs");
     include!("skills_http_tests.rs");
+    include!("gateway_skills_tests.rs");
     include!("mcp_oauth_binding_tests.rs");
 
     fn binary() -> PathBuf {

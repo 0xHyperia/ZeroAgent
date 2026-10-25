@@ -9,6 +9,7 @@ import {
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { ProviderModal } from "@liveagent/ui/pages/settings/ProviderModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GroupMultiSelect } from "@/components/relay/GroupMultiSelect";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
@@ -23,7 +24,12 @@ import {
   type RelayUser,
   verifyRelayPassword,
 } from "@/lib/relay/client";
-import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "@/lib/relay/providers";
+import {
+  applyRelayProviderModelSettings,
+  bindRelayKeysToSettings,
+  relayProviderId,
+  relayProviderTypeForPlatform,
+} from "@/lib/relay/providers";
 import type { SettingsSectionProps } from "./types";
 
 function message(error: unknown, fallback: string) {
@@ -52,6 +58,10 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
   const [keyName, setKeyName] = useState("ZeroAgent");
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [copyTarget, setCopyTarget] = useState<RelayApiKey | null>(null);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const editingProvider = settings.customProviders.find(
+    (provider) => provider.id === editingProviderId,
+  );
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -214,6 +224,20 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
                       {group ? platformLabel(group.platform) : "不可绑定"}
                     </p>
                   </div>
+                  {key.status === "active" &&
+                    settings.customProviders.some(
+                      (provider) => provider.id === relayProviderId(key.id),
+                    ) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={syncing}
+                        onClick={() => setEditingProviderId(relayProviderId(key.id))}
+                      >
+                        模型设置
+                      </Button>
+                    )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -292,6 +316,26 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
           <CheckCircle2 className="h-3.5 w-3.5" />
           {success}
         </div>
+      )}
+      {editingProvider && (
+        <ProviderModal
+          key={editingProvider.id}
+          providerType={editingProvider.type}
+          initialData={editingProvider}
+          connectionManaged
+          onClose={() => setEditingProviderId(null)}
+          onSave={(draft) => {
+            try {
+              setSettings((current) =>
+                applyRelayProviderModelSettings(current, editingProvider.id, draft),
+              );
+              setEditingProviderId(null);
+              setSuccess("模型设置已保存。");
+            } catch (cause) {
+              setError(message(cause, "保存模型设置失败。"));
+            }
+          }}
+        />
       )}
       <RelayKeyCopyDialog
         key={copyTarget?.id ?? "closed"}

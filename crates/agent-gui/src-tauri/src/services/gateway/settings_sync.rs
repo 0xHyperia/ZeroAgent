@@ -34,6 +34,23 @@ impl GatewayController {
 }
 
 #[cfg(test)]
+pub(crate) fn apply_kbrain_mcp_settings(
+    snapshot: &mut Value,
+    backend: &Value,
+) -> Result<(), String> {
+    let settings = backend
+        .get("settings")
+        .filter(|settings| settings.get("servers").is_some_and(Value::is_array))
+        .ok_or_else(|| "K-brain MCP response is missing servers".to_string())?;
+    snapshot["mcp"] = settings.clone();
+    // Empty selections are omitted by the backend; never retain stale SQLite ids.
+    if !snapshot["mcp"].get("selected").is_some_and(Value::is_array) {
+        snapshot["mcp"]["selected"] = serde_json::json!([]);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn apply_kbrain_model_settings(
     snapshot: &mut Value,
     backend: &Value,
