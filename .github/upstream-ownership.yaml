@@ -2,6 +2,66 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "deploy/production/.env.example",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "生产示例不携带实际secret",
+        "就绪、不可变镜像与部署校验"
+      ]
+    },
+    {
+      "glob": "deploy/.env.dev.example",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "示例变量不含真实凭据",
+        "本地开发配置与固定平台来源"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/gen/android/app/.gitignore",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "Android签名材料与局部构建输出不入源包"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/gen/android/.gitignore",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "Android生成工程及本地密钥/构建缓存排除"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/gen/android/.editorconfig",
+      "ownership": "upstream_owned",
+      "risk": "high",
+      "checks": [
+        "Android工程格式配置与可重复构建"
+      ]
+    },
+    {
+      "glob": "AGENTS.md",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "产品契约与有序前置、用户本轮ADR覆盖",
+        "上游优先维护、当前模型/会话范围"
+      ]
+    },
+    {
+      "glob": ".dockerignore",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "镜像context不包含本地凭据、测试目录或构建产物",
+        "Docker分阶段构建与发布产物内容检查"
+      ]
+    },
+    {
       "glob": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
       "ownership": "adapted",
       "risk": "critical",

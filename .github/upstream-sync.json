@@ -1,6 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v1.2.6",
-  "base_commit": "d3020fd853f23a6a5d8182ee1bd049a632654cc2",
-  "commit": "0370c3b0df1b8297dd8a246d5fbfa816b566957c"
+  "tag": "v2.0.0-beta.21",
+  "base_commit": "1081b9af8d1e2e96baafc8671688498462b46492",
+  "commit": "0f82fc04db46fa5ea2712a6c560471d79861a189",
+  "integration_commit": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
+  "previous_tag": "v2.0.0-beta.20",
+  "previous_upstream_commit": "47a0d1c3e1f6719975678ca42d4c212c2ba278ec",
+  "prerelease": true,
+  "validation_status": "local-preview; formal platform, account/device and signing acceptance pending",
+  "channel": "preview",
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.21",
+  "published_at": "2026-10-24T15:28:01Z"
 }
