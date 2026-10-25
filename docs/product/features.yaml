@@ -121,7 +121,8 @@
         "crates/agent-gui/src/lib/relay/providers.ts",
         "crates/agent-gateway/web/src/lib/relay/providers.ts",
         "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
-        "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs"
+        "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs",
+        "crates/agent-gui/src/lib/kbrain/providerSettings.ts"
       ],
       "tests": [
         "crates/agent-gui/test/providers/relay-settings-refresh.test.mjs",
@@ -135,9 +136,10 @@
         "crates/agent-gui/test/providers/managed-model-settings.test.mjs",
         "crates/agent-gui/test/settings/provider-modal-managed.test.mjs",
         "crates/agent-gui/test/settings/provider-brand-model.test.mjs",
-        "crates/agent-gui/src-tauri/src/services/kbrain_backend/managed_model_discovery_tests.rs"
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend/managed_model_discovery_tests.rs",
+        "crates/agent-gui/test/providers/kbrain-provider-settings.test.mjs"
       ],
-      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。 ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。",
+      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。 ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。 运行时凭据未就绪不得清空模型启用/选择偏好。缓存仅开放固定后端可持久化的供应商级配置，模型请求投影不发送不受支持的单模型缓存字段；实际af5保存/停启回读已验证。",
       "upstream_relation": "adapt"
     },
     {

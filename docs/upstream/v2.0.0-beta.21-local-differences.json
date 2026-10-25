@@ -1,13 +1,13 @@
 {
-  "at": "2026-10-25T19:37:19.673Z",
+  "at": "2026-10-25T20:22:23.192Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
-  "scope": "Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained. Snapshot file itself is excluded to avoid self-reference.",
-  "paths": 799,
+  "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
+  "paths": 801,
   "byArea": {
     "Other": {
       "paths": 58,
-      "added": 2879,
+      "added": 2941,
       "deleted": 1659
     },
     "Gateway": {
@@ -17,13 +17,13 @@
     },
     "WebUI": {
       "paths": 87,
-      "added": 8613,
+      "added": 8628,
       "deleted": 3688
     },
     "Desktop": {
-      "paths": 186,
-      "added": 10101,
-      "deleted": 1266
+      "paths": 188,
+      "added": 10200,
+      "deleted": 1267
     },
     "Native": {
       "paths": 235,
@@ -32,12 +32,12 @@
     },
     "Shared UI": {
       "paths": 49,
-      "added": 1575,
-      "deleted": 1047
+      "added": 1652,
+      "deleted": 1129
     },
     "Documentation": {
       "paths": 62,
-      "added": 31878,
+      "added": 31901,
       "deleted": 32
     },
     "Backend patches": {
@@ -164,12 +164,12 @@
     },
     {
       "path": ".github/upstream-ownership.yaml",
-      "added": 597,
+      "added": 657,
       "deleted": 0
     },
     {
       "path": ".github/upstream-sync.json",
-      "added": 12,
+      "added": 14,
       "deleted": 0
     },
     {
@@ -939,7 +939,7 @@
     },
     {
       "path": "crates/agent-gateway/web/src/lib/relay/providers.ts",
-      "added": 225,
+      "added": 240,
       "deleted": 0
     },
     {
@@ -2533,6 +2533,11 @@
       "deleted": 8
     },
     {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "added": 8,
+      "deleted": 1
+    },
+    {
       "path": "crates/agent-gui/src/lib/kbrain/runtimeConnection.ts",
       "added": 5,
       "deleted": 0
@@ -2629,7 +2634,7 @@
     },
     {
       "path": "crates/agent-gui/src/lib/relay/providers.ts",
-      "added": 265,
+      "added": 279,
       "deleted": 0
     },
     {
@@ -3033,6 +3038,11 @@
       "deleted": 20
     },
     {
+      "path": "crates/agent-gui/test/providers/kbrain-provider-settings.test.mjs",
+      "added": 13,
+      "deleted": 0
+    },
+    {
       "path": "crates/agent-gui/test/providers/kbrain-reconnect.test.mjs",
       "added": 1,
       "deleted": 1
@@ -3044,7 +3054,7 @@
     },
     {
       "path": "crates/agent-gui/test/providers/managed-model-settings.test.mjs",
-      "added": 83,
+      "added": 114,
       "deleted": 0
     },
     {
@@ -3069,7 +3079,7 @@
     },
     {
       "path": "crates/agent-gui/test/providers/relay-binding.test.mjs",
-      "added": 201,
+      "added": 202,
       "deleted": 0
     },
     {
@@ -3159,7 +3169,7 @@
     },
     {
       "path": "crates/agent-gui/test/settings/provider-modal-managed.test.mjs",
-      "added": 40,
+      "added": 72,
       "deleted": 0
     },
     {
@@ -3444,13 +3454,13 @@
     },
     {
       "path": "crates/agent-ui/src/pages/settings/ProviderModal.tsx",
-      "added": 34,
-      "deleted": 14
+      "added": 37,
+      "deleted": 15
     },
     {
       "path": "crates/agent-ui/src/pages/settings/ProviderModalView.tsx",
-      "added": 173,
-      "deleted": 137
+      "added": 247,
+      "deleted": 218
     },
     {
       "path": "crates/agent-ui/src/pages/settings/RemoteSection.tsx",
@@ -3764,17 +3774,17 @@
     },
     {
       "path": "docs/product/decisions/0034-upstream-first-fresh-preview.md",
-      "added": 27,
+      "added": 31,
       "deleted": 0
     },
     {
       "path": "docs/product/decisions/0035-platform-model-settings-and-history-import.md",
-      "added": 25,
+      "added": 31,
       "deleted": 0
     },
     {
       "path": "docs/product/features.yaml",
-      "added": 377,
+      "added": 379,
       "deleted": 0
     },
     {
@@ -3784,7 +3794,7 @@
     },
     {
       "path": "docs/releases/v0.4.0-beta.2.md",
-      "added": 12,
+      "added": 13,
       "deleted": 0
     },
     {
@@ -3864,7 +3874,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 141,
+      "added": 151,
       "deleted": 0
     },
     {
