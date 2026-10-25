@@ -1,33 +1,23 @@
+#[cfg(test)]
 use std::collections::HashSet;
 
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::commands::settings::redact_gateway_settings_sync_payload;
+#[cfg(test)]
 use crate::commands::settings::{
-    load_gateway_settings_sync_snapshot, load_stt_raw, open_db,
-    redact_gateway_settings_sync_payload, PROVIDER_API_KEY_UPDATES_FIELD,
-    PROVIDER_USAGE_QUERY_SECRET_UPDATES_FIELD, SSH_PATCH_FIELD, SSH_SECRET_UPDATES_FIELD,
-    STT_SECRET_SYNC_FIELD, STT_SECRET_UPDATE_FIELD, SYSTEM_PROXY_PASSWORD_UPDATE_FIELD,
+    PROVIDER_API_KEY_UPDATES_FIELD, PROVIDER_USAGE_QUERY_SECRET_UPDATES_FIELD, SSH_PATCH_FIELD,
+    SSH_SECRET_UPDATES_FIELD, STT_SECRET_SYNC_FIELD, STT_SECRET_UPDATE_FIELD,
+    SYSTEM_PROXY_PASSWORD_UPDATE_FIELD,
 };
 
 use super::*;
 
 impl GatewayController {
     pub(crate) async fn current_settings_snapshot(&self) -> Result<Value, String> {
-        let cached_snapshot = self
-            .settings_snapshot
-            .lock()
-            .map_err(|_| "gateway settings snapshot lock poisoned".to_string())?
-            .clone();
-
-        let db_snapshot = tauri::async_runtime::spawn_blocking(move || {
-            let conn = open_db()?;
-            load_gateway_settings_sync_snapshot(&conn)
-        })
-        .await
-        .map_err(|e| format!("load gateway settings snapshot join failed: {e}"))??;
-
-        let snapshot = merge_settings_sync_snapshot(db_snapshot, cached_snapshot.as_ref())?;
+        let snapshot =
+            crate::commands::settings::load_device_configuration(self.app_handle.clone()).await?;
         self.store_settings_snapshot(snapshot)
     }
 
@@ -43,6 +33,35 @@ impl GatewayController {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn apply_kbrain_model_settings(
+    snapshot: &mut Value,
+    backend: &Value,
+) -> Result<(), String> {
+    let providers = backend
+        .get("providers")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "K-brain settings response is missing providers".to_string())?;
+    snapshot["customProviders"] = Value::Array(providers.clone());
+    snapshot["selectedModel"] = match (
+        backend
+            .get("defaultProvider")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty()),
+        backend
+            .get("defaultModel")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty()),
+    ) {
+        (Some(provider), Some(model)) => {
+            serde_json::json!({"customProviderId": provider, "model": model})
+        }
+        _ => Value::Null,
+    };
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn merge_settings_sync_snapshot(
     snapshot: Value,
     cached: Option<&Value>,
@@ -63,6 +82,7 @@ pub(crate) fn merge_settings_sync_snapshot(
     Ok(Value::Object(merged))
 }
 
+#[cfg(test)]
 pub(crate) fn merge_settings_update_into_snapshot(
     snapshot: Value,
     update: Value,
@@ -95,6 +115,7 @@ pub(crate) fn merge_settings_update_into_snapshot(
     Ok(Value::Object(merged))
 }
 
+#[cfg(test)]
 pub(crate) fn attach_stt_secret_sync(
     mut snapshot: Value,
     raw_stt: Option<Value>,
@@ -109,16 +130,7 @@ pub(crate) fn attach_stt_secret_sync(
     Ok(snapshot)
 }
 
-pub(crate) async fn attach_current_stt_secret_sync(snapshot: Value) -> Result<Value, String> {
-    let raw_stt = tauri::async_runtime::spawn_blocking(move || {
-        let conn = open_db()?;
-        load_stt_raw(&conn)
-    })
-    .await
-    .map_err(|e| format!("load private STT sync join failed: {e}"))??;
-    attach_stt_secret_sync(snapshot, raw_stt)
-}
-
+#[cfg(test)]
 fn workspace_project_ids(
     payload: &Value,
     payload_label: &str,
@@ -157,6 +169,7 @@ fn workspace_project_ids(
     Ok(Some(ids))
 }
 
+#[cfg(test)]
 pub(crate) fn removed_workspace_project_ids(
     current_snapshot: &Value,
     update: &Value,
@@ -194,6 +207,7 @@ pub(crate) fn normalize_settings_sync_payload(payload: Value) -> Result<Value, S
     }
 }
 
+#[cfg(test)]
 pub(crate) fn build_local_settings_update_event_payload(payload: Value) -> Result<Value, String> {
     let mut event = match payload {
         Value::Object(map) => map,
@@ -231,6 +245,7 @@ pub(crate) fn build_local_settings_update_event_payload(payload: Value) -> Resul
     Ok(Value::Object(public_event))
 }
 
+#[cfg(test)]
 pub(crate) fn build_local_settings_update_event_payload_with_ssh(
     payload: Value,
     ssh: Value,

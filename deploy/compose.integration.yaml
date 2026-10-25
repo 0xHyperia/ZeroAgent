@@ -26,7 +26,7 @@ services:
       retries: 30
   zeroagent-gateway:
     build:
-      context: ../../ZeroAgent
+      context: ..
       dockerfile: Dockerfile
       args:
         HTTP_PROXY: ${http_proxy:-${HTTP_PROXY:-}}

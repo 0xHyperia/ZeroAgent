@@ -75,7 +75,7 @@ pub(crate) fn terminate_process_tree_best_effort(pid: Option<u32>) -> bool {
     #[cfg(unix)]
     {
         std::process::Command::new("kill")
-            .args(["-TERM", &format!("-{pid}")])
+            .args(["-TERM", "--", &format!("-{pid}")])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

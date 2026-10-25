@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     body::{to_bytes, Body},
-    extract::{OriginalUri, Path, Query, State},
+    extract::{OriginalUri, Query, State},
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::Response,
     routing::{any, get},
@@ -24,6 +24,9 @@ const ACCESS_CONTROL_REQUEST_METHOD: &str = "access-control-request-method";
 const ACCESS_CONTROL_PREFIX: &str = "access-control-";
 const CONTENT_LENGTH: &str = "content-length";
 const CONTENT_TYPE: &str = "content-type";
+const CACHE_CONTROL: &str = "cache-control";
+const PRAGMA: &str = "pragma";
+const EXPIRES: &str = "expires";
 const CONNECTION: &str = "connection";
 const HOST: &str = "host";
 const KEEP_ALIVE: &str = "keep-alive";
@@ -45,7 +48,10 @@ const UPSTREAM_HEADERS_MAX_BYTES: usize = 8 * 1024;
 const USE_SYSTEM_PROXY_HEADER: &str = "x-liveagent-use-system-proxy";
 const DEFAULT_ALLOW_HEADERS: &str = "authorization,content-type,x-api-key,x-goog-api-key,anthropic-version,x-liveagent-upstream-origin,x-liveagent-upstream-url,x-liveagent-upstream-headers,x-liveagent-proxy-token,x-liveagent-use-system-proxy";
 const ALLOW_METHODS_VALUE: &str = "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
-const VARY_VALUE: &str = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers";
+// The upstream origin is carried in a request header because providers sharing
+// a proxy path can have different hosts. Keep it in the cache key.
+const VARY_VALUE: &str = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, x-liveagent-upstream-origin";
+const VARY: &str = "vary";
 const IMAGE_PROXY_MAX_BYTES: usize = 25 * 1024 * 1024;
 const IMAGE_PROXY_TIMEOUT_SECS: u64 = 20;
 const IMAGE_PROXY_ACCEPT: &str = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
@@ -62,13 +68,6 @@ pub struct ProxyServerInfo {
 pub struct ProxyServerState {
     info: ProxyServerInfo,
     client: reqwest::Client,
-}
-
-#[derive(Deserialize)]
-struct ProxyRoutePath {
-    provider: String,
-    #[serde(rename = "rest")]
-    _rest: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -98,14 +97,15 @@ pub fn start_proxy_server() -> Result<Arc<ProxyServerState>, String> {
         },
         client: reqwest::Client::builder()
             .no_proxy()
+            .redirect(resource_redirect_policy())
             .build()
             .map_err(|err| format!("创建本地代理 HTTP 客户端失败：{err}"))?,
     });
 
     let app = Router::new()
         .route("/image-proxy", get(handle_image_proxy))
-        .route("/proxy/{provider}", any(handle_proxy))
-        .route("/proxy/{provider}/{*rest}", any(handle_proxy))
+        .route("/proxy/hub", any(handle_proxy))
+        .route("/proxy/hub/{*rest}", any(handle_proxy))
         .with_state(state.clone());
 
     tauri::async_runtime::spawn(async move {
@@ -130,9 +130,17 @@ async fn handle_image_proxy(Query(query): Query<ImageProxyQuery>, headers: Heade
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message, &headers),
     };
 
+    if is_account_resource(&target_url) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "Account resources require native account commands",
+            &headers,
+        );
+    }
+
     // 图片外链与商店链路同语义：恒随应用代理出网（未启用=直连，配置异常
     // 502 fail fast）。<img> 请求无法携带自定义头，因此不走 per-request 开关。
-    let client = match crate::services::system_proxy::cached_client() {
+    let client = match resource_proxy_client() {
         Ok(client) => client,
         Err(error) => {
             return error_response(
@@ -324,12 +332,12 @@ fn resolve_image_proxy_mime(
 
 async fn handle_proxy(
     State(state): State<Arc<ProxyServerState>>,
-    Path(ProxyRoutePath { provider, .. }): Path<ProxyRoutePath>,
     method: Method,
     headers: HeaderMap,
     OriginalUri(original_uri): OriginalUri,
     body: Body,
 ) -> Response {
+    let provider = "hub";
     if method == Method::OPTIONS {
         return preflight_response(&headers);
     }
@@ -344,6 +352,14 @@ async fn handle_proxy(
         Ok(value) => value,
         Err(response) => return response,
     };
+
+    if !is_allowed_proxy_provider(&provider) {
+        return error_response(
+            StatusCode::NOT_FOUND,
+            "Provider model proxying is owned by K-brain",
+            &headers,
+        );
+    }
 
     let original_path_and_query = original_uri
         .path_and_query()
@@ -372,6 +388,14 @@ async fn handle_proxy(
         Ok(url) => url,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message, &headers),
     };
+
+    if is_account_resource(&target_url) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "Account resources require native account commands",
+            &headers,
+        );
+    }
 
     let body_bytes = match to_bytes(body, usize::MAX).await {
         Ok(bytes) => bytes,
@@ -448,6 +472,41 @@ async fn handle_proxy(
     }
     apply_cors_headers(response.headers_mut(), &headers);
     response
+}
+
+// Account endpoints must stay behind the native session/key boundary, including
+// when an ordinary resource server redirects to the account host.
+fn is_account_resource(url: &Url) -> bool {
+    let configured =
+        Url::parse(option_env!("ZEROAGENT_USA_ZERO_ORIGIN").unwrap_or("https://usa0.top")).ok();
+    url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("usa0.top")
+            || configured
+                .as_ref()
+                .and_then(Url::host_str)
+                .is_some_and(|account| host.eq_ignore_ascii_case(account))
+    })
+}
+fn resource_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if is_account_resource(attempt.url()) {
+            attempt.error("Account resources require native account commands")
+        } else if attempt.previous().len() >= 10 {
+            attempt.error("Too many resource redirects")
+        } else {
+            attempt.follow()
+        }
+    })
+}
+fn resource_proxy_client() -> Result<reqwest::Client, String> {
+    crate::services::system_proxy::async_client_builder()?
+        .redirect(resource_redirect_policy())
+        .build()
+        .map_err(|_| "Unable to create resource proxy client".into())
+}
+
+fn is_allowed_proxy_provider(provider: &str) -> bool {
+    provider == "hub"
 }
 
 fn build_target_url(
@@ -603,10 +662,41 @@ fn apply_cors_headers(headers: &mut HeaderMap, request_headers: &HeaderMap) {
         HeaderName::from_static("access-control-allow-headers"),
         build_allow_headers_value(request_headers),
     );
-    headers.insert(
-        HeaderName::from_static("vary"),
-        HeaderValue::from_static(VARY_VALUE),
-    );
+    let vary = build_vary_value(headers);
+    headers.insert(HeaderName::from_static(VARY), vary);
+}
+
+fn build_vary_value(headers: &HeaderMap) -> HeaderValue {
+    let mut items: Vec<String> = VARY_VALUE
+        .split(',')
+        .map(|item| item.trim().to_ascii_lowercase())
+        .collect();
+    let mut upstream_values = Vec::new();
+    for value in headers.get_all(VARY) {
+        let Ok(value) = value.to_str() else {
+            continue;
+        };
+        for item in value
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+        {
+            if item == "*" {
+                return HeaderValue::from_static("*");
+            }
+            upstream_values.push(item);
+        }
+    }
+    for item in upstream_values {
+        if !items
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(item))
+        {
+            items.push(item.to_ascii_lowercase());
+        }
+    }
+    HeaderValue::from_str(&items.join(", "))
+        .unwrap_or_else(|_| HeaderValue::from_static(VARY_VALUE))
 }
 
 fn build_allow_headers_value(request_headers: &HeaderMap) -> HeaderValue {
@@ -731,6 +821,9 @@ fn should_forward_response_header(name: &HeaderName) -> bool {
     !matches!(
         lowered,
         CONTENT_LENGTH
+            | CACHE_CONTROL
+            | PRAGMA
+            | EXPIRES
             | CONNECTION
             | KEEP_ALIVE
             | PROXY_CONNECTION
@@ -740,13 +833,105 @@ fn should_forward_response_header(name: &HeaderName) -> bool {
             | TRAILER
             | TRANSFER_ENCODING
             | UPGRADE
-            | "vary"
     ) && !lowered.starts_with(ACCESS_CONTROL_PREFIX)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resource_proxy_cannot_target_account_host_through_any_path_or_scheme() {
+        for raw in [
+            "https://usa0.top/api/v1/app/keys",
+            "http://USA0.TOP:80/api/v1/auth/login",
+            "https://usa0.top/%61pi/v1/keys",
+            "https://usa0.top/other",
+        ] {
+            assert!(super::is_account_resource(&Url::parse(raw).unwrap()));
+        }
+        assert!(!super::is_account_resource(
+            &Url::parse("https://api.github.com/repos").unwrap()
+        ));
+        assert!(!super::is_account_resource(
+            &Url::parse("https://usa0.top.foreign.test/api").unwrap()
+        ));
+    }
+    #[tokio::test]
+    async fn resource_redirects_to_account_are_rejected_before_contacting_the_account_server() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let router = axum::Router::new().route(
+            "/",
+            axum::routing::get(|| async {
+                axum::response::Redirect::temporary("https://usa0.top/api/v1/auth/login")
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(super::resource_redirect_policy())
+            .build()
+            .unwrap();
+        let error = client.get(url).send().await.unwrap_err();
+        server.abort();
+        assert!(error.is_redirect());
+    }
     use super::*;
+
+    #[test]
+    fn does_not_forward_cache_headers_from_upstream() {
+        for name in [CACHE_CONTROL, PRAGMA, EXPIRES] {
+            assert!(!should_forward_response_header(&HeaderName::from_static(
+                name
+            )));
+        }
+        for name in [CONTENT_TYPE, VARY, "etag", "x-request-id"] {
+            assert!(should_forward_response_header(&HeaderName::from_static(
+                name
+            )));
+        }
+    }
+
+    #[test]
+    fn vary_merges_cors_upstream_origin_and_upstream_values() {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            HeaderName::from_static(VARY),
+            HeaderValue::from_static("Accept-Encoding, origin"),
+        );
+        headers.append(
+            HeaderName::from_static(VARY),
+            HeaderValue::from_static("Authorization"),
+        );
+        apply_cors_headers(&mut headers, &HeaderMap::new());
+        assert_eq!(headers.get_all(VARY).iter().count(), 1);
+        assert_eq!(
+            header_str(&headers, VARY),
+            Some("origin, access-control-request-method, access-control-request-headers, x-liveagent-upstream-origin, accept-encoding, authorization")
+        );
+    }
+
+    #[test]
+    fn vary_includes_upstream_origin_without_upstream_vary() {
+        let mut headers = HeaderMap::new();
+        apply_cors_headers(&mut headers, &HeaderMap::new());
+        assert_eq!(
+            header_str(&headers, VARY),
+            Some("origin, access-control-request-method, access-control-request-headers, x-liveagent-upstream-origin")
+        );
+    }
+
+    #[test]
+    fn vary_star_is_preserved() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static(VARY),
+            HeaderValue::from_static("Accept-Encoding, *"),
+        );
+        apply_cors_headers(&mut headers, &HeaderMap::new());
+        assert_eq!(header_str(&headers, VARY), Some("*"));
+    }
 
     #[test]
     fn builds_target_url_for_openai_v1_responses() {

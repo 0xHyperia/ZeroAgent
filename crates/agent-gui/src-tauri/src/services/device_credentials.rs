@@ -1,8 +1,35 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 
 const CREDENTIAL_TARGET: &str = "ZeroAgent/device-credential";
 const MAX_ACCOUNT_SCOPE_LENGTH: usize = 512;
+static ACTIVE_ACCOUNT_SCOPE: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_active_account_scope(scope: Option<&str>) -> Result<(), String> {
+    if let Some(scope) = scope {
+        credential_target(Some(scope))?;
+    }
+    *ACTIVE_ACCOUNT_SCOPE
+        .lock()
+        .map_err(|_| "device credential scope lock failed")? = scope.map(str::to_owned);
+    Ok(())
+}
+
+fn validate_active_scope(active: Option<&str>, requested: Option<&str>) -> Result<(), String> {
+    if active.is_some() && active == requested {
+        Ok(())
+    } else {
+        Err("device credentials require the active authenticated account profile".into())
+    }
+}
+
+pub(crate) fn require_active_scope(requested: Option<&str>) -> Result<(), String> {
+    let active = ACTIVE_ACCOUNT_SCOPE
+        .lock()
+        .map_err(|_| "device credential scope lock failed")?;
+    validate_active_scope(active.as_deref(), requested)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -38,14 +65,15 @@ impl DeviceCredentialRecord {
 }
 
 fn credential_target(account_scope: Option<&str>) -> Result<String, String> {
-    let Some(scope) = account_scope
-        .map(str::trim)
-        .filter(|scope| !scope.is_empty())
-    else {
+    let Some(scope) = account_scope else {
         return Ok(CREDENTIAL_TARGET.to_string());
     };
-    if scope.len() > MAX_ACCOUNT_SCOPE_LENGTH {
-        return Err("device credential account scope is too long".to_string());
+    if scope.is_empty()
+        || scope.trim() != scope
+        || scope.len() > MAX_ACCOUNT_SCOPE_LENGTH
+        || scope.chars().any(char::is_control)
+    {
+        return Err("invalid device credential account scope".to_string());
     }
     let digest = Sha256::digest(scope.as_bytes());
     let suffix = digest
@@ -56,12 +84,20 @@ fn credential_target(account_scope: Option<&str>) -> Result<String, String> {
 }
 
 pub fn load_device_credential() -> Result<Option<DeviceCredentialRecord>, String> {
-    load_device_credential_for_scope(None)
+    let scope = ACTIVE_ACCOUNT_SCOPE
+        .lock()
+        .map_err(|_| "device credential scope lock failed")?
+        .clone();
+    load_device_credential_for_scope(scope.as_deref())
 }
 
 pub fn load_device_credential_for_scope(
     account_scope: Option<&str>,
 ) -> Result<Option<DeviceCredentialRecord>, String> {
+    // An unscoped legacy record has no proven owner. It must never become an active identity.
+    if account_scope.is_none() {
+        return Ok(None);
+    }
     let target = credential_target(account_scope)?;
     let Some(value) = platform_load(&target)? else {
         return Ok(None);
@@ -74,14 +110,13 @@ pub fn load_device_credential_for_scope(
     Ok(Some(record))
 }
 
-pub fn save_device_credential(record: &DeviceCredentialRecord) -> Result<(), String> {
-    save_device_credential_for_scope(record, None)
-}
-
 pub fn save_device_credential_for_scope(
     record: &DeviceCredentialRecord,
     account_scope: Option<&str>,
 ) -> Result<(), String> {
+    if account_scope.is_none() {
+        return Err("device credential account scope is required".into());
+    }
     if record.agent_id.trim().is_empty() || record.token.trim().is_empty() {
         return Err("agent id and token are required".to_string());
     }
@@ -94,6 +129,10 @@ pub fn save_device_credential_for_scope(
 pub fn device_credential_get(
     account_scope: Option<String>,
 ) -> Result<Option<DeviceCredentialRecord>, String> {
+    if account_scope.is_none() {
+        return Ok(None);
+    }
+    require_active_scope(account_scope.as_deref())?;
     load_device_credential_for_scope(account_scope.as_deref())
 }
 
@@ -106,15 +145,8 @@ pub async fn device_credential_set(
         std::sync::Arc<crate::services::gateway::GatewayController>,
     >,
 ) -> Result<(), String> {
+    require_active_scope(account_scope.as_deref())?;
     save_device_credential_for_scope(&record, account_scope.as_deref())?;
-    // The Gateway runner has one active identity. Keep its legacy target in
-    // sync while retaining per-account records for future account switches.
-    if account_scope
-        .as_deref()
-        .is_some_and(|scope| !scope.trim().is_empty())
-    {
-        save_device_credential(&record)?;
-    }
     gateway_controller.reload_from_db().await
 }
 
@@ -126,16 +158,24 @@ pub async fn device_credential_activate(
         std::sync::Arc<crate::services::gateway::GatewayController>,
     >,
 ) -> Result<(), String> {
-    match load_device_credential_for_scope(Some(&account_scope))? {
-        Some(record) => save_device_credential(&record)?,
-        None => platform_delete(CREDENTIAL_TARGET)?,
-    }
+    require_active_scope(Some(&account_scope))?;
     gateway_controller.reload_from_db().await
 }
 
-#[tauri::command]
-pub fn device_credential_delete() -> Result<(), String> {
+pub fn deactivate_device_credential() -> Result<(), String> {
+    set_active_account_scope(None)?;
     platform_delete(CREDENTIAL_TARGET)
+}
+
+#[tauri::command]
+pub fn device_credential_delete(
+    gateway_controller: tauri::State<
+        '_,
+        std::sync::Arc<crate::services::gateway::GatewayController>,
+    >,
+) -> Result<(), String> {
+    gateway_controller.disconnect_runtime()?;
+    deactivate_device_credential()
 }
 
 #[tauri::command]
@@ -391,4 +431,35 @@ fn platform_load(_target_name: &str) -> Result<Option<String>, String> {
 #[cfg(any(target_os = "android", target_os = "ios"))]
 fn platform_delete(_target_name: &str) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    #[test]
+    fn active_identity_requires_the_exact_verified_scope_and_never_legacy_storage() {
+        let a = "https://usa0.top|user:1";
+        let b = "https://usa0.top|user:2";
+        assert!(validate_active_scope(Some(a), Some(a)).is_ok());
+        for (active, requested) in [
+            (Some(a), Some(b)),
+            (Some(a), None),
+            (None, Some(a)),
+            (None, None),
+        ] {
+            assert!(validate_active_scope(active, requested).is_err());
+        }
+        assert!(load_device_credential_for_scope(None).unwrap().is_none());
+        assert!(
+            save_device_credential_for_scope(&DeviceCredentialRecord::default(), None).is_err()
+        );
+        assert_ne!(
+            credential_target(Some(a)).unwrap(),
+            credential_target(Some(b)).unwrap()
+        );
+        for scope in ["", " user:1", "user:1\n"] {
+            assert!(credential_target(Some(scope)).is_err());
+        }
+    }
 }

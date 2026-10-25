@@ -1,11 +1,12 @@
 import type {
+  Api,
   AssistantMessage,
   Message,
   Model,
   ToolCall,
   ToolResultMessage,
   Usage,
-} from "@earendil-works/pi-ai";
+} from "@liveagent/app/lib/agentTypes";
 
 import type { ExecutionMode } from "../../settings";
 import { isSubagentCardToolCall } from "../../subagents/card";
@@ -62,7 +63,7 @@ export function cloneLiveRoundSnapshots(rounds: LiveRoundSnapshot[]): LiveRoundS
 }
 
 function buildAssistantMessage(params: {
-  model: Model<any>;
+  model: Model<Api>;
   blocks?: UiRoundContentBlock[];
   suppressedToolCalls?: ToolCall[];
   stopReason: AssistantMessage["stopReason"];
@@ -128,7 +129,7 @@ export function isAbortedAssistantMessage(
 
 export function buildAbortedMessagesFromSnapshot(params: {
   executionMode: ExecutionMode;
-  model: Model<any>;
+  model: Model<Api>;
   draftAssistantText: string;
   liveRounds: LiveRoundSnapshot[];
   completedThroughRound?: number;
@@ -249,7 +250,7 @@ export function sanitizeAbortedHistoryMessages(messages: Message[]): Message[] {
 
 export function buildPersistableMessagesFromSnapshot(params: {
   executionMode: ExecutionMode;
-  model: Model<any>;
+  model: Model<Api>;
   draftAssistantText: string;
   liveRounds: LiveRoundSnapshot[];
   completedThroughRound?: number;

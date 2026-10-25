@@ -1,3 +1,8 @@
+import {
+  providerSupportsNativeWebSearch,
+  resolveProviderApi,
+} from "../providers/providerCapabilities";
+import { findCatalogModelAcrossProviders } from "./modelCatalog";
 import { toModelValue } from "./modelValue";
 
 export type SharedModelOption<TProviderType extends string = string> = {
@@ -7,6 +12,10 @@ export type SharedModelOption<TProviderType extends string = string> = {
   providerName: string;
   providerType: TProviderType;
   model: string;
+  nativeWebSearchSupported?: boolean;
+  reasoning?: boolean;
+  vision?: boolean;
+  contextWindow?: number;
 };
 
 export type ModelOptionGroup<TProviderType extends string = string> = {
@@ -21,7 +30,15 @@ export type ModelOptionsSettings<TProviderType extends string = string> = {
     id: string;
     name: string;
     type: TProviderType;
+    requestFormat?: string;
     activeModels: readonly string[];
+    models?: readonly {
+      id: string;
+      displayName?: string;
+      contextWindow: number;
+      limitsSource?: string;
+      inputModalities?: readonly string[];
+    }[];
   }[];
   selectedModel?: {
     customProviderId: string;
@@ -98,13 +115,25 @@ export function buildModelOptions<TProviderType extends string>(
   const modelOptions: SharedModelOption<TProviderType>[] = [];
   for (const provider of settings.customProviders) {
     for (const model of provider.activeModels) {
+      const configured = provider.models?.find((item) => item.id === model);
+      const catalog = findCatalogModelAcrossProviders(model);
       modelOptions.push({
         providerType: provider.type,
         providerId: provider.id,
         providerName: provider.name,
         model,
         value: toModelValue(provider.id, model),
-        label: model,
+        label: configured?.displayName?.trim() || model,
+        nativeWebSearchSupported: providerSupportsNativeWebSearch(
+          provider.type,
+          resolveProviderApi(provider.type, provider.requestFormat),
+        ),
+        reasoning: Boolean(catalog?.thinking),
+        vision: (configured?.inputModalities ?? catalog?.inputModalities)?.includes("image"),
+        contextWindow:
+          configured?.limitsSource === "fallback"
+            ? catalog?.contextWindow
+            : (configured?.contextWindow ?? catalog?.contextWindow),
       });
     }
   }

@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { cn } from "../../lib/shared/utils";
 import { Button } from "./button";
+import { resolveZoneFontScale, ZoneFontScaleContext } from "./zone-font-scale";
 
 export function Dialog(props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -30,8 +31,10 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Backdrop
     ref={ref}
     data-slot="dialog-overlay"
+    forceRender
     className={cn(
-      "layer-modal fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+      "layer-modal fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-150",
+      "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
       className,
     )}
     {...props}
@@ -39,7 +42,11 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = "DialogOverlay";
 
-type DialogLayout = "center" | "fullscreen-mobile" | "bottom-sheet-mobile";
+type DialogLayout = "center" | "fullscreen-mobile" | "bottom-sheet-mobile" | "lightbox";
+
+// Dialog chrome reads one step smaller than the app default so it stays close
+// to the sidebar's 13px/11px rhythm instead of the unscaled 16/14/12.
+const DIALOG_FONT_SCALE = 0.9;
 
 type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Popup> & {
   closeDisabled?: boolean;
@@ -57,46 +64,81 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
       closeLabel = "Close",
       layout = "center",
       showCloseButton = false,
+      style,
       ...props
     },
     ref,
-  ) => (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Viewport
-        data-slot="dialog-viewport"
-        data-layout={layout}
-        className={cn(
-          "layer-modal fixed inset-0 flex min-h-0 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]",
-          layout === "fullscreen-mobile" &&
-            "max-[720px]:items-stretch max-[720px]:overflow-hidden max-[720px]:p-0",
-          layout === "bottom-sheet-mobile" &&
-            "items-stretch justify-end overflow-hidden p-0 sm:items-center sm:justify-start sm:overflow-y-auto sm:px-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-[max(1rem,env(safe-area-inset-top))]",
-        )}
-      >
-        <DialogPrimitive.Popup
-          ref={ref}
-          data-slot="dialog-content"
+  ) => {
+    // Popups opened from inside the dialog (Select, Dropdown, Popover) render
+    // through their own portals and would fall back to scale 1.0; the context
+    // carries the dialog's scale — including a call-site `style` override —
+    // across that boundary.
+    const inheritedFontScale = React.useContext(ZoneFontScaleContext);
+    const zoneFontScale = resolveZoneFontScale(style, inheritedFontScale ?? DIALOG_FONT_SCALE);
+    return (
+      <DialogPortal>
+        <DialogOverlay
+          className={layout === "lightbox" ? "bg-black/80 backdrop-blur-none" : undefined}
+        />
+        <DialogPrimitive.Viewport
+          data-slot="dialog-viewport"
           data-layout={layout}
-          data-has-close-button={showCloseButton ? "true" : undefined}
           className={cn(
-            "group/dialog relative my-auto w-full max-w-lg rounded-2xl border border-border/70 bg-background p-6 text-foreground shadow-2xl outline-none transition-[transform,opacity] duration-150 ease-out data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+            "layer-modal fixed inset-0 flex min-h-0 flex-col items-center overflow-y-auto",
+            "overscroll-contain px-4 pb-safe-bottom pt-safe-top",
+            layout === "lightbox" && "overflow-hidden p-0",
             layout === "fullscreen-mobile" &&
-              "max-[720px]:my-0 max-[720px]:h-full max-[720px]:max-w-none max-[720px]:rounded-none max-[720px]:border-0",
+              "max-[720px]:items-stretch max-[720px]:overflow-hidden max-[720px]:p-0",
             layout === "bottom-sheet-mobile" &&
-              "my-0 max-w-none rounded-b-none sm:my-auto sm:max-w-2xl sm:rounded-b-2xl",
-            className,
+              cn(
+                "items-stretch justify-end overflow-hidden p-0",
+                "sm:items-center sm:justify-start sm:overflow-y-auto sm:px-4 sm:pb-safe-bottom sm:pt-safe-top",
+              ),
           )}
-          {...props}
         >
-          {children}
-          {showCloseButton ? (
-            <DialogCloseButton disabled={closeDisabled} label={closeLabel} />
-          ) : null}
-        </DialogPrimitive.Popup>
-      </DialogPrimitive.Viewport>
-    </DialogPortal>
-  ),
+          <DialogPrimitive.Popup
+            ref={ref}
+            data-slot="dialog-content"
+            data-layout={layout}
+            data-has-close-button={showCloseButton ? "true" : undefined}
+            style={{
+              ...({ "--zone-font-scale": zoneFontScale } as React.CSSProperties),
+              ...style,
+            }}
+            className={cn(
+              // Dialogs render through a portal, so they sit outside every
+              // `--zone-font-scale` zone (sidebar / chat / right dock) and would
+              // otherwise ignore font scaling entirely. Declare our own zone so
+              // the rem-based text-* utilities inside follow it. Call sites can
+              // override the scale through `style`.
+              "zone-font-scale",
+              // No default padding: the header/body/footer slots own their own
+              // spacing, and every call site was cancelling a `p-6` here.
+              "group/dialog relative my-auto w-full max-w-md",
+              "rounded-2xl border border-border/70 bg-background text-foreground shadow-2xl outline-none",
+              "transition-[transform,opacity] duration-150 ease-out",
+              "data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              layout === "lightbox" &&
+                "pointer-events-none fixed inset-0 m-0 h-full w-full max-w-none rounded-none border-0 bg-transparent shadow-none data-[starting-style]:scale-100 data-[ending-style]:scale-100",
+              layout === "fullscreen-mobile" &&
+                "max-[720px]:my-0 max-[720px]:h-full max-[720px]:max-w-none max-[720px]:rounded-none max-[720px]:border-0",
+              layout === "bottom-sheet-mobile" &&
+                "my-0 max-w-none rounded-b-none sm:my-auto sm:max-w-2xl sm:rounded-b-2xl",
+              className,
+            )}
+            {...props}
+          >
+            <ZoneFontScaleContext.Provider value={zoneFontScale}>
+              {children}
+              {showCloseButton ? (
+                <DialogCloseButton disabled={closeDisabled} label={closeLabel} />
+              ) : null}
+            </ZoneFontScaleContext.Provider>
+          </DialogPrimitive.Popup>
+        </DialogPrimitive.Viewport>
+      </DialogPortal>
+    );
+  },
 );
 DialogContent.displayName = "DialogContent";
 
@@ -114,12 +156,12 @@ export function DialogCloseButton({ className, disabled, label }: DialogCloseBut
       title={label}
       disabled={disabled}
       className={cn(
-        "absolute right-4 top-4 z-10 group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:top-[max(1rem,env(safe-area-inset-top))]",
+        "absolute right-4 top-4 z-10 group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:top-safe-top",
         className,
       )}
-      render={<Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" />}
+      render={<Button variant="ghost" size="icon-sm" className="rounded-lg" />}
     >
-      <X className="h-4 w-4" />
+      <X className="size-4" />
     </DialogPrimitive.Close>
   );
 }
@@ -130,7 +172,10 @@ export const DialogHeader = React.forwardRef<HTMLDivElement, React.HTMLAttribute
       ref={ref}
       data-slot="dialog-header"
       className={cn(
-        "relative flex shrink-0 flex-col gap-1.5 border-b border-border/60 px-5 py-4 max-[820px]:px-3.5 max-[820px]:py-3 group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:pt-[max(0.75rem,env(safe-area-inset-top))]",
+        // Headers hold a title plus at most one description line, so they take
+        // one step less vertical padding than the body/footer.
+        "relative flex shrink-0 flex-col min-h-13 gap-1.5",
+        "px-4 py-3 max-[820px]:px-3.5 max-[820px]:py-2 group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:pt-safe-top-compact",
         className,
         "group-data-[has-close-button=true]/dialog:pr-14 group-data-[has-close-button=true]/dialog:max-[820px]:pr-12",
       )}
@@ -147,10 +192,7 @@ export const DialogSubheader = React.forwardRef<
   <div
     ref={ref}
     data-slot="dialog-subheader"
-    className={cn(
-      "shrink-0 border-b border-border/40 px-5 py-4 max-[820px]:px-3.5 max-[820px]:py-3",
-      className,
-    )}
+    className={cn("shrink-0 px-4 py-3 max-[820px]:px-3.5 max-[820px]:py-3", className)}
     {...props}
   />
 ));
@@ -162,7 +204,7 @@ export const DialogBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<
       ref={ref}
       data-slot="dialog-body"
       className={cn(
-        "min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 max-[820px]:px-3.5 max-[820px]:py-3.5",
+        "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 max-[820px]:p-3.5",
         className,
       )}
       {...props}
@@ -193,7 +235,11 @@ export const DialogFooter = React.forwardRef<HTMLDivElement, React.HTMLAttribute
       ref={ref}
       data-slot="dialog-footer"
       className={cn(
-        "flex shrink-0 flex-row items-center justify-end gap-2 border-t border-border/60 px-5 py-4 max-[820px]:flex-col-reverse max-[820px]:items-stretch max-[820px]:px-3.5 max-[820px]:py-3 group-data-[layout=bottom-sheet-mobile]/dialog:max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+        // Footer matches the header's vertical padding: both are chrome around
+        // the body, so they read tighter than the content they frame.
+        "flex shrink-0 flex-row items-center justify-end min-h-13 gap-2",
+        "px-4 py-3",
+        "max-[820px]:flex-col-reverse max-[820px]:items-stretch max-[820px]:px-3.5 max-[820px]:py-3 group-data-[layout=bottom-sheet-mobile]/dialog:max-sm:pb-safe-bottom-compact group-data-[layout=fullscreen-mobile]/dialog:max-[720px]:pb-safe-bottom-compact",
         className,
       )}
       {...props}
@@ -208,7 +254,8 @@ export const DialogActions = React.forwardRef<HTMLDivElement, React.HTMLAttribut
       ref={ref}
       data-slot="dialog-actions"
       className={cn(
-        "flex min-w-0 items-center justify-end gap-2 max-[820px]:w-full max-sm:grid max-sm:grid-cols-2 max-sm:has-[>:only-child]:grid-cols-1 max-sm:[&>button]:w-full",
+        "flex min-w-0 items-center justify-end gap-2",
+        "max-[820px]:w-full max-sm:grid max-sm:grid-cols-2 max-sm:has-[>:only-child]:grid-cols-1 max-sm:[&>button]:w-full",
         className,
       )}
       {...props}

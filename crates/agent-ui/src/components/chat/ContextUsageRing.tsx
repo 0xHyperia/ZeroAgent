@@ -1,7 +1,9 @@
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { formatTokenCount } from "@liveagent/ui/lib/chat/formatTokenCount";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { useMemo, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
+  CONTEXT_USAGE_WARN_RATIO,
   canManualCompact,
   contextUsageLevel,
   contextUsageRatio,
@@ -16,16 +18,25 @@ const RING_STROKE_BY_LEVEL = {
   danger: "stroke-red-500 dark:stroke-red-400",
 } as const;
 
-// Intl.NumberFormat 构造含 locale 数据解析，环随流式读数逐帧重渲染，
-// 必须按 locale 复用实例。
-const tokenFormatterByLocale = new Map<string, Intl.NumberFormat>();
+const COARSE_POINTER_QUERY = "(hover: none), (pointer: coarse)";
 
-function getTokenFormatter(locale: string): Intl.NumberFormat {
-  const cached = tokenFormatterByLocale.get(locale);
-  if (cached) return cached;
-  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-  tokenFormatterByLocale.set(locale, formatter);
-  return formatter;
+// 触屏形态可热切换（iPad 插拔键鼠、可翻转本翻转），订阅 matchMedia change
+// 而非挂载时一次性求值，交互模式（两段点按 vs 悬停）随设备形态实时切换。
+function subscribeCoarsePointer(onChange: () => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return () => {};
+  }
+  const query = window.matchMedia(COARSE_POINTER_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function isCoarsePointerNow(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(COARSE_POINTER_QUERY).matches
+  );
 }
 
 /**
@@ -43,32 +54,54 @@ export function ContextUsageRing(props: {
   disabled?: boolean;
   onConfirm?: (() => void) | (() => Promise<unknown>);
   className?: string;
+  /**
+   * 占用低于警戒线（50%，即手动压缩尚不可用）时整枚环不渲染。展示样式改为
+   * 三档后 composer 仍不传此项——"ring" / "both" 模式环都必须 0% 起常显
+   * （docs/design/composer-context-stats-bar.md §4.7）。保留为共享环的通用显示
+   * 选项，供未来低占用需让位的挂载点使用。
+   */
+  hideBelowWarn?: boolean;
 }) {
-  const { totalTokens, contextWindow, disabled, onConfirm, className } = props;
+  const { totalTokens, contextWindow, disabled, onConfirm, className, hideBelowWarn } = props;
   const { t, locale } = useLocale();
-  const isCoarsePointer = useMemo(
-    () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(hover: none), (pointer: coarse)").matches,
-    [],
+  const isCoarsePointer = useSyncExternalStore(
+    subscribeCoarsePointer,
+    isCoarsePointerNow,
+    () => false,
   );
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const ratio = contextUsageRatio(totalTokens, contextWindow);
+  const compactAvailable = canManualCompact(ratio) && !disabled && Boolean(onConfirm);
+  // 确认弹层只在可压缩分支渲染，而可压缩状态可能在弹层打开期间翻回 false
+  //（他端开始压缩/发消息使 disabled 置位、他端压缩完成后占用掉回阈值下）。
+  // 此时弹层随分支切换直接卸载，confirmOpen 若残留 true：恢复可压缩后弹层
+  // 会无操作自动弹开，残留期间还会经 tooltip 互斥守卫一直吞掉 tooltip 的
+  // 打开请求。渲染期归位（adjust-state-during-render）在绘制前完成，不闪现。
+  if (!compactAvailable && confirmOpen) {
+    setConfirmOpen(false);
+  }
+  // 低占用隐藏：环整枚不渲染，但组件仍挂载着 tooltipOpen。残留 true 会让占用
+  // 回到警戒线以上时 tooltip 无悬停自动弹开——与上面 confirmOpen 同一类问题，
+  // 同样在渲染期归位。
+  const hiddenByLowUsage = hideBelowWarn === true && ratio < CONTEXT_USAGE_WARN_RATIO;
+  if (hiddenByLowUsage && tooltipOpen) {
+    setTooltipOpen(false);
+  }
   if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow) || contextWindow <= 0) {
     return null;
   }
+  if (hiddenByLowUsage) return null;
 
-  const ratio = contextUsageRatio(totalTokens, contextWindow);
   // 只保留两个口径：展示值（取整、封顶 999）与画环/量度值（0-100 钳制，
   // 二者共用避免 a11y 量度与弧线漂移）。contextUsageRatio 不会返回负数。
   const displayedPercentage = Math.min(999, Math.round(ratio * 100));
   const clampedPercentage = Math.min(100, ratio * 100);
-  const formatTokens = getTokenFormatter(locale);
-  const usageLine = `${displayedPercentage}% · ${t("chat.usageTotal")} ${formatTokens.format(
-    Math.max(0, Math.floor(totalTokens ?? 0)),
+  const usageLine = `${displayedPercentage}% · ${t("chat.usageTotal")} ${formatTokenCount(
+    totalTokens ?? 0,
+    locale,
   )}`;
-  const windowLine = `${t("chat.contextWindow")} ${formatTokens.format(contextWindow)}`;
+  const windowLine = `${t("chat.contextWindow")} ${formatTokenCount(contextWindow, locale)}`;
   // a11y 量度/无障碍标签仍是单行字符串；tooltip 视觉上分两行（百分比+总计 /
   // 上下文窗口），窄屏不再挤成一长条折行。
   const usageLabel = `${usageLine} · ${windowLine}`;
@@ -78,7 +111,6 @@ export function ContextUsageRing(props: {
       <span className="text-muted-foreground">{windowLine}</span>
     </span>
   );
-  const compactAvailable = canManualCompact(ratio) && !disabled && Boolean(onConfirm);
 
   const handleTooltipOpenChange = (nextOpen: boolean) => {
     // 确认弹层展示期间抑制 tooltip 的打开请求（悬停/点按），保证不重叠。
@@ -104,9 +136,12 @@ export function ContextUsageRing(props: {
     <Meter
       value={clampedPercentage}
       aria-valuetext={usageLabel}
-      className="relative flex h-8 w-8 items-center justify-center text-[8px] font-semibold leading-none tabular-nums text-foreground/75"
+      className={cn(
+        "relative flex size-8 items-center justify-center",
+        "text-tiny font-semibold leading-none tabular-nums text-foreground/75",
+      )}
     >
-      <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute inset-0 h-8 w-8 -rotate-90">
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute inset-0 size-8 -rotate-90">
         <circle
           cx="12"
           cy="12"
@@ -151,12 +186,12 @@ export function ContextUsageRing(props: {
             type="button"
             aria-label={usageLabel}
             onClick={() => handleTooltipOpenChange(!tooltipOpen)}
-            className={cn("inline-flex h-8 w-8 shrink-0 opacity-90 outline-hidden", className)}
+            className={cn("inline-flex size-8 shrink-0 opacity-90 outline-hidden", className)}
           >
             {ring}
           </button>
         ) : (
-          <span className={cn("inline-flex h-8 w-8 shrink-0 cursor-default opacity-90", className)}>
+          <span className={cn("inline-flex size-8 shrink-0 cursor-default opacity-90", className)}>
             {ring}
           </span>
         )}
@@ -187,7 +222,10 @@ export function ContextUsageRing(props: {
             onClick={open}
             aria-label={t("chat.manualCompactTitle")}
             className={cn(
-              "inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full outline-hidden transition-[background-color,opacity] hover:bg-muted/60 focus-visible:bg-muted/60",
+              // 悬停底色画在 inset-0.5 的伪元素上（28px），与环外径及 composer 右列
+              // 其余按钮的可见圆等大；不能改用 padding 收缩——内部 32px 的环会被挤偏。
+              "relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center",
+              "rounded-full outline-hidden before:absolute before:inset-0.5 before:rounded-full before:transition-colors hover:before:bg-muted/60 focus-visible:before:bg-muted/60",
               className,
             )}
           >

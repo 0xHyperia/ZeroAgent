@@ -171,7 +171,7 @@ function formatTimestamp(value?: number | null) {
   return new Date(timestampMs).toLocaleString();
 }
 
-export function RemoteSection(props: SettingsSectionProps) {
+export function RemoteSection(props: SettingsSectionProps & { surface?: "desktop" | "web" }) {
   const { settings, setSettings } = props;
   const { t } = useLocale();
   const remoteHeartbeatDraft = usePositiveIntegerDraft(

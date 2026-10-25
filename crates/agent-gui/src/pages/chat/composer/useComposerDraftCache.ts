@@ -1,11 +1,12 @@
+import type { ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
-import { type MutableRefObject, useEffect, useRef } from "react";
+import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
 import type { ConversationDraftStore } from "../conversations/conversationDraftStore";
 
 type UseComposerDraftCacheParams = {
   composerRef: MutableRefObject<MentionComposerHandle | null>;
   currentConversationIdRef: MutableRefObject<string>;
-  activeView: "chat" | "skills-hub" | "mcp-hub";
+  activeView: ApplicationViewId;
   currentConversationId: string;
   draftStore: ConversationDraftStore;
 };
@@ -47,21 +48,24 @@ export function useComposerDraftCache(params: UseComposerDraftCacheParams) {
     composerDraftOwnerRef.current = "";
   }
 
-  function restoreCachedComposerDraft(conversationId: string) {
-    const targetConversationId = conversationId.trim();
-    const composer = composerRef.current;
-    if (!targetConversationId || !composer) {
-      return;
-    }
+  const restoreCachedComposerDraft = useCallback(
+    (conversationId: string) => {
+      const targetConversationId = conversationId.trim();
+      const composer = composerRef.current;
+      if (!targetConversationId || !composer) {
+        return;
+      }
 
-    const cachedDraft = composerDraftCacheRef.current.get(targetConversationId);
-    if (cachedDraft) {
-      composer.setDraft(cachedDraft);
-    } else {
-      composer.clear();
-    }
-    composerDraftOwnerRef.current = targetConversationId;
-  }
+      const cachedDraft = composerDraftCacheRef.current.get(targetConversationId);
+      if (cachedDraft) {
+        composer.setDraft(cachedDraft);
+      } else {
+        composer.clear();
+      }
+      composerDraftOwnerRef.current = targetConversationId;
+    },
+    [composerRef],
+  );
 
   function clearCachedComposerDraft(conversationId = currentConversationIdRef.current) {
     const targetConversationId = conversationId.trim();
@@ -103,7 +107,7 @@ export function useComposerDraftCache(params: UseComposerDraftCacheParams) {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [activeView, currentConversationId]);
+  }, [activeView, currentConversationId, composerRef, restoreCachedComposerDraft]);
 
   return {
     composerDraftCacheRef,

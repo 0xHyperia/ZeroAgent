@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Generates the model metadata catalog (context window / max output /
-// thinking capability) consumed by both frontends through the shared UI package. OpenAI model metadata is
+// thinking capability / input modalities) consumed by both frontends through the shared UI package. OpenAI model metadata is
 // merged Codex-first from openai/codex models.json, then supplemented by the
 // models.dev open database; every other section comes from models.dev. The
 // output is written once to:
@@ -37,6 +37,15 @@ const MIN_CODEX_MODELS = 5;
 // remain as supplements, while newly listed Codex models receive conservative
 // defaults for fields models.json does not publish yet.
 //
+// Codex context_window semantics: models.json publishes the *input-side*
+// session budget (GPT-5 family: 272k documented max input), while every other
+// catalog source records the total window including output (GPT-5: 400k =
+// 272k input + 128k output). The merge converts Codex entries to total-window
+// semantics (context_window + resolved maxOutputToken) so the whole catalog —
+// and every consumer (usage ring, buffered-reserve compaction thresholds) —
+// shares one meaning of contextWindow. Cross-check: gpt-5.2 converts to
+// exactly the 400k total that models.dev/OpenAI document for it.
+//
 // The first four sections are the native catalogs behind the app's provider
 // types (claude_code→anthropic, gemini→google, codex→openai, xai); scoped
 // lookup (findCatalogModel) only ever reads these. The remaining sections are
@@ -50,6 +59,9 @@ const MIN_CODEX_MODELS = 5;
 // "tencent" (coding plan) host third-party models (glm/kimi/MiniMax/deepseek
 // deployments with platform-clamped limits), so they come last and their
 // copies of another vendor's models are dropped in favor of the official ones.
+// The runtime thinking supplement mirrors this order as
+// OFFICIAL_SECTION_ORDER in crates/agent-ui/src/lib/models/thinkingLive.ts —
+// keep both lists in sync when adding or removing sources here.
 const SECTIONS = [
   { key: "anthropic", sources: ["anthropic"], min: 8 },
   { key: "google", sources: ["google"], min: 15 },
@@ -59,7 +71,10 @@ const SECTIONS = [
   // zai (Z.AI, international brand) is a superset of zhipuai with identical
   // ids and limits for the overlap; keep the domestic brand as the key.
   { key: "zhipuai", sources: ["zai", "zhipuai"], min: 10 },
-  { key: "moonshotai", sources: ["moonshotai-cn", "moonshotai"], min: 8 },
+  // Kimi 下架了 k2-0711/0905-preview、k2-thinking(-turbo)、k2-turbo-preview、
+  // k2.5 等老模型后，上游 moonshot 分区只剩 4 个现役模型（kimi-k3、kimi-k2.6、
+  // kimi-k2.7-code(-highspeed)）；min 给 1 个余量容忍后续继续下架。
+  { key: "moonshotai", sources: ["moonshotai-cn", "moonshotai"], min: 3 },
   { key: "minimax", sources: ["minimax-cn", "minimax"], min: 5 },
   { key: "stepfun", sources: ["stepfun"], min: 4 },
   { key: "xiaomi", sources: ["xiaomi"], min: 4 },
@@ -71,11 +86,16 @@ const SECTIONS = [
 // Models that must exist (with the expected thinking shape); their absence
 // signals an upstream schema change (or, for unioned sections, a source-key
 // rename). `level` must be present in the extracted thinking levels; `off`
-// must match when specified.
+// must match when specified. `inputModality` must be present in the extracted
+// input modalities — it guards against upstream renaming modalities.input,
+// which would otherwise silently strip modality data from every entry.
 const SENTINELS = [
-  { section: "anthropic", id: "claude-sonnet-4-6", level: "high", off: true },
+  { section: "anthropic", id: "claude-sonnet-4-6", level: "high", off: true, inputModality: "image" },
   { section: "openai", id: "gpt-5", level: "minimal" },
-  { section: "openai", id: "gpt-5.6-sol", level: "max", contextWindow: 272_000 },
+  // 272k Codex input budget + 128k models.dev output = 400k total window.
+  // Fails when either upstream changes semantics or Codex lifts the default
+  // session budget — both require re-evaluating the merge conversion above.
+  { section: "openai", id: "gpt-5.6-sol", level: "max", contextWindow: 400_000 },
   { section: "deepseek", id: "deepseek-v4-flash", level: "low", off: true },
   { section: "deepseek", id: "deepseek-v4-pro", level: "high", off: true },
   { section: "zhipuai", id: "glm-4.6", off: true },
@@ -92,6 +112,30 @@ const DEEPSEEK_RESPONSES_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro
 function normalizeMaxOutputToken(contextWindow, maxOutputToken) {
   if (maxOutputToken < contextWindow) return maxOutputToken;
   return Math.min(MAX_OUTPUT_TOKEN_CAP, Math.max(1, Math.floor(contextWindow / 4)));
+}
+
+// ---------------------------------------------------------------------------
+// Input modality extraction
+// ---------------------------------------------------------------------------
+// Canonical order for the catalog's inputModalities field. models.dev
+// publishes modalities.input and Codex models.json publishes input_modalities
+// with the same vocabulary; unknown future values are dropped with a note
+// rather than failing the refresh — modality data must never block a limits
+// update.
+const INPUT_MODALITIES = ["text", "image", "audio", "video", "pdf"];
+
+function normalizeInputModalities(values, label) {
+  if (!Array.isArray(values)) return undefined;
+  const seen = new Set();
+  for (const value of values) {
+    if (INPUT_MODALITIES.includes(value)) {
+      seen.add(value);
+    } else {
+      console.error(`note ${label}: unknown input modality "${value}" dropped`);
+    }
+  }
+  if (seen.size === 0) return undefined;
+  return INPUT_MODALITIES.filter((modality) => seen.has(modality));
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +172,7 @@ const CLIENT_SIDE_OFF_SECTIONS = new Set(["anthropic"]);
 // Facts where the upstream aggregator is missing or lags the provider's
 // protocol documentation, keyed "section/id". Kept tiny and documented.
 // claude-fable-5: adaptive thinking cannot be disabled (the API requires the
-// thinking block; pi-ai's catalog marks off:null) — the client-side-off rule
+// thinking block; the catalog marks off:null) — the client-side-off rule
 // above must not apply.
 // DeepSeek's Responses thinking guide documents the same none/low/high/max
 // ladder for both V4 models; models.dev currently omits low from V4 Pro.
@@ -280,15 +324,25 @@ function mergeCodexOpenAIEntries(entries, codexModels, claimedLower) {
       supplemental?.thinking,
       `openai/codex/${codexModel.id}`,
     );
+    // Codex-first like the rest of the merge; models.dev fills the gap when
+    // models.json stops publishing input_modalities.
+    const inputModalities =
+      normalizeInputModalities(codexModel.raw?.input_modalities, `openai/codex/${codexModel.id}`) ??
+      supplemental?.inputModalities;
 
     if (supplemental) {
+      // Codex context_window is the input-side budget; add the resolved output
+      // cap to express the same total-window semantics as the rest of the
+      // catalog (see the section comment above SECTIONS).
+      const maxOutputToken = normalizeMaxOutputToken(
+        codexModel.contextWindow,
+        supplemental.maxOutputToken,
+      );
       mergedByLower.set(lower, {
         id: codexModel.id,
-        contextWindow: codexModel.contextWindow,
-        maxOutputToken: normalizeMaxOutputToken(
-          codexModel.contextWindow,
-          supplemental.maxOutputToken,
-        ),
+        contextWindow: codexModel.contextWindow + maxOutputToken,
+        maxOutputToken,
+        ...(inputModalities ? { inputModalities } : {}),
         ...(thinking ? { thinking } : {}),
       });
       continue;
@@ -307,10 +361,12 @@ function mergeCodexOpenAIEntries(entries, codexModels, claimedLower) {
       continue;
     }
     claimedLower.set(lower, "openai");
+    const maxOutputToken = normalizeMaxOutputToken(codexModel.contextWindow, MAX_OUTPUT_TOKEN_CAP);
     mergedByLower.set(lower, {
       id: codexModel.id,
-      contextWindow: codexModel.contextWindow,
-      maxOutputToken: normalizeMaxOutputToken(codexModel.contextWindow, MAX_OUTPUT_TOKEN_CAP),
+      contextWindow: codexModel.contextWindow + maxOutputToken,
+      maxOutputToken,
+      ...(inputModalities ? { inputModalities } : {}),
       ...(thinking ? { thinking } : {}),
     });
   }
@@ -369,10 +425,12 @@ function extractSection(section, upstream, claimedLower, codexModels) {
       }
       claimedLower.set(lower, section.key);
       const thinking = normalizeThinking(model, id, `${source}/${id}`, section.key);
+      const inputModalities = normalizeInputModalities(model?.modalities?.input, `${source}/${id}`);
       entries.push({
         id,
         contextWindow,
         maxOutputToken: normalizeMaxOutputToken(contextWindow, rawOutput),
+        ...(inputModalities ? { inputModalities } : {}),
         ...(thinking ? { thinking } : {}),
       });
     }
@@ -391,6 +449,12 @@ function renderEntry(entry) {
     `contextWindow: ${entry.contextWindow}`,
     `maxOutputToken: ${entry.maxOutputToken}`,
   ];
+  if (entry.inputModalities) {
+    const modalities = entry.inputModalities
+      .map((modality) => JSON.stringify(modality))
+      .join(", ");
+    parts.push(`inputModalities: [${modalities}]`);
+  }
   if (entry.thinking) {
     const levels = entry.thinking.levels.map((level) => JSON.stringify(level)).join(", ");
     parts.push(`thinking: { levels: [${levels}], off: ${entry.thinking.off} }`);
@@ -408,6 +472,8 @@ function renderCatalog(catalog, snapshotDate) {
     "",
     'export type CatalogThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";',
     "",
+    `export type CatalogInputModality = ${INPUT_MODALITIES.map((modality) => JSON.stringify(modality)).join(" | ")};`,
+    "",
     "export type CatalogModelThinking = {",
     "  /** Selectable levels, ascending; [] = thinking is always on and not tunable. */",
     "  levels: readonly CatalogThinkingLevel[];",
@@ -419,6 +485,8 @@ function renderCatalog(catalog, snapshotDate) {
     "  id: string;",
     "  contextWindow: number;",
     "  maxOutputToken: number;",
+    "  /** Accepted input modalities, canonical order; absent = upstream published none. */",
+    "  inputModalities?: readonly CatalogInputModality[];",
     "  /** Absent = the model does not reason. */",
     "  thinking?: CatalogModelThinking;",
     "};",
@@ -486,6 +554,12 @@ for (const sentinel of SENTINELS) {
     fail(
       `sentinel ${sentinel.section}/${sentinel.id}: expected thinking.off=${sentinel.off}; ` +
         "upstream reasoning_options schema may have changed",
+    );
+  }
+  if (sentinel.inputModality && !entry.inputModalities?.includes(sentinel.inputModality)) {
+    fail(
+      `sentinel ${sentinel.section}/${sentinel.id}: expected input modality ` +
+        `"${sentinel.inputModality}"; upstream modalities schema may have changed`,
     );
   }
   if (

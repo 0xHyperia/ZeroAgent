@@ -1,5 +1,3 @@
-import { type FormEvent, useEffect, useState } from "react";
-import { CodeFlowBackground } from "../components/CodeFlowBackground";
 import {
   ArrowRight,
   ExternalLink,
@@ -12,10 +10,12 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
+import { type FormEvent, useEffect, useState } from "react";
+import { CodeFlowBackground } from "../components/CodeFlowBackground";
 import {
   getRelayPublicSettings,
-  resumeRelayOAuth,
   type RelayPublicSettings,
+  resumeRelayOAuth,
   sendRelayVerifyCode,
   startRelayOAuth,
 } from "../lib/relay/client";

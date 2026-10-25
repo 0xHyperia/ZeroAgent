@@ -1,7 +1,7 @@
-import type { Tool, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Tool, ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
+import { invoke } from "@liveagent/app/shims/tauriCore";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
-import { invoke } from "@tauri-apps/api/core";
-import { Type } from "typebox";
+import { type TProperties, Type } from "typebox";
 import {
   inferRuntimePlatform,
   normalizeRuntimePlatform,
@@ -131,8 +131,8 @@ function createShellSessionId() {
   return `bash-${createUuid()}`;
 }
 
-function strictToolParameters(properties: Record<string, unknown>) {
-  return Type.Object(properties as any, { additionalProperties: false });
+function strictToolParameters<T extends TProperties>(properties: T) {
+  return Type.Object(properties, { additionalProperties: false });
 }
 
 function assertKnownArguments(toolName: string, args: unknown, allowed: readonly string[]) {
@@ -734,9 +734,31 @@ export function createShellTools(params: {
     stdout: string;
     stderr: string;
     shellFamily?: string;
+    /** 本次运行是否被 shell 超时杀掉（`ShellRunResponse.timed_out`）。 */
+    timedOut?: boolean;
+    /** 实际生效的超时上限（res.effective_timeout_ms，回退到请求值）。 */
+    effectiveTimeoutMs?: number;
+    /** 当前 provider 的硬上限；等于 effectiveTimeoutMs 时说明是策略上限而非请求值。 */
+    timeoutCapMs?: number;
+    providerLabel?: string;
   }) {
     const combined = [params.command, params.stdout, params.stderr].join("\n");
     const hints: string[] = [];
+
+    if (params.timedOut) {
+      // 报告里的真实困惑："同一个构建为什么连续跑了三次、日志里看不到失败原因"。
+      // 超时杀进程时，命令自己的日志文件里当然什么都没有——它被外部 SIGKILL 了。
+      // 所以这里把"被杀的原因"写成模型和人都能直接读到的一行，并说明重跑同一
+      // 条命令不会有别的结果（这一层从来没有自动重试，重复执行都是模型自己发的）。
+      const limitMs = params.effectiveTimeoutMs ?? 0;
+      const capMs = params.timeoutCapMs ?? limitMs;
+      hints.push(
+        `Hint: This run was killed by the shell timeout (${limitMs}ms) — it did not crash, and the command itself reported no error. ` +
+          `The partial output above is everything it produced before the kill. ` +
+          `${params.providerLabel ?? "This provider"} caps Bash at ${capMs}ms, so re-running the identical command unchanged reaches the same limit: ` +
+          `redirect the output to a file and poll that file, split the work into steps that finish within ${capMs}ms, or pass an explicit timeout_ms (clamped to ${capMs}ms).`,
+      );
+    }
 
     if (
       runtimePlatform === "windows" &&
@@ -1146,7 +1168,7 @@ export function createShellTools(params: {
           signal,
           {
             onLateResult: (lateResponse) =>
-              invoke("managed_process_stop", { process_id: lateResponse.process.id } as any).then(
+              invoke("managed_process_stop", { process_id: lateResponse.process.id }).then(
                 () => undefined,
               ),
           },
@@ -1540,7 +1562,7 @@ export function createShellTools(params: {
         run_id,
         sandbox: sandboxEnabled,
         sandbox_allow_network: sandboxAllowNetwork,
-      } as any);
+      });
 
       const header = [
         `# Shell`,
@@ -1582,6 +1604,10 @@ export function createShellTools(params: {
               stdout: res.stdout || "",
               stderr: res.stderr || "",
               shellFamily: res.shell_family,
+              timedOut: Boolean(res.timed_out),
+              effectiveTimeoutMs: res.effective_timeout_ms || timeout_ms,
+              timeoutCapMs: timeoutPolicy.maxTimeoutMs,
+              providerLabel: timeoutPolicy.providerLabel,
             })
           : "";
 

@@ -66,6 +66,59 @@ func TestApplyDesiredStateAddUpdateRemove(t *testing.T) {
 	}
 }
 
+func TestRepeatedTunnelDesiredStateDoesNotFloodOutboundQueue(t *testing.T) {
+	m := NewManager()
+	sess := NewAgentSession(AuthSnapshot{AgentID: "test-agent"})
+	m.SetSession(sess)
+	t.Cleanup(func() { m.ClearSession(sess) })
+	desired := desiredState(&gatewayv2.TunnelSpec{Id: "tunnel", TargetUrl: "http://localhost:3000"})
+	for i := 0; i < 1000; i++ {
+		m.ApplyDesiredState("test-agent", desired)
+	}
+	// No writer is draining the queue. Duplicate control state must leave room for data.
+	queued := len(sess.Outbound())
+	if queued >= cap(sess.Outbound()) {
+		t.Fatalf("duplicate desired state queued %d envelopes", queued)
+	}
+	snapshots := 0
+	for i := 0; i < queued; i++ {
+		outbound := <-sess.Outbound()
+		outbound.Ack(nil)
+		if snapshot := outbound.GetTunnelState(); snapshot != nil && len(snapshot.GetTunnels()) == 1 {
+			snapshots++
+		}
+	}
+	if snapshots != 1 {
+		t.Fatalf("duplicate desired state queued %d tunnel snapshots", snapshots)
+	}
+}
+
+func TestIdenticalTunnelDesiredStateAnnouncesOnAReplacementSession(t *testing.T) {
+	m := NewManager()
+	first := NewAgentSession(AuthSnapshot{AgentID: "test-agent"})
+	m.SetSession(first)
+	t.Cleanup(first.Close)
+	desired := desiredState(&gatewayv2.TunnelSpec{Id: "tunnel", TargetUrl: "http://localhost:3000"})
+	m.ApplyDesiredState("test-agent", desired)
+	slug := m.TunnelStateSnapshot("test-agent").GetTunnels()[0].GetSlug()
+	second := NewAgentSession(AuthSnapshot{AgentID: "test-agent"})
+	// Connection identity must not depend on wall-clock resolution.
+	second.ConnectedAt = first.ConnectedAt
+	m.SetSession(second)
+	t.Cleanup(func() { m.ClearSession(second) })
+	m.ApplyDesiredState("test-agent", desired)
+	queued := len(second.Outbound())
+	for i := 0; i < queued; i++ {
+		outbound := <-second.Outbound()
+		outbound.Ack(nil)
+		snapshot := outbound.GetTunnelState()
+		if snapshot != nil && len(snapshot.GetTunnels()) == 1 && snapshot.GetTunnels()[0].GetSlug() == slug {
+			return
+		}
+	}
+	t.Fatalf("replacement session did not receive the preserved tunnel slug (queued=%d)", queued)
+}
+
 func TestApplyDesiredStateHonorsSlugHintAndCollision(t *testing.T) {
 	m := newTunnelTestManager(t)
 	hint := strings.Repeat("a", 32)

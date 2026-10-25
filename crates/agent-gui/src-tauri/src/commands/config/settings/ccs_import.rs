@@ -1,3 +1,10 @@
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedProviderHeader {
+    pub key: String,
+    pub value: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CcsProviderImportItem {
@@ -11,6 +18,91 @@ pub struct CcsProviderImportItem {
     pub api_key: String,
     pub request_format: String,
     pub models: Vec<String>,
+    #[serde(default)]
+    pub custom_headers: Vec<ImportedProviderHeader>,
+}
+
+fn imported_headers_from_values(values: &[&Value]) -> Vec<ImportedProviderHeader> {
+    let mut headers = Vec::new();
+    for value in values {
+        append_imported_headers_from_tree(&mut headers, value);
+    }
+    headers
+}
+
+fn append_imported_headers_from_tree(
+    headers: &mut Vec<ImportedProviderHeader>,
+    value: &Value,
+) {
+    match value {
+        Value::Object(entries) => {
+            for (key, child) in entries {
+                if matches!(
+                    key.as_str(),
+                    "customHeaders" | "custom_headers" | "extraHeaders" | "extra_headers"
+                ) {
+                    append_imported_headers(headers, child);
+                }
+                append_imported_headers_from_tree(headers, child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                append_imported_headers_from_tree(headers, item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_imported_headers(headers: &mut Vec<ImportedProviderHeader>, value: &Value) {
+    match value {
+        Value::Object(entries) => {
+            if let (Some(key), Some(header_value)) = (
+                entries.get("key").and_then(Value::as_str),
+                entries.get("value").and_then(Value::as_str),
+            ) {
+                push_imported_header(headers, key, header_value);
+                return;
+            }
+            for (key, header_value) in entries {
+                if let Some(header_value) = header_value.as_str() {
+                    push_imported_header(headers, key, header_value);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Some(pair) = item.as_array() {
+                    if let (Some(key), Some(header_value)) = (
+                        pair.first().and_then(Value::as_str),
+                        pair.get(1).and_then(Value::as_str),
+                    ) {
+                        push_imported_header(headers, key, header_value);
+                    }
+                } else {
+                    append_imported_headers(headers, item);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_imported_header(headers: &mut Vec<ImportedProviderHeader>, key: &str, value: &str) {
+    let key = key.trim();
+    let value = value.trim();
+    if key.is_empty()
+        || value.contains(['\r', '\n'])
+        || key.contains(['\r', '\n'])
+        || headers.iter().any(|header| header.key.eq_ignore_ascii_case(key))
+    {
+        return;
+    }
+    headers.push(ImportedProviderHeader {
+        key: key.to_string(),
+        value: value.to_string(),
+    });
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,34 +214,46 @@ fn list_ccswitch_liveagent_providers_from_db(
 
     let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| format!("打开 ccswitch 数据库失败 {}：{e}", path.display()))?;
+    // meta 是 ccswitch providers 表的独立列（TEXT NOT NULL DEFAULT '{}'），
+    // Claude Desktop 的接入模式、上游格式与模型路由都存在这里，而不在
+    // settings_config。极老的 v0 库尚未迁移出 meta 列（ZeroAgent 只读打开、
+    // 不会触发 ccswitch 迁移），这种库也早于 Claude Desktop 支持，退化为
+    // 空 meta 查询即可。
+    let has_meta_column = ccswitch_providers_has_meta_column(&conn);
+    let meta_select = if has_meta_column { "meta" } else { "NULL" };
+    let sql = format!(
+        "SELECT id, app_type, name, settings_config, {meta_select} AS meta
+         FROM providers
+         WHERE app_type IN (
+           'codex',
+           'claude', 'claude-code', 'claude_code',
+           'claude-desktop', 'claude_desktop', 'claudeDesktop',
+           'gemini',
+           'grokbuild', 'grok-build', 'grok_build', 'grok', 'xai',
+           'deepseek'
+         )
+         ORDER BY
+           CASE app_type
+             WHEN 'claude' THEN 0
+             WHEN 'claude-code' THEN 0
+             WHEN 'claude_code' THEN 0
+             WHEN 'claude-desktop' THEN 0
+             WHEN 'claude_desktop' THEN 0
+             WHEN 'claudeDesktop' THEN 0
+             WHEN 'codex' THEN 1
+             WHEN 'gemini' THEN 2
+             WHEN 'grokbuild' THEN 3
+             WHEN 'grok-build' THEN 3
+             WHEN 'grok_build' THEN 3
+             WHEN 'grok' THEN 3
+             WHEN 'xai' THEN 3
+             WHEN 'deepseek' THEN 4
+             ELSE 5
+           END,
+           COALESCE(sort_index, 999999), created_at ASC, id ASC"
+    );
     let mut stmt = conn
-        .prepare(
-            "SELECT id, app_type, name, settings_config
-             FROM providers
-             WHERE app_type IN (
-               'codex',
-               'claude', 'claude-code', 'claude_code',
-               'gemini',
-               'grokbuild', 'grok-build', 'grok_build', 'grok', 'xai',
-               'deepseek'
-             )
-             ORDER BY
-               CASE app_type
-                 WHEN 'claude' THEN 0
-                 WHEN 'claude-code' THEN 0
-                 WHEN 'claude_code' THEN 0
-                 WHEN 'codex' THEN 1
-                 WHEN 'gemini' THEN 2
-                 WHEN 'grokbuild' THEN 3
-                 WHEN 'grok-build' THEN 3
-                 WHEN 'grok_build' THEN 3
-                 WHEN 'grok' THEN 3
-                 WHEN 'xai' THEN 3
-                 WHEN 'deepseek' THEN 4
-                 ELSE 5
-               END,
-               COALESCE(sort_index, 999999), created_at ASC, id ASC",
-        )
+        .prepare(&sql)
         .map_err(|e| format!("读取 ccswitch providers 表失败：{e}"))?;
     let rows = stmt
         .query_map([], |row| {
@@ -158,22 +262,45 @@ fn list_ccswitch_liveagent_providers_from_db(
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
         })
         .map_err(|e| format!("查询 ccswitch providers 失败：{e}"))?;
 
     let mut providers = Vec::new();
     for row in rows {
-        let (source_id, app_type, name, settings_config) =
+        let (source_id, app_type, name, settings_config, meta_str) =
             row.map_err(|e| format!("读取 ccswitch provider 行失败：{e}"))?;
         let Ok(config) = serde_json::from_str::<Value>(&settings_config) else {
             continue;
         };
-        if let Some(provider) = ccs_provider_from_value(&source_id, &app_type, &name, &config) {
+        // meta 解析失败按空处理，不影响该行其余字段的导入。
+        let meta = meta_str
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .unwrap_or(Value::Null);
+        if let Some(provider) =
+            ccs_provider_from_value(&source_id, &app_type, &name, &config, &meta)
+        {
             providers.push(provider);
         }
     }
     Ok(providers)
+}
+
+fn ccswitch_providers_has_meta_column(conn: &Connection) -> bool {
+    let Ok(mut stmt) = conn.prepare("PRAGMA table_info(providers)") else {
+        return false;
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
+        return false;
+    };
+    for name in rows.flatten() {
+        if name == "meta" {
+            return true;
+        }
+    }
+    false
 }
 
 fn ccs_provider_from_value(
@@ -181,8 +308,19 @@ fn ccs_provider_from_value(
     app_type: &str,
     name: &str,
     config: &Value,
+    meta: &Value,
 ) -> Option<CcsProviderImportItem> {
     let mapped_provider_type = ccs_provider_type_from_app_type(app_type)?;
+
+    // Claude Desktop（ccswitch app_type=claude-desktop）供应商归入 Anthropic 协议标签，
+    // 但只有 Anthropic 原生格式的才可直接作为 claude_code 导入：代理模式声明的
+    // openai_chat / openai_responses / gemini_native 上游需要本地转协议，直接当作
+    // Anthropic 供应商导入会得到协议不符的坏配置，这里跳过。
+    let is_claude_desktop = ccs_is_claude_desktop_app_type(app_type);
+    if is_claude_desktop && !ccs_claude_desktop_is_anthropic(meta) {
+        return None;
+    }
+
     let mapped_base_url = ccs_extract_base_url(mapped_provider_type, config).unwrap_or_default();
     let provider_type = if mapped_provider_type == "codex"
         && ccs_is_chat_protocol(config)
@@ -194,6 +332,19 @@ fn ccs_provider_from_value(
     };
     let base_url = ccs_extract_base_url(provider_type, config).unwrap_or_default();
     let api_key = ccs_extract_api_key(provider_type, config).unwrap_or_default();
+    let custom_headers = imported_headers_from_values(&[config, meta]);
+
+    let mut models = ccs_extract_models(provider_type, config);
+    if is_claude_desktop {
+        // Claude Desktop 的模型不写在 env，而是 meta.claudeDesktopModelRoutes：
+        // 直连模式 route_id 即模型名，映射模式取 route.model 的真实上游模型。
+        for model in ccs_extract_claude_desktop_models(meta) {
+            if !models.iter().any(|item| item == &model) {
+                models.push(model);
+            }
+        }
+    }
+
     Some(CcsProviderImportItem {
         source_id: source_id.to_string(),
         app_type: app_type.to_string(),
@@ -224,20 +375,71 @@ fn ccs_provider_from_value(
         } else {
             "openai-responses".to_string()
         },
-        models: ccs_extract_models(provider_type, config),
+        models,
+        custom_headers,
     })
 }
 
 fn ccs_provider_type_from_app_type(app_type: &str) -> Option<&'static str> {
     match app_type.trim().to_ascii_lowercase().as_str() {
         "codex" => Some("codex"),
-        "claude" | "claude-code" | "claude_code" => Some("claude_code"),
+        // Claude Desktop 与 Claude Code CLI 同为 Anthropic 协议供应商。
+        "claude" | "claude-code" | "claude_code" | "claude-desktop" | "claude_desktop"
+        | "claudedesktop" => Some("claude_code"),
         "gemini" => Some("gemini"),
         "deepseek" => Some("deepseek"),
         // CC-Switch Grok Build 应用桶（与上游 AppType::GrokBuild 别名对齐）。
         "grokbuild" | "grok-build" | "grok_build" | "grok" | "xai" => Some("xai"),
         _ => None,
     }
+}
+
+fn ccs_is_claude_desktop_app_type(app_type: &str) -> bool {
+    matches!(
+        app_type.trim().to_ascii_lowercase().as_str(),
+        "claude-desktop" | "claude_desktop" | "claudedesktop"
+    )
+}
+
+/// Claude Desktop 供应商是否使用 Anthropic 原生上游格式。
+///
+/// ccswitch 直连模式固定写 meta.apiFormat = "anthropic"；映射（proxy）模式可以声明
+/// openai_chat / openai_responses / gemini_native 等格式，由 ccswitch 内置网关转协议。
+/// 缺省（历史数据无 apiFormat）按 Anthropic 处理，与 ccswitch 的默认值一致。
+fn ccs_claude_desktop_is_anthropic(meta: &Value) -> bool {
+    match meta.get("apiFormat").and_then(Value::as_str) {
+        Some(format) => format.trim().eq_ignore_ascii_case("anthropic") || format.trim().is_empty(),
+        None => true,
+    }
+}
+
+/// 从 meta.claudeDesktopModelRoutes 提取 Claude Desktop 的模型列表。
+///
+/// 路由表形如 { "<route_id>": { "model": "<上游模型>", ... } }：直连模式下 route_id
+/// 就是模型名（model 字段同值）；映射模式下 model 字段才是真实上游模型。统一优先取
+/// model 字段，为空时回退 route_id。
+fn ccs_extract_claude_desktop_models(meta: &Value) -> Vec<String> {
+    let Some(routes) = meta
+        .get("claudeDesktopModelRoutes")
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (route_id, route) in routes {
+        let model = route
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route_id.trim());
+        if model.is_empty() || out.iter().any(|item| item == model) {
+            continue;
+        }
+        out.push(model.to_string());
+    }
+    out.sort();
+    out
 }
 
 fn ccs_extract_models(provider_type: &str, config: &Value) -> Vec<String> {

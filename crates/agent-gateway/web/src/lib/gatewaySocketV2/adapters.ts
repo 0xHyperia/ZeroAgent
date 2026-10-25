@@ -33,6 +33,7 @@ import type {
 import {
   CancelChatRequestSchema,
   ChatCommandRequestSchema,
+  ChatConversationReferenceSchema,
   ChatFileOpenRequestSchema,
   ChatMessageRefSchema,
   ChatQueueRequestSchema,
@@ -42,7 +43,9 @@ import {
   ChatUploadedFileSchema,
   CheckpointExpectedEntrySchema,
   CheckpointRequestSchema,
+  ClarifyTurnRequestSchema,
   CronManageRequestSchema,
+  CuaDriverRequestSchema,
   FileMentionListRequestSchema,
   FsCreateDirRequestSchema,
   FsCreateProjectFolderRequestSchema,
@@ -56,6 +59,7 @@ import {
   FsWriteTextRequestSchema,
   GatewayEnvelopeSchema,
   GitRequestSchema,
+  GoalManageRequestSchema,
   HistoryBranchRequestSchema,
   HistoryDeleteRequestSchema,
   HistoryGetRequestSchema,
@@ -67,11 +71,17 @@ import {
   HistoryShareGetRequestSchema,
   HistoryShareSetRequestSchema,
   HistoryWorkdirsRequestSchema,
+  InstalledAppsListRequestSchema,
+  LoopManageRequestSchema,
   ManagedProcessRequestSchema,
   MemoryManageRequestSchema,
+  PlanningRequestSchema,
+  ProviderCustomHeaderSchema,
+  ProviderCustomHeadersSchema,
   ProviderListRequestSchema,
   ProviderModelsRequestSchema,
   ProviderUsageRequestSchema,
+  ProxyDetectRequestSchema,
   SettingsGetRequestSchema,
   SettingsResetSshKnownHostRequestSchema,
   SettingsUpdateRequestSchema,
@@ -80,6 +90,7 @@ import {
   SkillManageRequestSchema,
   SkillMetadataReadRequestSchema,
   SkillTextReadRequestSchema,
+  SlashCommandListRequestSchema,
   TerminalRequestSchema,
   TerminalStreamFrameSchema,
   TrajectoryFetchRequestSchema,
@@ -334,8 +345,10 @@ function webFrame(requestId: string, frameCase: WebFrameCase, value: unknown): W
 function buildChatCommand(body: J) {
   const inner = rec(body.payload);
   const selectedModel = rec(inner.selected_model);
-  const runtimeControls = rec(inner.runtime_controls);
   const uploadedFiles = Array.isArray(inner.uploaded_files) ? inner.uploaded_files : [];
+  const referencedConversations = Array.isArray(inner.referenced_conversations)
+    ? inner.referenced_conversations
+    : [];
   return create(ChatCommandRequestSchema, {
     type: str(body.type),
     request: create(ChatRequestSchema, {
@@ -361,19 +374,38 @@ function buildChatCommand(body: J) {
           sizeBytes: toI64(raw.size_bytes),
         });
       }),
+      referencedConversations: referencedConversations.map((reference) => {
+        const raw = rec(reference);
+        return create(ChatConversationReferenceSchema, {
+          id: str(raw.id),
+          title: str(raw.title),
+          cwd: str(raw.cwd),
+          updatedAt: toI64(raw.updated_at),
+        });
+      }),
       clientRequestId: str(inner.client_request_id),
-      runtimeControls: inner.runtime_controls
-        ? create(ChatRuntimeControlsSchema, {
-            thinkingEnabled: bool(runtimeControls.thinking_enabled),
-            nativeWebSearchEnabled: bool(runtimeControls.native_web_search_enabled),
-            reasoning: str(runtimeControls.reasoning),
-          })
-        : undefined,
+      runtimeControls: buildRuntimeControls(inner.runtime_controls),
       queuePolicy: str(inner.queue_policy),
+      goalAction: str(inner.goal_action),
+      goalText: str(inner.goal_text),
+      promptCommand: bool(inner.prompt_command),
+      planCommand: bool(inner.plan_command),
     }),
     baseMessageRef: inner.base_message_ref
       ? buildMessageRef(rec(inner.base_message_ref))
       : undefined,
+  });
+}
+
+/** snake_case 载荷 → ChatRuntimeControls 消息（chat 与 clarify 请求共用）。 */
+function buildRuntimeControls(raw: unknown) {
+  if (!raw) return undefined;
+  const controls = rec(raw);
+  return create(ChatRuntimeControlsSchema, {
+    thinkingEnabled: bool(controls.thinking_enabled),
+    nativeWebSearchEnabled: bool(controls.native_web_search_enabled),
+    reasoning: str(controls.reasoning),
+    planModeEnabled: bool(controls.plan_mode_enabled),
   });
 }
 
@@ -409,6 +441,8 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
       case: "terminalRequest",
       value: create(TerminalRequestSchema, {
         action: type.slice("terminal.".length),
+        conversationId: trimStr(body.conversation_id),
+        runId: trimStr(body.run_id),
         sessionId: trimStr(body.session_id),
         projectPathKey: trimStr(body.project_path_key),
         cwd: trimStr(body.cwd),
@@ -610,6 +644,19 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
           modelsUrl: trimStr(body.models_url),
           providerId: trimStr(body.provider_id),
           isFullUrl: typeof body.is_full_url === "boolean" ? body.is_full_url : undefined,
+          // 字段存在性即语义：调用方没带 custom_headers 才回落到落库配置，带了空
+          // 数组表示草稿把头清空了，桌面端必须按空集发。
+          customHeaders: Array.isArray(body.custom_headers)
+            ? create(ProviderCustomHeadersSchema, {
+                headers: body.custom_headers.map((header) =>
+                  create(ProviderCustomHeaderSchema, {
+                    name: trimStr((header as { key?: unknown } | null)?.key),
+                    value: str((header as { value?: unknown } | null)?.value),
+                  }),
+                ),
+              })
+            : undefined,
+          requestFormat: trimStr(body.request_format),
         }),
       };
     case "provider.usage.query":
@@ -667,6 +714,65 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
           showHidden: optBool(body.show_hidden),
         }),
       };
+    case "apps.installed.list":
+      return { case: "installedAppsList", value: create(InstalledAppsListRequestSchema, {}) };
+    // 输入框“/”提示词指令：桌面端转调 K-brain 的提示词模板接口。
+    case "commands.list":
+      return {
+        case: "slashCommandList",
+        value: create(SlashCommandListRequestSchema, { workdir: trimStr(body.workdir) }),
+      };
+    case "goal.manage":
+      return {
+        case: "goalManage",
+        value: create(GoalManageRequestSchema, {
+          conversationId: trimStr(body.conversationId),
+          action: trimStr(body.action),
+        }),
+      };
+    case "loops.manage":
+      return {
+        case: "loopManage",
+        value: create(LoopManageRequestSchema, {
+          conversationId: trimStr(body.conversationId),
+          action: trimStr(body.action),
+          cron: trimStr(body.cron),
+          interval: trimStr(body.interval),
+          prompt: typeof body.prompt === "string" ? body.prompt : "",
+          reasoning: trimStr(body.reasoning),
+          loopId: trimStr(body.loopId),
+        }),
+      };
+    // Computer Use 设置页的只读引导状态。action 与桌面端的两条 Tauri 命令同名，
+    // 写动作（安装 / 授权）不在这条通道上——见 proto 的 CuaDriverRequest 注释。
+    case "cua.driver.probe":
+      return {
+        case: "cuaDriver",
+        value: create(CuaDriverRequestSchema, { action: "probe" }),
+      };
+    case "cua.driver.permissions_status":
+      return {
+        case: "cuaDriver",
+        value: create(CuaDriverRequestSchema, { action: "permissions_status" }),
+      };
+    // 应用代理设置的代理服务检测：在桌面宿主上执行，结果与 Tauri 命令同一份 JSON。
+    case "proxy.detect":
+      return {
+        case: "proxyDetect",
+        value: create(ProxyDetectRequestSchema, { action: "detect" }),
+      };
+    case "proxy.test":
+      return {
+        case: "proxyDetect",
+        value: create(ProxyDetectRequestSchema, {
+          action: "test",
+          inputJson: JSON.stringify({
+            type: body.type === "socks5" ? "socks5" : "http",
+            host: trimStr(body.host),
+            port: n32(body.port),
+          }),
+        }),
+      };
     case "files.preview":
       return {
         case: "uploadedImagePreview",
@@ -681,6 +787,14 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         value: create(MemoryManageRequestSchema, {
           command: trimStr(body.command),
           argsJson: body.args === undefined ? "{}" : JSON.stringify(body.args),
+        }),
+      };
+    case "planning.manage":
+      return {
+        case: "planning",
+        value: create(PlanningRequestSchema, {
+          action: str(body.action),
+          inputJson: JSON.stringify(body.input ?? {}),
         }),
       };
     case "cron.manage":
@@ -871,6 +985,17 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         }),
       };
     }
+    case "clarify.prompt_turn":
+      return {
+        case: "clarifyTurn",
+        value: create(ClarifyTurnRequestSchema, {
+          messagesJson:
+            typeof body.messages === "string" ? body.messages : JSON.stringify(body.messages ?? []),
+          providerId: trimStr(body.provider_id),
+          model: trimStr(body.model),
+          runtimeControls: buildRuntimeControls(body.runtime_controls),
+        }),
+      };
     default:
       throw new Error(`unsupported gateway request type: ${type}`);
   }
@@ -893,7 +1018,14 @@ export type DecodedServerFrame =
   | { kind: "ping"; timestamp: number }
   | { kind: "response"; requestId: string; agentId: string; payload: unknown }
   | { kind: "error"; requestId: string; agentId: string; message: string }
-  | { kind: "event"; type: string; agentId: string; payload: unknown };
+  | { kind: "event"; type: string; agentId: string; payload: unknown }
+  | {
+      kind: "progress";
+      requestId: string;
+      agentId: string;
+      type: "clarify.turn_delta";
+      payload: { text: string };
+    };
 
 export function decodeServerFrameBinary(data: ArrayBuffer | Uint8Array): WebServerFrame {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -929,7 +1061,16 @@ export function decodeServerFrame(
         agentId,
         message: payload.value.message || "Request failed",
       };
-    case "agentResponse":
+    case "agentResponse": {
+      if (payload.value.payload.case === "clarifyTurnDelta") {
+        return {
+          kind: "progress",
+          requestId,
+          agentId,
+          type: "clarify.turn_delta",
+          payload: { text: payload.value.payload.value.text ?? "" },
+        };
+      }
       try {
         return {
           kind: "response",
@@ -945,6 +1086,7 @@ export function decodeServerFrame(
           message: error instanceof Error ? error.message : "Request failed",
         };
       }
+    }
     case "status":
       // status 臂身兼二职：带 request_id 是 status.get/chat.prepare 响应，空则为 status.event 广播。
       return requestId
@@ -1073,6 +1215,13 @@ export function decodeServerFrame(
         requestId,
         agentId,
         payload: { agents: payload.value.agents.map(statusPayload) },
+      };
+    case "planningChanged":
+      return {
+        kind: "event",
+        type: "planning.changed",
+        agentId,
+        payload: { seq: num(payload.value.seq) },
       };
     case "workspaceActivity":
       return {
@@ -1217,6 +1366,44 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
         })),
         truncated: payload.value.truncated,
       };
+    case "installedAppsListResp":
+      return {
+        apps: payload.value.apps.map((app) => ({
+          name: app.name,
+          bundleId: app.bundleId,
+          path: app.path,
+          iconDataUrl: app.iconDataUrl,
+        })),
+      };
+    case "slashCommandListResp":
+      return {
+        commands: payload.value.commands.map((command) => ({
+          name: command.name,
+          description: command.description,
+          argumentHint: command.argumentHint,
+          kind: command.kind,
+          source: command.source,
+        })),
+      };
+    case "goalManageResp":
+      return {
+        conversationId: payload.value.conversationId,
+        goal: payload.value.goal,
+        status: payload.value.status,
+        round: payload.value.round,
+        maxRounds: payload.value.maxRounds,
+        reason: payload.value.reason,
+      };
+    case "loopManageResp":
+      return {
+        loops: payload.value.loops.map((loop) => ({
+          id: loop.id,
+          interval: loop.interval,
+          cron: loop.cron,
+          prompt: loop.prompt,
+          enabled: loop.enabled,
+        })),
+      };
     case "uploadedImagePreviewResp":
       return { mimeType: payload.value.mimeType, data: payload.value.data };
     case "memoryManageResp":
@@ -1238,6 +1425,14 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
           bytes: Number(section.bytes),
         })),
       };
+    case "clarifyTurnResp": {
+      const result: J = { final_text: payload.value.finalText };
+      if (payload.value.errorCode) result.error_code = payload.value.errorCode;
+      if (payload.value.errorMessage) result.error_message = payload.value.errorMessage;
+      return result;
+    }
+    case "planningResp":
+      return JSON.parse(payload.value.resultJson);
     case "cronManageResp":
       return { action: payload.value.action, result_json: payload.value.resultJson };
     case "fsRootsResp":
@@ -1338,6 +1533,10 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
     case "fsDeleteResp":
       return { path: payload.value.path, kind: payload.value.kind };
     case "gitResponse":
+      return unmarshalJsonPayload(payload.value.resultJson);
+    case "cuaDriverResp":
+      return unmarshalJsonPayload(payload.value.resultJson);
+    case "proxyDetectResp":
       return unmarshalJsonPayload(payload.value.resultJson);
     case "sftpResponse":
       return sftpResponsePayload(payload.value);

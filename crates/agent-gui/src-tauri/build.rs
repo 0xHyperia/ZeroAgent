@@ -1,4 +1,8 @@
 fn main() {
+    println!(
+        "cargo:rustc-env=LIVEAGENT_TARGET_TRIPLE={}",
+        std::env::var("TARGET").expect("TARGET")
+    );
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let package_json = std::path::Path::new(&manifest_dir)
         .join("..")
@@ -24,6 +28,42 @@ fn main() {
                 .to_owned()
         });
     println!("cargo:rustc-env=LIVEAGENT_APP_VERSION={app_version}");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        // NDK r27 and earlier need explicit ELF alignment for 16 KB page devices.
+        // https://developer.android.com/guide/practices/page-sizes
+        println!("cargo:rustc-link-arg-cdylib=-Wl,-z,max-page-size=16384");
+        println!("cargo:rustc-link-arg-cdylib=-Wl,-z,common-page-size=16384");
+    }
+    // Freeze capability metadata into the app, rather than trusting a mutable
+    // runtime JSON file to decide whether a sidecar may receive a host secret.
+    let target = std::env::var("TARGET").expect("TARGET");
+    let suffix = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        ".exe"
+    } else {
+        ""
+    };
+    let receipt_path = std::path::Path::new(&manifest_dir)
+        .join("binaries")
+        .join(format!("k-brain-{target}{suffix}.json"));
+    println!("cargo:rerun-if-changed={}", receipt_path.display());
+    let receipt = match std::fs::read_to_string(&receipt_path) {
+        Ok(raw) => {
+            serde_json::from_str::<serde_json::Value>(&raw).expect("parse prepared sidecar receipt")
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(error) => panic!("read prepared sidecar receipt: {error}"),
+    };
+    let native_receipt = if receipt.get("origin").and_then(serde_json::Value::as_str)
+        == Some("zeroagent-patched-source")
+    {
+        receipt
+    } else {
+        serde_json::json!({})
+    };
+    println!(
+        "cargo:rustc-env=ZEROAGENT_MCP_BRIDGE_RECEIPT={}",
+        serde_json::to_string(&native_receipt).expect("serialize sidecar capability receipt")
+    );
 
     // v2 业务消息与 WebSocket 帧壳共用 agent-gateway 目录为 include 根。
     let gateway_root = std::path::Path::new(&manifest_dir)

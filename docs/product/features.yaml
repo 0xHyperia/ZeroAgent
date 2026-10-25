@@ -2,14 +2,102 @@
   "schema_version": 1,
   "features": [
     {
+      "id": "configuration-backup-migration",
+      "name": "新版配置备份与恢复",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": [
+        "desktop"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain.rs",
+        "crates/agent-gui/src-tauri/src/services/automation/store.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/webdav_sync.rs",
+        "crates/agent-gui/src-tauri/src/services/webdav_auto_sync.rs",
+        "crates/agent-gui/src/lib/backup/index.ts",
+        "crates/agent-gui/src-tauri/src/services/account_session.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/native_batch.rs",
+        "crates/agent-gui/src/lib/settings/storage.ts",
+        "crates/agent-gui/src-tauri/src/services/configuration_coordinator.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/canonical_configuration.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences.rs",
+        "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts"
+      ],
+      "tests": [
+        "crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain_tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/webdav_backup_tests.rs",
+        "crates/agent-gui/test/settings/backup-restore.test.mjs",
+        "scripts/kbrain-startup-budget.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_session/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/native_batch_tests.rs",
+        "crates/agent-gui/test/settings/native-config-batch.test.mjs",
+        "crates/agent-gui/test/settings/stt-committed-settings.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/configuration_coordinator.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences_tests.rs",
+        "crates/agent-gui/test/settings/configuration-http.test.mjs",
+        "crates/agent-gui/test/skills/skills-configuration-version.test.mjs",
+        "crates/agent-gui/test/settings/device-settings-version.test.mjs"
+      ],
+      "security": "仅导出和恢复当前新格式的 MCP、模板与原生可移植偏好；拒绝旧格式、Provider 与默认模型注入，不改变当前账号托管模型注册。备份绑定当前 profile 与预览内容，排除托管密钥、后端运行授权及已知账号凭据别名；状态竞争时拒绝操作。正常保存、备份恢复和失败补偿共享 profile 写入边界，保留读取快照版本、私有字段合并及设备落盘 ACK。旧版数据、服务商归档及迁移回退不在本轮范围，不自动读取或清除原数据。最终真实账号、设备及平台验收仍待完成。",
+      "upstream_relation": "adapt"
+    },
+    {
       "id": "usa-zero-oauth",
       "name": "USA-Zero OAuth 登录",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["desktop", "webui", "android", "gateway"],
-      "entrypoints": ["crates/agent-gateway/internal/account", "crates/agent-gui/src/lib/relay/client.ts", "crates/agent-gateway/web/src/lib/relay/client.ts"],
-      "tests": ["crates/agent-gateway/internal/account/http_test.go", "crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs"],
-      "security": "OAuth state、回调目标、会话和账户范围均由服务端验证。",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "android",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gateway/internal/account",
+        "crates/agent-gui/src/lib/relay/client.ts",
+        "crates/agent-gateway/web/src/lib/relay/client.ts",
+        "crates/agent-gateway/web/src/lib/accountRequest.ts",
+        "crates/agent-gui/src-tauri/src/services/account_identity.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/src-tauri/src/services/desktop_oauth.rs",
+        "crates/agent-gui/src-tauri/src/services/account_session.rs",
+        "crates/agent-gui/src-tauri/src/services/account_session/api.rs",
+        "crates/agent-gui/src-tauri/src/services/account_session/gateway.rs",
+        "crates/agent-gui/src/lib/relay/nativeSession.ts",
+        "crates/agent-gui/src/lib/relay/nativeGatewaySocket.ts",
+        "crates/agent-gui/src-tauri/src/services/backend_facade.rs"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/http_test.go",
+        "crates/agent-gateway/internal/account/password_verification_test.go",
+        "crates/agent-gui/test/providers/relay-password-verification.test.mjs",
+        "crates/agent-gateway/web/test/relay-password-verification.test.mjs",
+        "crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs",
+        "crates/agent-gateway/web/test/account-session-ownership.test.mjs",
+        "crates/agent-gateway/web/test/relay-client.test.mjs",
+        "crates/agent-gateway/web/test/account-request.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_identity.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/test/providers/native-profile-credential.test.mjs",
+        "crates/agent-gui/test/chat/kbrain-bootstrap.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/desktop_oauth.rs",
+        "crates/agent-gui/test/startup/migration-progress.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_session/tests.rs",
+        "crates/agent-gui/test/providers/native-session.test.mjs",
+        "crates/agent-gui/test/providers/native-gateway-socket.test.mjs",
+        "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_session/gateway.rs",
+        "crates/agent-gui/test/providers/user-menu-logout.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs"
+      ],
+      "security": "OAuth state、回调目标、会话和账户范围均由服务端验证；Desktop 原始 token 由 Native 与 OS vault 持有，前端只取得不透明句柄；轮换候选在 Native 等待身份验证和持久化，临时故障重试不重复消费旧 refresh token。固定来源派生 profile、同步失效冷启动权限、拒绝过期请求覆盖新账户。真实 vault 故障、配置统一写入和跨平台端到端验收尚未完成。",
       "upstream_relation": "replace"
     },
     {
@@ -17,10 +105,29 @@
       "name": "USA-Zero 托管 Provider 与密钥",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["desktop", "webui"],
-      "entrypoints": ["crates/agent-gui/src/pages/settings/RelayProvidersSection.tsx", "crates/agent-gateway/web/src/pages/settings/RelayProvidersSection.tsx"],
-      "tests": ["crates/agent-gui/test/providers/relay-settings-refresh.test.mjs", "crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs"],
-      "security": "托管密钥保持遮罩，复制前必须验证 USA-Zero 密码。",
+      "surfaces": [
+        "desktop",
+        "webui"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src/pages/settings/RelayProvidersSection.tsx",
+        "crates/agent-gateway/web/src/pages/settings/RelayProvidersSection.tsx",
+        "crates/agent-gui/src-tauri/src/services/managed_model_broker.rs",
+        "crates/agent-gui/src/lib/relay/managedCredentials.ts",
+        "crates/agent-gui/src-tauri/src/services/account_session/api.rs",
+        "crates/agent-gui/src-tauri/src/services/proxy.rs"
+      ],
+      "tests": [
+        "crates/agent-gui/test/providers/relay-settings-refresh.test.mjs",
+        "crates/agent-gui/test/providers/relay-password-verification.test.mjs",
+        "crates/agent-gateway/web/test/relay-password-verification.test.mjs",
+        "crates/agent-gateway/internal/account/password_verification_test.go",
+        "crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/managed_model_broker.rs",
+        "crates/agent-gui/src-tauri/src/services/account_session/tests.rs",
+        "crates/agent-gui/test/providers/native-session.test.mjs"
+      ],
+      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。",
       "upstream_relation": "adapt"
     },
     {
@@ -28,9 +135,17 @@
       "name": "Cloud Chat 网页对话",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["webui", "gateway"],
-      "entrypoints": ["crates/agent-gateway/web/src/pages/CloudChatPage.tsx", "crates/agent-gateway/internal/server/http.go"],
-      "tests": ["crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs"],
+      "surfaces": [
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gateway/web/src/pages/CloudChatPage.tsx",
+        "crates/agent-gateway/internal/server/http.go"
+      ],
+      "tests": [
+        "crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs"
+      ],
       "security": "Cloud Chat 不得暴露仅桌面端可用的本地执行控制。",
       "upstream_relation": "adapt"
     },
@@ -39,10 +154,28 @@
       "name": "设备 Agent 执行",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["desktop", "webui", "gateway"],
-      "entrypoints": ["crates/agent-gui/src/lib/relay/desktopExecution.ts", "crates/agent-gateway/web/src/lib/executionTargets.ts"],
-      "tests": ["crates/agent-gateway/web/test/execution-targets.test.mjs", "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs"],
-      "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约。",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src/lib/relay/desktopExecution.ts",
+        "crates/agent-gateway/web/src/lib/executionTargets.ts",
+        "crates/agent-gui/src/App.tsx",
+        "crates/agent-gui/src/lib/relay/remoteDeviceState.ts",
+        "crates/agent-gateway/internal/protocol/pbws/controller_selection.go"
+      ],
+      "tests": [
+        "crates/agent-gateway/web/test/execution-targets.test.mjs",
+        "crates/agent-gateway/internal/session/tunnel_state_test.go",
+        "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
+        "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",
+        "crates/agent-gui/test/settings/remote-device-state.test.mjs",
+        "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go",
+        "crates/agent-gateway/internal/account/desktop_bound_selection_test.go"
+      ],
+      "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约；失联或列表移除不得静默切换本机。控制请求及新输出均复核当前会话、租约和所有权；Desktop连接复用已认证主体的固定有效期，不能逐次延长或每次按键重复外部认证。",
       "upstream_relation": "adapt"
     },
     {
@@ -50,9 +183,19 @@
       "name": "设备身份与会话管理",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["desktop", "webui", "gateway"],
-      "entrypoints": ["crates/agent-gateway/internal/account/service.go", "crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx"],
-      "tests": ["crates/agent-gateway/internal/account/device_presence_test.go", "crates/agent-gateway/web/test/execution-targets.test.mjs"],
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gateway/internal/account/service.go",
+        "crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/device_presence_test.go",
+        "crates/agent-gateway/web/test/execution-targets.test.mjs"
+      ],
       "security": "设备注册、在线状态、会话过期、租约所有权和撤销均按账户隔离。",
       "upstream_relation": "replace"
     },
@@ -61,21 +204,68 @@
       "name": "桌面本地工具",
       "status": "active",
       "owner": "shared",
-      "surfaces": ["desktop"],
-      "entrypoints": ["crates/agent-gui/src-tauri/src/commands/runtime", "crates/agent-gui/src-tauri/src/runtime/shell_runner.rs"],
-      "tests": ["crates/agent-gui/test/chat/agent-runner.test.mjs", "crates/agent-gui/test/backend/cargo-smoke.test.mjs"],
-      "security": "本地能力遵循工具策略，并且对 Cloud Chat 不可用。",
-      "upstream_relation": "adopt"
+      "surfaces": [
+        "desktop"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src/lib/kbrain/turn.ts",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
+        "crates/agent-gui/src-tauri/src/commands/integration/mcp_oauth.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/mod.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation.rs",
+        "patches/kbrain/manifest.json",
+        "patches/kbrain/0003-mcp-credential-history-and-legacy-sse.patch",
+        "scripts/release/build-kbrain-source.mjs",
+        "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
+        "patches/kbrain/0004-owned-mcp-lifecycle.patch"
+      ],
+      "tests": [
+        "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/test/backend/cargo-smoke.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/scoped_tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding_tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/rotation_tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/store/retry_tests.rs",
+        "crates/agent-gui/src-tauri/src/services/mcp_oauth/error_tests.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_tests.rs",
+        "scripts/release/kbrain-patches.test.mjs",
+        "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs"
+      ],
+      "security": "Go 保持唯一 Agent/MCP 执行器，标准审批与工具策略不向 Cloud Chat 开放。公开连接仅含 Native 代理能力，真实后端令牌不序列化给 renderer，profile 失效取消传输。MCP 凭据桥限制 profile、目标、版本和启用状态，真实令牌由 Native 持有、刷新并脱敏；私有 runtime 管理协议与额外端点兼容退出。保留官方 SDK 标准 SSE 最小接线及已复现的取消/进程树回收修复。补丁绑定精确源码和构建来源；完整应用、真实账号设备、支持端与发布验收尚未完成。",
+      "upstream_relation": "adapt"
     },
     {
       "id": "workspace-history-sync",
       "name": "工作区与历史同步",
       "status": "active",
       "owner": "shared",
-      "surfaces": ["desktop", "webui", "gateway"],
-      "entrypoints": ["crates/agent-gui/src/lib/chat/history/chatHistory.ts", "crates/agent-gateway/web/src/lib/chat/chatHistory.ts"],
-      "tests": ["crates/agent-gui/test/chat/chat-history-persist-queue.test.mjs", "crates/agent-gateway/web/test/sidebar-store.test.mjs"],
-      "security": "历史记录和工作区标识必须限定在已认证账户范围内。",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src/lib/kbrain/history.ts",
+        "crates/agent-gateway/web/src/lib/chat/chatHistory.ts",
+        "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
+        "crates/agent-gui/src-tauri/src/lib.rs"
+      ],
+      "tests": [
+        "crates/agent-gui/test/providers/kbrain-history.test.mjs",
+        "crates/agent-gateway/web/test/sidebar-store.test.mjs",
+        "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs"
+      ],
+      "security": "历史记录和工作区标识限定在已认证账户范围内；新安装不自动读取、迁移或清除旧版历史。",
       "upstream_relation": "adapt"
     },
     {
@@ -83,10 +273,24 @@
       "name": "Android 客户端",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["android", "webui"],
-      "entrypoints": ["crates/agent-gui/src-tauri/tauri.android.conf.json", ".github/workflows/android-release.yml"],
-      "tests": ["crates/agent-gui/test/backend/release-android.test.mjs", "crates/agent-gateway/web/test/mobile-app-update.test.mjs"],
-      "security": "OAuth 回调和持久化凭据必须使用受支持的移动端安全边界。",
+      "surfaces": [
+        "android",
+        "webui"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src-tauri/tauri.android.conf.json",
+        ".github/workflows/android-release.yml",
+        "crates/agent-gateway/web/src/zeroagent.css",
+        "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
+        "crates/agent-gui/src-tauri/src/services/mobile_gateway/session.rs",
+        "crates/agent-gui/src-tauri/src/services/mobile_secure_store.rs"
+      ],
+      "tests": [
+        "crates/agent-gui/test/backend/release-android.test.mjs",
+        "crates/agent-gateway/web/test/mobile-app-update.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/mobile_gateway/session/tests.rs"
+      ],
+      "security": "OAuth回调和持久化凭据使用移动平台安全设施；退出或切号后旧HTTP/上传响应、缓存及迟到socket不得复活旧身份，连接替换/失效取消旧读写，Set-Cookie不返回renderer。真实OAuth、加密存储写入/冷启解密和更新仍须实际平台验收。",
       "upstream_relation": "replace"
     },
     {
@@ -94,9 +298,17 @@
       "name": "Gateway 账户隔离与就绪检查",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["gateway"],
-      "entrypoints": ["crates/agent-gateway/internal/account", "deploy/production/smoke.sh"],
-      "tests": ["crates/agent-gateway/internal/account/workspace_snapshot_test.go", "deploy/production/validate.sh"],
+      "surfaces": [
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gateway/internal/account",
+        "deploy/production/smoke.sh"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/workspace_snapshot_test.go",
+        "deploy/production/validate.sh"
+      ],
       "security": "全部租户数据和设备路由按账户隔离；就绪检查必须验证必要依赖。",
       "upstream_relation": "replace"
     },
@@ -105,9 +317,17 @@
       "name": "双仓库发布",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["release"],
-      "entrypoints": [".github/workflows/desktop-release.yml", ".github/workflows/android-release.yml"],
-      "tests": ["crates/agent-gui/test/backend/release-notes.test.mjs", "crates/agent-gui/test/backend/release-branding.test.mjs"],
+      "surfaces": [
+        "release"
+      ],
+      "entrypoints": [
+        ".github/workflows/desktop-release.yml",
+        ".github/workflows/android-release.yml"
+      ],
+      "tests": [
+        "crates/agent-gui/test/backend/release-notes.test.mjs",
+        "crates/agent-gui/test/backend/release-branding.test.mjs"
+      ],
       "security": "公开产物不得包含源码归档、Secret、镜像细节和私有拓扑。",
       "upstream_relation": "replace"
     },
@@ -116,9 +336,20 @@
       "name": "Gateway 镜像与生产部署",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["gateway", "operations"],
-      "entrypoints": [".github/workflows/gateway-docker.yml", "deploy/production/deploy.sh"],
-      "tests": ["deploy/production/validate.sh", "deploy/production/smoke.sh"],
+      "surfaces": [
+        "gateway",
+        "operations"
+      ],
+      "entrypoints": [
+        ".github/workflows/gateway-docker.yml",
+        "deploy/production/deploy.sh"
+      ],
+      "tests": [
+        "deploy/production/validate.sh",
+        "deploy/production/smoke.sh",
+        "scripts/check-gateway-docker-smoke.sh",
+        "deploy/compose.smoke.yaml"
+      ],
       "security": "生产环境只能部署审核通过且不可变的镜像 digest。",
       "upstream_relation": "replace"
     }

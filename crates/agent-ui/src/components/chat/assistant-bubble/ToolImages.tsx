@@ -1,10 +1,9 @@
 import { deferLargeToolImages } from "@liveagent/adapters/assistantBubble";
+import { ImagePreview, type ImagePreviewSlide } from "@liveagent/ui/components/chat/ImagePreview";
 import {
-  ImagePreview,
   ImagePreviewActionFeedback,
   ImagePreviewContextMenu,
-  type ImagePreviewSlide,
-} from "@liveagent/ui/components/chat/ImagePreview";
+} from "@liveagent/ui/components/chat/ImagePreviewMenu";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type {
   DisplayImageItemDetails,
@@ -15,7 +14,7 @@ import type {
 } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
 import { prepareImageProxyUrl } from "@liveagent/ui/lib/providers/proxy";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, ImageOff, Loader2 } from "../../IconSet";
 import { getCompletedImageLoadState } from "../imageLoadState";
 import { getBuiltinResultKind } from "./assistantBubbleUtils";
@@ -42,8 +41,17 @@ export type NativeDisplayImageSourceState = {
 
 type ToolImageLoadState = "loading" | "loaded" | "error";
 
+// data URL = `data:...;base64,` + 完整 payload 的巨串（内联 SVG 可达 MB 级）。
+// 按 ImageContent 对象缓存，保证全生命周期只拼一次、引用恒定——否则转录区
+// 每次渲染都重新物化一份，流式/缩放期间分配速率可达每秒数百 MB。
+const imageDataUrlCache = new WeakMap<ImageContent, string>();
+
 function getImageDataUrl(image: ImageContent) {
-  return `data:${image.mimeType};base64,${image.data}`;
+  const cached = imageDataUrlCache.get(image);
+  if (cached !== undefined) return cached;
+  const dataUrl = `data:${image.mimeType};base64,${image.data}`;
+  imageDataUrlCache.set(image, dataUrl);
+  return dataUrl;
 }
 
 function imageFileExtension(mimeType: string | undefined) {
@@ -205,15 +213,21 @@ function useNativeDisplayImageSources(entries: NativeDisplayImageEntry[]) {
     };
   }, [proxyKey]);
 
-  return entries.map((entry, index) => {
-    if (entry.image) {
-      return { src: getImageDataUrl(entry.image), status: "ready" as const };
-    }
-    if (!getProxyImageSource(entry.detail)) {
-      return { src: "", status: "error" as const };
-    }
-    return proxySources[index] ?? { src: "", status: "loading" as const };
-  });
+  // memo：返回数组的身份决定下游 slides/ImagePreview 的 memo 是否生效。
+  // 每渲染重建会让整条预览链在转录区任何一次渲染时全量重算（含重拼 data URL）。
+  return useMemo(
+    () =>
+      entries.map((entry, index) => {
+        if (entry.image) {
+          return { src: getImageDataUrl(entry.image), status: "ready" as const };
+        }
+        if (!getProxyImageSource(entry.detail)) {
+          return { src: "", status: "error" as const };
+        }
+        return proxySources[index] ?? { src: "", status: "loading" as const };
+      }),
+    [entries, proxySources],
+  );
 }
 
 const LARGE_TOOL_IMAGE_INLINE_THRESHOLD_BYTES = 2 * 1024 * 1024;
@@ -260,7 +274,8 @@ function ToolImageStatusCard(props: {
   return (
     <div
       className={cn(
-        "relative flex min-h-28 w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-4 py-5 text-center",
+        "relative flex min-h-28 w-full flex-col items-center justify-center gap-2",
+        "overflow-hidden rounded-md border border-dashed px-4 py-5 text-center",
         isError
           ? "border-red-500/25 bg-red-500/[0.04] text-red-700 dark:border-red-400/25 dark:bg-red-400/[0.06] dark:text-red-300"
           : "border-black/[0.08] bg-black/[0.025] text-muted-foreground dark:border-white/[0.1] dark:bg-white/[0.035]",
@@ -269,30 +284,26 @@ function ToolImageStatusCard(props: {
     >
       <div
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-md border bg-white/80 shadow-sm dark:bg-black/20",
+          "flex size-9 items-center justify-center",
+          "rounded-md border bg-white/80 shadow-sm dark:bg-black/20",
           isError ? "border-red-500/20" : "border-black/[0.06] dark:border-white/[0.08]",
         )}
       >
         <Icon
           className={cn(
-            "h-4 w-4",
+            "size-4",
             !isError && "animate-spin text-primary motion-reduce:animate-none",
           )}
         />
       </div>
       <div className="max-w-full space-y-1">
-        <div
-          className={cn(
-            "text-[calc(12px*var(--zone-font-scale,1))] font-medium",
-            !isError && "shimmer",
-          )}
-        >
+        <div className={cn("text-xs font-medium", !isError && "shimmer")}>
           {title ?? (isError ? t("chat.image.unavailable") : t("chat.image.loading"))}
         </div>
         {detail ? (
           <div
             className={cn(
-              "max-w-full truncate text-[calc(11px*var(--zone-font-scale,1))]",
+              "max-w-full truncate text-xs",
               isError ? "text-red-700/75 dark:text-red-200/75" : "text-muted-foreground",
             )}
             title={detail}
@@ -320,7 +331,6 @@ export function ToolResultImagePreview(props: {
   const [shouldLoad, setShouldLoad] = useState(readOnly ? true : !shouldDeferImage);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [imageStatus, setImageStatus] = useState<ToolImageLoadState>("loading");
   const imageRef = useRef<HTMLImageElement | null>(null);
   const src = getImageDataUrl(image);
@@ -337,7 +347,7 @@ export function ToolResultImagePreview(props: {
         fileName: `tool-image-${id}.${imageFileExtension(image.mimeType)}`,
       },
     ],
-    [alt, estimatedBytes, id, image.data, image.mimeType, src],
+    [alt, estimatedBytes, id, image, src],
   );
 
   useEffect(() => {
@@ -358,22 +368,28 @@ export function ToolResultImagePreview(props: {
     return (
       <button
         type="button"
-        className="group flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/[0.12] bg-black/[0.025] px-4 py-5 text-center text-muted-foreground transition-colors hover:border-black/[0.2] hover:bg-black/[0.04] hover:text-foreground dark:border-white/[0.14] dark:bg-white/[0.035] dark:hover:border-white/[0.22] dark:hover:bg-white/[0.055]"
+        className={cn(
+          "group flex min-h-28 w-full flex-col items-center justify-center gap-2",
+          "rounded-md border border-dashed border-black/[0.12] bg-black/[0.025] px-4 py-5",
+          "text-center text-muted-foreground transition-colors",
+          "hover:border-black/[0.2] hover:bg-black/[0.04] hover:text-foreground dark:border-white/[0.14] dark:bg-white/[0.035] dark:hover:border-white/[0.22] dark:hover:bg-white/[0.055]",
+        )}
         onClick={() => setShouldLoad(true)}
         title={alt}
         aria-label={`${t("chat.image.load")} ${alt}`}
       >
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-black/[0.06] bg-white/80 shadow-sm transition-colors group-hover:border-black/[0.12] dark:border-white/[0.08] dark:bg-black/20 dark:group-hover:border-white/[0.16]">
-          <Eye className="h-4 w-4" />
+        <div
+          className={cn(
+            "flex size-9 items-center justify-center",
+            "rounded-md border border-black/[0.06] bg-white/80 shadow-sm transition-colors",
+            "group-hover:border-black/[0.12] dark:border-white/[0.08] dark:bg-black/20 dark:group-hover:border-white/[0.16]",
+          )}
+        >
+          <Eye className="size-4" />
         </div>
         <div className="max-w-full space-y-1">
-          <div className="text-[calc(12px*var(--zone-font-scale,1))] font-medium">
-            {t("chat.image.clickToLoad")}
-          </div>
-          <div
-            className="max-w-full truncate text-[calc(11px*var(--zone-font-scale,1))]"
-            title={imageDetail}
-          >
+          <div className="text-xs font-medium">{t("chat.image.clickToLoad")}</div>
+          <div className="max-w-full truncate text-xs" title={imageDetail}>
             {imageDetail}
           </div>
         </div>
@@ -401,7 +417,7 @@ export function ToolResultImagePreview(props: {
           loading="lazy"
           decoding="async"
           className={cn(
-            "block max-h-[32rem] w-full rounded-md object-contain transition-opacity duration-200",
+            "block max-h-128 w-full rounded-md object-contain transition-opacity duration-200",
             imageStatus === "loaded"
               ? "opacity-100"
               : "pointer-events-none absolute inset-0 h-full max-h-none opacity-0",
@@ -415,44 +431,48 @@ export function ToolResultImagePreview(props: {
 
   return (
     <>
-      <button
-        type="button"
-        className={cn(
-          "relative block w-full overflow-hidden rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 disabled:opacity-100",
-          canPreview ? "cursor-zoom-in" : "cursor-default",
-        )}
+      <ImagePreviewContextMenu
+        slide={slides[0]}
         disabled={!canPreview}
-        onClick={() => {
-          if (canPreview) setPreviewOpen(true);
-        }}
-        onContextMenu={(event) => {
-          if (!canPreview) return;
-          event.preventDefault();
-          setContextMenu({ x: event.clientX, y: event.clientY });
-        }}
-        title={alt}
-        aria-label={
-          canPreview ? `${t("chat.image.preview")} ${alt}` : `${t("chat.image.loading")} ${alt}`
+        onOpen={() => setPreviewOpen(true)}
+        onActionError={setActionError}
+        trigger={
+          <button
+            type="button"
+            className={cn(
+              "relative block w-full overflow-hidden rounded-md text-left",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 disabled:opacity-100",
+              canPreview ? "cursor-zoom-in" : "cursor-default",
+            )}
+            disabled={!canPreview}
+            onClick={() => {
+              if (canPreview) setPreviewOpen(true);
+            }}
+            title={alt}
+            aria-label={
+              canPreview ? `${t("chat.image.preview")} ${alt}` : `${t("chat.image.loading")} ${alt}`
+            }
+          >
+            {imageFrame}
+          </button>
         }
-      >
-        {imageFrame}
-      </button>
+      />
       {previewOpen ? (
         <ImagePreview open={previewOpen} slides={slides} onClose={() => setPreviewOpen(false)} />
-      ) : null}
-      {contextMenu && slides[0] ? (
-        <ImagePreviewContextMenu
-          slide={slides[0]}
-          position={contextMenu}
-          onOpen={() => setPreviewOpen(true)}
-          onClose={() => setContextMenu(null)}
-          onActionError={setActionError}
-        />
       ) : null}
       <ImagePreviewActionFeedback message={actionError} onDismiss={() => setActionError(null)} />
     </>
   );
 }
+
+// RoundContent 每次渲染都会调用本函数（含流式期间的高频渲染）。entries 数组
+// 的身份是下游 useNativeDisplayImageSources/slides memo 的输入，每次重建会让
+// 整条 memo 链失效，所以按 toolResult 引用缓存——toolResult 落定后引用稳定
+// （uiMessages 增量更新只在结果变化时才换引用）。
+const displayImagePayloadCache = new WeakMap<
+  ToolResultMessage,
+  { details: DisplayImageResultDetails; entries: NativeDisplayImageEntry[] } | null
+>();
 
 export function getNativeDisplayImagePayload(item: ToolTraceItem) {
   const result = item.toolResult;
@@ -460,15 +480,19 @@ export function getNativeDisplayImagePayload(item: ToolTraceItem) {
     return null;
   }
 
-  const entries = getNativeDisplayImageEntries(result);
-  if (entries.length === 0) {
-    return null;
-  }
+  const cached = displayImagePayloadCache.get(result);
+  if (cached !== undefined) return cached;
 
-  return {
-    details: result.details as DisplayImageResultDetails,
-    entries,
-  };
+  const entries = getNativeDisplayImageEntries(result);
+  const payload =
+    entries.length === 0
+      ? null
+      : {
+          details: result.details as DisplayImageResultDetails,
+          entries,
+        };
+  displayImagePayloadCache.set(result, payload);
+  return payload;
 }
 
 function getNativeImageGridClass(imageCount: number) {
@@ -502,10 +526,11 @@ function NativeDisplayImageTile(props: {
   isSvgImage: boolean;
   loading: "lazy" | "eager";
   onPreview: () => void;
-  onContextMenu?: (position: { x: number; y: number }) => void;
+  slide?: ImagePreviewSlide;
+  onActionError: (message: string) => void;
   readOnly?: boolean;
 }) {
-  const { source, alt, isGallery, isSvgImage, loading, onPreview, onContextMenu } = props;
+  const { source, alt, isGallery, isSvgImage, loading, onPreview, slide, onActionError } = props;
   const { t } = useLocale();
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageStatus, setImageStatus] = useState<ToolImageLoadState>(() =>
@@ -553,13 +578,13 @@ function NativeDisplayImageTile(props: {
           className={cn(
             "block object-contain transition-opacity duration-200",
             isGallery
-              ? "absolute inset-0 h-full w-full p-1"
+              ? "absolute inset-0 size-full p-1"
               : isSvgImage
-                ? "h-auto max-h-[32rem] w-full max-w-full p-1"
-                : "h-auto max-h-[32rem] max-w-full",
+                ? "h-auto max-h-128 w-full max-w-full p-1"
+                : "h-auto max-h-128 max-w-full",
             imageStatus === "loaded"
               ? "opacity-100"
-              : "pointer-events-none absolute inset-0 h-full w-full max-h-none opacity-0",
+              : "pointer-events-none absolute inset-0 size-full max-h-none opacity-0",
           )}
           onLoad={() => setImageStatus("loaded")}
           onError={() => setImageStatus("error")}
@@ -580,26 +605,31 @@ function NativeDisplayImageTile(props: {
   );
 
   return (
-    <button
-      type="button"
-      className={cn(className)}
+    <ImagePreviewContextMenu
+      slide={slide}
       disabled={!canPreview}
-      aria-label={canPreview ? `${t("chat.image.preview")} ${alt}` : statusTitle}
-      onClick={() => {
-        if (canPreview) onPreview();
-      }}
-      onContextMenu={(event) => {
-        if (!canPreview) return;
-        event.preventDefault();
-        onContextMenu?.({ x: event.clientX, y: event.clientY });
-      }}
-    >
-      {content}
-    </button>
+      onOpen={onPreview}
+      onActionError={onActionError}
+      trigger={
+        <button
+          type="button"
+          className={cn(className)}
+          disabled={!canPreview}
+          aria-label={canPreview ? `${t("chat.image.preview")} ${alt}` : statusTitle}
+          onClick={() => {
+            if (canPreview) onPreview();
+          }}
+        >
+          {content}
+        </button>
+      }
+    />
   );
 }
 
-export function NativeDisplayImageBlock(props: {
+// memo：payload 经 WeakMap 缓存后引用稳定，转录区高频渲染（流式增量、状态
+// 心跳）不再穿透到图片块——巨型 data URL 的 slides 重算由此被整体short-circuit。
+export const NativeDisplayImageBlock = memo(function NativeDisplayImageBlock(props: {
   payload: NonNullable<ReturnType<typeof getNativeDisplayImagePayload>>;
   readOnly?: boolean;
 }) {
@@ -608,9 +638,6 @@ export function NativeDisplayImageBlock(props: {
   const isGallery = payload.entries.length > 1;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ index: number; x: number; y: number } | null>(
-    null,
-  );
   const imageSources = useNativeDisplayImageSources(payload.entries);
   const slides = useMemo<ImagePreviewSlide[]>(
     () =>
@@ -648,7 +675,8 @@ export function NativeDisplayImageBlock(props: {
               isSvgImage={isSvgImage}
               loading={isGallery ? "eager" : "lazy"}
               onPreview={() => setPreviewIndex(index)}
-              onContextMenu={({ x, y }) => setContextMenu({ index, x, y })}
+              slide={slide}
+              onActionError={setActionError}
               readOnly={readOnly}
             />
           );
@@ -662,16 +690,7 @@ export function NativeDisplayImageBlock(props: {
           onClose={() => setPreviewIndex(null)}
         />
       ) : null}
-      {contextMenu && slides[contextMenu.index] ? (
-        <ImagePreviewContextMenu
-          slide={slides[contextMenu.index]}
-          position={contextMenu}
-          onOpen={() => setPreviewIndex(contextMenu.index)}
-          onClose={() => setContextMenu(null)}
-          onActionError={setActionError}
-        />
-      ) : null}
       <ImagePreviewActionFeedback message={actionError} onDismiss={() => setActionError(null)} />
     </>
   );
-}
+});

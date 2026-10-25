@@ -1,21 +1,23 @@
 import { ChangedFilesCard } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { collectChangedFiles } from "@liveagent/ui/lib/chat/changedFiles";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, useMemo } from "react";
 import type { HistoryMessageRef } from "../../../lib/chat/conversation/conversationState";
 import type { RetryAttemptRecord } from "../../../lib/chat/conversation/liveTranscriptStore";
-import { AssistantAvatar, AssistantBubbleUnit } from "../components/AssistantBubble";
+import { AssistantBubbleUnit } from "../components/AssistantBubble";
 import { AssistantRowFooter } from "./RowActions";
+import { useReplyHovered } from "./rowInteraction";
 import type { AssistantFooterRenderUnit, AssistantUnitRow } from "./rowModel";
 
 export type AssistantRenderUnitProps = {
   row: AssistantUnitRow;
   showUsage?: boolean;
   usageContextWindow?: number;
-  isAgentMode: boolean;
   isCompactionRunning: boolean;
+  awaitingDecision?: boolean;
   toolStatus: string | null;
   retryAttempts?: RetryAttemptRecord[];
   workdir?: string;
@@ -24,45 +26,55 @@ export type AssistantRenderUnitProps = {
     messageRef: HistoryMessageRef,
     text: string,
     attachments: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
 };
 
 const AssistantFooterUnit = memo(function AssistantFooterUnit(props: {
   unit: AssistantFooterRenderUnit;
-  showAvatar: boolean;
+  replyKey: string;
   compacted: boolean;
+  showUsage?: boolean;
+  usageContextWindow?: number;
   onResendFromEdit: AssistantRenderUnitProps["onResendFromEdit"];
   onBranchConversation?: AssistantRenderUnitProps["onBranchConversation"];
 }) {
-  const { unit, showAvatar, compacted, onResendFromEdit, onBranchConversation } = props;
+  const { unit, compacted, showUsage, usageContextWindow, onResendFromEdit, onBranchConversation } =
+    props;
+  const actionsVisible = useReplyHovered(props.replyKey);
   const changedFiles = useMemo(
     () => (unit.hasChangedFilesCandidate ? collectChangedFiles(unit.rounds) : null),
     [unit.hasChangedFilesCandidate, unit.rounds],
   );
+  const usageEntries = useMemo(
+    () =>
+      showUsage
+        ? unit.rounds.flatMap((round) =>
+            round.meta?.usage ? [{ key: round.key, usage: round.meta.usage }] : [],
+          )
+        : undefined,
+    [showUsage, unit.rounds],
+  );
 
   return (
-    <div className={cn("group/assistant w-full max-w-full", compacted && "opacity-70")}>
+    <div
+      data-actions-visible={actionsVisible ? "true" : undefined}
+      data-assistant-row
+      className={cn("group/assistant w-full max-w-full", compacted && "opacity-70")}
+    >
       {changedFiles ? (
-        <div className="flex w-full max-w-full items-start gap-3">
-          {showAvatar ? (
-            <AssistantAvatar />
-          ) : (
-            <div aria-hidden="true" className="h-7 w-7 shrink-0" />
-          )}
-          <div className={cn("min-w-0 flex-1", showAvatar ? "pt-0.5" : "")}>
+        <div className="w-full max-w-full">
+          <div className="min-w-0">
             <ChangedFilesCard summary={changedFiles} />
           </div>
-        </div>
-      ) : showAvatar ? (
-        <div className="flex w-full max-w-full items-start gap-3">
-          <AssistantAvatar />
-          <div className="min-w-0 flex-1" />
         </div>
       ) : null}
       <AssistantRowFooter
         timestamp={unit.timestamp}
         replyText={unit.replyText}
+        usageEntries={usageEntries}
+        usageContextWindow={showUsage ? usageContextWindow : undefined}
         retryTarget={unit.retryTarget}
         onResendFromEdit={onResendFromEdit}
         onBranchConversation={onBranchConversation}
@@ -78,8 +90,8 @@ export const AssistantRenderUnit = memo(function AssistantRenderUnit(
     row,
     showUsage,
     usageContextWindow,
-    isAgentMode,
     isCompactionRunning,
+    awaitingDecision,
     toolStatus,
     retryAttempts,
     workdir,
@@ -93,8 +105,10 @@ export const AssistantRenderUnit = memo(function AssistantRenderUnit(
     return (
       <AssistantFooterUnit
         unit={row.unit}
-        showAvatar={row.showAvatar}
         compacted={row.compacted}
+        showUsage={showUsage}
+        usageContextWindow={usageContextWindow}
+        replyKey={row.replyKey}
         onResendFromEdit={onResendFromEdit}
         onBranchConversation={onBranchConversation}
       />
@@ -102,13 +116,11 @@ export const AssistantRenderUnit = memo(function AssistantRenderUnit(
   }
 
   return (
-    <div className={cn("group/assistant w-full max-w-full", compactedClass)}>
+    <div className={cn("group/assistant w-full max-w-full", compactedClass)} data-assistant-row>
       <AssistantBubbleUnit
         row={row}
-        showUsage={showUsage}
-        usageContextWindow={usageContextWindow}
-        isAgentMode={isAgentMode}
         isCompactionRunning={isCompactionRunning}
+        awaitingDecision={awaitingDecision}
         toolStatus={toolStatus}
         retryAttempts={retryAttempts}
         workdir={workdir}

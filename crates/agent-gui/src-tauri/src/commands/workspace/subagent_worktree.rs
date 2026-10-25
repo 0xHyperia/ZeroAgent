@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
+use crate::runtime::platform::strip_windows_verbatim_prefix;
 use crate::runtime::process::configure_child_process_group;
 
 fn git_command(cwd: &Path) -> Command {
@@ -787,7 +788,7 @@ fn apply_worktree_changes_blocking(
         &worktree_root,
         &["diff", "--cached", "--binary", "HEAD", "--"],
     )?;
-    let patch_bytes = patch.as_bytes().len();
+    let patch_bytes = patch.len();
     if patch.trim().is_empty() {
         return Ok(SubagentWorktreeApplyResponse {
             applied: false,
@@ -1112,7 +1113,7 @@ pub async fn subagent_worktree_create(
         let label = sanitize_path_component(label.as_deref().unwrap_or("agent"), "agent");
         let target_parent = repo_root
             .parent()
-            .unwrap_or_else(|| repo_root.as_path())
+            .unwrap_or(repo_root.as_path())
             .join(".liveagent-subagents")
             .join(&repo_name);
         fs::create_dir_all(&target_parent)
@@ -1154,8 +1155,10 @@ pub async fn subagent_worktree_create(
             })?
         };
 
-        let worktree_root = fs::canonicalize(&target)
-            .map_err(|err| format!("failed to canonicalize worktree: {err}"))?;
+        let worktree_root = strip_windows_verbatim_prefix(
+            fs::canonicalize(&target)
+                .map_err(|err| format!("failed to canonicalize worktree: {err}"))?,
+        );
         let child_workdir = worktree_root.join(relative_workdir);
         let child_metadata = fs::metadata(&child_workdir).map_err(|_| {
             format!(

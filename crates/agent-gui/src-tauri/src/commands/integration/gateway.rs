@@ -6,7 +6,8 @@ use crate::commands::settings::{load_remote_settings, open_db, parse_remote_sett
 use crate::services::gateway::{
     GatewayChatCheckpointCommitResult, GatewayChatCheckpointInput, GatewayChatClaimedRequest,
     GatewayChatIngressAcceptResult, GatewayChatIngressBatchInput, GatewayChatQueueEventInput,
-    GatewayChatQueueResponseInput, GatewayController, GatewayStatusSnapshot,
+    GatewayChatQueueResponseInput, GatewayClarifyDeltaInput, GatewayClarifyRespondInput,
+    GatewayComposerActionRespondInput, GatewayController, GatewayStatusSnapshot,
 };
 use crate::services::provider_usage::{ProviderUsageResult, ProviderUsageService};
 use crate::services::tunnel::{
@@ -48,6 +49,7 @@ pub async fn gateway_connect(
         };
         // Agent ID 始终取本地持久化身份，调用方不能借连接命令临时覆盖。
         requested.agent_id = persisted.agent_id;
+        requested.token.clear();
         if let Some(credential) = crate::services::device_credentials::load_device_credential()? {
             requested.agent_id = credential.effective_agent_id().to_string();
             requested.token = credential.effective_token().to_string();
@@ -245,6 +247,33 @@ pub fn gateway_chat_queue_respond(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+pub fn gateway_clarify_respond(
+    input: GatewayClarifyRespondInput,
+    gateway_controller: tauri::State<'_, Arc<GatewayController>>,
+) -> Result<(), String> {
+    gateway_controller.respond_clarify_turn(input)
+}
+
+/// WebUI“/”指令非运行动作（/goal clear、/loop）的结果回传。
+#[tauri::command(rename_all = "snake_case")]
+pub fn gateway_composer_action_respond(
+    input: GatewayComposerActionRespondInput,
+    gateway_controller: tauri::State<'_, Arc<GatewayController>>,
+) -> Result<(), String> {
+    gateway_controller.respond_composer_action(input)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gateway_clarify_delta(
+    input: GatewayClarifyDeltaInput,
+    gateway_controller: tauri::State<'_, Arc<GatewayController>>,
+) -> Result<(), String> {
+    gateway_controller
+        .send_clarify_turn_delta(input.request_id, input.text)
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn gateway_publish_chat_queue_event(
     input: GatewayChatQueueEventInput,
     gateway_controller: tauri::State<'_, Arc<GatewayController>>,
@@ -257,7 +286,8 @@ pub async fn gateway_publish_settings_sync(
     payload: Value,
     gateway_controller: tauri::State<'_, Arc<GatewayController>>,
 ) -> Result<(), String> {
-    gateway_controller.publish_settings_sync(payload).await
+    let _ = payload;
+    gateway_controller.publish_current_settings_sync().await
 }
 
 #[tauri::command]

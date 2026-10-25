@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2,
   MonitorSmartphone,
-  Pencil,
   RefreshCw,
+  SquarePen,
   Trash2,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ExecutionEnvironment,
   getExecutionEnvironments,
@@ -146,7 +146,7 @@ export function DevicesSection({
           return (
             <div
               key={id}
-              className="settings-card-row settings-devices-card-row flex min-w-0 items-center gap-3 rounded-md border border-border/70 p-3"
+              className="settings-card-row settings-devices-card-row flex min-w-0 items-center gap-3 rounded-md border border-border/70 p-3 max-820:grid max-820:grid-cols-settings-devices-card-row"
             >
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${device.online ? "bg-emerald-500/10" : "bg-muted/60"}`}
@@ -155,7 +155,7 @@ export function DevicesSection({
                   className={`h-2.5 w-2.5 rounded-full ${device.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
                 />
               </div>
-              <div className="settings-devices-card-main min-w-0 flex-1">
+              <div className="settings-devices-card-main min-w-0 flex-1 max-820:min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   {editing ? (
                     <form
@@ -201,7 +201,7 @@ export function DevicesSection({
                 ) : null}
               </div>
               {!editing ? (
-                <div className="settings-devices-card-actions flex shrink-0 flex-wrap items-center justify-end gap-1">
+                <div className="settings-devices-card-actions flex shrink-0 flex-wrap items-center justify-end gap-1 max-820:col-span-full max-820:w-full max-820:[&_>_button]:min-w-0">
                   <Button
                     type="button"
                     variant="ghost"
@@ -213,7 +213,7 @@ export function DevicesSection({
                       setDraftName(device.name);
                     }}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <SquarePen className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"

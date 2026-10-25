@@ -1,21 +1,36 @@
+import { invoke } from "@liveagent/app/shims/tauriCore";
+import { type Event, listen } from "@liveagent/app/shims/tauriEvent";
+import type { ClarifyMessage } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
+import { normalizeConversationMentionReferences } from "@liveagent/ui/lib/chat/mentionReferences";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
 import type { HistoryMessageRef } from "../../../lib/chat/conversation/conversationState";
-import { normalizeChatRuntimeControls } from "../../../lib/settings";
+import { isKBrainBackendEnabled, isTauriHost } from "../../../lib/host";
+import { createKBrainClient } from "../../../lib/kbrain/client";
+import { publishGoalState } from "../../../lib/kbrain/goalStore";
+import { getKBrainSessionId } from "../../../lib/kbrain/mapping";
+import { type ChatRuntimeControls, normalizeChatRuntimeControls } from "../../../lib/settings";
+import { createTextComposerDraft } from "../composer/composerDraftText";
+import { createClarifyDeltaForwarder } from "./clarifyDeltaForwarder";
 import {
   type ActiveGatewayBridgeRequest,
   type GatewayBridgeRuntimeRefs,
   type GatewayChatCancelEvent,
   type GatewayChatClaimedRequest,
   type GatewayChatRequestReadyEvent,
+  type GatewayClarifyTurnRequestEvent,
+  type GatewayComposerActionEvent,
+  gatewayComposerTurnCommand,
   normalizeGatewayCommandSafetyMode,
   normalizeGatewayExecutionMode,
   normalizeGatewayWorkdir,
+  type PrepareEditResend,
 } from "./gatewayBridgeTypes";
+import { runGatewayComposerAction } from "./gatewayComposerActions";
+import { runGatewayHistoryAction } from "./gatewayHistoryActions";
 
 type UseGatewayBridgeListenersParams = GatewayBridgeRuntimeRefs & {
+  prepareEditResend?: PrepareEditResend;
   queueGatewayBridgeEventForRequest: (
     requestId: string,
     event: Record<string, unknown>,
@@ -30,10 +45,22 @@ type UseGatewayBridgeListenersParams = GatewayBridgeRuntimeRefs & {
     conversationId: string,
   ) => Promise<boolean>;
   isConversationRunning: (conversationId: string) => boolean;
+  /**
+   * 桌面输入框正在编辑这个会话的排队项。指令轮次此时按忙拒绝：直跑会清空输入框，
+   * 正在编辑的排队项就丢了；桌面输入框在编辑排队项时同样不执行指令。
+   */
+  isQueuedTurnEditOpen?: (conversationId: string) => boolean;
   getConversationAbortController: (conversationId: string) => AbortController | null;
   requestConversationStop: (conversationId: string) => boolean;
   requestActiveConversationStop: (conversationId: string, options: { force: boolean }) => boolean;
   consumeConversationStop: (conversationId: string, expectedVersion?: number) => boolean;
+  /** 执行一次澄清补全（Web 下发模型选择，桌面端按 providerId 查表重建 runtime）。返回 assistant 全文文本。 */
+  runGatewayClarifyTurn: (
+    messages: ClarifyMessage[],
+    selection: { providerId: string; model: string },
+    runtimeControls: ChatRuntimeControls,
+    onTextDelta?: (delta: string) => void,
+  ) => Promise<string>;
 };
 
 type GatewayBridgeRequestRegistry = {
@@ -148,11 +175,14 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
   }
 
   useEffect(() => {
+    if (isKBrainBackendEnabled() && !isTauriHost()) return;
     let disposed = false;
     let unlistenChatRequestReady: (() => void) | null = null;
     let unlistenChatRuntimeWake: (() => void) | null = null;
     let unlistenChatCancel: (() => void) | null = null;
     let unlistenGatewayStatus: (() => void) | null = null;
+    let unlistenClarifyTurnRequested: (() => void) | null = null;
+    let unlistenComposerActionRequested: (() => void) | null = null;
     let drainInFlight = false;
     const workerId = workerIdRef.current;
     const heartbeatTimers = new Map<string, number>();
@@ -172,7 +202,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         state: nextState,
         visible: runtimeVisible(),
         active_run_count: activeRunCount,
-      } as any).catch((error) => {
+      }).catch((error) => {
         console.warn("gateway_chat_runtime_heartbeat failed", error);
       });
     };
@@ -295,7 +325,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
       void invoke("gateway_chat_heartbeat", {
         request_id: requestId,
         worker_id: workerId,
-      } as any).catch((error) => {
+      }).catch((error) => {
         console.warn("gateway_chat_heartbeat failed", error);
       });
       heartbeatTimers.set(
@@ -304,7 +334,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           void invoke("gateway_chat_heartbeat", {
             request_id: requestId,
             worker_id: workerId,
-          } as any).catch((error) => {
+          }).catch((error) => {
             console.warn("gateway_chat_heartbeat failed", error);
           });
         }, GATEWAY_CHAT_RUNTIME_HEARTBEAT_MS),
@@ -324,7 +354,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         message,
         terminal: true,
         worker_id: workerId,
-      } as any).catch((error) => {
+      }).catch((error) => {
         console.warn("gateway_chat_fail failed", error);
       });
     };
@@ -341,7 +371,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         request_id: requestId,
         conversation_id: conversationId,
         worker_id: workerId,
-      } as any);
+      });
       stopHeartbeat(requestId);
       return true;
     };
@@ -372,12 +402,37 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         stopHeartbeat(requestId);
         return;
       }
+      const composerCommand = gatewayComposerTurnCommand(payload);
+      if (composerCommand === null) {
+        failClaimedRequest(
+          requestId,
+          targetConversationId,
+          "invalid_chat_command",
+          "Remote composer command is invalid.",
+        );
+        stopHeartbeat(requestId);
+        return;
+      }
+      // 指令轮次（/goal、提示词指令）不进等待队列，与桌面输入框一致：会话在跑或
+      // 正在编辑排队项就按忙拒绝，空闲时即使队列里还有项也立即执行。
+      const rejectBusyCommand = () =>
+        failClaimedRequest(
+          requestId,
+          targetConversationId,
+          "conversation_busy",
+          GATEWAY_CHAT_CONVERSATION_BUSY_MESSAGE,
+        );
       const claimResult = claimGatewayBridgeRequest(
         requestId,
         clientRequestId,
         targetConversationId,
       );
       if (claimResult !== "claimed") {
+        if (claimResult === "conversation_busy" && composerCommand) {
+          rejectBusyCommand();
+          stopHeartbeat(requestId);
+          return;
+        }
         if (claimResult === "conversation_busy") {
           if (targetConversationId) {
             try {
@@ -392,7 +447,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         void invoke("gateway_chat_release_lease", {
           request_id: requestId,
           worker_id: workerId,
-        } as any).catch((error) => {
+        }).catch((error) => {
           console.warn("gateway_chat_release_lease failed", error);
         });
         stopHeartbeat(requestId);
@@ -410,7 +465,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           void invoke("gateway_chat_release_lease", {
             request_id: requestId,
             worker_id: workerId,
-          } as any).catch((error) => {
+          }).catch((error) => {
             console.warn("gateway_chat_release_lease failed", error);
           });
           return;
@@ -424,21 +479,34 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           failClaimedRequest(requestId, targetConversationId, "invalid_chat_command", message);
           return;
         }
+        let editResendBaseMessageRef = baseMessageRef;
 
-        if (
-          targetConversationId &&
-          payload.rebased !== true &&
-          (latestParamsRef.current.shouldQueueGatewayChatRequest(
-            targetConversationId,
-            queuePolicy,
-          ) ||
+        if (targetConversationId && payload.rebased !== true) {
+          const running = Boolean(
             latestParamsRef.current.isConversationRunning(targetConversationId) ||
-            latestParamsRef.current.getConversationAbortController(targetConversationId))
-        ) {
-          if (await markQueuedInGui(claimed, targetConversationId)) {
+              latestParamsRef.current.getConversationAbortController(targetConversationId),
+          );
+          const editOpen =
+            latestParamsRef.current.isQueuedTurnEditOpen?.(targetConversationId) === true;
+          if (composerCommand && editOpen) {
+            rejectBusyCommand();
             return;
           }
-          return;
+          if (composerCommand && running) {
+            rejectBusyCommand();
+            return;
+          }
+          if (
+            !composerCommand &&
+            (running ||
+              latestParamsRef.current.shouldQueueGatewayChatRequest(
+                targetConversationId,
+                queuePolicy,
+              ))
+          ) {
+            await markQueuedInGui(claimed, targetConversationId);
+            return;
+          }
         }
 
         resolvedConversationId =
@@ -449,25 +517,44 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
             },
           );
 
+        const prepareEditResend = latestParamsRef.current.prepareEditResend;
+        if (payload.rebased === true && editResendBaseMessageRef && prepareEditResend) {
+          const prepared = await prepareEditResend(
+            resolvedConversationId,
+            editResendBaseMessageRef,
+            { activate: false },
+          );
+          resolvedConversationId = prepared.conversationId;
+          editResendBaseMessageRef = prepared.messageRef;
+        }
+
         const runningRequest =
           getActiveGatewayBridgeRequestByConversationId(resolvedConversationId) ||
           (clientRequestId
             ? getActiveGatewayBridgeRequestByClientRequestId(clientRequestId)
             : null);
-        if (
-          latestParamsRef.current.shouldQueueGatewayChatRequest(
-            resolvedConversationId,
-            queuePolicy,
-          ) ||
+        const resolvedRunning = Boolean(
           runningRequest ||
-          latestParamsRef.current.isConversationRunning(resolvedConversationId) ||
-          latestParamsRef.current.getConversationAbortController(resolvedConversationId)
+            latestParamsRef.current.isConversationRunning(resolvedConversationId) ||
+            latestParamsRef.current.getConversationAbortController(resolvedConversationId),
+        );
+        if (
+          composerCommand &&
+          (resolvedRunning ||
+            latestParamsRef.current.isQueuedTurnEditOpen?.(resolvedConversationId) === true)
         ) {
-          if (
-            await markQueuedInGui(claimed, runningRequest?.conversationId || resolvedConversationId)
-          ) {
-            return;
-          }
+          rejectBusyCommand();
+          return;
+        }
+        if (
+          !composerCommand &&
+          (resolvedRunning ||
+            latestParamsRef.current.shouldQueueGatewayChatRequest(
+              resolvedConversationId,
+              queuePolicy,
+            ))
+        ) {
+          await markQueuedInGui(claimed, runningRequest?.conversationId || resolvedConversationId);
           return;
         }
 
@@ -478,9 +565,13 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           workerId,
           startedAt: Date.now(),
           selectedModelOverride: payload.selectedModel,
-          runtimeControlsOverride: payload.runtimeControls
-            ? normalizeChatRuntimeControls(payload.runtimeControls)
-            : undefined,
+          runtimeControlsOverride:
+            payload.runtimeControls || composerCommand?.kind === "plan"
+              ? normalizeChatRuntimeControls({
+                  ...payload.runtimeControls,
+                  ...(composerCommand?.kind === "plan" ? { planModeEnabled: true } : {}),
+                })
+              : undefined,
           executionModeOverride: normalizeGatewayExecutionMode(payload.executionMode),
           workdirOverride: normalizeGatewayWorkdir(payload.workdir),
           commandSafetyModeOverride: normalizeGatewayCommandSafetyMode(payload.commandSafetyMode),
@@ -490,18 +581,26 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
             request_id: requestId,
             conversation_id: resolvedConversationId,
             worker_id: workerId,
-          } as any);
+          });
         };
         const accepted = await latestParamsRef.current.sendActionRef.current({
           textOverride: message,
+          composerDraftOverride: createTextComposerDraft(
+            message,
+            normalizeConversationMentionReferences(
+              payload.referencedConversations,
+              resolvedConversationId,
+            ),
+          ),
           uploadedFilesOverride: uploadedFiles,
           conversationIdOverride: resolvedConversationId,
           executionModeOverride: gatewayBridgeRequest.executionModeOverride,
           workdirOverride: gatewayBridgeRequest.workdirOverride,
           commandSafetyModeOverride: gatewayBridgeRequest.commandSafetyModeOverride,
           runtimeControlsOverride: gatewayBridgeRequest.runtimeControlsOverride,
+          ...(composerCommand ? { composerCommand } : {}),
           gatewayBridgeRequestOverride: gatewayBridgeRequest,
-          editResendBaseMessageRef: baseMessageRef,
+          editResendBaseMessageRef,
           beforeRuntimeStart: markRuntimeStarted,
           afterInitialHistoryPersist: markRuntimeStarted,
         });
@@ -518,7 +617,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           request_id: requestId,
           conversation_id: resolvedConversationId,
           worker_id: workerId,
-        } as any);
+        });
       } catch (error) {
         const rawMessage = asErrorMessage(
           error,
@@ -563,7 +662,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
             {
               worker_id: workerId,
               lease_ms: GATEWAY_CHAT_RUNTIME_LEASE_MS,
-            } as any,
+            },
           );
           if (!claimed || disposed) {
             return;
@@ -702,6 +801,95 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
       unlistenChatCancel = dispose;
     });
 
+    const handleClarifyTurnRequested = async (event: Event<GatewayClarifyTurnRequestEvent>) => {
+      const { requestId } = event.payload;
+      let finalText: string | undefined;
+      let errorCode: string | undefined;
+      let errorMessage: string | undefined;
+      try {
+        let messages: ClarifyMessage[];
+        try {
+          messages = JSON.parse(event.payload.messagesJson) as ClarifyMessage[];
+        } catch {
+          messages = [{ role: "user", content: event.payload.messagesJson }];
+        }
+        const runtimeControls = event.payload.runtimeControlsJson
+          ? (JSON.parse(event.payload.runtimeControlsJson) as Partial<ChatRuntimeControls>)
+          : undefined;
+        finalText = await latestParamsRef.current.runGatewayClarifyTurn(
+          messages,
+          { providerId: event.payload.providerId, model: event.payload.model },
+          normalizeChatRuntimeControls(runtimeControls),
+          createClarifyDeltaForwarder(
+            (text) => invoke<unknown>("gateway_clarify_delta", { input: { requestId, text } }),
+            (error) => console.warn("gateway_clarify_delta failed", error),
+          ),
+        );
+      } catch (error) {
+        errorCode = "execution_error";
+        errorMessage = error instanceof Error ? error.message : String(error);
+      } finally {
+        await invoke<unknown>("gateway_clarify_respond", {
+          input: {
+            requestId,
+            finalText: finalText || undefined,
+            errorCode,
+            errorMessage,
+          },
+        }).catch((error: unknown) => {
+          console.warn("gateway_clarify_respond failed", error);
+        });
+      }
+    };
+
+    void listen<GatewayClarifyTurnRequestEvent>(
+      "gateway:clarify-turn-requested",
+      handleClarifyTurnRequested,
+    ).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlistenClarifyTurnRequested = dispose;
+    });
+
+    // WebUI 指令和历史读取复用桌面的 K-brain 会话映射，执行后经
+    // gateway_composer_action_respond 把结果交回 Rust（Rust 侧有超时兜底）。
+    const composerActionClient = isKBrainBackendEnabled() ? createKBrainClient() : undefined;
+    const handleComposerActionRequested = async (event: Event<GatewayComposerActionEvent>) => {
+      const { requestId } = event.payload;
+      let result: unknown;
+      let errorMessage: string | undefined;
+      try {
+        result =
+          event.payload.kind === "history"
+            ? await runGatewayHistoryAction(event.payload)
+            : await runGatewayComposerAction(event.payload, {
+                client: composerActionClient,
+                getKBrainSessionId: (conversationId) => getKBrainSessionId(conversationId),
+                onGoalState: publishGoalState,
+              });
+      } catch (error) {
+        errorMessage = asErrorMessage(error, "Composer command failed.");
+      }
+      await invoke<unknown>("gateway_composer_action_respond", {
+        input: { requestId, result, errorMessage },
+      }).catch((error: unknown) => {
+        console.warn("gateway_composer_action_respond failed", error);
+      });
+    };
+
+    void listen<GatewayComposerActionEvent>(
+      "gateway:composer-action-requested",
+      handleComposerActionRequested,
+    ).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlistenComposerActionRequested = dispose;
+    });
+
     return () => {
       disposed = true;
       window.clearInterval(idlePollId);
@@ -719,6 +907,8 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
       unlistenChatRuntimeWake?.();
       unlistenChatCancel?.();
       unlistenGatewayStatus?.();
+      unlistenClarifyTurnRequested?.();
+      unlistenComposerActionRequested?.();
     };
   }, []);
 }

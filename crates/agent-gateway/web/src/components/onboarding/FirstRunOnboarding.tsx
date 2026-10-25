@@ -1,14 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Key, Loader2, Sparkles } from "@liveagent/ui/components/IconSet";
-import { GroupMultiSelect } from "@/components/relay/GroupMultiSelect";
 import { Button } from "@liveagent/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@liveagent/ui/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GroupMultiSelect } from "@/components/relay/GroupMultiSelect";
 import {
   createRelayApiKeys,
   listRelayApiKeys,
@@ -154,9 +150,7 @@ export function FirstRunOnboarding({
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Sparkles className="h-5 w-5" />
                 </div>
-                <DialogTitle className="text-2xl leading-normal">
-                  开始使用 ZeroAgent
-                </DialogTitle>
+                <DialogTitle className="text-2xl leading-normal">开始使用 ZeroAgent</DialogTitle>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   完成一次基础设置后，就可以在网页端、桌面端和已连接设备之间继续工作。
                 </p>
@@ -189,9 +183,7 @@ export function FirstRunOnboarding({
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Key className="h-5 w-5" />
                 </div>
-                <DialogTitle className="text-xl leading-normal">
-                  创建第一个分组密钥
-                </DialogTitle>
+                <DialogTitle className="text-xl leading-normal">创建第一个分组密钥</DialogTitle>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   选择需要使用的模型分组。创建完成后，模型会自动加入模型选择器。
                 </p>
@@ -222,9 +214,7 @@ export function FirstRunOnboarding({
                 <Check className="h-6 w-6" />
               </div>
               <div>
-                <DialogTitle className="text-xl leading-normal">
-                  设置完成
-                </DialogTitle>
+                <DialogTitle className="text-xl leading-normal">设置完成</DialogTitle>
                 <p className="mt-2 text-sm text-muted-foreground">
                   分组模型已经可以在模型选择器中使用。
                 </p>

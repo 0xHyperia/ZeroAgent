@@ -104,6 +104,16 @@ impl AutomationStore {
         })
     }
 
+    #[cfg(test)]
+    pub fn open_at_for_test(path: &std::path::Path) -> Result<Self, String> {
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        db::initialize(&conn)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+            notifier: Mutex::new(None),
+        })
+    }
+
     /// Test-only: read a run's lease deadline column (not exposed via any
     /// public API).
     #[cfg(test)]

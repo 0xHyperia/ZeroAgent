@@ -1,18 +1,21 @@
-import type { Context } from "@earendil-works/pi-ai";
+import type { Context } from "@liveagent/app/lib/agentTypes";
+import { invoke } from "@liveagent/app/shims/tauriCore";
+import { listen } from "@liveagent/app/shims/tauriEvent";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { Pin } from "@liveagent/ui/components/IconSet";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
+import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
+import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import {
-  applyGatewaySettingsSyncPayload,
-  buildGatewaySettingsSyncPayload,
-  type GatewaySettingsSyncPayload,
-} from "@liveagent/ui/lib/settings/sync";
+  configureResourceHostCapabilities,
+  kbrainResourceHostCapabilities,
+  type ResourceHostCapabilities,
+} from "@liveagent/ui/lib/resourceHost";
+import { buildGatewaySettingsSyncPayload } from "@liveagent/ui/lib/settings/sync";
 import { useSettingsOverlay } from "@liveagent/ui/lib/settings/useSettingsOverlay";
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
   lazy,
   type ReactNode,
@@ -23,18 +26,29 @@ import {
   useRef,
   useState,
 } from "react";
+import { useDesktopImageStudioHost } from "./agent-ui-adapters/imageStudio";
+import { settingsHostAdapter } from "./agent-ui-adapters/kbrainSettings";
+import { kbrainSkillsAdapter } from "./agent-ui-adapters/kbrainSkills";
 import { AppBootShell } from "./components/app/AppBootShell";
 import { DesktopExecutionSwitcher } from "./components/DesktopExecutionSwitcher";
 import { useNativeInputContextMenu } from "./components/input-context-menu/NativeInputContextMenu";
-import { FirstRunOnboarding } from "./components/onboarding/FirstRunOnboarding";
+import { useMacOsAppHeaderHeight } from "./components/MacOsTitleBarSpacer";
+import { ReleaseAnnouncementDialog } from "./components/ReleaseAnnouncementDialog";
 import { RelayAccessGate } from "./components/relay/RelayAccessGate";
+import { WindowsSettingsHeader } from "./components/WindowsSettingsHeader";
 import { WindowsTitleBar } from "./components/WindowsTitleBar";
 import { useAppUpdateController } from "./lib/appUpdates";
+import { isKBrainBrowserHost } from "./lib/host";
+import { backendProfileMatchesAccount } from "./lib/kbrain/profile";
+import { requestPlanning } from "./lib/planning/kbrain";
+import { TimeZoneNoticeBanner } from "./lib/planning/TimeZoneNoticeBanner";
+import { setRetryErrorExtension } from "./lib/providers/runtime/streamRetry";
 import {
   getRelayDashboardStats,
   getRelayProfile,
   getValidRelayAccessToken,
   installRelaySessionLifecycle,
+  RELAY_ORIGIN,
   RELAY_SESSION_CHANGED_EVENT,
   type RelayDashboardStats,
   type RelayUser,
@@ -45,7 +59,16 @@ import {
   switchDesktopDevice,
 } from "./lib/relay/desktopExecution";
 import { registerDesktopDevice } from "./lib/relay/deviceRegistration";
-import { bindRelayKeysToSettings, enforceRelayProviderConstraint } from "./lib/relay/providers";
+import { enforceRelayProviderConstraint } from "./lib/relay/providers";
+import {
+  type DesktopExecutionState,
+  LOCAL_ONLY_DEVICE_ID,
+  localDesktopExecutionState,
+  refreshDesktopExecutionState,
+  selectDesktopExecutionState,
+  unavailableDesktopExecutionState,
+} from "./lib/relay/remoteDeviceState";
+import { useReleaseAnnouncementController } from "./lib/releaseAnnouncement";
 import {
   type AppSettings,
   getDefaultSettings,
@@ -58,6 +81,7 @@ import {
   THEME_OPTIONS,
   type Theme,
 } from "./lib/settings";
+import { mergeBackendOwnedSettings } from "./lib/settings/backendOwnedMerge";
 import { getSettingsErrorMessage, SettingsStorageError } from "./lib/settings/errors";
 import {
   loadPersistedSettingsWithDefaults,
@@ -68,6 +92,12 @@ import {
 import { desktopSttSettingsService } from "./lib/stt/desktopSttSettingsService";
 import { RemoteDeviceChatPage } from "./pages/RemoteDeviceChatPage";
 import type { SectionId } from "./pages/settings/types";
+
+const guiResourceHostCapabilities: ResourceHostCapabilities = {
+  ...kbrainResourceHostCapabilities,
+  skillsAdapter: kbrainSkillsAdapter,
+};
+configureResourceHostCapabilities(guiResourceHostCapabilities);
 
 let chatPageModule: Promise<typeof import("./pages/ChatPage")> | null = null;
 
@@ -82,9 +112,6 @@ const SettingsPage = lazy(async () => ({
 }));
 const CronPromptRunner = lazy(async () => ({
   default: (await import("./components/cron/CronPromptRunner")).CronPromptRunner,
-}));
-const MemoryOrganizerHost = lazy(async () => ({
-  default: (await import("./components/memory/useMemoryOrganizer")).MemoryOrganizerHost,
 }));
 
 function getDefaultContext(): Context {
@@ -110,7 +137,6 @@ function interpolateMessage(template: string, values: Record<string, string>) {
 }
 
 const GATEWAY_SETTINGS_SYNC_EVENT = "gateway:settings-sync";
-const LOCAL_ONLY_DEVICE_ID = "zeroagent-local";
 
 type RemoteSelectionLease = {
   lease: string;
@@ -146,17 +172,21 @@ function buildLocalOnlyEnvironment(settings: AppSettings): DesktopEnvironment[] 
   ];
 }
 
-function AppChrome(props: { children: ReactNode }) {
+function AppChrome(props: { children: ReactNode; notice?: ReactNode }) {
   // Plain inputs get a shared cut/copy/paste menu; everything else keeps the
   // suppressed native menu (surfaces with their own menus opt out upstream).
   const { onRootContextMenu, onRootMouseDownCapture, menu } = useNativeInputContextMenu();
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Root-level pointer handlers only route native input menus and dismissals; child controls own activation semantics.
     <div
-      className="relative flex h-full w-full flex-col overflow-hidden bg-background"
+      className="relative flex size-full flex-col overflow-hidden bg-background"
       onContextMenu={onRootContextMenu}
       onMouseDownCapture={onRootMouseDownCapture}
     >
-      <WindowsTitleBar />
+      {/* No conditional title bar here: adding or removing a sibling when the
+          settings overlay opens would resize the chat subtree underneath it and make
+          the whole page jump. The overlay carries its own title bar instead. */}
+      {props.notice}
       <div className="relative min-h-0 flex-1 overflow-hidden bg-background">{props.children}</div>
       {menu}
     </div>
@@ -185,72 +215,6 @@ function hasSensitiveSettingsUpdates(settings: AppSettings) {
   );
 }
 
-function hasSensitiveSettingsUpdatesPayload(payload: unknown) {
-  const source =
-    payload && typeof payload === "object" && !Array.isArray(payload)
-      ? (payload as {
-          providerApiKeyUpdates?: unknown;
-          providerUsageQuerySecretUpdates?: unknown;
-          sshSecretUpdates?: unknown;
-          sttSecretUpdate?: unknown;
-        })
-      : {};
-  if (
-    source.sttSecretUpdate &&
-    typeof source.sttSecretUpdate === "object" &&
-    !Array.isArray(source.sttSecretUpdate)
-  ) {
-    return true;
-  }
-  const providerUpdates = source.providerApiKeyUpdates;
-  if (
-    providerUpdates &&
-    typeof providerUpdates === "object" &&
-    !Array.isArray(providerUpdates) &&
-    Object.values(providerUpdates).some(
-      (value) => typeof value === "string" && value.trim().length > 0,
-    )
-  ) {
-    return true;
-  }
-  const usageQueryUpdates = source.providerUsageQuerySecretUpdates;
-  if (
-    usageQueryUpdates &&
-    typeof usageQueryUpdates === "object" &&
-    !Array.isArray(usageQueryUpdates) &&
-    Object.values(usageQueryUpdates).some((value) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-      const update = value as {
-        apiKey?: unknown;
-        accessToken?: unknown;
-        secretAccessKey?: unknown;
-      };
-      // 显式携带字段(含空串=清除已配置密钥)即视为敏感更新,不得被丢弃。
-      return (
-        typeof update.apiKey === "string" ||
-        typeof update.accessToken === "string" ||
-        typeof update.secretAccessKey === "string"
-      );
-    })
-  ) {
-    return true;
-  }
-  const sshUpdates = source.sshSecretUpdates;
-  return Boolean(
-    sshUpdates &&
-      typeof sshUpdates === "object" &&
-      !Array.isArray(sshUpdates) &&
-      Object.values(sshUpdates).some((value) => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-        const update = value as { password?: unknown; privateKey?: unknown };
-        return (
-          (typeof update.password === "string" && update.password.trim().length > 0) ||
-          (typeof update.privateKey === "string" && update.privateKey.trim().length > 0)
-        );
-      }),
-  );
-}
-
 function applyRuntimeSystemDefaults(settings: AppSettings, defaultWorkdir: string): AppSettings {
   const normalizedDefaultWorkdir = defaultWorkdir.trim();
   const system =
@@ -269,6 +233,8 @@ function applyRuntimeSystemDefaults(settings: AppSettings, defaultWorkdir: strin
 }
 
 export default function App() {
+  // Root-level so the header height survives view switches; see the hook's note.
+  useMacOsAppHeaderHeight();
   const {
     settingsOpen,
     overlay,
@@ -281,15 +247,32 @@ export default function App() {
   const [settingsReady, setSettingsReady] = useState(false);
   const [relayReady, setRelayReady] = useState(false);
   const [relayUser, setRelayUser] = useState<RelayUser | null>(null);
+  const acceptRelayUser = useCallback((user: RelayUser) => {
+    if (!backendProfileMatchesAccount(RELAY_ORIGIN, user.id)) {
+      window.location.reload();
+      return;
+    }
+    setRelayUser(user);
+  }, []);
   const [relayStats, setRelayStats] = useState<RelayDashboardStats | null>(null);
-  const [desktopEnvironments, setDesktopEnvironments] = useState<DesktopEnvironment[]>([]);
-  const [localDeviceId, setLocalDeviceId] = useState("");
-  const [selectedExecutionDeviceId, setSelectedExecutionDeviceId] = useState("");
+  const [executionState, setExecutionState] = useState<DesktopExecutionState>({
+    environments: [],
+    localDeviceId: "",
+    selectedDeviceId: "",
+  });
+  const {
+    environments: desktopEnvironments,
+    localDeviceId,
+    selectedDeviceId: selectedExecutionDeviceId,
+  } = executionState;
+  const executionSessionEpochRef = useRef(0);
   const [remoteSelectionLeases, setRemoteSelectionLeases] = useState<
     Map<string, RemoteSelectionLease>
   >(() => new Map());
   const [backgroundHostsReady, setBackgroundHostsReady] = useState(false);
   const [settings, setSettingsState] = useState<AppSettings>(() => getBootAlignedDefaultSettings());
+  const [imageStudioWorkspace, setImageStudioWorkspace] = useState(settings.system.workdir);
+  const imageStudioHost = useDesktopImageStudioHost(imageStudioWorkspace);
   const [sttProviderOverride, setSttProviderOverride] = useState<SttProviderId | null>(null);
   const [settingsSaveState, setSettingsSaveState] = useState<SettingsSaveState>({
     status: "idle",
@@ -319,27 +302,31 @@ export default function App() {
 
   useEffect(() => {
     const applyLocalOnly = () => {
-      const environments = buildLocalOnlyEnvironment(settings);
-      setDesktopEnvironments(environments);
-      setLocalDeviceId(LOCAL_ONLY_DEVICE_ID);
-      setSelectedExecutionDeviceId(LOCAL_ONLY_DEVICE_ID);
+      setExecutionState(
+        localDesktopExecutionState(buildLocalOnlyEnvironment(settings), LOCAL_ONLY_DEVICE_ID),
+      );
     };
     if (!relayReady || !settings.remote.enabled || !settings.remote.gatewayUrl.trim()) {
       applyLocalOnly();
       return;
     }
     let cancelled = false;
+    const sessionEpoch = executionSessionEpochRef.current;
     const refresh = () =>
       getDesktopEnvironments(settings)
         .then((result) => {
-          if (cancelled || !result) return;
-          setDesktopEnvironments(result.environments);
-          setLocalDeviceId(result.localDeviceId);
-          setSelectedExecutionDeviceId((current) => current || result.localDeviceId);
+          if (cancelled || sessionEpoch !== executionSessionEpochRef.current || !result) return;
+          setExecutionState((current) =>
+            refreshDesktopExecutionState(current, result.environments, result.localDeviceId),
+          );
         })
         .catch((error) => {
           console.warn("load desktop execution environments failed", error);
-          if (!cancelled) applyLocalOnly();
+          if (!cancelled && sessionEpoch === executionSessionEpochRef.current) {
+            setExecutionState((current) =>
+              unavailableDesktopExecutionState(current, buildLocalOnlyEnvironment(settings)),
+            );
+          }
         });
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15_000);
@@ -359,13 +346,14 @@ export default function App() {
   useEffect(() => {
     if (!relayReady || !settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return;
     let cancelled = false;
+    const sessionEpoch = executionSessionEpochRef.current;
     void registerDesktopDevice(settings)
       .then(() => getDesktopEnvironments(settings))
       .then((result) => {
-        if (cancelled || !result) return;
-        setDesktopEnvironments(result.environments);
-        setLocalDeviceId(result.localDeviceId);
-        setSelectedExecutionDeviceId((current) => current || result.localDeviceId);
+        if (cancelled || sessionEpoch !== executionSessionEpochRef.current || !result) return;
+        setExecutionState((current) =>
+          refreshDesktopExecutionState(current, result.environments, result.localDeviceId),
+        );
       })
       .catch((error) => {
         console.warn("refresh ZeroAgent device registration failed", error);
@@ -385,6 +373,7 @@ export default function App() {
 
   const saveSequenceRef = useRef(0);
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const gatewaySyncChainRef = useRef<Promise<void>>(Promise.resolve());
   const defaultWorkdirRef = useRef("");
   // Mirrors `settings` so setSettings/queueSettingsSave can read the latest value
   // synchronously without passing a (side-effecting) function into setSettingsState —
@@ -393,11 +382,51 @@ export default function App() {
   // crypto.randomUUID() inside caller updaters) twice per call.
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const refreshCommittedConfiguration = useCallback((canApply: () => boolean = () => true) => {
+    const sequence = saveSequenceRef.current;
+    saveChainRef.current = saveChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const loaded = await loadPersistedSettingsWithDefaults();
+        if (!canApply() || saveSequenceRef.current !== sequence) return;
+        const next = applyRuntimeSystemDefaults(loaded.settings, loaded.defaultWorkdir);
+        settingsRef.current = next;
+        setSettingsState(next);
+      })
+      .catch((error) => {
+        console.error("Refresh committed settings failed", error);
+      });
+  }, []);
+  const sttSettingsService = useMemo(
+    () => ({
+      ...desktopSttSettingsService,
+      acceptPersisted(stt: AppSettings["stt"]) {
+        const current = settingsRef.current;
+        const next = normalizeSettings({
+          ...current,
+          stt,
+        });
+        settingsRef.current = next;
+        setSettingsState(next);
+        // A scalar STT receipt cannot lend its version to other stale root fields.
+        refreshCommittedConfiguration();
+      },
+    }),
+    [refreshCommittedConfiguration],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: Saved provider changes invalidate the temporary card selection.
   useEffect(() => {
     setSttProviderOverride(null);
   }, [settings.stt.provider]);
+
+  // 思考档位运行期补充（models.dev）：启动后台拉一次，TTL 内幂等；失败静默，
+  // 档位解析维持在「快照 + 兜底」的现状。
+  useEffect(() => {
+    void loadThinkingLiveSupplement();
+  }, []);
   const [systemThemeVersion, setSystemThemeVersion] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The version is an explicit invalidation signal for the system media query, which resolveEffectiveTheme reads outside React.
   const effectiveTheme = useMemo(
     () => resolveEffectiveTheme(settings.theme),
     [settings.theme, systemThemeVersion],
@@ -414,6 +443,10 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", effectiveTheme === "dark");
+    // index.html 的启动脚本在 system 主题下会监听系统主题；React 接管后移除它。
+    const bootWindow = window as Window & { __liveagentBootThemeCleanup?: () => void };
+    bootWindow.__liveagentBootThemeCleanup?.();
+    bootWindow.__liveagentBootThemeCleanup = undefined;
   }, [effectiveTheme]);
 
   useEffect(() => {
@@ -429,7 +462,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!settingsReady) return;
+    if (isKBrainBrowserHost() || !settingsReady) return;
     void invoke("app_set_close_window_behavior", {
       behavior: settings.closeWindowBehavior,
     }).catch(() => {
@@ -439,9 +472,19 @@ export default function App() {
 
   // 启动时恢复本机保存的全局快捷键（桌面端专属，非 Tauri 环境内部自动忽略）。
   useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
     void import("./lib/shortcuts/globalShortcuts")
-      .then(({ applyStoredGlobalShortcuts }) => applyStoredGlobalShortcuts())
+      .then(({ applyStoredGlobalShortcuts, installAppShortcutListener }) => {
+        if (disposed) return;
+        cleanup = installAppShortcutListener();
+        return applyStoredGlobalShortcuts();
+      })
       .catch(() => {});
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   // 窗口置顶状态：Rust 侧是唯一事实源（快捷键或指示器切换都经它广播），
@@ -480,6 +523,9 @@ export default function App() {
 
   useEffect(() => {
     const handleSessionChanged = () => {
+      executionSessionEpochRef.current++;
+      setExecutionState({ environments: [], localDeviceId: "", selectedDeviceId: "" });
+      setRemoteSelectionLeases(new Map());
       setRelayReady(false);
       setRelayUser(null);
       setRelayStats(null);
@@ -492,9 +538,9 @@ export default function App() {
   const relayUserId = relayUser?.id;
   const refreshRelayAccount = useCallback(async () => {
     const [profile, stats] = await Promise.all([getRelayProfile(), getRelayDashboardStats()]);
-    setRelayUser(profile);
+    acceptRelayUser(profile);
     setRelayStats(stats);
-  }, []);
+  }, [acceptRelayUser]);
 
   useEffect(() => {
     if (!relayReady || !relayUserId) return;
@@ -521,6 +567,8 @@ export default function App() {
         const persistedSettingsPromise = loadPersistedSettingsWithDefaults();
         void loadChatPage();
         const { settings: loaded, defaultWorkdir } = await persistedSettingsPromise;
+        if (!loaded.configurationRevision && !loaded.backendConfigurationVersion)
+          loaded.skills = (await kbrainSkillsAdapter.list()).settings;
         if (!cancelled) {
           defaultWorkdirRef.current = defaultWorkdir;
           const loadedWithDefaults = applyRuntimeSystemDefaults(loaded, defaultWorkdir);
@@ -571,6 +619,18 @@ export default function App() {
     return () => window.clearTimeout(timeoutId);
   }, [settingsReady]);
 
+  // Push the user's retry-error classification (preset Cloudflare 5xx toggles +
+  // custom substrings) into the stream-retry runtime. The extension is a pure
+  // function of settings, so re-running on every change keeps the runtime in
+  // sync without any per-call plumbing. The runtime's default already enables
+  // every preset, so this is a no-op until the user actually changes something.
+  useEffect(() => {
+    setRetryErrorExtension({
+      statusCodes: settings.retryErrorSettings.presetStatusCodes,
+      patterns: settings.retryErrorSettings.customPatterns,
+    });
+  }, [settings.retryErrorSettings]);
+
   const queueSettingsSave = useCallback(
     (prev: AppSettings, next: AppSettings, fallback: string, publishSync: boolean) => {
       const saveSequence = ++saveSequenceRef.current;
@@ -578,38 +638,91 @@ export default function App() {
 
       saveChainRef.current = saveChainRef.current
         .catch(() => undefined)
-        .then(() => persistSettings(prev, next))
+        .then(async () => {
+          return persistSettings(prev, next);
+        })
         .then(async (persistResult) => {
           const publishTarget = normalizeSettings({
             ...next,
+            ...(persistResult.uiPreferencesRevision
+              ? { uiPreferencesRevision: persistResult.uiPreferencesRevision }
+              : {}),
+            ...(persistResult.customProviders
+              ? { customProviders: persistResult.customProviders }
+              : {}),
             ...(persistResult.ssh ? { ssh: persistResult.ssh } : {}),
             ...(persistResult.stt ? { stt: persistResult.stt } : {}),
+            ...(persistResult.configurationRevision
+              ? { configurationRevision: persistResult.configurationRevision }
+              : {}),
+            ...(persistResult.mcp ? { mcp: persistResult.mcp } : {}),
+            ...(persistResult.agents ? { agents: persistResult.agents } : {}),
+            ...(persistResult.nativeConfigurationRevision
+              ? { nativeConfigurationRevision: persistResult.nativeConfigurationRevision }
+              : {}),
           });
-          if (
-            (persistResult.ssh || persistResult.stt) &&
-            saveSequenceRef.current === saveSequence
-          ) {
-            const merged = normalizeSettings({
-              ...settingsRef.current,
-              ...(persistResult.ssh ? { ssh: persistResult.ssh } : {}),
-              ...(persistResult.stt ? { stt: persistResult.stt } : {}),
-            });
-            settingsRef.current = merged;
-            setSettingsState(merged);
+          if (saveSequenceRef.current === saveSequence) {
+            // K-brain rebuilds customProviders on every PATCH (a model pick included).
+            // Only content changes reach React state, so an unchanged write-back keeps
+            // the existing references and does not re-run catalog/model memos.
+            const merged = mergeBackendOwnedSettings(
+              settingsRef.current,
+              persistResult,
+              normalizeSettings,
+            );
+            if (merged) {
+              settingsRef.current = merged;
+              setSettingsState(merged);
+            }
           }
           if (persistResult.conflict) {
             throw new SettingsStorageError(persistResult.conflict);
           }
+          if (persistResult.providerError) {
+            throw persistResult.providerError;
+          }
           if (publishSync) {
-            await publishGatewaySettingsSync(publishTarget);
+            // Gateway synchronization is a secondary broadcast. Keep it ordered, but do not
+            // hold the local config write queue on a slow or temporarily unavailable Gateway.
+            gatewaySyncChainRef.current = gatewaySyncChainRef.current
+              .catch(() => undefined)
+              .then(() => publishGatewaySettingsSync(publishTarget))
+              .catch((error) => {
+                if (saveSequenceRef.current === saveSequence) {
+                  console.error("publish gateway settings sync failed", error);
+                  setSettingsSaveState({
+                    status: "error",
+                    message: getSettingsErrorMessage(error, fallback, next.locale, translate),
+                  });
+                }
+              });
           }
+          return persistResult.warning;
         })
-        .then(() => {
+        .then((warning) => {
           if (saveSequenceRef.current === saveSequence) {
-            setSettingsSaveState({ status: "saved" });
+            setSettingsSaveState(
+              warning ? { status: "error", message: warning } : { status: "saved" },
+            );
           }
         })
-        .catch((error) => {
+        .catch(async (error) => {
+          if (
+            error instanceof SettingsStorageError &&
+            (error.code === "native_settings_changed" || error.code === "save_failed")
+          ) {
+            // Keep the next queued save behind recovery. Its old snapshot still has
+            // its old revision and cannot silently overwrite this freshly read data.
+            try {
+              const loaded = await loadPersistedSettingsWithDefaults();
+              defaultWorkdirRef.current = loaded.defaultWorkdir;
+              const refreshed = applyRuntimeSystemDefaults(loaded.settings, loaded.defaultWorkdir);
+              settingsRef.current = refreshed;
+              setSettingsState(refreshed);
+            } catch (reloadError) {
+              console.error("reload current settings after conflict failed", reloadError);
+            }
+          }
           if (saveSequenceRef.current === saveSequence) {
             console.error("persist settings failed", error);
             setSettingsSaveState({
@@ -659,6 +772,8 @@ export default function App() {
   const reloadPersistedSettings = useCallback(async () => {
     await saveChainRef.current.catch(() => undefined);
     const { settings: loaded, defaultWorkdir } = await loadPersistedSettingsWithDefaults();
+    if (!loaded.configurationRevision && !loaded.backendConfigurationVersion)
+      loaded.skills = (await kbrainSkillsAdapter.list()).settings;
     defaultWorkdirRef.current = defaultWorkdir;
     const loadedWithDefaults = applyRuntimeSystemDefaults(loaded, defaultWorkdir);
     settingsRef.current = loadedWithDefaults;
@@ -681,8 +796,16 @@ export default function App() {
     [setSettings],
   );
 
+  const settingsLeaveGuard = useRef<(() => boolean) | undefined>(undefined);
+  const registerSettingsLeaveGuard = useCallback((guard: () => boolean) => {
+    settingsLeaveGuard.current = guard;
+    return () => {
+      if (settingsLeaveGuard.current === guard) settingsLeaveGuard.current = undefined;
+    };
+  }, []);
   const openSettings = useCallback(
     (section: SectionId = "system", providerId?: string) => {
+      if (settingsLeaveGuard.current && !settingsLeaveGuard.current()) return;
       setSettingsSection(section);
       setSettingsProviderId(section === "providers" ? providerId : undefined);
       openSettingsOverlay();
@@ -702,7 +825,22 @@ export default function App() {
     [openSettingsOverlay, reloadPersistedSettings],
   );
 
-  const closeSettings = closeSettingsOverlay;
+  // Read the calendar time zone once per launch so the banner can flag a mismatch; it is
+  // not tracked afterwards (a system change applies after restart). Failures stay silent.
+  const timeZoneChecked = useRef(false);
+  useEffect(() => {
+    if (!settingsReady || !backgroundHostsReady || timeZoneChecked.current) return;
+    const timer = setTimeout(() => {
+      timeZoneChecked.current = true;
+      void requestPlanning("timezone.get").catch(() => {});
+    }, 1_500);
+    return () => clearTimeout(timer);
+  }, [settingsReady, backgroundHostsReady]);
+
+  const closeSettings = useCallback(() => {
+    if (settingsLeaveGuard.current?.() === false) return;
+    closeSettingsOverlay();
+  }, [closeSettingsOverlay]);
 
   // 动作总线（Rust `app:action`）中 App 拥有的动作：主题/打开设置/网关开关/
   // 检查更新，以及「新建对话」时先收起设置覆盖层（会话侧由 ChatPage 处理）。
@@ -777,6 +915,13 @@ export default function App() {
 
   const localeContextValue = useLocaleContextValue(settings.locale);
 
+  useEffect(() => {
+    // Calendar reminder notifications are shown by the backend, which has no UI locale.
+    void invoke("planning_set_labels", {
+      notificationTitle: translate("planner.notificationTitle", settings.locale),
+    }).catch(() => {});
+  }, [settings.locale]);
+
   const appUpdateMessages = useMemo(
     () => ({
       checkFailed: translate("settings.aboutUpdateCheckFailed", settings.locale),
@@ -799,7 +944,6 @@ export default function App() {
       cancelLabel: translate("appUpdate.restartLater", settings.locale),
       confirmLabel: translate("appUpdate.restartAnyway", settings.locale),
       closeLabel: translate("appUpdate.restartLater", settings.locale),
-      tone: "warning",
       preferCancel: true,
     });
   }, [requestRestartConfirm, settings.locale]);
@@ -813,6 +957,10 @@ export default function App() {
     includePrereleases: settings.updates.includePrereleases,
     messages: appUpdateMessages,
     beforeRestart: beforeAppRestart,
+  });
+  const releaseAnnouncement = useReleaseAnnouncementController({
+    enabled: settingsReady,
+    currentVersion: __LIVEAGENT_APP_VERSION__,
   });
   // 托盘「检查更新」动作：controller 在监听 effect 之后创建，经 ref 回填。
   runUpdateCheckRef.current = () => {
@@ -834,42 +982,24 @@ export default function App() {
     }
 
     let cancelled = false;
-    const unlistenPromise = listen<GatewaySettingsSyncPayload>(
-      GATEWAY_SETTINGS_SYNC_EVENT,
-      (event) => {
-        if (cancelled) {
-          return;
-        }
+    const unlistenPromise = listen<{ committed: boolean }>(GATEWAY_SETTINGS_SYNC_EVENT, (event) => {
+      if (cancelled || !event.payload.committed) {
+        return;
+      }
 
-        const prev = settingsRef.current;
-        const next = applyRuntimeSystemDefaults(
-          applyGatewaySettingsSyncPayload(prev, event.payload),
-          defaultWorkdirRef.current,
-        );
-        const publicChanged = hasSettingsSyncChanged(prev, next);
-        if (!publicChanged && !hasSensitiveSettingsUpdatesPayload(event.payload)) {
-          return;
-        }
-        settingsRef.current = next;
-        setSettingsState(next);
-        queueSettingsSave(
-          prev,
-          next,
-          translate("app.gatewaySettingsSyncFailed", next.locale),
-          publicChanged,
-        );
-      },
-    );
+      refreshCommittedConfiguration(() => !cancelled);
+    });
 
     return () => {
       cancelled = true;
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [queueSettingsSave, settingsReady]);
+  }, [settingsReady, refreshCommittedConfiguration]);
 
   if (!settingsReady) {
     return (
       <LocaleContext.Provider value={localeContextValue}>
+        <Toaster />
         <AppChrome>
           <AppBootShell loadingLabel={translate("app.loading", settings.locale)} />
         </AppChrome>
@@ -886,6 +1016,10 @@ export default function App() {
             setSettings={setSettings}
             appUpdate={appUpdate}
             onReady={(user) => {
+              if (!backendProfileMatchesAccount(RELAY_ORIGIN, user.id)) {
+                window.location.reload();
+                return;
+              }
               setRelayUser(user);
               setRelayReady(true);
             }}
@@ -899,11 +1033,14 @@ export default function App() {
   const active = overlay === "open";
 
   async function handleExecutionSwitch(environment: DesktopEnvironment) {
+    const sessionEpoch = executionSessionEpochRef.current;
     const isLocal = environment.device_id === localDeviceId;
     const existingLease = remoteSelectionLeases.get(environment.device_id);
     if (!isLocal && environment.online) await getValidRelayAccessToken();
     if (!isLocal && environment.online && !isRemoteLeaseValid(existingLease)) {
       const selection = await switchDesktopDevice(settings, environment);
+      if (sessionEpoch !== executionSessionEpochRef.current)
+        throw new Error("账号已变更，请重新选择设备。");
       setRemoteSelectionLeases((current) => {
         const next = new Map(current);
         next.set(environment.device_id, {
@@ -913,17 +1050,16 @@ export default function App() {
         return next;
       });
     }
-    setSelectedExecutionDeviceId(environment.device_id);
+    if (sessionEpoch !== executionSessionEpochRef.current)
+      throw new Error("账号已变更，请重新选择设备。");
+    setExecutionState((current) => selectDesktopExecutionState(current, environment));
   }
 
   const selectedExecutionEnvironment =
     desktopEnvironments.find(
       (environment) => environment.device_id === selectedExecutionDeviceId,
-    ) ??
-    desktopEnvironments.find((environment) => environment.device_id === localDeviceId) ??
-    null;
-  const localExecutionSelected =
-    !selectedExecutionEnvironment || selectedExecutionEnvironment.device_id === localDeviceId;
+    ) ?? null;
+  const localExecutionSelected = selectedExecutionEnvironment?.device_id === localDeviceId;
   const executionSwitcher =
     desktopEnvironments.length > 0 && !settingsOpen ? (
       <DesktopExecutionSwitcher
@@ -943,24 +1079,34 @@ export default function App() {
 
   return (
     <LocaleContext.Provider value={localeContextValue}>
-      <AppChrome>
+      <Toaster />
+      <AppChrome
+        notice={
+          <>
+            <TimeZoneNoticeBanner onOpenSettings={() => openSettings("system")} />
+          </>
+        }
+      >
         {backgroundHostsReady ? (
           <Suspense fallback={null}>
             <CronPromptRunner settings={settings} />
-            <MemoryOrganizerHost settings={settings} setSettings={setSettings} />
           </Suspense>
         ) : null}
-        <AppErrorBoundary>
+        <AppErrorBoundary fallbackHeader={<WindowsTitleBar />}>
           <Suspense
             fallback={<AppBootShell loadingLabel={translate("app.loading", settings.locale)} />}
           >
-            <div className={localExecutionSelected ? "h-full" : "hidden"}>
+            {localExecutionSelected ? (
               <ChatPage
                 relayUser={relayUser}
                 relayStats={relayStats}
                 onRefreshRelayAccount={refreshRelayAccount}
+                headerLeadingActions={executionSwitcher}
                 settings={settings}
                 setSettings={setSettings}
+                resourceHost={guiResourceHostCapabilities}
+                imageStudioHost={imageStudioHost}
+                onImageStudioWorkspaceChange={setImageStudioWorkspace}
                 sttProviderOverride={sttProviderOverride}
                 getMcpSettings={getMcpSettings}
                 getToolPolicies={getToolPolicies}
@@ -968,58 +1114,71 @@ export default function App() {
                 setContext={setContext}
                 onOpenSettings={openSettings}
                 onToggleTheme={toggleTheme}
-                headerLeadingActions={executionSwitcher}
                 appUpdate={appUpdate}
                 onRunningConversationCountChange={handleRunningConversationCountChange}
               />
-            </div>
-            {!localExecutionSelected && selectedExecutionEnvironment ? (
+            ) : selectedExecutionEnvironment ? (
               <RemoteDeviceChatPage
                 key={selectedExecutionEnvironment.device_id}
                 settings={settings}
                 environment={selectedExecutionEnvironment}
                 selectionLease={
-                  remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)?.lease ?? ""
+                  isRemoteLeaseValid(
+                    remoteSelectionLeases.get(selectedExecutionEnvironment.device_id),
+                  )
+                    ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)!.lease
+                    : ""
                 }
                 headerLeadingActions={executionSwitcher}
               />
-            ) : null}
+            ) : (
+              <AppBootShell loadingLabel="请重新选择并授权设备" />
+            )}
           </Suspense>
         </AppErrorBoundary>
         {visible && (
           <div
             className={cn(
-              "absolute inset-0 z-50 transition-all duration-300 ease-out",
+              "absolute inset-0 z-50 flex flex-col transition-all duration-300 ease-out",
               active ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6",
             )}
             onTransitionEnd={handleTransitionEnd}
           >
-            <AppErrorBoundary>
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
-                    {translate("app.loading", settings.locale)}
-                  </div>
-                }
-              >
-                <SettingsPage
-                  settings={settings}
-                  setSettings={setSettings}
-                  saveState={settingsSaveState}
-                  onBack={closeSettings}
-                  initialSection={settingsSection}
-                  initialProviderId={settingsProviderId}
-                  appUpdate={appUpdate}
-                  relayUser={relayUser}
-                  relayStats={relayStats}
-                  onRelayUserChange={setRelayUser}
-                  onRelayStatsChange={setRelayStats}
-                  sttSettingsService={desktopSttSettingsService}
-                  onSttProviderChange={setSttProviderOverride}
-                  reloadSettings={reloadPersistedSettings}
-                />
-              </Suspense>
-            </AppErrorBoundary>
+            {/* The overlay owns its title bar so the chat subtree below keeps a
+                constant height across open/close. */}
+            <WindowsSettingsHeader onBack={closeSettings} />
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <AppErrorBoundary>
+                <Suspense
+                  fallback={
+                    <div className="flex size-full items-center justify-center bg-background text-sm text-muted-foreground">
+                      {translate("app.loading", settings.locale)}
+                    </div>
+                  }
+                >
+                  <SettingsPage
+                    relayUser={relayUser}
+                    relayStats={relayStats}
+                    onRelayUserChange={acceptRelayUser}
+                    onRelayStatsChange={setRelayStats}
+                    settings={settings}
+                    settingsHost={settingsHostAdapter}
+                    imageClient={imageStudioHost?.client}
+                    registerLeaveGuard={registerSettingsLeaveGuard}
+                    setSettings={setSettings}
+                    saveState={settingsSaveState}
+                    onBack={closeSettings}
+                    initialSection={settingsSection}
+                    initialProviderId={settingsProviderId}
+                    appUpdate={appUpdate}
+                    releaseAnnouncement={releaseAnnouncement}
+                    sttSettingsService={sttSettingsService}
+                    onSttProviderChange={setSttProviderOverride}
+                    reloadSettings={reloadPersistedSettings}
+                  />
+                </Suspense>
+              </AppErrorBoundary>
+            </div>
           </div>
         )}
         {windowPinned && (
@@ -1029,19 +1188,17 @@ export default function App() {
               void invoke("app_toggle_window_pin").catch(() => {});
             }}
             title={translate("app.windowPinnedHint", settings.locale)}
-            className="layer-toast absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary shadow-sm backdrop-blur transition-colors hover:bg-primary/20"
+            className={cn(
+              "layer-toast absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5",
+              "rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1",
+              "text-xs font-medium text-primary shadow-sm backdrop-blur transition-colors hover:bg-primary/20",
+            )}
           >
-            <Pin className="h-3 w-3" />
+            <Pin className="size-3" />
             {translate("app.windowPinned", settings.locale)}
           </button>
         )}
-        <FirstRunOnboarding
-          userId={relayUser.id}
-          onSyncKeys={async (keys, groups) => {
-            const next = await bindRelayKeysToSettings(settings, keys, groups, true);
-            setSettings(() => next);
-          }}
-        />
+        <ReleaseAnnouncementDialog controller={releaseAnnouncement} />
         {restartConfirmDialog}
       </AppChrome>
     </LocaleContext.Provider>

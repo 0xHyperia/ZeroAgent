@@ -1,13 +1,14 @@
 use super::{
-    attach_stt_secret_sync, build_gateway_runtime_status_envelope,
+    attach_stt_secret_sync, build_chat_queue_event_envelope, build_gateway_runtime_status_envelope,
     build_local_settings_update_event_payload, effective_agent_id,
     gateway_connection_needs_restart, gateway_connection_stale_after, gateway_reconnect_backoff,
-    history_share_resolve_error_code, is_chat_runtime_wake_request_id,
-    merge_settings_sync_snapshot, merge_settings_update_into_snapshot, proto,
-    removed_workspace_project_ids, required_terminal_project_path_key, set_disconnected_status,
+    history_share_resolve_error_code, ignore_gateway_outbound_offline,
+    is_chat_runtime_wake_request_id, merge_settings_sync_snapshot,
+    merge_settings_update_into_snapshot, proto, removed_workspace_project_ids,
+    required_terminal_project_path_key, set_disconnected_status, GatewayChatQueueEventInput,
     GatewayChatRequestEvent, GatewayController, GatewayStatusSnapshot, RemoteChatInboxRecord,
-    GATEWAY_CHAT_LEASE_MS, GATEWAY_CHAT_RUNNING_LEASE_MS, GATEWAY_RECONNECT_MAX,
-    GATEWAY_RECONNECT_MIN, GATEWAY_RECONNECT_STABLE_AFTER,
+    GATEWAY_CHAT_LEASE_MS, GATEWAY_CHAT_RUNNING_LEASE_MS, GATEWAY_OUTBOUND_OFFLINE_ERROR,
+    GATEWAY_RECONNECT_MAX, GATEWAY_RECONNECT_MIN, GATEWAY_RECONNECT_STABLE_AFTER,
     GATEWAY_RUNTIME_STATUS_REPUBLISH_MAX_AGE, GATEWAY_WEBVIEW_REPORT_FRESH_WINDOW,
 };
 use crate::commands::settings::RemoteSettingsPayload;
@@ -15,6 +16,50 @@ use crate::services::gateway_bridge;
 use crate::services::provider_usage::{ProviderUsageResult, UsageData};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
+
+#[test]
+fn remote_chat_failure_preserves_actionable_error_for_webui() {
+    let envelope = super::build_gateway_chat_control_event_envelope(
+        "request-1".into(),
+        "conversation-1".into(),
+        "failed",
+        "desktop_runtime_rejected".into(),
+        "Backend request failed".into(),
+    );
+    let Some(proto::agent_envelope::Payload::ChatControl(event)) = envelope.payload else {
+        panic!("missing chat control event");
+    };
+    assert_eq!(event.state, "failed");
+    assert_eq!(event.request_id, "request-1");
+    assert_eq!(event.error_code, "desktop_runtime_rejected");
+    assert_eq!(event.message, "Backend request failed");
+}
+
+#[test]
+fn gateway_model_snapshot_uses_backend_instead_of_legacy_providers() {
+    let mut snapshot = json!({
+        "customProviders": [{"id": "legacy", "activeModels": ["old-model"]}],
+        "selectedModel": {"customProviderId": "legacy", "model": "old-model"},
+        "system": {"workdir": "C:\\Users\\Tester\\workspace"}
+    });
+    super::apply_kbrain_model_settings(
+        &mut snapshot,
+        &json!({
+            "providers": [{"id": "backend", "activeModels": ["new-model"]}],
+            "defaultProvider": "backend", "defaultModel": "new-model"
+        }),
+    )
+    .unwrap();
+    assert_eq!(snapshot["customProviders"][0]["id"], "backend");
+    assert_eq!(snapshot["selectedModel"]["model"], "new-model");
+    assert_eq!(
+        snapshot["system"]["workdir"],
+        "C:\\Users\\Tester\\workspace"
+    );
+    super::apply_kbrain_model_settings(&mut snapshot, &json!({"providers": []})).unwrap();
+    assert_eq!(snapshot["selectedModel"], Value::Null);
+    assert!(super::apply_kbrain_model_settings(&mut snapshot, &json!({})).is_err());
+}
 
 #[test]
 fn provider_usage_response_serializes_only_result_json() {
@@ -82,7 +127,12 @@ fn gateway_chat_request(
         workdir: String::new(),
         command_safety_mode: String::new(),
         uploaded_files: Vec::new(),
+        referenced_conversations: Vec::new(),
         queue_policy: String::new(),
+        goal_action: String::new(),
+        goal_text: String::new(),
+        prompt_command: false,
+        plan_command: false,
     }
 }
 
@@ -114,6 +164,15 @@ fn gateway_chat_command_mapping_preserves_rebase_signal() {
         execution_mode: "tools".to_string(),
         workdir: "/workspace".to_string(),
         command_safety_mode: "sandbox".to_string(),
+        goal_action: String::new(),
+        goal_text: String::new(),
+        prompt_command: false,
+        referenced_conversations: vec![proto::ChatConversationReference {
+            id: "conversation-source".to_string(),
+            title: "Earlier investigation".to_string(),
+            cwd: "/source".to_string(),
+            updated_at: 1_772_000_000_000,
+        }],
         ..Default::default()
     };
 
@@ -149,6 +208,64 @@ fn gateway_chat_command_mapping_preserves_rebase_signal() {
     assert_eq!(event.execution_mode, "tools");
     assert_eq!(event.workdir, "/workspace");
     assert_eq!(event.command_safety_mode, "sandbox");
+    assert_eq!(event.referenced_conversations.len(), 1);
+    assert_eq!(event.referenced_conversations[0].id, "conversation-source");
+    assert_eq!(
+        event.referenced_conversations[0].title,
+        "Earlier investigation"
+    );
+    assert_eq!(event.referenced_conversations[0].cwd, "/source");
+    assert_eq!(
+        event.referenced_conversations[0].updated_at,
+        1_772_000_000_000
+    );
+}
+
+#[test]
+fn gateway_chat_command_mapping_normalizes_conversation_reference_boundaries() {
+    let request = proto::ChatRequest {
+        conversation_id: "conversation-current".to_string(),
+        client_request_id: "client-reference-boundaries".to_string(),
+        message: "compare prior work".to_string(),
+        referenced_conversations: vec![
+            proto::ChatConversationReference {
+                id: "conversation-current".to_string(),
+                title: "Self".to_string(),
+                ..Default::default()
+            },
+            proto::ChatConversationReference {
+                id: "conversation\u{85}invalid".to_string(),
+                title: "Control id".to_string(),
+                ..Default::default()
+            },
+            proto::ChatConversationReference {
+                id: "😀".repeat(257),
+                title: "Long id".to_string(),
+                ..Default::default()
+            },
+            proto::ChatConversationReference {
+                id: "conversation-source".to_string(),
+                title: "😀".repeat(241),
+                cwd: " /source ".to_string(),
+                updated_at: 1_772_000_000_000,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let event = GatewayController::build_gateway_chat_request_event(
+        "run-reference-boundaries".to_string(),
+        request,
+        false,
+        None,
+    );
+
+    assert_eq!(event.referenced_conversations.len(), 1);
+    let reference = &event.referenced_conversations[0];
+    assert_eq!(reference.id, "conversation-source");
+    assert_eq!(reference.title.chars().count(), 240);
+    assert_eq!(reference.title, "😀".repeat(240));
+    assert_eq!(reference.cwd, "/source");
 }
 
 #[test]
@@ -175,7 +292,9 @@ fn remote_chat_started_records_use_running_lease() {
         GatewayController::remote_chat_record_lease_ms(&running),
         GATEWAY_CHAT_RUNNING_LEASE_MS
     );
-    assert!(GATEWAY_CHAT_RUNNING_LEASE_MS > GATEWAY_CHAT_LEASE_MS);
+    const {
+        assert!(GATEWAY_CHAT_RUNNING_LEASE_MS > GATEWAY_CHAT_LEASE_MS);
+    }
 }
 
 #[test]
@@ -581,6 +700,7 @@ fn set_disconnected_status_resets_runtime_fields_for_new_config() {
         enable_web_ssh_terminal: false,
         enable_web_git: false,
         enable_web_tunnels: false,
+        ..RemoteSettingsPayload::default()
     };
     let mut status = GatewayStatusSnapshot {
         online: true,
@@ -649,6 +769,7 @@ fn gateway_connection_nudge_detects_offline_and_stale_sessions() {
         enable_web_ssh_terminal: false,
         enable_web_git: false,
         enable_web_tunnels: false,
+        ..RemoteSettingsPayload::default()
     };
     assert_eq!(
         gateway_connection_stale_after(&config),
@@ -836,4 +957,46 @@ fn stalled_webview_status_refreshes_running_ledger_only_inside_grace_window() {
             now + GATEWAY_WEBVIEW_REPORT_FRESH_WINDOW + Duration::from_secs(1),
         )
     );
+}
+
+#[test]
+fn gateway_offline_is_ignored_for_best_effort_publishes() {
+    assert_eq!(
+        ignore_gateway_outbound_offline(Err(GATEWAY_OUTBOUND_OFFLINE_ERROR.to_string())),
+        Ok(())
+    );
+    assert_eq!(ignore_gateway_outbound_offline(Ok(())), Ok(()));
+}
+
+#[test]
+fn gateway_publish_keeps_real_send_failures() {
+    for error in [
+        "gateway outbound sender lock poisoned",
+        "gateway outbound control lane is offline",
+        "gateway outbound lane closed",
+    ] {
+        assert_eq!(
+            ignore_gateway_outbound_offline(Err(error.to_string())),
+            Err(error.to_string())
+        );
+    }
+}
+
+#[test]
+fn chat_queue_event_envelope_carries_snapshot() {
+    let envelope = build_chat_queue_event_envelope(GatewayChatQueueEventInput {
+        conversation_id: "conversation-1".to_string(),
+        snapshot_json: r#"{"items":[]}"#.to_string(),
+        revision: 7,
+    });
+
+    assert!(envelope.request_id.starts_with("chat-queue-event-"));
+    match envelope.payload {
+        Some(proto::agent_envelope::Payload::ChatQueueEvent(event)) => {
+            assert_eq!(event.conversation_id, "conversation-1");
+            assert_eq!(event.snapshot_json, r#"{"items":[]}"#);
+            assert_eq!(event.revision, 7);
+        }
+        other => panic!("unexpected payload: {other:?}"),
+    }
 }

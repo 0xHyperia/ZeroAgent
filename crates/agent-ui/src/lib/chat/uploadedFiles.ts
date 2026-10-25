@@ -1,4 +1,8 @@
 import { normalizeLogicalLineEndings } from "@liveagent/ui/lib/chat/composerText";
+import {
+  type ConversationMentionReference,
+  normalizeConversationMentionReferences,
+} from "@liveagent/ui/lib/chat/mentionReferences";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 
 export type UploadedReadableFileKind =
@@ -22,6 +26,7 @@ const UPLOADED_READABLE_FILE_KINDS = new Set<string>([
 
 const DISPLAY_CONTENT_FIELD = "liveAgentDisplayContent";
 const ATTACHMENTS_FIELD = "liveAgentAttachments";
+const REFERENCED_CONVERSATIONS_FIELD = "liveAgentReferencedConversations";
 
 function createUserMessageId() {
   return `user-${createUuid()}`;
@@ -30,6 +35,8 @@ function createUserMessageId() {
 export type PendingUploadedFile = {
   relativePath: string;
   absolutePath?: string;
+  /** Stable source/content identity used only to collapse pending duplicates. */
+  dedupeKey?: string;
   fileName: string;
   kind: UploadedReadableFileKind;
   sizeBytes: number;
@@ -56,20 +63,37 @@ export type UploadedUserMessage = {
   timestamp: number;
   [DISPLAY_CONTENT_FIELD]?: string;
   [ATTACHMENTS_FIELD]?: PendingUploadedFile[];
+  [REFERENCED_CONVERSATIONS_FIELD]?: ConversationMentionReference[];
 };
 
 export function mergePendingUploadedFiles(
   current: PendingUploadedFile[],
   incoming: PendingUploadedFile[],
 ) {
+  return mergePendingUploadedFilesWithStats(current, incoming).files;
+}
+
+export function pendingUploadedFileDedupeKey(file: PendingUploadedFile) {
+  return file.dedupeKey?.trim() || `relative:${file.relativePath}`;
+}
+
+export function mergePendingUploadedFilesWithStats(
+  current: PendingUploadedFile[],
+  incoming: PendingUploadedFile[],
+) {
   const merged = new Map<string, PendingUploadedFile>();
+  let duplicateCount = 0;
   for (const file of current) {
-    merged.set(file.relativePath, file);
+    const key = pendingUploadedFileDedupeKey(file);
+    if (merged.has(key)) duplicateCount += 1;
+    merged.set(key, file);
   }
   for (const file of incoming) {
-    merged.set(file.relativePath, file);
+    const key = pendingUploadedFileDedupeKey(file);
+    if (merged.has(key)) duplicateCount += 1;
+    merged.set(key, file);
   }
-  return Array.from(merged.values());
+  return { files: Array.from(merged.values()), duplicateCount };
 }
 
 function clonePendingUploadedFiles(files: PendingUploadedFile[]) {
@@ -141,18 +165,201 @@ export function splitUserAttachmentsForDisplay(files: PendingUploadedFile[], tex
   };
 }
 
+/**
+ * 附件指令的两行固定头。provider 原生内联适配器（nativeResponsesAttachments）
+ * 按整段精确匹配把它替换成"部分附件已内联"的版本；DeepSeek 大段粘贴内联
+ * （deepSeekAttachments）按整段精确匹配在所有附件行都被移除后删掉它。
+ * 改文案必须保持这两处仍能命中，所以只在这里定义一次。
+ *
+ * 第二行顺带告诉模型 Read 是分窗口返回的：Read 每次只给一段（文本默认 200
+ * 行、PDF 默认 5 页、notebook 默认 20 cell），并在结果里报告总量；这里提前
+ * 提醒它翻到底，避免模型只读了第一窗就开始总结。这段提示单独导出，供
+ * nativeResponsesAttachments 拼"部分附件已内联"版本的指令头时复用。
+ */
+export const UPLOADED_FILES_READ_PAGING_HINT =
+  "Read returns a bounded window per call and reports the total size, so keep paging (start_line/limit, page_start/page_limit, or cell_start/cell_limit) until you have read each file completely:";
+
+export const UPLOADED_FILES_INSTRUCTION_HEADER_LINES = [
+  "The user attached the files below to this message.",
+  `Use Read with these exact paths before analyzing or modifying them. ${UPLOADED_FILES_READ_PAGING_HINT}`,
+] as const;
+
+/** 改文案前落库的历史消息仍带这版头；匹配时两版都认。 */
+const LEGACY_UPLOADED_FILES_INSTRUCTION_HEADER_LINES = [
+  "The user attached the files below to this message.",
+  "Use Read with these exact paths before analyzing or modifying them:",
+] as const;
+
+const UPLOADED_FILES_INSTRUCTION_HEADER_VARIANTS: readonly (readonly string[])[] = [
+  UPLOADED_FILES_INSTRUCTION_HEADER_LINES,
+  LEGACY_UPLOADED_FILES_INSTRUCTION_HEADER_LINES,
+];
+
+/** 当前与历史两版附件指令头的整段文本，供按字符串替换的调用方使用。 */
+export const UPLOADED_FILES_INSTRUCTION_HEADER_TEXTS: readonly string[] =
+  UPLOADED_FILES_INSTRUCTION_HEADER_VARIANTS.map((lines) => lines.join("\n"));
+
+/**
+ * 在按行拆开的消息里定位附件指令头（当前或历史格式）。返回头的起始下标
+ * 与行数；找不到返回 null。
+ */
+export function locateUploadedFilesInstructionHeader(lines: readonly string[]) {
+  for (let index = 0; index < lines.length; index += 1) {
+    for (const header of UPLOADED_FILES_INSTRUCTION_HEADER_VARIANTS) {
+      if (header.every((line, offset) => lines[index + offset] === line)) {
+        return { index, length: header.length };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 单个附件在指令里的一行。格式是跨模块契约：deepSeekAttachments 按整行精确
+ * 匹配删除已内联的粘贴行，nativeResponsesAttachments 给原生内联的附件加标注。
+ * 带上体积让模型对"一窗读不完"有预期。
+ */
+export function formatUploadedFileInstructionLine(file: PendingUploadedFile) {
+  const absolutePath = typeof file.absolutePath === "string" ? file.absolutePath.trim() : "";
+  if (!absolutePath) return "";
+  const size =
+    Number.isFinite(file.sizeBytes) && file.sizeBytes >= 0
+      ? `, ${formatUploadedFileSize(Math.floor(file.sizeBytes))}`
+      : "";
+  return `- ${absolutePath} (${file.kind}${size})`;
+}
+
+/**
+ * 判断指令里的某一行是否就是该附件。除当前格式外也接受不带体积的旧格式
+ * `- <absolutePath> (<kind>)`，让已落库的历史会话继续能被精确匹配。
+ */
+export function matchesUploadedFileInstructionLine(line: string, file: PendingUploadedFile) {
+  const current = formatUploadedFileInstructionLine(file);
+  if (!current) return false;
+  if (line === current) return true;
+  const absolutePath = typeof file.absolutePath === "string" ? file.absolutePath.trim() : "";
+  return line === `- ${absolutePath} (${file.kind})`;
+}
+
+/** 空正文时填充的占位句，反解时按它还原成空正文。 */
+const EMPTY_TEXT_ATTACHMENT_PLACEHOLDER = "Please inspect the selected files first.";
+
+/**
+ * 附件行的反解正则。路径用非贪婪匹配，体积组可选（旧格式没有体积），
+ * 这样带括号的路径（`C:\a (1)\b.png`）也能靠回溯正确切分。
+ */
+const UPLOADED_FILE_INSTRUCTION_LINE_RE =
+  /^- (.+?) \(([a-z]+)(?:, (\d+(?:\.\d+)?) (B|KB|MB|GB))?\)$/;
+
+const SIZE_UNIT_MULTIPLIERS: Record<string, number> = {
+  B: 1,
+  KB: 1024,
+  MB: 1024 * 1024,
+  GB: 1024 * 1024 * 1024,
+};
+
+function parseInstructionLineSize(value: string | undefined, unit: string | undefined) {
+  if (value === undefined || unit === undefined) return 0;
+  const numeric = Number(value);
+  const multiplier = SIZE_UNIT_MULTIPLIERS[unit];
+  if (!Number.isFinite(numeric) || multiplier === undefined) return 0;
+  return Math.round(numeric * multiplier);
+}
+
+function toForwardSlashes(value: string) {
+  return value.replace(/\\/g, "/");
+}
+
+function stripTrailingSeparators(value: string) {
+  return value.replace(/[/\\]+$/, "");
+}
+
+/**
+ * 由绝对路径还原 relativePath，与 Rust `build_readable_file_entry` 的规则对齐：
+ * 工作区内用相对 cwd 的正斜杠路径（粘贴引用会拿它当 key），暂存区文件用
+ * `uploads/<batch>/<name>`（没有 cwd 时也能还原，工作区外的路径没有 uploads
+ * 段就退回绝对路径）。
+ */
+function uploadedFileRelativePath(absolutePath: string, cwd?: string) {
+  const forwardAbsolute = toForwardSlashes(absolutePath);
+  const normalizedCwd = cwd?.trim() ? stripTrailingSeparators(toForwardSlashes(cwd.trim())) : "";
+  if (normalizedCwd) {
+    const lowerAbsolute = forwardAbsolute.toLowerCase();
+    const lowerCwd = normalizedCwd.toLowerCase();
+    if (lowerAbsolute.startsWith(`${lowerCwd}/`)) {
+      return forwardAbsolute.slice(normalizedCwd.length + 1);
+    }
+  }
+  const uploadsMarker = forwardAbsolute.lastIndexOf("/uploads/");
+  if (uploadsMarker >= 0) {
+    return forwardAbsolute.slice(uploadsMarker + 1);
+  }
+  return forwardAbsolute;
+}
+
+function uploadedFileInstructionLineToPendingFile(
+  line: string,
+  cwd?: string,
+): PendingUploadedFile | null {
+  const match = UPLOADED_FILE_INSTRUCTION_LINE_RE.exec(line);
+  if (!match) return null;
+  const absolutePath = (match[1] ?? "").trim();
+  const kind = match[2] ?? "";
+  if (!absolutePath || !UPLOADED_READABLE_FILE_KINDS.has(kind)) return null;
+  const normalizedAbsolutePath = absolutePath.replace(/[/\\]+$/, "");
+  const fileName = normalizedAbsolutePath.split(/[/\\]/).pop() ?? "";
+  if (!fileName) return null;
+  return {
+    relativePath: uploadedFileRelativePath(normalizedAbsolutePath, cwd),
+    absolutePath: normalizedAbsolutePath,
+    fileName,
+    kind: kind as UploadedReadableFileKind,
+    sizeBytes: parseInstructionLineSize(match[3], match[4]),
+  };
+}
+
+/**
+ * 从落库/回读的消息正文反解附件指令，还原界面上要显示的正文与附件列表。
+ * K-brain 只存文本，重开旧会话时 user 消息没有 `liveAgentDisplayContent` 与
+ * `liveAgentAttachments`，界面就会直接把整段指令当正文显示；这里按
+ * `buildUserMessageContentWithUploads` 的拼装规则还原。
+ *
+ * 只要有附件行解析不出来就整体放弃（`parsed: false`），调用方保持消息原样，
+ * 避免把用户自己写的、形似指令的正文误判成附件。
+ */
+export function parseUserMessageContentWithUploads(
+  text: string,
+  cwd?: string,
+): { displayText: string; attachments: PendingUploadedFile[]; parsed: boolean } {
+  const unchanged = { displayText: text, attachments: [], parsed: false };
+  const normalized = normalizeLogicalLineEndings(text);
+  const lines = normalized.split("\n");
+  const header = locateUploadedFilesInstructionHeader(lines);
+  if (!header) return unchanged;
+
+  const attachments: PendingUploadedFile[] = [];
+  for (const line of lines.slice(header.index + header.length)) {
+    if (!line.trim()) continue;
+    const file = uploadedFileInstructionLineToPendingFile(line, cwd);
+    if (!file) return unchanged;
+    attachments.push(file);
+  }
+  if (attachments.length === 0) return unchanged;
+
+  const displayText = lines.slice(0, header.index).join("\n").replace(/\s+$/, "");
+  return {
+    displayText: displayText.trim() === EMPTY_TEXT_ATTACHMENT_PLACEHOLDER ? "" : displayText,
+    attachments,
+    parsed: true,
+  };
+}
+
 export function buildUploadedFilesInstruction(files: PendingUploadedFile[]) {
   // 模型读取路径只认导入时返回的绝对路径（工作区内原地引用、工作区外落
   // 暂存区）。旧版本仅持久化相对路径的附件不再列出——新方案下无法定位。
-  const lines = files
-    .filter((file) => typeof file.absolutePath === "string" && file.absolutePath.trim())
-    .map((file) => `- ${file.absolutePath} (${file.kind})`);
+  const lines = files.map(formatUploadedFileInstructionLine).filter((line) => line.length > 0);
   if (lines.length === 0) return "";
-  return [
-    "The user attached the files below to this message.",
-    "Use Read with these exact paths before analyzing or modifying them:",
-    ...lines,
-  ].join("\n");
+  return [...UPLOADED_FILES_INSTRUCTION_HEADER_LINES, ...lines].join("\n");
 }
 
 export function buildUserMessageContentWithUploads(userText: string, files: PendingUploadedFile[]) {
@@ -162,7 +369,7 @@ export function buildUserMessageContentWithUploads(userText: string, files: Pend
   const instruction = buildUploadedFilesInstruction(files);
   if (!instruction) return normalizedText;
   if (!normalizedText.trim()) {
-    return `Please inspect the selected files first.\n\n${instruction}`;
+    return `${EMPTY_TEXT_ATTACHMENT_PLACEHOLDER}\n\n${instruction}`;
   }
   return `${normalizedText}\n\n${instruction}`;
 }
@@ -171,6 +378,7 @@ export function createUserMessageWithUploads(
   userText: string,
   files: PendingUploadedFile[],
   timestamp = Date.now(),
+  referencedConversations: readonly ConversationMentionReference[] = [],
 ): UploadedUserMessage | null {
   const content = buildUserMessageContentWithUploads(userText, files);
   if (!content.trim()) return null;
@@ -184,6 +392,10 @@ export function createUserMessageWithUploads(
   if (files.length > 0) {
     message[DISPLAY_CONTENT_FIELD] = normalizeLogicalLineEndings(userText);
     message[ATTACHMENTS_FIELD] = clonePendingUploadedFiles(files);
+  }
+  const normalizedReferences = normalizeConversationMentionReferences(referencedConversations);
+  if (normalizedReferences.length > 0) {
+    message[REFERENCED_CONVERSATIONS_FIELD] = normalizedReferences;
   }
   return message;
 }
@@ -251,6 +463,18 @@ export function getUserMessageAttachments(message: { role: string } & Record<str
   });
 }
 
+export function getUserMessageReferencedConversations(
+  message: { role: string } & Record<string, unknown>,
+  currentConversationId?: string,
+) {
+  const raw = message[REFERENCED_CONVERSATIONS_FIELD];
+  if (!Array.isArray(raw)) return [];
+  return normalizeConversationMentionReferences(
+    raw as ConversationMentionReference[],
+    currentConversationId,
+  );
+}
+
 export function normalizeUploadedFileForDisplayComparison(file: PendingUploadedFile) {
   return {
     relativePath: file.relativePath,
@@ -287,13 +511,18 @@ export function stripUploadedFilesMessageMetadata<TMessage extends { role: strin
 ): TMessage {
   if (message.role !== "user") return message;
   const userMessage = message as TMessage & Record<string, unknown>;
-  if (!(DISPLAY_CONTENT_FIELD in userMessage) && !(ATTACHMENTS_FIELD in userMessage)) {
+  if (
+    !(DISPLAY_CONTENT_FIELD in userMessage) &&
+    !(ATTACHMENTS_FIELD in userMessage) &&
+    !(REFERENCED_CONVERSATIONS_FIELD in userMessage)
+  ) {
     return message;
   }
 
   const next = { ...userMessage };
   delete next[DISPLAY_CONTENT_FIELD];
   delete next[ATTACHMENTS_FIELD];
+  delete next[REFERENCED_CONVERSATIONS_FIELD];
   return next as TMessage;
 }
 

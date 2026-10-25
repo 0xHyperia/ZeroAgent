@@ -1,8 +1,17 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, Key, Loader2, Lock, RefreshCw, User } from "@liveagent/ui/components/IconSet";
+import {
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Key,
+  Loader2,
+  Lock,
+  RefreshCw,
+  User,
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   createRelayApiKeys,
   getRelayCurrentUser,

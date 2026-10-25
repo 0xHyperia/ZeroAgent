@@ -22,6 +22,36 @@ use crate::services::workspace_watch::WorkspaceWatchService;
 
 use super::*;
 
+/// The managed Gateway serves the WebUI Image Studio from the desktop's K-Brain.
+/// Every start reads the live backend under the manager's lock, and each K-Brain
+/// start/restart/shutdown rebinds a running Gateway to the new port/token.
+fn follow_kbrain_for_images(
+    app: &tauri::AppHandle,
+    gateway: &Arc<crate::services::local_gateway::LocalGatewayManager>,
+) {
+    use tauri::Manager as _;
+    let source_app = app.clone();
+    gateway.set_image_backend_source(Arc::new(move || {
+        super::connection::local_image_backend(&source_app)
+    }));
+    let Some(state) = app.try_state::<Arc<crate::services::kbrain_backend::KBrainBackendState>>()
+    else {
+        return;
+    };
+    let mut changes = state.subscribe_connection();
+    let gateway = Arc::clone(gateway);
+    tauri::async_runtime::spawn(async move {
+        while changes.changed().await.is_ok() {
+            let gateway = Arc::clone(&gateway);
+            let result =
+                tauri::async_runtime::spawn_blocking(move || gateway.refresh_image_backend()).await;
+            if let Ok(Err(error)) = result {
+                eprintln!("failed to rebind the local gateway to K-Brain: {error}");
+            }
+        }
+    });
+}
+
 impl GatewayController {
     pub fn new(
         app_handle: tauri::AppHandle,
@@ -38,6 +68,8 @@ impl GatewayController {
         let tunnel_store = TunnelStore::new(app_handle.clone());
         let workspace_watch = Arc::new(WorkspaceWatchService::new(app_handle.clone()));
         let chat_ingress = ChatIngressMirror::spawn(app_handle.clone());
+        let local_gateway = Arc::new(crate::services::local_gateway::LocalGatewayManager::new());
+        follow_kbrain_for_images(&app_handle, &local_gateway);
         Self {
             app_handle,
             automation_store,
@@ -48,6 +80,7 @@ impl GatewayController {
             managed_process_registry,
             git_clone_task_registry,
             config_tx,
+            local_gateway,
             runner_task: Mutex::new(None),
             status: Mutex::new(GatewayStatusSnapshot {
                 online: false,
@@ -73,6 +106,8 @@ impl GatewayController {
             tunnel_proxy: TunnelProxy::new(),
             workspace_watch,
             pending_chat_queue_requests: Mutex::new(HashMap::new()),
+            pending_clarify_turns: Mutex::new(HashMap::new()),
+            pending_composer_actions: Mutex::new(HashMap::new()),
             chat_ingress,
             chat_ingress_flush_lock: tokio::sync::Mutex::new(()),
             terminal_forwarder_once: Once::new(),
@@ -158,6 +193,12 @@ impl GatewayController {
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(GATEWAY_CHAT_LEASE_SWEEP_INTERVAL).await;
+                    // 未连上网关时这些 tick 什么也做不成（inbox 只有远端会写、
+                    // 租约只服务远端会话），但每条都要抢锁扫一遍。这条循环在未配置
+                    // 网关的机器上也常驻，所以先按 online 收敛。
+                    if !controller.status().online {
+                        continue;
+                    }
                     if let Err(error) = controller.expire_remote_chat_leases().await {
                         eprintln!("expire gateway remote chat leases failed: {error}");
                     }
@@ -178,6 +219,11 @@ impl GatewayController {
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(GATEWAY_RUNTIME_STATUS_REPUBLISH_INTERVAL).await;
+                    // 离线时发送本身就是 no-op，但快照构造 + protobuf 编码照旧执行。
+                    // 这条循环同样在未配置网关时常驻，先按 online 收敛掉。
+                    if !controller.status().online {
+                        continue;
+                    }
                     let Some((worker_id, state, visible, active_run_count)) =
                         controller.runtime_status_republish_snapshot()
                     else {
@@ -227,21 +273,6 @@ impl GatewayController {
         Ok(())
     }
 
-    pub(crate) fn restart_runner(self: &Arc<Self>) -> Result<(), String> {
-        self.set_outbound_sender(None);
-        self.set_outbound_control_sender(None);
-        self.set_terminal_stream_sender(None);
-        let mut runner_task = self
-            .runner_task
-            .lock()
-            .map_err(|_| "gateway runner task lock poisoned".to_string())?;
-        if let Some(task) = runner_task.take() {
-            task.abort();
-        }
-        self.spawn_runner(&mut runner_task);
-        Ok(())
-    }
-
     pub fn wake_chat_runtime(&self, reason: &str) -> Result<(), String> {
         self.app_handle
             .emit(
@@ -257,7 +288,7 @@ impl GatewayController {
         force_reconnect: bool,
     ) -> Result<bool, String> {
         let config = self.config_tx.borrow().clone();
-        if !config.enabled || !is_remote_configured(&config) {
+        if !config.enabled || !is_remote_configured(&config.effective_gateway_settings()) {
             return Ok(false);
         }
 
@@ -267,7 +298,11 @@ impl GatewayController {
 
         let status = self.status();
         if !force_reconnect
-            && !gateway_connection_needs_restart(&status, &config, now_unix_seconds())
+            && !gateway_connection_needs_restart(
+                &status,
+                &config.effective_gateway_settings(),
+                now_unix_seconds(),
+            )
         {
             return Ok(false);
         }
@@ -289,7 +324,11 @@ impl GatewayController {
             *last_nudge = Some(now);
         }
 
-        self.restart_runner()?;
+        // Wake the existing supervisor, including a pending child startup. Never
+        // abort a spawn_blocking task: its owned process still needs collecting.
+        self.local_gateway.cancel_start();
+        self.config_tx.send_modify(|_| {});
+        self.ensure_runner()?;
         Ok(true)
     }
 
@@ -297,6 +336,7 @@ impl GatewayController {
         let config = tauri::async_runtime::spawn_blocking(move || {
             let conn = open_db()?;
             let mut config = load_remote_settings(&conn)?;
+            config.token.clear();
             if let Some(credential) = crate::services::device_credentials::load_device_credential()?
             {
                 config.agent_id = credential.effective_agent_id().to_string();
@@ -313,25 +353,28 @@ impl GatewayController {
         let normalized = normalize_remote_settings_payload(config);
         let previous = self.config_tx.borrow().clone();
         let config_changed = previous != normalized;
-        let should_run_remote = normalized.enabled && is_remote_configured(&normalized);
+        let effective = normalized.effective_gateway_settings();
+        if config_changed {
+            self.local_gateway.cancel_start();
+        }
         self.config_tx.send_replace(normalized.clone());
         self.publish_status(|status| {
             status.enabled = normalized.enabled;
-            status.configured = is_remote_configured(&normalized);
-            status.gateway_url = normalized.gateway_url.clone();
+            status.configured = is_remote_configured(&effective);
+            status.gateway_url = effective.gateway_url.clone();
             status.agent_id = normalized.agent_id.clone();
-            if !normalized.enabled {
-                set_disconnected_status(status, &normalized, None);
-            } else if config_changed {
-                set_disconnected_status(status, &normalized, None);
+            if !normalized.enabled || config_changed {
+                set_disconnected_status(status, &effective, None);
             }
         });
-        if config_changed && should_run_remote {
-            self.restart_runner()?;
-        } else {
-            self.ensure_runner()?;
-        }
+        self.ensure_runner()?;
         Ok(())
+    }
+
+    pub fn shutdown_local_gateway(&self) {
+        if let Err(error) = self.local_gateway.shutdown() {
+            eprintln!("failed to stop local gateway: {error}");
+        }
     }
 
     pub fn disconnect_runtime(self: &Arc<Self>) -> Result<(), String> {
@@ -390,7 +433,11 @@ impl GatewayController {
         // The cached/browser-visible snapshot remains redacted. Only the
         // authenticated desktop-to-Gateway envelope receives the raw STT
         // sidecar, which Gateway consumes before broadcasting the snapshot.
-        let outbound = attach_current_stt_secret_sync(snapshot).await?;
+        let outbound = crate::commands::settings::prepare_device_configuration_outbound(
+            self.app_handle.clone(),
+            snapshot,
+        )
+        .await?;
         let envelope = build_settings_sync_envelope(outbound)?;
         self.send_agent_envelope(envelope).await
     }

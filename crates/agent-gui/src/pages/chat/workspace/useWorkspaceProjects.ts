@@ -1,3 +1,6 @@
+import { invoke } from "@liveagent/app/shims/tauriCore";
+import { revealItemInDir } from "@liveagent/app/shims/tauriOpener";
+import type { ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { sidebarScopeKey } from "@liveagent/ui/lib/sidebar/scope";
 import type { SidebarStore } from "@liveagent/ui/lib/sidebar/store";
@@ -13,8 +16,6 @@ import {
   getDefaultWorkspaceProjectPath,
   mergeWorkspaceProjectsWithHistory,
 } from "@liveagent/ui/lib/workspaceProjects";
-import { invoke } from "@tauri-apps/api/core";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   type Dispatch,
   type MutableRefObject,
@@ -25,6 +26,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { getProviderRuntimeBackend } from "../../../lib/providers/runtime/providerRuntimeConfig";
 import {
   type AppSettings,
   DEFAULT_WORKSPACE_PROJECT_ID,
@@ -46,9 +48,9 @@ type UseWorkspaceProjectsParams = {
   workdir: string;
   t: (key: string) => string;
   setErrorMessage: Dispatch<SetStateAction<string | null>>;
-  setActiveView: Dispatch<SetStateAction<"chat" | "skills-hub" | "mcp-hub">>;
+  setActiveView: Dispatch<SetStateAction<ApplicationViewId>>;
   setRightDockOpen: Dispatch<SetStateAction<boolean>>;
-  startNewConversationActionRef: MutableRefObject<(options?: { workdir?: string }) => void>;
+  startNewConversationActionRef: MutableRefObject<(options?: { workdir?: string }) => string>;
   prepareComposerForConversationChangeActionRef: MutableRefObject<() => void>;
 };
 
@@ -81,9 +83,22 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     () => mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs),
     [sidebarWorkdirs, settings.system],
   );
-  const [activeWorkspaceProjectId, setActiveWorkspaceProjectId] = useState<string>(
+  const [searchNavigation, setSearchNavigation] = useState<{
+    mode: typeof isAgentMode;
+    cwd: string;
+  } | null>(null);
+  const clearSearchConversationWorkspace = useCallback(() => setSearchNavigation(null), []);
+  const searchCwd = searchNavigation?.mode === isAgentMode ? searchNavigation.cwd : undefined;
+  const [activeWorkspaceProjectId, setActiveWorkspaceProjectIdState] = useState<string>(
     () => settings.system.activeWorkspaceProjectId?.trim() || DEFAULT_WORKSPACE_PROJECT_ID,
   );
+  const setActiveWorkspaceProjectId = useCallback<Dispatch<SetStateAction<string>>>((id) => {
+    setSearchNavigation(null);
+    setActiveWorkspaceProjectIdState(id);
+  }, []);
+  useEffect(() => {
+    if (searchNavigation && searchNavigation.mode !== isAgentMode) setSearchNavigation(null);
+  }, [searchNavigation, isAgentMode]);
   const missingWorkspaceProjectPathKeys = useMemo(
     () => new Set(settings.system.missingWorkspaceProjectPaths.map(workspaceProjectPathKey)),
     [settings.system.missingWorkspaceProjectPaths],
@@ -101,23 +116,35 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     return active.length > 0 ? active : workspaceProjects;
   }, [archivedWorkspaceProjectPathKeys, workspaceProjects]);
   const activeWorkspaceProject = useMemo(
-    () => findWorkspaceProject(selectableWorkspaceProjects, activeWorkspaceProjectId),
-    [activeWorkspaceProjectId, selectableWorkspaceProjects],
+    () =>
+      searchCwd === ""
+        ? undefined
+        : findWorkspaceProject(selectableWorkspaceProjects, activeWorkspaceProjectId),
+    [activeWorkspaceProjectId, selectableWorkspaceProjects, searchCwd],
   );
   useEffect(() => {
     if (activeWorkspaceProject?.id && activeWorkspaceProject.id !== activeWorkspaceProjectId) {
       setActiveWorkspaceProjectId(activeWorkspaceProject.id);
     }
-  }, [activeWorkspaceProject?.id, activeWorkspaceProjectId]);
+  }, [activeWorkspaceProject?.id, activeWorkspaceProjectId, setActiveWorkspaceProjectId]);
   const activeWorkspaceProjectPath = activeWorkspaceProject?.path.trim() ?? "";
+  const kBrainBackendEnabled = getProviderRuntimeBackend() === "kbrain";
   const sidebarScope = useMemo<SidebarScope>(
     () =>
-      isAgentMode
-        ? activeWorkspaceProjectPath
-          ? { kind: "workdir", cwd: activeWorkspaceProjectPath }
-          : { kind: "unscoped" }
-        : { kind: "unscoped" },
-    [activeWorkspaceProjectPath, isAgentMode],
+      kBrainBackendEnabled
+        ? searchCwd
+          ? { kind: "workdir", cwd: searchCwd }
+          : { kind: "all" }
+        : searchCwd !== undefined
+          ? searchCwd
+            ? { kind: "workdir", cwd: searchCwd }
+            : { kind: "unscoped" }
+          : isAgentMode
+            ? activeWorkspaceProjectPath
+              ? { kind: "workdir", cwd: activeWorkspaceProjectPath }
+              : { kind: "none" }
+            : { kind: "unscoped" },
+    [activeWorkspaceProjectPath, isAgentMode, kBrainBackendEnabled, searchCwd],
   );
   useLayoutEffect(() => {
     sidebarStore.setScope(sidebarScope);
@@ -187,10 +214,15 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     [setWorkspaceProjectDirectoryMissing],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Action refs deliberately provide the latest conversation-transition handlers without changing this callback identity.
   const activateWorkspaceProject = useCallback(
-    (project: WorkspaceProject, options?: { startConversation?: boolean }) => {
+    (
+      project: WorkspaceProject,
+      options?: { startConversation?: boolean; preserveMissing?: boolean },
+    ) => {
+      setSearchNavigation(null);
       const pathKey = project.path.trim();
-      if (!pathKey) return;
+      if (!pathKey) return null;
       const normalizedPathKey = workspaceProjectPathKey(pathKey);
       const matchedProject = workspaceProjects.find(
         (item) =>
@@ -218,7 +250,7 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
           (path) => workspaceProjectPathKey(path) === normalizedPathKey,
         )
       ) {
-        return;
+        return null;
       }
       setActiveWorkspaceProjectId(targetProject.id);
       setSettings((prev) => {
@@ -257,9 +289,11 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
             hiddenWorkspaceProjectPaths: prev.system.hiddenWorkspaceProjectPaths.filter(
               (path) => workspaceProjectPathKey(path) !== normalizedPathKey,
             ),
-            missingWorkspaceProjectPaths: prev.system.missingWorkspaceProjectPaths.filter(
-              (path) => workspaceProjectPathKey(path) !== normalizedPathKey,
-            ),
+            missingWorkspaceProjectPaths: options?.preserveMissing
+              ? prev.system.missingWorkspaceProjectPaths
+              : prev.system.missingWorkspaceProjectPaths.filter(
+                  (path) => workspaceProjectPathKey(path) !== normalizedPathKey,
+                ),
             // Activating a workspace always brings it back from the archive.
             archivedWorkspaceProjectPaths: prev.system.archivedWorkspaceProjectPaths.filter(
               (path) => workspaceProjectPathKey(path) !== normalizedPathKey,
@@ -274,10 +308,45 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
       });
       if (options?.startConversation) {
         prepareComposerForConversationChangeActionRef.current();
-        startNewConversationActionRef.current({ workdir: targetProject.path });
+        return startNewConversationActionRef.current({ workdir: targetProject.path });
       }
+      return null;
     },
     [setSettings, workspaceProjects, activeWorkspaceProjectId, settings.system],
+  );
+
+  // Bring the workspace that owns `cwd` to the front so the right dock (file
+  // tree / terminal / git) and the sidebar highlight follow the conversation
+  // being opened. Reading persisted history does not require the original
+  // directory to exist, so a missing directory is preserved rather than
+  // cleared. No-op when the conversation already belongs to the active
+  // workspace or has no cwd.
+  const activateConversationWorkspace = useCallback(
+    (cwd?: string) => {
+      const path = cwd?.trim() ?? "";
+      if (
+        !path ||
+        workspaceProjectPathKey(path) === workspaceProjectPathKey(activeWorkspaceProjectPath)
+      ) {
+        return;
+      }
+      const project =
+        workspaceProjects.find(
+          (item) => workspaceProjectPathKey(item.path) === workspaceProjectPathKey(path),
+        ) ?? createWorkspaceProjectFromPath(path, "history");
+      activateWorkspaceProject(project, { preserveMissing: true });
+    },
+    [activeWorkspaceProjectPath, workspaceProjects, activateWorkspaceProject],
+  );
+
+  const activateSearchConversationWorkspace = useCallback(
+    (cwd?: string) => {
+      const path = cwd?.trim() ?? "";
+      activateConversationWorkspace(path);
+      setSearchNavigation({ mode: isAgentMode, cwd: path });
+      sidebarStore.setScope(path ? { kind: "workdir", cwd: path } : { kind: "unscoped" });
+    },
+    [activateConversationWorkspace, isAgentMode, sidebarStore],
   );
 
   const handleSelectWorkspaceProject = useCallback(
@@ -293,12 +362,12 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
   const handleNewConversationForProject = useCallback(
     async (project: WorkspaceProject) => {
       if (!(await checkWorkspaceProjectDirectory(project))) {
-        return;
+        return null;
       }
       setActiveView("chat");
-      activateWorkspaceProject(project, { startConversation: true });
+      return activateWorkspaceProject(project, { startConversation: true });
     },
-    [activateWorkspaceProject, checkWorkspaceProjectDirectory],
+    [activateWorkspaceProject, checkWorkspaceProjectDirectory, setActiveView],
   );
 
   const handleBrowseWorkspaceProjectInFileTree = useCallback(
@@ -316,7 +385,13 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
       activateWorkspaceProject(project);
       setSettings((prev) => openRightDockSingletonTab(prev, pathKey, "fileTree"));
     },
-    [activateWorkspaceProject, checkWorkspaceProjectDirectory, setSettings],
+    [
+      activateWorkspaceProject,
+      checkWorkspaceProjectDirectory,
+      setActiveView,
+      setRightDockOpen,
+      setSettings,
+    ],
   );
 
   const ensureTunnelToolTab = useCallback(
@@ -688,6 +763,10 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     historyScopeKey,
     checkWorkspaceProjectDirectory,
     activateWorkspaceProject,
+    activateConversationWorkspace,
+    activateSearchConversationWorkspace,
+    clearSearchConversationWorkspace,
+    searchConversationWorkdir: searchCwd,
     handleSelectWorkspaceProject,
     handleNewConversationForProject,
     handleBrowseWorkspaceProjectInFileTree,

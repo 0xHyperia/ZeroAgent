@@ -1,6 +1,10 @@
 impl MemoryStore {
     pub fn open() -> Result<Self, String> {
         let root = memory_root_dir()?;
+        Self::open_at(root)
+    }
+
+    fn open_at(root: PathBuf) -> Result<Self, String> {
         ensure_root_dirs(&root)?;
         let db_path = root.join(DB_FILENAME);
         let conn = open_memory_connection(&db_path)?;
@@ -195,6 +199,4 @@ impl MemoryStore {
             used_fallback,
         })
     }
-
-
 }

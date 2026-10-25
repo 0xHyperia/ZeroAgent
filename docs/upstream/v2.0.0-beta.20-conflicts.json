@@ -1,0 +1,577 @@
+{
+  "base": "0370c3b0df1b8297dd8a246d5fbfa816b566957c",
+  "product": "f7c6ec51dfbd1c319da89343131239222a2c63ac",
+  "upstream": "47a0d1c3e1f6719975678ca42d4c212c2ba278ec",
+  "conflicts": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": ".github/workflows/desktop-release.yml",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "Cargo.lock",
+      "resolution": "regenerate-after-semantic-resolution",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "Makefile",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "README.md",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/cmd/gateway/main.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/agenttoken/store_test.go",
+      "resolution": "preserve-zeroagent-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/http_middleware.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/config/config.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway_ws.pb.go",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/server.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http_test.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager.go",
+      "resolution": "adapt-authentication-boundary",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_multiagent_test.go",
+      "resolution": "preserve-zeroagent-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/package.json",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/UserMenu.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayWorkspaceProjects.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/sidebar/GatewaySidebarContainer.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/GatewayTranscript.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/DevicesAdminPage.tsx",
+      "resolution": "preserve-zeroagent-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/LoginPage.tsx",
+      "resolution": "preserve-zeroagent-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/SharedHistoryPage.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/StatusDashboardPage.tsx",
+      "resolution": "preserve-zeroagent-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/styles.css",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/styles/base-chat.css",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/styles/responsive.css",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-v2-adapters.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/sidebar-store.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/index.html",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/package.json",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/Cargo.toml",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/app.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/system.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/backup_snapshot.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/remote.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/tests.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/connection.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/ws_transport.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mod.rs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.conf.json",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/App.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/settingsExtension.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/i18n/config.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/runner/toolExecutionPrompt.ts",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/providerFailover.ts",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/agentTool.ts",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/prompts.ts",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/sendMessageTool.ts",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/cronTools.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/sshManagerTools.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/chatPageTypes.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayRuntimeStatusModel.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/useGatewayStatus.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/providerRuntimeConfig.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/sidebar/ChatSidebarContainer.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/workspace/useWorkspaceProjects.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/AboutSection.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/BackupSyncSection.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/CherryStudioImportModal.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/types.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-notes.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/agent-turn-bus-delta.test.mjs",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/agent-turn-roster-split.test.mjs",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-image-viewer.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/execution-mode-model-picker.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/markdown-image-policy.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/load-ts-module.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/i18n/shared-translations.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/provider-runtime-config.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-usage-query-form.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/stt-settings.test.mjs",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/subagents/agent-tool.test.mjs",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/test/subagents/send-message.test.mjs",
+      "resolution": "adopt-upstream-removal",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-gui/vite.config.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/AppErrorBoundary.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/IconSet.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarTypes.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerAttachmentCard.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ImagePreview.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/UserAttachmentCards.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/hub/HubChrome.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/trajectory/TrajectoryView.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/trajectory/details/DetailsPanel.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceCodeEditorOverlay.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceFilePreviewOverlay.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceSshTerminalOverlay.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/RemoteSection.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsShell.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SystemSettingsForm.tsx",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/providerUtils.ts",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "package.json",
+      "resolution": "adapt-v2-implementation",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "resolution": "regenerate-after-semantic-resolution",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "scripts/release/create-ai-release-notes.mjs",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    },
+    {
+      "path": "scripts/release/prepare-app-version-from-tag.mjs",
+      "resolution": "preserve-product-build-release",
+      "status": "semantic-review-pending"
+    }
+  ]
+}

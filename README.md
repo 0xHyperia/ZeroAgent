@@ -83,7 +83,9 @@ The desktop app can run locally without a Gateway. A Gateway deployment is requi
 Deploy the root `Dockerfile` to Railway or another Docker platform. One container serves the WebUI, HTTP API, health check, and all WebSocket traffic.
 
 ```bash
-docker pull ghcr.io/0xhyperia/zeroagent-gateway:latest
+# Replace this with the verified digest of the release being deployed.
+GATEWAY_IMAGE=ghcr.io/0xhyperia/zeroagent-gateway@sha256:REPLACE_WITH_VERIFIED_DIGEST
+docker pull "$GATEWAY_IMAGE"
 
 docker run -d \
   --name zeroagent-gateway \
@@ -92,7 +94,7 @@ docker run -d \
   -e USA_ZERO_ORIGIN=https://usa0.top \
   -e DATABASE_URL=postgresql://user:password@host:5432/zeroagent \
   -e REDIS_URL=redis://host:6379/0 \
-  ghcr.io/0xhyperia/zeroagent-gateway:latest
+  "$GATEWAY_IMAGE"
 ```
 
 Production requirements:
@@ -103,11 +105,11 @@ Production requirements:
 - `USA_ZERO_ORIGIN=https://usa0.top`
 - `LIVEAGENT_GATEWAY_COOKIE_SECURE=true` when HTTPS terminates before the container
 
-After deployment, verify `https://your-domain.example/healthz`, then open the domain directly to use the WebUI. See [Deployment Operations](docs/operations/deployment.md) for Railway, reverse proxy, and release details.
+After deployment, verify `/healthz` for process liveness and `/readyz` for PostgreSQL/Redis readiness, then open the domain to use the WebUI. Keep the deployed image digest recorded for rollback. See [Deployment Operations](docs/operations/deployment.md) for Railway, reverse proxy, and release details.
 
 ## Android
 
-The Android app bundles the same Gateway WebUI as the browser instead of opening an external URL. On first launch, enter the deployed Gateway address and sign in with the account flow in the app. The native layer keeps its session and offline read-only cache outside WebView storage, while remote actions continue to require a fresh selection lease.
+The Android app bundles the same Gateway WebUI as the browser and connects to the official Gateway at `https://agent.usa0.top`. Sign in with the account flow in the app. The native layer keeps its session and offline read-only cache outside WebView storage, while remote actions continue to require a fresh selection lease.
 
 Deploy the Gateway before distributing an APK. The Android package is built and uploaded by `.github/workflows/android-release.yml` whenever a `v*` release tag is pushed.
 
@@ -117,14 +119,15 @@ Requirements:
 
 - Node.js 22 and pnpm
 - Rust stable
-- Go 1.25
+- Go 1.25.12 (pinned in `mise.toml` and the Gateway's `go.mod`)
 - Protobuf compiler
 - Platform-specific Tauri prerequisites
 
 Common commands:
 
 ```bash
-make dev                 # Desktop development
+make dev-tauri           # Desktop development
+make dev                 # Gateway/WebUI development stack; requires make dev-infra-up
 make dev-gateway         # Gateway development server
 make dev-webui           # WebUI development server
 make gateway-docker-smoke

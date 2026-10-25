@@ -1,20 +1,34 @@
+import {
+  discoverProviderModels,
+  providerCredentialsRedacted,
+  revealStoredProviderApiKey,
+} from "@liveagent/adapters/providerSettings";
 import { testProviderUsage, type UsageData } from "@liveagent/app/lib/providers/usageQuery";
 import {
   type CodexRequestFormat,
   type CustomProvider,
   getDefaultUsageQueryConfig,
+  normalizeProviderModelConfigs,
+  PROVIDER_RETRY_DEFAULT_MAX_RETRIES,
+  PROVIDER_RETRY_MAX_RETRIES_LIMITS,
   type PromptCacheHintMode,
   type ProviderId,
   type ProviderModelConfig,
+  type ProviderRetryPolicy,
 } from "@liveagent/app/lib/settings";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
-import { useVerticalListReorder } from "@liveagent/ui/components/ui/useVerticalListReorder";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import {
+  applyCliIdentity,
+  type CliIdentityProviderId,
   CustomHeaderImportError,
   type CustomHeaderImportErrorCode,
   type CustomHeaderImportIssue,
   getCustomHeaderKeyPresets,
+  isReservedCustomHeaderKey,
+  isValidCustomHeaderKey,
+  isValidCustomHeaderValue,
   mergeImportedCustomHeaders,
   parseCustomHeadersImport,
 } from "@liveagent/ui/lib/providers/customHeaders";
@@ -23,25 +37,27 @@ import {
   createModelOrderSnapshot,
   findNewModelIds,
 } from "@liveagent/ui/lib/providers/modelVendor";
+import { isGatewayWebuiRuntime } from "@liveagent/ui/lib/runtimeEnv";
 import {
-  applyModelBulkActiveState,
+  applyModelInputModalitiesMode,
+  applyModelsActiveState,
+  applyProviderModelDraft,
   applyUsageQueryModePreset,
   buildProviderModelsFetchKey,
   clampUsageQueryTimeoutSecs,
   createDraftModelConfig,
   createUsageQueryDraft,
   detectCodingPlanProvider,
-  fetchModelsFromApi,
-  getModelBulkActionCounts,
+  getModelInputModalitiesMode,
   getPersistedUsageQueryProviderId,
-  isGatewayWebuiRuntime,
+  type ModelInputModalitiesMode,
   matchBalanceProviders,
   mergeFetchedModels,
-  normalizeFetchedModels,
+  providerSupportsModelInputModalitiesOverride,
   requiresCustomUsageQueryConfirmation,
   serializeUsageQueryDraft,
 } from "@liveagent/ui/pages/settings/providerUtils";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProviderModalView } from "./ProviderModalView";
 import {
   customHeaderIssueMessage,
@@ -64,6 +80,8 @@ type HeaderImportErrorCode = CustomHeaderImportErrorCode | "no-valid" | "failed"
 type HeaderImportSummary = {
   importedCount: number;
   overwrittenCount: number;
+  /** 切换 CLI 身份时剥掉的上一家身份头数量；普通导入不产生。 */
+  removedCount?: number;
   issues: CustomHeaderImportIssue[];
 };
 
@@ -75,16 +93,9 @@ type ModelEditDraft = {
 
 type NewModelPhase = "visible" | "fading";
 
-type PendingModelLayout = {
-  topById: Map<string, number>;
-  scrollContainer: HTMLDivElement | null;
-  scrollTop: number | null;
-};
-
 const NEW_MODEL_SORT_DELAY_MS = 1_200;
 const NEW_MODEL_BADGE_DURATION_MS = 3_200;
 const NEW_MODEL_BADGE_FADE_MS = 500;
-const MODEL_FLIP_DURATION_MS = 420;
 
 const REDACTED_API_KEY_DISPLAY = "API Key";
 
@@ -113,14 +124,52 @@ function reconcileModelOrder(
   return next;
 }
 
-function useProviderModalController({ providerType, initialData, onSave, onClose }: ModalProps) {
+/**
+ * Mirrors K-brain's provider URL rule (HTTP(S), no user credentials, no fragment). An empty
+ * value is allowed: K-brain falls back to the provider type's default endpoint.
+ */
+export function isAcceptedProviderBaseUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  return (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    !url.username &&
+    !url.password &&
+    !trimmed.includes("#")
+  );
+}
+
+function useProviderModalController({
+  providerType: defaultProviderType,
+  initialData,
+  onSave,
+  onClose,
+}: ModalProps) {
+  const [providerType, setProviderType] = useState<ProviderId>(
+    initialData?.type ?? defaultProviderType,
+  );
   const { t } = useLocale();
   const isGatewayWebui = isGatewayWebuiRuntime();
   const initialApiKey = initialData?.apiKey ?? "";
   const initialUsesRedactedApiKey =
-    isGatewayWebui && initialApiKey.trim() === "" && initialData?.apiKeyConfigured === true;
+    providerCredentialsRedacted &&
+    initialApiKey.trim() === "" &&
+    initialData?.apiKeyConfigured === true;
   const [name, setName] = useState(initialData?.name ?? "");
-  const [baseUrl, setBaseUrl] = useState(initialData?.baseUrl ?? "");
+  const [baseUrl, setBaseUrlState] = useState(initialData?.baseUrl ?? "");
+  // Only flag the URL after a save attempt, so typing "https://" is not shown as an error.
+  const [baseUrlValidationSubmitted, setBaseUrlValidationSubmitted] = useState(false);
+  const setBaseUrl = (value: string) => {
+    setBaseUrlState(value);
+    setBaseUrlValidationSubmitted(false);
+  };
+  const baseUrlInvalid = baseUrlValidationSubmitted && !isAcceptedProviderBaseUrl(baseUrl);
   const [isFullUrl, setIsFullUrl] = useState(initialData?.isFullUrl ?? false);
   const [modelsUrl, setModelsUrl] = useState(
     providerType === "gemini" ? "" : (initialData?.modelsUrl ?? ""),
@@ -131,12 +180,28 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   const [customHeaders, setCustomHeaders] = useState(() =>
     (initialData?.customHeaders ?? []).map((header) => ({ ...header })),
   );
+  // 只有真会发出去的头才参与请求与去重 key：半截键名/保留头在 mergeCustomHeaders
+  // 里本就会被丢掉，让它们触发重新拉取只是白等 900ms 换回同一份结果。
+  const effectiveCustomHeaders = useMemo(
+    () =>
+      customHeaders.filter(
+        (header) =>
+          isValidCustomHeaderKey(header.key) &&
+          isValidCustomHeaderValue(header.value) &&
+          !isReservedCustomHeaderKey(header.key),
+      ),
+    [customHeaders],
+  );
   const [headerImportOpen, setHeaderImportOpen] = useState(false);
   const [headerImportText, setHeaderImportText] = useState("");
   const [headerImportError, setHeaderImportError] = useState<HeaderImportErrorCode | null>(null);
   const [headerImportSummary, setHeaderImportSummary] = useState<HeaderImportSummary | null>(null);
   const [models, setModels] = useState<ProviderModelConfig[]>(() =>
-    normalizeFetchedModels(initialData?.models ?? [], providerType),
+    // 弹窗初始化处理的是已持久化的模型配置，必须走持久化归一化（保留
+    // contextWindow/maxOutputToken/limitsSource/inputModalities 等用户字段）；
+    // normalizeFetchedModels 只用于供应商 API 刷新结果（如 Gemini 的
+    // inputTokenLimit 字段形状），混用会在“打开并保存”往返中重置用户配置。
+    normalizeProviderModelConfigs(initialData?.models ?? [], providerType),
   );
   const [modelOrder, setModelOrder] = useState<string[] | undefined>(() =>
     initialData?.modelOrder ? [...initialData.modelOrder] : undefined,
@@ -154,9 +219,19 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     initialData?.requestFormat ?? "openai-responses",
   );
   const [useSystemProxy, setUseSystemProxy] = useState(initialData?.useSystemProxy ?? false);
+  const [streamRetryMode, setStreamRetryMode] = useState<"default" | "off" | "custom">(
+    initialData?.retryPolicy?.mode ?? "default",
+  );
+  // 数字输入用本地草稿字符串，blur 时 clamp（与 usageTimeoutInput 同范式）。
+  const [streamRetryCountInput, setStreamRetryCountInput] = useState(() =>
+    String(
+      initialData?.retryPolicy?.mode === "custom"
+        ? initialData.retryPolicy.maxRetries
+        : PROVIDER_RETRY_DEFAULT_MAX_RETRIES,
+    ),
+  );
   const [promptCachingEnabled, setPromptCachingEnabled] = useState(
-    initialData?.promptCachingEnabled ??
-      (providerType !== "gemini" && providerType !== "xai" && providerType !== "deepseek"),
+    initialData?.promptCachingEnabled ?? true,
   );
   const [promptCacheHintMode, setPromptCacheHintMode] = useState<PromptCacheHintMode>(
     initialData?.promptCacheHintMode ??
@@ -168,7 +243,7 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   const [usageQuery, setUsageQuery] = useState(() => {
     const draft = createUsageQueryDraft(
       initialData?.usageQuery ?? getDefaultUsageQueryConfig(),
-      isGatewayWebui,
+      providerCredentialsRedacted,
     );
     // general/newapi 是可编辑脚本预设:脚本为空的存量配置打开时即在编辑器填充预设。
     return applyUsageQueryModePreset(draft, draft.mode);
@@ -181,19 +256,17 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   const [addingModel, setAddingModel] = useState(false);
   const [newModelName, setNewModelName] = useState("");
   const [modelSearch, setModelSearch] = useState("");
-  const [modelBulkMode, setModelBulkMode] = useState(false);
-  const [modelBulkSelection, setModelBulkSelection] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [editingModel, setEditingModel] = useState<ModelEditDraft | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  // Plaintext read back from the backend on demand. While the field still holds exactly this
+  // value it counts as unchanged, so saving never replaces a stored reference such as
+  // ${OPENAI_API_KEY} with its resolved value.
+  const [revealedApiKey, setRevealedApiKey] = useState<string | null>(null);
+  const [revealingApiKey, setRevealingApiKey] = useState(false);
+  const [revealApiKeyError, setRevealApiKeyError] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ProviderDialogPanel>("general");
   const [headerValidationSubmitted, setHeaderValidationSubmitted] = useState(false);
-  const [headerSuggest, setHeaderSuggest] = useState<{
-    index: number;
-    rect: { left: number; top: number; width: number };
-  } | null>(null);
-  const [headerSuggestActive, setHeaderSuggestActive] = useState(0);
+
   const [dialogOpen, setDialogOpen] = useState(true);
   const requestClose = useCallback(() => setDialogOpen(false), []);
 
@@ -201,8 +274,6 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   const prevFetchKey = useRef("");
   const headerKeyRefs = useRef<Array<HTMLInputElement | null>>([]);
   const headerValueRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const modelListRef = useRef<HTMLDivElement | null>(null);
-  const pendingModelLayoutRef = useRef<PendingModelLayout | null>(null);
   const modelSortTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelBadgeTimersRef = useRef(new Map<string, Array<ReturnType<typeof setTimeout>>>());
   const modelsRef = useRef(models);
@@ -216,17 +287,43 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   modelOrderRef.current = modelOrder;
   activeModelsRef.current = activeModels;
   const apiKeyIsRedactedDisplay = initialUsesRedactedApiKey && apiKey === REDACTED_API_KEY_DISPLAY;
-  const apiKeyForRequest = apiKeyIsRedactedDisplay ? "" : apiKey.trim();
+  const apiKeyIsStoredValue =
+    apiKeyIsRedactedDisplay || (revealedApiKey !== null && apiKey === revealedApiKey);
+  const apiKeyForRequest = apiKeyIsStoredValue ? "" : apiKey.trim();
   const canReuseStoredApiKey =
-    isGatewayWebui &&
-    apiKeyIsRedactedDisplay &&
+    providerCredentialsRedacted &&
+    apiKeyIsStoredValue &&
     Boolean(initialData?.id) &&
     initialData?.apiKeyConfigured === true &&
     baseUrl.trim() === (initialData.baseUrl ?? "").trim() &&
     modelsUrl.trim() === (providerType === "gemini" ? "" : (initialData.modelsUrl ?? "").trim()) &&
     useSystemProxy === (initialData.useSystemProxy ?? false);
+  const toggleShowApiKey = useCallback(async () => {
+    if (showApiKey) {
+      setShowApiKey(false);
+      return;
+    }
+    setRevealApiKeyError(null);
+    if (!apiKeyIsRedactedDisplay || !initialData?.id || isGatewayWebui) {
+      setShowApiKey(true);
+      return;
+    }
+    setRevealingApiKey(true);
+    try {
+      const stored = await revealStoredProviderApiKey(initialData.id);
+      if (stored !== null) {
+        setRevealedApiKey(stored);
+        setApiKey(stored);
+      }
+      setShowApiKey(true);
+    } catch (err) {
+      setRevealApiKeyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRevealingApiKey(false);
+    }
+  }, [apiKeyIsRedactedDisplay, initialData?.id, isGatewayWebui, showApiKey]);
   const persistedUsageQueryProviderId = getPersistedUsageQueryProviderId(initialData);
-  const { confirm: requestUsageQueryConfirm, dialog: usageQueryConfirmDialog } = useConfirmDialog();
+  const { confirm: requestConfirm, dialog: confirmDialog } = useConfirmDialog();
   const [usageQueryTest, setUsageQueryTest] = useState<{
     status: "idle" | "running" | "success" | "error";
     data: UsageData[];
@@ -253,39 +350,89 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     setUsageQuery((previous) => ({ ...previous, timeoutSecs: next }));
   }
 
+  function clampStreamRetryCount(raw: number): number {
+    if (!Number.isFinite(raw)) return PROVIDER_RETRY_DEFAULT_MAX_RETRIES;
+    return Math.min(
+      PROVIDER_RETRY_MAX_RETRIES_LIMITS.max,
+      Math.max(PROVIDER_RETRY_MAX_RETRIES_LIMITS.min, Math.round(raw)),
+    );
+  }
+
+  function commitStreamRetryCountInput() {
+    setStreamRetryCountInput(String(clampStreamRetryCount(Number(streamRetryCountInput.trim()))));
+  }
+
+  /** default 态不落字段：与 normalizeProviderRetryPolicy 的持久层形态一致。 */
+  function serializeStreamRetryPolicy(): ProviderRetryPolicy | undefined {
+    if (streamRetryMode === "off") return { mode: "off" };
+    if (streamRetryMode === "custom") {
+      return {
+        mode: "custom",
+        maxRetries: clampStreamRetryCount(Number(streamRetryCountInput.trim())),
+      };
+    }
+    return undefined;
+  }
+
+  const modelFetchGeneration = useRef(0);
+
   const doFetch = useCallback(
     async (url: string, key: string) => {
+      const generation = ++modelFetchGeneration.current;
       setFetchingModels(true);
       setFetchError(null);
       try {
-        const list = await fetchModelsFromApi(providerType, url, key, {
+        const list = await discoverProviderModels({
+          type: providerType,
+          requestFormat,
+          baseUrl: url,
+          apiKey: key,
           useSystemProxy,
           isFullUrl,
-          modelsUrl,
+          modelsUrl: providerType === "gemini" ? "" : modelsUrl,
           providerId: initialData?.id,
+          customHeaders: effectiveCustomHeaders,
         });
+        if (generation !== modelFetchGeneration.current) return;
         const mergedModels = mergeFetchedModels(list, modelsRef.current);
         commitModelsWithNewRowsRef.current(mergedModels);
       } catch (err) {
-        setFetchError(err instanceof Error ? err.message : String(err));
+        if (generation === modelFetchGeneration.current) {
+          setFetchError(err instanceof Error ? err.message : String(err));
+        }
       } finally {
-        setFetchingModels(false);
+        if (generation === modelFetchGeneration.current) setFetchingModels(false);
       }
     },
-    [initialData?.id, isFullUrl, modelsUrl, providerType, useSystemProxy],
+    [
+      effectiveCustomHeaders,
+      initialData?.id,
+      isFullUrl,
+      modelsUrl,
+      providerType,
+      requestFormat,
+      useSystemProxy,
+    ],
   );
 
   useEffect(() => {
+    modelFetchGeneration.current += 1;
+    setFetchingModels(false);
+    setFetchError(null);
     const trimUrl = baseUrl.trim();
-    const trimModelsUrl = modelsUrl.trim();
+    const trimModelsUrl = providerType === "gemini" ? "" : modelsUrl.trim();
     const trimKey = apiKeyForRequest;
-    const key = buildProviderModelsFetchKey(
-      trimUrl,
-      trimKey,
-      useSystemProxy,
-      isFullUrl,
-      trimModelsUrl,
-    );
+    const key =
+      providerType +
+      ":" +
+      buildProviderModelsFetchKey(
+        trimUrl,
+        trimKey,
+        useSystemProxy,
+        isFullUrl,
+        trimModelsUrl,
+        effectiveCustomHeaders,
+      );
     if ((!trimUrl && !trimModelsUrl) || !trimKey) return;
     if (key === prevFetchKey.current) return;
 
@@ -296,9 +443,20 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     }, 900);
 
     return () => {
+      modelFetchGeneration.current += 1;
+      prevFetchKey.current = "";
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [apiKeyForRequest, baseUrl, doFetch, isFullUrl, modelsUrl, useSystemProxy]);
+  }, [
+    apiKeyForRequest,
+    baseUrl,
+    providerType,
+    doFetch,
+    effectiveCustomHeaders,
+    isFullUrl,
+    modelsUrl,
+    useSystemProxy,
+  ]);
 
   useEffect(() => {
     if (!modelOrder) return;
@@ -322,6 +480,7 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
 
   useEffect(
     () => () => {
+      modelFetchGeneration.current += 1;
       if (modelSortTimerRef.current) clearTimeout(modelSortTimerRef.current);
       for (const timers of modelBadgeTimersRef.current.values()) {
         for (const timer of timers) clearTimeout(timer);
@@ -331,21 +490,11 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     [],
   );
 
-  function captureModelLayout() {
-    const rows = modelListRef.current?.querySelectorAll<HTMLElement>("[data-model-row-id]");
-    const topById = new Map<string, number>();
-    for (const row of rows ?? []) {
-      for (const animation of row.getAnimations()) animation.cancel();
-      const id = row.dataset.modelRowId;
-      if (id) topById.set(id, row.getBoundingClientRect().top);
-    }
-    const scrollContainer = modelScrollContainerRef.current;
-    pendingModelLayoutRef.current = {
-      topById,
-      scrollContainer,
-      scrollTop: scrollContainer?.scrollTop ?? null,
-    };
-  }
+  // 打开供应商弹窗时顺带刷新思考档位运行期补充（TTL 内幂等，通常零开销）：
+  // 新建供应商录入 url+key 后，新模型的档位不依赖次日 CI 快照刷新。
+  useEffect(() => {
+    void loadThinkingLiveSupplement();
+  }, []);
 
   function markModelAsNew(modelId: string) {
     for (const timer of modelBadgeTimersRef.current.get(modelId) ?? []) clearTimeout(timer);
@@ -379,7 +528,6 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
       modelSortTimerRef.current = setTimeout(settleNewModels, 200);
       return;
     }
-    captureModelLayout();
     setModelDisplayOrder(
       createModelOrderSnapshot(modelsRef.current, modelOrderRef.current, activeModelsRef.current),
     );
@@ -398,7 +546,6 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
       return;
     }
 
-    captureModelLayout();
     const nextIds = new Set(nextModels.map((model) => model.id));
     const newIdSet = new Set(newModelIds);
     setModels(nextModels);
@@ -431,91 +578,63 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     });
   }
 
-  function exitModelBulkMode() {
-    setModelBulkMode(false);
-    setModelBulkSelection(new Set());
-  }
-
-  function toggleModelBulkMode() {
-    if (modelBulkMode) {
-      exitModelBulkMode();
-      return;
-    }
-    setEditingModel(null);
-    setAddingModel(false);
-    setModelBulkSelection(new Set());
-    setModelBulkMode(true);
-  }
-
-  function toggleModelBulkSelection(modelId: string) {
-    setModelBulkSelection((prev) => {
-      const next = new Set(prev);
-      if (next.has(modelId)) next.delete(modelId);
-      else next.add(modelId);
-      return next;
-    });
-  }
-
-  function selectVisibleModels() {
-    setModelBulkSelection((prev) => {
-      const next = new Set(prev);
-      for (const model of visibleModels) next.add(model.id);
-      return next;
-    });
-  }
-
-  function applyModelBulkState(enabled: boolean) {
-    setActiveModels((prev) => applyModelBulkActiveState(prev, modelBulkSelection, enabled));
-    setModelBulkSelection(new Set());
-  }
-
   function handleAddModel() {
-    const model = newModelName.trim();
-    if (!model) return;
-    if (!modelsRef.current.some((item) => item.id === model)) {
-      commitModelsWithNewRows([...modelsRef.current, createDraftModelConfig(providerType, model)]);
-    }
-    setActiveModels((prev) => new Set([...prev, model]));
+    const modelId = newModelName.trim();
+    if (!modelId) return;
+    const nextModels = modelsWithEditingDraft();
+    if (!nextModels) return;
+    const existing = nextModels.find((item) => item.id === modelId);
+    const model = existing ?? createDraftModelConfig(providerType, modelId);
+    commitModelsWithNewRows(existing ? nextModels : [...nextModels, model]);
+    setActiveModels((prev) => new Set([...prev, modelId]));
+    setEditingModel({
+      model,
+      contextWindow: String(model.contextWindow),
+      maxOutputToken: String(model.maxOutputToken),
+    });
+    setModelSearch("");
     setNewModelName("");
     setAddingModel(false);
   }
 
   function removeModel(model: string) {
-    for (const timer of modelBadgeTimersRef.current.get(model) ?? []) clearTimeout(timer);
-    modelBadgeTimersRef.current.delete(model);
+    removeModels([model]);
+  }
+
+  function removeModels(modelIds: readonly string[]) {
+    if (modelIds.length === 0) return;
+    const removed = new Set(modelIds);
+    for (const model of removed) {
+      for (const timer of modelBadgeTimersRef.current.get(model) ?? []) clearTimeout(timer);
+      modelBadgeTimersRef.current.delete(model);
+    }
     setNewModelPhases((current) => {
-      if (!current.has(model)) return current;
+      if (![...removed].some((model) => current.has(model))) return current;
       const next = new Map(current);
-      next.delete(model);
+      for (const model of removed) next.delete(model);
       return next;
     });
-    setModels((prev) => prev.filter((item) => item.id !== model));
+    setModels((prev) => prev.filter((item) => !removed.has(item.id)));
     setActiveModels((prev) => {
       const next = new Set(prev);
-      next.delete(model);
+      for (const model of removed) next.delete(model);
       return next;
     });
-    setModelBulkSelection((prev) => {
-      if (!prev.has(model)) return prev;
-      const next = new Set(prev);
-      next.delete(model);
-      return next;
-    });
-    setEditingModel((prev) => (prev?.model.id === model ? null : prev));
+    setEditingModel((prev) => (prev && removed.has(prev.model.id) ? null : prev));
   }
 
   function openModelSettings(modelId: string) {
-    const target = models.find((item) => item.id === modelId);
+    if (editingModel?.model.id === modelId) return;
+    const nextModels = modelsWithEditingDraft();
+    if (!nextModels) return;
+    const target = nextModels.find((item) => item.id === modelId);
     if (!target) return;
-    setEditingModel((prev) =>
-      prev?.model.id === target.id
-        ? null
-        : {
-            model: target,
-            contextWindow: String(target.contextWindow),
-            maxOutputToken: String(target.maxOutputToken),
-          },
-    );
+    setModels(nextModels);
+    setEditingModel({
+      model: target,
+      contextWindow: String(target.contextWindow),
+      maxOutputToken: String(target.maxOutputToken),
+    });
   }
 
   const editingModelContextWindow = editingModel
@@ -524,24 +643,39 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   const editingModelMaxOutputToken = editingModel
     ? parsePositiveInteger(editingModel.maxOutputToken)
     : null;
+  const canOverrideModelInputModalities =
+    providerSupportsModelInputModalitiesOverride(providerType);
+  const editingModelInputModalitiesMode = editingModel
+    ? getModelInputModalitiesMode(editingModel.model)
+    : "auto";
   const canSaveEditingModel =
     editingModelContextWindow !== null && editingModelMaxOutputToken !== null;
 
+  function setEditingModelInputModalitiesMode(mode: ModelInputModalitiesMode) {
+    setEditingModel((prev) =>
+      prev
+        ? {
+            ...prev,
+            model: applyModelInputModalitiesMode(prev.model, mode),
+          }
+        : prev,
+    );
+  }
+
+  function modelsWithEditingDraft(): ProviderModelConfig[] | null {
+    if (!editingModel) return models;
+    return applyProviderModelDraft(
+      models,
+      editingModel.model,
+      editingModelContextWindow,
+      editingModelMaxOutputToken,
+    );
+  }
+
   function saveInlineModelSettings() {
-    if (
-      !editingModel ||
-      editingModelContextWindow === null ||
-      editingModelMaxOutputToken === null
-    ) {
-      return;
-    }
-    const nextModel: ProviderModelConfig = {
-      ...editingModel.model,
-      contextWindow: editingModelContextWindow,
-      maxOutputToken: editingModelMaxOutputToken,
-      limitsSource: "user",
-    };
-    setModels((prev) => prev.map((item) => (item.id === nextModel.id ? nextModel : item)));
+    const nextModels = modelsWithEditingDraft();
+    if (!nextModels) return;
+    setModels(nextModels);
     setEditingModel(null);
   }
   function updateCustomHeader(index: number, field: "key" | "value", value: string) {
@@ -573,28 +707,28 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     setHeaderValidationSubmitted(false);
   }
 
-  function openHeaderSuggest(index: number) {
-    const input = headerKeyRefs.current[index];
-    if (!input) return;
-    const rect = input.getBoundingClientRect();
-    setHeaderSuggest({
-      index,
-      rect: { left: rect.left, top: rect.bottom + 4, width: rect.width },
-    });
-    setHeaderSuggestActive(0);
-  }
-
-  function applyHeaderSuggestion(preset: string) {
-    if (!headerSuggest) return;
-    updateCustomHeader(headerSuggest.index, "key", preset);
-    setHeaderSuggest(null);
-    focusCustomHeader(headerSuggest.index, "value");
-  }
-
   function cancelCustomHeaderImport() {
     setHeaderImportOpen(false);
     setHeaderImportText("");
     setHeaderImportError(null);
+  }
+
+  // 一键模拟：换成所选 CLI 的整套身份头。先剥掉其它 CLI 家族的残留头，再并入所选
+  // CLI 的头——只做同名覆盖会留下上一家的 x-app / X-Stainless-* / originator，拼出
+  // 一份假指纹。不属于任何 CLI 家族的业务头原样保留。
+  function applyCliIdentityHeaders(identity: CliIdentityProviderId) {
+    const result = applyCliIdentity(customHeaders, identity);
+    setCustomHeaders(result.headers);
+
+    setHeaderValidationSubmitted(false);
+    setHeaderImportOpen(false);
+    setHeaderImportError(null);
+    setHeaderImportSummary({
+      importedCount: result.importedCount,
+      overwrittenCount: result.overwrittenCount,
+      removedCount: result.removedCount,
+      issues: [],
+    });
   }
 
   function handleImportCustomHeaders() {
@@ -613,7 +747,7 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
       }
       const merged = mergeImportedCustomHeaders(customHeaders, parsed.headers);
       setCustomHeaders(merged.headers);
-      setHeaderSuggest(null);
+
       setHeaderValidationSubmitted(false);
       setHeaderImportSummary({
         importedCount: merged.importedCount,
@@ -628,12 +762,20 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
   }
   async function handleSave() {
     if (!name.trim()) return;
+    if (!isAcceptedProviderBaseUrl(baseUrl)) {
+      // K-brain would reject the whole save; keep the dialog open with the reason instead.
+      setBaseUrlValidationSubmitted(true);
+      setActivePanel("general");
+      requestAnimationFrame(() => document.getElementById("modal-baseurl")?.focus());
+      return;
+    }
+    const nextModels = modelsWithEditingDraft();
+    if (!nextModels) return;
     const invalidHeaderIndex = customHeaders.findIndex(
       (header) => getCustomHeaderIssue(header, true) !== null,
     );
     if (invalidHeaderIndex >= 0) {
       setHeaderValidationSubmitted(true);
-      exitModelBulkMode();
       setActivePanel("request");
       // 导入视图会顶掉请求头列表,先切回列表再聚焦,否则目标输入框尚未挂载。
       setHeaderImportOpen(false);
@@ -646,18 +788,17 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
       return;
     }
     if (requiresCustomUsageQueryConfirmation(usageQuery, customUsageQueryConfirmed)) {
-      const confirmed = await requestUsageQueryConfirm({
+      const confirmed = await requestConfirm({
         title: t("settings.providerUsageCustomConfirmTitle"),
         description: t("settings.providerUsageCustomConfirmDescription"),
         detail: t("settings.providerUsageCustomConfirmDetail"),
         confirmLabel: t("settings.providerUsageCustomConfirmAction"),
         cancelLabel: t("settings.cancel"),
-        tone: "warning",
       });
       if (!confirmed) return;
       setCustomUsageQueryConfirmed(true);
     }
-    const nextApiKey = apiKeyIsRedactedDisplay ? "" : apiKey.trim();
+    const nextApiKey = apiKeyIsStoredValue ? "" : apiKey.trim();
     onSave({
       name: name.trim(),
       type: providerType,
@@ -665,12 +806,9 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
       isFullUrl,
       modelsUrl: providerType === "gemini" ? undefined : modelsUrl.trim() || undefined,
       apiKey: nextApiKey,
-      apiKeyConfigured:
-        nextApiKey.length > 0 ||
-        apiKeyIsRedactedDisplay ||
-        (isGatewayWebui && initialData?.apiKeyConfigured === true),
+      apiKeyConfigured: nextApiKey.length > 0 || apiKeyIsStoredValue,
       customHeaders,
-      models,
+      models: nextModels,
       modelOrder,
       activeModels: Array.from(activeModels),
       requestFormat:
@@ -694,10 +832,10 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
         providerType === "claude_code" && promptCachingEnabled && promptCacheRetention === "long"
           ? "long"
           : undefined,
-      nativeWebSearchEnabled:
-        initialData?.nativeWebSearchEnabled ?? true,
+      nativeWebSearchEnabled: initialData?.nativeWebSearchEnabled ?? true,
       useSystemProxy,
-      usageQuery: serializeUsageQueryDraft(usageQuery, isGatewayWebui),
+      retryPolicy: serializeStreamRetryPolicy(),
+      usageQuery: serializeUsageQueryDraft(usageQuery, providerCredentialsRedacted),
     });
     requestClose();
   }
@@ -709,7 +847,7 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     try {
       // 测试永远以编辑器里的草稿为准(忽略启用开关,不落库、不进缓存);
       // 秘密占位符经 serialize 还原为空串,由桌面端按 *Configured 沿用已存密钥。
-      const draft = serializeUsageQueryDraft(usageQuery, isGatewayWebui);
+      const draft = serializeUsageQueryDraft(usageQuery, providerCredentialsRedacted);
       const result = await testProviderUsage(persistedUsageQueryProviderId, draft);
       if (usageQueryTestSeqRef.current !== seq) return;
       if (result?.error) {
@@ -733,29 +871,6 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     () => applyModelOrderSnapshot(models, modelDisplayOrder),
     [models, modelDisplayOrder],
   );
-  useLayoutEffect(() => {
-    // The rendered row order is the commit boundary for restoring scroll and running FLIP.
-    void orderedModels;
-    const pending = pendingModelLayoutRef.current;
-    if (!pending) return;
-    pendingModelLayoutRef.current = null;
-    if (pending.scrollTop !== null && pending.scrollContainer) {
-      pending.scrollContainer.scrollTop = pending.scrollTop;
-    }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const rows = modelListRef.current?.querySelectorAll<HTMLElement>("[data-model-row-id]");
-    for (const row of rows ?? []) {
-      const id = row.dataset.modelRowId;
-      const previousTop = id ? pending.topById.get(id) : undefined;
-      if (previousTop === undefined) continue;
-      const delta = previousTop - row.getBoundingClientRect().top;
-      if (Math.abs(delta) < 1) continue;
-      row.animate([{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }], {
-        duration: MODEL_FLIP_DURATION_MS,
-        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-      });
-    }
-  }, [orderedModels]);
   const modelSearchQuery = modelSearch.trim().toLowerCase();
   const visibleModels = useMemo(
     () =>
@@ -764,17 +879,43 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
         : orderedModels,
     [orderedModels, modelSearchQuery],
   );
-  const allVisibleModelsSelected =
-    visibleModels.length > 0 && visibleModels.every((model) => modelBulkSelection.has(model.id));
-  const { enableCount: modelBulkEnableCount, disableCount: modelBulkDisableCount } = useMemo(
-    () => getModelBulkActionCounts(modelBulkSelection, activeModels),
-    [modelBulkSelection, activeModels],
+  // 表头总开关：作用于当前可见（含搜索过滤）的模型。全部启用时视为“开”，
+  // 再点一次全部禁用；部分启用时点击补全为全部启用。
+  const visibleActiveCount = useMemo(
+    () => visibleModels.reduce((count, model) => count + (activeModels.has(model.id) ? 1 : 0), 0),
+    [visibleModels, activeModels],
   );
-  const modelReorderDisabledHint = modelBulkMode
-    ? t("settings.modelReorderDisabledBulk")
-    : modelSearchQuery
-      ? t("settings.modelReorderDisabledSearch")
-      : t("settings.reorderNeedsTwoItems");
+  const allVisibleModelsActive =
+    visibleModels.length > 0 && visibleActiveCount === visibleModels.length;
+  function toggleVisibleModelsActive() {
+    setActiveModels((prev) =>
+      applyModelsActiveState(
+        prev,
+        visibleModels.map((model) => model.id),
+        !allVisibleModelsActive,
+      ),
+    );
+  }
+  // 表头清空按钮：与总开关同一作用域，搜索时只删除匹配项。
+  async function clearVisibleModels() {
+    const modelIds = visibleModels.map((model) => model.id);
+    if (modelIds.length === 0) return;
+    const confirmed = await requestConfirm({
+      title: t("settings.clearModelsConfirmTitle"),
+      description: t(
+        modelSearchQuery
+          ? "settings.clearMatchedModelsConfirmDescription"
+          : "settings.clearAllModelsConfirmDescription",
+      ).replace("{count}", String(modelIds.length)),
+      confirmLabel: t("settings.clearModelsConfirmAction"),
+      cancelLabel: t("settings.cancel"),
+    });
+    if (!confirmed) return;
+    removeModels(modelIds);
+  }
+  const modelReorderDisabledHint = modelSearchQuery
+    ? t("settings.modelReorderDisabledSearch")
+    : t("settings.reorderNeedsTwoItems");
   const handleModelReorder = useCallback((nextIds: string[]) => {
     if (modelSortTimerRef.current) clearTimeout(modelSortTimerRef.current);
     modelSortTimerRef.current = null;
@@ -784,44 +925,10 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     setModelOrder(nextIds);
     setModelDisplayOrder(nextIds);
   }, []);
-  const {
-    draggingItemId: draggingModelId,
-    getItemProps: getModelReorderProps,
-    renderDragHandle: renderModelDragHandle,
-    scrollContainerRef: modelScrollContainerRef,
-  } = useVerticalListReorder({
-    itemIds: orderedModels.map((model) => model.id),
-    canReorder: !modelBulkMode && !modelSearchQuery,
-    reorderLabel: t("settings.reorderModel"),
-    reorderHint: t("settings.reorderVerticalHint"),
-    disabledHint: modelReorderDisabledHint,
-    onReorder: handleModelReorder,
-  });
-  draggingModelIdRef.current = draggingModelId;
-  const headerSuggestQuery = headerSuggest
-    ? (customHeaders[headerSuggest.index]?.key ?? "").trim().toLowerCase()
-    : "";
-  const headerSuggestUsed = new Set(
-    headerSuggest
-      ? customHeaders
-          .filter((_, index) => index !== headerSuggest.index)
-          .map((header) => header.key.trim().toLowerCase())
-          .filter(Boolean)
-      : [],
-  );
-  const headerSuggestItems = headerSuggest
-    ? headerSuggestQuery
-      ? getCustomHeaderKeyPresets(providerType).filter((preset) => {
-          const lower = preset.toLowerCase();
-          if (headerSuggestUsed.has(lower)) return false;
-          return lower.includes(headerSuggestQuery) && lower !== headerSuggestQuery;
-        })
-      : []
-    : [];
-  const headerSuggestActiveIndex = Math.min(
-    headerSuggestActive,
-    Math.max(0, headerSuggestItems.length - 1),
-  );
+  const handleModelDraggingChange = useCallback((itemId: string | null) => {
+    draggingModelIdRef.current = itemId;
+  }, []);
+
   const headerImportErrorMessage = headerImportError
     ? t(`settings.customHeaderImportError.${headerImportError}`)
     : null;
@@ -831,6 +938,9 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
         t("settings.customHeaderImportSummary.overwritten") +
           " " +
           headerImportSummary.overwrittenCount,
+        (headerImportSummary.removedCount ?? 0) > 0
+          ? `${t("settings.customHeaderImportSummary.removed")} ${headerImportSummary.removedCount}`
+          : null,
         headerImportSummary.issues.length > 0
           ? t("settings.customHeaderImportSummary.skipped") +
             " " +
@@ -859,30 +969,32 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     activeCodingPlanProvider,
     activeModels,
     activePanel,
+    setProviderType,
     addCustomHeader,
     addingModel,
-    allVisibleModelsSelected,
+    allVisibleModelsActive,
     apiKey,
     apiKeyForRequest,
     apiKeyIsRedactedDisplay,
-    applyHeaderSuggestion,
-    applyModelBulkState,
+    applyCliIdentityHeaders,
     baseUrl,
     canSaveEditingModel,
+    canOverrideModelInputModalities,
     cancelCustomHeaderImport,
+    clearVisibleModels,
     commitUsageTimeoutInput,
     customHeaders,
-    draggingModelId,
     editingModel,
     editingModelContextWindow,
+    editingModelInputModalitiesMode,
     editingModelMaxOutputToken,
-    exitModelBulkMode,
     fetchError,
     fetchingModels,
     focusCustomHeader,
-    getModelReorderProps,
     handleAddModel,
     handleImportCustomHeaders,
+    handleModelDraggingChange,
+    handleModelReorder,
     handleRefresh,
     handleSave,
     handleTestUsageQuery,
@@ -891,23 +1003,17 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     headerImportSummaryMessage,
     headerImportText,
     headerIssueMessage,
+    headerKeyPresets: getCustomHeaderKeyPresets(providerType),
     headerKeyRefs,
-    headerSuggest,
-    headerSuggestActiveIndex,
-    headerSuggestItems,
     headerValidationSubmitted,
     headerValueRefs,
+    baseUrlInvalid,
     dialogOpen,
     isEditing,
     isFullUrl,
     isGatewayWebui,
     matchedBalanceProviders,
-    modelBulkDisableCount,
-    modelBulkEnableCount,
-    modelBulkMode,
-    modelBulkSelection,
-    modelListRef,
-    modelScrollContainerRef,
+    modelReorderDisabledHint,
     modelSearch,
     modelSearchQuery,
     models,
@@ -916,7 +1022,6 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     newModelName,
     newModelPhases,
     onClose,
-    openHeaderSuggest,
     openModelSettings,
     persistedUsageQueryProviderId,
     promptCacheHintMode,
@@ -925,24 +1030,20 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     providerType,
     removeCustomHeader,
     removeModel,
-    renderModelDragHandle,
     requestClose,
     requestFormat,
     saveInlineModelSettings,
-    selectVisibleModels,
     setActivePanel,
     setAddingModel,
     setApiKey,
     setBaseUrl,
     setEditingModel,
+    setEditingModelInputModalitiesMode,
     setHeaderImportError,
     setHeaderImportOpen,
     setHeaderImportSummary,
     setHeaderImportText,
-    setHeaderSuggest,
-    setHeaderSuggestActive,
     setIsFullUrl,
-    setModelBulkSelection,
     setModelSearch,
     setModelsUrl,
     setName,
@@ -952,25 +1053,33 @@ function useProviderModalController({ providerType, initialData, onSave, onClose
     setPromptCachingEnabled,
     setRequestFormat,
     setShowApiKey,
+    toggleShowApiKey,
+    revealingApiKey,
+    revealApiKeyError,
     setShowUsageVariableApiKey,
+    setStreamRetryCountInput,
+    setStreamRetryMode,
     setUsageQuery,
     setUsageTimeoutInput,
     setUseSystemProxy,
     showApiKey,
     showUsageVariableApiKey,
+    streamRetryCountInput,
+    streamRetryMode,
+    commitStreamRetryCountInput,
     t,
     toggleModel,
-    toggleModelBulkMode,
-    toggleModelBulkSelection,
+    toggleVisibleModelsActive,
     typeLabel,
     updateCustomHeader,
     usageQuery,
-    usageQueryConfirmDialog,
+    confirmDialog,
     usageQueryTest,
     usageTimeoutInput,
     usageVariableApiKey,
     usageVariableBaseUrl,
     useSystemProxy,
+    visibleActiveCount,
     visibleModels,
   };
   return viewModel;

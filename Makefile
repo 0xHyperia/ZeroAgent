@@ -215,21 +215,7 @@ gateway-docker-run:
 	docker run --rm -p 8080:8080 $(GATEWAY_DOCKER_IMAGE)
 
 gateway-docker-smoke: gateway-docker-build
-	@set -e; \
-	name="liveagent-gateway-smoke"; \
-	docker rm -f "$$name" >/dev/null 2>&1 || true; \
-	docker run -d --name "$$name" -p 18080:8080 $(GATEWAY_DOCKER_IMAGE) >/dev/null; \
-	trap 'docker rm -f "$$name" >/dev/null 2>&1 || true' EXIT; \
-	for _ in $$(seq 1 30); do \
-		if curl -fsS http://127.0.0.1:18080/healthz | grep -q '"ok":true'; then \
-			echo "Gateway Docker smoke test passed: http://127.0.0.1:18080/healthz"; \
-			exit 0; \
-		fi; \
-		sleep 1; \
-	done; \
-	echo "Gateway Docker smoke test failed; container logs:"; \
-	docker logs "$$name" || true; \
-	exit 1
+	GATEWAY_DOCKER_IMAGE="$(GATEWAY_DOCKER_IMAGE)" bash scripts/check-gateway-docker-smoke.sh
 
 build-linux: proto webui
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C $(AGENT_GATEWAY_DIR) build -o bin/liveagent-gateway-linux-amd64 ./cmd/gateway
@@ -289,8 +275,9 @@ desktop-verify-macos:
 
 help:
 	@printf "\n%s\n" "Desktop"
-	@printf "  %-34s %s\n" "make / make dev" "启动 Tauri 开发环境（Session Workbench 已默认启用）"
-	@printf "  %-34s %s\n" "make dev DEV_SESSION_WORKBENCH=0" "回退旧单会话布局启动 Tauri（逃生开关）"
+	@printf "  %-34s %s\n" "make / make dev" "启动 Gateway/WebUI 开发栈（需先运行 dev-infra-up）"
+	@printf "  %-34s %s\n" "make dev-tauri" "启动 Tauri 桌面开发环境"
+	@printf "  %-34s %s\n" "make dev-tauri DEV_SESSION_WORKBENCH=0" "回退旧单会话布局启动 Tauri（逃生开关）"
 	@printf "  %-34s %s\n" "make build" "构建当前平台 Tauri 应用"
 	@printf "  %-34s %s\n" "make desktop-build-macos" "构建当前 Mac 芯片架构"
 	@printf "  %-34s %s\n" "make desktop-build-macos-release" "签名、公证并验证 macOS DMG"

@@ -23,12 +23,17 @@ cert/
 node_modules
 dist
 dist-ssr
+dist-mobile
 target
 *.local
 deploy/.env.dev
 .vscode
 target
 bin
+# Generated Tauri external binary and local locked-artifact cache
+crates/agent-gui/src-tauri/binaries/
+.liveagent/kbrain-artifact/
+.liveagent/kbrain-cache/
 .serena
 chatroom
 
@@ -49,8 +54,10 @@ workspace.zip
 # Debug symbols (MSVC)
 *.pdb
 
+# Desktop Gateway sidecars are built from this checkout before Tauri dev/build.
+/crates/agent-gui/src-tauri/binaries/
+
 # Local workflow artifacts
-/.gitattributes
 /.trellis
 /AGENTS.md
 /CLAUDE.md

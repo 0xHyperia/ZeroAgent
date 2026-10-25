@@ -1,12 +1,13 @@
+import { assistantMessageToText } from "@liveagent/app/lib/providers/llm";
 import type {
   AssistantMessage,
   Message,
   ToolCall,
   ToolResultMessage,
   Usage,
-} from "@liveagent/app/lib/agentTypes";
-import { assistantMessageToText } from "@liveagent/app/lib/providers/llm";
+} from "@liveagent/ui/lib/chat/agentTypes";
 import { ASK_USER_QUESTION_DEADLINE_ARG } from "@liveagent/ui/lib/chat/askUserQuestion";
+import { estimateThinkingReplayTokenUnits } from "@liveagent/ui/lib/chat/contextUsage";
 import {
   enrichHostedSearchContentWithText,
   type HostedSearchBlock,
@@ -16,8 +17,15 @@ import {
   splitTextAroundHostedSearch,
 } from "@liveagent/ui/lib/chat/hostedSearch";
 import {
+  EXIT_PLAN_MODE_APPROVED_ARG,
+  EXIT_PLAN_MODE_PENDING_ARG,
+} from "@liveagent/ui/lib/chat/planMode";
+import {
+  TOOL_APPROVAL_ALLOW_SESSION_ARG,
   TOOL_APPROVAL_DEADLINE_ARG,
   TOOL_APPROVAL_PENDING_ARG,
+  TOOL_APPROVAL_SESSION_SCOPE_ARG,
+  TOOL_APPROVAL_SESSION_WIDE_ARG,
   TOOL_APPROVAL_SUMMARY_ARG,
 } from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import { fileToolFieldChars, LIVE_TOOL_PREVIEW_META_KEY } from "@liveagent/ui/lib/chat/toolPreview";
@@ -48,6 +56,8 @@ export type UiRoundContentBlock =
       // shifted by later inserts, unlike an array index.
       id: string;
       text: string;
+      // OpenAI Responses 重放的 reasoning item 估算；UI 仍只渲染 text 摘要。
+      replayTokenUnits?: number;
     }
   | {
       kind: "tool";
@@ -72,8 +82,6 @@ export type UiRound = {
     api?: string;
     stopReason?: string;
     usage?: Usage;
-    usageTotalTokens?: number;
-    contextUsageTokens?: number;
     contextRelevant?: boolean;
   };
 };
@@ -454,7 +462,33 @@ export function summarizeToolCall(
                                                 ? `maxBytes=${args.max_bytes}`
                                                 : null,
                                             ]
-                                          : [];
+                                          : name === "Browser"
+                                            ? [
+                                                includeManagerAction &&
+                                                typeof args.action === "string"
+                                                  ? `action=${args.action}`
+                                                  : null,
+                                                typeof args.url === "string"
+                                                  ? `url=${summarizeToolArg(args.url)}`
+                                                  : null,
+                                                typeof args.ref === "string"
+                                                  ? `ref=${summarizeToolArg(args.ref)}`
+                                                  : null,
+                                                typeof args.text === "string"
+                                                  ? `text=${summarizeToolArg(args.text)}`
+                                                  : null,
+                                                typeof args.expression === "string"
+                                                  ? `expression=${summarizeToolArg(args.expression)}`
+                                                  : null,
+                                                typeof args.selector === "string"
+                                                  ? `selector=${summarizeToolArg(args.selector)}`
+                                                  : null,
+                                                typeof args.timeMs === "number"
+                                                  ? `timeMs=${args.timeMs}`
+                                                  : null,
+                                                args.submit === true ? "submit=true" : null,
+                                              ]
+                                            : [];
 
   const summary = parts.filter(Boolean).join(" ");
   if (!summary) return includeName ? name : "";
@@ -528,7 +562,12 @@ const DISPLAY_SYNTHETIC_ARG_KEYS = new Set([
   TOOL_APPROVAL_PENDING_ARG,
   TOOL_APPROVAL_DEADLINE_ARG,
   TOOL_APPROVAL_SUMMARY_ARG,
+  TOOL_APPROVAL_ALLOW_SESSION_ARG,
+  TOOL_APPROVAL_SESSION_SCOPE_ARG,
+  TOOL_APPROVAL_SESSION_WIDE_ARG,
   ASK_USER_QUESTION_DEADLINE_ARG,
+  EXIT_PLAN_MODE_PENDING_ARG,
+  EXIT_PLAN_MODE_APPROVED_ARG,
 ]);
 
 // 深度截断超大字符串:MCP 参数可能把超长内容嵌在数组/对象里(如批量写文件),
@@ -786,13 +825,49 @@ export function appendTextLikeBlock(
       kind,
       id: last.id,
       text: last.text + delta,
+      ...(kind === "thinking" && last.kind === "thinking" && last.replayTokenUnits
+        ? { replayTokenUnits: last.replayTokenUnits }
+        : {}),
     };
     return next;
   }
   return [...blocks, { kind, id: nextTextLikeBlockId(blocks, kind), text: delta }];
 }
 
+function appendThinkingReplayUnits(blocks: UiRoundContentBlock[], replayTokenUnits: number) {
+  if (!(replayTokenUnits > 0)) return blocks;
+  const last = blocks[blocks.length - 1];
+  if (last?.kind === "thinking") {
+    return [
+      ...blocks.slice(0, -1),
+      { ...last, replayTokenUnits: (last.replayTokenUnits ?? 0) + replayTokenUnits },
+    ];
+  }
+  return [
+    ...blocks,
+    {
+      kind: "thinking" as const,
+      id: nextTextLikeBlockId(blocks, "thinking"),
+      text: "",
+      replayTokenUnits,
+    },
+  ];
+}
+
+export function appendThinkingBlockFromAssistant(
+  blocks: UiRoundContentBlock[],
+  block: { thinking?: string; thinkingSignature?: string },
+) {
+  const replayTokenUnits = Math.ceil(estimateThinkingReplayTokenUnits(block));
+  const thinking = typeof block.thinking === "string" ? block.thinking : "";
+  const next = thinking ? appendTextLikeBlock(blocks, "thinking", thinking) : blocks;
+  return appendThinkingReplayUnits(next, replayTokenUnits);
+}
+
 function rebalanceHostedSearchTextBoundaries(blocks: UiRoundContentBlock[]): UiRoundContentBlock[] {
+  // 绝大多数回复里没有任何 hosted-search 块：直接返回同一数组。否则每次文本增量
+  // 都会重建整个块数组（长会话里等价于每 delta 一次全量分配 + 数组拷贝）。
+  if (!blocks.some((block) => block.kind === "hostedSearch")) return blocks;
   const out: UiRoundContentBlock[] = [];
   for (let index = 0; index < blocks.length; index += 1) {
     const current = blocks[index];
@@ -1414,7 +1489,7 @@ function buildUiRoundBlocks(
       continue;
     }
     if (block.type === "thinking") {
-      blocks = appendTextLikeBlock(blocks, "thinking", block.thinking);
+      blocks = appendThinkingBlockFromAssistant(blocks, block);
       continue;
     }
     if (block.type === "toolCall") {
@@ -1491,7 +1566,6 @@ export function buildUiMessages(messages: Message[]): UiMessage[] {
             api: String(assistant.api ?? ""),
             stopReason: String(assistant.stopReason ?? ""),
             usage: assistant.usage as Usage | undefined,
-            usageTotalTokens: assistant.usage?.totalTokens,
           },
         });
       } else {

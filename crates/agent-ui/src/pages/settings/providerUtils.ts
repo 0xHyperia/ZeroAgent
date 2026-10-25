@@ -10,19 +10,59 @@ import {
   type UsageQueryConfig,
   type UsageQueryMode,
 } from "@liveagent/app/lib/settings";
-import { invoke } from "@liveagent/app/shims/tauriCore";
-import { prepareProxyRequest } from "../../lib/providers/proxy";
-import { isGatewayWebuiRuntime } from "../../lib/runtimeEnv";
-import { normalizeBaseUrl } from "../../lib/settings/normalize";
-
-const CODEX_MODELS_SUFFIXES = ["/chat/completions", "/responses", "/response"];
-const GEMINI_GENERATE_SUFFIXES = [":streamGenerateContent", ":generateContent"];
-const ANTHROPIC_API_VERSION = "2023-06-01";
-
-// Gateway WebUI 判定移至 lib/runtimeEnv 单一真源；此处再导出保持既有调用方不变。
-export { isGatewayWebuiRuntime };
+import type { CustomHeader } from "../../lib/providers/customHeaders";
 
 const REDACTED_USAGE_QUERY_SECRET_DISPLAY = "••••••••";
+
+export function applyProviderModelDraft(
+  models: ProviderModelConfig[],
+  draft: ProviderModelConfig,
+  contextWindow: number | null,
+  maxOutputToken: number | null,
+): ProviderModelConfig[] | null {
+  if (contextWindow === null || maxOutputToken === null) return null;
+  const limitsChanged =
+    contextWindow !== draft.contextWindow || maxOutputToken !== draft.maxOutputToken;
+  const nextModel: ProviderModelConfig = {
+    ...draft,
+    contextWindow,
+    maxOutputToken,
+    limitsSource: limitsChanged ? "user" : draft.limitsSource,
+  };
+  return models.map((model) => (model.id === draft.id ? nextModel : model));
+}
+
+export type ModelInputModalitiesMode = "auto" | "text" | "text-image";
+
+export function providerSupportsModelInputModalitiesOverride(providerId: ProviderId): boolean {
+  return (
+    providerId === "codex" ||
+    providerId === "xai" ||
+    providerId === "gemini" ||
+    // deepseek：Responses wire 已接受 input_image（官方《图像理解》指南），模型
+    // 能力默认按 id 推断（flash 家族吃图、Pro 纯文本），中转端点不吃图时用覆盖
+    // 改回 ["text"]。
+    providerId === "deepseek"
+  );
+}
+
+export function getModelInputModalitiesMode(model: ProviderModelConfig): ModelInputModalitiesMode {
+  if (!model.inputModalities) return "auto";
+  return model.inputModalities.length === 2 ? "text-image" : "text";
+}
+
+export function applyModelInputModalitiesMode(
+  model: ProviderModelConfig,
+  mode: ModelInputModalitiesMode,
+): ProviderModelConfig {
+  const modelWithoutOverride = { ...model };
+  delete modelWithoutOverride.inputModalities;
+  if (mode === "auto") return modelWithoutOverride;
+  return {
+    ...modelWithoutOverride,
+    inputModalities: mode === "text-image" ? ["text", "image"] : ["text"],
+  };
+}
 
 // KEEP IN SYNC:general/newapi 预设与桌面端 Rust services/provider_usage.rs 的
 // GENERAL_SCRIPT / NEWAPI_SCRIPT 逐字符一致(脚本为空的存量配置由 Rust 兜底执行);
@@ -276,288 +316,11 @@ export function formatTokenCount(value: number): string {
   return `${Number.isInteger(millions) ? String(millions) : millions.toFixed(1)}M`;
 }
 
-function deriveModelsBaseUrlFromFullUrl(baseUrl: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(baseUrl.trim());
-  } catch {
-    return normalizeBaseUrl(baseUrl);
-  }
-  parsed.search = "";
-  parsed.hash = "";
-
-  const path = parsed.pathname.replace(/\/+$/, "");
-  const versionIndex = path.toLowerCase().indexOf("/v1/");
-  if (versionIndex >= 0) {
-    parsed.pathname = path.slice(0, versionIndex + "/v1".length);
-  } else {
-    const separatorIndex = path.lastIndexOf("/");
-    parsed.pathname = separatorIndex > 0 ? path.slice(0, separatorIndex) : "/";
-  }
-  return normalizeBaseUrl(parsed.toString());
-}
-
-export function normalizeProviderModelsBaseUrl(
-  type: ProviderId,
-  baseUrl: string,
-  isFullUrl = false,
-) {
-  if (isFullUrl) return deriveModelsBaseUrlFromFullUrl(baseUrl);
-  let normalizedUrl = normalizeBaseUrl(baseUrl);
-
-  if (type !== "codex" && type !== "xai" && type !== "deepseek" && type !== "gemini") {
-    return normalizedUrl;
-  }
-
-  const lower = normalizedUrl.toLowerCase();
-
-  if (type === "codex" || type === "xai" || type === "deepseek") {
-    for (const suffix of CODEX_MODELS_SUFFIXES) {
-      if (lower.endsWith(suffix)) {
-        normalizedUrl = normalizedUrl.slice(0, -suffix.length);
-        break;
-      }
-    }
-  } else {
-    for (const suffix of GEMINI_GENERATE_SUFFIXES) {
-      if (lower.endsWith(suffix.toLowerCase())) {
-        normalizedUrl = normalizedUrl.slice(0, -suffix.length);
-        break;
-      }
-    }
-    const modelsIndex = normalizedUrl.toLowerCase().lastIndexOf("/models");
-    if (modelsIndex >= 0) {
-      const afterModels = normalizedUrl.slice(modelsIndex + "/models".length);
-      if (!afterModels || afterModels.startsWith("/")) {
-        normalizedUrl = normalizedUrl.slice(0, modelsIndex);
-      }
-    }
-  }
-
-  return normalizeBaseUrl(normalizedUrl);
-}
-
-export type ProviderModelsAttemptKind = "default" | "official";
-
-export type ProviderModelsAttempt = {
-  kind: ProviderModelsAttemptKind;
-  headers: Record<string, string>;
-};
-
-export type ProviderModelsFailure = {
-  status: number | null;
-  message: string;
-};
-
-function buildVersionedModelsUrl(baseUrl: string, versionPath: string) {
-  const apiRoot = normalizeBaseUrl(baseUrl)
-    .replace(/\/models$/i, "")
-    .replace(/\/v\d+(?:beta)?$/i, "");
-  return `${apiRoot}/${versionPath}/models`;
-}
-
-export function buildProviderModelsUrl(
-  type: ProviderId,
-  baseUrl: string,
-  kind: ProviderModelsAttemptKind,
-) {
-  const versionPath = kind === "official" && type === "gemini" ? "v1beta" : "v1";
-  return buildVersionedModelsUrl(baseUrl, versionPath);
-}
-
-// 首次尝试统一 /v1/models + Authorization Bearer；失败后回退到各家官方形式
-// （gemini v1beta + x-goog-api-key、claude_code x-api-key）。每次请求仍只带单一鉴权头。
-function buildModelsHeaders(
-  type: ProviderId,
-  apiKey: string,
-  kind: ProviderModelsAttemptKind,
-): Record<string, string> {
-  if (kind === "official") {
-    if (type === "gemini") {
-      return {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      };
-    }
-    if (type === "claude_code") {
-      return {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_API_VERSION,
-      };
-    }
-  }
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-  };
-}
-
-export function buildProviderModelsAttempts(
-  type: ProviderId,
-  apiKey: string,
-): ProviderModelsAttempt[] {
-  const attempts: ProviderModelsAttempt[] = [
-    { kind: "default", headers: buildModelsHeaders(type, apiKey, "default") },
-    { kind: "official", headers: buildModelsHeaders(type, apiKey, "official") },
-  ];
-  // codex/xai/deepseek 的官方形式与首次尝试完全一致（URL 仅 gemini 随 kind 变化，且其请求头
-  // 必不同），重复请求同一端点没有意义，收敛为一次。
-  return JSON.stringify(attempts[0].headers) === JSON.stringify(attempts[1].headers)
-    ? [attempts[0]]
-    : attempts;
-}
-
-function isMissingEndpointStatus(status: number | null) {
-  return status === 404 || status === 405;
-}
-
-export function pickProviderModelsFailure(
-  failures: ProviderModelsFailure[],
-): ProviderModelsFailure | null {
-  for (let index = failures.length - 1; index >= 0; index -= 1) {
-    if (!isMissingEndpointStatus(failures[index].status)) return failures[index];
-  }
-  return failures.length > 0 ? failures[failures.length - 1] : null;
-}
-
-function extractModelListItems(data: unknown): unknown[] | null {
-  if (Array.isArray(data)) return data;
-  const payload = data as { data?: unknown; models?: unknown } | null;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.models)) return payload.models;
-  return null;
-}
-
-async function readFetchError(response: Response, fallback: string) {
-  const raw = (await response.text()).trim();
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const payload = JSON.parse(raw) as { error?: unknown; message?: unknown };
-    const errorText =
-      typeof payload.error === "string"
-        ? payload.error.trim()
-        : typeof payload.message === "string"
-          ? payload.message.trim()
-          : "";
-    return errorText || raw;
-  } catch {
-    return raw;
-  }
-}
-
-async function fetchModelsThroughGateway(
-  type: ProviderId,
-  baseUrl: string,
-  apiKey: string,
-  useSystemProxy: boolean,
-  modelsUrl: string,
-  providerId: string,
-  isFullUrl: boolean,
-): Promise<ProviderModelConfig[]> {
-  const data = await invoke<unknown>("gateway_provider_models", {
-    type,
-    base_url: baseUrl,
-    api_key: apiKey,
-    use_system_proxy: useSystemProxy,
-    models_url: modelsUrl,
-    provider_id: providerId,
-    is_full_url: isFullUrl,
-  });
-
-  const items = extractModelListItems(data);
-  if (items !== null) {
-    return normalizeApiFetchedModels(items, type);
-  }
-
-  const maybeError =
-    data && typeof data === "object" && "error" in (data as Record<string, unknown>)
-      ? (data as Record<string, unknown>).error
-      : null;
-  if (typeof maybeError === "string" && maybeError.trim() !== "") {
-    throw new Error(maybeError);
-  }
-
-  return [];
-}
-
 export function normalizeFetchedModels(
   items: unknown,
   providerType: ProviderId,
 ): ProviderModelConfig[] {
-  if (providerType === "gemini") {
-    return normalizeGeminiFetchedModels(items);
-  }
   return normalizeProviderModelConfigs(items, providerType);
-}
-
-function normalizeApiFetchedModels(
-  items: unknown,
-  providerType: ProviderId,
-): ProviderModelConfig[] {
-  const models = normalizeFetchedModels(items, providerType);
-  if (providerType !== "claude_code") return models;
-
-  return models.map((model) => {
-    const defaults = createProviderModelConfig(providerType, model.id);
-    const roundsToOneMillion =
-      model.contextWindow < 1_000_000 && Math.round(model.contextWindow / 1_000) === 1_000;
-    return defaults.contextWindow === 1_000_000 && roundsToOneMillion
-      ? { ...model, contextWindow: defaults.contextWindow }
-      : model;
-  });
-}
-
-function normalizePositiveInteger(value: unknown): number | undefined {
-  const numeric =
-    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
-  return Math.floor(numeric);
-}
-
-function normalizeGeminiModelId(value: unknown): string {
-  const raw = typeof value === "string" ? value.trim() : "";
-  return raw.startsWith("models/") ? raw.slice("models/".length) : raw;
-}
-
-function normalizeGeminiFetchedModels(items: unknown): ProviderModelConfig[] {
-  if (!Array.isArray(items)) return [];
-
-  const out: ProviderModelConfig[] = [];
-  const seen = new Set<string>();
-
-  for (const item of items) {
-    const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
-    const supportedMethods = Array.isArray(obj.supportedGenerationMethods)
-      ? obj.supportedGenerationMethods.filter((value): value is string => typeof value === "string")
-      : [];
-    if (supportedMethods.length > 0 && !supportedMethods.includes("generateContent")) {
-      continue;
-    }
-
-    const id = normalizeGeminiModelId(obj.name ?? obj.id ?? obj.model);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-
-    const draft = createProviderModelConfig("gemini", id);
-    const ownedBy =
-      (typeof obj.ownedBy === "string" ? obj.ownedBy.trim() : "") ||
-      (typeof obj.owned_by === "string" ? obj.owned_by.trim() : "");
-    const contextWindow = normalizePositiveInteger(obj.inputTokenLimit);
-    const maxOutputToken = normalizePositiveInteger(obj.outputTokenLimit);
-    out.push({
-      id,
-      ...(ownedBy ? { ownedBy } : {}),
-      contextWindow: contextWindow ?? draft.contextWindow,
-      maxOutputToken: maxOutputToken ?? draft.maxOutputToken,
-      limitsSource: contextWindow && maxOutputToken ? "provider" : draft.limitsSource,
-    });
-  }
-
-  return out;
 }
 
 export function mergeFetchedModels(
@@ -595,6 +358,7 @@ export function mergeFetchedModels(
                   limitsSource: "provider",
                 }
               : {}),
+            ...(model.displayName ? { displayName: model.displayName } : {}),
             ...(model.ownedBy ? { ownedBy: model.ownedBy } : {}),
           }
         : model,
@@ -610,26 +374,14 @@ export function mergeFetchedModels(
   return merged;
 }
 
-export function getModelBulkActionCounts(
-  selectedModels: ReadonlySet<string>,
+// 供“列表总开关”一次性设置一批模型的启用状态：enabled=true 时并集，false 时差集。
+export function applyModelsActiveState(
   activeModels: ReadonlySet<string>,
-): { enableCount: number; disableCount: number } {
-  let enableCount = 0;
-  let disableCount = 0;
-  for (const modelId of selectedModels) {
-    if (activeModels.has(modelId)) disableCount += 1;
-    else enableCount += 1;
-  }
-  return { enableCount, disableCount };
-}
-
-export function applyModelBulkActiveState(
-  activeModels: ReadonlySet<string>,
-  selectedModels: ReadonlySet<string>,
+  targetModels: Iterable<string>,
   enabled: boolean,
 ): Set<string> {
   const next = new Set(activeModels);
-  for (const modelId of selectedModels) {
+  for (const modelId of targetModels) {
     if (enabled) next.add(modelId);
     else next.delete(modelId);
   }
@@ -649,95 +401,14 @@ export function buildProviderModelsFetchKey(
   useSystemProxy: boolean,
   isFullUrl = false,
   modelsUrl = "",
+  customHeaders?: readonly CustomHeader[],
 ): string {
   const routing = useSystemProxy ? "proxy" : "direct";
   const override = modelsUrl.trim();
-  return `${baseUrl.trim()}||${apiKey.trim()}||${routing}${isFullUrl ? "||full-url" : ""}${override ? `||models:${override}` : ""}`;
-}
-
-export async function fetchModelsFromApi(
-  type: ProviderId,
-  baseUrl: string,
-  apiKey: string,
-  options?: {
-    useSystemProxy?: boolean;
-    isFullUrl?: boolean;
-    modelsUrl?: string;
-    providerId?: string;
-  },
-): Promise<ProviderModelConfig[]> {
-  const modelsUrlOverride = type === "gemini" ? "" : (options?.modelsUrl?.trim() ?? "");
-  const normalizedApiKey = apiKey.trim();
-  if (isGatewayWebuiRuntime()) {
-    return fetchModelsThroughGateway(
-      type,
-      baseUrl.trim(),
-      normalizedApiKey,
-      options?.useSystemProxy === true,
-      modelsUrlOverride,
-      options?.providerId?.trim() ?? "",
-      options?.isFullUrl === true,
-    );
-  }
-
-  const normalizedUrl = normalizeProviderModelsBaseUrl(type, baseUrl, options?.isFullUrl === true);
-  const attempts = buildProviderModelsAttempts(type, normalizedApiKey);
-  const failures: ProviderModelsFailure[] = [];
-  let emptyResult: ProviderModelConfig[] | null = null;
-
-  for (const attempt of attempts) {
-    const proxyRequest = await prepareProxyRequest(
-      type,
-      modelsUrlOverride || normalizedUrl,
-      attempt.headers,
-      {
-        useSystemProxy: options?.useSystemProxy === true,
-        isFullUrl: modelsUrlOverride.length > 0,
-      },
-    );
-    const requestUrl = modelsUrlOverride
-      ? proxyRequest.baseUrl
-      : buildProviderModelsUrl(type, proxyRequest.baseUrl, attempt.kind);
-
-    let response: Response;
-    try {
-      response = await fetch(requestUrl, { headers: proxyRequest.headers });
-    } catch (error) {
-      failures.push({
-        status: null,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-
-    if (!response.ok) {
-      failures.push({
-        status: response.status,
-        message: await readFetchError(response, `HTTP ${response.status} ${response.statusText}`),
-      });
-      continue;
-    }
-
-    let data: unknown;
-    try {
-      data = await response.json();
-    } catch {
-      failures.push({ status: null, message: "Model list response is not valid JSON" });
-      continue;
-    }
-
-    const items = extractModelListItems(data);
-    if (items === null) {
-      emptyResult ??= [];
-      continue;
-    }
-    const models = normalizeApiFetchedModels(items, type);
-    if (models.length > 0) return models;
-    emptyResult = models;
-  }
-
-  if (emptyResult !== null) return emptyResult;
-
-  const failure = pickProviderModelsFailure(failures);
-  throw new Error(failure?.message ?? "Failed to fetch model list");
+  // 请求头进 key：这些头参与上游鉴权，改完不重新拉一次的话，用户看到的仍是上一套
+  // 头留下的失败结果，与「改了没生效」无法区分。
+  const headers = (customHeaders ?? []).length
+    ? JSON.stringify((customHeaders ?? []).map((header) => [header.key, header.value]))
+    : "";
+  return `${baseUrl.trim()}||${apiKey.trim()}||${routing}${isFullUrl ? "||full-url" : ""}${override ? `||models:${override}` : ""}${headers ? `||headers:${headers}` : ""}`;
 }

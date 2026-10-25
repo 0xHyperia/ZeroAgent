@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: zeroagent_smoke
+      POSTGRES_USER: zeroagent_smoke
+      POSTGRES_PASSWORD: isolated-smoke-fixture
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U zeroagent_smoke -d zeroagent_smoke]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks: [smoke]
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --save, "", --appendonly, "no"]
+    tmpfs: [/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks: [smoke]
+  gateway:
+    image: ${GATEWAY_DOCKER_IMAGE:-liveagent-gateway:local}
+    environment:
+      LIVEAGENT_GATEWAY_HTTP_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgres://zeroagent_smoke:isolated-smoke-fixture@postgres:5432/zeroagent_smoke?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      USA_ZERO_ORIGIN: https://usa0.top
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/readyz]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks: [smoke]
+networks:
+  smoke: {internal: true}

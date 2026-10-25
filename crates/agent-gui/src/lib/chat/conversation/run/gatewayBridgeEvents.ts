@@ -1,4 +1,8 @@
 import { buildHistoryMessageRefPayload } from "@liveagent/ui/lib/chat/historyMessageRef";
+import {
+  type ConversationMentionReference,
+  normalizeConversationMentionReferences,
+} from "@liveagent/ui/lib/chat/mentionReferences";
 import type { ConversationViewState, HistoryMessageRef } from "../conversationState";
 import type { RetryAttemptRecord } from "../liveTranscriptStore";
 
@@ -20,6 +24,9 @@ type QueueUserMessageOptions = {
   // messageRef immediately — a later edit-resend of THIS message anchors its
   // rebase without waiting for a history refresh.
   messageRef?: HistoryMessageRef;
+  // Structured references authorized by this user turn. Remote WebUI viewers
+  // need the same metadata immediately instead of waiting for history enrich.
+  referencedConversations?: readonly ConversationMentionReference[];
 };
 
 type GatewayBridgeSendResult = Promise<void> | void;
@@ -64,6 +71,8 @@ export type GatewayBridgeEventController = {
   close: () => Promise<void>;
   hasForwardedText: () => boolean;
   isClosed: () => boolean;
+  /** 事件流是否仍在消费：未启用或已关闭时，调用方可跳过构造昂贵的预览负载。 */
+  isEventStreamActive: () => boolean;
 };
 
 export function createGatewayBridgeEventController(
@@ -124,6 +133,10 @@ export function createGatewayBridgeEventController(
     queueEvent,
     queueUserMessage(message: string, uploadedFiles = [], options?: QueueUserMessageOptions) {
       if (!message.trim() && uploadedFiles.length === 0) return;
+      const referencedConversations = normalizeConversationMentionReferences(
+        options?.referencedConversations,
+        params.conversationId,
+      );
       return queueEvent({
         type: "user_message",
         message,
@@ -132,6 +145,16 @@ export function createGatewayBridgeEventController(
           file && typeof file === "object" ? { ...(file as Record<string, unknown>) } : file,
         ),
         conversation_id: params.conversationId,
+        ...(referencedConversations.length > 0
+          ? {
+              referenced_conversations: referencedConversations.map((reference) => ({
+                id: reference.id,
+                title: reference.title,
+                ...(reference.cwd ? { cwd: reference.cwd } : {}),
+                ...(reference.updatedAt === undefined ? {} : { updated_at: reference.updatedAt }),
+              })),
+            }
+          : {}),
         ...(options?.messageRef
           ? { message_ref: buildHistoryMessageRefPayload(options.messageRef) }
           : {}),
@@ -227,7 +250,8 @@ export function createGatewayBridgeEventController(
     },
     close() {
       streamClosed = true;
-      closePromise ??= params.flushEvents?.(params.requestId) ?? Promise.resolve();
+      closePromise ??=
+        (params.enabled ? params.flushEvents?.(params.requestId) : undefined) ?? Promise.resolve();
       return closePromise;
     },
     hasForwardedText() {
@@ -235,6 +259,9 @@ export function createGatewayBridgeEventController(
     },
     isClosed() {
       return streamClosed;
+    },
+    isEventStreamActive() {
+      return params.enabled && !streamClosed;
     },
   };
 }

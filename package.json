@@ -3,15 +3,35 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
+    "format": "biome format --write crates/agent-ui/src crates/agent-gui/src crates/agent-gateway/web/src",
+    "lint": "biome check crates/agent-ui/src crates/agent-gui/src crates/agent-gateway/web/src --max-diagnostics=none",
+    "lint:fix": "biome check --write crates/agent-ui/src crates/agent-gui/src crates/agent-gateway/web/src --max-diagnostics=none",
     "build:gui": "pnpm --filter zeroagent build",
     "build:webui": "pnpm --filter @liveagent/gateway-webui build",
-    "check:product-contract": "node scripts/check-zeroagent-product-contract.mjs",
-    "check:ui-boundaries": "node --test scripts/ui-boundary-declarations.test.mjs && node scripts/check-ui-boundaries.mjs",
+    "dev:stack": "node scripts/dev-stack.mjs start",
+    "dev:stack:stop": "node scripts/dev-stack.mjs stop",
+    "dev:stack:restart": "node scripts/dev-stack.mjs restart",
+    "dev:stack:status": "node scripts/dev-stack.mjs status",
+    "dev:stack:logs": "node scripts/dev-stack.mjs logs",
+    "check:fast": "node scripts/check.mjs fast",
+    "check:all": "node scripts/check.mjs all",
+    "check:strict": "node scripts/check.mjs strict",
+    "check:script-tests": "node --test scripts/kbrain-startup-budget.test.mjs scripts/typescript-source-tools.test.mjs scripts/ui-boundary-declarations.test.mjs scripts/run-node-tests.test.mjs scripts/check-biome-changed.test.mjs scripts/check-diff-hygiene.test.mjs scripts/release/release-version.test.mjs scripts/release/create-ai-release-notes.test.mjs scripts/release/build-kbrain-source.test.mjs scripts/release/prepare-kbrain.test.mjs scripts/release/kbrain-patches.test.mjs scripts/release/verify-kbrain-packaging.test.mjs",
+    "prepare:kbrain": "node scripts/release/prepare-kbrain.mjs --patch-manifest patches/kbrain/manifest.json --artifact-dir .liveagent/kbrain-artifact",
+    "build:kbrain:source": "node scripts/release/build-kbrain-source.mjs --patch-manifest patches/kbrain/manifest.json",
+    "prepare:kbrain:release": "node scripts/release/prepare-kbrain.mjs --release --patch-manifest patches/kbrain/manifest.json --artifact-dir .liveagent/kbrain-artifact",
+    "check:ui-boundaries": "node scripts/check-ui-boundaries.mjs",
+    "typecheck:ui": "pnpm --filter @liveagent/ui typecheck",
+    "typecheck:virtual-core": "pnpm --filter @tanstack/virtual-core typecheck",
+    "test:virtual-core": "pnpm --filter @tanstack/virtual-core test",
     "lint:ui": "pnpm --filter @liveagent/ui lint",
     "lint:gui": "pnpm --filter zeroagent lint",
     "lint:webui": "pnpm --filter @liveagent/gateway-webui lint",
+    "typecheck:gui": "pnpm --filter zeroagent typecheck",
+    "typecheck:webui": "pnpm --filter @liveagent/gateway-webui typecheck",
     "test:gui": "pnpm --filter zeroagent test:frontend",
-    "test:webui": "pnpm --filter @liveagent/gateway-webui test"
+    "test:webui": "pnpm --filter @liveagent/gateway-webui test",
+    "check:product-contract": "node scripts/check-zeroagent-product-contract.mjs"
   },
   "pnpm": {
     "overrides": {
@@ -24,6 +44,7 @@
       "@iconify-json/logos": "1.2.11",
       "@iconify-json/lucide": "1.2.108",
       "@tanstack/react-virtual": "3.14.6",
+      "@tanstack/virtual-core": "workspace:*",
       "@types/react": "19.2.14",
       "@types/react-dom": "19.2.3",
       "@vitejs/plugin-react": "6.0.1",
@@ -35,5 +56,14 @@
       "unplugin-icons": "23.0.1",
       "vite": "8.0.5"
     }
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/parser": "7.29.8",
+    "@babel/plugin-transform-modules-commonjs": "7.29.7",
+    "@babel/plugin-transform-react-jsx": "7.29.7",
+    "@babel/plugin-transform-typescript": "7.29.9",
+    "@biomejs/biome": "2.4.15",
+    "esbuild": "0.28.2"
   }
 }

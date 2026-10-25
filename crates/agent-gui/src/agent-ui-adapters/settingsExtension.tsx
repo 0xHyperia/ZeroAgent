@@ -23,18 +23,19 @@ export function createSettingsExtension(props: SettingsPageProps): {
     settings,
     setSettings,
     appUpdate,
+    releaseAnnouncement,
+    reloadSettings,
     relayUser,
     relayStats,
     onRelayUserChange,
     onRelayStatsChange,
-    reloadSettings,
   } = props;
   return {
     surface: "desktop",
-    iconClassName: "h-3.5 w-3.5",
+    iconClassName: "size-3.5",
     slots: {
       sidebarLeading: isMacOsTauri() ? (
-        <div data-tauri-drag-region className="h-[38px] shrink-0" />
+        <div data-tauri-drag-region className="h-38px shrink-0" />
       ) : null,
       mainLeading: <MacOsTitleBarSpacer />,
     },
@@ -63,7 +64,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupOrder: 50,
         order: 10,
         labelKey: "settings.navShortcuts",
-        icon: <Keyboard className="h-3.5 w-3.5" />,
+        icon: <Keyboard className="size-3.5" />,
         render: () => <GlobalShortcutsSection />,
       },
       {
@@ -72,7 +73,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupOrder: 50,
         order: 15,
         labelKey: "settings.navBackup",
-        icon: <Archive className="h-3.5 w-3.5" />,
+        icon: <Archive className="size-3.5" />,
         render: () => (
           <BackupSyncSection
             settings={settings}
@@ -87,9 +88,14 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupOrder: 50,
         order: 20,
         labelKey: "settings.navAbout",
-        icon: <Info className="h-3.5 w-3.5" />,
+        icon: <Info className="size-3.5" />,
         render: () => (
-          <AboutSection settings={settings} setSettings={setSettings} appUpdate={appUpdate} />
+          <AboutSection
+            settings={settings}
+            setSettings={setSettings}
+            appUpdate={appUpdate}
+            releaseAnnouncement={releaseAnnouncement}
+          />
         ),
       },
     ],

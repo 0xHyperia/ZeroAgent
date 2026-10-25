@@ -2,12 +2,15 @@ import {
   readAskUserQuestionDeadline,
   retainRunningToolContent,
   submitAskUserQuestionAnswers,
+  submitPlanDecision,
   usePendingToolApproval,
+  usePlanDecisionState,
 } from "@liveagent/adapters/assistantBubble";
 import { AskUserQuestionCard } from "@liveagent/ui/components/chat/AskUserQuestionCard";
 import { AssistantStatus } from "@liveagent/ui/components/chat/AssistantStatus";
 import { FileChangeBadge } from "@liveagent/ui/components/chat/FileChangeBadge";
 import { LazyCollapse } from "@liveagent/ui/components/chat/LazyCollapse";
+import { PlanModeCard } from "@liveagent/ui/components/chat/PlanModeCard";
 import { ToolScrollablePre, ToolSection } from "@liveagent/ui/components/chat/ToolSurfaces";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
@@ -25,26 +28,39 @@ import {
   type ToolTraceItem,
   toolResultMessageToText,
 } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
+import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import {
+  EXIT_PLAN_MODE_TOOL_NAME,
+  type PlanDecisionAnswer,
+  parseExitPlanModeResultDetails,
+  sanitizePlanMarkdown,
+} from "@liveagent/ui/lib/chat/planMode";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "../../IconSet";
 import {
   areStableValuesEqual,
+  type FileOperationDisplay,
   getBuiltinResultKind,
+  getFileOperationDisplay,
   getShellSessionDisplayDetails,
   getSubagentInlineSummary,
+  getToolActivityCategory,
   getToolDisplayName,
   getToolDisplayTitle,
   getToolMeta,
   isBuiltinShareToolName,
   isSubagentCardToolCall,
 } from "./assistantBubbleUtils";
-import { ToolArgsDisplay, ToolResultDisplay } from "./ToolResultDisplay";
+import { ShellToolDisplay, ToolArgsDisplay, ToolResultDisplay } from "./ToolResultDisplay";
 
 // 折叠摘要里行内命令的展示上限:远超任何实际窗口一行可容纳的字符数,视觉
 // 省略仍由 CSS truncate 决定;仅防御超长单行命令(如内联脚本)把常驻 DOM
 // 与原生 title 撑爆。完整命令在展开区可查看。
 const INLINE_COMMAND_PREVIEW_MAX_CHARS = 600;
+// Write/Edit 参数引用静止多久后视为流式结束，改算精确行级 diff。大于正常的
+// 流式 flush 间隔（≤ 96ms），小到用户几乎察觉不到估算→精确的切换。
+const FILE_CHANGE_ARGS_SETTLE_MS = 400;
 
 function capInlineCommandPreview(text: string) {
   return text.length > INLINE_COMMAND_PREVIEW_MAX_CHARS
@@ -52,16 +68,55 @@ function capInlineCommandPreview(text: string) {
     : text;
 }
 
+function FileOperationTarget({
+  operation,
+  actionLabel,
+  onOpenFileLink,
+}: {
+  operation: FileOperationDisplay;
+  actionLabel: string;
+  onOpenFileLink?: (link: ChatFileLink) => void;
+}) {
+  const fileLink = operation.kind === "delete" ? null : operation.link;
+  if (!fileLink || !onOpenFileLink) {
+    return (
+      <span className="min-w-0 flex-1 truncate" title={operation.path}>
+        {operation.fileName}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-chat-file-link=""
+      className={cn(
+        "min-w-0 flex-1 cursor-pointer",
+        "truncate text-left underline decoration-foreground/20 underline-offset-3px transition-colors hover:text-foreground hover:decoration-foreground/45",
+      )}
+      title={operation.path}
+      aria-label={`${actionLabel} ${operation.path}`}
+      onClick={() => onOpenFileLink(fileLink)}
+    >
+      {operation.fileName}
+    </button>
+  );
+}
+
 function ToolCallItem({
   item,
   isRunning,
   readOnly = false,
   redactToolContent = false,
+  compactChip = false,
+  onOpenFileLink,
 }: {
   item: ToolTraceItem;
   isRunning?: boolean;
   readOnly?: boolean;
   redactToolContent?: boolean;
+  compactChip?: boolean;
+  onOpenFileLink?: (link: ChatFileLink) => void;
 }) {
   const { t } = useLocale();
   const result = item.toolResult;
@@ -98,6 +153,20 @@ function ToolCallItem({
     (answers: AskUserQuestionAnswer[]) => submitAskUserQuestionAnswers(item.toolCall.id, answers),
     [item.toolCall.id],
   );
+  // ExitPlanMode 计划卡：分派方式同 AskUserQuestion(按工具名),details 优先、
+  // 流式参数兜底。对话式范式:提交即结束本轮,待决/已批准状态由宿主适配器
+  // 响应式提供(GUI 订阅登记表,WebUI 由参数标记),批准动作亦经适配器。
+  const isPlanCard = !isRedactedToolContent && item.toolCall.name === EXIT_PLAN_MODE_TOOL_NAME;
+  const planDetails = isPlanCard ? parseExitPlanModeResultDetails(result?.details) : null;
+  const planMarkdown = isPlanCard
+    ? (planDetails?.plan ?? sanitizePlanMarkdown(item.toolCall.arguments?.plan))
+    : "";
+  const planSettled = isPlanCard && (Boolean(isRunning) || Boolean(result));
+  const planState = usePlanDecisionState(item.toolCall.id, item.toolCall.arguments);
+  const submitPlanAnswer = useCallback(
+    (answer: PlanDecisionAnswer) => submitPlanDecision(item.toolCall.id, answer),
+    [item.toolCall.id],
+  );
   // 工具审批由宿主适配器读取。审批发生在工具执行前，不能用 isRunning 作门。
   const pendingApproval = usePendingToolApproval(item.toolCall.id, item.toolCall.arguments);
   const isApprovalPending = !readOnly && !isRedactedToolContent && !result && pendingApproval;
@@ -105,12 +174,14 @@ function ToolCallItem({
     !isRedactedToolContent &&
     (item.toolCall.name === "Image" || builtinResultKind === "display_image" || shouldKeepAskOpen);
   const [open, setOpen] = useState(readOnly || isRedactedToolContent ? false : shouldAutoOpen);
+  const userInteractedRef = useRef(false);
   const isSubagentCard = isSubagentCardToolCall(item.toolCall);
   const hasArgs = Object.keys(item.toolCall.arguments || {}).length > 0;
   const isStreamingFilePreviewTool = FILE_TOOL_TEXT_FIELDS[item.toolCall.name] !== undefined;
   const shouldShowArgs =
     !isRedactedToolContent &&
     !isAskUser &&
+    !isPlanCard &&
     (!isSubagentCard || !result) &&
     (isStreamingFilePreviewTool ? !result : hasArgs);
   const isManagedProcess = item.toolCall.name === "ManagedProcess";
@@ -127,7 +198,7 @@ function ToolCallItem({
   const firstLinePreview = capInlineCommandPreview(firstLine);
   const inlineCommandTitle = inlineCommand ? capInlineCommandPreview(inlineCommand) : "";
   const toolArgsSummary =
-    isRedactedToolContent || isBash || inlineCommand
+    isRedactedToolContent || isBash || isShellSessionControl || inlineCommand || isPlanCard
       ? ""
       : isAskUser
         ? (askQuestions[0]?.prompt ?? "")
@@ -137,17 +208,62 @@ function ToolCallItem({
               includeName: false,
               includeManagerAction: false,
             });
+  // 流式 Edit 参数每个 delta 都会换新 arguments 引用并重派生统计；exact 行级
+  // diff（Myers，上限 200K 字符）只在参数定稿后才算，流式期走行数估算，避免
+  // 每帧全量 diff 卡主线程。isRunning 不能作定稿信号：两端都在 toolcall_start
+  // 就标记 running，此时参数仍在流式。定稿判据：已有结果 / 卡在审批门（参数
+  // 必然完整），或 arguments 引用静止超过一个短窗口（流式结束）。
+  const isFileChangeTool = item.toolCall.name === "Write" || item.toolCall.name === "Edit";
+  const fileChangeArgsDefinitive = Boolean(result) || isApprovalPending;
+  const [quiescentArgs, setQuiescentArgs] = useState<unknown>(null);
+  useEffect(() => {
+    if (!isFileChangeTool || fileChangeArgsDefinitive) return;
+    const args = item.toolCall.arguments;
+    const timer = setTimeout(() => setQuiescentArgs(args), FILE_CHANGE_ARGS_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [fileChangeArgsDefinitive, isFileChangeTool, item.toolCall.arguments]);
+  const fileChangeArgsFinal = fileChangeArgsDefinitive || quiescentArgs === item.toolCall.arguments;
   const fileChangeStats = useMemo(
-    () => (isRedactedToolContent ? undefined : deriveFileChangeStats(item.toolCall)),
-    [isRedactedToolContent, item.toolCall],
+    () =>
+      isRedactedToolContent
+        ? undefined
+        : deriveFileChangeStats(item.toolCall, { preferEstimate: !fileChangeArgsFinal }),
+    [fileChangeArgsFinal, isRedactedToolContent, item.toolCall],
   );
+  const fileOperation = useMemo(() => getFileOperationDisplay(item), [item]);
   const meta = getToolMeta(item.toolCall.name);
   const ToolIcon = meta.Icon;
+  const activityCategory = getToolActivityCategory(item.toolCall.name);
+  const activityPhase =
+    result?.isError || shellSessionFailed
+      ? "failed"
+      : isRunning || !result
+        ? "running"
+        : "completed";
+  const localizedActivityTitle =
+    activityCategory === "other"
+      ? null
+      : t(`chat.tool.activity.${activityCategory}.${activityPhase}`);
+  const localizedFileOperationTitle = fileOperation
+    ? t(`chat.tool.file.${fileOperation.kind}.${activityPhase}`)
+    : null;
   const title = isAskUser
     ? { name: t("chat.tool.askUserTitle"), action: "" }
-    : isRedactedToolContent
-      ? { name: getToolDisplayName(item.toolCall.name), action: "" }
-      : getToolDisplayTitle(item.toolCall);
+    : isPlanCard
+      ? { name: t("chat.planMode.cardTitle"), action: "" }
+      : isRedactedToolContent
+        ? { name: getToolDisplayName(item.toolCall.name), action: "" }
+        : localizedFileOperationTitle
+          ? { name: localizedFileOperationTitle, action: "" }
+          : localizedActivityTitle
+            ? { name: localizedActivityTitle, action: "" }
+            : getToolDisplayTitle(item.toolCall);
+
+  // Successful/running path-based file operations are deliberately a single
+  // IDE link row. Failed operations retain the disclosure so the error stays
+  // inspectable; Delete is concise but cannot link to a target that is gone.
+  const simpleFileOperation =
+    !isRedactedToolContent && fileOperation && !result?.isError ? fileOperation : null;
 
   const statusLabel = isApprovalPending
     ? t("chat.toolApproval.waitingStatus")
@@ -156,7 +272,9 @@ function ToolCallItem({
         ? askQuestions.length > 0
           ? t("chat.askUser.waiting")
           : t("chat.askUser.preparing")
-        : t("chat.tool.running")
+        : isPlanCard
+          ? t("chat.planMode.submitted")
+          : t("chat.tool.running")
       : shellSessionStatus === "running"
         ? t("chat.tool.running")
         : shellSessionStatus === "cancelled"
@@ -172,12 +290,11 @@ function ToolCallItem({
                 : t("chat.tool.waiting");
 
   const statusTextClass =
-    result?.isError || shellSessionFailed
-      ? "text-[hsl(var(--chat-error))]"
-      : "text-muted-foreground/60";
+    result?.isError || shellSessionFailed ? "text-[hsl(var(--chat-error))]" : "text-foreground/45";
 
   useEffect(() => {
     if (readOnly || isRedactedToolContent) return;
+    if (userInteractedRef.current) return;
     if (shouldKeepAskOpen) {
       setOpen(true);
     } else if (shouldCloseAnsweredAsk) {
@@ -189,16 +306,108 @@ function ToolCallItem({
 
   const canExpand =
     !isRedactedToolContent &&
+    !simpleFileOperation &&
+    !isPlanCard &&
     (shouldShowArgs || Boolean(result) || (isAskUser && askQuestions.length > 0));
   const effectiveOpen = canExpand && open;
+  const summaryTitleName =
+    isBash && effectiveOpen ? t(`chat.tool.shell.${activityPhase}Title`) : title.name;
+  const compactChipText = simpleFileOperation
+    ? ""
+    : firstLinePreview
+      ? firstLinePreview
+      : toolArgsSummary || title.action;
   const summaryClassName = cn(
-    "flex w-full select-none items-center gap-2 text-left",
+    "flex select-none items-center gap-1.5 text-left",
+    compactChip
+      ? "group/tool -mx-1.5 min-h-7 w-bleed-0p75rem rounded-lg px-1.5 py-1 transition-colors duration-150 hover:bg-foreground/[0.04]"
+      : "min-h-7 w-full py-1",
     canExpand ? "cursor-pointer" : "cursor-default",
-    "py-1.5",
   );
-  const summaryContent = (
+  const summaryContent = simpleFileOperation ? (
     <>
-      <ToolIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 group-hover/tool:text-foreground/75" />
+      <ToolIcon className="size-3 shrink-0 text-foreground/45" />
+      <span
+        className={cn(
+          "shrink-0 font-[450] text-foreground/62",
+          compactChip ? "text-sm" : "text-sm",
+          displayIsRunning && "animate-pulse",
+        )}
+      >
+        {summaryTitleName}
+      </span>
+      <span
+        className={cn(
+          "inline-flex min-w-0 flex-1 items-center gap-2 font-mono text-foreground/52",
+          compactChip ? "h-22px text-xs" : "text-xs",
+        )}
+      >
+        <FileOperationTarget
+          operation={simpleFileOperation}
+          actionLabel={summaryTitleName}
+          onOpenFileLink={onOpenFileLink}
+        />
+        {fileChangeStats ? (
+          <FileChangeBadge
+            added={fileChangeStats.added}
+            removed={fileChangeStats.removed}
+            className={compactChip ? "gap-1" : undefined}
+          />
+        ) : null}
+      </span>
+    </>
+  ) : compactChip ? (
+    <>
+      {/* 宽度锁在图标列的 12px 上（高度仍留 14px 呼吸感），否则悬停切换用的
+          居中盒会把图标整体右推 1px，和同组里的简单文件操作行错开。 */}
+      <span className="relative flex h-3.5 w-3 shrink-0 items-center justify-center text-foreground/45">
+        <ToolIcon className="size-3 transition-opacity duration-150 group-hover/tool:opacity-0 group-focus-within/tool:opacity-0" />
+        {canExpand ? (
+          <ChevronRight
+            className={cn(
+              "absolute size-3 opacity-0 transition-[opacity,transform] duration-150 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100",
+              effectiveOpen ? "rotate-90" : "",
+            )}
+          />
+        ) : null}
+      </span>
+
+      <span className="shrink-0 text-sm font-[450] text-foreground/62">{summaryTitleName}</span>
+
+      {compactChipText || fileChangeStats ? (
+        <span
+          className={cn(
+            "inline-flex h-22px min-w-0 flex-1 items-center gap-2",
+            "font-mono text-xs text-foreground/48",
+          )}
+        >
+          {compactChipText ? (
+            <span
+              className="min-w-0 flex-1 truncate"
+              title={inlineCommandTitle || toolArgsSummary || undefined}
+            >
+              {compactChipText}
+            </span>
+          ) : null}
+          {fileChangeStats ? (
+            <FileChangeBadge
+              added={fileChangeStats.added}
+              removed={fileChangeStats.removed}
+              className="gap-1"
+            />
+          ) : null}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1" />
+      )}
+
+      {displayIsRunning || result?.isError || shellSessionFailed ? (
+        <span className={cn("shrink-0 text-tiny", statusTextClass)}>{statusLabel}</span>
+      ) : null}
+    </>
+  ) : (
+    <>
+      <ToolIcon className="size-3 shrink-0 text-foreground/45 group-hover/tool:text-foreground/65" />
 
       {/* Tool name + inline summary on same line. Name and summary must stay in
           one inline context (shared baseline): centering them as separate flex
@@ -207,13 +416,13 @@ function ToolCallItem({
         {/* Container carries the summary styling so the truncation ellipsis
             (styled per the block container) matches the summary text */}
         <div
-          className="min-w-0 truncate font-mono text-[calc(11px*var(--zone-font-scale,1))] leading-5 text-muted-foreground/55"
+          className="min-w-0 truncate font-mono text-xs leading-5 text-foreground/48"
           title={inlineCommandTitle || toolArgsSummary || undefined}
         >
-          <span className="font-sans text-[calc(13px*var(--zone-font-scale,1))] font-normal text-muted-foreground/80 group-hover/tool:text-foreground">
-            {title.name}
+          <span className="font-sans text-sm font-[450] text-foreground/62 group-hover/tool:text-foreground/75">
+            {summaryTitleName}
             {title.action ? (
-              <span className="font-mono text-[calc(11px*var(--zone-font-scale,1))] font-normal text-muted-foreground/60">
+              <span className="font-mono text-xs font-normal text-foreground/48">
                 {" · "}
                 {title.action}
               </span>
@@ -221,9 +430,7 @@ function ToolCallItem({
           </span>
 
           {firstLinePreview ? (
-            <span className="ml-1.5">
-              <span className="text-muted-foreground/30">$</span> {firstLinePreview}
-            </span>
+            <span className="ml-1.5">{firstLinePreview}</span>
           ) : toolArgsSummary ? (
             <span className="ml-1.5">{toolArgsSummary}</span>
           ) : null}
@@ -237,20 +444,18 @@ function ToolCallItem({
       <div className="flex shrink-0 items-center gap-2">
         {displayIsRunning ? (
           <AssistantStatus
-            className="min-h-0 gap-1.5 text-[calc(11px*var(--zone-font-scale,1))] text-muted-foreground/60"
-            iconClassName="h-3 w-3"
+            className="min-h-0 gap-1.5 text-xs text-foreground/45"
+            iconClassName="size-3"
           >
             {statusLabel}
           </AssistantStatus>
         ) : (
-          <span className={cn("text-[calc(11px*var(--zone-font-scale,1))]", statusTextClass)}>
-            {statusLabel}
-          </span>
+          <span className={cn("text-xs", statusTextClass)}>{statusLabel}</span>
         )}
         {canExpand ? (
           <ChevronRight
             className={cn(
-              "h-3.5 w-3.5 text-muted-foreground/60 transition-transform duration-200 ease-out",
+              "size-3 text-foreground/40 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tool:opacity-100 group-focus-within/tool:opacity-100",
               effectiveOpen ? "rotate-90" : "",
             )}
           />
@@ -258,14 +463,73 @@ function ToolCallItem({
       </div>
     </>
   );
+  const resultContent =
+    result &&
+    !isShellSessionTool &&
+    (!isAskUser || !askDetails) &&
+    (!isPlanCard || !planDetails) ? (
+      <div className="space-y-1.5">
+        <ToolResultDisplay item={item} result={result} readOnly={readOnly} />
+
+        {(() => {
+          const resultText = toolResultMessageToText(result);
+          if (!/\S/.test(resultText)) return null;
+          if (builtinResultKind && builtinResultKind !== "read_image") return null;
+
+          if (readOnly) {
+            return (
+              <ToolScrollablePre className="max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
+                {previewText(resultText, 6000)}
+              </ToolScrollablePre>
+            );
+          }
+
+          // Errors must be readable at a glance — never behind the
+          // collapsed "view return" toggle.
+          if (result.isError) {
+            return (
+              <ToolScrollablePre className="max-h-56 bg-destructive/10 text-destructive">
+                {previewText(resultText, 6000)}
+              </ToolScrollablePre>
+            );
+          }
+
+          return (
+            <details className="group/result">
+              <summary
+                className={cn(
+                  "flex cursor-pointer select-none items-center gap-1 text-tiny text-muted-foreground/50",
+                  "transition-colors duration-150 hover:text-foreground/60",
+                )}
+              >
+                <ChevronRight className="size-2.5 transition-transform duration-200 group-open/result:rotate-90" />
+                {t("chat.tool.viewReturn")}
+              </summary>
+              <ToolScrollablePre className="mt-1.5 max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
+                {previewText(resultText, 6000)}
+              </ToolScrollablePre>
+            </details>
+          );
+        })()}
+      </div>
+    ) : null;
   const body = (
     <LazyCollapse
       open={effectiveOpen}
       retainWhileClosed={retainRunningToolContent && displayIsRunning}
     >
       {() => (
-        <div className="space-y-3 pb-2 pl-[22px] pt-1">
-          {shouldShowArgs ? (
+        <div
+          className={cn(
+            "pb-2 pt-1",
+            compactChip
+              ? "mb-1 space-y-1.5 border-l border-border/55 pl-3"
+              : "space-y-3 border-l border-border/55 pl-3",
+          )}
+        >
+          {isShellSessionTool ? <ShellToolDisplay item={item} result={result} /> : null}
+
+          {!isShellSessionTool && shouldShowArgs && !compactChip ? (
             <ToolSection
               label={isBash || inlineCommand ? t("chat.tool.command") : t("chat.tool.args")}
             >
@@ -285,64 +549,23 @@ function ToolCallItem({
             />
           ) : null}
 
-          {/* 提问卡自带应答态展示；仅参数校验失败（无 details）时回落默认错误区。 */}
-          {result && (!isAskUser || !askDetails) ? (
+          {/* 提问卡/计划卡自带应答态展示；仅参数校验失败（无 details）时回落默认错误区。 */}
+          {resultContent && compactChip ? (
+            <div className="min-w-0 py-1 text-foreground/78 [&_.tool-text-scroll]:max-h-44 [&_.tool-text-scroll]:bg-foreground/[0.025]">
+              {resultContent}
+            </div>
+          ) : resultContent ? (
             <ToolSection
               label={t("chat.tool.return")}
               trailing={
-                result.isError ? (
-                  <span className="text-[calc(11px*var(--zone-font-scale,1))] font-medium text-red-500">
+                result?.isError ? (
+                  <span className="text-xs font-medium text-destructive">
                     {t("chat.tool.error")}
                   </span>
                 ) : null
               }
             >
-              <div className="space-y-1.5">
-                <ToolResultDisplay item={item} result={result} readOnly={readOnly} />
-
-                {(() => {
-                  const resultText = toolResultMessageToText(result);
-                  if (!/\S/.test(resultText)) return null;
-                  if (builtinResultKind && builtinResultKind !== "read_image") return null;
-
-                  if (isShellSessionTool || readOnly) {
-                    return (
-                      <ToolScrollablePre
-                        className={cn(
-                          "max-h-56",
-                          isShellSessionTool
-                            ? "bg-zinc-950/85 text-zinc-300/90 dark:bg-zinc-900/80"
-                            : "bg-black/[0.02] dark:bg-white/[0.03]",
-                        )}
-                      >
-                        {previewText(resultText, 6000)}
-                      </ToolScrollablePre>
-                    );
-                  }
-
-                  // Errors must be readable at a glance — never behind the
-                  // collapsed "view return" toggle.
-                  if (result.isError) {
-                    return (
-                      <ToolScrollablePre className="max-h-56 bg-red-500/[0.05] text-red-700/90 dark:bg-red-500/[0.08] dark:text-red-300/90">
-                        {previewText(resultText, 6000)}
-                      </ToolScrollablePre>
-                    );
-                  }
-
-                  return (
-                    <details className="group/result">
-                      <summary className="flex cursor-pointer select-none items-center gap-1 text-[calc(10.5px*var(--zone-font-scale,1))] text-muted-foreground/50 transition-colors duration-150 hover:text-foreground/60">
-                        <ChevronRight className="h-2.5 w-2.5 transition-transform duration-200 group-open/result:rotate-90" />
-                        {t("chat.tool.viewReturn")}
-                      </summary>
-                      <ToolScrollablePre className="mt-1.5 max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
-                        {previewText(resultText, 6000)}
-                      </ToolScrollablePre>
-                    </details>
-                  );
-                })()}
-              </div>
+              {resultContent}
             </ToolSection>
           ) : null}
         </div>
@@ -350,6 +573,24 @@ function ToolCallItem({
     </LazyCollapse>
   );
   const containerClassName = "group/tool min-w-0 max-w-full";
+
+  // 计划卡直出(任务卡风格):不进折叠壳、无摘要行,整卡直接展示——
+  // 卡片自带「实施计划」头部与状态,正文不限高(与消息正文同滚动上下文)。
+  if (isPlanCard && planSettled && planMarkdown) {
+    return (
+      <div className={containerClassName}>
+        <div className="py-1.5">
+          <PlanModeCard
+            plan={planMarkdown}
+            approved={planState.approved || planDetails?.decision === "approve"}
+            pending={planState.pending}
+            readOnly={readOnly}
+            onSubmit={submitPlanAnswer}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (!canExpand) {
     return (
@@ -365,7 +606,10 @@ function ToolCallItem({
         type="button"
         aria-expanded={effectiveOpen}
         className={summaryClassName}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          userInteractedRef.current = true;
+          setOpen((prev) => !prev);
+        }}
       >
         {summaryContent}
       </button>
@@ -412,5 +656,7 @@ export const MemoToolCallItem = memo(
     previousProps.isRunning === nextProps.isRunning &&
     previousProps.readOnly === nextProps.readOnly &&
     previousProps.redactToolContent === nextProps.redactToolContent &&
+    previousProps.compactChip === nextProps.compactChip &&
+    previousProps.onOpenFileLink === nextProps.onOpenFileLink &&
     areToolTraceItemsEqual(previousProps.item, nextProps.item),
 );

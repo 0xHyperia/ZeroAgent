@@ -463,6 +463,71 @@ fn ssh_terminal_tab_open_rejects_disabled_sftp() {
 }
 
 #[test]
+fn ssh_enable_sftp_upgrades_existing_session_in_place() {
+    let registry = TerminalSessionRegistry::default();
+    insert_test_ssh_session(
+        &registry,
+        "ssh-1",
+        "/tmp/project",
+        false,
+        SSH_STATUS_CONNECTED,
+    );
+
+    let record = registry
+        .ssh_enable_sftp("  ssh-1  ".to_string())
+        .expect("enable sftp on existing session");
+    assert_eq!(record.id, "ssh-1");
+    assert!(record.ssh.as_ref().expect("ssh metadata").sftp_enabled);
+    assert!(registry.ssh_session_info("ssh-1").unwrap().sftp_enabled);
+    registry
+        .ssh_terminal_tab_open("ssh-1".to_string(), "sftp".to_string())
+        .expect("sftp tab opens once SFTP is enabled");
+
+    let again = registry
+        .ssh_enable_sftp("ssh-1".to_string())
+        .expect("enabling twice is a no-op");
+    assert_eq!(again.updated_at, record.updated_at);
+}
+
+#[test]
+fn ssh_enable_sftp_rejects_missing_session() {
+    let registry = TerminalSessionRegistry::default();
+    assert!(registry.ssh_enable_sftp("missing".to_string()).is_err());
+}
+
+#[test]
+fn ssh_exec_without_live_connection_fails_without_reconnecting() {
+    let registry = Arc::new(TerminalSessionRegistry::default());
+    insert_test_ssh_session(
+        &registry,
+        "ssh-1",
+        "/tmp/project",
+        true,
+        SSH_STATUS_CONNECTED,
+    );
+
+    let error = block_on_test(registry.ssh_exec(
+        "ssh-1".to_string(),
+        "pwd".to_string(),
+        None,
+        Some(1_000),
+        None,
+        None,
+    ))
+    .unwrap_err();
+
+    assert!(error.contains("not connected"), "{error}");
+    let runtime = test_ssh_runtime(&registry, "ssh-1");
+    assert!(
+        runtime.begin_reconnect_runner(),
+        "no reconnect runner may start"
+    );
+    let record = registry.record("ssh-1".to_string()).unwrap();
+    assert!(record.running);
+    assert_eq!(record.ssh.unwrap().status, SSH_STATUS_CONNECTED);
+}
+
+#[test]
 fn ssh_terminal_tabs_prune_when_session_closes() {
     let registry = TerminalSessionRegistry::default();
     insert_test_ssh_session(
@@ -612,6 +677,7 @@ fn ssh_password_fallback_prompt_targets_password_auth() {
             username: String::new(),
             password: String::new(),
             password_configured: false,
+            use_system_proxy: false,
         },
     };
 
@@ -739,6 +805,7 @@ fn ssh_proxy_parser_resolves_http_and_socks5_endpoints() {
             username: "proxy-user".to_string(),
             password: "proxy-pass".to_string(),
             password_configured: true,
+            use_system_proxy: false,
         },
     };
 
@@ -754,6 +821,77 @@ fn ssh_proxy_parser_resolves_http_and_socks5_endpoints() {
     let proxy = resolve_ssh_proxy(&host).expect("resolve http proxy");
     assert_eq!(proxy.kind, SshProxyKind::Http);
     assert_eq!(proxy.host, "proxy.local");
+    assert_eq!(proxy.port, 8080);
+}
+
+#[test]
+fn ssh_effective_proxy_resolves_manual_config_and_direct_connections() {
+    let mut host = RuntimeSshHostConfig {
+        id: "prod".to_string(),
+        name: "Production".to_string(),
+        host: "prod.example.com".to_string(),
+        port: 22,
+        username: "deploy".to_string(),
+        auth_type: "keyboardInteractive".to_string(),
+        password: String::new(),
+        private_key: String::new(),
+        private_key_path: String::new(),
+        private_key_passphrase: String::new(),
+        proxy: crate::commands::settings::RuntimeSshProxyConfig {
+            proxy_type: "socks5".to_string(),
+            url: String::new(),
+            port: 0,
+            username: String::new(),
+            password: String::new(),
+            password_configured: false,
+            use_system_proxy: false,
+        },
+    };
+
+    // No proxy configured at all → direct connection.
+    assert!(resolve_effective_ssh_proxy(&host)
+        .expect("resolve without proxy")
+        .is_none());
+
+    // Manual proxy fields resolve exactly like before.
+    host.proxy.url = "socks5://127.0.0.1:1081".to_string();
+    let proxy = resolve_effective_ssh_proxy(&host)
+        .expect("resolve manual proxy")
+        .expect("manual proxy should be used");
+    assert_eq!(proxy.kind, SshProxyKind::Socks5);
+    assert_eq!(proxy.host, "127.0.0.1");
+    assert_eq!(proxy.port, 1081);
+}
+
+#[test]
+fn ssh_app_proxy_reuse_maps_system_proxy_config() {
+    let socks = crate::services::system_proxy::SystemProxyConfig {
+        enabled: true,
+        proxy_type: "socks5".to_string(),
+        host: "10.0.0.1".to_string(),
+        port: 1080,
+        username: "user".to_string(),
+        password: "pass".to_string(),
+    };
+    let proxy = system_proxy_to_ssh_proxy(&socks);
+    assert_eq!(proxy.kind, SshProxyKind::Socks5);
+    assert_eq!(proxy.host, "10.0.0.1");
+    assert_eq!(proxy.port, 1080);
+    assert_eq!(proxy.username, "user");
+    assert_eq!(proxy.password, "pass");
+
+    let http_ipv6 = crate::services::system_proxy::SystemProxyConfig {
+        enabled: true,
+        proxy_type: "http".to_string(),
+        host: "[::1]".to_string(),
+        port: 8080,
+        username: String::new(),
+        password: String::new(),
+    };
+    let proxy = system_proxy_to_ssh_proxy(&http_ipv6);
+    assert_eq!(proxy.kind, SshProxyKind::Http);
+    // Bracketed IPv6 hosts must be unwrapped for TcpStream resolution.
+    assert_eq!(proxy.host, "::1");
     assert_eq!(proxy.port, 8080);
 }
 
@@ -970,6 +1108,7 @@ fn ssh_private_key_host(private_key: &str, passphrase: &str) -> RuntimeSshHostCo
             username: String::new(),
             password: String::new(),
             password_configured: false,
+            use_system_proxy: false,
         },
     }
 }
@@ -1135,7 +1274,12 @@ fn canonicalize_workdir_within_rejects_paths_outside_the_project() {
         "unexpected error: {traversal}"
     );
 
-    let absolute = canonicalize_workdir_within("/etc", &root)
+    let unrelated_absolute = if cfg!(windows) {
+        std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into())
+    } else {
+        "/etc".into()
+    };
+    let absolute = canonicalize_workdir_within(&unrelated_absolute, &root)
         .expect_err("unrelated absolute path is rejected");
     assert!(
         absolute.contains("outside the current project"),

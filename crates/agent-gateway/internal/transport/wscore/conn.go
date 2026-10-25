@@ -46,6 +46,8 @@ type Config struct {
 	Remote string
 	// OnClose 在连接关闭时恰好回调一次（done 已关闭、底层 ws 尚未关闭），供协议层清理订阅等资源。
 	OnClose func()
+	// BeforeWrite rechecks protocol authorization immediately before queued frames leave.
+	BeforeWrite func() bool
 }
 
 // Conn 是单条 WebSocket 连接的传输运行时。Outbox/CtrlOutbox 由任意 goroutine 经 Enqueue
@@ -425,6 +427,9 @@ func (c *Conn) deliverQueuedFrame(frame Frame, control bool) bool {
 func (c *Conn) writeFrameDirect(frame Frame) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.cfg.BeforeWrite != nil && !c.cfg.BeforeWrite() {
+		return errors.New("websocket authorization expired")
+	}
 	if c.writeOverride != nil {
 		return c.writeOverride(frame)
 	}

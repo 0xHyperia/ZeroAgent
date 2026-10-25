@@ -1,13 +1,9 @@
-import { type FormEvent, useState } from "react";
-import { Button } from "@liveagent/ui/components/ui/button";
 import { Copy, Loader2, Lock } from "@liveagent/ui/components/IconSet";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@liveagent/ui/components/ui/dialog";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { type FormEvent, useState } from "react";
 
 type RelayKeyCopyDialogProps = {
   keyName: string | null;
@@ -54,9 +50,7 @@ export function RelayKeyCopyDialog({ keyName, onClose, onConfirm }: RelayKeyCopy
               <Lock className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <DialogTitle className="text-sm leading-normal">
-                验证密码后复制
-              </DialogTitle>
+              <DialogTitle className="text-sm leading-normal">验证密码后复制</DialogTitle>
               <p className="mt-1 truncate text-xs text-muted-foreground" title={keyName}>
                 {keyName}
               </p>

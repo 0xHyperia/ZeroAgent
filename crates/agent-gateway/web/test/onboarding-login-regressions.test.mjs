@@ -124,8 +124,12 @@ test("desktop onboarding uses the desktop relay client", () => {
 test("expired web sessions clear the complete cached application state", () => {
   assert.match(
     gatewayAppSource,
-    /addEventListener\(RELAY_SESSION_EXPIRED_EVENT, handleLogout\)/,
+    /const expired = \(\) => handleLogout\(false\)/,
   );
+  assert.match(gatewayAppSource, /addEventListener\(RELAY_SESSION_EXPIRED_EVENT, expired\)/);
+  assert.match(gatewayAppSource, /clearSession\(revokeRemotely\)/);
+  assert.match(gatewayAppSource, /addEventListener\(ACCOUNT_CHANGED_EVENT, changed\)/);
+  assert.match(gatewayAppSource, /addEventListener\("storage", cookieChanged\)/);
   assert.match(cloudChatSource, /response\.status === 401\) notifyRelaySessionExpired\(\)/);
 });
 

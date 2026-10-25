@@ -1,6 +1,8 @@
-import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
+import { homeDir } from "@liveagent/app/shims/tauriPath";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { SystemToolRuntimeScope } from "@liveagent/ui/lib/tools/systemToolOptions";
-import { homeDir } from "@tauri-apps/api/path";
+import { isKBrainBackendEnabled } from "../host";
 import type { RuntimePlatform } from "../runtimePlatform";
 import {
   type McpSettings,
@@ -9,31 +11,30 @@ import {
   type SshHostConfig,
   selectEnabledMcpServers,
 } from "../settings";
-import {
-  createSendMessageTools,
-  createSubagentTools,
-  SUBAGENT_PARENT_ID,
-  type SubagentRuntimeConfig,
-} from "../subagents";
 import type { AdditionalProjectRoot } from "./additionalProjectRoots";
 import { createAskUserQuestionTools } from "./askUserQuestionTools";
+import { createBrowserTools } from "./browserTools";
 import type {
   BuiltinToolBundle,
   BuiltinToolExecutionContext,
   BuiltinToolMetadata,
 } from "./builtinTypes";
+import { createConversationTools } from "./conversationTools";
 import { createCronTools } from "./cronTools";
-import { createFileToolState, type FileToolState } from "./fileToolState";
+import type { FileToolState } from "./fileToolState";
 import { createFsTools } from "./fsTools";
 import { createMcpManagerTools } from "./mcpManagerTools";
 import { createMcpTools } from "./mcpTools";
 import { createMemoryTools } from "./memoryTools";
+import { createExitPlanModeTools, isPlanModeAllowedTool } from "./planModeTools";
+import { createPlanningTools } from "./planningTools";
 import { createShellTools, type ShellSandboxSettings } from "./shellTools";
 import type { SkillAccessPolicy } from "./skillAccessPolicy";
 import { createSkillTools } from "./skillTools";
 import { createSSHManagerTools, type SshManagerSessionChange } from "./sshManagerTools";
 import { createTaskTools, type TaskStateStore } from "./taskTools";
 import { createTerminalTools } from "./terminalTools";
+import { createToolSearchTools, shouldDeferMcpTools } from "./toolSearchTools";
 import { createTunnelManagerTools, type TunnelManagerChange } from "./tunnelManagerTools";
 
 export type BuiltinToolRegistry = {
@@ -45,6 +46,9 @@ export type BuiltinToolRegistry = {
   ) => Promise<ToolResultMessage>;
   metadataByName: Map<string, BuiltinToolMetadata>;
   hasTool: (toolName: string) => boolean;
+  /** MCP 懒加载已启用:调用方应给 runner 挂 requestToolFilter(未激活的 MCP
+   * 工具不进模型请求)。工具仍全量在 tools 里——执行层必须找得到它们。 */
+  mcpToolDeferralActive?: boolean;
 };
 
 // 第三方来源(MCP server / 插件)的工具名不受我们控制,可能撞车。撞车时不能像
@@ -54,9 +58,9 @@ const UNTRUSTED_TOOL_GROUPS: ReadonlySet<BuiltinToolBundle["groupId"]> = new Set
 // 不再给内置工具声明 JSON-schema 约束采样(strict)。曾经声明过 "prefer"
 // (pi 0.84.2 升级时引入),但部分 OpenAI 兼容 provider(如 Moonshot/Kimi)在
 // strict 模式下按白名单校验 schema 关键字,内置工具常用的 minimum / maxItems
-// 等一律 400,一个工具的 schema 就打死整轮请求;而 pi-ai 的本地预检
-// (makeStrictJsonSchema)只拦结构性问题,拦不住这类关键字白名单差异,
-// "prefer" 的降级判定在这里完全失效。v1.2.4 及之前不声明 strict,各家都能用
+// 等一律 400,一个工具的 schema 就打死整轮请求；本地预检只拦结构性问题，
+// 拦不住这类关键字白名单差异，"prefer" 的降级判定在这里完全失效。
+// v1.2.4 及之前不声明 strict,各家都能用
 // ——回到那个行为。约束采样能消灭的"参数名写错、必填漏传"坏调用,由工具
 // 实现自身的参数校验兜底。
 
@@ -181,6 +185,8 @@ type BuildBuiltinBaseToolRegistryParams = {
   applyMcpOps?: (ops: McpSettingsOp[]) => void;
   onMcpLoadError?: (message: string) => void;
   mcpLoadFailureMode?: "continue" | "throw";
+  /** 允许 CUA 工具把 ZeroAgent 自己当作操作目标；默认 false，见 cuaSelfGuard.ts。 */
+  cuaAllowSelfTargeting?: boolean;
   memoryToolMode?: "rw" | "ro";
   remoteWebTunnelsEnabled?: boolean;
   tunnelProjectPathKey?: string;
@@ -194,7 +200,23 @@ type BuildBuiltinBaseToolRegistryParams = {
 
 const resolveHomeDir = () => homeDir();
 
-async function buildBaseBuiltinToolBundles(params: BuildBuiltinBaseToolRegistryParams) {
+type McpBusinessToolBundle = Awaited<ReturnType<typeof createMcpTools>>;
+
+type BaseBuiltinToolBundles = {
+  bundles: BuiltinToolBundle[];
+  /** MCP 业务工具 bundle(懒加载判定与 ToolSearch 目录的输入)。McpManager 与它
+   * 同为 groupId "mcp",绝不能按 groupId 搜索定位——必须持有这份直接引用。 */
+  mcpBusinessBundle: McpBusinessToolBundle | undefined;
+};
+
+async function buildBaseBuiltinToolBundles(
+  params: BuildBuiltinBaseToolRegistryParams,
+): Promise<BaseBuiltinToolBundles> {
+  if (isKBrainBackendEnabled()) {
+    throw new Error(
+      "Frontend tools are unavailable in K-brain mode; tools are owned by the backend.",
+    );
+  }
   const baseBundles: BuiltinToolBundle[] = [
     createFsTools({
       workdir: params.workdir,
@@ -227,6 +249,7 @@ async function buildBaseBuiltinToolBundles(params: BuildBuiltinBaseToolRegistryP
           }),
         ]
       : []),
+    createPlanningTools(),
     createCronTools({
       currentChatModel: params.currentChatModel,
       workdir: params.workdir,
@@ -272,31 +295,78 @@ async function buildBaseBuiltinToolBundles(params: BuildBuiltinBaseToolRegistryP
           }),
         ]
       : []),
+    // sandboxOffline(enabled 且 !allowNetwork)下浏览器出网违背离线语义,
+    // 整个 bundle 不注册,模型工具表内不可见;executor 内另有 fail-closed 兜底。
+    ...(params.sandbox?.enabled === true && !params.sandbox.allowNetwork
+      ? []
+      : [
+          createBrowserTools({
+            sandbox: params.sandbox,
+          }),
+        ]),
   ];
 
   const enabledServers = selectEnabledMcpServers(params.getMcpSettings());
+  let mcpBusinessBundle: McpBusinessToolBundle | undefined;
   if (enabledServers.length > 0) {
-    baseBundles.push(
-      await createMcpTools({
-        servers: enabledServers,
-        onLoadError: params.onMcpLoadError,
-        loadFailureMode: params.mcpLoadFailureMode,
-      }),
-    );
+    mcpBusinessBundle = await createMcpTools({
+      servers: enabledServers,
+      cwd: params.workdir,
+      onLoadError: params.onMcpLoadError,
+      loadFailureMode: params.mcpLoadFailureMode,
+      cuaAllowSelfTargeting: params.cuaAllowSelfTargeting,
+    });
+    baseBundles.push(mcpBusinessBundle);
   }
 
-  return baseBundles;
+  return { bundles: baseBundles, mcpBusinessBundle };
 }
 
 export async function buildBuiltinToolRegistry(
   params: BuildBuiltinBaseToolRegistryParams & {
-    subagentRuntime?: SubagentRuntimeConfig;
     taskStateStore?: TaskStateStore;
     /** chat 场景注入交互式提问工具；子代理/自动化场景无人值守，不注册。 */
     askUserQuestionConversationId?: string;
+    /** Plan mode:非只读工具不进注册表,注入 ExitPlanMode,子代理强制 readonly。 */
+    planMode?: {
+      conversationId: string;
+    };
+    /** MCP 懒加载:schema 总量超阈值时注入 ToolSearch,MCP 工具延迟到激活后
+     * 才进模型请求(执行层始终全量注册)。仅 chat 场景;plan mode 下无意义
+     * (MCP 工具非只读,本就不在表内)。 */
+    toolSearch?: {
+      conversationId: string;
+    };
+    /** Earlier conversations explicitly selected through structured @ mentions this turn. */
+    referencedConversations?: readonly ConversationMentionReference[];
+    currentConversationId?: string;
   },
 ) {
-  const baseBundles = await buildBaseBuiltinToolBundles(params);
+  const planModeActive = Boolean(params.planMode);
+  const { bundles: baseBundles, mcpBusinessBundle } = await buildBaseBuiltinToolBundles(params);
+  // MCP 懒加载判定:对"会进请求的 schema JSON"估算 token(与 tokenLedger 同
+  // 口径),超阈值才启用——多一次检索回合的代价只在真省下可观 context 时才值。
+  // 判定与目录的输入必须是 MCP 业务工具 bundle 的直接引用:McpManager 也注册在
+  // groupId "mcp" 下且先入列,按 groupId find 会命中它,让延迟判定永远失效。
+  const mcpToolDeferralActive = Boolean(
+    params.toolSearch &&
+      params.runtimeScope === "chat" &&
+      !planModeActive &&
+      mcpBusinessBundle &&
+      shouldDeferMcpTools(mcpBusinessBundle.tools),
+  );
+  const toolSearchBundles =
+    mcpToolDeferralActive && params.toolSearch && mcpBusinessBundle
+      ? [
+          createToolSearchTools({
+            conversationId: params.toolSearch.conversationId,
+            entries: mcpBusinessBundle.tools.map((tool) => ({
+              tool,
+              serverLabel: mcpBusinessBundle.toolNameMap.get(tool.name)?.serverLabel ?? "",
+            })),
+          }),
+        ]
+      : [];
   const taskBundles =
     params.runtimeScope === "chat" && params.taskStateStore
       ? [createTaskTools(params.taskStateStore)]
@@ -305,75 +375,49 @@ export async function buildBuiltinToolRegistry(
     params.runtimeScope === "chat" && params.askUserQuestionConversationId
       ? [createAskUserQuestionTools({ conversationId: params.askUserQuestionConversationId })]
       : [];
-  const chatBundles = [...taskBundles, ...askUserQuestionBundles];
-
-  const subagentRuntime = params.subagentRuntime;
-  if (!subagentRuntime) {
-    return createBuiltinToolRegistry([...baseBundles, ...chatBundles]);
-  }
-  const subagentAdditionalRoots = params.additionalRoots?.map((root) => ({
-    ...root,
-    // Delegated agents can inspect parent-granted roots, but they never
-    // inherit mutation capability for shared directories implicitly.
-    access: "read" as const,
-  }));
-
-  const baseRegistry = createBuiltinToolRegistry(baseBundles);
-  // The Agent tool description embeds the roster, so the store must be
-  // hydrated before the bundle is created. Roster load failures degrade to an
-  // empty roster instead of blocking the whole registry.
-  try {
-    await subagentRuntime.store.ready();
-  } catch (error) {
-    console.warn("Failed to load subagent roster for the Agent tool", error);
-  }
-  const parentMessageBundle = subagentRuntime.store.conversationId
-    ? createSendMessageTools({
-        store: subagentRuntime.store,
-        senderId: SUBAGENT_PARENT_ID,
-        senderName: "Parent Agent",
-      })
-    : null;
-  const parentBundles = parentMessageBundle ? [...baseBundles, parentMessageBundle] : baseBundles;
-  return createBuiltinToolRegistry([
-    ...parentBundles,
-    ...chatBundles,
-    createSubagentTools({
-      providerId: subagentRuntime.providerId,
-      model: subagentRuntime.model,
-      runtime: subagentRuntime.runtime,
-      runtimePlatform: params.runtimePlatform,
-      workdir: params.workdir,
-      resolveHomeDir,
-      sessionId: subagentRuntime.sessionId,
-      templates: subagentRuntime.templates,
-      store: subagentRuntime.store,
-      scheduler: subagentRuntime.scheduler,
-      baseTools: baseRegistry.tools,
-      executeToolCall: baseRegistry.executeToolCall,
-      metadataByName: baseRegistry.metadataByName,
-      additionalRoots: subagentAdditionalRoots,
-      // 仅供 worktree apply 在合并回父工作区前捕获前像(blocker-2),
-      // 不进入子代理自身的工具注册表(见下方 checkpoint: undefined)。
-      checkpoint: params.checkpoint,
-      createSubagentToolRegistry: async (workdir) =>
-        createBuiltinToolRegistry(
-          await buildBaseBuiltinToolBundles({
-            ...params,
-            workdir,
-            additionalRoots: subagentAdditionalRoots,
-            fileState: createFileToolState(),
-            skillsEnabled: false,
-            applyMcpOps: undefined,
-            mcpLoadFailureMode: "continue",
-            memoryToolMode: "ro",
-            // Worktree 子代理的 workdir 是临时 git worktree,改动经 apply
-            // 合并回父工作区后临时目录即被清理——若继承父轮 checkpoint,
-            // 捕获的是死路径的前像,rewind 会"恢复"已不存在的临时目录。
-            // 父工作区的真实前像由 subagent_worktree_apply 在合并前捕获。
-            checkpoint: undefined,
+  const planModeBundles =
+    params.runtimeScope === "chat" && params.planMode
+      ? [
+          createExitPlanModeTools({
+            conversationId: params.planMode.conversationId,
           }),
-        ),
-    }),
-  ]);
+        ]
+      : [];
+  const conversationBundles =
+    params.runtimeScope === "chat" &&
+    params.currentConversationId &&
+    params.referencedConversations?.length
+      ? [
+          createConversationTools({
+            references: params.referencedConversations,
+            currentConversationId: params.currentConversationId,
+          }),
+        ]
+      : [];
+  const chatBundles = [
+    ...taskBundles,
+    ...askUserQuestionBundles,
+    ...planModeBundles,
+    ...conversationBundles,
+    ...toolSearchBundles,
+  ];
+
+  // Plan mode:在注册表组装层裁掉非只读工具(而非 deny 后备拦截)——模型根本
+  // 看不到写工具,不浪费 token 也无泄漏面。子代理协作工具(Agent/SendMessage)
+  // 保留,Agent 由 forceReadonly 在 validate 层强制 readonly。
+  const filterForPlanMode = (registry: ReturnType<typeof createBuiltinToolRegistry>) => {
+    const withDeferralFlag: BuiltinToolRegistry = {
+      ...registry,
+      mcpToolDeferralActive,
+    };
+    if (!planModeActive) return withDeferralFlag;
+    return {
+      ...withDeferralFlag,
+      tools: withDeferralFlag.tools.filter((tool) =>
+        isPlanModeAllowedTool(tool.name, withDeferralFlag.metadataByName.get(tool.name)),
+      ),
+    };
+  };
+
+  return filterForPlanMode(createBuiltinToolRegistry([...baseBundles, ...chatBundles]));
 }

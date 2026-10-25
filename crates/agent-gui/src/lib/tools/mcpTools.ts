@@ -4,11 +4,18 @@ import type {
   Tool,
   ToolCall,
   ToolResultMessage,
-} from "@earendil-works/pi-ai";
-import { invoke } from "@tauri-apps/api/core";
+} from "@liveagent/app/lib/agentTypes";
+import { invoke } from "@liveagent/app/shims/tauriCore";
+import {
+  hardcodedServerPolicyDefault,
+  isCuaDriverServer,
+} from "@liveagent/ui/contracts/mcpServerDefaults";
+import { isKBrainBackendEnabled } from "../host";
+import { createKBrainClient } from "../kbrain/client";
 
-import type { McpServerConfig } from "../settings";
+import type { McpServerConfig, ToolPolicy } from "../settings";
 import { type BuiltinToolBundle, createBuiltinMetadataMap } from "./builtinTypes";
+import { type CuaSelfGuard, resolveCuaSelfGuard } from "./cuaSelfGuard";
 import {
   createToolRunId,
   invokeWithAbort,
@@ -95,8 +102,19 @@ function buildSafeToolName(serverId: string, toolName: string) {
 
 export async function createMcpTools(params: {
   servers: McpServerConfig[];
+  cwd?: string;
+  kbrain?: {
+    discoverMcpTools(input: { cwd?: string; server_ids?: string[] }): Promise<unknown>;
+    callMcpTool(input: { name: string; arguments?: unknown; cwd?: string }): Promise<unknown>;
+  };
   onLoadError?: (message: string) => void;
   loadFailureMode?: "continue" | "throw";
+  /**
+   * 允许 cua-driver 的工具看到并操作 ZeroAgent 自己的窗口。默认 false
+   * ——自指操作能绕过工具审批、改写权限设置、关闭应用本身。见
+   * `cuaSelfGuard.ts`。
+   */
+  cuaAllowSelfTargeting?: boolean;
 }): Promise<
   BuiltinToolBundle<{
     /** Maps the safe tool name (used by LLM) to the underlying MCP server/tool. */
@@ -105,6 +123,33 @@ export async function createMcpTools(params: {
 > {
   const servers = params.servers ?? [];
   const enabledServers = servers.filter((s) => s.enabled);
+  const kbrain = isKBrainBackendEnabled() ? createKBrainClient() : undefined;
+  if (kbrain) params.kbrain = kbrain;
+
+  /**
+   * 挂着 cua-driver 的那些 server 的 id。
+   *
+   * 判定看 `isCuaDriverServer`（id **或** command 命中），而运行时手上只有
+   * server id，所以在这里一次性把 id 收成集合，后面按 id 查表即可。只认
+   * `id === "cua-driver"` 的话，一条命名成别的、command 仍指向 cua-driver
+   * 的条目就完全绕开了闸门与审批缺省。
+   */
+  const cuaServerIds = new Set(
+    enabledServers.filter(isCuaDriverServer).map((server) => server.id?.trim() ?? ""),
+  );
+  const isCuaServerId = (serverId: string) => cuaServerIds.has(serverId.trim());
+
+  /**
+   * 每个 server 的硬编码缺省策略，同样按配置（含 command）算，随工具元数据
+   * 一起带下去。`resolveToolPolicy` 手上只有 serverId，不该在那里现查。
+   */
+  const serverPolicyDefaults = new Map(
+    enabledServers.map((server) => [server.id?.trim() ?? "", hardcodedServerPolicyDefault(server)]),
+  );
+
+  // 只有真的挂了 cua-driver 才去问宿主 pid，别的组合零开销。
+  const cuaSelfGuard: CuaSelfGuard | null =
+    cuaServerIds.size > 0 ? await resolveCuaSelfGuard(params.cuaAllowSelfTargeting === true) : null;
 
   const invalid: Array<{ label: string; reason: string }> = [];
   for (const s of enabledServers) {
@@ -166,12 +211,23 @@ export async function createMcpTools(params: {
     };
   }
 
-  // Ask Rust side to (re)sync servers and list tools.
+  // K-brain owns discovery and execution; native invoke remains the non-K-brain adapter.
   let toolInfos: McpToolInfo[] = [];
   try {
-    toolInfos = await invoke<McpToolInfo[]>("mcp_list_tools", {
-      servers: enabledServers,
-    } as any);
+    if (params.kbrain) {
+      const result = (await params.kbrain.discoverMcpTools({
+        cwd: params.cwd,
+        server_ids: enabledServers.map((server) => server.id),
+      })) as { tools?: Array<McpToolInfo & { toolName?: string }> };
+      toolInfos = (result.tools ?? []).map((info) => ({
+        ...info,
+        name: info.toolName ?? info.name,
+      }));
+    } else {
+      toolInfos = await invoke<McpToolInfo[]>("mcp_list_tools", {
+        servers: enabledServers,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (params.loadFailureMode === "throw") {
@@ -195,6 +251,7 @@ export async function createMcpTools(params: {
         isReadOnly: boolean;
         displayCategory: "mcp";
         serverId: string;
+        serverPolicyDefault?: ToolPolicy;
       },
     ]
   > = [];
@@ -222,6 +279,7 @@ export async function createMcpTools(params: {
         isReadOnly: false,
         displayCategory: "mcp",
         serverId: info.serverId,
+        serverPolicyDefault: serverPolicyDefaults.get(info.serverId.trim()),
       },
     ]);
   }
@@ -256,6 +314,26 @@ export async function createMcpTools(params: {
       };
     }
 
+    // 自指闸门：拦在发出调用之前。按 pid / window_id 寻址的直接拒绝；以桌面
+    // 为目标、坐标落在宿主窗口矩形内的也拒绝；无明确目标的键盘输入在宿主处于
+    // 前台时也拒绝——后两条要各取一次系统事实（窗口几何 / 前台应用），所以
+    // 这里是异步的。工具名必须一并传入：键盘类调用没有任何可疑参数字段，
+    // 只看参数认不出来。
+    if (cuaSelfGuard && isCuaServerId(mapped.serverId)) {
+      const refusal = await cuaSelfGuard.refuse(mapped.toolName, toolCall.arguments);
+      if (refusal) {
+        return {
+          role: "toolResult",
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          content: [{ type: "text", text: refusal }],
+          details: { serverId: mapped.serverId, tool: mapped.toolName, blocked: "self_target" },
+          isError: true,
+          timestamp: now,
+        };
+      }
+    }
+
     try {
       return await withMcpServerCallLock(
         mapped.serverId,
@@ -273,23 +351,46 @@ export async function createMcpTools(params: {
           }
 
           const runId = createToolRunId("mcp", toolCall.id);
-          const res = await invokeWithAbort<McpCallToolResponse>(
-            "mcp_call_tool",
-            {
-              server_id: mapped.serverId,
-              tool_name: mapped.toolName,
-              arguments: toolCall.arguments ?? {},
-              run_id: runId,
-            },
-            signal,
-            { onAbort: () => requestRuntimeCancel(runId) },
-          );
+          const res = params.kbrain
+            ? await (async () => {
+                const result = (await params.kbrain?.callMcpTool({
+                  name: toolCall.name,
+                  arguments: toolCall.arguments ?? {},
+                })) as { output?: string; failed?: boolean };
+                return {
+                  content: [{ type: "text", text: result.output ?? "" }],
+                  isError: result.failed,
+                } as McpCallToolResponse;
+              })()
+            : await invokeWithAbort<McpCallToolResponse>(
+                "mcp_call_tool",
+                {
+                  server_id: mapped.serverId,
+                  tool_name: mapped.toolName,
+                  arguments: toolCall.arguments ?? {},
+                  run_id: runId,
+                },
+                signal,
+                { onAbort: () => requestRuntimeCancel(runId) },
+              );
+
+          // 出参过滤：把宿主自己的记录从窗口 / 应用枚举里摘掉，顺手记下
+          // 它的 window_id 供后续入参拦截使用。
+          const rawContent = res?.content ?? [{ type: "text", text: "" }];
+          const content =
+            cuaSelfGuard && isCuaServerId(mapped.serverId)
+              ? rawContent.map((block) =>
+                  block.type === "text"
+                    ? { ...block, text: cuaSelfGuard.strip(block.text) }
+                    : block,
+                )
+              : rawContent;
 
           return {
             role: "toolResult",
             toolCallId: toolCall.id,
             toolName: toolCall.name,
-            content: (res?.content ?? [{ type: "text", text: "" }]) as any,
+            content,
             details: {
               serverId: mapped.serverId,
               serverLabel: mapped.serverLabel,

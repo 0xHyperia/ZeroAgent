@@ -1,6 +1,11 @@
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsLoadResponse {
+    pub native_revision: String,
+    pub ui_revision: String,
+    pub ui_preferences: Option<Value>,
+    pub configuration_revision: String,
+    pub backend: CanonicalBackendDocuments,
     pub providers: Option<Value>,
     pub system: Option<Value>,
     pub mcp: Option<Value>,
@@ -39,6 +44,13 @@ impl SshPatchConflictCode {
 pub struct RemoteSettingsPayload {
     #[serde(default)]
     pub enabled: bool,
+    /// Missing on existing installations: preserve the external Gateway selection.
+    #[serde(default)]
+    pub managed_local: bool,
+    #[serde(default = "default_local_gateway_port")]
+    pub local_gateway_port: u16,
+    #[serde(default)]
+    pub local_gateway_token: String,
     #[serde(default)]
     pub gateway_url: String,
     #[serde(default = "default_remote_gateway_port", alias = "grpcPort")]
@@ -68,6 +80,8 @@ pub(crate) struct RuntimeSshProxyConfig {
     pub username: String,
     pub password: String,
     pub password_configured: bool,
+    /// 直接复用「系统设置 → 应用代理」；开启时忽略上面的手动代理字段。
+    pub use_system_proxy: bool,
 }
 
 #[derive(Debug, Clone)]

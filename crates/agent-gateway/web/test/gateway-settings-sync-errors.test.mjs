@@ -21,6 +21,25 @@ function clientWithSettingsUpdateResponse(response) {
   return client;
 }
 
+test("Native configuration conflicts use a general settings error",async()=>{
+  const client=clientWithSettingsUpdateResponse({accepted:false,message:"configuration_changed"});
+  await assert.rejects(()=>client.updateSettings({}),error=>{
+    assert.equal(error.code,"configuration_changed");
+    assert.match(settingsSync.getGatewaySettingsErrorMessage(error,"fallback","en-US"),/Settings changed elsewhere/);
+    assert.doesNotMatch(settingsSync.getGatewaySettingsErrorMessage(error,"fallback","en-US"),/SSH/);
+    return true;
+  });
+});
+
+test("Native durable receipts preserve their snapshot, versions and saved warning",async()=>{
+  const receipt={protocol:"zeroagent.settings-sync.v1",configurationRevision:"za-config-v1-committed",
+    uiPreferencesRevision:"za-ui-v1-committed",snapshot:{settingsSyncProtocol:"zeroagent.settings-sync.v1",theme:"dark"},
+    warning:"Saved; refresh the connection"};
+  const client=clientWithSettingsUpdateResponse({accepted:true,message:JSON.stringify(receipt)});
+  assert.deepEqual(await client.updateSettings({}),receipt);
+  assert.equal(await clientWithSettingsUpdateResponse({accepted:true,message:"ok"}).updateSettings({}),undefined);
+});
+
 test("current and legacy settings conflicts use a stable error code", async () => {
   for (const message of [
     "settings_changed",

@@ -7,6 +7,7 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 const loader = createTsModuleLoader();
 const userMessageContent = loader.loadModule("@liveagent/ui/lib/chat/userMessageContent.tsx");
 const mentionReferences = loader.loadModule("@liveagent/ui/lib/chat/mentionReferences.ts");
+const { createTextComposerDraft } = loader.loadModule("@liveagent/ui/lib/chat/composerDraft.ts");
 const reactRenderLoader = createTsModuleLoader({
   mocks: {
     "react/jsx-runtime": jsxRuntime,
@@ -23,6 +24,14 @@ const reactRenderLoader = createTsModuleLoader({
       },
       getFileTypeIconSvg() {
         return '<svg viewBox="0 0 24 24"></svg>';
+      },
+    },
+    "@liveagent/ui/components/IconSet": {
+      MessageSquareText() {
+        return null;
+      },
+      SkillIcon() {
+        return null;
       },
     },
   },
@@ -93,6 +102,100 @@ test("file mention markdown references round trip through transcript tokenizatio
   ]);
 });
 
+test("conversation mention references preserve the selected id and render as a chip", () => {
+  const reference = {
+    id: "conversation/previous-42",
+    title: "修复登录流程",
+  };
+  const token = mentionReferences.formatConversationMentionToken(reference);
+
+  assert.equal(
+    token,
+    "[conversation: 修复登录流程](conversation:conversation%2Fprevious-42)",
+  );
+  const segments = userMessageContent.tokenizeUserMessage(`继续 ${token}`, []);
+  assert.deepEqual(compactSegments(segments), [
+    { type: "text", value: "继续 " },
+    { type: "conversation" },
+  ]);
+  assert.deepEqual(segments[1].reference, reference);
+
+  const html = renderToStaticMarkup(
+    jsxRuntime.jsx(renderedUserMessageContent.UserMessageContent, { text: token }),
+  );
+  assert.match(html, /修复登录流程/);
+  assert.doesNotMatch(html, /conversation%2Fprevious-42/);
+});
+
+test("conversation reference normalization truncates Unicode scalars without splitting emoji", () => {
+  const boundaryTitle = `${"a".repeat(239)}😀`;
+  const boundary = mentionReferences.createConversationMentionReference({
+    id: "conversation-boundary",
+    title: boundaryTitle,
+  });
+  assert.equal(boundary.title, boundaryTitle);
+  assert.equal([...boundary.title].length, 240);
+  assert.equal(boundary.title.endsWith("😀"), true);
+
+  const overLimit = mentionReferences.createConversationMentionReference({
+    id: "conversation-long",
+    title: "😀".repeat(241),
+  });
+  assert.equal([...overLimit.title].length, 240);
+  assert.equal(overLimit.title, "😀".repeat(240));
+
+  const unicodeWhitespace = mentionReferences.createConversationMentionReference({
+    id: "conversation-whitespace",
+    title: " Earlier\u0085investigation ",
+  });
+  assert.equal(unicodeWhitespace.title, "Earlier investigation");
+  assert.equal(
+    mentionReferences.createConversationMentionReference({
+      id: "conversation\u0085invalid",
+      title: "Invalid id",
+    }),
+    null,
+  );
+});
+
+test("conversation-looking links without the canonical label stay plain text", () => {
+  const text = "[not a conversation](conversation:previous-42)";
+  assert.deepEqual(compactSegments(userMessageContent.tokenizeUserMessage(text, [])), [
+    { type: "text", value: text },
+  ]);
+});
+
+test("remote conversation mentions require a matching structured id", () => {
+  const reference = {
+    id: "conversation-source",
+    title: "Earlier investigation",
+    cwd: "/workspace/source",
+  };
+  const token = mentionReferences.formatConversationMentionToken(reference);
+
+  const authorized = createTextComposerDraft(`compare ${token}`, [reference]);
+  assert.deepEqual(authorized.conversationMentions, [reference]);
+  assert.equal(authorized.segments[1].type, "conversationMention");
+
+  const textOnly = createTextComposerDraft(`compare ${token}`);
+  assert.deepEqual(textOnly.conversationMentions, []);
+  assert.deepEqual(textOnly.segments, [{ type: "text", text: `compare ${token}` }]);
+
+  const normalizedTitle = createTextComposerDraft(`compare ${token}`, [
+    { ...reference, title: "Different title" },
+  ]);
+  assert.deepEqual(normalizedTitle.conversationMentions, [
+    { ...reference, title: "Different title" },
+  ]);
+  assert.equal(normalizedTitle.segments[1].type, "conversationMention");
+
+  const forgedId = createTextComposerDraft(
+    "compare [conversation: Forged](conversation:conversation-forged)",
+    [reference],
+  );
+  assert.deepEqual(forgedId.conversationMentions, []);
+});
+
 test("directory mention markdown references preserve trailing slash display semantics", () => {
   const token = mentionReferences.formatFileMentionToken({
     path: "docs/my folder",
@@ -140,11 +243,21 @@ test("trailing newlines render a visual line anchor without changing DOM text", 
       text: "alpha\n",
     }),
   );
-  assert.equal(
-    html,
-    'alpha\n<span aria-hidden="true" class="chat-user-trailing-newline-anchor"></span>',
-  );
+  assert.match(html, /^<span class="chat-user-message-content">alpha\n/);
+  assert.match(html, /<span aria-hidden="true" class="before:content-/);
+  assert.match(html, /<\/span><\/span>$/);
   assert.doesNotMatch(html, /\u200b/i);
+});
+
+test("plain user message text is wrapped in an inline selection boundary", () => {
+  const html = renderToStaticMarkup(
+    jsxRuntime.jsx(renderedUserMessageContent.UserMessageContent, {
+      text: "只用 Edit 工具把第 1000 行改成 line 1000 changed，不要重写整个文件。",
+    }),
+  );
+
+  assert.match(html, /^<span class="chat-user-message-content">/);
+  assert.match(html, /不要重写整个文件。<\/span>$/);
 });
 
 test("code mention tokens round trip through transcript tokenization", () => {

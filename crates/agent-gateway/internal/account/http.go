@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -41,6 +42,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/refresh", h.withSession(h.refresh))
 	mux.HandleFunc("POST /api/auth/logout", h.logout)
 	mux.HandleFunc("GET /api/auth/me", h.withSession(h.me))
+	mux.HandleFunc("POST /api/auth/verify-password", h.withSession(h.verifyPassword))
 	mux.HandleFunc("GET /api/environments", h.withSession(h.environments))
 	mux.HandleFunc("GET /api/conversation-routes", h.withSession(h.conversationRoutes))
 	mux.HandleFunc("POST /api/execution-target/select", h.withSession(h.selectTarget))
@@ -316,9 +318,23 @@ func (h *HTTPHandler) refresh(w http.ResponseWriter, r *http.Request, session *S
 
 func (h *HTTPHandler) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
+		if r.Header.Get("X-ZeroAgent-Account-ID") != "" {
+			session, err := h.service.Session(r.Context(), cookie.Value)
+			if err != nil {
+				writeError(w, err)
+				return
+			}
+			if !matchesRequestAccount(w, r, session) {
+				return
+			}
+		}
 		_ = h.service.Logout(r.Context(), cookie.Value)
 	}
-	h.clearSessionCookie(w)
+	// A response for session A can arrive after another tab has installed cookie B. New
+	// clients revoke A server-side and clear local state, without a stale Set-Cookie deletion.
+	if r.Header.Get("X-ZeroAgent-Account-ID") == "" {
+		h.clearSessionCookie(w)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -460,6 +476,22 @@ func (h *HTTPHandler) proxyUSAZero(w http.ResponseWriter, r *http.Request, sessi
 
 type authenticatedHandler func(http.ResponseWriter, *http.Request, *Session)
 
+// An optional assertion for current WebUI clients, never an authentication mechanism. It
+// rejects a stale tab's account A request when another tab has replaced its cookie with B.
+func matchesRequestAccount(w http.ResponseWriter, r *http.Request, session *Session) bool {
+	expected := strings.TrimSpace(r.Header.Get("X-ZeroAgent-Account-ID"))
+	if expected == "" {
+		return true
+	}
+	if expected == strconv.FormatInt(session.UserID, 10) && session.UserID > 0 {
+		return true
+	}
+	w.Header().Set("X-ZeroAgent-Account-Mismatch", "1")
+	w.Header().Set("Cache-Control", "no-store")
+	writeError(w, &APIError{Status: http.StatusConflict, Message: "account changed; reload to continue", Reason: "account_changed"})
+	return false
+}
+
 func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(SessionCookieName)
@@ -469,8 +501,12 @@ func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 		}
 		session, err := h.service.Session(r.Context(), cookie.Value)
 		if err != nil {
-			h.clearSessionCookie(w)
+			// In-flight anonymous/bootstrap reads can also predate a new login. A rejected
+			// cookie is already unusable; do not let its late response erase the new one.
 			writeError(w, err)
+			return
+		}
+		if !matchesRequestAccount(w, r, session) {
 			return
 		}
 		next(w, r, session)

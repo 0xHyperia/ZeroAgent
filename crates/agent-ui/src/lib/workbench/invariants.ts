@@ -1,5 +1,6 @@
 import { terminalLaunchSpecIsInProject } from "./projectScope";
 import {
+  isProjectToolSurface,
   type PaneNode,
   surfaceIdentityKey,
   WORKBENCH_LAYOUT_SCHEMA_VERSION,
@@ -216,6 +217,17 @@ export function collectWorkbenchLayoutIssues(layout: WorkbenchLayout): Workbench
       } else {
         identityValid = true;
       }
+    } else if (isProjectToolSurface(surface)) {
+      identityValid = Boolean(surface.project.projectPathKey.trim());
+      if (!identityValid) {
+        issues.push(
+          issue(
+            "invalid-pane-record",
+            `${panePath}.surface.project.projectPathKey`,
+            `${surface.kind} surfaces require a project path key.`,
+          ),
+        );
+      }
     } else if (surface.kind === "localTerminal" || surface.kind === "sshTerminal") {
       if (!surface.surfaceId.trim()) {
         issues.push(
@@ -263,6 +275,14 @@ export function collectWorkbenchLayoutIssues(layout: WorkbenchLayout): Workbench
                 "duplicate-conversation",
                 `${panePath}.surface.conversationId`,
                 `Conversation '${surface.conversationId.trim()}' is already bound to pane '${previousPaneId}'.`,
+              ),
+            );
+          } else if (isProjectToolSurface(surface)) {
+            issues.push(
+              issue(
+                "duplicate-surface",
+                `${panePath}.surface.project.projectPathKey`,
+                `Tool '${surfaceKey}' is already bound to pane '${previousPaneId}'.`,
               ),
             );
           } else {

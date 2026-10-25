@@ -127,6 +127,7 @@ export type CheckpointRewindAction = {
   available: boolean;
   pending: boolean;
   disabled: boolean;
+  disabledReason?: string;
   onRewind?: () => void;
 };
 
@@ -134,11 +135,28 @@ type CheckpointRewindContextValue = {
   turns: Map<string, CheckpointTurnSummary>;
   loading: boolean;
   disabled: boolean;
+  disabledReason?: string;
   busyTurn: number | null;
   rewind: (turn: CheckpointTurnSummary) => void;
 };
 
 const CheckpointRewindContext = createContext<CheckpointRewindContextValue | null>(null);
+
+/**
+ * 输入框“/rewind”的结果：started 表示已进入与行内按钮相同的预览确认流程；
+ * none 表示本会话没有可回退的检查点；busy 表示发送中、列表加载中或已有回退在跑。
+ */
+export type CheckpointRewindLatestOutcome = "started" | "none" | "busy";
+
+// 输入框与转录区不在同一棵 Provider 子树里，按会话 id 登记“回退最近一轮”。
+const latestRewinders = new Map<string, () => CheckpointRewindLatestOutcome>();
+
+/** 回退指定会话最近一轮的文件改动；该会话没有挂载中的 Provider 时返回 none。 */
+export function requestCheckpointRewindLatest(
+  conversationId: string,
+): CheckpointRewindLatestOutcome {
+  return latestRewinders.get(conversationId)?.() ?? "none";
+}
 
 // 仅覆盖 Write/Edit/Delete 三个文件工具的改动;Bash 等 shell 写入不在检查点内。
 // 回退点 = 用户消息:turnId 就是用户消息 ID,行内按钮经 useCheckpointRewindAction
@@ -148,6 +166,7 @@ export function CheckpointRewindProvider(props: {
   conversationId?: string;
   /** 发送/流式中为 true:行内按钮全体禁用,且暂停列表刷新。 */
   disabled?: boolean;
+  disabledReason?: string;
   client: CheckpointRewindClient;
   /**
    * 回退授权的唯一来源:当前会话工作区根 + 仍处于 active 且可写的额外授权根。
@@ -160,6 +179,7 @@ export function CheckpointRewindProvider(props: {
   const {
     children,
     conversationId,
+    disabledReason,
     disabled = false,
     client,
     resolveAuthorizedRoots,
@@ -176,11 +196,12 @@ export function CheckpointRewindProvider(props: {
   // context value 会随宿主每帧重建,流式期间放大成全部用户行重渲染。
   const resolveRootsRef = useRef(resolveAuthorizedRoots);
   const onRewoundRef = useRef(onRewound);
-  const disabledRef = useRef(disabled);
+  const unavailable = disabled || Boolean(disabledReason);
+  const disabledRef = useRef(unavailable);
   useEffect(() => {
     resolveRootsRef.current = resolveAuthorizedRoots;
     onRewoundRef.current = onRewound;
-    disabledRef.current = disabled;
+    disabledRef.current = unavailable;
   });
 
   // 列表加载代际:慢响应(切会话前发出的)一律丢弃,防乱序覆盖。
@@ -204,6 +225,7 @@ export function CheckpointRewindProvider(props: {
 
   // 切会话立刻清空旧列表:分支复制会保留消息 ID,旧会话的轮残留可能错配到
   // 新会话的同 ID 气泡上。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: conversation identity intentionally clears stale rewind state
   useEffect(() => {
     loadEpochRef.current += 1;
     setTurns([]);
@@ -211,8 +233,8 @@ export function CheckpointRewindProvider(props: {
 
   // 空闲(挂载/切会话/轮次结束)时刷新;发送中不拉取,半截时间线没有展示价值。
   useEffect(() => {
-    if (!disabled) void loadTurns();
-  }, [disabled, loadTurns]);
+    if (!unavailable) void loadTurns();
+  }, [unavailable, loadTurns]);
 
   // busy 守卫走 ref:rewind 不依赖 busyTurn state,身份保持稳定。
   const busyTurnRef = useRef<number | null>(null);
@@ -231,37 +253,39 @@ export function CheckpointRewindProvider(props: {
         const parts: string[] = [];
         if (stats.restoreFiles > 0)
           parts.push(
-            zh ? `恢复 ${stats.restoreFiles} 个文件` : `restore ${stats.restoreFiles} file(s)`,
+            zh ? `将恢复 ${stats.restoreFiles} 个文件` : `Restore ${stats.restoreFiles} file(s)`,
           );
         if (stats.deleteFiles > 0)
           parts.push(
-            zh ? `删除 ${stats.deleteFiles} 个文件` : `delete ${stats.deleteFiles} file(s)`,
+            zh ? `将删除 ${stats.deleteFiles} 个文件` : `Delete ${stats.deleteFiles} file(s)`,
           );
         if (stats.cleanFiles > 0)
           parts.push(
-            zh ? `${stats.cleanFiles} 个文件已一致` : `${stats.cleanFiles} file(s) unchanged`,
+            zh ? `${stats.cleanFiles} 个文件无变化` : `${stats.cleanFiles} file(s) unchanged`,
           );
         if (stats.skippedDirs > 0)
           parts.push(
             zh
-              ? `${stats.skippedDirs} 个目录删除不可恢复`
-              : `${stats.skippedDirs} deleted dir(s) not restorable`,
+              ? `${stats.skippedDirs} 个已删除的目录无法恢复`
+              : `${stats.skippedDirs} deleted director(ies) cannot be restored`,
           );
         if (stats.missingBlobs > 0)
           parts.push(
-            zh ? `${stats.missingBlobs} 个前像缺失` : `${stats.missingBlobs} blob(s) missing`,
+            zh
+              ? `${stats.missingBlobs} 个文件缺少改动前快照`
+              : `${stats.missingBlobs} file(s) missing their pre-edit snapshot`,
           );
         if (stats.unresolvableFiles > 0)
           parts.push(
             zh
-              ? `${stats.unresolvableFiles} 个路径已不可回退（根未授权或路径含符号链接）`
-              : `${stats.unresolvableFiles} path(s) not rewindable (root unauthorized or symlinked)`,
+              ? `${stats.unresolvableFiles} 个路径无法回退（目录未授权，或路径包含符号链接）`
+              : `${stats.unresolvableFiles} path(s) cannot be rewound (directory unauthorized, or path contains a symlink)`,
           );
         if (stats.captureErrors > 0 || turn.incomplete)
           parts.push(
             zh
-              ? `⚠ 该轮有 ${Math.max(stats.captureErrors, 1)} 次前像捕获失败，回退可能不完整`
-              : `⚠ ${Math.max(stats.captureErrors, 1)} pre-image capture failure(s); rewind may be incomplete`,
+              ? `本轮有 ${Math.max(stats.captureErrors, 1)} 次快照记录失败，回退结果可能不完整`
+              : `${Math.max(stats.captureErrors, 1)} snapshot(s) failed to record this turn; the rewind may be incomplete`,
           );
         const actionable = stats.entries.filter(
           (entry) => entry.action === "restore" || entry.action === "delete",
@@ -271,23 +295,22 @@ export function CheckpointRewindProvider(props: {
         if (actionable.length > 0)
           parts.push(
             zh
-              ? "手动编辑（编辑器/文件树）不在检查点内，会被一并覆盖"
-              : "Manual edits (editor / file tree) are not checkpointed and will be overwritten",
+              ? "在编辑器或文件树中的手动修改不在检查点内，将被一并覆盖"
+              : "Manual edits made in the editor or file tree are not checkpointed and will be overwritten",
           );
         const confirmed = await confirm({
-          title: zh ? "回退代码到此轮开始前" : "Rewind code to before this turn",
+          title: zh ? "回退到本轮开始前" : "Rewind to before this turn",
           subtitle: new Date(turn.firstCapturedAt).toLocaleString(),
           description:
             parts.length > 0
               ? parts.join(zh ? "，" : ", ")
               : zh
-                ? "没有需要回退的改动"
-                : "Nothing to rewind",
+                ? "本轮没有可回退的文件改动"
+                : "No file changes to rewind in this turn",
           detail:
             actionable.length > 0 ? actionable.map((entry) => entry.path).join("\n") : undefined,
           confirmLabel: zh ? "回退" : "Rewind",
           cancelLabel: zh ? "取消" : "Cancel",
-          tone: "warning",
         });
         if (!confirmed) return;
         // 把预览时的现状哈希传回后端,回退前逐个复核:预览到执行之间被外部
@@ -347,7 +370,6 @@ export function CheckpointRewindProvider(props: {
             confirmLabel: zh ? "知道了" : "OK",
             cancelLabel: "",
             hideCancel: true,
-            tone: "destructive",
           });
         }
       } catch (error) {
@@ -357,7 +379,6 @@ export function CheckpointRewindProvider(props: {
           confirmLabel: zh ? "知道了" : "OK",
           cancelLabel: "",
           hideCancel: true,
-          tone: "destructive",
         });
       } finally {
         busyTurnRef.current = null;
@@ -367,15 +388,40 @@ export function CheckpointRewindProvider(props: {
     [client, confirm, conversationId, loadTurns, zh],
   );
 
+  const latestRef = useRef({ turns, loading });
+  latestRef.current = { turns, loading };
+  useEffect(() => {
+    if (!conversationId) return;
+    const rewindLatest = (): CheckpointRewindLatestOutcome => {
+      const latest = latestRef.current;
+      if (disabledRef.current || latest.loading || busyTurnRef.current !== null) return "busy";
+      const turn = latest.turns.reduce<CheckpointTurnSummary | undefined>(
+        (best, item) => (!best || item.turnSeq > best.turnSeq ? item : best),
+        undefined,
+      );
+      if (!turn) return "none";
+      void rewind(turn);
+      return "started";
+    };
+    latestRewinders.set(conversationId, rewindLatest);
+    return () => {
+      // 同一会话可能被另一 Pane 的 Provider 接管，只清理自己登记的那一项。
+      if (latestRewinders.get(conversationId) === rewindLatest) {
+        latestRewinders.delete(conversationId);
+      }
+    };
+  }, [conversationId, rewind]);
+
   const value = useMemo<CheckpointRewindContextValue>(
     () => ({
       turns: new Map(turns.map((turn) => [turn.turnId, turn])),
       loading,
-      disabled,
+      disabled: unavailable,
+      disabledReason,
       busyTurn,
       rewind: (turn) => void rewind(turn),
     }),
-    [busyTurn, disabled, loading, rewind, turns],
+    [busyTurn, disabledReason, loading, rewind, turns, unavailable],
   );
 
   return (
@@ -398,6 +444,7 @@ export function useCheckpointRewindAction(turnId?: string): CheckpointRewindActi
     available: !!turn,
     pending: !!turn && context.busyTurn === turn.turnSeq,
     disabled: context.disabled || context.loading || context.busyTurn !== null || !turn,
+    disabledReason: context.disabledReason,
     onRewind: turn ? () => context.rewind(turn) : undefined,
   };
 }

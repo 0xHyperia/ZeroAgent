@@ -3,6 +3,43 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    #[test]
+    fn reopening_profiles_keeps_identical_memory_ids_separate_and_leaves_legacy_files_intact() {
+        use crate::services::backend_profile::BackendProfile;
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(".liveagent/memory/global/user/private.md");
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, b"legacy memory must remain unchanged").unwrap();
+        let profiles = ["https://usa0.top|user:1", "https://usa0.top|user:2"];
+        for (index, scope) in profiles.iter().enumerate() {
+            let root = BackendProfile::from_account_scope(Some(scope)).unwrap()
+                .settings_dir(temp.path()).join("memory");
+            let store = MemoryStore::open_at(root).unwrap();
+            store.write(MemoryWriteArgs {
+                slug: "same-id".into(), scope: "global".into(), workdir: None,
+                memory_type: "user".into(), description: "owner".into(),
+                body: format!("private for account {index}"), actor: None,
+                conversation_id: None, model: None, evidence: None,
+            }).unwrap();
+        }
+        for (index, scope) in profiles.iter().enumerate() {
+            let root = BackendProfile::from_account_scope(Some(scope)).unwrap()
+                .settings_dir(temp.path()).join("memory");
+            let store = MemoryStore::open_at(root).unwrap();
+            let value = store.read(MemoryReadArgs {
+                slug: "same-id".into(), scope: Some("global".into()), workdir: None,
+                workdir_hash: None, offset: None, length: None,
+            }).unwrap();
+            assert_eq!(value.body, format!("private for account {index}"));
+        }
+        let offline = MemoryStore::open_at(BackendProfile::Local.settings_dir(temp.path()).join("memory")).unwrap();
+        assert!(offline.read(MemoryReadArgs {
+            slug: "same-id".into(), scope: Some("global".into()), workdir: None,
+            workdir_hash: None, offset: None, length: None,
+        }).is_err());
+        assert_eq!(fs::read(&legacy).unwrap(), b"legacy memory must remain unchanged");
+    }
+
     fn test_store() -> MemoryStore {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path().join("memory");
@@ -967,7 +1004,7 @@ mod tests {
             })
             .expect("read daily");
         assert_eq!(read.headline, "2026-05-13");
-        assert_eq!(read.meta.archived, false);
+        assert!(!read.meta.archived);
         assert!(read.body.contains("10:00"));
         assert!(read.body.contains("11:00"));
         let sources = read

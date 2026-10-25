@@ -1,6 +1,6 @@
 // Scroll-follow core for bottom-pinned live views: the chat transcript
-// viewport and the thinking-block <pre> both run on this reducer via
-// useScrollFollow.
+// viewport and the streaming thinking-block scroller both run on this reducer
+// via useScrollFollow.
 //
 // This replaces the 2026-07 scrollFollowPolicy after four rounds of
 // device-specific patches. Instead of refining the "was that scroll the user
@@ -42,13 +42,15 @@
 // that boundary and can never re-attach at the physical clamp.
 export const BOTTOM_ATTACH_THRESHOLD_PX = 8;
 
-// ChatTranscript reserves max(192, composer height + 12)px of blank space
-// below the last message so content clears the floating composer. Users
-// naturally stop "at the bottom" inside that band, dozens of px short of the
-// physical clamp, so a clamp-only check could never re-engage them. Any
-// gesture-latched downward arrival inside this zone counts as "scrolled back
-// to the bottom". ChatTranscript imports this constant to keep the reserve
-// band and the zone equal.
+// Reserve-band minimum: ChatTranscript reserves max(192, composer height +
+// 12)px of blank space below the last message (the WebUI spacer mirrors it as
+// 12rem) so content clears the floating composer. It also sizes the default
+// reattach zone, but both transcript hosts now pass `reattachZonePx: 0`: a
+// gesture-latched arrival inside the zone pinned the viewport to the clamp in
+// one write, which reads as the page snapping up (231px measured in the WebUI
+// probe page). Attach happens at the physical clamp only; wheel-down at the
+// clamp and a release at the clamp still re-engage. The thinking-block
+// scroller passes 0 as well.
 export const BOTTOM_REATTACH_ZONE_PX = 192;
 
 // Gap wiggle inside this slop is layout noise (virtualizer measurement
@@ -59,6 +61,48 @@ export const DIRECTION_SLOP_PX = 1;
 // drag for the scroll-driven detach means a static click plus a layout echo
 // can never read as "dragged away from the bottom".
 export const POINTER_DRAG_SLOP_PX = 4;
+
+// Geometry of a scroll container for native-scrollbar hit testing, all in the
+// same CSS-px coordinate space (getBoundingClientRect + client* metrics).
+export type ScrollerBox = {
+  // Border box (getBoundingClientRect).
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  // Client box offset from the border box origin (clientLeft/clientTop). In
+  // RTL clientLeft already includes a left-side vertical scrollbar.
+  clientLeft: number;
+  clientTop: number;
+  // Client box size (clientWidth/clientHeight) — excludes scrollbars and any
+  // `scrollbar-gutter: stable` reserve.
+  clientWidth: number;
+  clientHeight: number;
+};
+
+// A press inside the border box but outside the client box landed on the
+// element's own native scrollbar (thumb, track or reserved gutter). Native
+// thumb drags deliver no pointermove to the page — Chromium and WebKit route
+// them to the scrollbar — only scroll events, so the movement-slop promotion
+// in the hook can never fire; the hook must promote such a press to a drag
+// on pointerdown, exactly like a press on a custom scrollbar element.
+// Border pixels also read as "scrollbar": the scrollers using this engine
+// have no borders, and a press on a border is never content interaction.
+export function isPointInNativeScrollbarGutter(x: number, y: number, box: ScrollerBox) {
+  const insideBorderBox =
+    x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height;
+  if (!insideBorderBox) {
+    return false;
+  }
+  const clientX0 = box.left + box.clientLeft;
+  const clientY0 = box.top + box.clientTop;
+  const insideClientBox =
+    x >= clientX0 &&
+    x < clientX0 + box.clientWidth &&
+    y >= clientY0 &&
+    y < clientY0 + box.clientHeight;
+  return !insideClientBox;
+}
 
 // Elements carrying this attribute keep their arrow/Home/End keys to
 // themselves: the transcript width handles resize on those keys, which must

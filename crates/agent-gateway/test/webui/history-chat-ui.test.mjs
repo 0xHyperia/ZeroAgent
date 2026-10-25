@@ -11,6 +11,9 @@ const { createTurn, applyEventToTurn } = loader.loadModule(
 const { buildRowsFromEntries } = loader.loadModule("src/lib/chat/transcript/rows.ts");
 const historyShare = loader.loadModule("src/lib/historyShare.ts");
 const conversationState = loader.loadModule("src/lib/chat/conversationState.ts");
+const { createGatewayConversationActions } = loader.loadModule(
+  "src/app/gatewayConversationActions.ts",
+);
 
 // Live-stream reducer harness: the createTurn/applyEventToTurn pair replaces
 // the old flat pushChatEvent pipeline — one Turn holds a single run's entries.
@@ -91,6 +94,21 @@ test("fetchSharedHistory reads public share details that parse into transcript e
   }
 });
 
+test("parseHistoryMessagesJson uses canonical history ids for editable user rows", () => {
+  const entries = chatUi.parseHistoryMessagesJson(JSON.stringify([
+    { id: "msg-canonical-user-1", role: "user", content: "hello" },
+  ]));
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].messageId, "msg-canonical-user-1");
+  assert.equal(entries[0].messageRef.segmentIndex, 0);
+  assert.equal(entries[0].messageRef.messageIndex, 0);
+  assert.equal(entries[0].messageRef.segmentId, "gateway-history");
+  assert.equal(entries[0].messageRef.messageId, "msg-canonical-user-1");
+  assert.equal(entries[0].messageRef.role, "user");
+  assert.equal(entries[0].messageRef.contentHash, "m3bicr");
+});
+
 test("parseHistoryMessagesJson preserves upload display text and checkpoint metadata", () => {
   const entries = chatUi.parseHistoryMessagesJson(JSON.stringify([
     {
@@ -103,6 +121,13 @@ test("parseHistoryMessagesJson preserves upload display text and checkpoint meta
           fileName: "notes.txt",
           kind: "text",
           sizeBytes: 42,
+        },
+      ],
+      liveAgentReferencedConversations: [
+        {
+          id: "conversation-source",
+          title: "Source conversation",
+          cwd: "/workspace/source",
         },
       ],
       liveAgentHistoryRef: {
@@ -133,6 +158,20 @@ test("parseHistoryMessagesJson preserves upload display text and checkpoint meta
   assert.equal(entries[0].kind, "user");
   assert.equal(entries[0].text, "please inspect notes");
   assert.equal(entries[0].attachments[0].relativePath, "uploads/notes.txt");
+  assert.deepEqual(entries[0].referencedConversations, [
+    {
+      id: "conversation-source",
+      title: "Source conversation",
+      cwd: "/workspace/source",
+    },
+  ]);
+  assert.deepEqual(buildRowsFromEntries([entries[0]], "history")[0].referencedConversations, [
+    {
+      id: "conversation-source",
+      title: "Source conversation",
+      cwd: "/workspace/source",
+    },
+  ]);
   assert.deepEqual(entries[0].messageRef, {
     segmentIndex: 1,
     messageIndex: 2,
@@ -144,6 +183,121 @@ test("parseHistoryMessagesJson preserves upload display text and checkpoint meta
   assert.equal(entries[1].kind, "checkpoint");
   assert.equal(entries[1].summaryId, "summary-1");
   assert.equal(entries[1].coveredMessageCount, 8);
+});
+
+test("web edit-resend retains only persisted conversation references", async () => {
+  const calls = [];
+  const actions = createGatewayConversationActions({
+    api: {},
+    conversationIdRef: { current: "conversation-current" },
+    isLocalDraftConversationId: () => false,
+    isConversationBusy: () => false,
+    setChatError: () => {},
+    composerRef: { current: { clear() {} } },
+    setPendingUploadsForConversation: () => {},
+    sendChatRef: {
+      current: async (message, options) => {
+        calls.push({ message, options });
+        return null;
+      },
+    },
+  });
+  const messageRef = {
+    segmentIndex: 0,
+    messageIndex: 0,
+    segmentId: "segment-0",
+    messageId: "message-0",
+    role: "user",
+    contentHash: "hash-0",
+  };
+  const authorized = {
+    id: "conversation-source",
+    title: "Source conversation",
+    cwd: "/workspace/source",
+  };
+
+  await actions.handleResendFromEdit(
+    messageRef,
+    "edited [conversation: Source conversation](conversation:conversation-source) " +
+      "[conversation: Forged](conversation:conversation-forged)",
+    [],
+    [authorized],
+  );
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].options.referencedConversations, [authorized]);
+  assert.equal(calls[0].options.editMessageRef, messageRef);
+});
+
+// #787: picking a conversation that belongs to another workspace from the
+// sidebar session tree must bring that workspace to the front so the right
+// dock (file tree / terminal / git) follows; search already did this via
+// beforeCommit, the plain click path did not.
+function createSidebarSelectHarness({ isAgentMode, sidebarCwd, runtimeWorkdir }) {
+  const activated = [];
+  const opened = [];
+  const actions = createGatewayConversationActions({
+    isAgentMode,
+    activeView: "chat",
+    activateConversationWorkspace: (cwd) => activated.push(cwd),
+    activateSearchConversationWorkspace: () => {},
+    sidebarStore: {
+      peek: (id) => (id === "conversation-b" && sidebarCwd ? { id, cwd: sidebarCwd } : undefined),
+      upsertLocal: () => {},
+    },
+    conversationWorkdirsRef: {
+      current: new Map(runtimeWorkdir ? [["conversation-b", runtimeWorkdir]] : []),
+    },
+    openController: {
+      cancel: () => {},
+      open: (id, options) => opened.push({ id, options }),
+    },
+    getVisibleComposerConversationId: () => "conversation-a",
+    isLocalDraftConversationId: () => false,
+    prepareComposerForConversationChange: () => {},
+    restoreCachedComposerDraft: () => {},
+    setActiveView: () => {},
+    setSidebarOpen: () => {},
+    pendingDisplayedConversationAutoBottomRef: { current: null },
+  });
+  return { actions, activated, opened };
+}
+
+test("sidebar select opens immediately and activates the workspace only at commit", () => {
+  const { actions, activated, opened } = createSidebarSelectHarness({
+    isAgentMode: true,
+    sidebarCwd: "/workspace/project-b",
+  });
+  actions.handleSidebarSelectConversation("conversation-b");
+  // 点选瞬间只发起打开,不先切工作空间(否则作用域先行刷新会顶掉本次打开)。
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].id, "conversation-b");
+  assert.deepEqual(activated, []);
+  // 会话提交后才激活其工作空间。
+  opened[0].options.afterCommit();
+  assert.deepEqual(activated, ["/workspace/project-b"]);
+});
+
+test("sidebar select prefers the authoritative runtime workdir at commit time", () => {
+  const { actions, activated, opened } = createSidebarSelectHarness({
+    isAgentMode: true,
+    sidebarCwd: "/workspace/project-stale",
+    runtimeWorkdir: "/workspace/project-runtime",
+  });
+  actions.handleSidebarSelectConversation("conversation-b");
+  opened[0].options.afterCommit();
+  assert.deepEqual(activated, ["/workspace/project-runtime"]);
+});
+
+test("sidebar select leaves the workspace alone outside agent mode", () => {
+  const { actions, activated, opened } = createSidebarSelectHarness({
+    isAgentMode: false,
+    sidebarCwd: "/workspace/project-b",
+  });
+  actions.handleSidebarSelectConversation("conversation-b");
+  assert.equal(opened.length, 1);
+  opened[0].options.afterCommit();
+  assert.deepEqual(activated, []);
 });
 
 test("parseHistoryMessagesJson preserves Image tool result image content", () => {
@@ -409,7 +563,7 @@ test("turn reducer appends streaming text, dedupes tool cards, and dedupes compa
   assert.equal(turn.entries.length, 1);
   assert.equal(turn.entries[0].kind, "assistant");
   assert.equal(turn.entries[0].text, "hello world");
-  assert.equal(turn.entries[0].meta.usageTotalTokens, 12);
+  assert.equal(turn.entries[0].meta.usage.totalTokens, 12);
 
   const toolCall = { type: "tool_call", id: "call-1", name: "Read", arguments: { path: "README.md" }, round: 1 };
   turn = applyEventToTurn(turn, toolCall);
@@ -742,9 +896,14 @@ test("GatewayTranscript renders folded and live rows in one virtualized list", (
     forwardRef(render) {
       return render;
     },
+    // Module-load shim: TranscriptMessageActions lazy-loads the reply share dialog.
+    lazy() {
+      return () => null;
+    },
     memo(component) {
       return component;
     },
+    Suspense: "Suspense",
     useCallback(callback) {
       return callback;
     },
@@ -881,8 +1040,9 @@ test("GatewayTranscript renders folded and live rows in one virtualized list", (
     findTreeNode(
       listTree,
       (node) =>
-        typeof node.props?.className === "string" &&
-        node.props.className.includes("gateway-transcript-row-user"),
+        typeof node.type === "function" &&
+        node.props?.row?.kind === "user" &&
+        node.props.row.text === "queued from gui",
     ),
     "live user bubble renders before the live assistant output",
   );

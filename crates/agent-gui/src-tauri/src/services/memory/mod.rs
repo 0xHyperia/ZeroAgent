@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Timelike, Utc};
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-const MEMORY_DIR_NAME: &str = ".liveagent";
 const MEMORY_ROOT_DIR: &str = "memory";
 const DB_FILENAME: &str = "memory-index.sqlite3";
 const MAX_BODY_BYTES: usize = 8 * 1024;

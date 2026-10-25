@@ -2,6 +2,8 @@ import type { Locale } from "@liveagent/app/i18n/config";
 import type { ThinkingLevel } from "@liveagent/ui/lib/models/modelThinking";
 import type { WorkspaceProjectGroup } from "@liveagent/ui/lib/workspaceProjectTypes";
 
+import type { SidebarShortcuts } from "./sidebarShortcuts";
+
 export type ProviderId = "codex" | "claude_code" | "gemini" | "xai" | "deepseek";
 
 export type ExecutionMode = "text" | "tools" | "agent-dev";
@@ -11,6 +13,21 @@ export type CodexRequestFormat = "openai-completions" | "openai-responses";
 export type ReasoningLevel = "off" | ThinkingLevel;
 
 export type McpTransport = "stdio" | "http" | "sse";
+
+/**
+ * MCP OAuth 鉴权配置（docs/design/mcp-oauth.md）。缺省 = "none"（现状，静态
+ * headers 继续生效）。token 永不落 settings——只存 keychain（Rust 侧），
+ * 因此该结构可安全进 Gateway 同步与 WebDAV 备份。
+ */
+export type McpAuthType = "none" | "oauth";
+
+export type McpAuthConfig = {
+  type: McpAuthType;
+  /** 覆盖 PRM scopes_supported 的空格分隔 scope 列表。 */
+  scope?: string;
+  /** 静态 client_id（企业 AS）；缺省走 RFC 7591 动态注册。 */
+  clientId?: string;
+};
 
 export type McpServerConfig = {
   id: string;
@@ -22,10 +39,13 @@ export type McpServerConfig = {
   args: string[];
   url: string;
   env?: Record<string, string>;
+  envConfigured?: string[];
   cwd?: string;
   headers?: Record<string, string>;
+  headersConfigured?: string[];
   timeoutMs: number;
   messageUrl?: string;
+  auth?: McpAuthConfig;
 };
 
 export type McpSettings = {
@@ -131,21 +151,39 @@ export type FontScaleSettings = {
   sidebar: number;
   chat: number;
   rightDock: number;
+  settings: number;
 };
 
 export type ChatTranscriptSettings = {
   width: number;
 };
 
+/**
+ * Composer 上下文占用的三档展示样式（docs/design/composer-context-stats-bar.md §4.7）：
+ * "statsBar" 只显示卡片下方的会话统计状态栏（含占用读数），用量环不渲染；
+ * "both" 状态栏与常显用量环同时显示；
+ * "ring" 只显示常显用量环（0% 起），状态栏不渲染。三档都保留 ≥50% 的手动压缩入口。
+ */
+export type ComposerContextDisplayMode = "statsBar" | "both" | "ring";
+
 export type CustomSettings = {
+  sidebarShortcuts: SidebarShortcuts;
   conversationTitleModel?: SelectedModel;
   // AI commit-message generation in the Git review dock. Unset means "follow
   // the current conversation model"; a stored selection whose provider/model
   // is no longer active normalizes back to unset, restoring that fallback.
   commitMessageModel?: SelectedModel;
+  // Composer prompt-clarify (澄清提示词). The master switch hides the composer
+  // wand button on both surfaces when off. The model override follows the
+  // commitMessageModel contract: unset means "follow the current conversation
+  // model", and a stored selection whose provider/model is no longer active
+  // normalizes back to unset.
+  promptClarifyEnabled: boolean;
+  promptClarifyModel?: SelectedModel;
   chatSidebar: ChatSidebarSettings;
   chatTranscript: ChatTranscriptSettings;
   rightDock: RightDockSettings;
+  composerContextDisplay: ComposerContextDisplayMode;
   // Empty strings select the built-in stacks for each typography role.
   interfaceFontFamily: string;
   chatFontFamily: string;
@@ -215,6 +253,28 @@ export function getDefaultModelFailoverSettings(): ModelFailoverSettings {
   };
 }
 
+/** Cloudflare transient-error presets exposed by the retry settings UI. */
+export const RETRYABLE_PRESET_HTTP_STATUS_CODES = [520, 521, 522, 523, 525, 526, 527] as const;
+
+/** User-configured status codes and text patterns for transient errors. */
+export type RetryErrorSettings = {
+  /**
+   * HTTP status codes (from `RETRYABLE_PRESET_HTTP_STATUS_CODES`) the user has
+   * enabled. Defaults to all presets on so relays self-heal out of the box.
+   */
+  presetStatusCodes: number[];
+  /**
+   * Free-text substrings matched case-insensitively against the error message.
+   * An error containing any of these is retried. e.g. "SSL handshake failed".
+   */
+  customPatterns: string[];
+};
+
+export const DEFAULT_RETRY_ERROR_SETTINGS: RetryErrorSettings = {
+  presetStatusCodes: [...RETRYABLE_PRESET_HTTP_STATUS_CODES],
+  customPatterns: [],
+};
+
 export type SystemProxyType = "socks5" | "http";
 
 // 系统级出站代理：注入本地 shell 命令 env，并供勾选了 useSystemProxy 的
@@ -240,13 +300,37 @@ export type ToolPolicy = "allow" | "ask" | "deny";
 //   工作区+临时目录;offline 变体额外断网。Windows 免管理员双后端:sandbox=受限
 //   令牌(只围栏写,读放行);sandboxOffline=AppContainer(WFP 内核级全断网含
 //   loopback,默认拒读 ⇒ 系统目录/工作区可读、用户主目录等敏感目录读掩蔽)。
-export type CommandSafetyMode = "ask" | "auto" | "sandbox" | "sandboxOffline";
+export type CommandSafetyMode =
+  | "ask"
+  | "auto"
+  | "autoEdit"
+  | "always"
+  | "autoReview"
+  | "sandbox"
+  | "sandboxOffline";
 
 export const COMMAND_SAFETY_MODES: readonly CommandSafetyMode[] = [
   "ask",
   "auto",
+  "autoEdit",
+  "always",
+  "autoReview",
   "sandbox",
   "sandboxOffline",
+];
+
+// Browser 工具的浏览器接入模式:
+// - auto:扩展已连接则用用户日常浏览器(带登录态),否则回退独立 profile。
+// - userProfile:只用用户日常浏览器;扩展未连接时报错并引导安装,绝不回退
+//   (用户显式要登录态时,静默降级到无登录态的隔离浏览器会造成"看似在操作
+//   我的账号实际不是"的误判)。
+// - isolated:只用独立 profile 的专用浏览器,即使扩展在线也不碰用户浏览器。
+export type BrowserAutomationMode = "auto" | "userProfile" | "isolated";
+
+export const BROWSER_AUTOMATION_MODES: readonly BrowserAutomationMode[] = [
+  "auto",
+  "userProfile",
+  "isolated",
 ];
 
 export type SystemSettings = {
@@ -258,9 +342,32 @@ export type SystemSettings = {
    * 可选:旧快照缺失该字段时视为空表(全部走默认),保证零回归。
    */
   toolPolicies?: Record<string, ToolPolicy>;
+  /**
+   * 允许 CUA 工具把 ZeroAgent 自己当作操作目标。缺省 false。
+   *
+   * 关闭时（默认）宿主的窗口既不会出现在 cua-driver 的枚举结果里，也不
+   * 能被直接寻址——模型操作宿主界面等于能点掉自己的审批弹窗、改写这份
+   * 权限设置、或者直接关掉应用。打开它的正当场景只有一个：用 ZeroAgent
+   * 自动化测试 ZeroAgent。实现见 `lib/tools/cuaSelfGuard.ts`。
+   */
+  cuaAllowSelfTargeting?: boolean;
   commandSafetyMode: CommandSafetyMode;
+  /** Browser 工具的浏览器接入模式;缺省 auto(旧快照缺失该字段时同 auto)。 */
+  browserAutomationMode: BrowserAutomationMode;
+  /**
+   * 全局默认时区(IANA 名);"" = 自动跟随桌面端 OS 时区。日程、定时任务与后台日期
+   * 计算统一使用。有效值用 `resolveDefaultTimeZone` 求得。
+   */
+  defaultTimeZone: string;
+  /**
+   * 只读派生值:桌面后端加载设置时注入的「自动」档时区(桌面 OS 时区)。保存时被
+   * 后端忽略;WebUI 借此显示桌面时区而不是浏览器时区。
+   */
+  resolvedTimeZone?: string;
   workspaceProjects: WorkspaceProject[];
   workspaceProjectGroups: WorkspaceProjectGroup[];
+  workspaceProjectOrder?: string[];
+  sidebarPinnedOrder?: string[];
   activeWorkspaceProjectId?: string;
   hiddenWorkspaceProjectPaths: string[];
   missingWorkspaceProjectPaths: string[];
@@ -273,10 +380,14 @@ export type SystemSettings = {
 
 export type WorkspaceResourceSettingsMode = "inherit" | "custom" | "off";
 
+export type ProjectPromptStrategy = "append" | "replace";
+
 export type WorkspaceResourceSettings = {
   mode: WorkspaceResourceSettingsMode;
   skillNames: string[];
   mcpServerIds: string[];
+  projectPrompt: string;
+  projectPromptStrategy: ProjectPromptStrategy;
   stateVersion: number;
   writerId: string;
   updatedAt: number;
@@ -288,6 +399,14 @@ export type EffectiveWorkspaceResources = {
   skillNames: string[];
   mcpServerIds: string[];
   mcpServers: McpServerConfig[];
+};
+
+export type EffectivePromptSettings = {
+  globalTemplates: AgentPromptTemplate[];
+  globalPrompt: string;
+  projectPrompt: string;
+  projectPromptStrategy: ProjectPromptStrategy;
+  prompt: string;
 };
 
 export type WorkspaceProjectKind = "managed" | "folder" | "history";
@@ -311,6 +430,9 @@ export type WorkspaceProject = {
 export type SelectedModel = {
   customProviderId: string;
   model: string;
+  /** 会话选择附带的思考设置，随 selectedModelJson 保存在会话历史中。 */
+  thinkingEnabled?: boolean;
+  reasoning?: ReasoningLevel;
 };
 
 export type PromptCacheHintMode = "auto" | "openai-key" | "openrouter-session" | "none";
@@ -322,8 +444,21 @@ export type PromptCacheHintMode = "auto" | "openai-key" | "openrouter-session" |
  */
 export type ModelLimitsSource = "catalog" | "provider" | "fallback" | "user";
 
+/** 模型输入模态的合法值全集（运行时校验与类型的单一来源）。 */
+export const MODEL_INPUT_MODALITIES = ["text", "image"] as const;
+
+/** 模型输入模态；缺省时按 provider 内置规则推断。 */
+export type ModelInputModality = (typeof MODEL_INPUT_MODALITIES)[number];
+
+/**
+ * 归一化后的输入模态覆盖的规范形态：聊天协议始终发送文本，
+ * 因此 "text" 恒在首位；normalizer 只会产出这两种形状。
+ */
+export type ModelInputModalitiesOverride = ["text"] | ["text", "image"];
+
 export type ProviderModelConfig = {
   id: string;
+  displayName?: string;
   /** /models 元数据；缺失时保持旧设置格式兼容。 */
   ownedBy?: string;
   contextWindow: number;
@@ -331,13 +466,34 @@ export type ProviderModelConfig = {
   limitsSource?: ModelLimitsSource;
   /** OpenAI 兼容端点的缓存提示协议；缺失时继承供应商设置。 */
   promptCacheHintMode?: PromptCacheHintMode;
+  /**
+   * 用户手动的输入模态覆盖（如 ["text","image"] 强制开启图片输入）。
+   * 缺失时按 provider 内置启发式推断（白名单/官方已知模型目录）。
+   * 生效范围：仅 codex/xai/gemini provider（这些路径的附件发送受
+   * model.input 门控）；deepseek wire 层硬拒绝图片、anthropic 附件
+   * 路径不读 model.input，这两类 provider 上本字段不起作用。
+   * 读取前须经 normalizeInputModalities 归一化。
+   */
+  inputModalities?: ModelInputModalitiesOverride;
 };
 
 export type ChatRuntimeControls = {
   thinkingEnabled: boolean;
   nativeWebSearchEnabled: boolean;
+  /** Plan mode:本轮只注入只读工具,经 ExitPlanMode 批准后才进入执行。 */
+  planModeEnabled: boolean;
   reasoning: ReasoningLevel;
   reasoningByProvider: Partial<Record<ChatRuntimeReasoningProviderKey, ReasoningLevel>>;
+  /**
+   * 按模型记忆的思考档位覆盖:供应商桶 → 模型 id → 档位。读取顺序
+   * 模型桶 → reasoningByProvider → reasoning(见 resolveChatRuntimeReasoning)。
+   * 只被会话里显式的档位选择写入(写时按该模型档位表钳制),因此一个模型
+   * 的档位永远不会串到另一个模型——单靠 reasoningByProvider 时, narrow 表
+   * 模型会把 wide 表模型选的表外档钳掉并回写,造成「切会话/另一栏被重置」。
+   */
+  reasoningByModel: Partial<
+    Record<ChatRuntimeReasoningProviderKey, Partial<Record<string, ReasoningLevel>>>
+  >;
 };
 
 export type ChatRuntimeReasoningProviderKey =
@@ -367,6 +523,8 @@ export type SshProxyConfig = {
   username: string;
   password: string;
   passwordConfigured?: boolean;
+  /** 直接复用「系统设置 → 应用代理」（systemProxy）；开启时忽略手动代理字段。 */
+  useSystemProxy: boolean;
 };
 
 export type SshHostConfig = {
@@ -483,8 +641,35 @@ export type CustomProvider = {
   promptCacheRetention?: "short" | "long";
   nativeWebSearchEnabled: boolean;
   useSystemProxy: boolean;
+  /** 流内重试策略；缺省 = 全局默认行为（等价于 mode:"default"）。 */
+  retryPolicy?: ProviderRetryPolicy;
   usageQuery: UsageQueryConfig;
 };
+
+/**
+ * 供应商级流内重试策略。
+ *
+ * - default：沿用全局默认（5 次重试，即 DEFAULT_STREAM_RETRY_MAX_ATTEMPTS-1）
+ *   ——与未配置等价，归一化时直接省略字段，保证旧配置零迁移；
+ * - off：禁用流内重试（不影响跨供应商 failover）；
+ * - custom：使用 maxRetries——首次失败后的重试次数，不含首次请求（钳位
+ *   1..10；0 次重试请直接选 off）。与重试状态提示"正在重试 (n/m)"的 m
+ *   同一口径。
+ */
+export type ProviderRetryPolicy = { mode: "off" } | { mode: "custom"; maxRetries: number };
+
+export const PROVIDER_RETRY_MAX_RETRIES_LIMITS = {
+  min: 1,
+  max: 10,
+} as const;
+
+/**
+ * 全局默认流内重试次数（不含首次请求）的 UI 展示镜像。运行时真源是
+ * agent-gui streamRetry.ts 的 DEFAULT_STREAM_RETRY_MAX_ATTEMPTS（总尝试
+ * 数 = 重试数 + 1；UI 边界禁止反向依赖）；两者一致性由
+ * provider-retry-policy 单测锁定。
+ */
+export const PROVIDER_RETRY_DEFAULT_MAX_RETRIES = 5;
 
 export type EffectiveTheme = "light" | "dark";
 
@@ -501,6 +686,9 @@ export const CLOSE_WINDOW_BEHAVIOR_OPTIONS = [
 
 export type RemoteSettings = {
   enabled: boolean;
+  managedLocal: boolean;
+  localGatewayPort: number;
+  localGatewayToken: string;
   gatewayUrl: string;
   gatewayPort: number;
   token: string;
@@ -540,6 +728,10 @@ export type SttProviderSettings = {
 };
 
 export type SttSettings = {
+  /** Native snapshot version; carried by an editor, never persisted as STT data. */
+  nativeConfigurationRevision?: string;
+  /** Version of the complete configuration snapshot read by this editor. */
+  configurationRevision?: string;
   enabled: boolean;
   provider: SttProviderId | null;
   providers: Record<SttProviderId, SttProviderSettings>;
@@ -548,6 +740,15 @@ export type SttSettings = {
 };
 
 export type AppSettings = {
+  settingsSyncProtocol?: "zeroagent.settings-sync.v1";
+  /** Read version of the independently persisted Native presentation preferences. */
+  uiPreferencesRevision?: string;
+  /** Read version of the Native HTTP backend document; not a browser preference. */
+  backendConfigurationVersion?: string;
+  /** Version of the Native preferences actually read for this snapshot. */
+  nativeConfigurationRevision?: string;
+  /** Version of the complete configuration snapshot read by this editor. */
+  configurationRevision?: string;
   system: SystemSettings;
   customProviders: CustomProvider[];
   mcp: McpSettings;
@@ -558,6 +759,7 @@ export type AppSettings = {
   memory: MemorySettings;
   customSettings: CustomSettings;
   modelFailover: ModelFailoverSettings;
+  retryErrorSettings: RetryErrorSettings;
   updates: UpdateSettings;
   skills: SkillsSettings;
   chatRuntimeControls: ChatRuntimeControls;
@@ -583,6 +785,7 @@ export const PROMPT_CACHE_HINT_MODES = [
 export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
   thinkingEnabled: true,
   nativeWebSearchEnabled: true,
+  planModeEnabled: false,
   reasoning: "high",
   reasoningByProvider: {
     claude_code: "high",
@@ -592,6 +795,7 @@ export const DEFAULT_CHAT_RUNTIME_CONTROLS: ChatRuntimeControls = {
     xai: "high",
     deepseek: "high",
   },
+  reasoningByModel: {},
 };
 
 export const DEFAULT_WORKSPACE_PROJECT_ID = "default-project";

@@ -11,6 +11,12 @@ function readRepoFile(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
+test("Android excludes desktop sidecars and resource maps after config merging", () => {
+  const config = JSON.parse(readRepoFile("crates/agent-gui/src-tauri/tauri.android.conf.json"));
+  assert.deepEqual(config.bundle.externalBin, []);
+  assert.deepEqual(config.bundle.resources, []);
+});
+
 test("Android workflow builds a signed arm64 APK and can publish it", () => {
   const workflow = readRepoFile(".github/workflows/android-release.yml");
   const cargoToml = readRepoFile("crates/agent-gui/src-tauri/Cargo.toml");
@@ -20,6 +26,7 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
 
   assert.match(workflow, /java-version: "17"/);
   assert.match(workflow, /targets: aarch64-linux-android/);
+  assert.match(workflow, /platforms;android-36/);
   assert.match(
     workflow,
     /BINDGEN_EXTRA_CLANG_ARGS=--sysroot=\$\{ANDROID_HOME\}\/ndk\/\$\{ANDROID_NDK_VERSION\}\/toolchains\/llvm\/prebuilt\/linux-x86_64\/sysroot/,
@@ -66,12 +73,8 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   );
   const mobileRuntime = readRepoFile("crates/agent-gateway/web/src/lib/mobileRuntime.ts");
   const mobileStyles = [
-    readRepoFile("crates/agent-gateway/web/src/styles.css"),
-    readRepoFile("crates/agent-gateway/web/src/styles/base-chat.css"),
-    readRepoFile("crates/agent-gateway/web/src/styles/login.css"),
-    readRepoFile("crates/agent-gateway/web/src/styles/responsive.css"),
-    readRepoFile("crates/agent-gateway/web/src/styles/status-board.css"),
-    readRepoFile("crates/agent-gateway/web/src/styles/zeroagent.css"),
+    readRepoFile("crates/agent-gateway/web/src/index.css"),
+    readRepoFile("crates/agent-gateway/web/src/zeroagent.css"),
   ].join("\n");
   const mainActivity = readRepoFile(
     "crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt",
@@ -90,7 +93,8 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(androidConfig, /agent-gateway\/web exec vite build --mode embedded-mobile/);
   assert.match(androidConfig, /agent-gateway\/web exec vite --mode embedded-mobile/);
   assert.match(androidConfig, /"devUrl": "http:\/\/localhost:2120"/);
-  assert.match(androidConfig, /"frontendDist": "\.\.\/\.\.\/agent-gateway\/web\/dist"/);
+  assert.match(androidConfig, /"frontendDist": "\.\.\/\.\.\/agent-gateway\/web\/dist-mobile"/);
+  assert.match(readRepoFile("crates/agent-gateway/web/vite.config.ts"), /outDir: mode === "embedded-mobile" \? "dist-mobile" : "dist"/);
   assert.match(androidConfig, /"url": "index\.html"/);
   assert.doesNotMatch(androidConfig, /usa0\.top/);
   assert.deepEqual(tauriConfig.plugins["deep-link"].mobile, [

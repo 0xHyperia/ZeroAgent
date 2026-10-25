@@ -12,6 +12,9 @@ const loader = createTsModuleLoader();
 const { createPaneComposerSendHandler } = loader.loadModule(
   "src/pages/chat/surfaces/paneComposerSend.ts",
 );
+const { beginPaneComposerDraftSession, restoreClearedPaneComposerDraft } = loader.loadModule(
+  "src/pages/chat/surfaces/paneComposerDraftSession.ts",
+);
 
 function textDraft(text) {
   return { text, isEmpty: !text.trim(), segments: [], largePastes: [] };
@@ -205,4 +208,85 @@ test("background pane bindings route Send by conversationId, not through focusGu
   assert.doesNotMatch(builder, /onPasteFiles:\s*importReadableFiles\s*,/);
   assert.match(builder, /importReadableFiles\(files,\s*\{/);
   assert.match(builder, /workdir:\s*workspaceRoot/);
+});
+
+test("focusing another pane does not swap an object composer ref across hosts", () => {
+  // Object refs swapped with `ref={isCurrent ? hostRef : undefined}` detach
+  // in tree order: the outgoing host can null hostRef after the incoming
+  // host attached, so Enter reads a null composer and sends nothing.
+  const chatPage = readSource("../../src/pages/ChatPage.tsx");
+  assert.doesNotMatch(chatPage, /ref=\{isCurrent \? conversationPaneHostRef : undefined\}/);
+  assert.match(chatPage, /if \(handle\) conversationPaneHostRef\.current = handle;/);
+});
+
+test("the primary pane stays disabled during hydration in multi-pane layouts", () => {
+  const chatPage = readSource("../../src/pages/ChatPage.tsx");
+  const registrations = chatPage.slice(chatPage.indexOf("const workbenchRegistrations"));
+  assert.match(registrations, /surface\.conversationId === currentConversationId\s*\? primaryPaneBinding/);
+  assert.match(chatPage, /isInputDisabled: isComposerInputDisabled/);
+  const disabled = chatPage.slice(chatPage.indexOf("const isComposerInputDisabled"), chatPage.indexOf("const canDropUpload"));
+  for (const condition of ["isCompactionRunning", "isConversationHydrating", "isConversationHydrationFailed", "isImportingPastedText", "isUploadingFiles"]) {
+    assert.ok(disabled.includes(condition), `${condition} must disable the primary composer`);
+  }
+  assert.doesNotMatch(registrations, /isConversationHydrating &&\s*Object\.keys\(workbench\.layout\.panes\)/);
+});
+
+test("switch cleanup saves the outgoing pane draft to its original conversation", () => {
+  const composer = fakeComposer(textDraft("draft from conversation A"));
+  const drafts = new Map();
+  const controllerA = {
+    getDraft: () => null,
+    setDraft: (draft) => drafts.set("conversation-a", draft),
+  };
+  const controllerB = {
+    getDraft: () => textDraft("cached B"),
+    setDraft: (draft) => drafts.set("conversation-b", draft),
+  };
+
+  let currentController = controllerA;
+  const cleanupA = beginPaneComposerDraftSession(composer, currentController);
+  composer.setDraft(textDraft("unsent A"));
+  // React renders the next identity before it invokes the previous layout
+  // effect cleanup. The cleanup must remain bound to controller A.
+  currentController = controllerB;
+  assert.equal(currentController.getDraft().text, "cached B");
+  cleanupA();
+
+  assert.equal(drafts.get("conversation-a").text, "unsent A");
+  assert.equal(drafts.has("conversation-b"), false);
+});
+
+test("focus leaving a split pane refills the composer the page pipeline cleared", () => {
+  const composer = fakeComposer(textDraft("typed in pane A"));
+  const drafts = new Map();
+  const controllerA = {
+    getDraft: () => drafts.get("conversation-a") ?? null,
+    setDraft: (draft) => drafts.set("conversation-a", draft),
+  };
+  const cleanupA = beginPaneComposerDraftSession(composer, controllerA);
+  composer.setDraft(textDraft("typed in pane A"));
+
+  // Focusing pane B: the page caches A's draft, then clears the composer
+  // that is still bound as primary. Pane A stays on conversation A.
+  drafts.set("conversation-a", composer.getDraft());
+  composer.clear();
+  assert.equal(composer.hasContent(), false);
+
+  assert.equal(restoreClearedPaneComposerDraft(composer, controllerA), true);
+  assert.equal(composer.current().text, "typed in pane A");
+  cleanupA();
+});
+
+test("restoring a pane composer never overwrites live input or restores empty drafts", () => {
+  const live = fakeComposer(textDraft("newer input"));
+  assert.equal(
+    restoreClearedPaneComposerDraft(live, { getDraft: () => textDraft("cached") }),
+    false,
+  );
+  assert.equal(live.current().text, "newer input");
+
+  const empty = fakeComposer(textDraft(""));
+  assert.equal(restoreClearedPaneComposerDraft(empty, { getDraft: () => null }), false);
+  assert.equal(restoreClearedPaneComposerDraft(empty, { getDraft: () => textDraft("  ") }), false);
+  assert.equal(restoreClearedPaneComposerDraft(null, { getDraft: () => textDraft("x") }), false);
 });

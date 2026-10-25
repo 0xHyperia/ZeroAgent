@@ -3,9 +3,34 @@ import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { type CSSProperties, useEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useLocale } from "../../i18n/index";
+import {
+  absoluteWorkspacePath,
+  clearActiveWorkspacePathDrag,
+  getActiveWorkspacePathDrag,
+  hasWorkspacePathDragPayload,
+  quoteWorkspacePathForShell,
+  readNativeWorkspacePathDragOver,
+  readNativeWorkspacePathDrop,
+  readWorkspacePathDragPayload,
+  WORKSPACE_PATH_NATIVE_DRAG_LEAVE_EVENT,
+  WORKSPACE_PATH_NATIVE_DRAG_OVER_EVENT,
+  WORKSPACE_PATH_NATIVE_DROP_EVENT,
+  type WorkspacePathDragPayload,
+  workspacePathDragMatchesProject,
+} from "../../lib/chat/workspacePathDrag";
+import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { CODE_FONT_FAMILY_CHANGE_EVENT, getCodeFontFamily } from "../../lib/shared/fontFamily";
 import { cn } from "../../lib/shared/utils";
+import { readTerminalAppearance, readTerminalTheme } from "../../lib/terminal/theme";
 import type {
   TerminalClient,
   TerminalSession,
@@ -33,75 +58,15 @@ const SNAPSHOT_ATTACH_RETRY_MAX_MS = 5_000;
 const FIT_THROTTLE_MS = 80;
 const PTY_RESIZE_DEBOUNCE_MS = 100;
 
-function terminalTheme(theme: "light" | "dark") {
-  if (theme === "dark") {
-    return {
-      background: "#0b0f14",
-      foreground: "#4ade80",
-      cursor: "#f8fafc",
-      cursorAccent: "#0b0f14",
-      selectionBackground: "#2c3e57",
-      selectionInactiveBackground: "#22304a",
-      scrollbarSliderBackground: "rgba(148, 163, 184, 0.18)",
-      scrollbarSliderHoverBackground: "rgba(148, 163, 184, 0.3)",
-      scrollbarSliderActiveBackground: "rgba(148, 163, 184, 0.42)",
-      // xterm 的 css.toColor 不认关键字 "transparent"(canvas 回退路径遇到
-      // alpha<255 直接 throw),解析失败会静默落回默认色 #ffffff——overview
-      // ruler 每帧都会用该色画一条 1px 竖线(_renderRulerOutline),即终端右缘
-      // 的白线。8 位 hex 走独立分支不校验 alpha,才是真正的透明写法。
-      overviewRulerBorder: "#00000000",
-      black: "#1b2733",
-      red: "#ef4444",
-      green: "#22c55e",
-      yellow: "#eab308",
-      blue: "#38bdf8",
-      magenta: "#c084fc",
-      cyan: "#2dd4bf",
-      white: "#cbd5e1",
-      brightBlack: "#64748b",
-      brightRed: "#f87171",
-      brightGreen: "#4ade80",
-      brightYellow: "#fde047",
-      brightBlue: "#7dd3fc",
-      brightMagenta: "#d8b4fe",
-      brightCyan: "#5eead4",
-      brightWhite: "#f8fafc",
-    };
-  }
-  return {
-    background: "#fcfcfd",
-    foreground: "#1f2933",
-    cursor: "#111827",
-    cursorAccent: "#fcfcfd",
-    selectionBackground: "#bfdbfe",
-    selectionInactiveBackground: "#dbeafe",
-    scrollbarSliderBackground: "rgba(100, 116, 139, 0.16)",
-    scrollbarSliderHoverBackground: "rgba(100, 116, 139, 0.26)",
-    scrollbarSliderActiveBackground: "rgba(100, 116, 139, 0.36)",
-    // 同暗色主题:8 位 hex 透明,勿改回 "transparent"(见上)。
-    overviewRulerBorder: "#00000000",
-    black: "#1f2933",
-    red: "#dc2626",
-    green: "#16a34a",
-    yellow: "#b45309",
-    blue: "#2563eb",
-    magenta: "#9333ea",
-    cyan: "#0891b2",
-    white: "#e2e8f0",
-    brightBlack: "#64748b",
-    brightRed: "#ef4444",
-    brightGreen: "#22c55e",
-    brightYellow: "#d97706",
-    brightBlue: "#3b82f6",
-    brightMagenta: "#a855f7",
-    brightCyan: "#06b6d4",
-    brightWhite: "#f8fafc",
-  };
-}
-
 function terminalContainerHasSize(container: HTMLElement) {
   const rect = container.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+function writeTextToClipboard(text: string) {
+  if (!text) return;
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  void copyTextToClipboard(text, { restoreFocus: active });
 }
 
 export function XTermViewport({
@@ -114,7 +79,12 @@ export function XTermViewport({
   onError,
   onInitialSnapshotConsumed,
 }: XTermViewportProps) {
+  const { t } = useLocale();
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropTargetRef = useRef<HTMLDivElement>(null);
+  const [workspacePathDropState, setWorkspacePathDropState] = useState<"accept" | "blocked" | null>(
+    null,
+  );
   const resizeTimerRef = useRef<number | null>(null);
   const sessionRef = useRef(session);
   const themeRef = useRef(theme);
@@ -129,12 +99,106 @@ export function XTermViewport({
   const termRef = useRef<XTerm | null>(null);
   const fitAndResizeRef = useRef<(() => void) | null>(null);
   const viewportStyle = {
-    "--project-terminal-background": terminalTheme(theme).background,
+    "--project-terminal-background": `var(--terminal-${theme}-background)`,
   } as CSSProperties;
+
+  const canAcceptWorkspacePath = useCallback(
+    (payload = getActiveWorkspacePathDrag()) =>
+      Boolean(
+        payload &&
+          session.kind === "local" &&
+          workspacePathDragMatchesProject(payload, session.cwd) &&
+          !termRef.current?.options.disableStdin,
+      ),
+    [session.cwd, session.kind],
+  );
+
+  const handleWorkspacePathDragOver = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!hasWorkspacePathDragPayload(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const state = canAcceptWorkspacePath() ? "accept" : "blocked";
+      event.dataTransfer.dropEffect = state === "accept" ? "copy" : "none";
+      setWorkspacePathDropState(state);
+    },
+    [canAcceptWorkspacePath],
+  );
+
+  const insertWorkspacePathInTerminal = useCallback(
+    (payload: WorkspacePathDragPayload) => {
+      setWorkspacePathDropState(null);
+      if (!canAcceptWorkspacePath(payload)) return false;
+      const absolutePath = absoluteWorkspacePath(payload);
+      const quotedPath = absolutePath
+        ? quoteWorkspacePathForShell(absolutePath, session.shell)
+        : null;
+      if (!quotedPath) return false;
+      termRef.current?.paste(quotedPath);
+      termRef.current?.focus();
+      return true;
+    },
+    [canAcceptWorkspacePath, session.shell],
+  );
+
+  const handleWorkspacePathDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!hasWorkspacePathDragPayload(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const payload = readWorkspacePathDragPayload(event.dataTransfer);
+      clearActiveWorkspacePathDrag();
+      if (payload) insertWorkspacePathInTerminal(payload);
+    },
+    [insertWorkspacePathInTerminal],
+  );
+
+  useEffect(() => {
+    const target = dropTargetRef.current;
+    if (!target) return;
+    const handleNativeWorkspacePathDragOver = (event: Event) => {
+      const payload = readNativeWorkspacePathDragOver(event);
+      if (!payload) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setWorkspacePathDropState(canAcceptWorkspacePath(payload) ? "accept" : "blocked");
+    };
+    const handleNativeWorkspacePathDragLeave = (event: Event) => {
+      if (event.type !== WORKSPACE_PATH_NATIVE_DRAG_LEAVE_EVENT) return;
+      setWorkspacePathDropState(null);
+    };
+    const handleNativeWorkspacePathDrop = (event: Event) => {
+      const payload = readNativeWorkspacePathDrop(event);
+      if (!payload) return;
+      event.preventDefault();
+      event.stopPropagation();
+      insertWorkspacePathInTerminal(payload);
+    };
+    target.addEventListener(
+      WORKSPACE_PATH_NATIVE_DRAG_OVER_EVENT,
+      handleNativeWorkspacePathDragOver,
+    );
+    target.addEventListener(
+      WORKSPACE_PATH_NATIVE_DRAG_LEAVE_EVENT,
+      handleNativeWorkspacePathDragLeave,
+    );
+    target.addEventListener(WORKSPACE_PATH_NATIVE_DROP_EVENT, handleNativeWorkspacePathDrop);
+    return () => {
+      target.removeEventListener(
+        WORKSPACE_PATH_NATIVE_DRAG_OVER_EVENT,
+        handleNativeWorkspacePathDragOver,
+      );
+      target.removeEventListener(
+        WORKSPACE_PATH_NATIVE_DRAG_LEAVE_EVENT,
+        handleNativeWorkspacePathDragLeave,
+      );
+      target.removeEventListener(WORKSPACE_PATH_NATIVE_DROP_EVENT, handleNativeWorkspacePathDrop);
+    };
+  }, [canAcceptWorkspacePath, insertWorkspacePathInTerminal]);
 
   useEffect(() => {
     if (!termRef.current) return;
-    termRef.current.options.theme = terminalTheme(theme);
+    termRef.current.options.theme = readTerminalTheme(theme);
   }, [theme]);
 
   useEffect(() => {
@@ -148,6 +212,7 @@ export function XTermViewport({
     }, 0);
   }, [isActive]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project identity intentionally recreates the terminal session viewport
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -164,27 +229,62 @@ export function XTermViewport({
     let snapshotRetryDelayMs = SNAPSHOT_ATTACH_RETRY_MIN_MS;
     const bufferedChunks: TerminalStreamChunk[] = [];
     const encoder = new TextEncoder();
+    const appearance = readTerminalAppearance(themeRef.current);
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: "block",
       cursorInactiveStyle: "outline",
       disableStdin: true,
       fontFamily: getCodeFontFamily(),
-      fontSize: 13,
+      fontSize: appearance.fontSize,
       fontWeight: "normal",
       fontWeightBold: "bold",
-      lineHeight: 1.3,
+      lineHeight: appearance.lineHeight,
       letterSpacing: 0,
       scrollback: 5000,
       overviewRuler: {
-        width: 8,
+        width: appearance.overviewRulerWidth,
       },
-      theme: terminalTheme(themeRef.current),
+      theme: appearance.theme,
     });
     termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
+    // 终端复制/粘贴快捷键：xterm 的键盘映射不处理 Ctrl+Shift+字母（^C 控制
+    // 字符分支要求无 shift）和 Cmd 组合，所以选中后按 Ctrl+Shift+C/Cmd+C
+    // 什么都不发生（#355）。挂自定义键盘处理：Ctrl+Shift+C/V（Linux/Windows）
+    // 和 Cmd+C/V（macOS）走剪贴板，其余按键全部放行由 xterm 自行处理。
+    // 命中分支必须 event.preventDefault()：返回 false 只跳过 xterm 自身处理，
+    // 浏览器默认行为仍会执行——Chromium 的 Ctrl+Shift+V 和 macOS 的 Cmd+V
+    // 会另行派发原生 paste 事件（xterm 在 textarea 上有原生 paste 监听），
+    // 不拦截同一次按键会粘贴两遍。
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const key = event.key.toLowerCase();
+      const isMod =
+        (event.ctrlKey && event.shiftKey) || (event.metaKey && !event.ctrlKey && !event.altKey);
+      if (isMod && key === "c") {
+        const selection = term.getSelection();
+        if (!selection) return true;
+        event.preventDefault();
+        writeTextToClipboard(selection);
+        term.focus();
+        return false;
+      }
+      if (isMod && key === "v") {
+        const clipboard = navigator.clipboard;
+        // 非安全上下文里 readText 不存在，此时放行让原生 paste 事件路径
+        // （macOS Cmd+V / Chromium Ctrl+Shift+V）作为仅剩的粘贴通道。
+        if (!clipboard?.readText) return true;
+        event.preventDefault();
+        void clipboard.readText().then((text) => {
+          if (text) term.paste(text);
+        });
+        return false;
+      }
+      return true;
+    });
     // WebGL 渲染器：多 Pane 同时渲染时 DOM 渲染器主线程压力线性叠加，WebGL
     // 走 GPU。上下文创建失败（WebGL2 不可用）或运行中丢失时回退默认渲染器。
     let webglAddon: WebglAddon | null = null;
@@ -570,11 +670,48 @@ export function XTermViewport({
   }, [client, session.id, session.projectPathKey]);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the xterm viewport is a pointer drop target; keyboard users paste or use the file-tree context menu.
     <div
-      ref={containerRef}
+      ref={dropTargetRef}
       style={viewportStyle}
-      className={cn("project-terminal-viewport h-full min-h-0 w-full overflow-hidden", className)}
-    />
+      className={cn(
+        "project-terminal-viewport relative size-full min-h-0 overflow-hidden",
+        "bg-[var(--project-terminal-background)]",
+        "[&_.xterm]:size-full [&_.xterm]:box-border [&_.xterm]:bg-[var(--project-terminal-background)] [&_.xterm]:px-[var(--project-terminal-padding-x)] [&_.xterm]:py-[var(--project-terminal-padding-y)] [&_.xterm-viewport]:bg-[var(--project-terminal-background)]! [&_.xterm-screen]:bg-[var(--project-terminal-background)]! [&_.xterm-scrollable-element]:bg-[var(--project-terminal-background)]!",
+        "[&_.xterm-scrollable-element>.scrollbar.vertical>.slider]:rounded-full [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm-viewport]:[scrollbar-color:transparent_transparent] [&_.xterm-viewport]:transition-[scrollbar-color] [&_.xterm-viewport]:duration-200 hover:[&_.xterm-viewport]:[scrollbar-color:hsl(var(--muted-foreground)/0.32)_transparent] [&_.xterm-viewport::-webkit-scrollbar]:size-[var(--project-terminal-scrollbar-size)] [&_.xterm-viewport::-webkit-scrollbar-track]:bg-transparent",
+        "[&_.xterm-viewport::-webkit-scrollbar-thumb]:rounded-full [&_.xterm-viewport::-webkit-scrollbar-thumb]:bg-transparent [&_.xterm-viewport::-webkit-scrollbar-thumb]:transition-colors [&_.xterm-viewport::-webkit-scrollbar-thumb]:duration-200 hover:[&_.xterm-viewport::-webkit-scrollbar-thumb]:bg-muted-foreground/28 [&_.xterm-viewport::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/45 web:[overscroll-behavior:contain] web:touch-none",
+        "web:[&_.xterm]:[overscroll-behavior:contain] web:[&_.xterm]:touch-none web:[&_.xterm-screen]:[overscroll-behavior:contain] web:[&_.xterm-screen]:touch-none web:[&_.xterm-scrollable-element]:[overscroll-behavior:contain] web:[&_.xterm-scrollable-element]:touch-none web:[&_.xterm-scrollable-element]:[-webkit-overflow-scrolling:touch]",
+        className,
+      )}
+      data-workspace-path-drop-zone={workspacePathDropState ?? "idle"}
+      onDragEnter={handleWorkspacePathDragOver}
+      onDragOver={handleWorkspacePathDragOver}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setWorkspacePathDropState(null);
+      }}
+      onDrop={handleWorkspacePathDrop}
+    >
+      <div ref={containerRef} className="size-full min-h-0" />
+      {workspacePathDropState ? (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-2 z-20 flex items-center justify-center",
+            "rounded-lg border-2 border-dashed bg-background/90 text-xs font-medium backdrop-blur-sm",
+            workspacePathDropState === "accept"
+              ? "border-emerald-500/70 text-emerald-600 dark:text-emerald-300"
+              : "border-destructive/60 text-destructive",
+          )}
+        >
+          {workspacePathDropState === "accept"
+            ? t("projectTools.workspacePathDrop.insert")
+            : session.kind === "ssh"
+              ? t("projectTools.workspacePathDrop.sshBlocked")
+              : t("projectTools.workspacePathDrop.crossProject")}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

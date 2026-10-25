@@ -1,8 +1,9 @@
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { Loader2, Lock, RefreshCw, Shield, Upload, Wallet } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import {
   bindRelayEmail,
   changeRelayPassword,
@@ -10,8 +11,10 @@ import {
   getRelayDashboardStats,
   getRelayProfile,
   logoutRelay,
+  RELAY_ORIGIN,
   type RelayDashboardStats,
   type RelayUser,
+  requiresWebsiteAccountSecurity,
   sendRelayEmailBindingCode,
   updateRelayProfile,
 } from "../../lib/relay/client";
@@ -66,6 +69,7 @@ export function AccountSection({
   onUserChange,
   onStatsChange,
 }: AccountSectionProps) {
+  const websiteAccountSecurity = requiresWebsiteAccountSecurity();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState(user.username ?? "");
   const [email, setEmail] = useState(user.email);
@@ -294,94 +298,119 @@ export function AccountSection({
         </p>
       </section>
 
-      <section className="space-y-4 border-t border-border/70 pt-6">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">绑定邮箱</h3>
-        </div>
-        <form onSubmit={saveEmail} className="grid max-w-xl gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="account-email">新邮箱</Label>
-            <div className="flex gap-2">
-              <Input
-                id="account-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={sendCode}>
-                {busy === "code" ? "发送中" : "发送验证码"}
-              </Button>
-            </div>
+      {websiteAccountSecurity ? (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">账户安全</h3>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-code">邮箱验证码</Label>
-            <Input
-              id="account-code"
-              inputMode="numeric"
-              value={verifyCode}
-              onChange={(event) => setVerifyCode(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-email-password">
-              {user.email_bound === false ? "设置登录密码" : "当前密码"}
-            </Label>
-            <Input
-              id="account-email-password"
-              type="password"
-              value={emailPassword}
-              onChange={(event) => setEmailPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
-            {busy === "email" && <Loader2 className="h-4 w-4 animate-spin" />}更新邮箱
+          <p className="text-sm text-muted-foreground">
+            绑定邮箱、设置或修改密码，请前往 USA-零账户设置。
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              void openUrl(RELAY_ORIGIN + "/profile").catch((error) =>
+                setNotice({ kind: "error", text: errorMessage(error, "打开账户设置失败。") }),
+              )
+            }
+          >
+            打开 USA-零账户设置
           </Button>
-        </form>
-      </section>
+        </section>
+      ) : (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">绑定邮箱</h3>
+          </div>
+          <form onSubmit={saveEmail} className="grid max-w-xl gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="account-email">新邮箱</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="account-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={sendCode}>
+                  {busy === "code" ? "发送中" : "发送验证码"}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-code">邮箱验证码</Label>
+              <Input
+                id="account-code"
+                inputMode="numeric"
+                value={verifyCode}
+                onChange={(event) => setVerifyCode(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-email-password">
+                {user.email_bound === false ? "设置登录密码" : "当前密码"}
+              </Label>
+              <Input
+                id="account-email-password"
+                type="password"
+                value={emailPassword}
+                onChange={(event) => setEmailPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
+              {busy === "email" && <Loader2 className="h-4 w-4 animate-spin" />}更新邮箱
+            </Button>
+          </form>
+        </section>
+      )}
 
       <DevicesSection settings={settings} />
 
-      <section className="space-y-4 border-t border-border/70 pt-6">
-        <div className="flex items-center gap-2">
-          <Lock className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">修改密码</h3>
-        </div>
-        <form onSubmit={savePassword} className="grid max-w-xl gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="account-old-password">当前密码</Label>
-            <Input
-              id="account-old-password"
-              type="password"
-              value={oldPassword}
-              onChange={(event) => setOldPassword(event.target.value)}
-            />
+      {!websiteAccountSecurity && (
+        <section className="space-y-4 border-t border-border/70 pt-6">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">修改密码</h3>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-new-password">新密码</Label>
-            <Input
-              id="account-new-password"
-              type="password"
-              minLength={6}
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="account-confirm-password">确认新密码</Label>
-            <Input
-              id="account-confirm-password"
-              type="password"
-              minLength={6}
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
-            {busy === "password" && <Loader2 className="h-4 w-4 animate-spin" />}修改密码
-          </Button>
-        </form>
-      </section>
+          <form onSubmit={savePassword} className="grid max-w-xl gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="account-old-password">当前密码</Label>
+              <Input
+                id="account-old-password"
+                type="password"
+                value={oldPassword}
+                onChange={(event) => setOldPassword(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-new-password">新密码</Label>
+              <Input
+                id="account-new-password"
+                type="password"
+                minLength={6}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-confirm-password">确认新密码</Label>
+              <Input
+                id="account-confirm-password"
+                type="password"
+                minLength={6}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={Boolean(busy)} className="sm:col-span-2 sm:w-fit">
+              {busy === "password" && <Loader2 className="h-4 w-4 animate-spin" />}修改密码
+            </Button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

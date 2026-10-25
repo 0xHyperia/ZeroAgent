@@ -23,6 +23,24 @@ test("desktop tray integration remains isolated from the Android runtime", () =>
   assert.match(commands, /#\[cfg\(desktop\)\]\s+pub use app_commands::tray;/);
 });
 
+test("release builds cannot register the desktop development MCP bridge", () => {
+  const lib = readGuiFile("src-tauri/src/lib.rs").replace(/\r\n/g, "\n");
+  const desktopRunStart = lib.indexOf("#[cfg(desktop)]\npub fn run()");
+  assert.notEqual(desktopRunStart, -1);
+  const desktopRun = lib.slice(desktopRunStart);
+
+  assert.equal(lib.match(/\btauri_plugin_mcp_bridge\b/g)?.length, 1);
+  assert.equal(lib.match(/tauri_plugin_mcp_bridge::Builder::new\(\)/g)?.length, 1);
+  assert.doesNotMatch(lib.slice(0, desktopRunStart), /tauri_plugin_mcp_bridge/);
+  assert.match(
+    desktopRun,
+    /#\[cfg\(debug_assertions\)\]\s*let builder = builder\.plugin\(\s*tauri_plugin_mcp_bridge::Builder::new\(\)[\s\S]*?\.build\(\),\s*\);/,
+  );
+  assert.equal(lib.match(/LIVEAGENT_DEV_MCP_BRIDGE_PORT/g)?.length, 1);
+  assert.match(desktopRun, /std::env::var\("LIVEAGENT_DEV_MCP_BRIDGE_PORT"\)/);
+  assert.match(desktopRun, /\.unwrap_or\(9223\)/);
+});
+
 test("tray surfaces retain ZeroAgent identity", () => {
   const lib = readGuiFile("src-tauri/src/lib.rs");
   const trayService = readGuiFile("src-tauri/src/services/tray.rs");
@@ -44,6 +62,6 @@ test("tray conversation actions preserve workspace-aware selection", () => {
   assert.match(chatPage, /"app:action"/);
   assert.match(chatPage, /params\.handleSelectConversation\(conversationId\)/);
   assert.match(chatPage, /sidebarStore\.peek\(targetConversationId\)\?\.cwd/);
-  assert.match(chatPage, /activateWorkspaceProject\(targetProject\)/);
-  assert.match(chatPage, /setActiveWorkspaceProjectId\(DEFAULT_WORKSPACE_PROJECT_ID\)/);
+  assert.match(chatPage, /openController\.open\(targetConversationId, \{\s*afterCommit:/);
+  assert.match(chatPage, /activateConversationWorkspace\(targetWorkdir\)/);
 });

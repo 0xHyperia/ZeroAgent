@@ -36,6 +36,7 @@ type tunnelRuntime struct {
 	streams   map[string]*tunnelStream
 	revisions map[string]uint64
 	relays    map[string]*gatewayv2.TunnelHealth
+	desired   map[string]tunnelDesiredDelivery
 
 	subMu       sync.Mutex
 	nextSubID   int
@@ -43,6 +44,11 @@ type tunnelRuntime struct {
 
 	pingMu       sync.Mutex
 	pendingPings map[string]pendingTunnelPing
+}
+
+type tunnelDesiredDelivery struct {
+	sessionEpoch uint64
+	probedAt     time.Time
 }
 
 type tunnelRecord struct {
@@ -91,6 +97,7 @@ func newTunnelRuntime() *tunnelRuntime {
 		streams:      make(map[string]*tunnelStream),
 		revisions:    make(map[string]uint64),
 		relays:       make(map[string]*gatewayv2.TunnelHealth),
+		desired:      make(map[string]tunnelDesiredDelivery),
 		subscribers:  make(map[int]chan Tagged[*gatewayv2.TunnelStateSnapshot]),
 		pendingPings: make(map[string]pendingTunnelPing),
 	}
@@ -179,6 +186,12 @@ func (m *Manager) ApplyDesiredState(agentID string, desired *gatewayv2.TunnelDes
 		return
 	}
 	now := time.Now()
+	var sessionEpoch uint64
+	m.registry.mu.RLock()
+	if entry := m.registry.agents[agentID]; entry != nil && entry.session != nil {
+		sessionEpoch = entry.sessionEpoch
+	}
+	m.registry.mu.RUnlock()
 	specs := desired.GetTunnels()
 	if len(specs) > maxTunnelsPerAgent {
 		specs = specs[:maxTunnelsPerAgent]
@@ -186,6 +199,11 @@ func (m *Manager) ApplyDesiredState(agentID string, desired *gatewayv2.TunnelDes
 
 	var canceled []*tunnelStream
 	m.tunnels.mu.Lock()
+	delivery, applied := m.tunnels.desired[agentID]
+	changed := !applied || delivery.sessionEpoch != sessionEpoch
+	// Relay health measures this connection, independently of target/name edits.
+	// Identical desired-state floods must not create unbounded probe goroutines.
+	probeDue := changed || now.Sub(delivery.probedAt) >= tunnelRelayProbeTimeout
 	seen := make(map[string]bool, len(specs))
 	for _, spec := range specs {
 		id := strings.TrimSpace(spec.GetId())
@@ -208,6 +226,7 @@ func (m *Manager) ApplyDesiredState(agentID string, desired *gatewayv2.TunnelDes
 			continue
 		}
 		if record == nil {
+			changed = true
 			record = &tunnelRecord{
 				id:        id,
 				agentID:   agentID,
@@ -217,22 +236,37 @@ func (m *Manager) ApplyDesiredState(agentID string, desired *gatewayv2.TunnelDes
 			m.tunnels.records[id] = record
 			m.tunnels.slugToID[record.slug] = id
 		}
-		record.name = strings.TrimSpace(spec.GetName())
+		name := strings.TrimSpace(spec.GetName())
+		projectPathKey := strings.TrimSpace(spec.GetProjectPathKey())
+		if record.name != name || record.targetURL != targetURL || record.projectPathKey != projectPathKey || !record.expiresAt.Equal(expiresAt) {
+			changed = true
+		}
+		record.name = name
 		record.targetURL = targetURL
-		record.projectPathKey = strings.TrimSpace(spec.GetProjectPathKey())
+		record.projectPathKey = projectPathKey
 		record.expiresAt = expiresAt
 	}
 	for id, record := range m.tunnels.records {
 		if seen[id] || record.agentID != agentID {
 			continue
 		}
+		changed = true
 		canceled = append(canceled, m.dropTunnelRecordLocked(record)...)
 	}
+	delivery.sessionEpoch = sessionEpoch
+	if probeDue {
+		delivery.probedAt = now
+	}
+	m.tunnels.desired[agentID] = delivery
 	m.tunnels.mu.Unlock()
 
 	m.cancelTunnelStreams(canceled)
-	m.broadcastTunnelState(agentID)
-	go m.probeRelay(agentID)
+	if changed {
+		m.broadcastTunnelState(agentID)
+	}
+	if probeDue {
+		go m.probeRelay(agentID)
+	}
 }
 
 // ApplyProbeReport merges one authenticated Agent report into only that Agent records.
@@ -639,6 +673,7 @@ func (m *Manager) onAgentSessionCleared(agentID string) {
 		stream.close()
 	}
 	delete(m.tunnels.relays, agentID)
+	delete(m.tunnels.desired, agentID)
 	m.tunnels.mu.Unlock()
 	m.broadcastTunnelState(agentID)
 	// Managed-process subscribers re-render with agent_online=false.
@@ -662,6 +697,7 @@ func (m *Manager) purgeAgentTunnels(agentID string) {
 		}
 	}
 	delete(m.tunnels.relays, agentID)
+	delete(m.tunnels.desired, agentID)
 	m.tunnels.mu.Unlock()
 
 	m.tunnels.pingMu.Lock()

@@ -136,6 +136,35 @@ function findFrame(codec, socket, frameCase) {
   return frames(codec, socket).find((frame) => frame.case === frameCase);
 }
 
+test("Gateway queue pause/resume keeps explicit revisions and the backend paused state", async () => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+  try {
+    const client = getGatewayWebSocketClient("token");
+    const first = client.chatQueueSetPaused("conversation", true, 0);
+    const socket = await connectAndAuth(codec);
+    await waitFor(() => findAgentRequest(codec, socket, "chat_queue"), "pause request");
+    const pause = findAgentRequest(codec, socket, "chat_queue");
+    assert.equal(pause.json.agent_request.chat_queue.action, "pause");
+    assert.equal(Number(pause.json.agent_request.chat_queue.revision || 0), 0);
+    socket.receiveBinary(codec.encodeServerFrame({ request_id: pause.requestId, agent_response: {chat_queue_resp: {
+      accepted:true, revision:1, snapshot_json:JSON.stringify({conversationId:"conversation",revision:1,paused:true,items:[]}),
+    }}}));
+    assert.equal((await first).snapshot.paused,true);
+    const next = client.chatQueueSetPaused("conversation", false, 1);
+    await waitFor(() => frames(codec,socket).filter(f=>f.json.agent_request?.chat_queue).length===2,"resume request");
+    const resume=frames(codec,socket).filter(f=>f.json.agent_request?.chat_queue)[1];
+    assert.equal(resume.json.agent_request.chat_queue.action,"resume");
+    assert.equal(Number(resume.json.agent_request.chat_queue.revision),1);
+    socket.receiveBinary(codec.encodeServerFrame({request_id:resume.requestId,agent_response:{chat_queue_resp:{accepted:true,revision:2,snapshot_json:JSON.stringify({conversationId:"conversation",revision:2,paused:false,items:[]})}}}));
+    assert.equal((await next).snapshot.paused,false);
+    const shared = createWebModuleLoader().loadModule("src/lib/gatewaySocketShared.ts");
+    assert.equal(shared.normalizeChatQueueSnapshot({conversationId:"c",revision:3,paused:true,items:[]}).paused,true);
+    assert.equal(Object.hasOwn(shared.normalizeChatQueueSnapshot({conversationId:"c",revision:3,items:[]}),"paused"),false);
+  } finally { resetGatewayWebSocketClient(); }
+});
+
 async function connectAndAuth(codec, index = 0) {
   await waitFor(() => FakeWebSocket.instances.length > index, "websocket construction");
   const socket = FakeWebSocket.instances[index];
@@ -556,6 +585,50 @@ test("GatewayWebSocketClient sends mention query payloads", async () => {
   resetGatewayWebSocketClient();
 });
 
+test("GatewayWebSocketClient lists the desktop host's installed apps", async () => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+
+  const client = getGatewayWebSocketClient("token");
+  const appsPromise = client.listInstalledApps();
+  const socket = await connectAndAuth(codec);
+  await waitFor(() => findAgentRequest(codec, socket, "installed_apps_list"), "installed apps frame");
+  const request = findAgentRequest(codec, socket, "installed_apps_list");
+  // 请求体无参：空消息臂就是全部载荷。
+  assert.deepEqual(request.json.agent_request.installed_apps_list, {});
+  socket.receiveBinary(
+    codec.encodeServerFrame({
+      request_id: request.requestId,
+      agent_response: {
+        installed_apps_list_resp: {
+          apps: [
+            {
+              name: "Safari",
+              bundle_id: "com.apple.Safari",
+              path: "/Applications/Safari.app",
+              icon_data_url: "data:image/png;base64,QUJD",
+            },
+            // Windows 形态：无 bundle id、无图标——身份以 path 兜底。
+            { name: "Notepad", path: "C:\\Windows\\notepad.exe" },
+          ],
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(await appsPromise, [
+    {
+      name: "Safari",
+      bundleId: "com.apple.Safari",
+      path: "/Applications/Safari.app",
+      iconDataUrl: "data:image/png;base64,QUJD",
+    },
+    { name: "Notepad", bundleId: "", path: "C:\\Windows\\notepad.exe", iconDataUrl: "" },
+  ]);
+  resetGatewayWebSocketClient();
+});
+
 test("GatewayWebSocketClient sends memory manage payloads", async () => {
   installBrowser();
   const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
@@ -586,6 +659,92 @@ test("GatewayWebSocketClient sends memory manage payloads", async () => {
   );
 
   assert.deepEqual(await memoryPromise, { matches: [], usedFallback: false });
+  resetGatewayWebSocketClient();
+});
+
+test("GatewayWebSocketClient sends clarify prompt turn payloads", async () => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+
+  const client = getGatewayWebSocketClient("token");
+  const clarifyPromise = client.clarifyPromptTurn({
+    messages: [{ role: "user", content: "帮我做一个网站" }],
+    providerId: "builtin-gemini",
+    model: "gemini-2.0-flash",
+    runtimeControls: {
+      thinkingEnabled: true,
+      nativeWebSearchEnabled: false,
+      reasoning: "low",
+      planModeEnabled: false,
+    },
+  });
+  const socket = await connectAndAuth(codec);
+  await waitFor(() => findAgentRequest(codec, socket, "clarify_turn"), "clarify frame");
+  const request = findAgentRequest(codec, socket, "clarify_turn");
+  assert.deepEqual(JSON.parse(request.json.agent_request.clarify_turn.messages_json), [
+    { role: "user", content: "帮我做一个网站" },
+  ]);
+  assert.equal(request.json.agent_request.clarify_turn.provider_id, "builtin-gemini");
+  assert.equal(request.json.agent_request.clarify_turn.model, "gemini-2.0-flash");
+  assert.equal(request.json.agent_request.clarify_turn.runtime_controls.thinking_enabled, true);
+  assert.equal(request.json.agent_request.clarify_turn.runtime_controls.reasoning, "low");
+
+  socket.receiveBinary(
+    codec.encodeServerFrame({
+      request_id: request.requestId,
+      agent_response: {
+        clarify_turn_resp: {
+          final_text: "优化后的提示词",
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(await clarifyPromise, { final_text: "优化后的提示词" });
+  resetGatewayWebSocketClient();
+});
+
+test("GatewayWebSocketClient surfaces clarify turn deltas before the final response", async () => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+
+  const client = getGatewayWebSocketClient("token");
+  const deltas = [];
+  const clarifyPromise = client.clarifyPromptTurn(
+    {
+      messages: [{ role: "user", content: "帮我做一个网站" }],
+      providerId: "builtin-gemini",
+      model: "gemini-2.0-flash",
+    },
+    { onDelta: (text) => deltas.push(text) },
+  );
+  const socket = await connectAndAuth(codec);
+  await waitFor(() => findAgentRequest(codec, socket, "clarify_turn"), "clarify frame");
+  const request = findAgentRequest(codec, socket, "clarify_turn");
+
+  socket.receiveBinary(
+    codec.encodeServerFrame({
+      request_id: request.requestId,
+      agent_response: { clarify_turn_delta: { text: "[CLARIFY" } },
+    }),
+  );
+  socket.receiveBinary(
+    codec.encodeServerFrame({
+      request_id: request.requestId,
+      agent_response: { clarify_turn_delta: { text: "_QUESTION]" } },
+    }),
+  );
+  socket.receiveBinary(
+    codec.encodeServerFrame({
+      request_id: request.requestId,
+      agent_response: { clarify_turn_resp: { final_text: "[CLARIFY_QUESTION]\n要做什么？" } },
+    }),
+  );
+
+  assert.deepEqual(await clarifyPromise, { final_text: "[CLARIFY_QUESTION]\n要做什么？" });
+  assert.deepEqual(deltas, ["[CLARIFY", "_QUESTION]"]);
   resetGatewayWebSocketClient();
 });
 

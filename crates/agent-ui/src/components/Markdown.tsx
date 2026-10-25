@@ -1,10 +1,7 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { ChevronDown, ChevronUp, Copy, ExternalLink } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import {
   type ComponentProps,
   cloneElement,
@@ -12,7 +9,10 @@ import {
   memo,
   type ReactElement,
   type ReactNode,
+  useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import remarkBreaks from "remark-breaks";
@@ -32,13 +32,32 @@ import {
   parseChatFileLink,
 } from "../lib/chat/chatFileLinks";
 import {
+  rememberExternalLinkConfirmation,
+  shouldSkipExternalLinkConfirmation,
+} from "../lib/externalLinkPreference";
+import { parseChatMarkdownBlocks } from "../lib/markdownBlocks";
+import {
   getCollapsedCodeBlockPreview,
   resolveCodeBlockRenderPolicy,
 } from "../lib/markdownCodeBlockPolicy";
+import { throttledCodePlugin } from "../lib/markdownCodeHighlight";
+import {
+  cjkDoubleTildeStrikethrough,
+  withDoubleTildeStrikethrough,
+} from "../lib/markdownStrikethrough";
 import { normalizeLatexDelimiters } from "../lib/normalizeLatexDelimiters";
+import { copyTextToClipboard } from "../lib/shared/clipboard";
 import { cn } from "../lib/shared/utils";
-import { MermaidFullscreenButton } from "./MarkdownMermaidFullscreen";
+import { MarkdownMermaidBlock } from "./markdown/MarkdownMermaidBlock";
+import {
+  CHAT_MARKDOWN_CLASS,
+  DOCUMENT_MARKDOWN_CLASS,
+  PLAN_MARKDOWN_CLASS,
+  RELEASE_NOTES_MARKDOWN_CLASS,
+  THINKING_MARKDOWN_CLASS,
+} from "./markdown/markdownStyles";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import { CopyButton } from "./ui/copy-button";
 import {
   Dialog,
@@ -203,8 +222,15 @@ export type MarkdownProps = {
   onOpenFileLink?: (link: ChatFileLink) => void;
 };
 
-const streamdownPlugins = { code, math, mermaid, cjk };
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), remarkBreaks];
+// code 走包装插件：有界 LRU + 流式增长块 300ms 节流（见 markdownCodeHighlight.ts）。
+// 删除线只认 `~~text~~`，单个 `~` 按普通字符显示（见 markdownStrikethrough.ts）。
+const streamdownPlugins = { code: throttledCodePlugin, math, cjk: cjkDoubleTildeStrikethrough };
+const remarkPlugins = [
+  ...Object.entries(defaultRemarkPlugins).map(([name, plugin]) =>
+    name === "gfm" ? withDoubleTildeStrikethrough(plugin) : plugin,
+  ),
+  remarkBreaks,
+];
 const chatRemarkPlugins = [...remarkPlugins, remarkChatFileLinks];
 
 type StreamdownRehypePlugins = NonNullable<ComponentProps<typeof Streamdown>["rehypePlugins"]>;
@@ -310,7 +336,13 @@ export function MarkdownFileLink(props: MarkdownFileLinkProps) {
   return (
     <button
       type="button"
-      className="inline max-w-full cursor-pointer appearance-none whitespace-normal rounded-sm border-0 bg-transparent p-0 text-left font-medium text-primary underline decoration-primary/35 underline-offset-4 outline-none [overflow-wrap:anywhere] hover:decoration-primary focus-visible:ring-2 focus-visible:ring-ring/35"
+      className={cn(
+        "inline max-w-full cursor-pointer appearance-none",
+        "whitespace-normal rounded-sm border-0 bg-transparent p-0",
+        "text-left font-medium text-sky-600 no-underline",
+        "decoration-sky-500/45 underline-offset-2 outline-none",
+        "[overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring/35 dark:text-sky-400",
+      )}
       data-liveagent-file-link="true"
       title={label}
       onClick={() => onOpenFileLink(parsed)}
@@ -341,6 +373,7 @@ function MarkdownImageFallback(props: MarkdownImageFallbackProps) {
 }
 
 export const markdownComponents: Components = {
+  a: MarkdownExternalLink,
   img: MarkdownImageFallback,
   pre: CollapsibleCodePre,
 };
@@ -354,7 +387,7 @@ function MarkdownReadOnlyLink(props: MarkdownAnchorFallbackProps) {
         ? href.trim()
         : undefined;
   return (
-    <span className="text-primary underline decoration-primary/35 underline-offset-4" title={label}>
+    <span className="text-sky-600 no-underline dark:text-sky-400" title={label}>
       {children}
     </span>
   );
@@ -376,14 +409,22 @@ function MarkdownExternalLink(props: MarkdownAnchorFallbackProps) {
       <button
         type="button"
         className={cn(
-          "inline max-w-full cursor-pointer appearance-none whitespace-normal border-0 bg-transparent p-0 text-left font-medium text-primary underline [overflow-wrap:anywhere]",
+          "inline max-w-full cursor-pointer appearance-none",
+          "whitespace-normal border-0 bg-transparent p-0",
+          "text-left font-medium text-sky-600 no-underline decoration-sky-500/45 underline-offset-2",
+          "[overflow-wrap:anywhere] hover:underline dark:text-sky-400",
           className,
         )}
         data-incomplete={incomplete}
         data-streamdown="link"
         title={title}
         onClick={() => {
-          if (!incomplete) setModalOpen(true);
+          if (incomplete) return;
+          if (shouldSkipExternalLinkConfirmation()) {
+            void openExternalLink(href, () => window.open(href, "_blank", "noreferrer"));
+          } else {
+            setModalOpen(true);
+          }
         }}
       >
         {children}
@@ -430,16 +471,92 @@ function CodeBlockActions({ code }: { code: string }) {
   const { t } = useLocale();
 
   return (
-    <div className="pointer-events-none absolute right-0 top-0 z-20 flex h-8 items-center justify-end">
-      <div className="pointer-events-auto flex shrink-0 items-center rounded-md bg-background/95 px-1.5 py-1">
+    <div
+      className={cn(
+        "pointer-events-none absolute right-0 top-0 z-20 flex h-8 items-center",
+        "justify-end",
+      )}
+    >
+      <div className="pointer-events-auto flex shrink-0 items-center rounded-md bg-transparent px-1.5 py-1">
         <CopyButton
           value={code}
           label={t("chat.markdown.copyCode")}
           copiedLabel={t("chat.markdown.copied")}
-          className="h-6 w-6 p-1 hover:bg-foreground/[0.04]"
+          className="size-6 p-1 hover:bg-foreground/[0.04]"
         />
       </div>
     </div>
+  );
+}
+
+/** 代码块折叠前的最大显示高度（约 12 行，行高 22px）。 */
+const CODE_BLOCK_CLAMP_PX = 280;
+const CODE_BLOCK_EXPANDED_CLASSNAME = "max-h-[60vh] w-full overflow-y-auto";
+// 设了 overflow 的容器不再与代码块的 my-4 外边距折叠，复制按钮会比代码块高出一截；
+// 把外边距移到容器上，按钮仍与代码块顶部对齐。
+const CODE_BLOCK_OVERFLOW_CLASSNAME = "my-4 [&_[data-streamdown='code-block']]:!my-0";
+
+/**
+ * 代码自动换行后，长行也会占多行：按实际渲染高度判断是否折叠，而不是逻辑行数。
+ * 超出时只显示前一段并给出展开按钮；展开后限高、可上下滚动。
+ */
+function HeightClampedCode({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node) return;
+    const measure = () => setOverflowing(node.scrollHeight > CODE_BLOCK_CLAMP_PX + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const clamped = overflowing && !expanded;
+  return (
+    <>
+      <div
+        ref={contentRef}
+        className={cn(
+          "relative w-full",
+          overflowing && CODE_BLOCK_OVERFLOW_CLASSNAME,
+          expanded && CODE_BLOCK_EXPANDED_CLASSNAME,
+        )}
+        style={clamped ? { maxHeight: CODE_BLOCK_CLAMP_PX, overflow: "hidden" } : undefined}
+      >
+        {children}
+        {clamped ? (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-b",
+              "from-transparent via-background/70 to-background",
+            )}
+          />
+        ) : null}
+      </div>
+      {overflowing ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            aria-expanded={expanded}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-2 py-0.5",
+              "text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
+            )}
+          >
+            {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            <span>
+              {expanded ? t("chat.markdown.collapseCode") : t("chat.markdown.expandAllCode")}
+            </span>
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -467,15 +584,16 @@ export function CollapsibleCodePre({
 
   if (!childElement) return children;
 
+  if (isRenderedMermaid) {
+    return <MarkdownMermaidBlock chart={codeContent} readOnly={!allowMermaidFullscreen} />;
+  }
+
   if (!isCollapsible) {
     const codeBlock = cloneElement(childElement, { "data-block": "true" });
     return (
       <div className="relative w-full">
-        {isRenderedMermaid && allowMermaidFullscreen ? (
-          <MermaidFullscreenButton chart={codeContent} className="absolute right-7 top-1.5 z-30" />
-        ) : null}
         {isMermaid ? null : <CodeBlockActions code={codeContent} />}
-        {codeBlock}
+        {isMermaid ? codeBlock : <HeightClampedCode>{codeBlock}</HeightClampedCode>}
       </div>
     );
   }
@@ -486,36 +604,49 @@ export function CollapsibleCodePre({
     <div className="relative w-full">
       <CodeBlockActions code={codeContent} />
       {expanded ? (
-        <div className="w-full">{cloneElement(childElement, { "data-block": "true" })}</div>
+        <div className={cn(CODE_BLOCK_OVERFLOW_CLASSNAME, CODE_BLOCK_EXPANDED_CLASSNAME)}>
+          {cloneElement(childElement, { "data-block": "true" })}
+        </div>
       ) : (
         <div
           className="mt-2 w-full overflow-hidden rounded-xl bg-muted/40"
           data-liveagent-code-preview="collapsed"
+          // 预览会自动换行：超长单行或长行多行同样按渲染高度限高，与 HeightClampedCode 一致。
+          style={{ maxHeight: CODE_BLOCK_CLAMP_PX }}
         >
-          <div className="flex h-8 items-center px-3 text-[11px] font-medium tracking-[0.06em] text-muted-foreground/85">
+          <div className="flex h-8 items-center px-3 text-xs font-medium tracking-0p06em text-muted-foreground/85">
             {language || DEFAULT_CODE_BLOCK_LANGUAGE}
           </div>
           <pre className="!m-0 !overflow-x-auto !pb-2">
-            <code className="block w-max min-w-full whitespace-pre py-4 font-mono text-[13px] leading-5 text-foreground/92">
+            <code
+              className={cn(
+                "block w-full whitespace-pre-wrap py-4 [overflow-wrap:anywhere]",
+                "font-mono text-sm leading-5 text-foreground/92",
+              )}
+            >
               {previewContent}
             </code>
           </pre>
         </div>
       )}
       {expanded ? null : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-7 h-20 bg-gradient-to-b from-transparent via-background/70 to-background" />
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-7 h-20 bg-gradient-to-b",
+            "from-transparent via-background/70 to-background",
+          )}
+        />
       )}
       <div className="flex justify-center">
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-        >
-          {expanded ? (
-            <ChevronUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5" />
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md px-2 py-0.5",
+            "text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
           )}
+        >
+          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
           <span>
             {expanded
               ? t("chat.markdown.collapseCode")
@@ -559,32 +690,41 @@ const streamdownTranslations = {
   viewFullscreen: "全屏查看",
 } satisfies Partial<StreamdownTranslations>;
 
+async function openExternalLink(url: string, fallback: () => void) {
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.error("Failed to open external link via opener", error);
+    fallback();
+  }
+}
+
 export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafetyModalProps) {
   if (!isOpen || typeof document === "undefined") {
     return null;
   }
+  return <ExternalLinkDialog key={url} onClose={onClose} onConfirm={onConfirm} url={url} />;
+}
+
+function ExternalLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, "isOpen">) {
+  const [dontRemind, setDontRemind] = useState(false);
+  const checkboxId = useId();
 
   const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (error) {
-      console.error("Failed to copy external link", error);
-    }
+    if (!(await copyTextToClipboard(url))) console.error("Failed to copy external link");
   };
 
   const handleOpenLink = async () => {
+    if (dontRemind) rememberExternalLinkConfirmation();
     try {
-      await openUrl(url);
-    } catch (error) {
-      console.error("Failed to open external link via opener", error);
-      onConfirm();
+      await openExternalLink(url, onConfirm);
     } finally {
       onClose();
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className="max-w-md p-0"
         closeLabel={streamdownTranslations.close}
@@ -604,7 +744,12 @@ export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafet
           </div>
         </DialogHeader>
         <DialogBody className="overflow-visible pb-5 pt-0">
-          <div className="flex min-h-10 items-center gap-2 rounded-xl bg-muted/55 px-3 py-2.5 text-muted-foreground">
+          <div
+            className={cn(
+              "flex min-h-10 items-center gap-2 rounded-xl bg-muted/55 px-3 py-2.5",
+              "text-muted-foreground",
+            )}
+          >
             <ExternalLink className="size-3.5 shrink-0" />
             <p
               className="min-w-0 truncate font-mono text-xs leading-5 text-foreground/85"
@@ -613,11 +758,21 @@ export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafet
               {url}
             </p>
           </div>
-          <DialogActions className="mt-4">
+          <DialogActions className="mt-4 max-sm:flex max-sm:flex-wrap max-sm:[&>button]:w-auto">
+            <label
+              htmlFor={checkboxId}
+              className="mr-auto flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+            >
+              <Checkbox id={checkboxId} checked={dontRemind} onCheckedChange={setDontRemind} />
+              <span>不再提醒</span>
+            </label>
             <Button
               type="button"
               variant="ghost"
-              className="h-8 gap-1.5 rounded-lg px-3 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+              className={cn(
+                "h-8 gap-1.5 rounded-lg px-3",
+                "text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
+              )}
               onClick={handleCopyLink}
             >
               <Copy className="size-3.5" />
@@ -626,7 +781,10 @@ export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafet
             <Button
               type="button"
               variant="secondary"
-              className="h-8 gap-1.5 rounded-lg bg-muted px-3 text-xs font-normal shadow-none hover:bg-muted/80"
+              className={cn(
+                "h-8 gap-1.5 rounded-lg bg-muted px-3",
+                "text-xs font-normal shadow-none hover:bg-muted/80",
+              )}
               onClick={handleOpenLink}
             >
               <ExternalLink className="size-3.5" />
@@ -643,27 +801,25 @@ const MARKDOWN_EMBED_CLASSNAME = cn(
   "min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere]",
   "[&_[data-streamdown='mermaid-block']]:my-4 [&_[data-streamdown='mermaid-block']]:flex [&_[data-streamdown='mermaid-block']]:!w-full [&_[data-streamdown='mermaid-block']]:min-w-0 [&_[data-streamdown='mermaid-block']]:gap-2 [&_[data-streamdown='mermaid-block']]:rounded-none [&_[data-streamdown='mermaid-block']]:border-0 [&_[data-streamdown='mermaid-block']]:bg-transparent [&_[data-streamdown='mermaid-block']]:p-0 [&_[data-streamdown='mermaid-block']]:shadow-none",
   "[&_[data-streamdown='mermaid-block']>div:last-child]:!w-full [&_[data-streamdown='mermaid-block']>div:last-child]:min-w-0 [&_[data-streamdown='mermaid-block']>div:last-child]:rounded-none [&_[data-streamdown='mermaid-block']>div:last-child]:border-0 [&_[data-streamdown='mermaid-block']>div:last-child]:bg-transparent [&_[data-streamdown='mermaid-block']>div:last-child]:p-0 [&_[data-streamdown='mermaid-block']>div:last-child]:shadow-none",
-  "[&_[data-streamdown='mermaid']]:my-0 [&_[data-streamdown='mermaid']]:block [&_[data-streamdown='mermaid']]:!w-full [&_[data-streamdown='mermaid']]:max-h-[280px] [&_[data-streamdown='mermaid']]:min-w-0 [&_[data-streamdown='mermaid']]:overflow-hidden [&_[data-streamdown='mermaid']]:rounded-none [&_[data-streamdown='mermaid']]:border-0 [&_[data-streamdown='mermaid']]:bg-transparent [&_[data-streamdown='mermaid']]:shadow-none",
-  "[&_[data-streamdown='mermaid']>div]:!w-full [&_[data-streamdown='mermaid']>div]:min-w-0 [&_[data-streamdown='mermaid']>div]:max-w-none",
-  "[&_[data-streamdown='mermaid']_svg]:mx-auto [&_[data-streamdown='mermaid']_svg]:block [&_[data-streamdown='mermaid']_svg]:h-auto [&_[data-streamdown='mermaid']_svg]:max-h-[280px] [&_[data-streamdown='mermaid']_svg]:max-w-full [&_[data-streamdown='mermaid']_svg]:bg-transparent",
-  "[&_[data-streamdown='mermaid']>div>div:first-child]:!left-0 [&_[data-streamdown='mermaid']>div>div:first-child]:rounded-none [&_[data-streamdown='mermaid']>div>div:first-child]:border-0 [&_[data-streamdown='mermaid']>div>div:first-child]:bg-transparent [&_[data-streamdown='mermaid']>div>div:first-child]:p-0 [&_[data-streamdown='mermaid']>div>div:first-child]:shadow-none [&_[data-streamdown='mermaid']>div>div:first-child]:backdrop-blur-none",
+  "[&_[data-streamdown='mermaid']]:my-0 [&_[data-streamdown='mermaid']]:block [&_[data-streamdown='mermaid']]:!w-full [&_[data-streamdown='mermaid']]:max-h-280px [&_[data-streamdown='mermaid']]:min-w-0 [&_[data-streamdown='mermaid']]:overflow-hidden [&_[data-streamdown='mermaid']]:rounded-none [&_[data-streamdown='mermaid']]:border-0 [&_[data-streamdown='mermaid']]:bg-transparent [&_[data-streamdown='mermaid']]:shadow-none",
+  "[&_[data-streamdown='mermaid']_svg]:mx-auto [&_[data-streamdown='mermaid']_svg]:block [&_[data-streamdown='mermaid']_svg]:h-auto [&_[data-streamdown='mermaid']_svg]:max-h-280px [&_[data-streamdown='mermaid']_svg]:max-w-full [&_[data-streamdown='mermaid']_svg]:bg-transparent",
   "[&_[data-streamdown='mermaid-block-actions']]:gap-2 [&_[data-streamdown='mermaid-block-actions']]:rounded-none [&_[data-streamdown='mermaid-block-actions']]:border-0 [&_[data-streamdown='mermaid-block-actions']]:bg-transparent [&_[data-streamdown='mermaid-block-actions']]:p-0 [&_[data-streamdown='mermaid-block-actions']]:shadow-none [&_[data-streamdown='mermaid-block-actions']]:backdrop-blur-none",
   "[&_[data-streamdown='mermaid-block-actions']_svg]:size-3 [&_[data-streamdown='mermaid-block']_button>svg]:size-3",
   "[&_[data-streamdown='table-wrapper']]:my-4 [&_[data-streamdown='table-wrapper']]:!w-full [&_[data-streamdown='table-wrapper']]:min-w-0 [&_[data-streamdown='table-wrapper']]:gap-0 [&_[data-streamdown='table-wrapper']]:rounded-none [&_[data-streamdown='table-wrapper']]:border-0 [&_[data-streamdown='table-wrapper']]:bg-transparent [&_[data-streamdown='table-wrapper']]:p-0 [&_[data-streamdown='table-wrapper']]:shadow-none [&_[data-streamdown='table-wrapper']]:outline-none [&_[data-streamdown='table-wrapper']]:ring-0",
-  "[&_[data-streamdown='table-wrapper']>div:last-child]:!w-full [&_[data-streamdown='table-wrapper']>div:last-child]:min-w-0 [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-x-auto [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-y-hidden [&_[data-streamdown='table-wrapper']>div:last-child]:rounded-none [&_[data-streamdown='table-wrapper']>div:last-child]:border-0 [&_[data-streamdown='table-wrapper']>div:last-child]:bg-transparent [&_[data-streamdown='table-wrapper']>div:last-child]:p-0 [&_[data-streamdown='table-wrapper']>div:last-child]:shadow-none [&_[data-streamdown='table-wrapper']>div:last-child]:outline-none [&_[data-streamdown='table-wrapper']>div:last-child]:ring-0",
+  "[&_[data-streamdown='table-wrapper']>div:last-child]:!w-full [&_[data-streamdown='table-wrapper']>div:last-child]:min-w-0 [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-x-auto [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-y-hidden [&_[data-streamdown='table-wrapper']>div:last-child]:[contain:layout_paint_style] [&_[data-streamdown='table-wrapper']>div:last-child]:rounded-none [&_[data-streamdown='table-wrapper']>div:last-child]:border-0 [&_[data-streamdown='table-wrapper']>div:last-child]:bg-transparent [&_[data-streamdown='table-wrapper']>div:last-child]:p-0 [&_[data-streamdown='table-wrapper']>div:last-child]:shadow-none [&_[data-streamdown='table-wrapper']>div:last-child]:outline-none [&_[data-streamdown='table-wrapper']>div:last-child]:ring-0",
   "[&_table]:my-2 [&_table]:!w-full [&_table]:!min-w-full [&_table]:max-w-none [&_table]:table-auto [&_table]:border-collapse [&_table]:rounded-none [&_table]:border-0 [&_table]:bg-transparent [&_table]:shadow-none [&_table]:outline-none [&_table]:ring-0",
   "[&_thead]:bg-transparent [&_tbody]:bg-transparent [&_tr]:border-b [&_tr]:border-border/50 [&_tr]:bg-transparent [&_tbody_tr:last-child]:border-b-0",
-  "[&_th]:border-0 [&_th]:px-0 [&_th]:py-2 [&_th]:pr-8 [&_th]:text-left [&_th]:align-bottom [&_th]:font-semibold [&_th]:tracking-[-0.01em] [&_th]:text-foreground",
+  "[&_th]:border-0 [&_th]:px-0 [&_th]:py-2 [&_th]:pr-8 [&_th]:text-left [&_th]:align-bottom [&_th]:font-semibold [&_th]:tracking-minus-0p01em [&_th]:text-foreground",
   "[&_td]:border-0 [&_td]:px-0 [&_td]:py-1 [&_td]:pr-8 [&_td]:align-middle [&_td]:leading-8 [&_td]:text-foreground/90",
   "[&_th:last-child]:pr-0 [&_td:last-child]:pr-0 [&_table_*]:outline-none [&_table_*]:ring-0",
   "[&_div:has(>table)]:rounded-none [&_div:has(>table)]:border-0 [&_div:has(>table)]:bg-transparent [&_div:has(>table)]:shadow-none [&_div:has(>table)]:outline-none [&_div:has(>table)]:ring-0",
-  "[&_code:not(pre_code)]:whitespace-pre-wrap [&_code:not(pre_code)]:break-words [&_code:not(pre_code)]:rounded-md [&_code:not(pre_code)]:bg-foreground/[0.05] [&_code:not(pre_code)]:px-1.5 [&_code:not(pre_code)]:py-0.5 [&_code:not(pre_code)]:font-mono [&_code:not(pre_code)]:text-[0.92em] [&_code:not(pre_code)]:text-foreground [&_code:not(pre_code)]:[overflow-wrap:anywhere]",
+  "[&_code:not(pre_code)]:whitespace-pre-wrap [&_code:not(pre_code)]:break-words [&_code:not(pre_code)]:rounded-xs [&_code:not(pre_code)]:bg-foreground/[0.085] [&_code:not(pre_code)]:px-5px [&_code:not(pre_code)]:py-px [&_code:not(pre_code)]:font-mono [&_code:not(pre_code)]:text-[0.92em] [&_code:not(pre_code)]:text-foreground/95 [&_code:not(pre_code)]:[overflow-wrap:anywhere]",
   "[&_[data-streamdown='code-block']]:my-4 [&_[data-streamdown='code-block']]:!w-full [&_[data-streamdown='code-block']]:min-w-0 [&_[data-streamdown='code-block']]:gap-0 [&_[data-streamdown='code-block']]:rounded-none [&_[data-streamdown='code-block']]:border-0 [&_[data-streamdown='code-block']]:bg-transparent [&_[data-streamdown='code-block']]:p-0 [&_[data-streamdown='code-block']]:shadow-none [&_[data-streamdown='code-block']]:outline-none [&_[data-streamdown='code-block']]:ring-0",
-  "[&_[data-streamdown='code-block']>div:first-child]:mt-2 [&_[data-streamdown='code-block']>div:first-child]:min-h-0 [&_[data-streamdown='code-block']>div:first-child]:justify-between [&_[data-streamdown='code-block']>div:first-child]:gap-2 [&_[data-streamdown='code-block']>div:first-child]:border-0 [&_[data-streamdown='code-block']>div:first-child]:bg-transparent [&_[data-streamdown='code-block']>div:first-child]:pb-6 [&_[data-streamdown='code-block']>div:first-child]:text-[11px] [&_[data-streamdown='code-block']>div:first-child]:font-medium [&_[data-streamdown='code-block']>div:first-child]:tracking-[0.06em] [&_[data-streamdown='code-block']>div:first-child]:text-muted-foreground/85 [&_[data-streamdown='code-block']>div:first-child]:shadow-none",
+  "[&_[data-streamdown='code-block']>div:first-child]:min-h-0 [&_[data-streamdown='code-block']>div:first-child]:justify-between [&_[data-streamdown='code-block']>div:first-child]:gap-2 [&_[data-streamdown='code-block']>div:first-child]:bg-transparent [&_[data-streamdown='code-block']>div:first-child]:shadow-none",
   "[&_[data-streamdown='code-block']>div:last-child]:!w-full [&_[data-streamdown='code-block']>div:last-child]:min-w-0 [&_[data-streamdown='code-block']>div:last-child]:rounded-none [&_[data-streamdown='code-block']>div:last-child]:border-0 [&_[data-streamdown='code-block']>div:last-child]:bg-transparent [&_[data-streamdown='code-block']>div:last-child]:p-0 [&_[data-streamdown='code-block']>div:last-child]:shadow-none",
-  "[&_[data-streamdown='code-block-body']]:!rounded-xl [&_[data-streamdown='code-block-body']]:!bg-muted/40",
-  "[&_pre]:my-0 [&_pre]:block [&_pre]:!w-full [&_pre]:!min-w-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:overflow-y-hidden [&_pre]:border-0 [&_pre]:bg-transparent [&_pre]:px-0 [&_pre]:pb-2 [&_pre]:pt-0 [&_pre]:shadow-none [&_pre]:outline-none [&_pre]:ring-0",
-  "[&_pre>code]:block [&_pre>code]:w-max [&_pre>code]:min-w-full [&_pre>code]:max-w-none [&_pre>code]:border-0 [&_pre>code]:bg-transparent [&_pre>code]:py-4 [&_pre>code]:font-mono [&_pre>code]:text-[13px] [&_pre>code]:leading-5 [&_pre>code]:text-foreground/92 [&_pre>code]:shadow-none [&_pre>code]:outline-none [&_pre>code]:ring-0",
+  "[&_[data-streamdown='code-block-body']]:!rounded-none [&_[data-streamdown='code-block-body']]:!bg-transparent",
+  "[&_pre]:my-0 [&_pre]:block [&_pre]:!w-full [&_pre]:!min-w-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:overflow-y-hidden [&_pre]:border-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:shadow-none [&_pre]:outline-none [&_pre]:ring-0",
+  "[&_pre>code]:block [&_pre>code]:w-full [&_pre>code]:whitespace-pre-wrap [&_pre>code]:[overflow-wrap:anywhere] [&_pre>code]:border-0 [&_pre>code]:bg-transparent [&_pre>code]:px-4 [&_pre>code]:py-3.5 [&_pre>code]:font-mono [&_pre>code]:text-sm [&_pre>code]:leading-22px [&_pre>code]:text-foreground/92 [&_pre>code]:shadow-none [&_pre>code]:outline-none [&_pre>code]:ring-0",
   "[&_strong]:font-medium [&_[data-streamdown='strong']]:font-medium",
 );
 
@@ -703,12 +859,18 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
     : preserveRelativeUrls
       ? relativeUrlRehypePlugins
       : undefined;
+  const profileClasses = new Set(className?.split(/\s+/));
 
   return (
     <div>
       <Streamdown
         className={cn(
           "chat-markdown max-w-none break-words",
+          CHAT_MARKDOWN_CLASS,
+          profileClasses.has("thinking-markdown") && THINKING_MARKDOWN_CLASS,
+          profileClasses.has("document-markdown") && DOCUMENT_MARKDOWN_CLASS,
+          profileClasses.has("plan-markdown") && PLAN_MARKDOWN_CLASS,
+          profileClasses.has("release-notes-markdown") && RELEASE_NOTES_MARKDOWN_CLASS,
           MARKDOWN_EMBED_CLASSNAME,
           streaming ? "chat-markdown--streaming" : "chat-markdown--static",
           showCaret ? "chat-markdown--caret-on" : "chat-markdown--caret-off",
@@ -721,6 +883,7 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
         mode={streaming ? "streaming" : "static"}
         dir="auto"
         parseIncompleteMarkdown
+        parseMarkdownIntoBlocksFn={parseChatMarkdownBlocks}
         normalizeHtmlIndentation
         isAnimating={showCaret}
         caret={streaming ? "block" : undefined}

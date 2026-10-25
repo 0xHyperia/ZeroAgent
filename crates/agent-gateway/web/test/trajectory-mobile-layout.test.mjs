@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { normalizeClassGroups } from "../../../agent-ui/test-support/source-class-groups.mjs";
 
 const sharedTrajectoryRoot = new URL("../../../agent-ui/src/components/trajectory/", import.meta.url);
 const trajectoryViewSource = readFileSync(new URL("TrajectoryView.tsx", sharedTrajectoryRoot), "utf8");
@@ -12,44 +13,38 @@ const detailsSource = readFileSync(
   new URL("details/DetailsPanel.tsx", sharedTrajectoryRoot),
   "utf8",
 );
-const resizeHandleSource = readFileSync(
-  new URL("details/DetailsResizeHandle.tsx", sharedTrajectoryRoot),
-  "utf8",
+const resizeHandleSource = normalizeClassGroups(
+  readFileSync(new URL("details/DetailsResizeHandle.tsx", sharedTrajectoryRoot), "utf8"),
 );
 const gatewayAppViewSource = readFileSync(
   new URL("../src/app/GatewayAppView.tsx", import.meta.url),
-  "utf8",
-);
-const gatewayChatStyles = readFileSync(
-  new URL("../src/styles/base-chat.css", import.meta.url),
   "utf8",
 );
 
 test("gateway host constrains the shared trajectory scroll surface", () => {
   assert.match(
     gatewayAppViewSource,
-    /<div className="gateway-trajectory-shell">[\s\S]*?<TrajectoryView/,
+    /className="gateway-transcript-stage relative min-h-0 flex-1 overflow-hidden @container"[\s\S]*?<TrajectoryView/,
   );
-  const shellRule = gatewayChatStyles.match(/\.gateway-trajectory-shell \{[\s\S]*?\}/);
-  assert.ok(shellRule, ".gateway-trajectory-shell rule not found");
-  assert.match(shellRule[0], /display: flex/);
-  assert.match(shellRule[0], /height: 100%/);
-  assert.match(shellRule[0], /min-height: 0/);
-  assert.match(shellRule[0], /overflow: hidden/);
 });
 
 test("narrow trajectory container keeps empty details beside the list", () => {
-  assert.match(trajectoryViewSource, /className="@container flex min-h-0 flex-1 flex-col"/);
-  assert.match(detailsSource, /min-w-\[160px\] max-w-\[calc\(100%-140px\)\]/);
+  assert.match(trajectoryViewSource, /className="@container flex h-full min-h-0 flex-1 flex-col"/);
+  assert.match(detailsSource, /min-w-160px max-w-trajectory-details/);
   assert.match(detailsSource, /trajectory\.details\.empty/);
   assert.match(tableSource, /min-h-0 min-w-0 flex-1 overflow-y-auto/);
   assert.doesNotMatch(detailsSource, /@max-\[820px\]:hidden/);
   assert.match(trajectoryViewSource, /relative flex min-h-0 flex-1 overflow-hidden/);
 });
 
+test("trajectory details keep a bounded vertical scroll owner in the WebUI host", () => {
+  assert.match(trajectoryViewSource, /@container flex h-full min-h-0 flex-1 flex-col/);
+  assert.match(detailsSource, /min-h-0 flex-1 overflow-y-auto/);
+});
+
 test("selected narrow-container details remain in a two-column layout", () => {
   assert.equal(
-    detailsSource.match(/min-w-\[160px\] max-w-\[calc\(100%-140px\)\]/g)?.length,
+    detailsSource.match(/min-w-160px max-w-trajectory-details/g)?.length,
     2,
   );
   assert.doesNotMatch(detailsSource, /@max-\[820px\]:absolute/);
@@ -63,7 +58,7 @@ test("narrow trajectory controls preserve horizontal content space", () => {
   assert.match(toolbarSource, /@max-\[520px\]:order-last[\s\S]*?@max-\[520px\]:w-full/);
   assert.match(timelineSource, /@max-\[520px\]:gap-1 @max-\[520px\]:px-2/);
   assert.match(timelineSource, /@max-\[520px\]:w-8/);
-  assert.match(rowSource, /@max-\[520px\]:w-12 @max-\[520px\]:text-\[11px\]/);
+  assert.match(rowSource, /@max-\[520px\]:w-12 @max-\[520px\]:text-xs/);
 });
 
 test("trajectory details resizing remains available in narrow containers", () => {

@@ -13,6 +13,7 @@ export {
  */
 export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> = {
   "zh-CN": {
+    "settings.navAccount": "账号",
     "account.userMenu": "用户菜单",
     "account.balance": "余额",
     "account.todayTokens": "今日 Token",
@@ -28,6 +29,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "chat.runtime.protocolIncompatiblePlaceholder": "请先更新 ZeroAgent 桌面端",
     "chat.queue.moveDown": "下移",
     "chat.upload.maxFilesIgnored": "最多上传 {max} 个文件，已忽略 {count} 个额外文件",
+    "chat.upload.duplicatesMerged": "已合并 {count} 个重复文件",
     "projectTools.sshLocalForwardHelp":
       "仅监听桌面端本机 127.0.0.1；本地端口留空或填 0 自动分配，远端主机留空默认 SSH 服务器自身的 127.0.0.1",
     "projectTools.sshLocalForwardListening": "正在监听（仅桌面端本机）",
@@ -90,6 +92,8 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "settings.filePickerTitle": "选择文件",
     "settings.filePickerDesc": "从桌面设备中选择一个文件",
     "settings.pathPickerPathLabel": "路径",
+    "settings.pathPickerOpen": "打开",
+    "settings.pathPickerNoRoots": "远端没有返回目录。请重试，或输入远端目录的绝对路径。",
     "settings.emptyDir": "此目录为空",
     "settings.select": "选择",
     "settings.loadingDirs": "正在加载目录…",
@@ -116,6 +120,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
       "启用后，本地 ZeroAgent 将通过 WebSocket（v2 协议）连接云端 Gateway。你可以在浏览器中通过 WebUI 远程发送 Chat 消息、管理 Cron 任务和查看历史记录。所有工具执行仍在本地完成，远程端仅转发指令和结果。",
   },
   "en-US": {
+    "settings.navAccount": "Account",
     "account.userMenu": "User menu",
     "account.balance": "Balance",
     "account.todayTokens": "Today's tokens",
@@ -131,6 +136,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "chat.runtime.protocolIncompatiblePlaceholder": "Update ZeroAgent desktop to continue",
     "chat.queue.moveDown": "Move down",
     "chat.upload.maxFilesIgnored": "Upload up to {max} files; {count} extra files were ignored",
+    "chat.upload.duplicatesMerged": "Merged {count} duplicate files",
     "projectTools.sshLocalForwardHelp":
       "Listens on the desktop machine's 127.0.0.1 only. Leave the local port empty or 0 for auto-assign; leave the remote host empty for 127.0.0.1 on the SSH server.",
     "projectTools.sshLocalForwardListening": "Listening on the desktop machine only",
@@ -197,6 +203,9 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "settings.filePickerTitle": "Select File",
     "settings.filePickerDesc": "Pick a file from the desktop device",
     "settings.pathPickerPathLabel": "Path",
+    "settings.pathPickerOpen": "Open",
+    "settings.pathPickerNoRoots":
+      "The remote host returned no folders. Retry or enter an absolute path on that host.",
     "settings.emptyDir": "This directory is empty",
     "settings.select": "Select",
     "settings.loadingDirs": "Loading directories…",

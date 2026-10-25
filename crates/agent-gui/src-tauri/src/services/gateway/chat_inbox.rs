@@ -284,18 +284,16 @@ impl GatewayController {
                     .lease_expires_at
                     .map(|expires_at| now >= expires_at)
                     .unwrap_or(true);
-                if state == "queued"
+                if (state == "queued"
                     || ((state == "claimed" || state == "starting")
                         && lease_expired
-                        && !record.started)
-                {
-                    if selected_created_at
+                        && !record.started))
+                    && selected_created_at
                         .map(|created_at| record.created_at < created_at)
                         .unwrap_or(true)
-                    {
-                        selected_request_id = Some(request_id.clone());
-                        selected_created_at = Some(record.created_at);
-                    }
+                {
+                    selected_request_id = Some(request_id.clone());
+                    selected_created_at = Some(record.created_at);
                 }
             }
             selected_request_id.and_then(|request_id| {
@@ -541,6 +539,14 @@ impl GatewayController {
                 &error_code,
                 &message,
             )?;
+            self.send_gateway_chat_control_event_with_details(
+                request_id,
+                conversation_id,
+                "failed",
+                error_code,
+                message,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -729,11 +735,7 @@ impl GatewayController {
                 .map(chat_run_report_from_entry)
                 .collect(),
         );
-        match self.send_agent_envelope(envelope).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.contains("outbound stream is offline") => Ok(()),
-            Err(error) => Err(error),
-        }
+        ignore_gateway_outbound_offline(self.send_agent_envelope(envelope).await)
     }
 
     pub fn release_chat_request_lease(

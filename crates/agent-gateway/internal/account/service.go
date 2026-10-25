@@ -447,6 +447,15 @@ func (s *Service) ValidateDesktopSelection(ctx context.Context, accessToken, lea
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.ValidateBoundDesktopSelection(ctx, session, leaseID)
+}
+
+// ValidateBoundDesktopSelection checks a principal authenticated at this socket hello.
+// Its original deadline is fixed; dispatch does not extend it or call USA-Zero per frame.
+func (s *Service) ValidateBoundDesktopSelection(ctx context.Context, session *Session, leaseID string) (*Session, *SelectionLease, error) {
+	if session == nil || session.UserID <= 0 || !strings.HasPrefix(session.ID, "desktop:") || !session.SessionExpiresAt.After(s.now()) {
+		return nil, nil, &APIError{Status: http.StatusUnauthorized, Message: "desktop session is missing or expired"}
+	}
 	lease, err := s.store.GetSelectionLease(ctx, strings.TrimSpace(leaseID))
 	// DesktopSession IDs intentionally include the access-token hash, so they
 	// change when USA-Zero rotates an access token. A desktop selection remains

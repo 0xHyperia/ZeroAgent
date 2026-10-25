@@ -3,7 +3,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(desktop)]
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
@@ -88,6 +88,8 @@ const UPLOADED_TEXT_TRANSCODE_MAX_BYTES: u64 = 64 * 1024 * 1024; // 64MB，超�
 pub struct SystemReadableFileEntry {
     pub relative_path: String,
     pub absolute_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dedupe_key: Option<String>,
     pub file_name: String,
     pub kind: String,
     pub size_bytes: u64,
@@ -144,12 +146,7 @@ pub struct SystemCreateProjectFolderResponse {
 }
 
 fn app_storage_dir() -> Result<PathBuf, String> {
-    let home =
-        dirs::home_dir().ok_or_else(|| "Failed to locate the user home directory".to_string())?;
-    let dir = home.join(format!(".{}", env!("CARGO_PKG_NAME")));
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create the application directory: {e}"))?;
-    Ok(dir)
+    crate::commands::settings::config_dir()
 }
 
 fn debug_root_dir() -> Result<PathBuf, String> {
@@ -626,10 +623,7 @@ fn unique_path_for_copy(mut target: PathBuf) -> PathBuf {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.to_string());
-    let parent = target
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(PathBuf::new);
+    let parent = target.parent().map(Path::to_path_buf).unwrap_or_default();
 
     for idx in 2..=10_000usize {
         let file_name = match ext.as_deref() {
@@ -717,6 +711,22 @@ fn canonical_upload_staging_base() -> Option<PathBuf> {
     fs::canonicalize(base).ok()
 }
 
+/// 供 K-brain 运行授权用的暂存区根：确保目录存在（K-brain 要求授权根是已存在
+/// 的目录），返回与消息中 absolute_path 同构的逻辑路径——K-brain 按字符串前缀
+/// 比较授权根，且拒绝 `\\?\` 形式与 symlink 根，因此不能返回 canonical 路径。
+fn ensure_upload_staging_base() -> Result<String, String> {
+    let base = upload_staging_base()?;
+    fs::create_dir_all(&base).map_err(|e| format!("创建上传目录失败 {}: {e}", base.display()))?;
+    Ok(base.to_string_lossy().into_owned())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn system_upload_staging_base() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(ensure_upload_staging_base)
+        .await
+        .map_err(|e| format!("system_upload_staging_base join failed: {e}"))?
+}
+
 /// 暂存文件保留天数：过期批次由启动 GC 清理。附件路径持久化在历史消息里，
 /// 因此不与单个会话的删除绑定，按时效回收是与"暂存区"语义一致的做法。
 const UPLOAD_STAGING_RETENTION: std::time::Duration =
@@ -791,6 +801,7 @@ fn build_readable_file_entry(
     destination: &Path,
     kind: &str,
     size_bytes: u64,
+    dedupe_key: Option<String>,
 ) -> Result<SystemReadableFileEntry, String> {
     // 工作区内的文件用真实相对路径；暂存区文件用 `uploads/<batch>/<name>`
     // 形式的展示路径（UI 徽标、粘贴引用与去重 key 都吃这个字段），模型侧
@@ -819,10 +830,37 @@ fn build_readable_file_entry(
     Ok(SystemReadableFileEntry {
         relative_path,
         absolute_path: destination.to_string_lossy().into_owned(),
+        dedupe_key,
         file_name,
         kind: kind.to_string(),
         size_bytes,
     })
+}
+
+fn upload_sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+fn readable_path_dedupe_key(path: &Path) -> String {
+    format!(
+        "path:{}",
+        upload_sha256_hex(path.to_string_lossy().as_bytes())
+    )
+}
+
+fn uploaded_content_dedupe_key(file_name: &str, content: &[u8]) -> String {
+    format!(
+        "content:{}:{}",
+        file_name.trim(),
+        upload_sha256_hex(content)
+    )
 }
 
 fn canonicalize_uploaded_file_path(absolute_path: &str) -> Result<PathBuf, String> {
@@ -1266,6 +1304,7 @@ fn import_readable_file_paths_into_workdir(
         };
 
         let canonical_source = fs::canonicalize(&source).unwrap_or_else(|_| source.clone());
+        let dedupe_key = readable_path_dedupe_key(&canonical_source);
         let mut entry_size = metadata.len();
         let destination = if canonical_source.starts_with(workdir) {
             // 工作区内文件保持原地引用（含非 UTF-8 文本，不改写用户文件）；
@@ -1316,6 +1355,7 @@ fn import_readable_file_paths_into_workdir(
             &destination,
             detected.kind,
             entry_size,
+            Some(dedupe_key),
         )?);
     }
 
@@ -1363,6 +1403,7 @@ pub(crate) fn system_import_uploaded_readable_files_sync(
                 continue;
             }
         };
+        let dedupe_key = uploaded_content_dedupe_key(source_name, &upload.content);
 
         let import_root = match import_root.as_ref() {
             Some(root) => root.clone(),
@@ -1391,6 +1432,7 @@ pub(crate) fn system_import_uploaded_readable_files_sync(
             &target,
             detected.kind,
             content.len() as u64,
+            Some(dedupe_key),
         )?);
     }
 
@@ -2973,6 +3015,24 @@ mod tests {
     }
 
     #[test]
+    fn upload_staging_base_grant_is_logical_and_exists() {
+        // K-brain 按字符串前缀授权，且拒绝 `\\?\` 形式；这里必须返回逻辑路径，
+        // 并与消息里持久化的 absolute_path 同构（不含 verbatim 前缀）。
+        let granted = ensure_upload_staging_base().expect("resolve staging base");
+        let base = upload_staging_base().expect("staging base");
+
+        assert_eq!(granted, base.to_string_lossy());
+        assert!(
+            !granted.contains(r"\\?\"),
+            "grant must not be verbatim: {granted}"
+        );
+        assert!(
+            Path::new(&granted).is_dir(),
+            "granted root must exist as a directory: {granted}"
+        );
+    }
+
+    #[test]
     fn upload_import_root_stays_outside_the_workspace() {
         let root = upload_import_root().expect("create upload root");
 
@@ -3022,8 +3082,8 @@ mod tests {
         let staged = batch.join("notes.txt");
         fs::write(&staged, b"hello").expect("write staged file");
 
-        let entry =
-            build_readable_file_entry(&workdir, &staged, "text", 5).expect("build staged entry");
+        let entry = build_readable_file_entry(&workdir, &staged, "text", 5, None)
+            .expect("build staged entry");
         assert_eq!(entry.relative_path, "uploads/test-batch-entry/notes.txt");
         assert_eq!(entry.absolute_path, staged.to_string_lossy());
 
@@ -3031,10 +3091,36 @@ mod tests {
         fs::create_dir_all(inside.parent().expect("parent")).expect("create src dir");
         fs::write(&inside, b"fn main() {}").expect("write workspace file");
         let workspace_entry =
-            build_readable_file_entry(&workdir, &inside, "text", 12).expect("build entry");
+            build_readable_file_entry(&workdir, &inside, "text", 12, None).expect("build entry");
         assert_eq!(workspace_entry.relative_path, "src/main.rs");
 
         let _ = fs::remove_dir_all(&batch);
+    }
+
+    #[test]
+    fn upload_dedupe_keys_distinguish_source_identity_and_content_versions() {
+        let first_path = Path::new("/tmp/source-a.txt");
+        assert_eq!(
+            readable_path_dedupe_key(first_path),
+            readable_path_dedupe_key(first_path)
+        );
+        assert_ne!(
+            readable_path_dedupe_key(first_path),
+            readable_path_dedupe_key(Path::new("/tmp/source-b.txt"))
+        );
+
+        assert_eq!(
+            uploaded_content_dedupe_key("notes.txt", b"same"),
+            uploaded_content_dedupe_key("notes.txt", b"same")
+        );
+        assert_ne!(
+            uploaded_content_dedupe_key("notes.txt", b"same"),
+            uploaded_content_dedupe_key("notes.txt", b"changed")
+        );
+        assert_ne!(
+            uploaded_content_dedupe_key("notes.txt", b"same"),
+            uploaded_content_dedupe_key("other.txt", b"same")
+        );
     }
 
     #[test]

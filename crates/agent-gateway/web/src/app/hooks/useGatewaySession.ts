@@ -1,15 +1,16 @@
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import { bindAccountRequests } from "@/lib/accountRequest";
 import {
   canReuseDeviceSelection,
-  mergeExecutionPresence,
-  publishExecutionPresence,
   type ExecutionEnvironment,
   type ExecutionPresence,
   type ExecutionSelection,
   type ExecutionWorkspace,
   encodeSelectionCredential,
   getExecutionEnvironments,
+  mergeExecutionPresence,
+  publishExecutionPresence,
   selectExecutionTarget,
   validateExecutionSelection,
 } from "@/lib/executionTargets";
@@ -22,7 +23,6 @@ import {
   type RelayUser,
   registerRelay,
 } from "@/lib/relay/client";
-import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { setEphemeralCredential } from "@/lib/storage";
 
 const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";
@@ -63,6 +63,7 @@ export function useGatewaySession(historyShareToken: string | null) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const executionPresenceRef = useRef<readonly ExecutionPresence[]>([]);
+  const sessionEpochRef = useRef(0);
 
   const applyToken = useCallback((next: string) => {
     // Child effects can issue Gateway requests before parent effects run.
@@ -72,6 +73,7 @@ export function useGatewaySession(historyShareToken: string | null) {
   }, []);
 
   const loadEnvironments = useCallback(async () => {
+    const epoch = sessionEpochRef.current;
     const params = new URLSearchParams(window.location.search);
     const desktopEmbedded = params.get("controller_surface") === "desktop_embed";
     const localDeviceId = params.get("local_device_id")?.trim() ?? "";
@@ -79,6 +81,7 @@ export function useGatewaySession(historyShareToken: string | null) {
       desktopEmbedded ? "desktop" : "web",
       localDeviceId,
     );
+    if (epoch !== sessionEpochRef.current) return [];
     setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
     const handoffLease = params.get("selection_lease")?.trim() ?? "";
     const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
@@ -115,7 +118,9 @@ export function useGatewaySession(historyShareToken: string | null) {
         "",
         `${cleanURL.pathname}${cleanURL.search}`,
       );
-      if (await validateExecutionSelection(next)) {
+      const valid = await validateExecutionSelection(next);
+      if (epoch !== sessionEpochRef.current) return [];
+      if (valid) {
         setSelection(next);
         applyToken(encodeSelectionCredential(next));
         persistHistorySelection(next);
@@ -131,7 +136,9 @@ export function useGatewaySession(historyShareToken: string | null) {
       const workspaceIsValid =
         !restored.workspace_id ||
         environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id);
-      if (environment && workspaceIsValid && (await validateExecutionSelection(restored))) {
+      const valid = environment && workspaceIsValid && (await validateExecutionSelection(restored));
+      if (epoch !== sessionEpochRef.current) return [];
+      if (valid) {
         setSelection(restored);
         applyToken(encodeSelectionCredential(restored));
         return items;
@@ -168,17 +175,19 @@ export function useGatewaySession(historyShareToken: string | null) {
       return;
     }
     let cancelled = false;
+    const epoch = sessionEpochRef.current;
     void getRelayCurrentUser()
       .then(async (user) => {
-        if (cancelled) return;
+        if (cancelled || epoch !== sessionEpochRef.current) return;
         setAccountUser(user);
+        bindAccountRequests(user.id);
         await loadEnvironments();
       })
       .catch(() => {
-        if (!cancelled) setAccountUser(null);
+        if (!cancelled && epoch === sessionEpochRef.current) setAccountUser(null);
       })
       .finally(() => {
-        if (!cancelled) setAuthInitializing(false);
+        if (!cancelled && epoch === sessionEpochRef.current) setAuthInitializing(false);
       });
     return () => {
       cancelled = true;
@@ -206,12 +215,14 @@ export function useGatewaySession(historyShareToken: string | null) {
 
   useEffect(() => {
     const handleInvalidSelection = () => {
+      const epoch = ++sessionEpochRef.current;
       resetGatewayWebSocketClient();
       persistHistorySelection(null);
       setSelection(null);
       applyToken("");
       void loadEnvironments().catch((error) => {
-        setAuthError(error instanceof Error ? error.message : "执行环境加载失败");
+        if (epoch === sessionEpochRef.current)
+          setAuthError(error instanceof Error ? error.message : "执行环境加载失败");
       });
     };
     window.addEventListener(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection);
@@ -221,23 +232,29 @@ export function useGatewaySession(historyShareToken: string | null) {
 
   const login = useCallback(
     async (email: string, password: string) => {
+      const epoch = ++sessionEpochRef.current;
+      setAuthInitializing(false);
       setAuthSubmitting(true);
       setAuthError(null);
       try {
         const response = await loginRelay(email, password);
+        if (epoch !== sessionEpochRef.current) return "failed" as const;
         if ("requires_2fa" in response && response.requires_2fa) {
           setTwoFactorToken(response.temp_token);
           return "two-factor" as const;
         }
         if (!("user" in response)) return "failed" as const;
         setAccountUser(response.user);
+        bindAccountRequests(response.user.id);
         await loadEnvironments();
+        if (epoch !== sessionEpochRef.current) return "failed" as const;
         return "authenticated" as const;
       } catch (error) {
-        setAuthError(error instanceof Error ? error.message : "登录失败");
+        if (epoch === sessionEpochRef.current)
+          setAuthError(error instanceof Error ? error.message : "登录失败");
         return "failed" as const;
       } finally {
-        setAuthSubmitting(false);
+        if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
     [loadEnvironments],
@@ -245,19 +262,25 @@ export function useGatewaySession(historyShareToken: string | null) {
 
   const verifyTwoFactor = useCallback(
     async (code: string) => {
+      const epoch = ++sessionEpochRef.current;
+      setAuthInitializing(false);
       setAuthSubmitting(true);
       setAuthError(null);
       try {
         const response = await loginRelay2FA(twoFactorToken, code);
+        if (epoch !== sessionEpochRef.current) return false;
         setAccountUser(response.user);
+        bindAccountRequests(response.user.id);
         setTwoFactorToken("");
         await loadEnvironments();
+        if (epoch !== sessionEpochRef.current) return false;
         return true;
       } catch (error) {
-        setAuthError(error instanceof Error ? error.message : "两步验证码校验失败");
+        if (epoch === sessionEpochRef.current)
+          setAuthError(error instanceof Error ? error.message : "两步验证码校验失败");
         return false;
       } finally {
-        setAuthSubmitting(false);
+        if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
     [loadEnvironments, twoFactorToken],
@@ -270,18 +293,24 @@ export function useGatewaySession(historyShareToken: string | null) {
       verifyCode?: string;
       invitationCode?: string;
     }) => {
+      const epoch = ++sessionEpochRef.current;
+      setAuthInitializing(false);
       setAuthSubmitting(true);
       setAuthError(null);
       try {
         const response = await registerRelay(input);
+        if (epoch !== sessionEpochRef.current) return false;
         setAccountUser(response.user);
+        bindAccountRequests(response.user.id);
         await loadEnvironments();
+        if (epoch !== sessionEpochRef.current) return false;
         return true;
       } catch (error) {
-        setAuthError(error instanceof Error ? error.message : "注册失败");
+        if (epoch === sessionEpochRef.current)
+          setAuthError(error instanceof Error ? error.message : "注册失败");
         return false;
       } finally {
-        setAuthSubmitting(false);
+        if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
     [loadEnvironments],
@@ -292,7 +321,10 @@ export function useGatewaySession(historyShareToken: string | null) {
       if (canReuseDeviceSelection(selection, environment)) {
         return selection;
       }
+      const epoch = ++sessionEpochRef.current;
       const next = await selectExecutionTarget(environment, workspace);
+      if (epoch !== sessionEpochRef.current)
+        throw new Error("账号或执行目标已变更，请重新选择设备。");
       resetGatewayWebSocketClient();
       setSelection(next);
       applyToken(next.runtime_kind === "device_agent" ? encodeSelectionCredential(next) : "");
@@ -302,17 +334,26 @@ export function useGatewaySession(historyShareToken: string | null) {
     [applyToken, selection],
   );
 
-  const clearSession = useCallback(() => {
-    void logoutRelay();
-    resetGatewayWebSocketClient();
-    setAccountUser(null);
-    setEnvironments([]);
-    setSelection(null);
-    applyToken("");
-    persistHistorySelection(null);
-    setTwoFactorToken("");
-    setAuthError(null);
-  }, [applyToken]);
+  const clearSession = useCallback(
+    (revokeRemotely = true) => {
+      sessionEpochRef.current++;
+      executionPresenceRef.current = [];
+      publishExecutionPresence([]);
+      if (revokeRemotely) void logoutRelay().catch(() => undefined);
+      bindAccountRequests(null);
+      resetGatewayWebSocketClient();
+      setAccountUser(null);
+      setEnvironments([]);
+      setSelection(null);
+      applyToken("");
+      persistHistorySelection(null);
+      setTwoFactorToken("");
+      setAuthError(null);
+      setAuthSubmitting(false);
+      setAuthInitializing(false);
+    },
+    [applyToken],
+  );
 
   return {
     token,

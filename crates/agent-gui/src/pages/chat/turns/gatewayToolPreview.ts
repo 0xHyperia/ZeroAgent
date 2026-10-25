@@ -1,12 +1,20 @@
-import type { ToolCall } from "@earendil-works/pi-ai";
+import type { ToolCall } from "@liveagent/app/lib/agentTypes";
 
 import {
   ASK_USER_QUESTION_DEADLINE_ARG,
   ASK_USER_QUESTION_TOOL_NAME,
 } from "@liveagent/ui/lib/chat/askUserQuestion";
 import {
+  EXIT_PLAN_MODE_APPROVED_ARG,
+  EXIT_PLAN_MODE_PENDING_ARG,
+  EXIT_PLAN_MODE_TOOL_NAME,
+} from "@liveagent/ui/lib/chat/planMode";
+import {
+  TOOL_APPROVAL_ALLOW_SESSION_ARG,
   TOOL_APPROVAL_DEADLINE_ARG,
   TOOL_APPROVAL_PENDING_ARG,
+  TOOL_APPROVAL_SESSION_SCOPE_ARG,
+  TOOL_APPROVAL_SESSION_WIDE_ARG,
   TOOL_APPROVAL_SUMMARY_ARG,
 } from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import {
@@ -18,7 +26,8 @@ import {
 } from "@liveagent/ui/lib/chat/toolPreview";
 import { summarizeToolCall } from "../../../lib/chat/messages/uiMessages";
 import { ensureAskUserQuestionDeadlineAt } from "../../../lib/tools/askUserQuestionTools";
-import { getToolApprovalDeadlineAt, hasPendingToolApproval } from "../../../lib/tools/toolApproval";
+import { isPlanApprovalToolCall, isPlanDecisionPending } from "../../../lib/tools/planModeTools";
+import { getPendingToolApproval } from "../../../lib/tools/toolApproval";
 
 const GATEWAY_TOOL_TEXT_PREVIEW_MAX_CHARS = 4000;
 
@@ -39,6 +48,35 @@ export function summarizeToolCallForApproval(
   ) {
     // 命令保留原始换行(审批栏以 pre-wrap 完整展示),不折叠空白。
     text = args.command.trim();
+  } else if (toolCall.name === "Browser" && typeof args.action === "string") {
+    // 浏览器审批摘要必须按 action 精确取对应参数,不能取"第一个非空字段":
+    // 模型可能同时传入与本 action 无关的字段(如 eval 带 url),那会把无害目标
+    // 顶到摘要里、掩盖真实执行内容。type 的输入文本与 eval 的表达式属于
+    // 高危信息,完整展示(审批栏 pre-wrap,超长由末尾统一截断兜底)。
+    const pick = (value: unknown) =>
+      typeof value === "string" && value.trim() ? value.trim() : undefined;
+    const action = args.action;
+    let target: string | undefined;
+    if (action === "navigate") {
+      target = pick(args.url);
+    } else if (action === "click") {
+      target = pick(args.ref);
+    } else if (action === "type") {
+      const typed = typeof args.text === "string" ? args.text : "";
+      target = [
+        pick(args.ref),
+        `text: ${JSON.stringify(typed)}`,
+        args.submit === true ? "+Enter" : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    } else if (action === "eval") {
+      target = typeof args.expression === "string" ? args.expression.trim() : undefined;
+    } else if (action === "wait") {
+      target =
+        pick(args.selector) ?? (typeof args.timeMs === "number" ? `${args.timeMs}ms` : undefined);
+    }
+    text = [action, target].filter(Boolean).join(" ");
   } else {
     text = summarizeToolCall(toolCall as ToolCall, {
       includeName: false,
@@ -47,6 +85,12 @@ export function summarizeToolCallForApproval(
       .replace(/\s+/g, " ")
       .trim();
   }
+  return clampApprovalSummary(text);
+}
+
+// 同步给 WebUI 的审批摘要统一限长:K-brain 的 AI 审查会把完整工具参数放进
+// command,登记摘要也可能很大,审批开始/落定各重推一次,不能不设上限。
+function clampApprovalSummary(text: string): string {
   if (text.length > TOOL_APPROVAL_SUMMARY_MAX_CHARS) {
     return `${text.slice(0, TOOL_APPROVAL_SUMMARY_MAX_CHARS - 1)}…`;
   }
@@ -96,14 +140,23 @@ export function buildGatewayToolCallPreviewArguments(
   // 待审批标记:任意工具在 beforeToolCall 处挂起等待批准时,盖到同步给 WebUI 的
   // 参数上,让远端渲染审批卡片并显示与桌面同源的倒计时。审批消解后重发的快照
   // 不再带此标记,卡片随之隐藏。__ 前缀合成参数不入展示、不影响本地执行。
-  const approvalOverlay: Record<string, unknown> | null =
-    toolCall.id && hasPendingToolApproval(toolCall.id)
-      ? {
-          [TOOL_APPROVAL_PENDING_ARG]: true,
-          [TOOL_APPROVAL_DEADLINE_ARG]: getToolApprovalDeadlineAt(toolCall.id) ?? undefined,
-          [TOOL_APPROVAL_SUMMARY_ARG]: summarizeToolCallForApproval(toolCall),
-        }
-      : null;
+  // 授权范围随标记同步,远端审批栏与桌面一致地说明"允许"的效果、决定是否提供
+  // "本会话始终允许";摘要优先用审批登记的文本(K-brain 下含 AI 审查说明)。
+  const pending = toolCall.id ? getPendingToolApproval(toolCall.id) : null;
+  const approvalOverlay: Record<string, unknown> | null = pending
+    ? {
+        [TOOL_APPROVAL_PENDING_ARG]: true,
+        [TOOL_APPROVAL_DEADLINE_ARG]: pending.deadlineAt,
+        [TOOL_APPROVAL_SUMMARY_ARG]: pending.summary
+          ? clampApprovalSummary(pending.summary)
+          : summarizeToolCallForApproval(toolCall),
+        [TOOL_APPROVAL_ALLOW_SESSION_ARG]: pending.allowSession,
+        [TOOL_APPROVAL_SESSION_WIDE_ARG]: pending.sessionWide,
+        ...(pending.sessionScope
+          ? { [TOOL_APPROVAL_SESSION_SCOPE_ARG]: pending.sessionScope }
+          : {}),
+      }
+    : null;
   // AskUserQuestion：附带权威应答截止时间，WebUI 卡片倒计时与桌面计时同源
   //（execute 挂起时复用同一预置值；见 askUserQuestionTools）。ask 工具只读、
   // 永不进入审批门,故此处无需叠加 approvalOverlay。
@@ -111,6 +164,15 @@ export function buildGatewayToolCallPreviewArguments(
     return {
       ...sourceArgs,
       [ASK_USER_QUESTION_DEADLINE_ARG]: ensureAskUserQuestionDeadlineAt(toolCall.id),
+    };
+  }
+  // ExitPlanMode：附带待决/已批准标记(桌面登记表权威),WebUI 卡片据此渲染
+  // 批准按钮与落定态;快照/事件每次经此重建,状态翻转随补发事件同步。
+  if (toolCall.name === EXIT_PLAN_MODE_TOOL_NAME) {
+    return {
+      ...sourceArgs,
+      [EXIT_PLAN_MODE_PENDING_ARG]: isPlanDecisionPending(toolCall.id),
+      [EXIT_PLAN_MODE_APPROVED_ARG]: isPlanApprovalToolCall(toolCall.id),
     };
   }
   const fieldsToPreview = FILE_TOOL_TEXT_FIELDS[toolCall.name];

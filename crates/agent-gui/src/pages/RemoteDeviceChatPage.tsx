@@ -1,18 +1,34 @@
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bot,
+  Loader2,
+  MessageSquare,
+  Pin,
+  Square,
+  SquarePen,
+  Trash2,
+} from "@liveagent/ui/components/IconSet";
 import { Markdown } from "@liveagent/ui/components/Markdown";
-import { Bot, Edit3, Loader2, MessageSquare, Pin, Square, Trash2 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ConfirmDeletePopover } from "@liveagent/ui/components/ui/confirm-action-popover";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Textarea } from "@liveagent/ui/components/ui/textarea";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import type { AppSettings } from "../lib/settings";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ConversationStreamEvent,
+  ConversationSubscribeResult,
+} from "@/lib/chat/stream/streamTypes";
+import type { ChatEntry } from "@/lib/chatUi";
+import { GatewayWebSocketClient } from "@/lib/gatewaySocket";
+import type { ChatQueueSnapshot, ConversationSummary } from "@/lib/gatewayTypes";
+import { parseHistoryMessagesJsonAsync } from "@/lib/historyParser";
+import { getRelayAccessToken, RELAY_TOKEN_CHANGED_EVENT } from "../lib/relay/client";
 import {
-  desktopGatewayOrigin,
   type DesktopConversationRoute,
   type DesktopEnvironment,
   type DesktopWorkspace,
+  desktopGatewayOrigin,
   encodeDesktopSelectionCredential,
   getDesktopConversationRoutes,
 } from "../lib/relay/desktopExecution";
@@ -20,15 +36,7 @@ import {
   remoteConversationStorageKey,
   remoteProjectStorageKey,
 } from "../lib/relay/remoteDeviceState";
-import { getRelayAccessToken, RELAY_TOKEN_CHANGED_EVENT } from "../lib/relay/client";
-import { GatewayWebSocketClient } from "@/lib/gatewaySocket";
-import type { ConversationSummary, ChatQueueSnapshot } from "@/lib/gatewayTypes";
-import type {
-  ConversationStreamEvent,
-  ConversationSubscribeResult,
-} from "@/lib/chat/stream/streamTypes";
-import { parseHistoryMessagesJsonAsync } from "@/lib/historyParser";
-import type { ChatEntry } from "@/lib/chatUi";
+import type { AppSettings } from "../lib/settings";
 
 type Props = {
   settings: AppSettings;
@@ -558,7 +566,7 @@ export function RemoteDeviceChatPage({
                     title="重命名"
                     onClick={() => setRenaming({ id: item.id, title: item.title })}
                   >
-                    <Edit3 className="h-3.5 w-3.5" />
+                    <SquarePen className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     size="icon"

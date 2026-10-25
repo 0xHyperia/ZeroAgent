@@ -58,7 +58,7 @@ pub async fn run<R: Runtime>(
         .await
         .map_err(|e| stage_failure("Baidu", "connect", format!("网络错误: {e}")))?;
     let (mut write, mut read) = socket.split();
-    send_provider_message(&mut write, Message::Text( serde_json::json!({ "type":"START", "data": { "appid":app_id, "appkey":app_key, "dev_pid":dev_pid, "cuid":format!("LiveAgent-{}", uuid::Uuid::new_v4()), "format":"pcm", "sample":16000 } }) .to_string() .into(), ), "Baidu", "start").await?;
+    send_provider_message(&mut write, Message::Text( serde_json::json!({ "type":"START", "data": { "appid":app_id, "appkey":app_key, "dev_pid":dev_pid, "cuid":format!("ZeroAgent-{}", uuid::Uuid::new_v4()), "format":"pcm", "sample":16000 } }) .to_string() .into(), ), "Baidu", "start").await?;
     // 百度协议没有 READY 消息，START 写入后即可发送已缓存音频。
     emit(
         &app,

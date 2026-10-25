@@ -1,8 +1,16 @@
 import {
+  type AssistantTurnLayoutEntry,
   type GroupedRoundBlock,
-  groupRoundBlocks,
+  resolveAssistantTurnLayout,
 } from "@liveagent/ui/components/chat/assistant-bubble/assistantBubbleUtils";
-import { isTaskToolBlock } from "@liveagent/ui/lib/chat/taskProgress";
+import {
+  assembleContinuousReply,
+  type CompactionSeamRound,
+  type ReplyStitchClass,
+  rekeyContinuationRounds,
+  stitchCompactedReplies,
+} from "@liveagent/ui/lib/chat/replyContinuity";
+import { chatDuration } from "@liveagent/ui/lib/chat/workTiming";
 import {
   CHECKPOINT_ROW_ESTIMATE_PX,
   estimateAssistantRowHeight,
@@ -10,6 +18,7 @@ import {
   measureEstimateText,
 } from "@liveagent/ui/lib/transcript-virtual/rowEstimates";
 import type {
+  RenderAssistantGroup,
   RenderSummaryCard,
   RenderTimelineItem,
   RenderUserMessage,
@@ -19,6 +28,113 @@ import { getRoundText, type LiveRound, type UiRound } from "../../../lib/chat/me
 
 const TRANSCRIPT_ROW_GAP_PX = 24;
 const ASSISTANT_UNIT_GAP_PX = 8;
+
+type ReplyRound = UiRound | LiveRound | CompactionSeamRound;
+
+function classifyTimelineItem(item: RenderTimelineItem): ReplyStitchClass {
+  if (item.kind === "user") return "user";
+  if (item.kind === "summary") return "checkpoint";
+  return "assistant";
+}
+
+/**
+ * Stitch `assistant → summary → assistant` chains (a compaction that landed
+ * mid-reply) into one continuous reply. History rounds are per-group
+ * ordinals, so continuation parts are re-keyed positionally; the live turn
+ * uses the same re-keying (see buildLiveReplyRounds) so its persisted twin
+ * lands on identical unit keys at settle.
+ */
+function assembleHistoryReply(items: readonly RenderTimelineItem[]) {
+  return assembleContinuousReply<RenderTimelineItem, UiRound>(items, {
+    classify: classifyTimelineItem,
+    roundsOf: (item) => (item.kind === "assistant" ? item.rounds : []),
+    seamOf: (item) => item as RenderSummaryCard,
+    rekeyParts: true,
+  });
+}
+
+/**
+ * The committed prefix of the reply that is still streaming. A compaction
+ * that fires mid-run commits the first half of the reply plus its checkpoint
+ * into history (`assistant → summary`) and restarts the live transcript for
+ * the continuation. Those trailing items belong to the live reply: they are
+ * absorbed into the live activity row so one avatar / one work trace / one
+ * footer covers the whole reply, and the checkpoint renders as a seam inside
+ * it instead of a card between two half-replies.
+ *
+ * Returns the index of the first absorbed item, or -1 when nothing should be
+ * absorbed: the trailing chain must end with a checkpoint (a trailing
+ * assistant item is the persisted twin of a settled reply — see
+ * adoptSettledTwin) and must either contain an assistant part or precede a
+ * live continuation that already has content (an idle manual compaction
+ * produces a checkpoint with neither, and that one is an exchange divider).
+ */
+function findLiveReplyLeader(
+  historyItems: readonly RenderTimelineItem[],
+  turnStartIndex: number,
+  liveHasContent: boolean,
+): number {
+  const last = historyItems[historyItems.length - 1];
+  if (!last || last.kind !== "summary" || historyItems.length - 1 < turnStartIndex) return -1;
+  let leader = -1;
+  let firstAssistant = -1;
+  for (let index = historyItems.length - 1; index >= turnStartIndex; index -= 1) {
+    const item = historyItems[index];
+    if (!item || item.kind === "user") break;
+    leader = index;
+    if (item.kind === "assistant") firstAssistant = index;
+  }
+  if (firstAssistant !== -1) return firstAssistant;
+  return liveHasContent ? leader : -1;
+}
+
+/**
+ * 运行中回合的起点：live 尾部（或被并入的前半段回复）之前最近的用户消息时间戳。
+ * 中间隔着 assistant 说明那是上一轮的用户消息，不能拿来计时，返回 undefined
+ * 让工作区块退回挂载时刻。
+ */
+function findLiveTurnStartedAt(
+  historyItems: readonly RenderTimelineItem[],
+  endIndex: number,
+): number | undefined {
+  for (let index = endIndex - 1; index >= 0; index -= 1) {
+    const item = historyItems[index];
+    if (!item || item.kind === "assistant") return undefined;
+    if (item.kind === "user") return item.timestamp;
+  }
+  return undefined;
+}
+
+/**
+ * 回合起点在当前历史窗口里的下标：回合开始时已存在、且仍留在窗口里的最后一项之后。
+ * 历史窗口只保留最新 N 条消息，长会话里回复落库的同时最旧的项会滑出窗口，列表
+ * 长度可能不增反减，所以不能拿开始时的长度当下标。起点前的项全部滑出时，窗口里
+ * 每一项都比起点新，返回 0。
+ */
+function resolveTurnStartIndex(
+  historyItems: readonly RenderTimelineItem[],
+  keysAtStart: ReadonlySet<string>,
+): number {
+  for (let index = historyItems.length - 1; index >= 0; index -= 1) {
+    const item = historyItems[index];
+    if (item && keysAtStart.has(item.key)) return index + 1;
+  }
+  return 0;
+}
+
+/**
+ * Rounds of the live reply: the absorbed committed prefix (re-keyed exactly
+ * as the persisted twin will be) followed by the streaming continuation,
+ * re-keyed as the next part so settle lands on identical unit keys.
+ */
+function buildLiveReplyRounds(
+  absorbed: readonly RenderTimelineItem[],
+  tailRounds: readonly (UiRound | LiveRound)[],
+): ReplyRound[] {
+  if (absorbed.length === 0) return tailRounds as ReplyRound[];
+  const prefix = assembleHistoryReply(absorbed);
+  return [...prefix.rounds, ...rekeyContinuationRounds(tailRounds, prefix.partCount)];
+}
 
 export type SummaryRow = {
   kind: "summary";
@@ -56,23 +172,30 @@ export type AssistantPlaceholderRenderUnit = {
   showFallbackStatus: boolean;
 };
 
+export type AssistantWorkTraceRenderUnit = {
+  kind: "work-trace";
+  durationMs?: number;
+  /** 运行中回合的真实起点（触发它的用户消息时间戳），重挂载后计时不归零。 */
+  startedAtMs?: number;
+  entries: AssistantTurnLayoutEntry[];
+  latestToolGroupKey: string | null;
+  /** 回合已有总结文案（answer 层非空）：落定后工作区块可自动折叠成一行。 */
+  hasAnswer: boolean;
+};
+
 export type AssistantFooterRenderUnit = {
   kind: "footer";
   timestamp?: number;
   replyText: string;
   retryTarget: RenderUserMessage | null;
-  rounds: (UiRound | LiveRound)[];
+  rounds: ReplyRound[];
   hasChangedFilesCandidate: boolean;
-};
-
-export type AssistantStatusRenderUnit = {
-  kind: "status";
 };
 
 export type AssistantRenderUnit =
   | AssistantBlockRenderUnit
+  | AssistantWorkTraceRenderUnit
   | AssistantPlaceholderRenderUnit
-  | AssistantStatusRenderUnit
   | AssistantFooterRenderUnit;
 
 export type AssistantUnitRow = {
@@ -87,7 +210,6 @@ export type AssistantUnitRow = {
   mutable: boolean;
   renderMode: "streaming" | "static";
   compacted: boolean;
-  showAvatar: boolean;
   unit: AssistantRenderUnit;
 };
 
@@ -119,18 +241,16 @@ export type LiveTailInput = LiveTranscriptState & {
   isCompactionRunning?: boolean;
 };
 
-function buildReplyText(rounds: (UiRound | LiveRound)[]): string {
+function buildReplyText(rounds: readonly ReplyRound[]): string {
+  const finalAnswer = resolveAssistantTurnLayout(rounds, { live: false })
+    .answer.flatMap((entry) => (entry.block.kind === "text" ? [entry.block.text.trim()] : []))
+    .filter((text) => text.length > 0)
+    .join("\n\n");
+  if (finalAnswer) return finalAnswer;
   return rounds
     .map((round) => getRoundText(round).trim())
     .filter((text) => text.length > 0)
     .join("\n\n");
-}
-
-function isVisibleGroupedBlock(block: GroupedRoundBlock) {
-  if (block.kind === "text" || block.kind === "thinking") {
-    return block.text.trim().length > 0;
-  }
-  return !isTaskToolBlock(block);
 }
 
 function hasRunningToolCall(blocks: GroupedRoundBlock[], runningToolCallIds: string[]) {
@@ -149,7 +269,7 @@ function hasRunningToolCall(blocks: GroupedRoundBlock[], runningToolCallIds: str
   });
 }
 
-function hasChangedFilesCandidate(rounds: (UiRound | LiveRound)[]) {
+function hasChangedFilesCandidate(rounds: readonly ReplyRound[]) {
   return rounds.some((round) =>
     round.blocks.some(
       (block) =>
@@ -162,7 +282,16 @@ function hasChangedFilesCandidate(rounds: (UiRound | LiveRound)[]) {
   );
 }
 
-function measureBlockUnit(block: GroupedRoundBlock, hasUsage: boolean) {
+type BlockMeasurement = { estimate: number; renderCost: number };
+
+// Measuring a text block scans its whole text (O(chars)). Block objects come
+// from the per-round layout cache and are immutable, so memoizing by identity
+// limits per-flush measurement work to blocks of the round that changed.
+const blockMeasurementCache = new WeakMap<GroupedRoundBlock, BlockMeasurement>();
+
+function measureBlockUnit(block: GroupedRoundBlock): BlockMeasurement {
+  const cached = blockMeasurementCache.get(block);
+  if (cached) return cached;
   let estimate: number;
   let renderCost: number;
   if (block.kind === "text") {
@@ -195,14 +324,28 @@ function measureBlockUnit(block: GroupedRoundBlock, hasUsage: boolean) {
     estimate = 96;
     renderCost =
       block.kind === "hostedSearchGroup" ? Math.min(6, 1 + Math.ceil(block.items.length / 3)) : 2;
+  } else if (block.kind === "checkpoint") {
+    estimate = 36;
+    renderCost = 1;
   } else {
     estimate = 72;
     renderCost = 2;
   }
-  return {
-    estimate: Math.max(36, estimate) + (hasUsage ? 112 : 0),
+  const measurement: BlockMeasurement = {
+    estimate: Math.max(36, estimate),
     renderCost,
   };
+  blockMeasurementCache.set(block, measurement);
+  return measurement;
+}
+
+function sameRowArray(previous: readonly AssistantUnitRow[], next: readonly AssistantUnitRow[]) {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    if (previous[index] !== next[index]) return false;
+  }
+  return true;
 }
 
 function sameStringArray(previous: string[], next: string[]) {
@@ -213,6 +356,7 @@ function sameStringArray(previous: string[], next: string[]) {
 }
 
 function sameGroupedBlock(previous: GroupedRoundBlock, next: GroupedRoundBlock) {
+  if (previous === next) return true;
   if (previous.kind !== next.kind || previous.key !== next.key) return false;
   if (previous.kind === "text" || previous.kind === "thinking") {
     return next.kind === previous.kind && previous.text === next.text;
@@ -222,6 +366,9 @@ function sameGroupedBlock(previous: GroupedRoundBlock, next: GroupedRoundBlock) 
   }
   if (previous.kind === "hostedSearch") {
     return next.kind === "hostedSearch" && previous.item === next.item;
+  }
+  if (previous.kind === "checkpoint") {
+    return next.kind === "checkpoint" && previous.seam === next.seam;
   }
   if (previous.kind === "toolGroup") {
     return (
@@ -238,7 +385,7 @@ function sameGroupedBlock(previous: GroupedRoundBlock, next: GroupedRoundBlock) 
 }
 
 function canReuseLiveUnit(previous: AssistantUnitRow, next: AssistantUnitRow) {
-  if (previous.mutable || next.mutable) return false;
+  if (previous.mutable !== next.mutable) return false;
   if (
     previous.key !== next.key ||
     previous.replyKey !== next.replyKey ||
@@ -249,12 +396,36 @@ function canReuseLiveUnit(previous: AssistantUnitRow, next: AssistantUnitRow) {
     previous.live !== next.live ||
     previous.renderMode !== next.renderMode ||
     previous.compacted !== next.compacted ||
-    previous.showAvatar !== next.showAvatar ||
-    previous.unit.kind !== "block" ||
-    next.unit.kind !== "block"
+    previous.unit.kind !== next.unit.kind
   ) {
     return false;
   }
+
+  if (previous.unit.kind === "work-trace" && next.unit.kind === "work-trace") {
+    const nextWorkTrace = next.unit;
+    return (
+      previous.unit.entries.length === nextWorkTrace.entries.length &&
+      previous.unit.durationMs === nextWorkTrace.durationMs &&
+      previous.unit.startedAtMs === nextWorkTrace.startedAtMs &&
+      previous.unit.entries.every((entry, index) => {
+        const nextEntry = nextWorkTrace.entries[index];
+        if (!nextEntry) return false;
+        if (entry === nextEntry) return true;
+        return (
+          entry.key === nextEntry.key &&
+          entry.roundKey === nextEntry.roundKey &&
+          entry.roundMeta === nextEntry.roundMeta &&
+          entry.thinkingOpen === nextEntry.thinkingOpen &&
+          sameStringArray(entry.runningToolCallIds, nextEntry.runningToolCallIds) &&
+          sameGroupedBlock(entry.block, nextEntry.block)
+        );
+      }) &&
+      previous.unit.latestToolGroupKey === nextWorkTrace.latestToolGroupKey &&
+      previous.unit.hasAnswer === nextWorkTrace.hasAnswer
+    );
+  }
+
+  if (previous.unit.kind !== "block" || next.unit.kind !== "block") return false;
   return (
     sameGroupedBlock(previous.unit.block, next.unit.block) &&
     previous.unit.roundMeta === next.unit.roundMeta &&
@@ -297,12 +468,14 @@ type BuildAssistantUnitsInput = {
   replyKey: string;
   live: boolean;
   renderMode: "streaming" | "static";
-  rounds: (UiRound | LiveRound)[];
+  rounds: readonly ReplyRound[];
   timestamp?: number;
   compacted: boolean;
   replyText: string;
   retryTarget: RenderUserMessage | null;
   anchorUserKey: string | null;
+  /** live 回合没有 retryTarget，起点单独传入。 */
+  liveStartedAtMs?: number;
   liveUnitCache?: Map<string, AssistantUnitRow>;
 };
 
@@ -317,52 +490,88 @@ function buildAssistantUnits(input: BuildAssistantUnitsInput): AssistantUnitRow[
     replyText,
     retryTarget,
     anchorUserKey,
+    liveStartedAtMs,
     liveUnitCache,
   } = input;
   const rows: AssistantUnitRow[] = [];
+  const layout = resolveAssistantTurnLayout(rounds, { live });
+  const visibleEntries = [...layout.work, ...layout.interaction, ...layout.answer];
+  const roundTailKeys = new Map<string, string>();
+  for (const entry of visibleEntries) roundTailKeys.set(entry.roundKey, entry.key);
 
-  rounds.forEach((round) => {
-    const groupedBlocks = groupRoundBlocks(round.blocks).filter(isVisibleGroupedBlock);
-    const runningToolCallIds = "runningToolCallIds" in round ? round.runningToolCallIds : [];
-    const roundHasRunningToolCall = hasRunningToolCall(groupedBlocks, runningToolCallIds);
-    let latestThinkingKey: string | null = null;
-    for (let blockIndex = groupedBlocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-      const block = groupedBlocks[blockIndex];
-      if (block?.kind === "thinking") {
-        latestThinkingKey = block.key;
-        break;
-      }
+  let latestToolGroupKey: string | null = null;
+  for (let index = layout.work.length - 1; index >= 0; index -= 1) {
+    const entry = layout.work[index];
+    if (entry?.block.kind === "toolGroup") {
+      latestToolGroupKey = entry.key;
+      break;
     }
+  }
 
-    groupedBlocks.forEach((block, blockIndex) => {
-      const isRoundTail = blockIndex === groupedBlocks.length - 1;
-      const measurement = measureBlockUnit(block, Boolean(isRoundTail && round.meta?.usage));
-      rows.push({
-        kind: "assistant-unit",
-        key: `${replyKey}:round:${round.key}:block:${block.key}`,
-        replyKey,
-        estimate: measurement.estimate,
-        renderCost: measurement.renderCost,
-        gapAfter: ASSISTANT_UNIT_GAP_PX,
-        anchorUserKey,
-        live,
-        mutable: false,
-        renderMode,
-        compacted,
-        showAvatar: rows.length === 0,
-        unit: {
-          kind: "block",
-          block,
-          roundMeta: round.meta,
-          runningToolCallIds,
-          thinkingOpen: "thinkingOpen" in round ? round.thinkingOpen : false,
-          isLatestThinking: block.kind === "thinking" && block.key === latestThinkingKey,
-          isRoundTail,
-          hasRunningToolCall: roundHasRunningToolCall,
-        },
-      });
+  if (layout.work.length > 0 || live) {
+    const workMeasurements = layout.work.map((entry) => measureBlockUnit(entry.block));
+    rows.push({
+      kind: "assistant-unit",
+      key: `${replyKey}:work-trace`,
+      replyKey,
+      // 没有总结文案的回合落定后仍展开（见 AssistantWorkTrace），估算要算上展开的条目。
+      estimate:
+        live || layout.answer.length === 0
+          ? Math.min(
+              480,
+              42 + workMeasurements.reduce((total, measurement) => total + measurement.estimate, 0),
+            )
+          : 42,
+      renderCost: Math.min(
+        16,
+        Math.max(
+          1,
+          workMeasurements.reduce((total, measurement) => total + measurement.renderCost, 0),
+        ),
+      ),
+      gapAfter: ASSISTANT_UNIT_GAP_PX,
+      anchorUserKey,
+      live,
+      mutable: false,
+      renderMode,
+      compacted,
+      unit: {
+        kind: "work-trace",
+        durationMs: !live ? chatDuration(retryTarget?.timestamp, timestamp) : undefined,
+        startedAtMs: live ? liveStartedAtMs : undefined,
+        entries: layout.work,
+        latestToolGroupKey,
+        hasAnswer: layout.answer.length > 0,
+      },
     });
-  });
+  }
+
+  for (const entry of [...layout.interaction, ...layout.answer]) {
+    const measurement = measureBlockUnit(entry.block);
+    rows.push({
+      kind: "assistant-unit",
+      key: `${replyKey}:round:${entry.roundKey}:block:${entry.block.key}`,
+      replyKey,
+      estimate: measurement.estimate,
+      renderCost: measurement.renderCost,
+      gapAfter: ASSISTANT_UNIT_GAP_PX,
+      anchorUserKey,
+      live,
+      mutable: false,
+      renderMode,
+      compacted,
+      unit: {
+        kind: "block",
+        block: entry.block,
+        roundMeta: entry.roundMeta,
+        runningToolCallIds: entry.runningToolCallIds,
+        thinkingOpen: entry.thinkingOpen,
+        isLatestThinking: false,
+        isRoundTail: roundTailKeys.get(entry.roundKey) === entry.key,
+        hasRunningToolCall: hasRunningToolCall([entry.block], entry.runningToolCallIds),
+      },
+    });
+  }
 
   if (live) {
     const contentTailIndex = rows.length - 1;
@@ -374,21 +583,6 @@ function buildAssistantUnits(input: BuildAssistantUnitsInput): AssistantUnitRow[
         mutable: true,
       };
     }
-    rows.push({
-      kind: "assistant-unit",
-      key: `${replyKey}:footer`,
-      replyKey,
-      estimate: rows.length === 0 ? 64 : 32,
-      renderCost: 1,
-      gapAfter: TRANSCRIPT_ROW_GAP_PX,
-      anchorUserKey,
-      live: true,
-      mutable: true,
-      renderMode,
-      compacted,
-      showAvatar: rows.length === 0,
-      unit: { kind: "status" },
-    });
   } else {
     const changedFilesCandidate = hasChangedFilesCandidate(rounds);
     const contentTailIndex = rows.length - 1;
@@ -411,13 +605,12 @@ function buildAssistantUnits(input: BuildAssistantUnitsInput): AssistantUnitRow[
       mutable: false,
       renderMode,
       compacted,
-      showAvatar: rows.length === 0 && rounds.length > 0,
       unit: {
         kind: "footer",
         timestamp,
         replyText,
         retryTarget,
-        rounds,
+        rounds: rounds as ReplyRound[],
         hasChangedFilesCandidate: changedFilesCandidate,
       },
     });
@@ -439,46 +632,44 @@ function buildAssistantUnits(input: BuildAssistantUnitsInput): AssistantUnitRow[
   return reconciled;
 }
 
-export type TranscriptRowModelOptions = {
-  onRowsBorn?: (keys: readonly string[], isInitialBuild: boolean) => void;
-};
-
 export type TranscriptRowModel = {
   build: (historyItems: RenderTimelineItem[], live: LiveTailInput) => TranscriptRowsSnapshot;
   reset: () => void;
 };
 
-export function createTranscriptRowModel(options?: TranscriptRowModelOptions): TranscriptRowModel {
+export function createTranscriptRowModel(): TranscriptRowModel {
+  // Keyed by the FIRST item of a render group: a plain user/summary item, or
+  // the leading assistant part of a (possibly stitched) reply. `members`
+  // records every item the cached rows were built from so a group that grows
+  // (a checkpoint + continuation appended to the trailing reply) rebuilds.
   let rowCache = new WeakMap<
     RenderTimelineItem,
     {
       anchorUserKey: string | null;
       retryTarget: RenderUserMessage | null;
+      members: readonly RenderTimelineItem[];
       rows: TranscriptRow[];
     }
   >();
   let historyRowsCache: { items: RenderTimelineItem[]; rows: TranscriptRow[] } | null = null;
   let streamOrigins = new Map<string, string>();
-  let knownKeys = new Set<string>();
-  let hasBuilt = false;
   let turnSeq = 0;
   let activeTurn: {
     replyKey: string;
-    historyLenAtStart: number;
+    keysAtStart: ReadonlySet<string>;
     liveUnitCache: Map<string, AssistantUnitRow>;
     lastLiveUnits: AssistantUnitRow[];
     settlingUnits: AssistantUnitRow[] | null;
+    lastActivityRow: AssistantActivityRow | null;
   } | null = null;
-  let pendingSettle: { replyKey: string; historyLenAtStart: number } | null = null;
-  let deferredSettles: { replyKey: string; historyLenAtStart: number }[] = [];
+  let pendingSettle: { replyKey: string; keysAtStart: ReadonlySet<string> } | null = null;
+  let deferredSettles: { replyKey: string; keysAtStart: ReadonlySet<string> }[] = [];
   let draftRoundCache: { text: string; round: LiveRound } | null = null;
 
   const reset = () => {
     rowCache = new WeakMap();
     historyRowsCache = null;
     streamOrigins = new Map();
-    knownKeys = new Set();
-    hasBuilt = false;
     turnSeq = 0;
     activeTurn = null;
     pendingSettle = null;
@@ -502,75 +693,129 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
     return draftRoundCache.round;
   };
 
+  // The persisted twin of a live turn is the whole reply it streamed. When
+  // that reply compacted mid-way it is persisted as several items
+  // (assistant → summary → assistant …); the origin alias attaches to the
+  // LEADING assistant part, because that item keys the stitched group. Walk
+  // back from the newest assistant item over assistant/summary items only —
+  // a user item ends the reply.
+  const findReplyLeader = (
+    historyItems: RenderTimelineItem[],
+    index: number,
+    lowerBound: number,
+  ) => {
+    let leader = index;
+    for (let cursor = index - 1; cursor >= lowerBound; cursor -= 1) {
+      const item = historyItems[cursor];
+      if (!item || item.kind === "user") break;
+      if (item.kind === "assistant") leader = cursor;
+    }
+    return leader;
+  };
+
   const adoptSettledTwin = (
     historyItems: RenderTimelineItem[],
-    turn: { replyKey: string; historyLenAtStart: number },
+    turn: { replyKey: string; keysAtStart: ReadonlySet<string> },
   ) => {
-    for (let index = historyItems.length - 1; index >= turn.historyLenAtStart; index -= 1) {
+    const turnStartIndex = resolveTurnStartIndex(historyItems, turn.keysAtStart);
+    for (let index = historyItems.length - 1; index >= turnStartIndex; index -= 1) {
       const item = historyItems[index];
-      if (item?.kind === "assistant" && !streamOrigins.has(item.key)) {
-        streamOrigins.set(item.key, turn.replyKey);
-        if (rowCache.has(item)) {
-          rowCache.delete(item);
-          historyRowsCache = null;
-        }
-        return true;
+      if (item?.kind !== "assistant") continue;
+      const leader = historyItems[findReplyLeader(historyItems, index, turnStartIndex)];
+      if (!leader || leader.kind !== "assistant") return false;
+      if (streamOrigins.has(leader.key)) return false;
+      streamOrigins.set(leader.key, turn.replyKey);
+      if (rowCache.has(leader)) {
+        rowCache.delete(leader);
+        historyRowsCache = null;
       }
+      return true;
     }
     return false;
   };
 
+  const sameMembers = (
+    previous: readonly RenderTimelineItem[],
+    next: readonly RenderTimelineItem[],
+  ) => previous.length === next.length && previous.every((item, index) => item === next[index]);
+
   const buildHistoryRows = (
-    item: RenderTimelineItem,
+    members: readonly RenderTimelineItem[],
     retryTarget: RenderUserMessage | null,
   ): TranscriptRow[] => {
-    const anchorUserKey = item.kind === "user" ? item.key : (retryTarget?.key ?? null);
-    const cached = rowCache.get(item);
-    if (cached && cached.anchorUserKey === anchorUserKey && cached.retryTarget === retryTarget) {
+    const leader = members[0];
+    if (!leader) return [];
+    const anchorUserKey = leader.kind === "user" ? leader.key : (retryTarget?.key ?? null);
+    const cached = rowCache.get(leader);
+    if (
+      cached &&
+      cached.anchorUserKey === anchorUserKey &&
+      cached.retryTarget === retryTarget &&
+      sameMembers(cached.members, members)
+    ) {
       return cached.rows;
     }
 
     let rows: TranscriptRow[];
-    if (item.kind === "summary") {
+    if (leader.kind === "summary") {
       rows = [
         {
           kind: "summary",
-          key: item.key,
+          key: leader.key,
           estimate: CHECKPOINT_ROW_ESTIMATE_PX,
           renderCost: 1,
           gapAfter: TRANSCRIPT_ROW_GAP_PX,
           anchorUserKey,
-          item,
+          item: leader,
         },
       ];
-    } else if (item.kind === "user") {
+    } else if (leader.kind === "user") {
       rows = [
         {
           kind: "user",
-          key: item.key,
-          estimate: estimateUserRowHeight(item.text.length, item.attachments.length),
-          renderCost: Math.min(4, 1 + item.attachments.length),
+          key: leader.key,
+          estimate: estimateUserRowHeight(leader.text.length, leader.attachments.length),
+          renderCost: Math.min(4, 1 + leader.attachments.length),
           gapAfter: TRANSCRIPT_ROW_GAP_PX,
-          anchorUserKey: item.key,
-          item,
+          anchorUserKey: leader.key,
+          item: leader,
         },
       ];
     } else {
-      const originKey = streamOrigins.get(item.key);
+      const originKey = streamOrigins.get(leader.key);
+      const reply = assembleHistoryReply(members);
+      const lastPart = members.reduce<RenderAssistantGroup | null>(
+        (last, item) => (item.kind === "assistant" ? item : last),
+        null,
+      );
       const assistantUnits = buildAssistantUnits({
-        replyKey: originKey ?? item.key,
+        replyKey: originKey ?? leader.key,
         live: false,
         renderMode: originKey ? "streaming" : "static",
-        rounds: item.rounds,
-        timestamp: item.timestamp,
-        compacted: item.isFromCompactedSegment,
-        replyText: buildReplyText(item.rounds),
+        rounds: reply.rounds,
+        timestamp: lastPart?.timestamp ?? leader.timestamp,
+        compacted: members.every((item) => item.kind === "summary" || item.isFromCompactedSegment),
+        replyText: buildReplyText(reply.rounds),
         retryTarget,
         anchorUserKey,
       });
       rows = originKey ? [buildAssistantActivityRow(originKey, assistantUnits)] : assistantUnits;
     }
-    rowCache.set(item, { anchorUserKey, retryTarget, rows });
+    rowCache.set(leader, { anchorUserKey, retryTarget, members, rows });
+    return rows;
+  };
+
+  // History rows for items[0, end): the same grouped/cached path as the full
+  // build, so the prefix shares row identities with the complete history.
+  const buildHistoryRowsUntil = (historyItems: RenderTimelineItem[], end: number) => {
+    const prefixItems = historyItems.slice(0, end);
+    const rows: TranscriptRow[] = [];
+    let retryTarget: RenderUserMessage | null = null;
+    for (const group of stitchCompactedReplies(prefixItems, classifyTimelineItem)) {
+      const members = group.kind === "reply" ? group.items : [group.item];
+      rows.push(...buildHistoryRows(members, retryTarget));
+      if (group.kind === "single" && group.item.kind === "user") retryTarget = group.item;
+    }
     return rows;
   };
 
@@ -580,8 +825,6 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
   ): TranscriptRowsSnapshot => {
     const liveTailVisible =
       (live.isSending || live.isCompactionRunning === true) && !live.isSettled;
-    const isInitialBuild = !hasBuilt;
-    hasBuilt = true;
 
     if (liveTailVisible && pendingSettle && activeTurn) {
       if (!adoptSettledTwin(historyItems, pendingSettle)) {
@@ -590,38 +833,46 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
       pendingSettle = null;
       activeTurn = {
         replyKey: `live-turn-${++turnSeq}`,
-        historyLenAtStart: historyItems.length,
+        keysAtStart: new Set(historyItems.map((item) => item.key)),
         liveUnitCache: new Map(),
         lastLiveUnits: [],
         settlingUnits: null,
+        lastActivityRow: null,
       };
     } else if (liveTailVisible && !activeTurn) {
       pendingSettle = null;
       activeTurn = {
         replyKey: `live-turn-${++turnSeq}`,
-        historyLenAtStart: historyItems.length,
+        keysAtStart: new Set(historyItems.map((item) => item.key)),
         liveUnitCache: new Map(),
         lastLiveUnits: [],
         settlingUnits: null,
+        lastActivityRow: null,
       };
     } else if (!liveTailVisible && activeTurn) {
-      // 落定交接：丢弃 activeTurn 的判据是「历史自 historyLenAtStart 起有没有
+      // 落定交接：丢弃 activeTurn 的判据是「历史自回合起点起有没有
       // 新增的、尚未被认领的 assistant 孪生项」——adoptSettledTwin 的返回值正是
       // 这个判据（认领成功 ⇔ 窗口内有可领养孪生项）。不能改用「live 单元里有没有
       // 可见 block」：存在零可见 block 却有真实孪生行的 turn——被取消的 run 会
       // 持久化中止提示 assistant 项；仅输出 Task 工具的 run 其块被
       // isVisibleGroupedBlock 全部过滤。这类 turn 若被误判丢弃，孪生行永不被领养
       // → 以全新 key 重挂载（违反零 remount），persist 滞后时更会漏进下一个 run 的
-      // historyLenAtStart 窗口被错位认领。
+      // 回合起点之后被错位认领。
       const adopted = adoptSettledTwin(historyItems, activeTurn);
       if (adopted) {
         activeTurn = null;
-      } else if (activeTurn.lastLiveUnits.some((row) => row.unit.kind === "block")) {
+      } else if (
+        activeTurn.lastLiveUnits.some(
+          (row) =>
+            row.unit.kind === "block" ||
+            (row.unit.kind === "work-trace" && row.unit.entries.length > 0),
+        )
+      ) {
         // 产出过内容 ⟹ 真实回复必将持久化：孪生行尚未落库（persist 滞后）时
         // 登记 pendingSettle，待其落库后按同一 replyKey 认领（零 remount）。
         pendingSettle = {
           replyKey: activeTurn.replyKey,
-          historyLenAtStart: activeTurn.historyLenAtStart,
+          keysAtStart: activeTurn.keysAtStart,
         };
       } else {
         // 既没产出内容、历史也没有可领养孪生项（空闲手动压缩落定成检查点卡片、
@@ -636,25 +887,17 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
       deferredSettles = deferredSettles.filter((turn) => !adoptSettledTwin(historyItems, turn));
     }
 
-    const bornKeys: string[] = [];
-    const trackBirth = (key: string) => {
-      if (!knownKeys.has(key)) {
-        knownKeys.add(key);
-        bornKeys.push(key);
-      }
-    };
-
     let historyRows: TranscriptRow[];
     if (historyRowsCache?.items === historyItems) {
       historyRows = historyRowsCache.rows;
     } else {
       historyRows = [];
       let retryTarget: RenderUserMessage | null = null;
-      for (const item of historyItems) {
-        const itemRows = buildHistoryRows(item, retryTarget);
+      for (const group of stitchCompactedReplies(historyItems, classifyTimelineItem)) {
+        const members = group.kind === "reply" ? group.items : [group.item];
+        const itemRows = buildHistoryRows(members, retryTarget);
         historyRows.push(...itemRows);
-        for (const row of itemRows) trackBirth(row.key);
-        if (item.kind === "user") retryTarget = item;
+        if (group.kind === "single" && group.item.kind === "user") retryTarget = group.item;
       }
       historyRowsCache = { items: historyItems, rows: historyRows };
     }
@@ -662,15 +905,36 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
     let rows = historyRows;
     let liveStartIndex = -1;
     if ((liveTailVisible || pendingSettle) && activeTurn) {
+      // 运行中压缩：前半段回复已经作为历史项落库（assistant → summary），后半段
+      // 仍在流式。把从本 turn 起点开始的尾部历史项（只允许 assistant/summary，
+      // 遇 user 即止）并入 live 回合——前半段的轮次 + 检查点缝合轮 + 实时轮次
+      // 组成一条连续回复，只渲染一个头像 / 一个工作区块。这些历史项在本次
+      // 构建里不再单独出行；落定后由 adoptSettledTwin 以同一 replyKey 认领整条
+      // 缝合回复（首段 assistant 项为 leader），单元 key 逐一对上、零 remount。
+      const liveHasContent = live.liveRounds.length > 0 || Boolean(live.draftAssistantText);
+      const absorbedLeaderIndex = liveTailVisible
+        ? findLiveReplyLeader(
+            historyItems,
+            resolveTurnStartIndex(historyItems, activeTurn.keysAtStart),
+            liveHasContent,
+          )
+        : -1;
+      const absorbed = absorbedLeaderIndex === -1 ? [] : historyItems.slice(absorbedLeaderIndex);
+      const visibleHistoryRows =
+        absorbed.length > 0
+          ? buildHistoryRowsUntil(historyItems, absorbedLeaderIndex)
+          : historyRows;
+
       let liveUnits = activeTurn.lastLiveUnits;
       if (liveTailVisible) {
-        const rounds: (UiRound | LiveRound)[] =
+        const tailRounds: readonly (UiRound | LiveRound)[] =
           live.liveRounds.length > 0
             ? live.liveRounds
             : live.draftAssistantText
               ? [draftRound(live.draftAssistantText)]
               : [];
-        liveUnits = buildAssistantUnits({
+        const rounds = buildLiveReplyRounds(absorbed, tailRounds);
+        const nextLiveUnits = buildAssistantUnits({
           replyKey: activeTurn.replyKey,
           live: true,
           renderMode: "streaming",
@@ -678,31 +942,38 @@ export function createTranscriptRowModel(options?: TranscriptRowModelOptions): T
           compacted: false,
           replyText: "",
           retryTarget: null,
-          anchorUserKey: historyRows.at(-1)?.anchorUserKey ?? null,
+          anchorUserKey: visibleHistoryRows.at(-1)?.anchorUserKey ?? null,
+          liveStartedAtMs: findLiveTurnStartedAt(
+            historyItems,
+            absorbedLeaderIndex === -1 ? historyItems.length : absorbedLeaderIndex,
+          ),
           liveUnitCache: activeTurn.liveUnitCache,
         });
+        // Preserve array identity when every unit was reused so the whole
+        // activity row (and its memoized subtree) can bail out on emits that
+        // change nothing visible (tool-status-only frames).
+        liveUnits = sameRowArray(activeTurn.lastLiveUnits, nextLiveUnits)
+          ? activeTurn.lastLiveUnits
+          : nextLiveUnits;
         activeTurn.lastLiveUnits = liveUnits;
         activeTurn.settlingUnits = null;
       } else {
         if (!activeTurn.settlingUnits) {
-          activeTurn.settlingUnits = activeTurn.lastLiveUnits
-            .filter((row) => row.unit.kind !== "status")
-            .map((row) => ({
-              ...row,
-              live: false,
-              mutable: false,
-            }));
+          activeTurn.settlingUnits = activeTurn.lastLiveUnits.map((row) => ({
+            ...row,
+            live: false,
+            mutable: false,
+          }));
         }
         liveUnits = activeTurn.settlingUnits;
       }
-      const liveActivity = buildAssistantActivityRow(activeTurn.replyKey, liveUnits);
-      rows = [...historyRows, liveActivity];
+      const liveActivity =
+        activeTurn.lastActivityRow && activeTurn.lastActivityRow.units === liveUnits
+          ? activeTurn.lastActivityRow
+          : buildAssistantActivityRow(activeTurn.replyKey, liveUnits);
+      activeTurn.lastActivityRow = liveActivity;
+      rows = [...visibleHistoryRows, liveActivity];
       liveStartIndex = rows.length - 1;
-      trackBirth(liveActivity.key);
-    }
-
-    if (bornKeys.length > 0 || isInitialBuild) {
-      options?.onRowsBorn?.(bornKeys, isInitialBuild);
     }
 
     return { rows, liveStartIndex };

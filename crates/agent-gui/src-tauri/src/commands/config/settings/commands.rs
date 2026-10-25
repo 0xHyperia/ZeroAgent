@@ -1,9 +1,28 @@
 #[tauri::command]
-pub async fn settings_load_all() -> Result<SettingsLoadResponse, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let conn = open_db()?;
+pub async fn settings_load_all(
+    kbrain_backend: tauri::State<'_, Arc<crate::services::kbrain_backend::KBrainBackendState>>,
+) -> Result<SettingsLoadResponse, String> {
+    let backend = Arc::clone(kbrain_backend.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        if !backend.allows_profile_commands() {
+            return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
+        }
+        let mut conn = open_db()?;
+        let lock = backend.configuration_coordinator()?;
+        let _guard = lock.blocking_lock();
+        lock.ensure_consistent()?;
+        if !backend.allows_profile_commands() {
+            return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
+        }
+        let client = ProfileBackupBackend::new(
+            backend.running_connection().ok_or("当前配置后端尚未就绪")?,
+            Some(Arc::clone(&backend)),
+            config_dir()?,
+        )?;
+        let documents = client.documents_locked()?;
         let default_workdir = default_project_workdir()?;
-        let mut remote = serde_json::to_value(load_remote_settings(&conn)?)
+        let snapshot = conn.transaction().map_err(|_| "无法读取一致配置快照")?;
+        let mut remote = serde_json::to_value(load_remote_settings(&snapshot)?)
             .map_err(|e| format!("序列化 remote settings 失败：{e}"))?;
         if let serde_json::Value::Object(settings) = &mut remote {
             settings.insert(
@@ -11,18 +30,35 @@ pub async fn settings_load_all() -> Result<SettingsLoadResponse, String> {
                 serde_json::Value::String(String::new()),
             );
         }
-        Ok(SettingsLoadResponse {
-            providers: load_providers(&conn)?,
-            system: Some(load_system_with_defaults(&conn, &default_workdir)?),
-            mcp: load_mcp(&conn)?,
-            agents: load_agents(&conn)?,
-            ssh: load_ssh(&conn)?,
+        let native_revision = native_configuration_revision(&snapshot)?;
+        let ui = load_ui_preferences(&snapshot)?;
+        let response = SettingsLoadResponse {
+            ui_revision: ui.ui_revision,
+            ui_preferences: ui.ui_preferences,
+            configuration_revision: client.revision_locked(&native_revision, &documents)?,
+            native_revision,
+            backend: documents,
+            providers: None,
+            system: Some(load_system_with_defaults(&snapshot, &default_workdir)?),
+            // Go-owned domains are returned only in the canonical public documents.
+            // Old SQLite MCP payloads can contain private values and are migration-only.
+            mcp: None,
+            agents: None,
+            ssh: load_ssh(&snapshot)?,
             remote: Some(remote),
-            stt: load_stt_redacted(&conn)?,
-            memory: load_memory(&conn)?,
-            model_failover: load_model_failover(&conn)?,
+            stt: load_stt_redacted(&snapshot)?,
+            memory: load_memory(&snapshot)?,
+            model_failover: load_model_failover(&snapshot)?,
             default_workdir,
-        })
+        };
+        snapshot.commit().map_err(|_| "无法完成一致配置读取")?;
+        backend.verify_portable_backup(
+            &serde_json::to_value(&response).map_err(|_| "无法校验配置快照")?,
+        )?;
+        if !backend.allows_profile_commands() {
+            return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
+        }
+        Ok(response)
     })
     .await
     .map_err(|e| format!("settings_load_all join 失败：{e}"))?
@@ -42,17 +78,27 @@ pub async fn settings_save_providers(payload: Value) -> Result<(), String> {
 pub async fn settings_save_system(
     payload: Value,
     automation_scheduler: tauri::State<'_, Arc<AutomationScheduler>>,
+    kbrain_backend: tauri::State<'_, Arc<crate::services::kbrain_backend::KBrainBackendState>>,
 ) -> Result<(), String> {
+    let kbrain_backend = Arc::clone(kbrain_backend.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let mut conn = open_db()?;
         save_system(&mut conn, payload)?;
         // 保存成功后刷新全局代理状态，让 shell env 注入与出网代理即时生效。
-        refresh_system_proxy_state(&conn)
+        let proxy_revision = crate::services::system_proxy::revision();
+        refresh_system_proxy_state(&conn)?;
+        // 代理真实变化时推给运行中的 K-brain（best effort，失败只记日志）。
+        if crate::services::system_proxy::revision() != proxy_revision {
+            kbrain_backend.push_proxy_setting();
+        }
+        Ok::<(), String>(())
     })
     .await
     .map_err(|e| format!("settings_save_system join 失败：{e}"))??;
     // Bash cron tasks execute in the system workdir; reschedule so the new
     // workdir takes effect without an app restart.
+    // 默认时区可能已变:先让缓存失效,记忆等高频调用方立即读到新时区。
+    invalidate_default_tz_cache();
     automation_scheduler.request_reload();
     Ok(())
 }
@@ -79,6 +125,7 @@ pub async fn settings_save_remote(
     .await
     .map_err(|e| format!("settings_save_remote join 失败：{e}"))??;
     let mut normalized = normalized;
+    normalized.token.clear();
     if let Some(credential) = crate::services::device_credentials::load_device_credential()? {
         normalized.agent_id = credential.effective_agent_id().to_string();
         normalized.token = credential.effective_token().to_string();
@@ -125,10 +172,7 @@ pub async fn settings_save_stt(
 }
 
 #[tauri::command]
-pub async fn settings_reveal_stt_secret(
-    provider: String,
-    field: String,
-) -> Result<String, String> {
+pub async fn settings_reveal_stt_secret(provider: String, field: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db()?;
         load_stt_secret(&conn, &provider, &field)

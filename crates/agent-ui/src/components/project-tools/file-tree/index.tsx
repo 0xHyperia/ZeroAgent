@@ -4,7 +4,11 @@
 // Shared implementation owned by @liveagent/ui. Host-specific icons, settings
 // and backend capabilities resolve through the current application's contracts.
 
-import type { RightDockFileTreeStatePatch } from "@liveagent/app/lib/settings";
+import type {
+  RightDockFileTreeState,
+  RightDockFileTreeStatePatch,
+  WorkspaceProject,
+} from "@liveagent/app/lib/settings";
 import {
   Check,
   FolderOpen,
@@ -14,9 +18,11 @@ import {
   Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
+import type { WorkspaceProjectRootClient } from "@liveagent/ui/contracts/workspaceProjectRoots";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
@@ -24,9 +30,15 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  finishWorkspacePathDrag,
+  writeWorkspacePathDragPayload,
+} from "../../../lib/chat/workspacePathDrag";
+import { hostAwareErrorMessage } from "../../../lib/shared/hostErrors";
 import { cn } from "../../../lib/shared/utils";
+import type { WorkspaceActivityClient } from "../../../lib/workspace-activity/types";
 import { getFileTypeIcon } from "../../chat/fileTypeIcons";
-import { Button } from "../../ui/button";
+import { Button, RefreshButton } from "../../ui/button";
 import { useConfirmDialog } from "../../ui/confirm-dialog";
 import { Input } from "../../ui/input";
 import { isWorkspaceImagePath } from "../../workspace-editor/workspaceImagePreview";
@@ -37,7 +49,9 @@ import {
   ancestorDirsOfPath,
   basename,
   dirname,
+  FILE_TREE_HAS_OS_INTEGRATION,
   FILE_TREE_ROW_HEIGHT,
+  type FileTreeExternalRoot,
   type FileTreeKind,
   flattenFileTreeRows,
   ROOT_PATH,
@@ -47,8 +61,10 @@ import {
 } from "./model";
 import { FileTreeErrorRow, FileTreeRow } from "./Row";
 import { useFileTreeData } from "./useFileTreeData";
+import { useFileTreeExternalRoots } from "./useFileTreeExternalRoots";
 
 const FILE_TREE_QUERY_SYNC_DEBOUNCE_MS = 180;
+const NO_EXTERNAL_FILE_TREE_ROOTS: readonly FileTreeExternalRoot[] = [];
 
 type PendingAction = "file" | "folder" | "rename" | null;
 
@@ -59,11 +75,87 @@ type ContextMenuState = {
 };
 
 export function FileTreePanel(props: { active: boolean }) {
-  const { active } = props;
   const context = useRightDockToolContext();
-  const { projectPathKey, cwd, fileTree } = context;
-  const syncState = fileTree.state;
-  const initialized = fileTree.initialized;
+  return (
+    <FileTreeSurface
+      active={props.active}
+      projectPathKey={context.projectPathKey}
+      cwd={context.cwd}
+      state={context.fileTree.state}
+      initialized={context.fileTree.initialized}
+      externalRoots={context.fileTree.externalRoots}
+      workspaceActivityClient={context.clients.workspaceActivity ?? null}
+      onInitializedChange={context.fileTree.onInitializedChange}
+      onRefreshExternalRoots={context.fileTree.refreshExternalRoots}
+      onStateChange={context.fileTree.onStateChange}
+      onInsertFileMention={context.fileTree.onInsertFileMention}
+      onOpenFile={context.fileTree.onOpenFile}
+    />
+  );
+}
+
+export type FileTreeSurfaceProps = {
+  active: boolean;
+  projectPathKey: string;
+  cwd: string;
+  state: RightDockFileTreeState;
+  initialized?: boolean;
+  externalRoots?: readonly FileTreeExternalRoot[];
+  workspaceActivityClient?: WorkspaceActivityClient | null;
+  onInitializedChange?: (initialized: boolean) => void;
+  onRefreshExternalRoots?: () => Promise<void>;
+  onStateChange: (patch: RightDockFileTreeStatePatch) => void;
+  onInsertFileMention?: (path: string, kind: "file" | "dir") => void;
+  onOpenFile?: (path: string, imagePaths?: string[]) => void;
+};
+
+export type FileTreePaneSurfaceProps = Omit<
+  FileTreeSurfaceProps,
+  "externalRoots" | "onRefreshExternalRoots"
+> & {
+  workspaceProject?: WorkspaceProject;
+  workspaceProjectRootClient?: WorkspaceProjectRootClient;
+  workspaceRootRevision?: number;
+};
+
+/**
+ * Workbench pane host for the file tree. The Right Dock fetches external
+ * (multi-root) grants itself and injects them through context; a pane has no
+ * dock context, so this wrapper owns the same fetch and keeps both hosts
+ * rendering identical roots.
+ */
+export function FileTreePaneSurface(props: FileTreePaneSurfaceProps) {
+  const { workspaceProject, workspaceProjectRootClient, workspaceRootRevision, ...surfaceProps } =
+    props;
+  const { externalRoots, refreshExternalRoots } = useFileTreeExternalRoots({
+    workspaceProject,
+    workspaceProjectRootClient,
+    workspaceRootRevision,
+  });
+  return (
+    <FileTreeSurface
+      {...surfaceProps}
+      externalRoots={externalRoots}
+      onRefreshExternalRoots={refreshExternalRoots}
+    />
+  );
+}
+
+export function FileTreeSurface(props: FileTreeSurfaceProps) {
+  const {
+    active,
+    projectPathKey,
+    cwd,
+    state: syncState,
+    initialized = true,
+    externalRoots = NO_EXTERNAL_FILE_TREE_ROOTS,
+    workspaceActivityClient,
+    onInitializedChange,
+    onRefreshExternalRoots,
+    onStateChange,
+    onInsertFileMention,
+    onOpenFile,
+  } = props;
   const { t } = useLocale();
 
   const [query, setQuery] = useState(syncState.query);
@@ -87,13 +179,16 @@ export function FileTreePanel(props: { active: boolean }) {
     renameEntry,
     deleteEntry,
     openWorkspacePath,
+    isExternalPath,
+    getDisplayPath,
     search,
   } = useFileTreeData({
     projectPathKey,
     cwd,
+    externalRoots,
     active,
     initialized,
-    workspaceActivityClient: context.clients.workspaceActivity ?? null,
+    workspaceActivityClient: workspaceActivityClient ?? null,
     expandedPaths: syncState.expandedPaths,
     query,
     showHidden: syncState.showHidden,
@@ -104,10 +199,10 @@ export function FileTreePanel(props: { active: boolean }) {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const onStateChangeRef = useRef(fileTree.onStateChange);
+  const onStateChangeRef = useRef(onStateChange);
   useEffect(() => {
-    onStateChangeRef.current = fileTree.onStateChange;
-  }, [fileTree.onStateChange]);
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
   const emitState = useCallback((patch: RightDockFileTreeStatePatch) => {
     onStateChangeRef.current(patch);
   }, []);
@@ -178,22 +273,6 @@ export function FileTreePanel(props: { active: boolean }) {
     setRevealTarget(null);
   }, [projectPathKey]);
 
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    window.addEventListener("click", close);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [contextMenu]);
-
   // Reveal: expand + load the ancestor chain, then scroll the row into view.
   // The expansion merge reads `expandedRef` *after* the awaits so manual
   // expands that happened while loading are preserved (the old panel captured
@@ -252,26 +331,63 @@ export function FileTreePanel(props: { active: boolean }) {
     return siblingPaths.includes(targetPath) ? siblingPaths : [targetPath];
   }, []);
 
-  const onOpenFileRef = useRef(fileTree.onOpenFile);
+  const onOpenFileRef = useRef(onOpenFile);
   useEffect(() => {
-    onOpenFileRef.current = fileTree.onOpenFile;
-  }, [fileTree.onOpenFile]);
+    onOpenFileRef.current = onOpenFile;
+  }, [onOpenFile]);
   const handleOpenFile = useCallback(
     (path: string) => {
+      if (isExternalPath(path)) {
+        if (!FILE_TREE_HAS_OS_INTEGRATION) return;
+        setActionError(null);
+        void openWorkspacePath(path, "open").catch((error: unknown) => {
+          setActionError(hostAwareErrorMessage(error, t("projectTools.runtimeUnsupported")));
+        });
+        return;
+      }
       onOpenFileRef.current?.(path, getSiblingImagePaths(path));
     },
-    [getSiblingImagePaths],
+    [getSiblingImagePaths, isExternalPath, openWorkspacePath, t],
   );
 
-  const onInsertFileMentionRef = useRef(fileTree.onInsertFileMention);
+  const onInsertFileMentionRef = useRef(onInsertFileMention);
   useEffect(() => {
-    onInsertFileMentionRef.current = fileTree.onInsertFileMention;
-  }, [fileTree.onInsertFileMention]);
-  const handleInsertMention = useCallback((path: string) => {
-    const node = nodesRef.current[path];
-    if (!path || !node) return;
-    onInsertFileMentionRef.current?.(path, node.kind);
-  }, []);
+    onInsertFileMentionRef.current = onInsertFileMention;
+  }, [onInsertFileMention]);
+  const handleInsertMention = useCallback(
+    (path: string) => {
+      const node = nodesRef.current[path];
+      if (!path || !node || isExternalPath(path)) return;
+      onInsertFileMentionRef.current?.(path, node.kind);
+    },
+    [isExternalPath],
+  );
+
+  const handleWorkspacePathDragStart = useCallback(
+    (event: ReactDragEvent, path: string, kind: FileTreeKind) => {
+      const node = nodesRef.current[path];
+      // External roots live outside the project cwd, so they have no
+      // project-relative payload; the payload validator would reject their
+      // sentinel prefix anyway, but refuse the drag explicitly.
+      if (!node || !path || isExternalPath(path)) {
+        event.preventDefault();
+        return;
+      }
+      if (
+        !writeWorkspacePathDragPayload(event.dataTransfer, {
+          kind: "workspacePath",
+          projectPathKey,
+          cwd,
+          relativePath: path,
+          entryKind: kind,
+          label: node.name,
+        })
+      ) {
+        event.preventDefault();
+      }
+    },
+    [cwd, isExternalPath, projectPathKey],
+  );
 
   const openContextMenu = useCallback(
     (event: ReactMouseEvent, path: string) => {
@@ -336,7 +452,7 @@ export function FileTreePanel(props: { active: boolean }) {
       setPendingTargetPath(null);
       setDraftName("");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(hostAwareErrorMessage(error, t("projectTools.runtimeUnsupported")));
     } finally {
       setBusyAction(false);
     }
@@ -361,8 +477,13 @@ export function FileTreePanel(props: { active: boolean }) {
         subtitle: t("projectTools.fileTree.deleteConfirmDescription"),
         description: (
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-destructive/25 bg-destructive/10 text-destructive">
-              <Trash2 className="h-4 w-4" />
+            <div
+              className={cn(
+                "flex size-9 shrink-0 items-center justify-center",
+                "rounded-xl border border-destructive/25 bg-destructive/10 text-destructive",
+              )}
+            >
+              <Trash2 className="size-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-foreground">
@@ -377,7 +498,6 @@ export function FileTreePanel(props: { active: boolean }) {
         confirmLabel: t("projectTools.fileTree.delete"),
         cancelLabel: t("settings.cancel"),
         closeLabel: t("projectTools.fileTree.deleteConfirmClose"),
-        tone: "destructive",
       });
       if (!confirmed) return;
       setBusyAction(true);
@@ -387,7 +507,7 @@ export function FileTreePanel(props: { active: boolean }) {
         setExpanded(removeExpandedSubtree(expandedRef.current, targetPath));
         selectPath(dirname(targetPath));
       } catch (error) {
-        setActionError(error instanceof Error ? error.message : String(error));
+        setActionError(hostAwareErrorMessage(error, t("projectTools.runtimeUnsupported")));
       } finally {
         setBusyAction(false);
       }
@@ -399,20 +519,20 @@ export function FileTreePanel(props: { active: boolean }) {
     (path: string) => {
       setActionError(null);
       void openWorkspacePath(path, "open").catch((error: unknown) => {
-        setActionError(error instanceof Error ? error.message : String(error));
+        setActionError(hostAwareErrorMessage(error, t("projectTools.runtimeUnsupported")));
       });
     },
-    [openWorkspacePath],
+    [openWorkspacePath, t],
   );
 
   const handleOpenContainingDirectory = useCallback(
     (path: string) => {
       setActionError(null);
       void openWorkspacePath(path, "reveal").catch((error: unknown) => {
-        setActionError(error instanceof Error ? error.message : String(error));
+        setActionError(hostAwareErrorMessage(error, t("projectTools.runtimeUnsupported")));
       });
     },
-    [openWorkspacePath],
+    [openWorkspacePath, t],
   );
 
   const handleMenuRefresh = useCallback(
@@ -431,9 +551,14 @@ export function FileTreePanel(props: { active: boolean }) {
 
   if (!initialized) {
     return (
-      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/80">
-          <FolderOpen className="h-6 w-6 text-muted-foreground" />
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col items-center justify-center gap-4 px-6",
+          "text-center",
+        )}
+      >
+        <div className="flex size-12 items-center justify-center rounded-xl bg-muted/80">
+          <FolderOpen className="size-6 text-muted-foreground" />
         </div>
         <div className="flex flex-col gap-1">
           <div className="text-sm font-medium text-foreground">{t("projectTools.newFileTree")}</div>
@@ -444,7 +569,7 @@ export function FileTreePanel(props: { active: boolean }) {
         <Button
           size="sm"
           onClick={() => {
-            fileTree.onInitializedChange(true);
+            onInitializedChange?.(true);
             void loadChildren(ROOT_PATH, { force: true });
           }}
         >
@@ -460,23 +585,27 @@ export function FileTreePanel(props: { active: boolean }) {
     <div ref={panelRef} className="relative flex h-full min-h-0 select-none flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             placeholder={t("projectTools.fileTree.searchPlaceholder")}
-            className="h-8 pl-7 text-[calc(11px*var(--zone-font-scale,1))] placeholder:text-[calc(11px*var(--zone-font-scale,1))]"
+            className="h-8 pl-7 text-xs placeholder:text-xs"
           />
         </div>
-        <Button
+        <RefreshButton
+          aria-busy={Object.values(nodes).some((node) => node.loading)}
           variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-lg"
+          size="icon-sm"
+          className="rounded-lg"
           title={t("projectTools.fileTree.refresh")}
-          onClick={() => refreshVisible()}
+          onClick={() => {
+            void onRefreshExternalRoots?.();
+            refreshVisible();
+          }}
         >
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+          <RefreshCw data-refresh-icon className="size-4" />
+        </RefreshButton>
       </div>
 
       {pendingAction ? (
@@ -498,31 +627,31 @@ export function FileTreePanel(props: { active: boolean }) {
               }
             }}
             placeholder={actionPlaceholder}
-            className="h-8 text-[calc(11px*var(--zone-font-scale,1))] placeholder:text-[calc(11px*var(--zone-font-scale,1))]"
+            className="h-8 text-xs placeholder:text-xs"
           />
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8 rounded-lg"
+            className="rounded-lg"
             disabled={busyAction}
             onClick={() => void finishAction()}
           >
             {busyAction ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Check className="h-4 w-4" />
+              <Check className="size-4" />
             )}
           </Button>
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8 rounded-lg"
+            className="rounded-lg"
             onClick={() => {
               setPendingAction(null);
               setPendingTargetPath(null);
             }}
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </div>
       ) : null}
@@ -534,10 +663,15 @@ export function FileTreePanel(props: { active: boolean }) {
       ) : null}
 
       {query.trim() ? (
-        <div className="project-file-tree-panel-scroll max-h-40 shrink-0 overflow-auto border-b border-border/60 px-2 py-2">
+        <div
+          className={cn(
+            "project-file-tree-panel-scroll max-h-40 shrink-0 overflow-auto border-b border-border/60 p-2",
+            "web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
+          )}
+        >
           {search.loading ? (
             <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="size-3.5 animate-spin" />
               {t("projectTools.fileTree.searching")}
             </div>
           ) : search.error ? (
@@ -553,22 +687,28 @@ export function FileTreePanel(props: { active: boolean }) {
                 <button
                   key={`${entry.kind}:${entry.path}`}
                   type="button"
+                  draggable
                   className={cn(
-                    "flex w-full select-none items-center gap-1.5 rounded-md px-2 text-left text-xs leading-5 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    "flex w-full select-none items-center gap-1.5 rounded-md px-2",
+                    "text-left text-xs leading-5 text-muted-foreground hover:bg-muted hover:text-foreground",
                     entry.hidden && "opacity-60 hover:opacity-80",
                   )}
                   style={{ minHeight: FILE_TREE_ROW_HEIGHT }}
                   title={entry.path}
                   onClick={() => void revealPath(entry.path, entry.kind)}
+                  onDragStart={(event) =>
+                    handleWorkspacePathDragStart(event, entry.path, entry.kind)
+                  }
+                  onDragEnd={finishWorkspacePathDrag}
                 >
-                  <TypeIcon className="h-3.5 w-3.5 shrink-0" />
+                  <TypeIcon className="size-3.5 shrink-0" />
                   <span className="min-w-0 truncate">{entry.path}</span>
                 </button>
               );
             })
           )}
           {search.truncated ? (
-            <div className="px-2 pt-1 text-[calc(11px*var(--zone-font-scale,1))] text-muted-foreground">
+            <div className="px-2 pt-1 text-xs text-muted-foreground">
               {t("projectTools.fileTree.resultsTruncated")}
             </div>
           ) : null}
@@ -578,7 +718,7 @@ export function FileTreePanel(props: { active: boolean }) {
       <div
         role="tree"
         ref={scrollRef}
-        className="project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto px-2 py-2"
+        className="project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]"
         onContextMenu={(event) => openContextMenu(event, selectedPath || ROOT_PATH)}
       >
         <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
@@ -617,11 +757,13 @@ export function FileTreePanel(props: { active: boolean }) {
                   expanded={expandedSet.has(row.path)}
                   selected={selectedPath === row.path}
                   loading={node.loading}
-                  title={row.path || cwd}
+                  title={getDisplayPath(row.path)}
                   onToggle={toggleDirectory}
                   onSelect={selectPath}
                   onOpen={handleOpenFile}
                   onContextMenu={openContextMenu}
+                  onDragStart={handleWorkspacePathDragStart}
+                  onDragEnd={finishWorkspacePathDrag}
                 />
               </div>
             );
@@ -635,10 +777,13 @@ export function FileTreePanel(props: { active: boolean }) {
           anchor={{ x: contextMenu.x, y: contextMenu.y }}
           containerRef={panelRef}
           path={contextNode.path}
+          displayPath={
+            isExternalPath(contextNode.path) ? getDisplayPath(contextNode.path) : undefined
+          }
           kind={contextNode.kind}
-          canMutate={canMutate}
-          canOpenFile={Boolean(fileTree.onOpenFile)}
-          canInsertMention={Boolean(fileTree.onInsertFileMention)}
+          canMutate={canMutate && !isExternalPath(contextNode.path)}
+          canOpenFile={Boolean(onOpenFile) && !isExternalPath(contextNode.path)}
+          canInsertMention={Boolean(onInsertFileMention) && !isExternalPath(contextNode.path)}
           showHidden={syncState.showHidden}
           onClose={() => setContextMenu(null)}
           onOpenFile={handleOpenFile}

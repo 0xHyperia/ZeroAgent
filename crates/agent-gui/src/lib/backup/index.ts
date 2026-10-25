@@ -1,12 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { SkillsSettings } from "../settings";
+import { invoke } from "@liveagent/app/shims/tauriCore";
 
 /**
  * 配置备份的 IPC 封装。
  *
- * 后端只能看到 SQLite 里的 providers / mcp / system 三域；skills 启用态存在
- * webview localStorage（见 `lib/settings/storage.ts`），因此导出时由前端拼进
- * payload，导入时由后端回传给前端写回。
+ * schema4 包含 mcp / system 可移植偏好 / agents / modelFailover / stt。
+ * MCP / agents 由当前 K-brain 后端采集，其余域来自原生 SQLite。
+ * 模型服务商和默认模型由当前 USA-Zero 账户提供，不进入可移植备份或恢复。
+ * 私有值采集、密钥过滤与失败恢复由原生端完成。
  */
 
 /** 各域条目数，仅用于确认对话框展示摘要。 */
@@ -14,7 +14,9 @@ export type BackupDomainCounts = {
   providers: number;
   mcp: number;
   system: number;
-  skills: number;
+  agents: number;
+  modelFailover: number;
+  stt: number;
 };
 
 export type BackupManifest = {
@@ -32,15 +34,15 @@ export type BackupManifest = {
 
 export type BackupImportPreview = {
   path: string;
+  fingerprint: string;
   manifest: BackupManifest;
 };
 
 export type BackupApplyOutcome = {
   applied: BackupDomainCounts;
-  /** 需由调用方写回 localStorage —— 后端无法操作 webview 存储。 */
-  skills: SkillsSettings | null;
   /** 应用前生成的本地备份文件路径。 */
   backupPath: string | null;
+  warning?: string | null;
 };
 
 /**
@@ -48,8 +50,8 @@ export type BackupApplyOutcome = {
  *
  * 后端错误信息已是可直接展示的中文文案，故不额外包一层错误类型。
  */
-export async function exportBackup(skills: SkillsSettings): Promise<string | null> {
-  return await invoke<string | null>("settings_backup_export", { skills });
+export async function exportBackup(): Promise<string | null> {
+  return await invoke<string | null>("settings_backup_export");
 }
 
 /** 选择并解析备份文件，仅校验不写库。用户取消返回 null。 */
@@ -58,8 +60,33 @@ export async function peekBackupImport(): Promise<BackupImportPreview | null> {
 }
 
 /** 应用备份。写库前后端会自动备份当前配置。 */
-export async function applyBackupImport(path: string): Promise<BackupApplyOutcome> {
-  return await invoke<BackupApplyOutcome>("settings_backup_apply_import", { path });
+export async function applyBackupImport(
+  path: string,
+  fingerprint: string,
+): Promise<BackupApplyOutcome> {
+  return await invoke<BackupApplyOutcome>("settings_backup_apply_import", { path, fingerprint });
+}
+
+/** Refresh canonical state even after a partial restore/rollback failure. */
+export async function restoreBackupAndReload(
+  restore: () => Promise<BackupApplyOutcome>,
+  reload: () => Promise<void>,
+): Promise<BackupApplyOutcome> {
+  let outcome: BackupApplyOutcome | undefined;
+  let failed: { error: unknown } | undefined;
+  try {
+    outcome = await restore();
+  } catch (error) {
+    failed = { error };
+  }
+  try {
+    await reload();
+  } catch (error) {
+    if (failed) throw new AggregateError([failed.error, error], String(failed.error));
+    throw error;
+  }
+  if (failed) throw failed.error;
+  return outcome as BackupApplyOutcome;
 }
 
 // ===== WebDAV 同步 =====
@@ -104,6 +131,7 @@ export type BackupRemoteInfo = {
   manifest: BackupManifest;
   size: number;
   sha256: string;
+  fingerprint: string;
 };
 
 export async function loadSyncConfig(): Promise<BackupSyncConfigView> {
@@ -127,28 +155,13 @@ export async function fetchRemoteInfo(): Promise<BackupRemoteInfo | null> {
 }
 
 /** 上传当前配置。返回本次同步的毫秒时间戳。 */
-export async function uploadBackup(skills: SkillsSettings): Promise<number> {
-  return await invoke<number>("settings_backup_upload", { skills });
+export async function uploadBackup(): Promise<number> {
+  return await invoke<number>("settings_backup_upload");
 }
 
 /** 下载并应用远端配置。 */
-export async function downloadBackup(): Promise<BackupApplyOutcome> {
-  return await invoke<BackupApplyOutcome>("settings_backup_download");
-}
-
-/**
- * 通知后端「配置已变更」，触发自动同步的防抖上传。
- *
- * providers / mcp / system 三域后端自己就能感知；skills 存在 localStorage，
- * 后端读不到，所以每次都把最新的 skills 一并送过去缓存起来，供后台上传使用。
- *
- * 自动同步是尽力而为的后台行为：失败绝不能冒泡成「保存失败」，
- * 因此调用方一律 fire-and-forget。
- */
-export function markBackupDirty(skills: SkillsSettings): void {
-  void invoke("settings_backup_mark_dirty", { skills }).catch(() => {
-    // 忽略：自动同步的失败通过 backup-sync-status-updated 事件呈现。
-  });
+export async function downloadBackup(fingerprint: string): Promise<BackupApplyOutcome> {
+  return await invoke<BackupApplyOutcome>("settings_backup_download", { fingerprint });
 }
 
 /** 后台自动同步的结果事件载荷。手动同步的成败由命令返回值直接告知，不走此事件。 */

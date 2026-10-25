@@ -50,6 +50,11 @@ export type GatewaySettingsSyncCustomSettings = Partial<AppSettings["customSetti
 export type GatewaySttSecretUpdate = AppSettings["stt"];
 
 export type GatewaySettingsSyncPayload = {
+  settingsSyncProtocol?: "zeroagent.settings-sync.v1";
+  configurationRevision?: string;
+  uiPreferencesRevision?: string;
+  aiApproval?: import("@liveagent/ui/pages/settings/kbrainSettingsAdapter").AIApprovalConfig;
+  computer?: import("@liveagent/ui/pages/settings/kbrainSettingsAdapter").KBrainComputerConfig;
   system: AppSettings["system"];
   customProviders: GatewaySettingsSyncProvider[];
   mcp: AppSettings["mcp"];
@@ -80,6 +85,13 @@ export type GatewaySettingsSyncPayload = {
   sttSecretUpdate?: GatewaySttSecretUpdate;
 };
 export type GatewaySettingsSyncUpdatePayload = Partial<GatewaySettingsSyncPayload>;
+export type GatewaySettingsUpdateReceipt = {
+  protocol: "zeroagent.settings-sync.v1";
+  configurationRevision: string;
+  uiPreferencesRevision: string;
+  snapshot: GatewaySettingsSyncPayload | null;
+  warning?: string | null;
+};
 
 const GATEWAY_SETTINGS_SYNC_FIELDS = [
   "system",
@@ -185,6 +197,10 @@ export function redactSettingsForWebStorage(settings: AppSettings): AppSettings 
     },
     customProviders: redactCustomProvidersForWebStorage(settings.customProviders),
     ssh: redactSshSettingsForWebStorage(settings.ssh),
+    remote: {
+      ...settings.remote,
+      localGatewayToken: "",
+    },
     stt: redactSttSettingsForWebStorage(settings.stt),
   });
 }
@@ -508,7 +524,7 @@ function syncableCustomSettings(
     chatFontFamily: "",
     codeFontFamily: "",
     chatTranscript: { width: DEFAULT_CHAT_TRANSCRIPT_WIDTH },
-    fontScale: { sidebar: 1, chat: 1, rightDock: 1 },
+    fontScale: { sidebar: 1, chat: 1, rightDock: 1, settings: 1 },
   };
 }
 
@@ -1167,6 +1183,13 @@ export function buildGatewaySettingsSyncPayload(
     stt.allowIncomplete = true;
   }
   const payload: GatewaySettingsSyncPayload = {
+    ...(settings.settingsSyncProtocol
+      ? {
+          settingsSyncProtocol: settings.settingsSyncProtocol,
+          configurationRevision: settings.configurationRevision,
+          uiPreferencesRevision: settings.uiPreferencesRevision,
+        }
+      : {}),
     system: syncableSystemSettings(settings.system),
     customProviders: redactCustomProvidersForGateway(settings.customProviders),
     mcp: settings.mcp,
@@ -1267,6 +1290,11 @@ export function buildGatewaySettingsSyncUpdatePayload(
     update.systemProxyPasswordUpdate = systemProxyPasswordUpdate;
   }
 
+  if (Object.keys(update).length && prev.settingsSyncProtocol) {
+    update.settingsSyncProtocol = prev.settingsSyncProtocol;
+    update.configurationRevision = prev.configurationRevision;
+    update.uiPreferencesRevision = prev.uiPreferencesRevision;
+  }
   return update;
 }
 
@@ -1299,6 +1327,24 @@ export function applyGatewaySettingsSyncPayload(
 
   return normalizeSettings({
     ...current,
+    settingsSyncProtocol:
+      source.settingsSyncProtocol === "zeroagent.settings-sync.v1"
+        ? source.settingsSyncProtocol
+        : Array.isArray(source.customProviders)
+          ? undefined
+          : current.settingsSyncProtocol,
+    configurationRevision:
+      typeof source.configurationRevision === "string"
+        ? source.configurationRevision
+        : Array.isArray(source.customProviders)
+          ? undefined
+          : current.configurationRevision,
+    uiPreferencesRevision:
+      typeof source.uiPreferencesRevision === "string"
+        ? source.uiPreferencesRevision
+        : Array.isArray(source.customProviders)
+          ? undefined
+          : current.uiPreferencesRevision,
     system: Object.hasOwn(source, "system")
       ? mergeSyncedSystemSettings(current.system, source.system, systemProxyPasswordUpdate)
       : current.system,
@@ -1328,6 +1374,18 @@ export function applyGatewaySettingsSyncPayload(
           )
         : current.customSettings.rightDock,
       chatSidebar: current.customSettings.chatSidebar,
+      // 入口可见性跨端同步；旧端未携带此字段时保留当前状态。
+      sidebarShortcuts:
+        incomingCustomSettings.sidebarShortcuts ?? current.customSettings.sidebarShortcuts,
+      // 展示样式是全局偏好，随同步走；老对端的 payload 没有该字段时保留本地值，
+      // 不得被重置回默认。
+      composerContextDisplay:
+        incomingCustomSettings.composerContextDisplay ??
+        current.customSettings.composerContextDisplay,
+      // 澄清提示词总开关同上（全局偏好 + 老对端兼容）；promptClarifyModel
+      // 经上方展开随同步走——缺省即「跟随当前对话模型」，与标题/commit 模型同轨。
+      promptClarifyEnabled:
+        incomingCustomSettings.promptClarifyEnabled ?? current.customSettings.promptClarifyEnabled,
       // Typography, scale, and transcript width are local UI preferences, never gateway-synced.
       interfaceFontFamily: current.customSettings.interfaceFontFamily,
       chatFontFamily: current.customSettings.chatFontFamily,

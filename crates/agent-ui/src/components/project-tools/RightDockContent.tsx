@@ -7,10 +7,12 @@ import type { TerminalSession, TerminalSnapshot } from "../../lib/terminal/types
 import { Button } from "../ui/button";
 import { BackgroundTasksPanel } from "./BackgroundTasksPanel";
 import { useRightDockToolContext } from "./RightDockContext";
+import { NO_LEASED_RIGHT_DOCK_TOOLS, type RightDockLeasedToolKind } from "./rightDockModel";
 import { RIGHT_DOCK_TOOL_DEFINITIONS, type RightDockSingletonTabKind } from "./rightDockRegistry";
 import { XTermViewport } from "./XTermViewport";
 
 type RightDockContentProps = {
+  isOpen: boolean;
   currentActiveTab: RightDockTabKind;
   initializedTools: Readonly<Record<RightDockSingletonTabKind, boolean>>;
   localSessions: TerminalSession[];
@@ -22,10 +24,12 @@ type RightDockContentProps = {
   onTerminalError: (sessionId: string, message: string | null) => void;
   onInitialTerminalSnapshotConsumed: (sessionId: string) => void;
   onCreateTerminal: () => void;
+  leasedTools?: ReadonlySet<RightDockLeasedToolKind>;
 };
 
 export function RightDockContent(props: RightDockContentProps) {
   const {
+    isOpen,
     currentActiveTab,
     initializedTools,
     localSessions,
@@ -37,6 +41,7 @@ export function RightDockContent(props: RightDockContentProps) {
     onTerminalError,
     onInitialTerminalSnapshotConsumed,
     onCreateTerminal,
+    leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
   } = props;
   const { t } = useLocale();
   const context = useRightDockToolContext();
@@ -49,7 +54,12 @@ export function RightDockContent(props: RightDockContentProps) {
         if (!initializedTools[definition.kind] || !definition.isAvailable(context)) {
           return null;
         }
-        const active = currentActiveTab === definition.kind;
+        // Project tools follow terminal's single-host lease semantics: while a
+        // tool's Surface lives in Workbench, Dock mounts neither a tab nor a
+        // hidden duplicate. Closing the Pane releases the lease and this
+        // persisted tool becomes visible here again.
+        if (leasedTools.has(definition.kind)) return null;
+        const active = isOpen && currentActiveTab === definition.kind;
         return (
           <div
             key={definition.kind}
@@ -62,9 +72,9 @@ export function RightDockContent(props: RightDockContentProps) {
           </div>
         );
       })}
-      {currentActiveTab === "backgroundTasks" ? (
+      {currentActiveTab === "backgroundTasks" && !leasedTools.has("backgroundTasks") ? (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <BackgroundTasksPanel active />
+          <BackgroundTasksPanel active={isOpen} />
         </div>
       ) : null}
       {localSessions.length > 0 ? (
@@ -87,7 +97,7 @@ export function RightDockContent(props: RightDockContentProps) {
                 保证切 tab 走完整卸载/重挂而不是复用实例。 */}
             {localSessions.map((session) => {
               const isActiveTerminal =
-                currentActiveTab === "terminal" && activeSession?.id === session.id;
+                isOpen && currentActiveTab === "terminal" && activeSession?.id === session.id;
               if (!isActiveTerminal) return null;
               // 拖入画板(持有租约)的会话已从 localSessions 隐藏,这里挂载的
               // 视口必然是该会话的唯一消费者。
@@ -114,8 +124,8 @@ export function RightDockContent(props: RightDockContentProps) {
         // RightDockPanel renders RightDockChooser instead, which is where the
         // drag-to-workbench affordance for "new terminal" lives.
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/80">
-            <Terminal className="h-6 w-6 text-muted-foreground" />
+          <div className="flex size-12 items-center justify-center rounded-xl bg-muted/80">
+            <Terminal className="size-6 text-muted-foreground" />
           </div>
           <div className="flex flex-col gap-1">
             <div className="text-sm font-medium text-foreground">

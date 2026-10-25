@@ -143,6 +143,15 @@ const allowedRisk = new Set(["critical", "high", "medium", "low"]);
 const trackedFiles = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
   .split("\0")
   .filter((path) => path && existsSync(resolve(root, path)));
+const upstreamSync = parseJsonYaml(".github/upstream-sync.json");
+const syncedUpstreamPaths = /^[0-9a-f]{40}$/.test(upstreamSync.base_commit ?? "") &&
+  /^[0-9a-f]{40}$/.test(upstreamSync.commit ?? "")
+  ? git(["diff", "--name-only", upstreamSync.base_commit, upstreamSync.commit]).split("\n").filter(Boolean)
+  : [];
+// An owned upstream path may have been deliberately deleted. Such rules remain meaningful when
+// supported by the pinned sync range or an actual staged deletion during integration.
+const ownershipEvidencePaths = [...trackedFiles, ...syncedUpstreamPaths,
+  ...git(["diff", "--cached", "--name-only", "--diff-filter=D"]).split("\n").filter(Boolean)];
 const seenGlobs = new Set();
 for (const rule of ownership.rules ?? []) {
   if (
@@ -159,7 +168,7 @@ for (const rule of ownership.rules ?? []) {
     failures.push(`.github/upstream-ownership.yaml：重复 Glob ${rule.glob}`);
   }
   seenGlobs.add(rule.glob);
-  if (!trackedFiles.some((path) => matchesGlob(path, rule.glob))) {
+  if (!ownershipEvidencePaths.some((path) => matchesGlob(path, rule.glob))) {
     failures.push(`.github/upstream-ownership.yaml：Glob 没有命中任何受版本控制文件：${rule.glob}`);
   }
 }
@@ -169,7 +178,6 @@ for (const required of allowedOwnership) {
   }
 }
 
-const upstreamSync = parseJsonYaml(".github/upstream-sync.json");
 for (const field of ["base_commit", "commit"]) {
   if (!/^[0-9a-f]{40}$/.test(upstreamSync[field] ?? "")) {
     failures.push(`.github/upstream-sync.json：${field} 必须是完整的 40 位 Commit SHA`);
@@ -203,6 +211,7 @@ if (
 requireMatch("crates/agent-gui/package.json", /"name"\s*:\s*"zeroagent"/, "Desktop Package 必须命名为 zeroagent");
 requireMatch("crates/agent-gui/src-tauri/tauri.conf.json", /"productName"\s*:\s*"ZeroAgent"/, "Tauri productName 必须为 ZeroAgent");
 requireMatch("crates/agent-gui/src-tauri/tauri.conf.json", /"identifier"\s*:\s*"top\.usa0\.zeroagent"/, "Tauri identifier 已变化");
+requireMatch("crates/agent-gui/browser-extension/manifest.json", /"name"\s*:\s*"ZeroAgent Browser Bridge"/, "随应用分发的浏览器扩展必须显示 ZeroAgent 品牌");
 requireMatch(".github/workflows/desktop-release.yml", /RELEASE_REPOSITORY:\s*USA-Zero\/ZeroAgent/, "Desktop 公开发布目标已变化");
 requireMatch(".github/workflows/android-release.yml", /RELEASE_REPOSITORY:\s*USA-Zero\/ZeroAgent/, "Android 公开发布目标已变化");
 requireMatch(".github/workflows/android-release.yml", /ZeroAgent-.*Android-arm64/, "Android 产物命名已变化");
@@ -315,6 +324,27 @@ for (const path of [
 if (/non-LiveAgent/.test(read("crates/agent-gui/src-tauri/src/commands/workspace/subagent_worktree.rs"))) {
   failures.push("subagent_worktree.rs：工作树错误文案仍包含 LiveAgent");
 }
+
+// Native account migrations must not reopen raw credentials through the old device IPC.
+for (const path of [
+  "crates/agent-gui/src-tauri/src/services/account_session.rs",
+  "crates/agent-gui/src-tauri/src/services/account_session/api.rs",
+  "crates/agent-gui/src-tauri/src/services/account_session/gateway.rs",
+  "crates/agent-gui/src/lib/relay/nativeSession.ts",
+  "crates/agent-gui/src/lib/relay/nativeGatewaySocket.ts",
+]) {
+  if (!read(path).trim()) failures.push(path + "：原生账号边界入口缺失");
+}
+if (/services::device_credentials::device_credential_(?:get|set|activate|delete)/.test(read("crates/agent-gui/src-tauri/src/lib.rs"))) {
+  failures.push("lib.rs：不能重新注册向渲染层读写原始设备凭据的旧命令");
+}
+requireMatch("crates/agent-gui/src-tauri/src/lib.rs", /KBrainBackendState::with_account_sessions/, "配置守卫必须关联当前 Native 账号状态");
+requireMatch("crates/agent-gui/src-tauri/src/services/kbrain_backend.rs", /NativeSessionCredential[\s\S]*session_handle: String/, "Native profile 必须使用不透明会话句柄");
+requireMatch("crates/agent-gui/src-tauri/src/services/kbrain_backend.rs", /connection: state\.viewer_connection\(&connection\)\?/, "profile IPC 必须只公开 Native 代理连接");
+requireMatch("crates/agent-gui/src-tauri/src/services/kbrain_backend.rs", /pub async fn kbrain_backend_connection[\s\S]*Result<PublicBackendConnection, String>/, "连接 IPC 不能返回可序列化的私有后端连接");
+requireMatch("crates/agent-gui/src-tauri/src/services/backend_facade.rs", /profile_live[\s\S]*invalidated/, "Native 传输必须绑定 profile 并取消旧请求");
+requireMatch("crates/agent-gui/src-tauri/src/services/account_session/api.rs", /deny_unknown_fields/, "账号请求不得静默接收旧原始凭据字段");
+requireMatch("crates/agent-gui/src-tauri/src/services/proxy.rs", /is_account_resource[\s\S]*resource_redirect_policy/, "通用资源代理必须保留账号来源与重定向边界");
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(`错误：${failure}`);

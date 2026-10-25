@@ -59,10 +59,27 @@ type Config struct {
 	//
 	// Deprecated: 离线命令队列（生产不可达路径）已随死代码清理移除；保留本 flag 仅为不破坏既有启动脚本，下个版本删除。
 	CommandQueueTimeout time.Duration
+	ImageSingleUser     bool
+	ImageKBrainURL      string
+	ImageKBrainToken    string
+	InstanceNonce       string
+	AgentDB             string
+	KBrainURL           string
+	KBrainToken         string
+	KBrainAgentID       string
+	KBrainProvider      string
+	KBrainModel         string
 }
 
 func Load() *Config {
 	cfg := &Config{}
+	cfg.InstanceNonce = os.Getenv("LIVEAGENT_GATEWAY_INSTANCE_NONCE")
+	// Only the desktop-owned numeric-loopback process uses the local image backend. The public
+	// Gateway keeps account authorization; inherited backend URLs cannot install a global target.
+	if os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
+		cfg.ImageKBrainURL = getenv("LIVEAGENT_GATEWAY_IMAGE_KBRAIN_URL", "")
+		cfg.KBrainAgentID = "kbrain"
+	}
 
 	flag.StringVar(&cfg.USAZeroOrigin, "usa-zero-origin", getenv("USA_ZERO_ORIGIN", DefaultUSAZeroOrigin), "USA-Zero account service origin")
 	flag.StringVar(&cfg.USAZeroAuthorizationOrigin, "usa-zero-authorization-origin", getenv("USA_ZERO_AUTHORIZATION_ORIGIN", ""), "public USA-Zero authorization page origin")
@@ -95,6 +112,18 @@ func Load() *Config {
 	flag.IntVar(&cfg.RelayBufferSeconds, "relay-buffer-seconds", getenvInt("LIVEAGENT_GATEWAY_RELAY_BUFFER_SECONDS", 30), "seconds of chat events to buffer for brief reconnections")
 	flag.DurationVar(&cfg.CommandQueueTimeout, "command-queue-timeout", getenvDuration("LIVEAGENT_GATEWAY_COMMAND_QUEUE_TIMEOUT", 30*time.Second), "deprecated, no-op (kept for startup-script compatibility)")
 	flag.Parse()
+	for _, secret := range []struct {
+		value *string
+		env   string
+	}{
+		{&cfg.Token, "LIVEAGENT_GATEWAY_TOKEN"},
+		{&cfg.KBrainToken, "LIVEAGENT_GATEWAY_KBRAIN_TOKEN"},
+		{&cfg.ImageKBrainToken, "LIVEAGENT_GATEWAY_IMAGE_KBRAIN_TOKEN"},
+	} {
+		if *secret.value == "" {
+			*secret.value = getenv(secret.env, "")
+		}
+	}
 
 	cfg.USAZeroOrigin = strings.TrimRight(strings.TrimSpace(cfg.USAZeroOrigin), "/")
 	cfg.USAZeroAuthorizationOrigin = strings.TrimRight(strings.TrimSpace(cfg.USAZeroAuthorizationOrigin), "/")
@@ -104,6 +133,13 @@ func Load() *Config {
 	cfg.OAuthWebClientSecret = strings.TrimSpace(cfg.OAuthWebClientSecret)
 	cfg.TLSCert = strings.TrimSpace(cfg.TLSCert)
 	cfg.TLSKey = strings.TrimSpace(cfg.TLSKey)
+	cfg.KBrainURL = strings.TrimRight(strings.TrimSpace(cfg.KBrainURL), "/")
+	cfg.ImageKBrainURL = strings.TrimRight(strings.TrimSpace(cfg.ImageKBrainURL), "/")
+	cfg.ImageKBrainToken = strings.TrimSpace(cfg.ImageKBrainToken)
+	cfg.KBrainToken = strings.TrimSpace(cfg.KBrainToken)
+	cfg.KBrainAgentID = strings.TrimSpace(cfg.KBrainAgentID)
+	cfg.KBrainProvider = strings.TrimSpace(cfg.KBrainProvider)
+	cfg.KBrainModel = strings.TrimSpace(cfg.KBrainModel)
 
 	if cfg.GRPCMaxMessageBytes <= 0 {
 		cfg.GRPCMaxMessageBytes = DefaultGRPCMaxMessageBytes

@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "pnpm typecheck && vite build",
     "preview": "vite preview",
-    "test": "node --test ../test/webui/*.test.mjs test/*.test.mjs",
-    "lint": "biome lint src/ --diagnostic-level=error",
+    "test": "node ../../../scripts/run-node-tests.mjs ../test/webui test",
+    "lint": "biome check src/ --max-diagnostics=none",
     "format": "biome format --write src/",
-    "lint:fix": "biome check --write src/"
+    "lint:fix": "biome check --write src/",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -43,9 +44,7 @@
     "yet-another-react-lightbox": "^3.31.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
     "@bufbuild/protoc-gen-es": "2.12.1",
-    "@earendil-works/pi-ai": "^0.84.2",
     "@iconify-json/logos": "^1.2.11",
     "@iconify-json/lucide": "^1.2.108",
     "@iconify-json/material-icon-theme": "1.2.67",
@@ -56,10 +55,10 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "30.0.1",
     "postcss": "^8.5.8",
     "tailwindcss": "4.2.2",
-    "typescript": "6.0.2",
-    "typescript-transpile": "npm:typescript@~6.0.2",
+    "typescript": "~7.0.2",
     "unplugin-icons": "^23.0.1",
     "vite": "^8.0.5"
   }

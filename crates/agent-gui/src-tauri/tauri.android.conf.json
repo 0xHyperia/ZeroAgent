@@ -4,7 +4,7 @@
     "beforeDevCommand": "pnpm --dir ../agent-gateway/web exec vite --mode embedded-mobile",
     "devUrl": "http://localhost:2120",
     "beforeBuildCommand": "pnpm --dir ../agent-gateway/web exec vite build --mode embedded-mobile",
-    "frontendDist": "../../agent-gateway/web/dist"
+    "frontendDist": "../../agent-gateway/web/dist-mobile"
   },
   "app": {
     "windows": [
@@ -23,6 +23,8 @@
   "bundle": {
     "android": {
       "minSdkVersion": 24
-    }
+    },
+    "externalBin": [],
+    "resources": []
   }
 }

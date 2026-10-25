@@ -17,6 +17,9 @@ use tauri_plugin_opener::OpenerExt;
 
 #[cfg(desktop)]
 const MAIN_WINDOW_LABEL: &str = "main";
+/// 等待原生全屏退出完成的兜底时长;超时仍未收到通知就直接隐藏。
+#[cfg(target_os = "macos")]
+const FULLSCREEN_EXIT_HIDE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 // Only size + maximized are persisted: POSITION would fight multi-monitor
 // layouts we don't manage, VISIBLE would re-show a tray-hidden window on
 // startup, and DECORATIONS would override the per-platform window chrome
@@ -49,17 +52,27 @@ pub fn app_version() -> &'static str {
     env!("LIVEAGENT_APP_VERSION")
 }
 
+#[cfg(desktop)]
 macro_rules! app_invoke_handler {
-    () => {
-        tauri::generate_handler![
+    () => {{
+        let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             // Chat history
-            services::device_credentials::device_credential_get,
-            services::device_credentials::device_credential_set,
-            services::device_credentials::device_credential_activate,
-            services::device_credentials::device_credential_delete,
             services::device_credentials::device_default_name,
             services::device_credentials::zeroagent_app_version,
             services::desktop_oauth::desktop_oauth_login,
+            services::account_session::api::account_session_bootstrap,
+            services::account_session::api::account_session_import_legacy,
+            services::account_session::api::account_session_current,
+            services::account_session::api::account_session_http,
+            services::account_session::api::account_session_logout,
+            services::account_session::api::account_session_reveal_key,
+            services::account_session::gateway::account_gateway_http,
+            services::account_session::gateway::account_device_register,
+            services::account_session::gateway::account_device_identity,
+            services::account_session::gateway::account_device_rotate,
+            services::account_session::gateway::account_gateway_socket_connect,
+            services::account_session::gateway::account_gateway_socket_send,
+            services::account_session::gateway::account_gateway_socket_close,
             commands::chat_history::chat_history_list,
             commands::chat_history::chat_history_workdirs,
             commands::chat_history::chat_history_shared_list,
@@ -77,6 +90,7 @@ macro_rules! app_invoke_handler {
             commands::chat_history::chat_history_share_get,
             commands::chat_history::chat_history_share_set,
             commands::chat_history::chat_history_delete,
+            commands::planning::planning_migrate_legacy,
             // Trajectory (events ride the owning history segment)
             commands::chat_history::trajectory_append_events,
             commands::chat_history::trajectory_get_events,
@@ -127,13 +141,19 @@ macro_rules! app_invoke_handler {
             commands::subagent_worktree::subagent_worktree_status,
             commands::subagent_worktree::subagent_worktree_apply,
             commands::subagent_worktree::subagent_worktree_cleanup,
+            // Browser automation
+            commands::browser::browser_action,
+            commands::browser::browser_status,
+            commands::browser::browser_close,
+            commands::browser::browser_extension_install_info,
+            commands::browser::browser_extension_reveal_dir,
             // MCP
             commands::mcp::mcp_list_tools,
             commands::mcp::mcp_call_tool,
-            commands::mcp::mcp_runtime_status,
-            commands::mcp::mcp_stop_server,
-            commands::mcp::mcp_test_server,
-            commands::mcp::mcp_restart_server,
+            // MCP OAuth
+            commands::mcp_oauth::mcp_oauth_authorize,
+            commands::mcp_oauth::mcp_oauth_status,
+            commands::mcp_oauth::mcp_oauth_clear,
             // Memory
             commands::memory::memory_list,
             commands::memory::memory_read,
@@ -160,20 +180,12 @@ macro_rules! app_invoke_handler {
             commands::memory::memory_wipe_all,
             // Settings
             commands::settings::settings_load_all,
-            commands::settings::settings_save_providers,
+            commands::settings::settings_save_canonical_batch,
+            commands::settings::settings_save_ui_preferences,
             commands::settings::settings_list_ccswitch_providers,
             commands::settings::settings_list_cherry_studio_providers,
             commands::settings::settings_list_cherry_studio_providers_from_path,
-            commands::settings::settings_save_system,
-            commands::settings::settings_save_mcp,
-            commands::settings::settings_save_agents,
-            commands::settings::settings_save_ssh,
-            commands::settings::settings_apply_ssh_patch,
             commands::settings::settings_reset_ssh_known_host,
-            commands::settings::settings_save_remote,
-            commands::settings::settings_save_memory,
-            commands::settings::settings_save_model_failover,
-            commands::settings::settings_save_stt,
             commands::settings::settings_reveal_stt_secret,
             services::stt::settings_test_stt,
             services::stt::stt_request_microphone_permission,
@@ -190,14 +202,16 @@ macro_rules! app_invoke_handler {
             commands::settings::settings_backup_fetch_remote_info,
             commands::settings::settings_backup_upload,
             commands::settings::settings_backup_download,
-            commands::settings::settings_backup_mark_dirty,
             commands::update::app_update_check,
             commands::update::app_update_install,
+            commands::update::app_release_announcement,
+            commands::update::app_release_announcement_preview,
             commands::update::app_restart,
             commands::app::app_runtime_platform,
             commands::app::app_frontend_ready,
             commands::app::app_set_close_window_behavior,
             commands::app::app_set_global_shortcuts,
+            commands::app::app_run_shortcut,
             commands::app::app_window_pinned,
             commands::app::app_toggle_window_pin,
             commands::app::app_confirmed_exit,
@@ -208,11 +222,19 @@ macro_rules! app_invoke_handler {
             commands::hook::hook_run_http_requests,
             commands::hook::hook_cancel_scope,
             // Automation (cron tasks + hooks store)
+            commands::planning::planning_query,
+            commands::planning::planning_mutate,
+            commands::planning::planning_export,
+            commands::planning::planning_set_labels,
+            commands::planning::planning_notification_test,
+            commands::planning::planning_subscription,
+            commands::planning::planning_import,
             commands::cron::cron_validate_expression,
             commands::cron::automation_snapshot,
             commands::cron::automation_cron_apply,
             commands::cron::automation_hooks_apply,
             commands::cron::automation_list_runs,
+            commands::cron::automation_cron_occurrences,
             commands::cron::automation_clear_runs,
             commands::cron::automation_run_cron_now,
             commands::cron::automation_claim_prompt_runs,
@@ -238,6 +260,7 @@ macro_rules! app_invoke_handler {
             commands::terminal::terminal_answer_ssh_prompt,
             commands::terminal::terminal_cancel_ssh_prompt,
             commands::terminal::terminal_ssh_reconnect,
+            commands::terminal::terminal_ssh_enable_sftp,
             commands::terminal::terminal_ssh_latency,
             commands::terminal::terminal_ssh_exec,
             commands::terminal::terminal_ssh_local_forward_start,
@@ -300,18 +323,23 @@ macro_rules! app_invoke_handler {
             commands::git::git_rename_branch,
             commands::git::git_stash_push,
             commands::git::git_stash_pop,
+            commands::fonts::system_list_font_families,
+            commands::proxy_detect::system_proxy_detect,
+            commands::proxy_detect::system_proxy_test,
             commands::system::system_pick_folder,
             commands::system::system_resolve_dropped_workspace_folders,
             commands::system::system_classify_dropped_paths,
             commands::system::system_pick_file,
             commands::system::system_sandbox_capability,
             commands::system::system_save_preview_file,
+            commands::image_export::image_export_asset,
             commands::system::system_create_project_folder,
             commands::system::system_import_pasted_texts,
             commands::system::system_import_readable_file_paths,
             commands::system::system_import_uploaded_readable_files,
             commands::system::system_pick_readable_files,
             commands::system::system_read_uploaded_image_preview,
+            commands::system::system_upload_staging_base,
             commands::system::system_open_uploaded_image,
             commands::system::system_prepare_preview_file_save,
             commands::system::system_write_preview_file,
@@ -328,6 +356,15 @@ macro_rules! app_invoke_handler {
             commands::system::system_begin_power_activity,
             commands::system::system_end_power_activity,
             commands::system::system_clipboard_read_text,
+            commands::cua_driver::cua_driver_probe,
+            commands::cua_driver::cua_driver_install_command,
+            commands::cua_driver::cua_driver_install,
+            commands::cua_driver::cua_driver_permissions_status,
+            commands::cua_driver::cua_driver_permissions_grant,
+            commands::cua_driver::cua_driver_self_identity,
+            commands::cua_driver::cua_driver_self_windows,
+            commands::cua_driver::cua_driver_frontmost_pid,
+            commands::cua_driver::cua_driver_list_installed_apps,
             commands::gateway::gateway_connect,
             commands::gateway::gateway_disconnect,
             commands::gateway::gateway_status,
@@ -346,6 +383,9 @@ macro_rules! app_invoke_handler {
             commands::gateway::gateway_chat_runtime_heartbeat,
             commands::gateway::gateway_chat_release_lease,
             commands::gateway::gateway_chat_queue_respond,
+            commands::gateway::gateway_clarify_respond,
+            commands::gateway::gateway_composer_action_respond,
+            commands::gateway::gateway_clarify_delta,
             commands::gateway::gateway_publish_chat_queue_event,
             commands::gateway::gateway_publish_settings_sync,
             commands::gateway::gateway_tunnel_state,
@@ -357,8 +397,77 @@ macro_rules! app_invoke_handler {
             commands::gateway::provider_usage_query,
             commands::gateway::provider_usage_test,
             services::proxy::proxy_get_server_info,
-        ]
-    };
+            services::kbrain_backend::kbrain_backend_connection,
+            services::kbrain_backend::kbrain_backend_activate_profile,
+            services::kbrain_backend::kbrain_managed_credentials_replace,
+        ];
+        move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+            let command = invoke.message.command();
+            let bootstrap = command.starts_with("account_session_")
+                || command.starts_with("account_gateway_")
+                || command.starts_with("account_device_")
+                || command.starts_with("plugin:")
+                || matches!(
+                    command,
+                    "desktop_oauth_login"
+                        | "kbrain_backend_activate_profile"
+                        | "app_frontend_ready"
+                        | "zeroagent_app_version"
+                        | "device_default_name"
+                );
+            let allowed = bootstrap
+                || invoke
+                    .message
+                    .webview_ref()
+                    .app_handle()
+                    .try_state::<Arc<services::kbrain_backend::KBrainBackendState>>()
+                    .is_some_and(|state| state.allows_profile_commands());
+            if !allowed {
+                invoke
+                    .resolver
+                    .reject("Verify the ZeroAgent profile before using native data or tools");
+                return true;
+            }
+            handler(invoke)
+        }
+    }};
+}
+
+#[cfg(desktop)]
+fn start_account_session_lifecycle(app: &tauri::AppHandle) {
+    let account = app
+        .state::<Arc<services::account_session::AccountSessionState>>()
+        .inner()
+        .clone();
+    let sockets = app
+        .state::<Arc<services::account_session::gateway::AccountSocketState>>()
+        .inner()
+        .clone();
+    let mut ended = account.subscribe_ended();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            tokio::select! {
+                event=ended.recv()=>{
+                    let Ok(event)=event else{continue;};
+                    sockets.close_session(&event.handle).await;
+                    let matched=app.state::<Arc<services::kbrain_backend::KBrainBackendState>>().close_account_session(&event.handle);
+                    if matched {
+                        if let Some(gateway)=app.try_state::<Arc<services::gateway::GatewayController>>(){let _=gateway.disconnect_runtime();gateway.shutdown_local_gateway();}
+                        let _=services::device_credentials::deactivate_device_credential();
+                        if let Some(terminals)=app.try_state::<Arc<runtime::terminal::TerminalSessionRegistry>>(){terminals.shutdown_cleanup();}
+                        if let Some(shells)=app.try_state::<Arc<runtime::shell_session::ShellSessionManager>>(){shells.shutdown_cleanup();}
+                        if let Some(processes)=app.try_state::<Arc<runtime::managed_process::ManagedProcessRegistry>>(){processes.shutdown_cleanup();}
+                    }
+                    if event.persistent_cleared{let _=app.emit("account-session-ended",event.handle);}else{let _=app.emit("account-session-suspended",event.handle);}
+                }
+                _=interval.tick()=>{
+                    if let Some(handle)=account.active_handle().await{let _=account.verified_current(&handle).await;}
+                }
+            }
+        }
+    });
 }
 
 #[cfg(desktop)]
@@ -424,6 +533,7 @@ enum AppAction {
     ToggleWindow,
     TogglePin,
     NewChat,
+    SearchConversations,
     OpenConversation(String),
     ViewAllConversations,
     SwitchWorkspace(String),
@@ -529,6 +639,9 @@ fn dispatch_app_action(app: &tauri::AppHandle, action: AppAction) {
         AppAction::ToggleWindow => toggle_main_window(app),
         AppAction::TogglePin => toggle_main_window_pin(app),
         AppAction::NewChat => forward_app_action(app, "new-chat", None, None, true),
+        AppAction::SearchConversations => {
+            forward_app_action(app, "search-conversations", None, None, true);
+        }
         AppAction::OpenConversation(id) => {
             forward_app_action(app, "open-conversation", Some(id), None, true);
         }
@@ -614,14 +727,94 @@ fn handle_global_shortcut(
     let Some(action) = action else {
         return;
     };
-    let action = match action.as_str() {
+    run_shortcut_action(app, &action);
+}
+
+#[cfg(desktop)]
+fn run_shortcut_action(app: &tauri::AppHandle, action: &str) {
+    let action = match action {
         "summon" => AppAction::Summon,
         "toggle" => AppAction::ToggleWindow,
         "newChat" => AppAction::NewChat,
+        "searchConversations" => AppAction::SearchConversations,
         "pin" => AppAction::TogglePin,
         _ => return,
     };
     dispatch_app_action(app, action);
+}
+
+/// 关闭按钮默认隐藏到托盘。macOS 原生全屏下直接隐藏会在独立 Space 留下一块黑屏,
+/// 所以先退出全屏,等 AppKit 发出 `NSWindowDidExitFullScreenNotification` 再隐藏
+/// (见 [`install_fullscreen_exit_observer`])。
+#[cfg(desktop)]
+fn hide_main_window_on_close(window: &tauri::Window, hide_after_fullscreen_exit: &Arc<AtomicBool>) {
+    #[cfg(target_os = "macos")]
+    if window.is_fullscreen().unwrap_or(false) {
+        if hide_after_fullscreen_exit.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        if let Err(error) = window.set_fullscreen(false) {
+            eprintln!("failed to leave fullscreen before hiding ZeroAgent window: {error}");
+            hide_after_fullscreen_exit.store(false, Ordering::SeqCst);
+        } else {
+            // 兜底:退出通知没到(过渡被打断等)时,也不能让关闭按钮失效。
+            let window = window.clone();
+            let pending = Arc::clone(hide_after_fullscreen_exit);
+            std::thread::spawn(move || {
+                std::thread::sleep(FULLSCREEN_EXIT_HIDE_TIMEOUT);
+                if pending.swap(false, Ordering::SeqCst) {
+                    let _ = window.hide();
+                }
+            });
+            return;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = hide_after_fullscreen_exit;
+
+    if let Err(error) = window.hide() {
+        eprintln!("failed to hide ZeroAgent window on close: {error}");
+    }
+}
+
+/// tao 在 `set_fullscreen(false)` 调用后立刻清掉自身的全屏状态,NSWindow 的
+/// styleMask 也在过渡开始时就去掉 FullScreen 位;而 AppKit 在过渡结束、切回原
+/// Space 时会重新显示窗口,在那之前隐藏会被撤销。只有 didExit 通知代表真正结束。
+#[cfg(target_os = "macos")]
+fn install_fullscreen_exit_observer(
+    app: &tauri::App,
+    hide_after_fullscreen_exit: Arc<AtomicBool>,
+) -> tauri::Result<()> {
+    use objc2_app_kit::{NSWindow, NSWindowDidExitFullScreenNotification};
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Ok(());
+    };
+    let ns_window_ptr = window.ns_window()?;
+    if ns_window_ptr.is_null() {
+        return Ok(());
+    }
+    let ns_window: &NSWindow = unsafe { &*ns_window_ptr.cast::<NSWindow>() };
+
+    let block = block2::RcBlock::new(move |_: std::ptr::NonNull<NSNotification>| {
+        if hide_after_fullscreen_exit.swap(false, Ordering::SeqCst) {
+            if let Err(error) = window.hide() {
+                eprintln!("failed to hide ZeroAgent window after leaving fullscreen: {error}");
+            }
+        }
+    });
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(NSWindowDidExitFullScreenNotification),
+            Some(ns_window),
+            None,
+            &block,
+        )
+    };
+    // 主窗口与应用同生命周期,观察者无需注销。
+    std::mem::forget(observer);
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -818,27 +1011,106 @@ mod mobile_oauth_callback_tests {
 }
 
 #[cfg(desktop)]
+pub(crate) fn start_native_profile_services(app: &tauri::AppHandle) -> Result<(), String> {
+    // Called under KBrainBackendState's profile lock, after verified scope selection. No store,
+    // crash reconciliation or scheduler may capture the default/offline root before this point.
+    if app
+        .try_state::<Arc<services::gateway::GatewayController>>()
+        .is_some()
+    {
+        return Ok(());
+    }
+    commands::history_db::initialize_history_db()?;
+    let automation_store = Arc::new(services::automation::AutomationStore::open()?);
+    let automation_scheduler = Arc::new(services::automation::AutomationScheduler::new(
+        Arc::clone(&automation_store),
+    ));
+    let automation_profile = app
+        .state::<Arc<services::kbrain_backend::KBrainBackendState>>()
+        .inner()
+        .clone();
+    automation_scheduler.set_profile_guard(Arc::new(move || {
+        automation_profile.allows_profile_commands()
+    }));
+    let memory_store = Arc::new(services::memory::MemoryStore::open()?);
+    let managed_process_registry =
+        Arc::new(runtime::managed_process::ManagedProcessRegistry::open());
+    let gateway_controller = Arc::new(services::gateway::GatewayController::new(
+        app.clone(),
+        Arc::clone(&automation_store),
+        Arc::clone(&memory_store),
+        Arc::clone(
+            app.state::<Arc<services::provider_usage::ProviderUsageService>>()
+                .inner(),
+        ),
+        Arc::clone(
+            app.state::<Arc<runtime::terminal::TerminalSessionRegistry>>()
+                .inner(),
+        ),
+        Arc::clone(
+            app.state::<Arc<runtime::sftp::SftpSessionRegistry>>()
+                .inner(),
+        ),
+        Arc::clone(&managed_process_registry),
+        Arc::clone(
+            app.state::<Arc<commands::git::GitCloneTaskRegistry>>()
+                .inner(),
+        ),
+    ));
+    managed_process_registry.set_notifier(runtime::managed_process::ManagedProcessNotifier {
+        app_handle: app.clone(),
+        gateway: Arc::downgrade(&gateway_controller),
+    });
+    automation_store.set_notifier(services::automation::AutomationNotifier {
+        app_handle: app.clone(),
+        gateway: Arc::downgrade(&gateway_controller),
+        scheduler: Arc::downgrade(&automation_scheduler),
+    });
+    app.manage(automation_store);
+    app.manage(Arc::clone(&automation_scheduler));
+    app.manage(memory_store);
+    app.manage(Arc::clone(&managed_process_registry));
+    app.manage(Arc::clone(&gateway_controller));
+    if let Err(error) = commands::settings::initialize_system_proxy_from_db() {
+        eprintln!("failed to initialize system proxy state: {error}");
+    }
+    commands::system::gc_upload_staging_on_startup();
+    commands::system::start_directory_import_staging_gc();
+    if let Err(error) = services::skills::ensure_builtin_agent_skills_sync() {
+        eprintln!("failed to seed builtin skills: {error}");
+    }
+    if !runtime::data_home::isolation_requested()
+        && std::env::var_os("LIVEAGENT_CONFIG_DIR").is_none()
+    {
+        app.state::<Arc<services::browser::BrowserManager>>()
+            .start_extension_bridge();
+    }
+    services::webdav_auto_sync::start(app.clone());
+    managed_process_registry.spawn_startup_reconcile();
+    managed_process_registry.spawn_monitor();
+    automation_scheduler.start();
+    services::planning::start(app.clone());
+    if let Err(error) = gateway_controller.start() {
+        eprintln!("failed to start remote gateway controller: {error}");
+    }
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = gateway_controller.reload_from_db().await {
+            eprintln!("failed to load remote gateway settings: {error}");
+        }
+    });
+    Ok(())
+}
+
+#[cfg(desktop)]
 pub fn run() {
     // 最早期钩子:若本进程是 Windows 沙箱的自我再执行启动器(__sandbox_exec),
     // 就在此建立受限令牌并运行真实命令,以其退出码退出——绝不继续初始化 Tauri。
     // 非 Windows 平台为空操作。
     runtime::windows_sandbox::run_sandbox_launcher_if_requested();
 
-    let automation_store = Arc::new(
-        services::automation::AutomationStore::open()
-            .expect("failed to initialize ZeroAgent automation store"),
-    );
-    let automation_scheduler = Arc::new(services::automation::AutomationScheduler::new(
-        Arc::clone(&automation_store),
-    ));
-    let memory_store = Arc::new(
-        services::memory::MemoryStore::open().expect("failed to initialize ZeroAgent memory store"),
-    );
     let provider_usage_service =
         Arc::new(services::provider_usage::ProviderUsageService::default());
     let power_activity = Arc::new(services::power_activity::PowerActivityManager::default());
-    let managed_process_registry =
-        Arc::new(runtime::managed_process::ManagedProcessRegistry::open());
     let shell_session_manager = Arc::new(runtime::shell_session::ShellSessionManager::default());
     runtime::shell_session::ShellSessionManager::start_cleaner(&shell_session_manager);
     let terminal_registry = Arc::new(runtime::terminal::TerminalSessionRegistry::default());
@@ -847,23 +1119,48 @@ pub fn run() {
         &terminal_registry,
     )));
     let allow_exit = Arc::new(AtomicBool::new(false));
+    let hide_after_fullscreen_exit = Arc::new(AtomicBool::new(false));
     let close_window_behavior = Arc::new(commands::app::CloseWindowBehaviorState::new(
         commands::app::CLOSE_WINDOW_BEHAVIOR_MINIMIZE,
     ));
     let stt_manager = Arc::new(services::stt::SttManager::default());
+    let browser_manager = Arc::new(services::browser::BrowserManager::default());
 
-    let app = tauri::Builder::default()
-        // Must be registered first so a second launch exits before it can start
-        // another gateway connection, scheduler, or local database writer.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Err(error) = show_main_window(app) {
-                eprintln!("failed to focus existing ZeroAgent instance: {error}");
-            }
-            eprintln!("focused existing ZeroAgent instance after a secondary launch");
-        }))
+    let builder = tauri::Builder::default();
+    // dev 构建与已安装正式版共享 identifier；若 dev 也注册单实例，
+    // `tauri dev` 会把启动转发给正在运行的正式版然后自我退出。
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Err(error) = show_main_window(app) {
+            eprintln!("failed to focus existing ZeroAgent instance: {error}");
+        }
+    }));
+
+    let account_sessions = Arc::new(
+        services::account_session::AccountSessionState::new()
+            .expect("Native account transport must initialize"),
+    );
+    let account_sockets =
+        Arc::new(services::account_session::gateway::AccountSocketState::default());
+    let builder = builder
+        .manage(Arc::clone(&account_sessions))
+        .manage(Arc::clone(&account_sockets))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_mcp_bridge::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // The development inspection bridge must never expose a release listener.
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .base_port(
+                std::env::var("LIVEAGENT_DEV_MCP_BRIDGE_PORT")
+                    .ok()
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(9223),
+            )
+            .build(),
+    );
+    let app = builder
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(WINDOW_STATE_FLAGS)
@@ -881,22 +1178,23 @@ pub fn run() {
         .manage(Arc::new(commands::app::GlobalShortcutRegistry::default()))
         .manage(Arc::new(commands::app::FrontendReadyState::default()))
         .manage(Arc::new(commands::app::WindowPinState::default()))
-        .manage(Arc::new(commands::mcp::McpRuntimeManager::default()))
-        .manage(Arc::clone(&memory_store))
         .manage(Arc::clone(&provider_usage_service))
         .manage(Arc::clone(&power_activity))
+        .manage(Arc::new(
+            services::kbrain_backend::KBrainBackendState::with_account_sessions(Arc::clone(
+                &account_sessions,
+            )),
+        ))
         .manage(Arc::new(runtime::shell_runner::ShellRunRegistry::default()))
         .manage(Arc::clone(&shell_session_manager))
-        .manage(Arc::clone(&managed_process_registry))
         .manage(Arc::clone(&terminal_registry))
         .manage(Arc::clone(&sftp_registry))
         .manage(Arc::clone(&git_clone_task_registry))
         .manage(Arc::clone(&allow_exit))
         .manage(Arc::clone(&close_window_behavior))
-        .manage(Arc::clone(&automation_store))
-        .manage(Arc::clone(&automation_scheduler))
         .manage(Arc::new(commands::hook::HookScopeRegistry::default()))
         .manage(stt_manager)
+        .manage(Arc::clone(&browser_manager))
         .on_page_load(|webview, payload| {
             if webview.label() != MAIN_WINDOW_LABEL
                 || !matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
@@ -916,64 +1214,24 @@ pub fn run() {
         .setup({
             let terminal_registry = Arc::clone(&terminal_registry);
             let sftp_registry = Arc::clone(&sftp_registry);
-            let managed_process_registry = Arc::clone(&managed_process_registry);
-            let git_clone_task_registry = Arc::clone(&git_clone_task_registry);
-            let provider_usage_service = Arc::clone(&provider_usage_service);
+            #[cfg(target_os = "macos")]
+            let hide_after_fullscreen_exit = Arc::clone(&hide_after_fullscreen_exit);
             move |app| {
-                commands::history_db::initialize_history_db()?;
                 configure_system_tray(app)?;
                 #[cfg(target_os = "windows")]
                 configure_windows_window_chrome(app)?;
-                if let Err(error) = commands::settings::initialize_system_proxy_from_db() {
-                    eprintln!("failed to initialize system proxy state: {error}");
-                }
-                commands::system::gc_upload_staging_on_startup();
-                commands::system::start_directory_import_staging_gc();
+                #[cfg(target_os = "macos")]
+                install_fullscreen_exit_observer(app, hide_after_fullscreen_exit)?;
                 app.manage(services::proxy::start_proxy_server()?);
-                if let Err(error) = services::skills::ensure_builtin_agent_skills_sync() {
-                    eprintln!("failed to seed builtin skills: {error}");
+                start_account_session_lifecycle(app.handle());
+                // 浏览器扩展同步到 ~/.zeroagent/extension：Chrome 加载解压
+                // 扩展记录绝对路径，必须给一个不随应用更新变化的目录。
+                if let Err(error) = commands::browser::sync_bundled_browser_extension(app.handle())
+                {
+                    eprintln!("failed to sync browser extension: {error}");
                 }
                 terminal_registry.attach_app_handle(app.handle().clone());
                 sftp_registry.attach_app_handle(app.handle().clone());
-                // 配置自动同步的后台任务：只消费脏信号并做防抖上传，
-                // 未开启自动同步时它会在每次唤醒后静默跳过。
-                services::webdav_auto_sync::start(app.handle().clone());
-                let gateway_controller = Arc::new(services::gateway::GatewayController::new(
-                    app.handle().clone(),
-                    Arc::clone(&automation_store),
-                    Arc::clone(&memory_store),
-                    Arc::clone(&provider_usage_service),
-                    Arc::clone(&terminal_registry),
-                    Arc::clone(&sftp_registry),
-                    Arc::clone(&managed_process_registry),
-                    Arc::clone(&git_clone_task_registry),
-                ));
-                managed_process_registry.set_notifier(
-                    runtime::managed_process::ManagedProcessNotifier {
-                        app_handle: app.handle().clone(),
-                        gateway: Arc::downgrade(&gateway_controller),
-                    },
-                );
-                managed_process_registry.spawn_startup_reconcile();
-                managed_process_registry.spawn_monitor();
-                automation_store.set_notifier(services::automation::AutomationNotifier {
-                    app_handle: app.handle().clone(),
-                    gateway: Arc::downgrade(&gateway_controller),
-                    scheduler: Arc::downgrade(&automation_scheduler),
-                });
-                Arc::clone(&automation_scheduler).start();
-                app.manage(Arc::clone(&gateway_controller));
-                if let Err(error) = gateway_controller.start() {
-                    eprintln!("failed to start remote gateway controller: {error}");
-                }
-                tauri::async_runtime::spawn({
-                    let gateway_controller = Arc::clone(&gateway_controller);
-                    async move {
-                        if let Err(error) = gateway_controller.reload_from_db().await {
-                            eprintln!("failed to load remote gateway settings: {error}");
-                        }
-                    }
-                });
                 Ok(())
             }
         })
@@ -990,8 +1248,8 @@ pub fn run() {
                     api.prevent_close();
                     if commands::app::is_close_window_exit(&close_window_behavior) {
                         request_app_exit(window.app_handle(), &allow_exit, &terminal_registry);
-                    } else if let Err(error) = window.hide() {
-                        eprintln!("failed to hide ZeroAgent window on close: {error}");
+                    } else {
+                        hide_main_window_on_close(window, &hide_after_fullscreen_exit);
                     }
                 }
             }
@@ -1031,16 +1289,42 @@ pub fn run() {
                     ) {
                         eprintln!("failed to request terminal exit confirmation: {error}");
                     }
+                    api.prevent_exit();
+                    return;
                 }
-                api.prevent_exit();
-            } else {
-                // Real exit: reclaim every non-isolated managed process
-                // before the OS tears us down (Drop is not guaranteed).
+            }
+            {
+                // Stop our backend before other cleanup can block or the OS exits.
+                if let Some(backend) =
+                    _app.try_state::<Arc<services::kbrain_backend::KBrainBackendState>>()
+                {
+                    backend.shutdown_for_exit();
+                }
+                if let Some(gateway) = _app.try_state::<Arc<services::gateway::GatewayController>>()
+                {
+                    gateway.shutdown_local_gateway();
+                }
                 terminal_registry.shutdown_cleanup();
                 shell_session_manager.shutdown_cleanup();
-                managed_process_registry.shutdown_cleanup();
+                if let Some(registry) =
+                    _app.try_state::<Arc<runtime::managed_process::ManagedProcessRegistry>>()
+                {
+                    registry.shutdown_cleanup();
+                }
                 git_clone_task_registry.shutdown_cleanup();
+                browser_manager.shutdown_cleanup();
                 power_activity.clear_all();
+            }
+        }
+        tauri::RunEvent::Exit => {
+            // Native macOS termination can bypass ExitRequested; Drop is not guaranteed.
+            if let Some(backend) =
+                _app.try_state::<Arc<services::kbrain_backend::KBrainBackendState>>()
+            {
+                backend.shutdown_for_exit();
+            }
+            if let Some(gateway) = _app.try_state::<Arc<services::gateway::GatewayController>>() {
+                gateway.shutdown_local_gateway();
             }
         }
         _ => {}

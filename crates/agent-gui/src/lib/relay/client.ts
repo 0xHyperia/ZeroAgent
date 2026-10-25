@@ -1,6 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
-import { prepareProxyRequest } from "@liveagent/ui/lib/providers/proxy";
+import { isTauriHost } from "../host";
+import type { NativeProfileCredential } from "../kbrain/profile";
+import { prepareAccountRequest } from "./accountProxy";
 import { getInstallationID } from "./installation";
+import {
+  acceptNativeSession,
+  clearNativeSession,
+  initializeNativeAccount,
+  logoutNativeAccount,
+  type NativeAccountSession,
+  nativeAccountRequest,
+  nativeRevealKey,
+  nativeSessionHandle,
+  nativeSessionSummary,
+  rejectNativeSession,
+  requireNativeSession,
+} from "./nativeSession";
 
 const DEFAULT_RELAY_ORIGIN = "https://usa0.top";
 
@@ -164,6 +179,7 @@ function readAccessToken() {
 }
 
 export function getRelayAccessToken() {
+  if (isTauriHost()) return nativeSessionHandle();
   return readAccessToken();
 }
 
@@ -172,6 +188,7 @@ function readRefreshToken() {
 }
 
 function saveSession(response: RelaySessionTokens) {
+  if (isTauriHost()) throw new Error("Native account tokens must stay in the system vault");
   relaySessionExpiryNotified = false;
   const previousAccessToken = readAccessToken();
   localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token.trim());
@@ -191,10 +208,19 @@ function saveSession(response: RelaySessionTokens) {
 }
 
 function isOAuthSession() {
+  if (isTauriHost()) return nativeSessionSummary()?.authKind === "oauth";
   return localStorage.getItem(AUTH_KIND_KEY) === "oauth";
 }
 
+export function requiresWebsiteAccountSecurity() {
+  return isTauriHost() && isOAuthSession();
+}
+
 export function clearRelaySession() {
+  if (isTauriHost()) {
+    clearNativeSession();
+    return;
+  }
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_AT_KEY);
@@ -210,18 +236,25 @@ function expireRelaySession() {
 }
 
 export function hasStoredRelaySession() {
+  if (isTauriHost()) return Boolean(nativeSessionHandle());
   return Boolean(readAccessToken() || readRefreshToken());
 }
 
 function accessTokenExpiresAt() {
+  if (isTauriHost()) return nativeSessionSummary()?.expiresAtMs ?? 0;
   const value = Number(localStorage.getItem(EXPIRES_AT_KEY) ?? "");
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 async function requireValidRelayAccessToken(forceRefresh = false) {
+  if (isTauriHost()) return (await requireNativeSession(forceRefresh)).sessionHandle;
   const accessToken = readAccessToken();
   const expiresAt = accessTokenExpiresAt();
-  if (!forceRefresh && accessToken && (!expiresAt || expiresAt > Date.now() + TOKEN_REFRESH_SKEW_MS)) {
+  if (
+    !forceRefresh &&
+    accessToken &&
+    (!expiresAt || expiresAt > Date.now() + TOKEN_REFRESH_SKEW_MS)
+  ) {
     return accessToken;
   }
   if (await refreshRelaySession()) {
@@ -233,6 +266,28 @@ async function requireValidRelayAccessToken(forceRefresh = false) {
 
 export async function getValidRelayAccessToken(forceRefresh = false) {
   return requireValidRelayAccessToken(forceRefresh);
+}
+
+export async function getNativeProfileCredential(): Promise<NativeProfileCredential | null> {
+  if (isTauriHost()) {
+    const session = await initializeNativeAccount();
+    return session ? { sessionHandle: session.sessionHandle } : null;
+  }
+  return null;
+}
+
+export function nativeProfileCredentialMatches(
+  credential: NativeProfileCredential | null,
+): boolean {
+  if (credential === null) return !hasStoredRelaySession();
+  return credential.sessionHandle === nativeSessionHandle();
+}
+
+export function rejectNativeProfileCredential(credential: NativeProfileCredential | null): boolean {
+  if (isTauriHost()) return rejectNativeSession(credential?.sessionHandle ?? null);
+  if (credential === null || !nativeProfileCredentialMatches(credential)) return false;
+  expireRelaySession();
+  return true;
 }
 
 export function installRelaySessionLifecycle() {
@@ -292,6 +347,14 @@ type RelayRequestOptions = {
 };
 
 async function requestRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
+  if (isTauriHost())
+    return nativeAccountRequest<T>(
+      path,
+      options.method ?? "GET",
+      options.body,
+      Boolean(options.authenticated),
+      false,
+    );
   const method = options.method ?? "GET";
   let requestAccessToken = "";
   const headers: Record<string, string> = {
@@ -303,7 +366,7 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
     headers.Authorization = `Bearer ${requestAccessToken}`;
   }
 
-  const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+  const proxyRequest = await prepareAccountRequest(RELAY_API_BASE_URL, headers);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   let response: Response;
   try {
@@ -357,6 +420,8 @@ type AppRelayEnvelope<T> = {
 };
 
 async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {}): Promise<T> {
+  if (isTauriHost())
+    return nativeAccountRequest<T>(path, options.method ?? "GET", options.body, true, true);
   const accessToken = await requireValidRelayAccessToken();
 
   const headers: Record<string, string> = {
@@ -364,7 +429,7 @@ async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${accessToken}`,
   };
-  const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+  const proxyRequest = await prepareAccountRequest(RELAY_API_BASE_URL, headers);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   let response: Response;
   try {
@@ -410,6 +475,10 @@ async function requestAppRelay<T>(path: string, options: RelayRequestOptions = {
 }
 
 async function refreshRelaySession() {
+  if (isTauriHost()) {
+    await requireNativeSession(true);
+    return true;
+  }
   if (refreshRelaySessionPromise) return refreshRelaySessionPromise;
   refreshRelaySessionPromise = refreshRelaySessionInternal().finally(() => {
     refreshRelaySessionPromise = null;
@@ -430,7 +499,7 @@ async function refreshRelaySessionInternal() {
         Accept: "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
       };
-      const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+      const proxyRequest = await prepareAccountRequest(RELAY_API_BASE_URL, headers);
       const response = await fetch(`${proxyRequest.baseUrl}/app-auth/token`, {
         method: "POST",
         headers: proxyRequest.headers,
@@ -465,6 +534,15 @@ async function refreshRelaySessionInternal() {
 }
 
 export async function loginRelayOAuth() {
+  if (isTauriHost()) {
+    const response = await invoke<NativeAccountSession>("desktop_oauth_login", {
+      relayOrigin: RELAY_ORIGIN,
+      installationId: getInstallationID(),
+    });
+    acceptNativeSession(response);
+    window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
+    return { user: response.user };
+  }
   const response = await invoke<
     RelayAuthResponse & { auth_kind: "oauth"; oauth_client_id: string }
   >("desktop_oauth_login", { relayOrigin: RELAY_ORIGIN, installationId: getInstallationID() });
@@ -481,6 +559,7 @@ export async function getRelayPublicSettings() {
 }
 
 export async function loginRelay(email: string, password: string) {
+  if (isTauriHost()) throw new RelayApiError("请使用 USA-Zero OAuth 登录。", 400);
   const response = await requestRelay<RelayLoginResponse>("/auth/login", {
     method: "POST",
     body: { email: email.trim(), password },
@@ -490,13 +569,42 @@ export async function loginRelay(email: string, password: string) {
 }
 
 export async function verifyRelayPassword(email: string, password: string) {
-  const response = await loginRelay(email, password);
-  if (!("access_token" in response) && !response.requires_2fa) {
-    throw new RelayApiError("密码验证失败", 401);
+  if (isTauriHost()) throw new Error("使用指定密钥的原生密码验证入口。");
+  await requireValidRelayAccessToken();
+  const sessionIdentity = () =>
+    JSON.stringify([
+      readAccessToken(),
+      localStorage.getItem(AUTH_KIND_KEY),
+      localStorage.getItem(OAUTH_CLIENT_ID_KEY),
+    ]);
+  const expectedSession = sessionIdentity();
+  const currentUser = await getRelayCurrentUser();
+  const requireCurrentSession = () => {
+    if (sessionIdentity() !== expectedSession) {
+      throw new RelayApiError("登录状态已变化，请重新验证密码", 409);
+    }
+  };
+  requireCurrentSession();
+  if (email.trim().toLowerCase() !== currentUser.email.trim().toLowerCase()) {
+    throw new RelayApiError("请验证当前账号的密码", 403);
+  }
+  // Password proof must not install the temporary password-login tokens over OAuth.
+  const response = await requestRelay<RelayLoginResponse>("/auth/login", {
+    method: "POST",
+    body: { email: currentUser.email.trim(), password },
+  });
+  requireCurrentSession();
+  if (isFullAuthResponse(response)) {
+    if (!response.access_token.trim() || response.user?.id !== currentUser.id) {
+      throw new RelayApiError("密码验证失败", 403);
+    }
+  } else if (response.requires_2fa !== true || !response.temp_token?.trim()) {
+    throw new RelayApiError("密码验证失败", 403);
   }
 }
 
 export async function loginRelay2FA(tempToken: string, totpCode: string) {
+  if (isTauriHost()) throw new RelayApiError("请使用 USA-Zero OAuth 登录。", 400);
   const response = await requestRelay<RelayAuthResponse>("/auth/login/2fa", {
     method: "POST",
     body: { temp_token: tempToken, totp_code: totpCode.trim() },
@@ -511,6 +619,7 @@ export async function registerRelay(input: {
   verifyCode?: string;
   invitationCode?: string;
 }) {
+  if (isTauriHost()) throw new RelayApiError("请在 USA-Zero 完成注册后使用 OAuth 登录。", 400);
   const response = await requestRelay<RelayAuthResponse>("/auth/register", {
     method: "POST",
     body: {
@@ -606,6 +715,15 @@ export async function listRelayApiKeys() {
   return page.items;
 }
 
+export async function revealRelayApiKey(id: number, password: string): Promise<string> {
+  if (isTauriHost()) return nativeRevealKey(id, password);
+  const user = await getRelayCurrentUser();
+  await verifyRelayPassword(user.email, password);
+  const key = (await listRelayApiKeys()).find((key) => key.id === id);
+  if (!key) throw new Error("密钥已不可用。");
+  return key.key;
+}
+
 export async function listRelayGroups() {
   if (isOAuthSession())
     return requestAppRelay<RelayGroup[]>("/app/groups", { authenticated: true });
@@ -644,6 +762,7 @@ export async function createRelayApiKeys(name: string, groupIds: number[], group
 }
 
 export async function logoutRelay() {
+  if (isTauriHost()) return logoutNativeAccount();
   const refreshToken = readRefreshToken();
   if (refreshToken) {
     try {
@@ -651,7 +770,7 @@ export async function logoutRelay() {
         const headers: Record<string, string> = {
           "Content-Type": "application/x-www-form-urlencoded",
         };
-        const proxyRequest = await prepareProxyRequest("codex", RELAY_API_BASE_URL, headers);
+        const proxyRequest = await prepareAccountRequest(RELAY_API_BASE_URL, headers);
         await fetch(`${proxyRequest.baseUrl}/app-auth/revoke`, {
           method: "POST",
           headers: proxyRequest.headers,

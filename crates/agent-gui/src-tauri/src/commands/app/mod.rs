@@ -1,4 +1,6 @@
 pub mod app;
+pub mod fonts;
+pub mod proxy_detect;
 pub mod system;
 #[cfg(desktop)]
 pub mod tray;

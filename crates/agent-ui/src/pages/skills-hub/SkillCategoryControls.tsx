@@ -49,7 +49,14 @@ export const STORE_CATEGORY_ICONS: Record<StoreCategoryValue, typeof Layers> = {
   other: Package,
 };
 
-const STORE_CATEGORY_OPTIONS: readonly StoreCategoryValue[] = ["all", ...CLAWHUB_CATEGORY_SLUGS];
+// 惰性计算而非模块顶层 spread：生产构建下这段代码与 CLAWHUB_CATEGORY_SLUGS
+// 分处不同的 rolldown chunk，顶层 spread 有时会在对方 chunk 初始化完成前
+// 执行，读到 undefined 并抛出 "not iterable"。推迟到调用时读取可以避开。
+let storeCategoryOptionsCache: readonly StoreCategoryValue[] | undefined;
+function getStoreCategoryOptions(): readonly StoreCategoryValue[] {
+  storeCategoryOptionsCache ??= ["all", ...CLAWHUB_CATEGORY_SLUGS];
+  return storeCategoryOptionsCache;
+}
 
 function storeCategoryLabelKey(value: StoreCategoryValue): string {
   return `settings.skillsStoreCategory${value.charAt(0).toUpperCase()}${value.slice(1)}`;
@@ -77,21 +84,18 @@ export function StoreCategoryChips(props: {
   const appearance = props.appearance ?? "quiet";
   const showIcons = props.showIcons ?? true;
   return (
-    <div className={cn("hub-panel-enter", props.className)}>
+    <div className={cn(props.className)}>
       <Tabs
         value={props.value}
         onValueChange={(value) => {
-          if (STORE_CATEGORY_OPTIONS.includes(value as StoreCategoryValue)) {
+          if (getStoreCategoryOptions().includes(value as StoreCategoryValue)) {
             props.onChange(value as StoreCategoryValue);
           }
         }}
         className="max-w-full"
       >
-        <TabsList
-          aria-label={t("settings.skillsStoreCategoryAll")}
-          className="flex h-auto max-w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {STORE_CATEGORY_OPTIONS.map((value) => {
+        <TabsList aria-label={t("settings.skillsStoreCategoryAll")} variant="filter">
+          {getStoreCategoryOptions().map((value) => {
             const CategoryIcon = STORE_CATEGORY_ICONS[value];
             const count = props.counts.get(value) ?? 0;
             return (
@@ -100,18 +104,17 @@ export function StoreCategoryChips(props: {
                 value={value}
                 aria-label={`${t(storeCategoryLabelKey(value))}: ${count}`}
                 className={cn(
-                  "group h-7 shrink-0 gap-1 rounded-md px-2 text-[11.5px] font-medium text-muted-foreground shadow-none hover:text-foreground data-[active]:text-foreground data-[active]:shadow-none",
+                  "group shrink-0 gap-1 rounded-md px-2",
+                  "text-xs font-medium text-muted-foreground shadow-none",
+                  "hover:text-foreground data-[active]:text-foreground data-[active]:shadow-none",
                   appearance === "outlined"
                     ? "border border-border/70 bg-background hover:border-foreground/20 hover:bg-muted/50 data-[active]:border-foreground/25 data-[active]:bg-muted data-[active]:shadow-xs"
                     : "border border-transparent hover:bg-muted/60 data-[active]:bg-muted",
                 )}
               >
-                {showIcons ? <CategoryIcon className="h-3.5 w-3.5" /> : null}
+                {showIcons ? <CategoryIcon className="size-3.5" /> : null}
                 <span>{t(storeCategoryLabelKey(value))}</span>
-                <Badge
-                  variant="muted"
-                  className="h-4 min-w-4 rounded-full px-1 text-[9.5px] font-semibold tabular-nums group-data-[active]:bg-foreground/[0.08] group-data-[active]:text-foreground"
-                >
+                <Badge variant="muted" size="filter-count">
                   {count}
                 </Badge>
               </TabsTrigger>
@@ -138,18 +141,16 @@ export function InstalledSkillCategoryChip(props: {
         props.onSelect(props.category);
       }}
       onKeyDown={(event) => event.stopPropagation()}
-      className="h-6 shrink-0 gap-1 px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+      className="h-6 shrink-0 gap-1 px-1.5 text-tiny font-medium text-muted-foreground hover:text-foreground"
     >
-      <CategoryIcon className="h-2.5 w-2.5" />
+      <CategoryIcon className="size-2.5" />
       <span>{t(storeCategoryLabelKey(props.category))}</span>
     </Button>
   );
 }
 
-export function SkillCategoryBadges(props: {
+export function SkillCategoryChips(props: {
   categories: ClawHubCategorySlug[];
-  topics?: string[];
-  searchQuery?: string;
   onSelect: (category: ClawHubCategorySlug) => void;
 }) {
   const { t } = useLocale();
@@ -167,17 +168,24 @@ export function SkillCategoryBadges(props: {
               props.onSelect(category);
             }}
             onKeyDown={(event) => event.stopPropagation()}
-            className="h-6 shrink-0 gap-1 px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+            className="h-6 shrink-0 gap-1 px-1.5 text-tiny font-medium text-muted-foreground hover:text-foreground"
           >
-            <BadgeIcon className="h-2.5 w-2.5" />
+            <BadgeIcon className="size-2.5" />
             <span>{t(storeCategoryLabelKey(category))}</span>
           </Button>
         );
       })}
+    </div>
+  );
+}
+
+export function SkillTopicBadges(props: { topics?: string[]; searchQuery?: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
       {(props.topics ?? []).slice(0, 3).map((topic) => (
         <span
           key={topic}
-          className="shrink-0 rounded-md bg-muted px-1.5 py-1 text-[10px] text-muted-foreground"
+          className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-1.5 text-tiny text-muted-foreground"
         >
           <SearchHighlight text={topic} query={props.searchQuery ?? ""} />
         </span>

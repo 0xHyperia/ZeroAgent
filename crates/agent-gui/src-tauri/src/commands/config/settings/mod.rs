@@ -37,17 +37,34 @@ const SYSTEM_WORKDIR_KEY: &str = "workdir";
 // 工具审批策略(按工具名/`group:`/`server:` 键 → allow/ask/deny)。此前未纳入
 // 保存白名单,导致重启后设置丢失;补入本键持久化。
 const SYSTEM_TOOL_POLICIES_KEY: &str = "toolPolicies";
-// 命令执行方式("ask"/"auto"/"sandbox"/"sandboxOffline"),与前端
+// 命令执行方式与前端
 // SystemSettings.commandSafetyMode 对齐;sandbox* 由执行层映射为 OS 沙箱参数。
 const SYSTEM_COMMAND_SAFETY_MODE_KEY: &str = "commandSafetyMode";
+// 浏览器接入模式("auto"/"userProfile"/"isolated"),与前端
+// SystemSettings.browserAutomationMode 对齐;Browser 工具按调用透传给
+// BrowserManager,决定走扩展桥接(用户浏览器)还是独立 profile。
+const SYSTEM_BROWSER_AUTOMATION_MODE_KEY: &str = "browserAutomationMode";
 const SYSTEM_WORKSPACE_PROJECTS_KEY: &str = "workspaceProjects";
 const SYSTEM_WORKSPACE_PROJECT_GROUPS_KEY: &str = "workspaceProjectGroups";
+const SYSTEM_WORKSPACE_PROJECT_ORDER_KEY: &str = "workspaceProjectOrder";
+const SYSTEM_SIDEBAR_PINNED_ORDER_KEY: &str = "sidebarPinnedOrder";
 const SYSTEM_ACTIVE_WORKSPACE_PROJECT_ID_KEY: &str = "activeWorkspaceProjectId";
 const SYSTEM_HIDDEN_WORKSPACE_PROJECT_PATHS_KEY: &str = "hiddenWorkspaceProjectPaths";
 const SYSTEM_MISSING_WORKSPACE_PROJECT_PATHS_KEY: &str = "missingWorkspaceProjectPaths";
 const SYSTEM_ARCHIVED_WORKSPACE_PROJECT_PATHS_KEY: &str = "archivedWorkspaceProjectPaths";
 const SYSTEM_WORKSPACE_RESOURCE_SETTINGS_KEY: &str = "workspaceResourceSettings";
 const SYSTEM_SYSTEM_PROXY_KEY: &str = "systemProxy";
+// CUA 自指开关。默认 false —— cua-driver 的工具默认看不到、也点不到
+// LiveAgent 自己的窗口：让模型操作宿主界面等于让它能点掉自己的审批弹窗、
+// 改自己的设置、关掉自己。置 true 才解除（用 LiveAgent 自动化测试
+// LiveAgent 这类场景需要）。
+const SYSTEM_CUA_ALLOW_SELF_TARGETING_KEY: &str = "cuaAllowSelfTargeting";
+// 全局默认时区(IANA 名,"" = 自动跟随桌面端 OS 时区)。日程快照、Cron 调度与
+// 记忆后台日期计算统一经 `load_runtime_default_time_zone` 解析。
+const SYSTEM_DEFAULT_TIME_ZONE_KEY: &str = "defaultTimeZone";
+// 只读派生值:load 时注入「自动」档解析到的桌面 OS 时区,供前端(含 WebUI)展示与
+// 回退;不进保存白名单。
+const SYSTEM_RESOLVED_TIME_ZONE_KEY: &str = "resolvedTimeZone";
 const DEFAULT_WORKSPACE_PROJECT_ID: &str = "default-project";
 const DEFAULT_WORKSPACE_PROJECT_NAME: &str = "Default Project";
 pub(crate) const PROVIDER_API_KEY_UPDATES_FIELD: &str = "providerApiKeyUpdates";
@@ -163,6 +180,8 @@ const SSH_KNOWN_HOSTS_DELETE_SQL: &str = "
 ";
 
 include!("types.rs");
+include!("ui_preferences.rs");
+include!("native_batch.rs");
 include!("remote.rs");
 include!("db.rs");
 include!("json.rs");
@@ -177,9 +196,18 @@ include!("model_failover.rs");
 include!("stt.rs");
 include!("gateway_sync.rs");
 include!("backup_snapshot.rs");
+include!("backup_kbrain.rs");
+include!("canonical_configuration.rs");
+include!("mcp_oauth_binding.rs");
+include!("configuration_http.rs");
+include!("device_configuration.rs");
+#[cfg(test)]
+include!("backup_kbrain_tests.rs");
 #[cfg(desktop)]
 include!("backup_io.rs");
 include!("webdav_sync.rs");
+#[cfg(test)]
+include!("webdav_backup_tests.rs");
 include!("ssh/mod.rs");
 include!("commands.rs");
 include!("tests.rs");

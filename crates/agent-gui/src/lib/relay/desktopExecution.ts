@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isTauriHost } from "../host";
 import type { AppSettings } from "../settings";
 import { desktopRequest } from "./desktopRequest";
+import { nativeSessionHandle, requireNativeSession } from "./nativeSession";
 
 export type DesktopWorkspace = {
   id: string;
@@ -39,7 +41,14 @@ function gatewayURL(settings: AppSettings) {
 
 export async function getDesktopEnvironments(settings: AppSettings) {
   if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return null;
-  const credential = await invoke<CredentialRecord | null>("device_credential_get");
+  const session = isTauriHost() ? await requireNativeSession() : null;
+  const credential = session
+    ? await invoke<CredentialRecord | null>("account_device_identity", {
+        sessionHandle: session.sessionHandle,
+      })
+    : await invoke<CredentialRecord | null>("device_credential_get");
+  if (session && nativeSessionHandle() !== session.sessionHandle)
+    throw new Error("USA-Zero account session changed");
   const localAgentId = credential?.agentId?.trim() || credential?.deviceId?.trim() || "";
   if (!localAgentId) return null;
   const searchParams = new URLSearchParams({

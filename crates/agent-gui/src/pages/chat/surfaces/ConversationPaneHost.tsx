@@ -3,10 +3,12 @@ import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
-import type { ProjectRef } from "@liveagent/ui/lib/workbench/types";
+import { cn } from "@liveagent/ui/lib/shared/utils";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
 import {
+  type ForwardedRef,
   forwardRef,
+  memo,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -15,21 +17,36 @@ import {
   useState,
 } from "react";
 import { PaneLoadingSkeleton } from "../../../components/app/PaneLoadingSkeleton";
+import { isKBrainBackendEnabled } from "../../../lib/host";
+import { ConversationStatsBarHost } from "../components/ConversationStatsBarHost";
 import { CurrentTaskProgress } from "../components/CurrentTaskProgress";
 import { DesktopCheckpointRewindProvider } from "../components/DesktopCheckpointRewindProvider";
+import { KBrainCheckpointRewindProvider } from "../components/KBrainCheckpointRewindProvider";
 import { PendingToolApprovalBar } from "../components/PendingToolApprovalBar";
+import { KBrainGoalBarHost } from "../composer/KBrainGoalBarHost";
 import type { ConversationPaneHostHandle } from "../conversations/useConversationPaneHostBridge";
 import { useConversationSurfaceSnapshot } from "../conversations/useConversationSurfaceSnapshot";
 import { buildQueuedChatTurnPreview } from "../queue/chatTurnQueue";
+
+const CheckpointRewindProvider = isKBrainBackendEnabled()
+  ? KBrainCheckpointRewindProvider
+  : DesktopCheckpointRewindProvider;
+
 import { ChatTranscript } from "../transcript/ChatTranscript";
-import { useConversationPaneBinding } from "./ConversationPaneHostEnvironment";
+import {
+  type ConversationPaneRegistration,
+  sameConversationPaneRegistration,
+  useConversationPaneRegistration,
+} from "./ConversationPaneHostEnvironment";
 import { ConversationSurface } from "./ConversationSurface";
+import {
+  beginPaneComposerDraftSession,
+  restoreClearedPaneComposerDraft,
+} from "./paneComposerDraftSession";
 import { createPaneComposerSendHandler } from "./paneComposerSend";
 
 export type ConversationPaneHostProps = {
   paneId: string;
-  conversationId: string;
-  project: ProjectRef;
 };
 
 export type RestorableConversationPaneHostProps = ConversationPaneHostProps & {
@@ -41,9 +58,34 @@ export const RestorableConversationPaneHost = forwardRef<
   ConversationPaneHostHandle,
   RestorableConversationPaneHostProps
 >(function RestorableConversationPaneHost(props, forwardedRef) {
-  const { title, deferHydration = false, ...identity } = props;
+  const registration = useConversationPaneRegistration(props.paneId);
+  if (!registration) {
+    return <PendingConversationPaneHost />;
+  }
+  return (
+    <RegisteredRestorableConversationPaneHost
+      registration={registration}
+      title={props.title}
+      deferHydration={props.deferHydration ?? false}
+      forwardedRef={forwardedRef}
+    />
+  );
+});
+
+function PendingConversationPaneHost() {
   const { t } = useLocale();
-  const { controller } = useConversationPaneBinding(identity);
+  return <PaneLoadingSkeleton label={t("chat.loadingConversation")} />;
+}
+
+function RegisteredRestorableConversationPaneHostContent(props: {
+  registration: ConversationPaneRegistration;
+  title?: string;
+  deferHydration: boolean;
+  forwardedRef: ForwardedRef<ConversationPaneHostHandle>;
+}) {
+  const { registration, title, deferHydration, forwardedRef } = props;
+  const { t } = useLocale();
+  const { controller } = registration.binding;
   const snapshot = useConversationSurfaceSnapshot(controller);
 
   useEffect(() => {
@@ -59,7 +101,9 @@ export const RestorableConversationPaneHost = forwardRef<
       return;
     }
     if (typeof window.requestIdleCallback === "function") {
-      const idleCallback = window.requestIdleCallback(hydrate, { timeout: 800 });
+      const idleCallback = window.requestIdleCallback(hydrate, {
+        timeout: 800,
+      });
       return () => {
         cancelled = true;
         window.cancelIdleCallback(idleCallback);
@@ -84,7 +128,12 @@ export const RestorableConversationPaneHost = forwardRef<
       return <PaneLoadingSkeleton label={t("chat.loadingConversation")} />;
     }
     return (
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <div
+        className={cn(
+          "flex size-full min-h-0 flex-col items-center justify-center gap-3 p-6",
+          "text-center",
+        )}
+      >
         <p className="text-sm text-muted-foreground">{title || t("chat.pendingTitle")}</p>
         <button
           type="button"
@@ -97,14 +146,26 @@ export const RestorableConversationPaneHost = forwardRef<
     );
   }
 
-  return <ConversationPaneHost ref={forwardedRef} {...identity} />;
-});
+  return <RegisteredConversationPaneHost ref={forwardedRef} registration={registration} />;
+}
 
 export const ConversationPaneHost = forwardRef<
   ConversationPaneHostHandle,
   ConversationPaneHostProps
 >(function ConversationPaneHost(props, forwardedRef) {
-  const { paneId, conversationId, project } = props;
+  const registration = useConversationPaneRegistration(props.paneId);
+  if (!registration) {
+    return <PendingConversationPaneHost />;
+  }
+  return <RegisteredConversationPaneHost ref={forwardedRef} registration={registration} />;
+});
+
+const RegisteredConversationPaneHostContent = forwardRef<
+  ConversationPaneHostHandle,
+  { registration: ConversationPaneRegistration }
+>(function RegisteredConversationPaneHost(props, forwardedRef) {
+  const { identity, binding } = props.registration;
+  const { paneId, conversationId } = identity;
   const {
     controller,
     transcript,
@@ -115,10 +176,12 @@ export const ConversationPaneHost = forwardRef<
     fileDrop,
     trajectory,
     sendDraft,
-  } = useConversationPaneBinding({ paneId, conversationId, project });
+  } = binding;
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const scrollFollowRef = useRef<ScrollFollowHandle | null>(null);
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
+  const [composerFloatingOverhang, setComposerFloatingOverhang] = useState(0);
+  const [composerCenterOffset, setComposerCenterOffset] = useState(0);
   // Background panes send through their own conversation-scoped pipeline; the
   // handler owns clear-on-send/restore-on-failure for this pane's composer.
   const paneSendHandler = useMemo(
@@ -144,31 +207,35 @@ export const ConversationPaneHost = forwardRef<
     [],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on conversationId so primary↔background controller swaps for the same conversation never clear a composer mid-typing.
   useLayoutEffect(() => {
     const composer = composerRef.current;
-    const draft = controller.getSnapshot().draft;
-    if (draft) {
-      composer?.setDraft(draft);
-    } else {
-      composer?.clear();
-    }
+    return beginPaneComposerDraftSession(composer, {
+      getDraft: () => controller.getSnapshot().draft,
+      setDraft: (draft) => controller.setDraft(draft),
+    });
+  }, [conversationId]);
 
-    return () => {
-      // Save only non-empty drafts. The page pipeline may already have
-      // cleared this composer mid-switch (legacy reset semantics), so an
-      // empty composer must not delete the draft cached in the registry —
-      // deliberate clears propagate through the page-level draft cache.
-      const nextDraft = composer?.getDraft();
-      if (!nextDraft || nextDraft.isEmpty || !nextDraft.text.trim()) {
-        return;
-      }
-      controller.setDraft(nextDraft);
-    };
-  }, [controller]);
+  // Focus leaving this pane swaps it from the primary binding (no sendDraft)
+  // to a background one for the same conversation. The page pipeline cleared
+  // this composer while it was still primary, after caching its draft; put the
+  // draft back. Only this transition is handled: the incoming pane is never
+  // cleared, and restoring on focus-in could resurrect text the user deleted.
+  const isBackgroundPane = Boolean(sendDraft);
+  const wasBackgroundPaneRef = useRef(isBackgroundPane);
+  useLayoutEffect(() => {
+    const wasBackgroundPane = wasBackgroundPaneRef.current;
+    wasBackgroundPaneRef.current = isBackgroundPane;
+    if (wasBackgroundPane || !isBackgroundPane) return;
+    restoreClearedPaneComposerDraft(composerRef.current, {
+      getDraft: () => controller.getSnapshot().draft,
+    });
+  }, [controller, isBackgroundPane]);
 
   return (
     <ConversationSurface
       paneId={paneId}
+      contentWidth={transcript.contentWidth}
       controller={controller}
       renderContent={(snapshot) => {
         const runtime = snapshot.runtime;
@@ -187,7 +254,7 @@ export const ConversationPaneHost = forwardRef<
             trajectory?.renderContent(snapshot)
           ) : (
             <ChangedFilesActionsProvider value={changedFilesActions}>
-              <DesktopCheckpointRewindProvider
+              <CheckpointRewindProvider
                 conversationId={snapshot.conversationId}
                 workspaceRoot={transcript.workspaceRoot}
                 project={checkpointRewind.project}
@@ -203,8 +270,10 @@ export const ConversationPaneHost = forwardRef<
                   isSending={isSending}
                   isCompactionRunning={isCompactionRunning}
                   bottomReservePx={composerOverlayHeight}
+                  floatingOverhangPx={composerFloatingOverhang}
+                  composerCenterOffsetPx={composerCenterOffset}
                 />
-              </DesktopCheckpointRewindProvider>
+              </CheckpointRewindProvider>
             </ChangedFilesActionsProvider>
           ),
           composer: (
@@ -218,10 +287,20 @@ export const ConversationPaneHost = forwardRef<
               isSending={isSending}
               pendingUploadedFiles={snapshot.uploads}
               queuedTurns={queuedTurns}
+              goalBar={
+                <KBrainGoalBarHost
+                  key={`goal-${snapshot.conversationId}`}
+                  conversationId={snapshot.conversationId}
+                  commandHost={composer.commandHost}
+                  enabled={isKBrainBackendEnabled()}
+                />
+              }
               onStop={controller.stop}
               onManualCompactConfirm={controller.compact}
               manualCompactBlocked={isCompactionRunning}
               onHeightChange={setComposerOverlayHeight}
+              onFloatingOverhangChange={setComposerFloatingOverhang}
+              onCenterOffsetChange={setComposerCenterOffset}
               taskProgressBar={
                 <CurrentTaskProgress
                   key={snapshot.conversationId}
@@ -231,9 +310,25 @@ export const ConversationPaneHost = forwardRef<
                 />
               }
               approvalBar={
-                <PendingToolApprovalBar
+                snapshot.approvals.length > 0 ? (
+                  <PendingToolApprovalBar
+                    conversationId={snapshot.conversationId}
+                    approvals={snapshot.approvals}
+                  />
+                ) : null
+              }
+              statsBar={
+                <ConversationStatsBarHost
+                  // 前缀防与同级 taskProgressBar 的 key（裸会话 id）碰撞：React 对同键
+                  // 兄弟的 keyed diff 会让旧 fiber 逃过删除，DOM 残留逐次累积。
+                  key={`stats-${snapshot.conversationId}`}
                   conversationId={snapshot.conversationId}
-                  approvals={snapshot.approvals}
+                  // 轨迹页挂起输入区时状态栏随之隐藏，无需重复拉取。
+                  enabled={!trajectoryActive}
+                  contextUsageTokensSource={composer.contextUsageTokensSource}
+                  contextWindow={composer.contextWindow}
+                  onManualCompactConfirm={controller.compact}
+                  manualCompactBlocked={isCompactionRunning}
                 />
               }
               fileDropOverlay={
@@ -254,3 +349,17 @@ export const ConversationPaneHost = forwardRef<
     />
   );
 });
+
+// Context changes reach the small lookup wrapper; unchanged bindings stop here.
+const RegisteredRestorableConversationPaneHost = memo(
+  RegisteredRestorableConversationPaneHostContent,
+  (previous, next) =>
+    sameConversationPaneRegistration(previous.registration, next.registration) &&
+    previous.title === next.title &&
+    previous.deferHydration === next.deferHydration &&
+    previous.forwardedRef === next.forwardedRef,
+);
+const RegisteredConversationPaneHost = memo(
+  RegisteredConversationPaneHostContent,
+  (previous, next) => sameConversationPaneRegistration(previous.registration, next.registration),
+);

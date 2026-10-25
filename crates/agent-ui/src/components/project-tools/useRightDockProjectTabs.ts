@@ -11,6 +11,7 @@ import {
   getCurrentRightDockActiveTab,
   getRightDockVisibleTabs,
   orderRightDockVisibleTabs,
+  type RightDockLeasedToolKind,
   type RightDockSingletonTabKind,
   resolveEffectiveActiveTabId,
   rightDockNeighborTabId,
@@ -20,6 +21,7 @@ import {
 
 type UseRightDockProjectTabsOptions = {
   backgroundTasksVisible: boolean;
+  leasedTools?: ReadonlySet<RightDockLeasedToolKind>;
   localSessions: TerminalSession[];
   projectPathKey: string;
   projectState: RightDockProjectState;
@@ -33,6 +35,7 @@ type UseRightDockProjectTabsOptions = {
 export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions) {
   const {
     backgroundTasksVisible,
+    leasedTools,
     localSessions,
     onProjectStateChange,
     projectPathKey,
@@ -49,12 +52,20 @@ export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions)
     () =>
       getRightDockVisibleTabs({
         backgroundTasksVisible,
+        leasedTools,
         localSessions,
         projectPathKey,
         projectState,
         tunnelAvailable,
       }),
-    [backgroundTasksVisible, localSessions, projectPathKey, projectState, tunnelAvailable],
+    [
+      backgroundTasksVisible,
+      leasedTools,
+      localSessions,
+      projectPathKey,
+      projectState,
+      tunnelAvailable,
+    ],
   );
   const effectiveTabOrder = draftTabOrder ?? projectState.tabOrder;
   const orderedProjectTabs = useMemo(

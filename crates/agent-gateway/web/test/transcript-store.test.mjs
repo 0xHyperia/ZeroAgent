@@ -211,7 +211,7 @@ test("assistant meta merge never wipes an existing anchor with a later own-undef
   const store = createTranscriptStore();
   store.applyEvent(userMessage("run-1", 1, "hello"));
   store.applyEvent(runStarted("run-1", 2));
-  // 首帧携带 contextUsageTokens 锚点。
+  // 首帧携带 usage（用量环锚点的现算输入）。
   store.applyEvent({
     type: "token",
     conversation_id: "conv-1",
@@ -219,12 +219,13 @@ test("assistant meta merge never wipes an existing anchor with a later own-undef
     seq: 3,
     round: 0,
     text: "answer ",
-    contextUsageTokens: 150_000,
+    stopReason: "stop",
+    usage: { input: 140_000, cacheRead: 9_000, output: 1_000, totalTokens: 150_000 },
   });
   store.flush();
 
-  // 同轮后续帧带其他 meta 字段但不带 contextUsageTokens：旧代码会用 own-undefined
-  // 键把锚点抹掉；修复后锚点保留，新字段并入。
+  // 同轮后续帧带其他 meta 字段但不带 usage：旧代码会用 own-undefined
+  // 键把锚点输入抹掉；修复后 usage 保留，新字段并入。
   store.applyEvent({
     type: "token",
     conversation_id: "conv-1",
@@ -239,7 +240,8 @@ test("assistant meta merge never wipes an existing anchor with a later own-undef
   const snapshot = store.getSnapshot();
   const assistantRow = allRows(snapshot).find((row) => row.kind === "assistant");
   assert.ok(assistantRow, "expected an assistant row");
-  assert.equal(assistantRow.rounds[0].meta.contextUsageTokens, 150_000);
+  assert.equal(assistantRow.rounds[0].meta.usage.totalTokens, 150_000);
+  assert.equal(assistantRow.rounds[0].meta.stopReason, "stop");
   assert.equal(assistantRow.rounds[0].meta.model, "claude-sonnet");
 });
 
@@ -593,6 +595,53 @@ test("optimistic user bubble binds to its run keeping its key", () => {
   const users = allRows(snapshot).filter((row) => row.kind === "user");
   assert.equal(users.length, 1, "seeded echo must not duplicate the bubble");
   assert.equal(users[0].key, optimisticKey, "user bubble keeps its identity");
+});
+
+test("user_message enriches an optimistic user bubble with conversation references", () => {
+  const store = createTranscriptStore();
+  store.addOptimisticUserEntry({ clientRequestId: "client-1", text: "compare prior work" });
+  store.applyEvent(
+    userMessage("run-1", 1, "compare prior work", {
+      client_request_id: "client-1",
+      referenced_conversations: [
+        {
+          id: "conversation-source",
+          title: "Earlier investigation",
+          cwd: "/workspace/source",
+          updated_at: 1772000000000,
+        },
+      ],
+    }),
+  );
+  store.flush();
+
+  const users = allRows(store.getSnapshot()).filter((row) => row.kind === "user");
+  assert.deepEqual(users[0].referencedConversations, [
+    {
+      id: "conversation-source",
+      title: "Earlier investigation",
+      cwd: "/workspace/source",
+      updatedAt: 1772000000000,
+    },
+  ]);
+});
+
+test("foreign seeded user_message preserves conversation references before history refresh", () => {
+  const store = createTranscriptStore();
+  store.applyEvent(
+    userMessage("run-foreign", 1, "compare prior work", {
+      client_request_id: "someone-else",
+      referenced_conversations: [
+        { id: "conversation-source", title: "Earlier investigation" },
+      ],
+    }),
+  );
+  store.flush();
+
+  const users = allRows(store.getSnapshot()).filter((row) => row.kind === "user");
+  assert.deepEqual(users[0].referencedConversations, [
+    { id: "conversation-source", title: "Earlier investigation" },
+  ]);
 });
 
 test("a desktop identity echo binds the live turn to its persisted message id", () => {
@@ -1075,7 +1124,7 @@ test("reset sync rebuilds the active turn from a runtime snapshot", () => {
           kind: "assistant",
           text: "rebuilt from snapshot",
           round: 0,
-          meta: { contextUsageTokens: 150_000, contextRelevant: false },
+          meta: { usage: { totalTokens: 150_000 }, contextRelevant: false },
         },
       ]),
       toolStatus: "Vibing",
@@ -1093,7 +1142,7 @@ test("reset sync rebuilds the active turn from a runtime snapshot", () => {
   assert.match(text, /rebuilt from snapshot/);
   assert.doesNotMatch(text, /will be lost/);
   const assistantRow = allRows(snapshot).find((row) => row.kind === "assistant");
-  assert.equal(assistantRow.rounds[0].meta.contextUsageTokens, 150_000);
+  assert.equal(assistantRow.rounds[0].meta.usage.totalTokens, 150_000);
   assert.equal(assistantRow.rounds[0].meta.contextRelevant, false);
 });
 
@@ -2234,6 +2283,59 @@ test("a matching run_finished settles the run without firing onDivergence", () =
   assert.equal(divergences, 0);
 });
 
+test("visible tab: a large live reply batches content deltas before the next frame", () => {
+  const store = createTranscriptStore();
+  store.applyEvent(runStarted("run-budget", 1));
+  store.applyEvent(token("run-budget", 2, "x".repeat(60_000)));
+  store.flush();
+
+  const originalDocument = globalThis.document;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timers = [];
+  const frames = [];
+  let emits = 0;
+  store.subscribe(() => {
+    emits += 1;
+  });
+
+  try {
+    globalThis.document = { visibilityState: "visible" };
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.push(callback);
+      return 31;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.setTimeout = (callback, delay) => {
+      timers.push({ callback, delay });
+      return timers.length;
+    };
+    globalThis.clearTimeout = () => {};
+
+    store.applyEvent(token("run-budget", 3, "tail"));
+    assert.deepEqual(timers.map((timer) => timer.delay), [64]);
+    assert.equal(frames.length, 0);
+    assert.equal(emits, 0);
+
+    timers[0].callback();
+    assert.equal(frames.length, 1);
+    frames[0]();
+    assert.equal(emits, 1);
+    assert.ok(rowText(allRows(store.getSnapshot()).at(-1)).endsWith("tail"));
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalRequestAnimationFrame === undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    if (originalCancelAnimationFrame === undefined) delete globalThis.cancelAnimationFrame;
+    else globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 function installHiddenTab() {
   const rafCalls = { count: 0 };
   globalThis.document = { visibilityState: "hidden" };
@@ -2594,4 +2696,92 @@ test("manual compaction checkpoint stays a single card after the next exchange's
     assert.equal(checkpoints[0].key, "checkpoint-sum-1", `${mode}: stable content-identity key`);
     assertUniqueKeys(snapshot);
   }
+});
+
+test("a compaction inside a streaming reply renders one assistant row with an inline seam", () => {
+  const { parseHistoryMessagesJson } = loader.loadModule("src/lib/chatUi.ts");
+  const store = createTranscriptStore();
+
+  store.applyEvent(runStarted("run-1", 1));
+  store.applyEvent(userMessage("run-1", 2, "do a lot", { message_id: "user-1" }));
+  store.applyEvent(token("run-1", 3, "first half"));
+  store.flush();
+  const before = store.getSnapshot();
+  const liveRowBefore = allRows(before).at(-1);
+  assert.equal(liveRowBefore.kind, "assistant");
+
+  // 运行中压缩：checkpoint token 落在同一 run 内，之后继续流式。
+  store.applyEvent({
+    type: "token",
+    conversation_id: "conv-1",
+    run_id: "run-1",
+    seq: 4,
+    text: "summary body",
+    provider: "liveagent",
+    model: "summary",
+    api: "liveagent-compaction",
+    checkpoint: {
+      summaryId: "sum-mid",
+      segmentIndex: 1,
+      coveredMessageCount: 9,
+      timestamp: 1000,
+      generatedBy: { providerId: "anthropic", model: "claude", promptVersion: "v1" },
+      contextUsageTokens: 4321,
+    },
+  });
+  store.applyEvent(token("run-1", 5, "second half", { round: 2 }));
+  store.flush();
+
+  const mid = store.getSnapshot();
+  const midRows = allRows(mid);
+  assert.deepEqual(
+    midRows.map((row) => row.kind),
+    ["user", "assistant"],
+    "no standalone checkpoint card and no second assistant row mid-run",
+  );
+  const liveRow = midRows[1];
+  assert.equal(liveRow.key, liveRowBefore.key, "the live assistant row keeps its identity");
+  assert.deepEqual(
+    liveRow.rounds.map((round) => Boolean(round.checkpoint)),
+    [false, true, false],
+  );
+  assert.equal(liveRow.rounds[1].checkpoint.summaryId, "sum-mid");
+  assert.equal(liveRow.rounds[1].checkpoint.contextUsageTokens, 4321);
+  assertUniqueKeys(mid);
+
+  store.applyEvent(runFinished("run-1", 6));
+  store.flush();
+
+  // 历史刷新后的形态：assistant → summary → assistant，同样缝合成一条。
+  const historyEntries = parseHistoryMessagesJson(
+    JSON.stringify([
+      { role: "user", id: "user-1", content: "do a lot", timestamp: 500 },
+      { role: "assistant", content: "first half", timestamp: 900 },
+      {
+        role: "summary",
+        id: "sum-mid",
+        content: "summary body",
+        timestamp: 1000,
+        summaryMeta: {
+          coveredMessageCount: 9,
+          generatedBy: { providerId: "anthropic", model: "claude", promptVersion: "v1" },
+          stats: { sourceMessageCount: 9, contextTokensAfter: 4321 },
+        },
+      },
+      { role: "assistant", content: "second half", timestamp: 1100 },
+    ]),
+  );
+  store.applyHistorySnapshot(historyEntries, { mode: "replace" });
+  store.flush();
+  const settled = store.getSnapshot();
+  const settledRows = allRows(settled);
+  assert.deepEqual(
+    settledRows.map((row) => row.kind),
+    ["user", "assistant"],
+  );
+  assert.deepEqual(
+    settledRows[1].rounds.map((round) => Boolean(round.checkpoint)),
+    [false, true, false],
+  );
+  assertUniqueKeys(settled);
 });

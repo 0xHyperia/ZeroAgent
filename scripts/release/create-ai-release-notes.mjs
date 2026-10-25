@@ -5,9 +5,7 @@ import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseReleaseVersion } from "./release-version.mjs";
 
-const DEFAULT_BASE_URL = "https://codex-api.packycode.com/v1";
 const DEFAULT_MODEL = "gpt-5.5";
-const DEFAULT_REASONING_EFFORT = "";
 const MAX_CONTEXT_CHARS = 22000;
 
 const [releaseTagArg, outputPath, fallbackNotesPath] = process.argv.slice(2);
@@ -21,16 +19,7 @@ function fail(message, code = 1) {
   process.exit(code);
 }
 
-if (!releaseTagArg || !outputPath) {
-  fail(usage());
-}
-
 let releaseVersion;
-try {
-  releaseVersion = parseReleaseVersion(releaseTagArg);
-} catch (error) {
-  fail(error instanceof Error ? error.message : String(error));
-}
 
 function runGit(args, options = {}) {
   const result = spawnSync("git", args, {
@@ -83,12 +72,14 @@ function stripCodeFence(markdown) {
   return match ? match[1].trim() : trimmed;
 }
 
-function normalizeMarkdown(markdown) {
+export function normalizeMarkdown(markdown, tag = releaseVersion?.releaseTag) {
   let output = stripCodeFence(markdown);
   if (!output) return "";
-  if (!output.startsWith("#")) {
-    output = `# ZeroAgent ${releaseVersion.releaseTag}\n\n${output}`;
-  }
+  const heading = `# ZeroAgent ${tag}`;
+  const lines = output.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) return "";
+  output = lines.slice(start).join("\n");
   return `${output.trim()}\n`;
 }
 
@@ -178,16 +169,20 @@ function buildPrompt(context) {
   ].join("\n");
 }
 
-function responseText(payload) {
+function isReasoningOutput(type) { return /^(analysis|reasoning|summary)(?:_|$)/.test(String(type)); }
+
+export function responseText(payload) {
+  if (!payload || typeof payload !== "object") return "";
   if (typeof payload.output_text === "string") return payload.output_text;
 
   const output = payload.output;
   if (Array.isArray(output)) {
     const parts = [];
     for (const item of output) {
+      if (!item || isReasoningOutput(item.type)) continue;
       if (!Array.isArray(item.content)) continue;
       for (const content of item.content) {
-        if (typeof content.text === "string") parts.push(content.text);
+        if (content && !isReasoningOutput(content.type) && typeof content.text === "string") parts.push(content.text);
       }
     }
     if (parts.length > 0) return parts.join("\n");
@@ -197,6 +192,7 @@ function responseText(payload) {
   if (typeof choice === "string") return choice;
   if (Array.isArray(choice)) {
     return choice
+      .filter((part) => part && !isReasoningOutput(part.type))
       .map((part) => (typeof part.text === "string" ? part.text : ""))
       .filter(Boolean)
       .join("\n");
@@ -205,159 +201,38 @@ function responseText(payload) {
   return "";
 }
 
-function normalizeReasoningEffort(value) {
-  const effort = value.trim().toLowerCase();
-  if (!effort || effort === "none" || effort === "off" || effort === "false" || effort === "xhigh") {
-    return "";
-  }
-  return effort;
-}
-
-async function fetchJsonWithTimeout(endpoint, { apiKey, body, timeoutMs }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    signal: controller.signal,
-    body: JSON.stringify(body),
-  }).finally(() => clearTimeout(timeout));
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`API returned HTTP ${response.status}: ${text.slice(0, 500)}`);
-  }
-  return JSON.parse(text);
-}
-
-async function createResponse({ apiKey, baseUrl, model, prompt, reasoningEffort, timeoutMs }) {
-  const endpoint = `${baseUrl.replace(/\/+$/, "")}/responses`;
-  const body = {
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text: "You are a precise release-notes editor. You never make claims that are not grounded in the provided repository context.",
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: prompt }],
-      },
-    ],
-    max_output_tokens: 3000,
-    model,
-    store: false,
-  };
-  if (reasoningEffort) {
-    body.reasoning = { effort: reasoningEffort };
-  }
-  return fetchJsonWithTimeout(endpoint, {
-    apiKey,
-    timeoutMs,
-    body,
-  });
-}
-
-async function createChatCompletion({ apiKey, baseUrl, model, prompt, reasoningEffort, timeoutMs }) {
-  const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const body = {
-    max_tokens: 3000,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a precise release-notes editor. You never make claims that are not grounded in the provided repository context.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    model,
-  };
-  if (reasoningEffort) {
-    body.reasoning_effort = reasoningEffort;
-  }
-  return fetchJsonWithTimeout(endpoint, {
-    apiKey,
-    timeoutMs,
-    body,
-  });
-}
-
 async function main() {
-  const apiKey =
-    process.env.AI_RELEASE_NOTES_API_KEY?.trim() ||
-    process.env.PACKYCODE_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    writeFallback("missing AI_RELEASE_NOTES_API_KEY/PACKYCODE_API_KEY/OPENAI_API_KEY");
-    return;
-  }
-
-  const baseUrl = process.env.AI_RELEASE_NOTES_BASE_URL?.trim() || DEFAULT_BASE_URL;
+  const token = process.env.KBRAIN_TOKEN?.trim() || process.env.K_BRAIN_TOKEN?.trim();
+  if (!token) { writeFallback("missing KBRAIN_TOKEN/K_BRAIN_TOKEN"); return; }
+  const baseUrl = (process.env.KBRAIN_URL?.trim() || process.env.K_BRAIN_URL?.trim() || "http://127.0.0.1:47321").replace(/\/+$/, "");
+  const provider = process.env.AI_RELEASE_NOTES_PROVIDER?.trim() || "usa-zero";
   const model = process.env.AI_RELEASE_NOTES_MODEL?.trim() || DEFAULT_MODEL;
-  const reasoningEffort = normalizeReasoningEffort(
-    process.env.AI_RELEASE_NOTES_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT,
-  );
-  const parsedTimeoutMs = Number.parseInt(process.env.AI_RELEASE_NOTES_TIMEOUT_MS ?? "60000", 10);
-  const timeoutMs = Number.isFinite(parsedTimeoutMs) ? parsedTimeoutMs : 60000;
-
+  const timeoutMs = Number.parseInt(process.env.AI_RELEASE_NOTES_TIMEOUT_MS ?? "60000", 10);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number.isFinite(timeoutMs) ? timeoutMs : 60000);
   try {
     const context = collectContext();
-    const prompt = buildPrompt(context);
-    let markdown = "";
-    let chatCompleted = false;
-    try {
-      const chatPayload = await createChatCompletion({
-        apiKey,
-        baseUrl,
-        model,
-        prompt,
-        reasoningEffort,
-        timeoutMs,
-      });
-      chatCompleted = true;
-      markdown = normalizeMarkdown(responseText(chatPayload));
-    } catch (error) {
-      console.warn(
-        `Chat completions unavailable: ${
-          error instanceof Error ? error.message : String(error)
-        }; trying Responses API fallback.`,
-      );
-    }
-    if (!markdown) {
-      if (chatCompleted) {
-        console.warn("Chat completions returned empty release notes; trying Responses API fallback.");
-      }
-      const responsesPayload = await createResponse({
-        apiKey,
-        baseUrl,
-        model,
-        prompt,
-        reasoningEffort,
-        timeoutMs,
-      });
-      markdown = normalizeMarkdown(responseText(responsesPayload));
-    }
-    if (!markdown) {
-      writeFallback("model returned empty release notes");
-      return;
-    }
+    const response = await fetch(baseUrl + "/v1/text/generate", {
+      method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({ model: {provider, model}, output: "text", messages: [
+        {role:"system",content:[{type:"text",text:"Write accurate ZeroAgent release notes from the supplied evidence. Never include reasoning, secrets or unsupported claims."}]},
+        {role:"user",content:[{type:"text",text:buildPrompt(context)}]}
+      ]}),
+    });
+    if (!response.ok) throw new Error("K-brain text generation failed (" + response.status + ")");
+    const payload = await response.json();
+    if (payload.version !== "kbrain.agent.v1" || payload.model?.provider !== provider || payload.model?.model !== model) throw new Error("K-brain text generation identity mismatch");
+    const markdown = normalizeMarkdown(typeof payload.text === "string" ? payload.text : "");
+    if (!markdown) { writeFallback("model returned no valid ZeroAgent release notes"); return; }
     writeFileSync(outputPath, markdown);
-    console.log(`Wrote AI release notes with ${model}: ${outputPath}`);
-  } catch (error) {
-    writeFallback(error instanceof Error ? error.message : String(error));
-  }
+    console.log("Wrote release notes through K-brain: " + outputPath);
+  } catch (error) { writeFallback(error instanceof Error ? error.message : String(error)); }
+  finally { clearTimeout(timeout); }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  if (!releaseTagArg || !outputPath) fail(usage());
+  try { releaseVersion = parseReleaseVersion(releaseTagArg); }
+  catch (error) { fail(error instanceof Error ? error.message : String(error)); }
   main();
 }

@@ -1,5 +1,4 @@
 import {
-  AssistantAvatar,
   AssistantBubble,
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
@@ -14,8 +13,10 @@ import {
 import { UserAttachmentCards } from "@liveagent/ui/components/chat/UserAttachmentCards";
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/LocaleContext";
-import { normalizeLiveToolStatus, VIBING_STATUS } from "@liveagent/ui/lib/chat/assistantStatus";
+import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
+import type { ReplyShareSource } from "@liveagent/ui/lib/chat/replyShare";
 import {
   type PendingUploadedFile,
   splitUserAttachmentsForDisplay,
@@ -26,8 +27,10 @@ import {
   type CommitDetailsLoader,
   UserMessageContent,
 } from "@liveagent/ui/lib/chat/userMessageContent";
+import { chatDuration } from "@liveagent/ui/lib/chat/workTiming";
 import type { GitClient } from "@liveagent/ui/lib/git/types";
-import { CodeFlowBackground } from "./CodeFlowBackground";
+import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
+import { cn } from "@liveagent/ui/lib/shared/utils";
 import { createLiveRowScrollAdjustPolicy } from "@liveagent/ui/lib/transcript-virtual/liveScrollAdjustPolicy";
 import {
   buildTranscriptLayoutKey,
@@ -43,7 +46,7 @@ import {
   type TranscriptNavigationHandle,
   useTranscriptNavigation,
 } from "@liveagent/ui/lib/transcript-virtual/useTranscriptNavigation";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { type Range, useVirtualizer } from "@tanstack/react-virtual";
 import {
   type Dispatch,
   type MutableRefObject,
@@ -60,7 +63,14 @@ import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import { getRoundText } from "@/lib/chat/uiMessages";
 import { DEFAULT_CHAT_TRANSCRIPT_WIDTH } from "@/lib/settings";
 import { extractLiveRange } from "@/lib/transcript-virtual/liveRangeExtractor";
+import { findLiveTurnStartTimestamp } from "../lib/chat/transcript/rows";
 import type { RetryAttemptRecord, TranscriptRow } from "../lib/chat/transcript/types";
+import {
+  GATEWAY_CHAT_COLUMN_CLASS,
+  GATEWAY_EMPTY_STATE_CLASS,
+  GATEWAY_TRANSCRIPT_ROW_CLASS,
+  GATEWAY_TRANSCRIPT_SHELL_CLASS,
+} from "../lib/webStyleClasses";
 import type { SectionId } from "../pages/settings/types";
 
 type GatewayTranscriptProps = {
@@ -107,13 +117,13 @@ type GatewayTranscriptProps = {
     messageRef: HistoryMessageRef,
     text: string,
     uploadedFiles: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   // Anchor messageId of the branch request in flight; the matching row shows
   // a spinner and every branch button disables until it settles.
   branchPendingMessageId?: string | null;
   onSuggestionSelect?: (text: string) => void;
-  suggestionsDisabled?: boolean;
   readOnly?: boolean;
   redactToolContent?: boolean;
 };
@@ -130,12 +140,25 @@ export type GatewayTranscriptNavHandle = TranscriptNavigationHandle;
 
 const TRANSCRIPT_ROW_ESTIMATED_HEIGHT = 260;
 const TRANSCRIPT_ROW_GAP = 18;
-const TRANSCRIPT_ROW_OVERSCAN_COUNT = 5;
+
+// Bump when the transcript row model or its measurement semantics change:
+// persisted snapshots outlive releases, and stale heights keyed only by
+// widths would seed wrong layouts (and scroll-compensation churn) after an
+// upgrade. Mirrors the GUI's versioned key.
+const TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION = "gateway-rows-v2";
+
+function buildVersionedTranscriptLayoutKey(viewportWidth: number, contentWidth: number) {
+  const layoutKey = buildTranscriptLayoutKey(viewportWidth, contentWidth);
+  return layoutKey ? `${layoutKey}:${TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION}` : "";
+}
 
 // Measured row heights survive conversation switches: saved on unmount,
 // restored (width-gated) on the next open so the switch lays out with exact
-// heights instead of estimates.
-const transcriptMeasurementsLru = createTranscriptMeasurementsLru();
+// heights instead of estimates. Persisted so revisited conversations skip
+// the estimate→measure correction churn across page reloads too.
+const transcriptMeasurementsLru = createTranscriptMeasurementsLru({
+  persistNamespace: "webui-transcript",
+});
 
 type GatewayTranscriptVirtualItem =
   | { key: string; kind: "loadRemoteHistory" }
@@ -146,31 +169,30 @@ function resolveNearestScrollViewport(element: HTMLElement | null) {
   return element?.closest("[data-scroll-viewport]") as HTMLDivElement | null;
 }
 
-function LiveStatusFooter(props: { status: string; isCompaction?: boolean }) {
-  const { status, isCompaction = false } = props;
-  return (
-    <div className="gateway-live-status-footer ml-9 min-w-0 overflow-hidden pt-1">
-      <LiveAssistantStatus status={status} isCompaction={isCompaction} className="w-full" />
-    </div>
-  );
-}
-
 function HistoryLoadingState(props: { title?: string }) {
   const title = props.title?.trim();
   return (
-    <div className="gateway-transcript-shell">
-      <div className="gateway-chat-column gateway-empty-state">
-        <div className="flex min-h-[280px] w-full flex-col items-center justify-center px-4 text-center">
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-background/80 shadow-sm">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
+      <div
+        className={cn(
+          GATEWAY_CHAT_COLUMN_CLASS,
+          GATEWAY_EMPTY_STATE_CLASS,
+          "relative col-[2] flex items-center justify-center overflow-hidden",
+          "px-0 pt-24px pb-0 max-640:pt-8px",
+        )}
+      >
+        <div className="flex min-h-280px w-full flex-col items-center justify-center px-4 text-center">
+          <div
+            className={cn(
+              "mb-4 flex size-10 items-center justify-center",
+              "rounded-xl border border-border/70 bg-background/80 shadow-sm",
+            )}
+          >
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
-          <div className="max-w-[28rem] text-[calc(14px*var(--zone-font-scale,1))] font-medium text-foreground/90">
-            正在加载会话历史
-          </div>
+          <div className="max-w-112 text-sm font-medium text-foreground/90">正在加载会话历史</div>
           {title ? (
-            <div className="mt-1 max-w-[28rem] truncate text-[calc(12px*var(--zone-font-scale,1))] text-muted-foreground">
-              {title}
-            </div>
+            <div className="mt-1 max-w-112 truncate text-xs text-muted-foreground">{title}</div>
           ) : null}
         </div>
       </div>
@@ -185,9 +207,9 @@ function CheckpointCard(props: {
   const { item, readOnly = false } = props;
 
   return (
-    <div className="checkpoint-row flex w-full max-w-full items-start gap-3">
-      <div className="checkpoint-row-spacer mt-0.5 h-6 w-6 shrink-0" aria-hidden="true" />
-      <div className="checkpoint-row-body min-w-0 flex-1">
+    <div className="flex max-w-full items-start gap-3 w-full max-640:block">
+      <div className="mt-0.5 size-6 shrink-0 max-640:hidden" aria-hidden="true" />
+      <div className="min-w-0 flex-1 w-full">
         <ContextCheckpointCard
           content={item.content}
           coveredMessageCount={item.coveredMessageCount}
@@ -210,7 +232,13 @@ function GatewayUserMessageBubbleBody(props: {
   const { visibleFiles, pastedTextFiles } = splitUserAttachmentsForDisplay(attachments, text);
 
   return (
-    <div className="chat-user-bubble ml-auto w-fit max-w-full rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5 font-chat text-[calc(14.5px*var(--zone-font-scale,1))] leading-relaxed text-[hsl(var(--chat-user-fg))]">
+    <div
+      className={cn(
+        "ml-auto w-fit max-w-full",
+        "whitespace-pre-wrap rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5",
+        "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
+      )}
+    >
       <UserAttachmentCards
         files={visibleFiles}
         workspaceRoot={workspaceRoot}
@@ -251,6 +279,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
     messageRef: HistoryMessageRef,
     text: string,
     uploadedFiles: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
 }) {
   const {
@@ -285,20 +314,23 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         imagePreviewMode="imageKind"
         attachmentRemoveLabel={t("settings.delete")}
-        className="chat-user-bubble-editor"
-        textareaClassName="chat-user-bubble-editor-textarea overflow-hidden"
+        className="shadow-chat-user-bubble-editor max-640:max-w-chat-user-bubble-editor-max-w"
+        textareaClassName="overflow-hidden block min-h-72px whitespace-pre-wrap wrap-anywhere [word-break:break-word]"
         textareaSizing="content"
         onCancel={() => setEditingMessageId(null)}
         onSubmit={(text, attachments) => {
           setEditingMessageId(null);
-          onResendFromEdit?.(effectiveMessageRef, text, attachments);
+          onResendFromEdit?.(effectiveMessageRef, text, attachments, row.referencedConversations);
         }}
       />
     );
   }
 
   return (
-    <div className="chat-user-bubble-wrap group relative ml-auto max-w-[min(85%,calc(50em+2rem))]">
+    <div
+      className="chat-user-bubble-wrap group relative ml-auto max-w-user-bubble-web"
+      data-user-bubble-wrap
+    >
       <GatewayUserMessageBubbleBody
         text={row.text}
         attachments={row.attachments}
@@ -310,7 +342,8 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
         timestamp={row.timestamp}
         copied={isCopied}
         onCopy={() => {
-          void navigator.clipboard.writeText(row.text).then(() => {
+          void copyTextToClipboard(row.text).then((copied) => {
+            if (!copied) return;
             setCopiedMessageId(row.key);
             window.setTimeout(() => {
               setCopiedMessageId((current) => (current === row.key ? null : current));
@@ -330,35 +363,29 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
   );
 });
 
-// Maps each assistant row to the nearest preceding user row — the prompt a
-// retry re-sends.
-function buildRetryTargetMap(rows: readonly TranscriptRow[]) {
-  const map = new Map<string, Extract<TranscriptRow, { kind: "user" }>>();
-  let lastUser: Extract<TranscriptRow, { kind: "user" }> | null = null;
-  for (const row of rows) {
-    if (row.kind === "user") {
-      lastUser = row;
-    } else if (row.kind === "assistant" && lastUser) {
-      map.set(row.key, lastUser);
-    }
+function findRetryTarget(rows: readonly TranscriptRow[], assistantIndex: number) {
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row?.kind === "user") return row;
   }
-  return map;
+  return null;
 }
 
-// Shared assistant-row hover actions (copy / retry). Retry re-sends the
-// nearest preceding user prompt through the edit-resend pipeline: this reply
-// and everything after it are discarded, same as editing that prompt
-// unchanged. Both transcript regions render it below the bubble.
+// Compact assistant footer: primary reply actions stay one click away while
+// detailed usage remains behind the info popover.
 const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActions(props: {
   row: Extract<TranscriptRow, { kind: "assistant" }>;
   retryTarget: Extract<TranscriptRow, { kind: "user" }> | null;
   isStreaming: boolean;
+  showUsage?: boolean;
+  usageContextWindow?: number;
   isCopied: boolean;
   setCopiedMessageId: Dispatch<SetStateAction<string | null>>;
   onResendFromEdit?: (
     messageRef: HistoryMessageRef,
     text: string,
     uploadedFiles: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   branchPendingMessageId?: string | null;
@@ -367,6 +394,8 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
     row,
     retryTarget,
     isStreaming,
+    showUsage,
+    usageContextWindow,
     isCopied,
     setCopiedMessageId,
     onResendFromEdit,
@@ -378,7 +407,21 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
     .map((round) => getRoundText(round).trim())
     .filter((text) => text.length > 0)
     .join("\n\n");
+  const usageEntries = useMemo(
+    () =>
+      showUsage
+        ? row.rounds.flatMap((round) =>
+            round.meta?.usage ? [{ key: `round-${round.round}`, usage: round.meta.usage }] : [],
+          )
+        : undefined,
+    [row.rounds, showUsage],
+  );
   const retryMessageRef = retryTarget?.messageRef;
+  const retryPrompt = retryTarget?.text;
+  const shareSource = useMemo<ReplyShareSource>(
+    () => ({ reply: replyText, prompt: retryPrompt, timestamp: row.timestamp }),
+    [replyText, retryPrompt, row.timestamp],
+  );
   const retryDisabled = isStreaming || !onResendFromEdit || !retryMessageRef;
   const retryTitle = retryMessageRef
     ? t("chat.retry")
@@ -397,18 +440,26 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
       copied={isCopied}
       copyDisabled={!replyText}
       onCopy={() => {
-        void navigator.clipboard.writeText(replyText).then(() => {
+        void copyTextToClipboard(replyText).then((copied) => {
+          if (!copied) return;
           setCopiedMessageId(row.key);
           window.setTimeout(() => {
             setCopiedMessageId((current) => (current === row.key ? null : current));
           }, 1500);
         });
       }}
+      usageEntries={usageEntries}
+      usageContextWindow={showUsage ? usageContextWindow : undefined}
       retryDisabled={retryDisabled}
       retryTitle={retryTitle}
       onRetry={() => {
         if (!retryTarget || !retryMessageRef) return;
-        onResendFromEdit?.(retryMessageRef, retryTarget.text, retryTarget.attachments);
+        onResendFromEdit?.(
+          retryMessageRef,
+          retryTarget.text,
+          retryTarget.attachments,
+          retryTarget.referencedConversations,
+        );
       }}
       branchDisabled={branchDisabled}
       branchTitle={branchTitle}
@@ -416,6 +467,7 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
       onBranch={() => {
         if (retryMessageRef) onBranchConversation?.(retryMessageRef);
       }}
+      shareSource={shareSource}
       withAvatarSpacer
       alwaysShowActions
     />
@@ -503,6 +555,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     messageRef: HistoryMessageRef,
     text: string,
     uploadedFiles: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   branchPendingMessageId?: string | null;
@@ -548,6 +601,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   const historyIdentityKey = `${conversationId ?? ""}\n${rows[0]?.key ?? ""}`;
   const loadCommitDetails = useCommitDetailsLoader(workspaceRoot, gitClient, historyIdentityKey);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: transcript identity changes intentionally cancel the current edit
   useEffect(() => {
     setEditingMessageId(null);
   }, [historyIdentityKey]);
@@ -630,8 +684,20 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
         : -1;
   const forceMountStartRef = useRef(forceMountStart);
   forceMountStartRef.current = forceMountStart;
+  const virtualItemsRef = useRef(virtualItems);
+  virtualItemsRef.current = virtualItems;
+  const getVirtualItemRenderCost = useCallback((index: number) => {
+    const item = virtualItemsRef.current[index];
+    if (!item) return 1;
+    // Height is already identity-cached per transcript row. It is a useful
+    // proxy for Markdown/tool mount cost and avoids a second block traversal.
+    return Math.max(1, Math.ceil(estimateVirtualItemHeight(item) / 480));
+  }, []);
+  const extractTranscriptRange = useCallback(
+    (range: Range) => extractLiveRange(range, forceMountStartRef.current, getVirtualItemRenderCost),
+    [getVirtualItemRenderCost],
+  );
 
-  const retryTargetByAssistantKey = useMemo(() => buildRetryTargetMap(rows), [rows]);
   const getTranscriptItemKey = useCallback(
     // The index branch is unreachable (count === virtualItems.length); it
     // only satisfies the type.
@@ -646,7 +712,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
       (conversationId && scrollViewport
         ? transcriptMeasurementsLru.restore(
             conversationId,
-            buildTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
+            buildVersionedTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
           )
         : null) ?? [],
   );
@@ -660,15 +726,24 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     },
     getItemKey: getTranscriptItemKey,
     gap: TRANSCRIPT_ROW_GAP,
-    overscan: TRANSCRIPT_ROW_OVERSCAN_COUNT,
+    overscan: 0,
     enabled: scrollViewport !== null,
     // End anchoring is enabled only for a detached reader so keyed prepends
     // preserve the visible row. While following, start anchoring disables the
     // virtualizer's bottom correction and leaves live growth to useScrollFollow.
     anchorTo: viewportFollowing ? "start" : "end",
     scrollEndThreshold: 8,
+    // Above-viewport estimate corrections and history-page prepends are
+    // absorbed into the layout origin instead of written to scrollTop, so
+    // no programmatic scroll can race the user's wheel gesture; the debt
+    // settles with one verified write when scrolling is idle.
+    scrollAnchoring: "origin",
+    // Compositors paint scrolls ahead of the main thread; keep roughly half
+    // a viewport of pre-rendered rows toward the scroll direction so fast
+    // wheel ticks reveal content instead of blank space.
+    directionalOverscanPx: 480,
     initialMeasurementsCache,
-    rangeExtractor: (range) => extractLiveRange(range, forceMountStartRef.current),
+    rangeExtractor: extractTranscriptRange,
   });
 
   // TanStack exposes the resize-compensation predicate as an instance field,
@@ -722,21 +797,36 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   // further back keeps paging one request at a time: readers load exactly as
   // far as they scroll, servers transfer only the pages actually walked to,
   // and a failed fetch retries only on the next user scroll (no hammering).
+  // The distance is read from the virtualizer's settled offset, not DOM
+  // scrollTop: a page anchored through the 'origin' keeps scrollTop parked
+  // near the top until the rebase lands, and a raw scrollTop check would
+  // re-arm on every wheel tick and stack page after page. The hard top (DOM
+  // scrollTop 0) is a trigger of its own: WebKit defers the rebase until the
+  // gesture settles, so a fling can pin the viewport at 0 with unsettled
+  // debt still above it — the reader is pushing against the top and cannot
+  // scroll into that debt until the rebase lands. Fire once per visit there;
+  // rubber-band scroll events at 0 must not re-fire it.
   const autoLoadEarlierInFlightRef = useRef(false);
+  const hardTopLatchedRef = useRef(false);
   const maybeAutoLoadEarlierRef = useRef(() => {});
   maybeAutoLoadEarlierRef.current = () => {
+    if (!scrollViewport) return;
+    const atHardTop = scrollViewport.scrollTop <= 1;
+    if (!atHardTop) hardTopLatchedRef.current = false;
     if (
       readOnly ||
       isStreaming ||
       !hasMoreHistory ||
       !onLoadEarlierHistory ||
       isLoadingMoreHistory ||
-      autoLoadEarlierInFlightRef.current ||
-      !scrollViewport ||
-      scrollViewport.scrollTop > scrollViewport.clientHeight
+      autoLoadEarlierInFlightRef.current
     ) {
       return;
     }
+    const nearSettledTop =
+      transcriptVirtualizer.getSettledScrollOffset() <= scrollViewport.clientHeight;
+    if (!nearSettledTop && (!atHardTop || hardTopLatchedRef.current)) return;
+    if (atHardTop) hardTopLatchedRef.current = true;
     autoLoadEarlierInFlightRef.current = true;
     onLoadEarlierHistory();
   };
@@ -778,7 +868,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     if (!conversationId || !scrollViewport) return;
     transcriptMeasurementsLru.save(
       conversationId,
-      buildTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
+      buildVersionedTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
       transcriptVirtualizer.takeSnapshot(),
     );
   };
@@ -798,14 +888,17 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={transcriptVirtualizer.measureElement}
-              className="absolute left-0 right-0 top-0 flex justify-center"
+              className="absolute inset-x-0 top-0 flex justify-center"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               <button
                 type="button"
                 onClick={onLoadEarlierHistory}
                 disabled={isLoadingMoreHistory || !onLoadEarlierHistory}
-                className="rounded-full border border-border/60 bg-background/80 px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                className={cn(
+                  "rounded-full border border-border/60 bg-background/80 px-4 py-1.5 text-xs text-muted-foreground",
+                  "transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
+                )}
               >
                 {isLoadingMoreHistory
                   ? locale === "en-US"
@@ -825,16 +918,16 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={transcriptVirtualizer.measureElement}
-              className="gateway-transcript-row absolute left-0 right-0 top-0"
+              className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              <div className="flex w-full max-w-full items-start gap-3">
-                <AssistantAvatar />
-                <div className="min-w-0 flex-1 space-y-2 pt-1">
-                  <div className="flex items-center py-1">
+              <div className="w-full max-w-full">
+                <div className="min-w-0 space-y-2 pt-1">
+                  <div className="flex w-full items-center py-1">
                     <LiveAssistantStatus
                       status={displayedToolStatus}
                       isCompaction={displayedToolStatusIsCompaction}
+                      className={displayedToolStatusIsCompaction ? "w-full" : undefined}
                     />
                   </div>
                   {retryAttempts && retryAttempts.length > 0 ? (
@@ -853,7 +946,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={transcriptVirtualizer.measureElement}
-              className="gateway-transcript-row gateway-transcript-row-user absolute left-0 right-0 top-0"
+              className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0 justify-end!`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               <GatewayUserMessageRowBody
@@ -877,34 +970,37 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
           const rowIndex = virtualRow.index - leadingOffset;
           const isLatestLiveAssistant = rowIndex === liveAssistantIndex;
           const isLatestLiveStreaming = isStreaming && isLatestLiveAssistant;
+          const retryTarget = findRetryTarget(rows, rowIndex);
+          const durationMs = chatDuration(retryTarget?.timestamp, row.timestamp);
           return (
             <article
               key={virtualRow.key}
               data-index={virtualRow.index}
               data-row-key={row.key}
               ref={transcriptVirtualizer.measureElement}
-              className="gateway-transcript-row absolute left-0 right-0 top-0"
+              className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              <div className="group/assistant min-w-0 w-full max-w-full space-y-1">
+              <div
+                className="group/assistant min-w-0 w-full max-w-full space-y-1"
+                data-assistant-row
+              >
                 <AssistantBubble
                   rounds={row.rounds}
-                  showUsage={showUsage}
-                  usageContextWindow={usageContextWindow}
                   isLive={isLatestLiveAssistant}
                   isStreaming={isLatestLiveStreaming}
                   renderMode={rowRenderMode(row)}
+                  toolStatus={isLatestLiveStreaming ? displayedToolStatus : null}
+                  toolStatusVariant={displayedToolStatusIsCompaction ? "compaction" : "default"}
+                  durationMs={durationMs}
+                  startedAtMs={
+                    isLatestLiveStreaming ? findLiveTurnStartTimestamp(rows, rowIndex) : undefined
+                  }
                   readOnly={readOnly}
                   redactToolContent={redactToolContent}
                   workdir={workspaceRoot}
                   onOpenFileLink={onOpenFileLink}
                 />
-                {isLatestLiveStreaming ? (
-                  <LiveStatusFooter
-                    status={displayedToolStatus ?? VIBING_STATUS}
-                    isCompaction={displayedToolStatusIsCompaction}
-                  />
-                ) : null}
                 {isLatestLiveStreaming &&
                 !shouldShowPendingLiveBubble &&
                 retryAttempts &&
@@ -916,8 +1012,10 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 {!readOnly && !isLatestLiveStreaming ? (
                   <GatewayAssistantMessageActions
                     row={row}
-                    retryTarget={retryTargetByAssistantKey.get(row.key) ?? null}
+                    retryTarget={retryTarget}
                     isStreaming={isStreaming}
+                    showUsage={showUsage}
+                    usageContextWindow={usageContextWindow}
                     isCopied={copiedMessageId === row.key}
                     setCopiedMessageId={setCopiedMessageId}
                     onResendFromEdit={onResendFromEdit}
@@ -936,7 +1034,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={transcriptVirtualizer.measureElement}
-              className="gateway-transcript-row gateway-transcript-row-checkpoint absolute left-0 right-0 top-0"
+              className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0 w-full`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               <CheckpointCard item={row} readOnly={readOnly} />
@@ -949,12 +1047,19 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
             key={virtualRow.key}
             data-index={virtualRow.index}
             ref={transcriptVirtualizer.measureElement}
-            className="gateway-transcript-row absolute left-0 right-0 top-0"
+            className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0`}
             style={{ transform: `translateY(${virtualRow.start}px)` }}
           >
-            <div className="gateway-bubble gateway-bubble-error">
-              <div className="gateway-bubble-label">Error</div>
-              <div className="gateway-bubble-content">
+            <div
+              className={cn(
+                "w-gateway-bubble-w rounded-22px border border-solid shadow-gateway-bubble backdrop-blur-18px px-18px py-16px",
+                "border-destructive/30 bg-destructive/5",
+              )}
+            >
+              <div className="text-xs font-bold tracking-0p12em uppercase text-muted-foreground">
+                Error
+              </div>
+              <div className="gateway-bubble-content mt-10px text-sm leading-1p72 text-foreground">
                 <pre>{row.text}</pre>
               </div>
             </div>
@@ -997,7 +1102,6 @@ export function GatewayTranscript({
   onBranchConversation,
   branchPendingMessageId,
   onSuggestionSelect,
-  suggestionsDisabled = false,
   readOnly = false,
   redactToolContent = false,
 }: GatewayTranscriptProps) {
@@ -1026,9 +1130,15 @@ export function GatewayTranscript({
   if (rowCount === 0 && !isStreaming) {
     const showNoModelsState = !hasModels;
     return (
-      <div className="gateway-transcript-shell">
-        <CodeFlowBackground />
-        <div className="gateway-chat-column gateway-empty-state">
+      <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
+        <div
+          className={cn(
+            GATEWAY_CHAT_COLUMN_CLASS,
+            GATEWAY_EMPTY_STATE_CLASS,
+            "relative col-[2] flex items-center justify-center overflow-hidden",
+            "px-0 pt-24px pb-0 max-640:pt-8px",
+          )}
+        >
           {/* Keyed per conversation so the hero entrance replays when
               switching between empty conversations, not just on mount. */}
           <ChatEmptyState
@@ -1036,7 +1146,6 @@ export function GatewayTranscript({
             variant={showNoModelsState ? "no-models" : "start-chat"}
             onOpenSettings={onOpenSettings}
             onSuggestionSelect={readOnly ? undefined : onSuggestionSelect}
-            suggestionsDisabled={suggestionsDisabled}
           />
         </div>
       </div>
@@ -1044,10 +1153,10 @@ export function GatewayTranscript({
   }
 
   return (
-    <div className="gateway-transcript-shell">
+    <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
       <div
         ref={transcriptListRef}
-        className="gateway-chat-column gateway-transcript-list select-text"
+        className={`${GATEWAY_CHAT_COLUMN_CLASS} gateway-transcript-list col-[2] flex min-w-0 select-text flex-col gap-18px max-640:gap-14px`}
       >
         {/* Keyed remount per conversation: per-conversation state (measured
             heights, scroll-to-end latch) initializes fresh, and row keys can
@@ -1084,10 +1193,17 @@ export function GatewayTranscript({
           redactToolContent={redactToolContent}
         />
         {shouldShowInlineError ? (
-          <div className="gateway-inline-error">{inlineErrorText}</div>
+          <div
+            className={cn(
+              "rounded-14px border border-solid border-destructive/16 bg-destructive/8 px-12px py-10px",
+              "text-sm text-destructive",
+            )}
+          >
+            {inlineErrorText}
+          </div>
         ) : null}
       </div>
-      <div className="gateway-transcript-bottom-spacer" />
+      <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
     </div>
   );
 }

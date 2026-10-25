@@ -1,9 +1,13 @@
 import type { WorkspaceProject } from "@liveagent/app/lib/settings";
+import type { ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
 import type {
   SidebarBatchDeleteOptions,
   SidebarBatchDeleteResult,
 } from "@liveagent/ui/lib/sidebar/batchDelete";
 import type { ReactNode } from "react";
+import type { SidebarShortcutId, SidebarShortcuts } from "../../lib/settings/sidebarShortcuts";
+import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
+import type { WorkspaceHistoryState } from "../../lib/sidebar/store";
 import type { SidebarConversation } from "../../lib/sidebar/types";
 import type { WorkspaceProjectGroup } from "../../lib/workspaceProjectTypes";
 
@@ -24,12 +28,22 @@ export type WorkspaceFolderDropHandlers = {
 };
 
 export type ChatHistorySidebarProps = {
+  projectOrder?: readonly string[];
+  pinnedOrder?: readonly string[];
+  onReorderPinned?: (orderedKeys: string[]) => void;
+  onReorderProjects?: (orderedPaths: string[]) => void;
+  workspaceHistory?: ReadonlyMap<string, WorkspaceHistoryState>;
+  onLoadWorkspaceHistory?: (cwd: string, more?: boolean) => Promise<void>;
   items: readonly SidebarConversation[];
   taskItems?: readonly SidebarConversation[];
   currentConversationId: string;
   // Per-row in-flight mutations: only that row's menu/inputs disable.
   busyConversationIds: ReadonlyMap<string, ChatHistorySidebarMutationKind>;
   runningConversationIds: ReadonlySet<string>;
+  /** Conversations currently blocked on an explicit tool approval. */
+  approvalConversationIds?: ReadonlySet<string>;
+  /** Conversations currently blocked on an unanswered AskUserQuestion card. */
+  questionConversationIds?: ReadonlySet<string>;
   listStatus: ChatHistorySidebarListStatus;
   // Identity of the current list scope (workspace/text mode). A change
   // remounts the list content with a soft enter transition and resets scroll.
@@ -51,7 +65,9 @@ export type ChatHistorySidebarProps = {
   renameDraft: string;
   isOpen: boolean;
   fontScale?: number;
-  activeView?: "chat" | "skills-hub" | "mcp-hub";
+  /** Incremented by the desktop host when its configured search shortcut fires. */
+  conversationSearchRequestKey?: number;
+  activeView?: ApplicationViewId;
   showProjects?: boolean;
   workspaceSectionLabel?: string;
   showAgentHubs?: boolean;
@@ -92,19 +108,28 @@ export type ChatHistorySidebarProps = {
   // collapsed group at the end of the list.
   archivedProjectPathKeys?: ReadonlySet<string>;
   onNewConversation: () => void;
-  onNewRecentConversation?: () => void;
-  onSelectConversation: (id: string) => void;
+  onSelectConversation: (id: string, options?: ConversationOpenOptions) => void;
   /** Workbench drag intent from a conversation row title (desktop pointer). */
   onConversationWorkbenchDragIntent?: (
     item: SidebarConversation,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
   /** Menu alternative to dragging: open a conversation in a split pane. */
   onConversationOpenInWorkbenchSplit?: (item: SidebarConversation) => void;
   /** Workbench drag intent from a project row title (creates a conversation). */
   onProjectWorkbenchDragIntent?: (
     project: WorkspaceProject,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
   onStartRenaming: (item: SidebarConversation) => void;
   onRenameDraftChange: (value: string) => void;
@@ -126,19 +151,23 @@ export type ChatHistorySidebarProps = {
     options?: SidebarBatchDeleteOptions,
   ) => Promise<SidebarBatchDeleteResult>;
   onLoadMore: () => void;
-  onCloseSidebar: () => void;
+  sidebarShortcuts?: SidebarShortcuts;
   onOpenSettings: () => void;
-  onOpenSkillsHub?: () => void;
-  onOpenMcpHub?: () => void;
+  onOpenResourceHub: (resource: SidebarShortcutId) => void;
   headerTop?: ReactNode;
   brand?: ReactNode;
   hideCloseButton?: boolean;
   footerTrailing?: ReactNode;
   accountMenu?: ReactNode;
+  onNewRecentConversation?: () => void;
 };
 
 export type ChatHistorySidebarWorkspaceSource = Pick<
   ChatHistorySidebarProps,
+  | "pinnedOrder"
+  | "onReorderPinned"
+  | "projectOrder"
+  | "onReorderProjects"
   | "showProjects"
   | "workspaceSectionLabel"
   | "workspaceProjectGroups"
@@ -170,6 +199,10 @@ export type ChatHistorySidebarWorkspaceSource = Pick<
 
 type OptionalWorkspaceSourceKey =
   | "workspaceSectionLabel"
+  | "pinnedOrder"
+  | "onReorderPinned"
+  | "projectOrder"
+  | "onReorderProjects"
   | "workspaceProjectGroups"
   | "workspaceFolderDropActive"
   | "workspaceFolderDropHandlers"
@@ -193,16 +226,17 @@ export type ChatHistorySidebarContainerSource = Required<
     | "currentConversationId"
     | "isOpen"
     | "fontScale"
+    | "conversationSearchRequestKey"
     | "onNewConversation"
     | "onSelectConversation"
     | "canShareConversations"
     | "sharedConversationCount"
     | "onShareConversation"
     | "onOpenSharedConversations"
-    | "onCloseSidebar"
+    | "sidebarShortcuts"
     | "onOpenSettings"
   > &
-  Required<Pick<ChatHistorySidebarProps, "activeView" | "onOpenSkillsHub" | "onOpenMcpHub">> & {
+  Required<Pick<ChatHistorySidebarProps, "activeView" | "onOpenResourceHub">> & {
     projects: WorkspaceProject[];
     accountMenu?: ReactNode;
     onNewRecentConversation?: () => void;
@@ -216,10 +250,9 @@ type ChatHistorySidebarConversationSource = Pick<
   | "sharedConversationCount"
   | "onShareConversation"
   | "onOpenSharedConversations"
-  | "onCloseSidebar"
+  | "sidebarShortcuts"
   | "onOpenSettings"
-  | "onOpenSkillsHub"
-  | "onOpenMcpHub"
+  | "onOpenResourceHub"
 >;
 
 type ChatHistorySidebarConversationHandlers = Pick<
@@ -261,7 +294,7 @@ type ChatHistorySidebarBaseState = Pick<
 export function buildChatHistorySidebarBaseProps(
   source: Pick<
     ChatHistorySidebarContainerSource,
-    "currentConversationId" | "isOpen" | "fontScale" | "activeView"
+    "currentConversationId" | "isOpen" | "fontScale" | "conversationSearchRequestKey" | "activeView"
   >,
   state: ChatHistorySidebarBaseState,
 ) {
@@ -284,6 +317,7 @@ export function buildChatHistorySidebarBaseProps(
     renameDraft: state.renameDraft,
     isOpen: source.isOpen,
     fontScale: source.fontScale,
+    conversationSearchRequestKey: source.conversationSearchRequestKey,
     activeView: source.activeView,
   };
 }
@@ -300,10 +334,9 @@ export function buildChatHistorySidebarConversationProps(
     sharedConversationCount: source.sharedConversationCount,
     onShareConversation: source.onShareConversation,
     onOpenSharedConversations: source.onOpenSharedConversations,
-    onCloseSidebar: source.onCloseSidebar,
     onOpenSettings: source.onOpenSettings,
-    onOpenSkillsHub: source.onOpenSkillsHub,
-    onOpenMcpHub: source.onOpenMcpHub,
+    sidebarShortcuts: source.sidebarShortcuts,
+    onOpenResourceHub: source.onOpenResourceHub,
   };
 }
 
@@ -313,6 +346,10 @@ export function buildChatHistorySidebarWorkspaceProps(
   runningProjectPathKeys: ReadonlySet<string>,
 ) {
   return {
+    pinnedOrder: source.pinnedOrder,
+    onReorderPinned: source.onReorderPinned,
+    projectOrder: source.projectOrder,
+    onReorderProjects: source.onReorderProjects,
     showProjects: source.showProjects,
     workspaceSectionLabel: source.workspaceSectionLabel,
     projects,

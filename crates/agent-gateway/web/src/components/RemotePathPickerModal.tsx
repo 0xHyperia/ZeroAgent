@@ -7,6 +7,7 @@ import {
   Home,
   Loader2,
   Plus,
+  RefreshCw,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
@@ -153,6 +154,9 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
   const [roots, setRoots] = useState<FsRoot[]>([]);
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(() => new Set());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rootsRevision, setRootsRevision] = useState(0);
+  const [pathInput, setPathInput] = useState(initialPath);
+  const [openingPath, setOpeningPath] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [createFolderError, setCreateFolderError] = useState<string | null>(null);
@@ -173,8 +177,6 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
   const focusedPath = typeof focusedItem === "string" && focusedItem !== ROOT_ID ? focusedItem : "";
   const activePath = (selectedPath || focusedPath).trim();
 
-  const headerPath = (selectedPath || initialPath || "").trim();
-
   const activeMeta = activePath ? (items[activePath]?.data ?? null) : null;
   const activeChildren = activePath ? (items[activePath]?.children ?? null) : null;
   const createFolderName = newFolderName.trim();
@@ -185,9 +187,11 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
 
   const selectedMeta = selectedPath ? (items[selectedPath]?.data ?? null) : null;
   const canConfirm =
-    mode === "file"
+    !openingPath &&
+    normalizePathForCompare(pathInput) === normalizePathForCompare(selectedPath) &&
+    (mode === "file"
       ? selectedMeta?.kind === "file"
-      : Boolean(selectedPath && selectedMeta?.kind !== "file");
+      : Boolean(selectedPath && selectedMeta?.kind !== "file"));
 
   const statusLine = useMemo(() => {
     if (loadError) {
@@ -245,6 +249,7 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
     });
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: root loading follows explicit retries using stable state helpers
   useEffect(() => {
     let cancelled = false;
 
@@ -253,7 +258,9 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
       setLoadError(null);
       try {
         const resp = await invoke<FsRootsResponse>("fs_roots");
+        if (cancelled) return;
         const roots = Array.isArray(resp.roots) ? resp.roots : [];
+        if (roots.length === 0) throw new Error(t("settings.pathPickerNoRoots"));
         const rootChildren = roots.map((root) => root.path).filter(Boolean);
 
         setRoots(roots);
@@ -293,12 +300,16 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rootsRevision]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initial-path expansion is driven only by its path and loaded roots
   useEffect(() => {
     if (loadingRoots || didExpandInitialPathRef.current) return;
 
-    const targetPath = stripTrailingPathSeparators(initialPath);
+    const targetPath =
+      stripTrailingPathSeparators(initialPath) ||
+      roots.find((root) => root.kind === "home")?.path ||
+      roots[0]?.path;
     if (!targetPath || roots.length === 0) return;
 
     const root = findBestRootForPath(targetPath, roots);
@@ -348,6 +359,7 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
       const selectedPathForState = reachedTarget
         ? currentPath
         : (route[route.length - 1] ?? root.path);
+      setPathInput(selectedPathForState);
       const expandedRoute = [ROOT_ID, ...route];
 
       updateTreeViewState(TREE_ID, (treePrev) => ({
@@ -453,7 +465,7 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
   async function loadChildren(path: string) {
     if (!path.trim()) return;
     const current = items[path];
-    if (!current || !current.isFolder) return;
+    if (!current?.isFolder) return;
     if (current.data?.loaded) return;
     if (loadingPaths.has(path)) return;
 
@@ -461,6 +473,48 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
       await loadDirectoryChildren(path);
     } catch {
       // The shared error banner is updated by loadDirectoryChildren.
+    }
+  }
+
+  async function openPath() {
+    const path = stripTrailingPathSeparators(pathInput);
+    if (!path || openingPath) return;
+    setOpeningPath(true);
+    setLoadError(null);
+    try {
+      const response = await invoke<FsListDirsResponse>("fs_list_dirs", {
+        path,
+        max_results: DEFAULT_MAX_RESULTS,
+      });
+      const directory = response.path || path;
+      const entries = response.entries ?? [];
+      setItems((prev) => {
+        const next = { ...prev };
+        next[ROOT_ID] = {
+          ...next[ROOT_ID],
+          children: mergeTreeIndexes(next[ROOT_ID].children, [directory]),
+        };
+        next[directory] = createNodeItem(directory, directory, "dir");
+        for (const entry of entries) {
+          next[entry.path] = createNodeItem(entry.path, entry.name, "dir");
+        }
+        next[directory].children = entries.map((entry) => entry.path);
+        next[directory].data.loaded = mode === "directory";
+        next[directory].data.truncated = response.truncated;
+        return next;
+      });
+      updateTreeViewState(TREE_ID, (prev) => ({
+        ...prev,
+        expandedItems: mergeTreeIndexes(prev.expandedItems, [ROOT_ID, directory]),
+        selectedItems: [directory],
+        focusedItem: directory,
+      }));
+      setPathInput(directory);
+      if (mode === "file") await loadDirectoryChildren(directory);
+    } catch (error) {
+      setLoadError(toErrorMessage(error, "Failed to list directories"));
+    } finally {
+      setOpeningPath(false);
     }
   }
 
@@ -532,13 +586,13 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
       }}
     >
       <DialogContent
-        className="flex h-[min(650px,92vh)] max-h-[92vh] max-w-4xl flex-col p-0"
+        className="flex h-dialog-650px-vh max-h-92vh max-w-4xl flex-col p-0"
         closeLabel={t("settings.cancel")}
         showCloseButton
       >
         <DialogHeader className="flex-row items-center gap-3 px-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            {mode === "file" ? <File className="h-5 w-5" /> : <FolderOpen className="h-5 w-5" />}
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            {mode === "file" ? <File className="size-5" /> : <FolderOpen className="size-5" />}
           </div>
           <div className="min-w-0 flex-1">
             <DialogTitle>{modalTitle}</DialogTitle>
@@ -547,23 +601,43 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
         </DialogHeader>
 
         <DialogSubheader className="px-6">
-          <div className="settings-field-row flex items-center gap-3">
+          <div className="flex items-center gap-3 max-820:min-w-0">
             <div className="w-24 shrink-0 text-xs font-medium text-muted-foreground">
               {mode === "file" ? t("settings.pathPickerPathLabel") : t("settings.workdir")}
             </div>
-            <Input value={headerPath} readOnly className="font-mono text-[13px]" />
+            <Input
+              variant="plain"
+              aria-label={t("settings.pathPickerPathLabel")}
+              value={pathInput}
+              onChange={(event) => setPathInput(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void openPath();
+                }
+              }}
+              className="min-w-0 font-mono text-sm"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!pathInput.trim() || openingPath}
+              onClick={() => void openPath()}
+            >
+              {t("settings.pathPickerOpen")}
+            </Button>
           </div>
         </DialogSubheader>
 
         <DialogBody className="flex flex-col gap-3 px-6">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
-              <Home className="h-3.5 w-3.5" />
+              <Home className="size-3.5" />
               <span>~</span>
             </div>
             <span className="text-muted-foreground/40">·</span>
             <div className="flex items-center gap-1.5">
-              <HardDrive className="h-3.5 w-3.5" />
+              <HardDrive className="size-3.5" />
               <span>Root</span>
             </div>
           </div>
@@ -572,6 +646,7 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
             <div className="rounded-xl border border-border/60 bg-background/70 p-2">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <Input
+                  variant="plain"
                   value={newFolderName}
                   onChange={(event) => {
                     setNewFolderName(event.currentTarget.value);
@@ -601,23 +676,34 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
                   disabled={!canCreateFolder}
                 >
                   {creatingFolder ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="size-3.5 animate-spin" />
                   ) : (
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="size-3.5" />
                   )}
                   {t("settings.createFolder")}
                 </Button>
               </div>
               {createFolderError ? (
-                <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div
+                  className={cn(
+                    "mt-2 flex items-start gap-2",
+                    "rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive",
+                  )}
+                >
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1">{createFolderError}</span>
                 </div>
               ) : null}
             </div>
           ) : null}
 
-          <div className="workdir-picker-tree min-h-0 flex-1 overflow-auto rounded-xl border border-border/60 bg-muted/20 p-2">
+          <div
+            className={cn(
+              "workdir-picker-tree min-h-0 flex-1 overflow-auto",
+              "rounded-xl border border-border/60 bg-muted/20 p-2",
+              "[&_.rct-tree-root]:bg-transparent [&_.rct-tree-root]:text-foreground [&_.rct-tree-root]:font-inherit [&_.rct-tree-item-button]:min-w-0",
+            )}
+          >
             <ControlledTreeEnvironment
               items={items}
               getItemTitle={(item) => item.data.label}
@@ -646,6 +732,8 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
                   ...treePrev,
                   selectedItems,
                 }));
+                const path = selectedItems[0];
+                if (typeof path === "string" && path !== ROOT_ID) setPathInput(path);
               }}
               onFocusItem={(item, treeId) => {
                 updateTreeViewState(treeId, (treePrev) => ({
@@ -670,13 +758,28 @@ export function RemotePathPickerModal(props: RemotePathPickerModalProps) {
               )}
             >
               {statusLine.kind === "loading" ? (
-                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin" />
               ) : statusLine.kind === "error" ? (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               ) : (
-                <FolderOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                <FolderOpen className="mt-0.5 size-4 shrink-0" />
               )}
               <span className="min-w-0 flex-1">{statusLine.text}</span>
+              {statusLine.kind === "error" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (pathInput.trim() && pathInput !== selectedPath) void openPath();
+                    else if (activePath)
+                      void loadDirectoryChildren(activePath).catch(() => undefined);
+                    else setRootsRevision((revision) => revision + 1);
+                  }}
+                >
+                  <RefreshCw className="size-3.5" />
+                  {t("chat.retry")}
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </DialogBody>

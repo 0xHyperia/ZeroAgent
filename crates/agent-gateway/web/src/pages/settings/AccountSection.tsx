@@ -1,4 +1,3 @@
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ExternalLink,
   Loader2,
@@ -11,6 +10,7 @@ import {
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import {
   bindRelayEmail,
   changeRelayPassword,

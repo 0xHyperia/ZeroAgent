@@ -69,6 +69,7 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 		verdict = helloVerdict{message: "agent_id is required"}
 	}
 	boundAgentID := strings.TrimSpace(hello.GetAgentId())
+	var selectionCurrent func() bool
 	if verdict.ok && wantRole == gatewayv2.ClientRole_CLIENT_ROLE_BROWSER && s.accounts != nil {
 		session, lease, err := s.validateControllerSelection(
 			context.Background(),
@@ -83,6 +84,7 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 			verdict = helloVerdict{message: "agent_id is outside the selected account device"}
 		} else {
 			boundAgentID = device.ID
+			selectionCurrent = s.controllerSelectionCurrent(controllerSessionID, hello, session, lease)
 		}
 	}
 	if !verdict.ok {
@@ -173,7 +175,7 @@ func (s *Server) serveTerminal(conn *websocket.Conn, controllerSessionID string)
 		return
 	}
 	observability.Usage.V2TerminalConnectsTotal.Add(1)
-	s.serveTerminalBrowser(conn, boundAgentID)
+	s.serveTerminalBrowser(conn, boundAgentID, selectionCurrent)
 }
 
 func readTerminalFrame(conn *websocket.Conn) (*gatewayv2.TerminalClientFrame, bool) {
@@ -259,7 +261,8 @@ type terminalBrowserConn struct {
 	conn *websocket.Conn
 	// agentID 是连接通过 hello.agent_id 显式绑定的目标 Agent；出站按它路由，
 	// 入站只放行同源帧。
-	agentID string
+	agentID          string
+	selectionCurrent func() bool
 
 	out  chan []byte
 	done chan struct{}
@@ -270,16 +273,17 @@ type terminalBrowserConn struct {
 	streams  map[string]struct{}
 }
 
-func (s *Server) serveTerminalBrowser(conn *websocket.Conn, agentID string) {
+func (s *Server) serveTerminalBrowser(conn *websocket.Conn, agentID string, selectionCurrent func() bool) {
 	c := &terminalBrowserConn{
-		srv:      s,
-		sm:       s.sm,
-		conn:     conn,
-		agentID:  agentID,
-		out:      make(chan []byte, terminalWriteQueueSize),
-		done:     make(chan struct{}),
-		attached: make(map[string]struct{}),
-		streams:  make(map[string]struct{}),
+		srv:              s,
+		sm:               s.sm,
+		conn:             conn,
+		agentID:          agentID,
+		selectionCurrent: selectionCurrent,
+		out:              make(chan []byte, terminalWriteQueueSize),
+		done:             make(chan struct{}),
+		attached:         make(map[string]struct{}),
+		streams:          make(map[string]struct{}),
 	}
 	defer c.close()
 
@@ -294,6 +298,9 @@ func (s *Server) serveTerminalBrowser(conn *websocket.Conn, agentID string) {
 		streamFrame := frame.GetFrame()
 		if streamFrame == nil {
 			continue
+		}
+		if selectionCurrent != nil && !selectionCurrent() {
+			return
 		}
 		c.handleFrame(streamFrame)
 	}
@@ -466,6 +473,10 @@ func (c *terminalBrowserConn) writeLoop() {
 		case <-c.done:
 			return
 		case payload := <-c.out:
+			if c.selectionCurrent != nil && !c.selectionCurrent() {
+				c.close()
+				return
+			}
 			if timeout := c.srv.writeTimeout(); timeout > 0 {
 				_ = c.conn.SetWriteDeadline(time.Now().Add(timeout))
 			}

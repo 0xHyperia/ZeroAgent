@@ -32,6 +32,7 @@ pub struct GatewayChatRuntimeControlsEvent {
     pub thinking_enabled: bool,
     pub native_web_search_enabled: bool,
     pub reasoning: String,
+    pub plan_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,6 +58,15 @@ pub struct GatewayChatMessageRefEvent {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GatewayConversationReferenceEvent {
+    pub id: String,
+    pub title: String,
+    pub cwd: String,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GatewayChatRequestEvent {
     pub request_id: String,
     pub conversation_id: String,
@@ -72,7 +82,14 @@ pub struct GatewayChatRequestEvent {
     /// 未指定,桌面端回落到本地 settings.system.commandSafetyMode。
     pub command_safety_mode: String,
     pub uploaded_files: Vec<GatewayUploadedFileEvent>,
+    pub referenced_conversations: Vec<GatewayConversationReferenceEvent>,
     pub queue_policy: String,
+    /// WebUI 输入框“/”指令：goal 动作（set/resume）、目标正文，以及本条
+    /// message 是否为提示词指令（由 K-brain 展开，历史保留原文）。
+    pub goal_action: String,
+    pub goal_text: String,
+    pub prompt_command: bool,
+    pub plan_command: bool,
 }
 
 pub(crate) fn is_complete_user_chat_message_ref(ref_value: &proto::ChatMessageRef) -> bool {

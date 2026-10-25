@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
@@ -10,9 +9,10 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
+import { useRef } from "react";
 import { requestMobileAppUpdateCheck } from "@/lib/mobileAppUpdate";
 import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
+import { formatRelayBalance, formatRelayTokenCount } from "@/lib/relay/client";
 
 type UserMenuProps = {
   open: boolean;

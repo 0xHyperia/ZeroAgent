@@ -1,5 +1,3 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@liveagent/ui/components/ui/button";
 import {
   CheckCircle2,
   ExternalLink,
@@ -12,9 +10,12 @@ import {
   RefreshCw,
   Shield,
 } from "@liveagent/ui/components/IconSet";
+import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
+import { backendProfileMatchesAccount } from "../../lib/kbrain/profile";
 import {
   createRelayApiKeys,
   getRelayCurrentUser,
@@ -25,6 +26,7 @@ import {
   loginRelay,
   loginRelay2FA,
   loginRelayOAuth,
+  RELAY_ORIGIN,
   type RelayGroup,
   type RelayPublicSettings,
   type RelayUser,
@@ -104,6 +106,10 @@ export function RelayAccessGate({
         listRelayApiKeys(),
         listRelayGroups(),
       ]);
+      if (!backendProfileMatchesAccount(RELAY_ORIGIN, currentUser.id)) {
+        window.location.reload();
+        return;
+      }
       setUser(currentUser);
       setGroups(availableGroups);
       if (keys.length === 0) {

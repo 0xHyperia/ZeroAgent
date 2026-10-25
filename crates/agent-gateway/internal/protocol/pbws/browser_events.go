@@ -215,6 +215,10 @@ func (c *browserConn) handleWorkspaceSubscribe(requestID, agentID string, req *g
 	}
 	requestedAgentID := strings.TrimSpace(agentID)
 	resolvedAgentID, err := c.sm.ResolveAgentID(requestedAgentID)
+	var ownerCleanup func()
+	if err != nil && errors.Is(err, session.ErrAgentOffline) {
+		resolvedAgentID, _, ownerCleanup, err = c.sm.EnsureLocalWorkspaceActivityOwner(requestedAgentID, workdir)
+	}
 	if err != nil {
 		_ = c.sendLocalError(requestID, errorMessage(err))
 		return
@@ -222,6 +226,13 @@ func (c *browserConn) handleWorkspaceSubscribe(requestID, agentID string, req *g
 	subKey := requestedAgentID + "\x00" + workdir
 
 	events, cancel := c.sm.SubscribeWorkspaceActivity(resolvedAgentID, workdir)
+	if ownerCleanup != nil {
+		baseCancel := cancel
+		cancel = func() {
+			baseCancel()
+			ownerCleanup()
+		}
+	}
 	sub := &workspaceSubscription{
 		cancel: cancel,
 		done:   make(chan struct{}),
@@ -294,6 +305,10 @@ func (c *browserConn) handleWorkspaceUnsubscribe(requestID, agentID string, req 
 // 泛型 forward 统一可掉帧广播骨架，各路只提供订阅与帧构造。广播帧盖来源
 // agent_id（服务端不过滤，客户端按活跃 Agent 过滤）；功能门控按来源 Agent 判定。
 func (c *browserConn) startEventForwarders() {
+	forward(c, c.sm.SubscribePlanningChanged, func(event session.Tagged[*gatewayv2.PlanningChanged]) (*gatewayv2.WebServerFrame, bool) {
+		return &gatewayv2.WebServerFrame{AgentId: event.AgentID, Payload: &gatewayv2.WebServerFrame_PlanningChanged{PlanningChanged: event.Event}}, true
+	}, "planning_changed")
+
 	forward(c, c.sm.SubscribeHistorySync, func(event session.Tagged[*gatewayv2.HistorySyncEvent]) (*gatewayv2.WebServerFrame, bool) {
 		return &gatewayv2.WebServerFrame{
 			AgentId: event.AgentID,

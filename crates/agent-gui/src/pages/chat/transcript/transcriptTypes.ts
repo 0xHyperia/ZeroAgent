@@ -1,4 +1,5 @@
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import type { GitClient } from "@liveagent/ui/lib/git/types";
@@ -23,12 +24,20 @@ export type ChatTranscriptProps = {
   onLoadEarlierHistory: () => Promise<void>;
   isHistorySwitching: boolean;
   isSending: boolean;
-  isAgentMode: boolean;
   showUsage: boolean;
   usageContextWindow?: number;
   liveTranscriptStore: LiveTranscriptStore;
   isCompactionRunning: boolean;
   bottomReservePx?: number;
+  // Composer chrome floating above the reserve line (queue panel, task
+  // progress pill). Deliberately excluded from bottomReservePx so the
+  // transcript reserve stays put; overlays anchored above the composer must
+  // clear it or they end up hidden underneath.
+  floatingOverhangPx?: number;
+  // Horizontal offset of the composer card's center from the pane center
+  // (positive = right). The desktop card is shifted to align with the
+  // assistant message body; overlays centered above it must follow.
+  composerCenterOffsetPx?: number;
   contentWidth: number;
   onContentWidthChange: (width: number) => void;
   onOpenFileLink?: (link: ChatFileLink) => void;
@@ -36,6 +45,7 @@ export type ChatTranscriptProps = {
     messageRef: HistoryMessageRef,
     text: string,
     attachments: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   // Anchor messageId of the branch request in flight; the matching row shows
@@ -43,5 +53,4 @@ export type ChatTranscriptProps = {
   branchPendingMessageId?: string | null;
   onOpenSettings: (section?: SectionId) => void;
   onSuggestionSelect?: (text: string) => void;
-  suggestionsDisabled?: boolean;
 };

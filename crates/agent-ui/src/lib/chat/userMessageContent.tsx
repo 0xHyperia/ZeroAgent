@@ -1,11 +1,20 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
 import { mentionChipClassName } from "@liveagent/ui/components/chat/mentionChipStyles";
-import { SkillIcon } from "@liveagent/ui/components/IconSet";
+import {
+  AppWindow,
+  MessageSquareText,
+  SkillIcon,
+  Terminal,
+} from "@liveagent/ui/components/IconSet";
+import { floatingSurfaceClassName } from "@liveagent/ui/components/ui/menu-surface";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { useAppMentionIcon } from "@liveagent/ui/lib/chat/appMentionIcons";
+import { COMPOSER_ACTION_COMMAND_NAMES } from "@liveagent/ui/lib/chat/composerCommands";
 import { normalizeLogicalLineEndings } from "@liveagent/ui/lib/chat/composerText";
 import {
   type CodeMentionReference,
+  type ConversationMentionReference,
   codeMentionDisplayName,
   codeMentionLineLabel,
   codeMentionTitle,
@@ -17,6 +26,7 @@ import {
   normalizeMentionPath,
   parseFileMentionPath,
   parseMarkdownCodeMentionReference,
+  parseMarkdownConversationMentionReference,
   parseMarkdownFileMentionReference,
   unescapeMarkdownReferenceLabel,
 } from "@liveagent/ui/lib/chat/mentionReferences";
@@ -25,6 +35,12 @@ import {
   type PendingUploadedFile,
   parsePastedTextDisplayReferences,
 } from "@liveagent/ui/lib/chat/uploadedFiles";
+import {
+  cachedDateTimeFormat,
+  cachedNumberFormat,
+  cachedRelativeTimeFormat,
+} from "@liveagent/ui/lib/shared/intlFormatters";
+import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
   type FocusEvent,
   type MouseEvent,
@@ -74,9 +90,12 @@ export type UserMessageSegment =
   | { type: "text"; value: string }
   | { type: "mention"; reference: FileMentionReference }
   | { type: "skill"; name: string }
+  | { type: "command"; name: string }
+  | { type: "app"; app: AppDisplayReference }
   | { type: "commit"; commit: CommitDisplayReference }
   | { type: "gitFile"; file: GitFileDisplayReference }
   | { type: "codeRef"; reference: CodeMentionReference }
+  | { type: "conversation"; reference: ConversationMentionReference }
   | {
       type: "pastedText";
       reference: PastedTextDisplayReference;
@@ -115,6 +134,14 @@ export type GitFileDisplayReference = {
   remoteName?: string;
   remoteUrl?: string;
   githubUrl?: string;
+};
+
+/** 应用提及（computer use 目标）。身份按内容分类：带路径分隔符判 path，
+ *  否则判 bundle id——与 formatAppMentionToken 的序列化取向互逆。 */
+export type AppDisplayReference = {
+  name: string;
+  bundleId?: string;
+  path?: string;
 };
 
 export type CommitDetailsLoader = (
@@ -344,6 +371,27 @@ function inlineGitFileReferenceAt(text: string, index: number) {
   };
 }
 
+/** `app "Safari" (com.apple.Safari)`——formatAppMentionToken 的逆变换。
+ *  只认带括号身份的完整形态：裸 `app "Name"` 在自然语言里太常见，作为
+ *  token 识别会把普通句子错渲染成 chip。 */
+function inlineAppReferenceAt(text: string, index: number) {
+  if (!isTokenBoundary(text, index)) return null;
+  const match = /^app "([^"\r\n]{1,200})" \(([^()\r\n]{1,500})\)/.exec(text.slice(index));
+  if (!match) return null;
+  const name = (match[1] ?? "").trim();
+  const identity = (match[2] ?? "").trim();
+  if (!name || !identity) return null;
+  const isPath = identity.includes("/") || identity.includes("\\");
+  return {
+    end: index + (match[0]?.length ?? 0),
+    app: {
+      name,
+      bundleId: isPath ? undefined : identity,
+      path: isPath ? identity : undefined,
+    } satisfies AppDisplayReference,
+  };
+}
+
 function tokenizeInlineMentions(
   text: string,
   options: UserMessageTokenizeOptions,
@@ -371,6 +419,17 @@ function tokenizeInlineMentions(
       segments.push({ type: "commit", commit: commitMatch.commit });
       cursor = commitMatch.end;
       index = commitMatch.end - 1;
+      continue;
+    }
+
+    const appMatch = inlineAppReferenceAt(text, index);
+    if (appMatch) {
+      if (index > cursor) {
+        pushTextSegment(segments, text.slice(cursor, index));
+      }
+      segments.push({ type: "app", app: appMatch.app });
+      cursor = appMatch.end;
+      index = appMatch.end - 1;
       continue;
     }
 
@@ -438,9 +497,15 @@ function tokenizeMentions(text: string, options: UserMessageTokenizeOptions): Us
     const commit = gitFile ? null : markdownCommitReference(label, destination);
     const codeRef =
       gitFile || commit ? null : parseMarkdownCodeMentionReference(label, destination);
+    const conversation =
+      gitFile || commit || codeRef
+        ? null
+        : parseMarkdownConversationMentionReference(label, destination);
     const reference =
-      gitFile || commit || codeRef ? null : parseMarkdownFileMentionReference(label, destination);
-    if (!gitFile && !commit && !codeRef && !reference) continue;
+      gitFile || commit || codeRef || conversation
+        ? null
+        : parseMarkdownFileMentionReference(label, destination);
+    if (!gitFile && !commit && !codeRef && !conversation && !reference) continue;
 
     if (matchIndex > cursor) {
       appendSegments(segments, tokenizeInlineMentions(text.slice(cursor, matchIndex), options));
@@ -451,6 +516,8 @@ function tokenizeMentions(text: string, options: UserMessageTokenizeOptions): Us
       segments.push({ type: "commit", commit });
     } else if (codeRef) {
       segments.push({ type: "codeRef", reference: codeRef });
+    } else if (conversation) {
+      segments.push({ type: "conversation", reference: conversation });
     } else if (reference) {
       segments.push({ type: "mention", reference });
     }
@@ -495,20 +562,20 @@ export function tokenizeUserMessage(
 }
 
 function formatPastedTextCount(value: number) {
-  return new Intl.NumberFormat().format(value);
+  return cachedNumberFormat(undefined, "count").format(value);
 }
 
 function formatCommitTooltipDate(value: string | undefined, locale: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const absolute = date.toLocaleString(locale, {
+  const absolute = cachedDateTimeFormat(locale, "commit-date", {
     year: "numeric",
     month: "long",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }).format(date);
   const deltaSeconds = Math.round((date.getTime() - Date.now()) / 1000);
   const units: Array<{
     unit: "year" | "month" | "day" | "hour" | "minute" | "second";
@@ -521,11 +588,13 @@ function formatCommitTooltipDate(value: string | undefined, locale: string) {
     { unit: "minute", seconds: 60 },
     { unit: "second", seconds: 1 },
   ];
-  const selected = units.find(({ seconds }) => Math.abs(deltaSeconds) >= seconds) ?? units.at(-1)!;
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-    Math.round(deltaSeconds / selected.seconds),
-    selected.unit,
-  );
+  const selected = units.find(({ seconds }) => Math.abs(deltaSeconds) >= seconds) ?? {
+    unit: "second",
+    seconds: 1,
+  };
+  const relative = cachedRelativeTimeFormat(locale, "commit-relative", {
+    numeric: "auto",
+  }).format(Math.round(deltaSeconds / selected.seconds), selected.unit);
   return { relative, absolute };
 }
 
@@ -616,6 +685,7 @@ function CommitReferenceTooltip({
     formatPastedTextCount(deletions),
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: commit content changes invalidate tooltip width measurement
   useLayoutEffect(() => {
     const node = tooltipRef.current;
     if (!node) return;
@@ -624,9 +694,14 @@ function CommitReferenceTooltip({
   }, [commit, maxWidth, minWidth]);
 
   return createPortal(
+    // biome-ignore lint/a11y/noStaticElementInteractions: Hover handlers keep this descriptive tooltip open; it has no activation behavior.
     <div
       ref={tooltipRef}
-      className="layer-popover fixed overflow-y-auto rounded-xl border border-border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-xl"
+      className={cn(
+        "layer-popover fixed overflow-y-auto",
+        floatingSurfaceClassName,
+        "px-3 py-2.5 text-xs",
+      )}
       style={{
         left,
         top,
@@ -640,21 +715,19 @@ function CommitReferenceTooltip({
       onMouseLeave={onMouseLeave}
     >
       <div className="flex items-start gap-2">
-        <GitHubMarkIcon className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+        <GitHubMarkIcon className="mt-0.5 size-4 shrink-0 text-foreground" />
         <div className="min-w-0">
           {detailed ? (
             <>
               <div className="break-words font-medium leading-tight">{authorLabel}</div>
               {date ? (
-                <div className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+                <div className="mt-0.5 text-xs leading-tight text-muted-foreground">
                   {date.relative} ({date.absolute})
                 </div>
               ) : null}
             </>
           ) : (
-            <div className="font-mono text-[11px] leading-tight text-muted-foreground">
-              {shortSha}
-            </div>
+            <div className="font-mono text-xs leading-tight text-muted-foreground">{shortSha}</div>
           )}
         </div>
       </div>
@@ -665,7 +738,7 @@ function CommitReferenceTooltip({
         </div>
       ) : null}
       {detailed ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-tight">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-tight">
           <span className="text-muted-foreground">{filesChangedLabel}</span>
           <span className="font-medium text-emerald-600 dark:text-emerald-400">
             {insertionsLabel}
@@ -674,21 +747,31 @@ function CommitReferenceTooltip({
         </div>
       ) : null}
       {commit.githubUrl ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/70 pt-1.5 text-[11px] leading-tight text-muted-foreground">
+        <div
+          className={cn(
+            "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/70",
+            "pt-1.5 text-xs leading-tight text-muted-foreground",
+          )}
+        >
           <span className="font-mono text-foreground">{shortSha}</span>
           {commit.remoteName ? <span>{commit.remoteName}</span> : null}
           <span className="text-border">|</span>
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-primary hover:bg-primary/10"
-            onClick={() => void openUrl(commit.githubUrl!)}
+            onClick={() => commit.githubUrl && void openUrl(commit.githubUrl)}
           >
-            <GitHubMarkIcon className="h-3 w-3" />
+            <GitHubMarkIcon className="size-3" />
             {t("chat.composer.commitTooltipOpenGithub")}
           </button>
         </div>
       ) : detailed ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/70 pt-1.5 text-[11px] leading-tight text-muted-foreground">
+        <div
+          className={cn(
+            "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/70",
+            "pt-1.5 text-xs leading-tight text-muted-foreground",
+          )}
+        >
           <span className="font-mono text-foreground">{shortSha}</span>
           {commit.remoteName ? <span>{commit.remoteName}</span> : null}
         </div>
@@ -718,7 +801,7 @@ function PastedTextChip({
 
   return (
     <span title={file.relativePath} className={mentionChipClassName("pastedText")}>
-      <Icon className="h-3 w-3 shrink-0 self-center" />
+      <Icon className="size-3 shrink-0 self-center" />
       {chipText}
     </span>
   );
@@ -731,7 +814,7 @@ function MentionChip({ reference }: { reference: FileMentionReference }) {
       title={fileMentionTitle(reference)}
       className={mentionChipClassName(reference.kind === "dir" ? "dir" : "file")}
     >
-      <Icon className="h-3 w-3 shrink-0 self-center" />
+      <Icon className="size-3 shrink-0 self-center" />
       {fileMentionDisplayName(reference)}
     </span>
   );
@@ -742,8 +825,17 @@ function CodeRefMentionChip({ reference }: { reference: CodeMentionReference }) 
   const lineLabel = codeMentionLineLabel(reference);
   return (
     <span title={codeMentionTitle(reference)} className={mentionChipClassName("codeRef")}>
-      <Icon className="h-3 w-3 shrink-0 self-center" />
+      <Icon className="size-3 shrink-0 self-center" />
       <span>{`${codeMentionDisplayName(reference)}：${lineLabel}`}</span>
+    </span>
+  );
+}
+
+function ConversationMentionChip({ reference }: { reference: ConversationMentionReference }) {
+  return (
+    <span title={reference.title} className={mentionChipClassName("conversation")}>
+      <MessageSquareText className="size-3 shrink-0 self-center" />
+      {reference.title}
     </span>
   );
 }
@@ -754,12 +846,19 @@ function userMessageSegmentKey(part: UserMessageSegment, index: number) {
     return `mention:${index}:${part.reference.kind}:${part.reference.path}`;
   }
   if (part.type === "skill") return `skill:${index}:${part.name}`;
+  if (part.type === "command") return `command:${index}:${part.name}`;
+  if (part.type === "app") {
+    return `app:${index}:${part.app.bundleId ?? part.app.path ?? part.app.name}`;
+  }
   if (part.type === "commit") return `commit:${index}:${part.commit.sha}:${part.commit.subject}`;
   if (part.type === "gitFile") {
     return `git-file:${index}:${part.file.commitSha}:${part.file.path}`;
   }
   if (part.type === "codeRef") {
     return `code-ref:${index}:${part.reference.path}:${part.reference.startLine}:${part.reference.endLine}`;
+  }
+  if (part.type === "conversation") {
+    return `conversation:${index}:${part.reference.id}`;
   }
   return `pasted-text:${index}:${part.file.relativePath}:${part.reference.raw}`;
 }
@@ -777,6 +876,7 @@ function GitFileMentionChip({ file }: { file: GitFileDisplayReference }) {
   }, [normalized.githubUrl]);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: The chip conditionally exposes complete button semantics and keyboard activation only when a URL is available.
     <span
       title={title}
       role={normalized.githubUrl ? "button" : undefined}
@@ -789,9 +889,52 @@ function GitFileMentionChip({ file }: { file: GitFileDisplayReference }) {
         openFile();
       }}
     >
-      <Icon className="h-3 w-3 shrink-0 self-center" />
+      <Icon className="size-3 shrink-0 self-center" />
       <span>{fileName}</span>
-      <span className="max-w-[8rem] truncate text-[10px] opacity-70">@{refLabel}</span>
+      <span className="max-w-32 truncate text-tiny opacity-70">@{refLabel}</span>
+    </span>
+  );
+}
+
+/**
+ * 用户消息开头的输入框动作指令（/goal、/loop、/plan 等）。只认消息开头，和发送时
+ * 的识别一致；句中的 /name 仍按 Skill 引用处理。
+ */
+function leadingCommandName(text: string): string | null {
+  const match = /^\/([A-Za-z0-9_-]+)(?=\s|$)/.exec(text);
+  if (!match) return null;
+  const name = match[1].toLowerCase();
+  return COMPOSER_ACTION_COMMAND_NAMES.includes(name) ? name : null;
+}
+
+/** 把消息开头的动作指令段从 Skill 标签（或纯文本）改成指令标签。 */
+function withLeadingCommand(parts: UserMessageSegment[]): UserMessageSegment[] {
+  const first = parts[0];
+  if (first?.type === "skill") {
+    const name = leadingCommandName(`/${first.name}`);
+    return name ? [{ type: "command", name }, ...parts.slice(1)] : parts;
+  }
+  if (first?.type === "text") {
+    const name = leadingCommandName(first.value);
+    if (!name) return parts;
+    const rest = first.value.slice(name.length + 1);
+    return [
+      { type: "command", name },
+      ...(rest ? [{ type: "text" as const, value: rest }] : []),
+      ...parts.slice(1),
+    ];
+  }
+  return parts;
+}
+
+function CommandChip({ name }: { name: string }) {
+  const { t } = useLocale();
+  return (
+    <span
+      title={`${t("chat.mention.command")}: /${name}`}
+      className={mentionChipClassName("command")}
+    >
+      <Terminal className="size-3 shrink-0 self-center" />/{name}
     </span>
   );
 }
@@ -799,8 +942,33 @@ function GitFileMentionChip({ file }: { file: GitFileDisplayReference }) {
 function SkillMentionChip({ name }: { name: string }) {
   return (
     <span title={`Skill: ${name}`} className={mentionChipClassName("skill")}>
-      <SkillIcon className="h-3 w-3 shrink-0 self-center" />
+      <SkillIcon className="size-3 shrink-0 self-center" />
       {name}
+    </span>
+  );
+}
+
+function AppMentionChip({ app }: { app: AppDisplayReference }) {
+  // 图标来自进程级注册表（宿主拉到应用列表时登记）；订阅保证登记晚于
+  // 气泡挂载时也能补上真实 logo。查不到（WebUI、应用已卸载）回退占位。
+  const iconDataUrl = useAppMentionIcon(app);
+  const identity = app.bundleId ?? app.path ?? "";
+  return (
+    <span
+      title={identity ? `${app.name}\n${identity}` : app.name}
+      className={mentionChipClassName("app")}
+    >
+      {iconDataUrl ? (
+        <img
+          src={iconDataUrl}
+          alt=""
+          draggable={false}
+          className="size-3 shrink-0 self-center rounded-xs"
+        />
+      ) : (
+        <AppWindow className="size-3 shrink-0 self-center" />
+      )}
+      {app.name}
     </span>
   );
 }
@@ -820,6 +988,7 @@ function CommitMentionChip({
   const closeTimerRef = useRef<number | null>(null);
   const label = resolvedCommit.shortSha || resolvedCommit.sha.slice(0, 7);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable commit identity fields reset asynchronously resolved details
   useEffect(() => {
     setResolvedCommit(normalizeCommitDisplayReference(commit));
     setDetailsState("idle");
@@ -890,6 +1059,7 @@ function CommitMentionChip({
 
   return (
     <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: The chip conditionally exposes complete button semantics and keyboard activation only when a URL is available. */}
       <span
         role={resolvedCommit.githubUrl ? "button" : undefined}
         tabIndex={resolvedCommit.githubUrl ? 0 : undefined}
@@ -907,7 +1077,7 @@ function CommitMentionChip({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={scheduleClose}
       >
-        <GitHubMarkIcon className="h-3 w-3 shrink-0 self-center" />
+        <GitHubMarkIcon className="size-3 shrink-0 self-center" />
         {label}
       </span>
       {tooltipRect ? (
@@ -937,39 +1107,51 @@ export const UserMessageContent = memo(function UserMessageContent({
 }) {
   const normalizedText = useMemo(() => normalizeLogicalLineEndings(text), [text]);
   const parts = useMemo(
-    () => tokenizeUserMessage(normalizedText, pastedTextFiles, { legacyInlineFileMentions }),
+    () =>
+      withLeadingCommand(
+        tokenizeUserMessage(normalizedText, pastedTextFiles, { legacyInlineFileMentions }),
+      ),
     [legacyInlineFileMentions, normalizedText, pastedTextFiles],
   );
   const hasChip = parts.some(
     (part) =>
       part.type === "mention" ||
       part.type === "skill" ||
+      part.type === "command" ||
+      part.type === "app" ||
       part.type === "commit" ||
       part.type === "gitFile" ||
       part.type === "codeRef" ||
+      part.type === "conversation" ||
       part.type === "pastedText",
   );
   const trailingNewlineAnchor = normalizedText.endsWith("\n") ? (
-    <span aria-hidden="true" className="chat-user-trailing-newline-anchor" />
+    <span aria-hidden="true" className={String.raw`before:content-['\200b']`} />
   ) : null;
   if (!hasChip) {
     return (
-      <>
+      <span className="chat-user-message-content">
         {normalizedText}
         {trailingNewlineAnchor}
-      </>
+      </span>
     );
   }
 
   return (
-    <>
+    <span className="chat-user-message-content">
       {parts.map((part, idx) => {
         const key = userMessageSegmentKey(part, idx);
         if (part.type === "mention") {
           return <MentionChip key={key} reference={part.reference} />;
         }
+        if (part.type === "command") {
+          return <CommandChip key={key} name={part.name} />;
+        }
         if (part.type === "skill") {
           return <SkillMentionChip key={key} name={part.name} />;
+        }
+        if (part.type === "app") {
+          return <AppMentionChip key={key} app={part.app} />;
         }
         if (part.type === "commit") {
           return (
@@ -986,12 +1168,15 @@ export const UserMessageContent = memo(function UserMessageContent({
         if (part.type === "codeRef") {
           return <CodeRefMentionChip key={key} reference={part.reference} />;
         }
+        if (part.type === "conversation") {
+          return <ConversationMentionChip key={key} reference={part.reference} />;
+        }
         if (part.type === "pastedText") {
           return <PastedTextChip key={key} reference={part.reference} file={part.file} />;
         }
         return <span key={key}>{part.value}</span>;
       })}
       {trailingNewlineAnchor}
-    </>
+    </span>
   );
 });

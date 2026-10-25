@@ -42,6 +42,7 @@ import {
   normalizePositiveInteger,
   normalizeStringArray,
 } from "./normalizers";
+import { normalizeRetryErrorSettings } from "./retryError";
 import {
   DEFAULT_RIGHT_DOCK_FILE_TREE_STATE,
   normalizeRightDockFileTreeExpandedPaths,
@@ -51,6 +52,7 @@ import {
   normalizeRightDockSettings,
   RIGHT_DOCK_SINGLETON_TAB_IDS,
 } from "./rightDockNormalization";
+import { normalizeSidebarShortcuts } from "./sidebarShortcuts";
 import {
   computeNextMemoryOrganizerRunAt,
   normalizeMemoryOrganizerMode,
@@ -62,6 +64,7 @@ import {
 import type {
   AgentPromptTemplate,
   AppSettings,
+  BrowserAutomationMode,
   ChatRuntimeControls,
   ChatRuntimeReasoningProviderKey,
   CloseWindowBehavior,
@@ -69,17 +72,23 @@ import type {
   CommandSafetyMode,
   CustomProvider,
   CustomSettings,
+  EffectivePromptSettings,
   EffectiveWorkspaceResources,
   ExecutionMode,
+  McpAuthConfig,
   McpServerConfig,
   McpSettings,
   McpTransport,
   MemorySettings,
+  ModelInputModalitiesOverride,
+  ModelInputModality,
   ModelLimitsSource,
+  ProjectPromptStrategy,
   PromptCacheHintMode,
   ProviderFailoverSettings,
   ProviderId,
   ProviderModelConfig,
+  ProviderRetryPolicy,
   ReasoningLevel,
   RemoteSettings,
   RightDockFileTreeState,
@@ -109,10 +118,13 @@ import type {
 } from "./types";
 
 import {
+  BROWSER_AUTOMATION_MODES,
   COMMAND_SAFETY_MODES,
   DEFAULT_CHAT_RUNTIME_CONTROLS,
   getDefaultUsageQueryConfig,
+  MODEL_INPUT_MODALITIES,
   PROMPT_CACHE_HINT_MODES,
+  PROVIDER_RETRY_MAX_RETRIES_LIMITS,
   RIGHT_DOCK_BACKGROUND_TASKS_TAB_ID,
   RIGHT_DOCK_TOOL_KINDS,
   USAGE_QUERY_TIMEOUT_DEFAULT_SECS,
@@ -150,6 +162,7 @@ export {
   normalizeFontScale,
   normalizeFontScaleSettings,
 } from "./normalizers";
+export { normalizeRetryErrorSettings } from "./retryError";
 export {
   DEFAULT_RIGHT_DOCK_FILE_TREE_STATE,
   normalizeRightDockBackgroundTasksState,
@@ -165,6 +178,7 @@ export {
   getDefaultMemoryOrganizerSchedule,
   getNextTheme,
   normalizeTheme,
+  rescheduleOrganizerForTimeZone,
   resolveEffectiveTheme,
   subscribeToSystemThemePreference,
 } from "./themeAndMemory";
@@ -432,17 +446,72 @@ function normalizeChatRuntimeReasoningByProvider(
   return normalized;
 }
 
+/**
+ * 模型级档位桶的结构化归一:只保留已知供应商 key、非空 model id、合法档位值
+ * (含 "off" 的原始串一律视为非法丢弃,与会话写入只落非 off 档位的约定一致)。
+ * 空桶不落键,保证存量设置升级后对象保持最小形态。
+ */
+function normalizeChatRuntimeReasoningByModel(
+  input: unknown,
+): ChatRuntimeControls["reasoningByModel"] {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const normalized: ChatRuntimeControls["reasoningByModel"] = {};
+  for (const key of CHAT_RUNTIME_REASONING_PROVIDER_KEYS) {
+    const rawBucket = obj[key];
+    if (!rawBucket || typeof rawBucket !== "object") continue;
+    const entries: Record<string, ReasoningLevel> = {};
+    for (const [rawModelId, rawLevel] of Object.entries(rawBucket as Record<string, unknown>)) {
+      const modelId = rawModelId.trim();
+      if (
+        !modelId ||
+        Object.hasOwn(entries, modelId) ||
+        typeof rawLevel !== "string" ||
+        !(REASONING_LEVELS as string[]).includes(rawLevel)
+      ) {
+        continue;
+      }
+      entries[modelId] = rawLevel as ReasoningLevel;
+    }
+    if (Object.keys(entries).length > 0) {
+      normalized[key] = entries;
+    }
+  }
+  return normalized;
+}
+
+/**
+ * 档位的存储解析顺序:模型桶 → 供应商桶 → 全局默认。供应商桶保留为「迁移前
+ * 存量值/供应商级默认」,会话内写入只落模型桶,因此在某模型上改档位永远不会
+ * 影响其他模型(旧单桶方案的全部串档路径都从这里切断)。
+ */
+function resolveChatRuntimeReasoning(
+  controls: ChatRuntimeControls,
+  key: ChatRuntimeReasoningProviderKey,
+  modelId: string | undefined,
+): ReasoningLevel {
+  const trimmedModelId = modelId?.trim();
+  if (trimmedModelId) {
+    const level = controls.reasoningByModel[key]?.[trimmedModelId];
+    if (level) return level;
+  }
+  return controls.reasoningByProvider[key] ?? controls.reasoning;
+}
+
 export function normalizeChatRuntimeControls(input: unknown): ChatRuntimeControls {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const reasoning = normalizeChatRuntimeReasoning(obj.reasoning);
   return {
     thinkingEnabled: obj.thinkingEnabled !== false,
     nativeWebSearchEnabled: obj.nativeWebSearchEnabled !== false,
+    // Plan mode 是限制性开关,归一化取向与联网/思考相反:仅显式 true 生效,
+    // 旧配置/远端缺失字段一律回落 false,绝不把历史会话意外锁进只读。
+    planModeEnabled: obj.planModeEnabled === true,
     reasoning,
     reasoningByProvider: normalizeChatRuntimeReasoningByProvider(
       obj.reasoningByProvider,
       reasoning,
     ),
+    reasoningByModel: normalizeChatRuntimeReasoningByModel(obj.reasoningByModel),
   };
 }
 
@@ -461,6 +530,13 @@ export function getKnownModelThinkingLevels(
   return resolveModelThinking(providerId, modelId).levels;
 }
 
+/**
+ * 纯读路径:按 (供应商类型, 模型) 解析出当前应展示/下发的档位,只推导
+ * `reasoning` 展示值,**绝不回写任何桶**。旧实现在这里把钳制结果写回
+ * reasoningByProvider 再被 update 持久化——narrow 表模型一碰任何控件就把
+ * wide 表模型选的表外档抹掉,是「切会话/另一栏档位被重置」的元凶之一。
+ * 桶的迁移与写入只发生在 updateChatRuntimeControlsForProvider。
+ */
 export function normalizeChatRuntimeControlsForProvider(
   input: unknown,
   params: {
@@ -472,21 +548,51 @@ export function normalizeChatRuntimeControlsForProvider(
   const controls = normalizeChatRuntimeControls(input);
   const key = getChatRuntimeReasoningProviderKey(params);
   const levels = getChatRuntimeReasoningLevelsForProvider(params);
-  const reasoningByProvider = {
-    ...DEFAULT_CHAT_RUNTIME_CONTROLS.reasoningByProvider,
-    ...controls.reasoningByProvider,
-  };
   const reasoning = normalizeChatRuntimeReasoningForLevels(
-    reasoningByProvider[key] ?? controls.reasoning,
+    resolveChatRuntimeReasoning(controls, key, params.modelId),
     levels,
   );
+  return { ...controls, reasoning };
+}
+
+/**
+ * 会话选择附带的思考设置覆盖全局默认，仅用于派生显示/请求参数，不写回设置。
+ * 档位写入该模型在各供应商键下的档位桶，后续按模型档位表钳制。
+ */
+export function applyConversationThinking(
+  input: unknown,
+  selection: SelectedModel | undefined,
+): ChatRuntimeControls {
+  const controls = normalizeChatRuntimeControls(input);
+  if (!selection) return controls;
+  const { model, thinkingEnabled, reasoning } = selection;
   return {
     ...controls,
-    reasoning,
-    reasoningByProvider: {
-      ...reasoningByProvider,
-      [key]: reasoning,
-    },
+    thinkingEnabled: thinkingEnabled ?? controls.thinkingEnabled,
+    reasoningByModel: reasoning
+      ? Object.fromEntries(
+          CHAT_RUNTIME_REASONING_PROVIDER_KEYS.map((key) => [
+            key,
+            { ...controls.reasoningByModel[key], [model]: reasoning },
+          ]),
+        )
+      : controls.reasoningByModel,
+  };
+}
+
+/** 思考控件的调整同时保存到会话选择；非思考字段的调整返回 undefined。 */
+export function applyThinkingPatchToSelection(
+  selection: SelectedModel | undefined,
+  current: Pick<ChatRuntimeControls, "thinkingEnabled" | "reasoning">,
+  patch: Partial<ChatRuntimeControls>,
+): SelectedModel | undefined {
+  if (!selection || (patch.thinkingEnabled === undefined && patch.reasoning === undefined)) {
+    return undefined;
+  }
+  return {
+    ...selection,
+    thinkingEnabled: patch.thinkingEnabled ?? current.thinkingEnabled,
+    reasoning: patch.reasoning ?? current.reasoning,
   };
 }
 
@@ -505,20 +611,32 @@ export function updateChatRuntimeControlsForProvider(
     ...normalizeChatRuntimeControls(input),
     ...patch,
   });
-  const reasoningByProvider = {
-    ...DEFAULT_CHAT_RUNTIME_CONTROLS.reasoningByProvider,
-    ...controls.reasoningByProvider,
-  };
-  if (patch.reasoning !== undefined) {
-    reasoningByProvider[key] = normalizeChatRuntimeReasoningForLevels(patch.reasoning, levels);
+  if (patch.reasoning === undefined) {
+    // 非 reasoning 字段的更新不得触碰任何档位桶(含展示值钳制),否则存储值
+    // 会被当前模型的窄表钳平——按模型记忆在「只改联网/Plan 开关」时丢档。
+    return controls;
   }
-  return normalizeChatRuntimeControlsForProvider(
-    {
+  const reasoning = normalizeChatRuntimeReasoningForLevels(patch.reasoning, levels);
+  const trimmedModelId = params.modelId?.trim();
+  if (trimmedModelId) {
+    // 正常路径:按模型落桶,写时按该模型档位表钳制(菜单只会提供表内档,
+    // 这里兜住过期表单/竞态)。供应商桶保持不动,继续充当供应商级默认。
+    return {
       ...controls,
-      reasoningByProvider,
-    },
-    params,
-  );
+      reasoning,
+      reasoningByModel: {
+        ...controls.reasoningByModel,
+        [key]: { ...(controls.reasoningByModel[key] ?? {}), [trimmedModelId]: reasoning },
+      },
+    };
+  }
+  // 无 modelId 的极端兜底(会话尚未选定模型):退回旧语义写供应商桶,
+  // 保证用户选择不静默丢失。
+  return {
+    ...controls,
+    reasoning,
+    reasoningByProvider: { ...controls.reasoningByProvider, [key]: reasoning },
+  };
 }
 
 function normalizeOptionalText(input: unknown): string {
@@ -582,13 +700,13 @@ export function normalizeRemoteSettings(input: unknown): RemoteSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   return {
     enabled: obj.enabled === true,
-    gatewayUrl: normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : ""),
-    gatewayPort: normalizeIntegerInRange(
-      obj.gatewayPort,
-      1,
-      65_535,
-      OFFICIAL_GATEWAY_PORT,
+    managedLocal: obj.managedLocal === true,
+    localGatewayPort: normalizeIntegerInRange(obj.localGatewayPort, 1, 65_535, 50052),
+    localGatewayToken: normalizeApiKey(
+      typeof obj.localGatewayToken === "string" ? obj.localGatewayToken : "",
     ),
+    gatewayUrl: normalizeBaseUrl(typeof obj.gatewayUrl === "string" ? obj.gatewayUrl : ""),
+    gatewayPort: normalizeIntegerInRange(obj.gatewayPort, 1, 65_535, OFFICIAL_GATEWAY_PORT),
     token: normalizeApiKey(typeof obj.token === "string" ? obj.token : ""),
     agentId: normalizeOptionalText(obj.agentId),
     autoReconnect: obj.autoReconnect !== false,
@@ -704,6 +822,12 @@ export function normalizeSttSettings(input: unknown): SttSettings {
     enabled: obj.enabled === true,
     provider,
     providers,
+    ...(typeof obj.configurationRevision === "string"
+      ? { configurationRevision: obj.configurationRevision }
+      : {}),
+    ...(typeof obj.nativeConfigurationRevision === "string"
+      ? { nativeConfigurationRevision: obj.nativeConfigurationRevision }
+      : {}),
     ...(obj.allowIncomplete === true ? { allowIncomplete: true } : {}),
   };
 }
@@ -867,14 +991,45 @@ export function normalizeProviderModelConfig(
 
   const promptCacheHintMode =
     providerId === "codex" ? normalizePromptCacheHintMode(obj.promptCacheHintMode) : undefined;
+  const inputModalities = normalizeInputModalities(obj.inputModalities);
   return {
     id,
+    ...(typeof obj.displayName === "string"
+      ? { displayName: obj.displayName.trim() }
+      : typeof obj.display_name === "string"
+        ? { displayName: obj.display_name.trim() }
+        : typeof obj.name === "string" && obj.name !== id
+          ? { displayName: obj.name.trim() }
+          : {}),
     ...(ownedBy ? { ownedBy } : {}),
     contextWindow: limits.contextWindow,
     maxOutputToken: limits.maxOutputToken,
     limitsSource,
     ...(promptCacheHintMode ? { promptCacheHintMode } : {}),
+    // 用户手动的输入模态覆盖（如给未识别的多模态模型强制开启图片输入）；
+    // 经 normalizeInputModalities 归一化后透传（可能过滤非法值/补齐 text/
+    // 重排顺序），合法覆盖永不被自动删除。
+    ...(inputModalities ? { inputModalities } : {}),
   };
+}
+
+/**
+ * 输入模态覆盖的运行时归一化（设置加载与 modelFactory 共用的唯一校验）：
+ * - 非数组、空数组、全部非法 -> undefined（等价于“无覆盖，用内置推断”）；
+ * - 混合非法项采用“过滤合法项”的容错策略；
+ * - 本应用的聊天协议始终发送文本，因此含 "image" 缺 "text" 时自动补齐；
+ * - 输出固定为 ["text","image"] 规范顺序，避免同义配置产生持久化差异。
+ */
+export function normalizeInputModalities(input: unknown): ModelInputModalitiesOverride | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const valid = new Set<string>(
+    input.filter(
+      (item): item is ModelInputModality =>
+        typeof item === "string" && (MODEL_INPUT_MODALITIES as readonly string[]).includes(item),
+    ),
+  );
+  if (valid.size === 0) return undefined;
+  return valid.has("image") ? ["text", "image"] : ["text"];
 }
 export function normalizeProviderModelConfigs(
   input: unknown,
@@ -1052,6 +1207,30 @@ function normalizeUsageQueryConfig(input: unknown): UsageQueryConfig {
   };
 }
 
+/**
+ * 供应商级重试策略归一化。default 态在持久层不落字段（返回 undefined），
+ * 保证旧配置零迁移；非法输入（未知 mode、custom 无有效次数）一律视为
+ * default。custom 的 maxRetries（不含首次请求的重试次数）钳位 1..10。
+ */
+export function normalizeProviderRetryPolicy(input: unknown): ProviderRetryPolicy | undefined {
+  const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  if (obj.mode === "off") return { mode: "off" };
+  if (obj.mode === "custom") {
+    const raw = obj.maxRetries;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+    return {
+      mode: "custom",
+      maxRetries: clampInt(
+        raw,
+        PROVIDER_RETRY_MAX_RETRIES_LIMITS.min,
+        PROVIDER_RETRY_MAX_RETRIES_LIMITS.max,
+        PROVIDER_RETRY_MAX_RETRIES_LIMITS.min,
+      ),
+    };
+  }
+  return undefined;
+}
+
 export function normalizeCustomProvider(input: unknown): CustomProvider {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const type = normalizeProviderId(obj.type);
@@ -1111,6 +1290,10 @@ export function normalizeCustomProvider(input: unknown): CustomProvider {
       : {}),
     nativeWebSearchEnabled: obj.nativeWebSearchEnabled !== false,
     useSystemProxy: obj.useSystemProxy === true,
+    ...((): { retryPolicy?: ProviderRetryPolicy } => {
+      const retryPolicy = normalizeProviderRetryPolicy(obj.retryPolicy);
+      return retryPolicy ? { retryPolicy } : {};
+    })(),
     usageQuery: normalizeUsageQueryConfig(obj.usageQuery),
   };
 }
@@ -1165,6 +1348,7 @@ export function normalizeSshProxyConfig(input: unknown): SshProxyConfig {
     username: typeof obj.username === "string" ? obj.username.trim() : "",
     password,
     passwordConfigured: password.length > 0 || obj.passwordConfigured === true,
+    useSystemProxy: obj.useSystemProxy === true,
   };
 }
 
@@ -1325,14 +1509,17 @@ export function normalizeCommandSafetyMode(input: unknown): CommandSafetyMode {
 }
 
 /**
- * 严格度序:`auto` < `sandbox` < `sandboxOffline` < `ask`(逐次人工放行最严)。
+ * 远端选择只能收紧本地模式；旧沙箱约束优先于新增自动审批模式。
  * 供“取更严格者”的钳制使用,不参与持久化。
  */
 const COMMAND_SAFETY_MODE_STRICTNESS: Record<CommandSafetyMode, number> = {
+  always: -1,
   auto: 0,
-  sandbox: 1,
-  sandboxOffline: 2,
-  ask: 3,
+  autoEdit: 1,
+  autoReview: 2,
+  sandbox: 3,
+  sandboxOffline: 4,
+  ask: 5,
 };
 
 /**
@@ -1344,7 +1531,59 @@ export function strictestCommandSafetyMode(
   a: CommandSafetyMode,
   b: CommandSafetyMode,
 ): CommandSafetyMode {
+  // 自动编辑与自动审查的授权范围不包含彼此，合并时保留人工确认。
+  if ((a === "autoEdit" && b === "autoReview") || (a === "autoReview" && b === "autoEdit")) {
+    return "ask";
+  }
   return COMMAND_SAFETY_MODE_STRICTNESS[a] >= COMMAND_SAFETY_MODE_STRICTNESS[b] ? a : b;
+}
+
+/**
+ * 浏览器接入模式归一。缺失/空串/未知值一律回 `auto`:该设置是行为选择而非
+ * 安全约束(登录态使用与否由 group:browser 审批把关),未知值不需要 fail-closed。
+ */
+export function normalizeBrowserAutomationMode(input: unknown): BrowserAutomationMode {
+  if (typeof input !== "string") return "auto";
+  const mode = input.trim();
+  return (BROWSER_AUTOMATION_MODES as readonly string[]).includes(mode)
+    ? (mode as BrowserAutomationMode)
+    : "auto";
+}
+
+/** 合法 IANA 时区名(按当前 JS 引擎的 Intl 校验)。 */
+function isValidTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 默认时区归一:非字符串 / 空串 / 非法时区一律回 ""(自动)。 */
+export function normalizeDefaultTimeZone(input: unknown): string {
+  if (typeof input !== "string") return "";
+  const zone = input.trim();
+  return zone && isValidTimeZone(zone) ? zone : "";
+}
+
+/** 本机 JS 运行时的时区;取不到时回 UTC。 */
+function runtimeTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/**
+ * 全局有效时区:手选值 → 后端注入的桌面 OS 时区 → 当前 JS 运行时时区。
+ * 与后端 `load_runtime_default_time_zone` 同一优先级。
+ */
+export function resolveDefaultTimeZone(
+  system: Pick<SystemSettings, "defaultTimeZone" | "resolvedTimeZone">,
+): string {
+  return system.defaultTimeZone || system.resolvedTimeZone || runtimeTimeZone();
 }
 
 export function normalizeSystemSettings(input: unknown): SystemSettings {
@@ -1353,9 +1592,20 @@ export function normalizeSystemSettings(input: unknown): SystemSettings {
     executionMode: normalizeExecutionMode(obj.executionMode),
     workdir: normalizeWorkdir(obj.workdir),
     toolPolicies: normalizeToolPolicies(obj.toolPolicies),
+    // 安全侧开关：任何非 true 的值都收敛成 false。
+    cuaAllowSelfTargeting: obj.cuaAllowSelfTargeting === true,
     commandSafetyMode: normalizeCommandSafetyMode(obj.commandSafetyMode),
+    browserAutomationMode: normalizeBrowserAutomationMode(obj.browserAutomationMode),
+    defaultTimeZone: normalizeDefaultTimeZone(obj.defaultTimeZone),
+    ...(typeof obj.resolvedTimeZone === "string" && obj.resolvedTimeZone.trim()
+      ? { resolvedTimeZone: obj.resolvedTimeZone.trim() }
+      : {}),
     workspaceProjects: normalizeWorkspaceProjects(obj.workspaceProjects),
     workspaceProjectGroups: normalizeWorkspaceProjectGroups(obj.workspaceProjectGroups),
+    workspaceProjectOrder: [
+      ...new Set(normalizeStringArray(obj.workspaceProjectOrder).map(workspaceProjectPathKey)),
+    ],
+    sidebarPinnedOrder: [...new Set(normalizeStringArray(obj.sidebarPinnedOrder))],
     activeWorkspaceProjectId:
       typeof obj.activeWorkspaceProjectId === "string" && obj.activeWorkspaceProjectId.trim()
         ? obj.activeWorkspaceProjectId.trim()
@@ -1374,6 +1624,19 @@ export function normalizeSystemSettings(input: unknown): SystemSettings {
   };
 }
 
+function normalizeMcpAuthConfig(input: unknown): McpAuthConfig | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const obj = input as Record<string, unknown>;
+  if (obj.type !== "oauth") return undefined; // "none"/未知值 = 现状，不存壳对象
+  const scope = typeof obj.scope === "string" ? obj.scope.trim() : "";
+  const clientId = typeof obj.clientId === "string" ? obj.clientId.trim() : "";
+  return {
+    type: "oauth",
+    ...(scope ? { scope } : {}),
+    ...(clientId ? { clientId } : {}),
+  };
+}
+
 export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const id = typeof obj.id === "string" ? obj.id.trim() : "";
@@ -1381,6 +1644,19 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
   const docsUrl = typeof obj.docsUrl === "string" ? obj.docsUrl.trim() : "";
   const cwd = typeof obj.cwd === "string" ? obj.cwd.trim() : "";
   const messageUrl = typeof obj.messageUrl === "string" ? obj.messageUrl.trim() : "";
+  const auth = normalizeMcpAuthConfig(obj.auth);
+  const privateMap = (field: "env" | "headers") => {
+    const values = normalizeRecordStringString(obj[field]) ?? {};
+    const raw =
+      obj[field] && typeof obj[field] === "object" ? (obj[field] as Record<string, unknown>) : {};
+    const configured = normalizeStringArray(obj[`${field}Configured`]).filter((key) =>
+      Object.hasOwn(raw, key),
+    );
+    for (const key of configured) if (raw[key] === "") values[key] = "";
+    return { values: Object.keys(values).length ? values : undefined, configured };
+  };
+  const env = privateMap("env");
+  const headers = privateMap("headers");
 
   return {
     id,
@@ -1391,11 +1667,14 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
     command: typeof obj.command === "string" ? obj.command.trim() : "",
     args: normalizeStringArray(obj.args),
     url: typeof obj.url === "string" ? obj.url.trim() : "",
-    env: normalizeRecordStringString(obj.env),
+    env: env.values,
+    ...(env.configured.length ? { envConfigured: env.configured } : {}),
     cwd: cwd || undefined,
-    headers: normalizeRecordStringString(obj.headers),
+    headers: headers.values,
+    ...(headers.configured.length ? { headersConfigured: headers.configured } : {}),
     timeoutMs: normalizeTimeoutMs(obj.timeoutMs),
     messageUrl: messageUrl || undefined,
+    ...(auth ? { auth } : {}),
   };
 }
 
@@ -1426,7 +1705,7 @@ export function normalizeAgentPromptTemplates(input: unknown): AgentPromptTempla
 export function normalizeSkillsSettings(input: unknown): SkillsSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   return {
-    enabled: obj.enabled === false ? false : true,
+    enabled: obj.enabled !== false,
     selected: mergeAlwaysEnabledSkillNames(normalizeStringArray(obj.selected)),
   };
 }
@@ -1438,7 +1717,14 @@ export function normalizeSelectedModel(input: unknown): SelectedModel | undefine
   const model = typeof obj.model === "string" ? obj.model.trim() : "";
 
   if (!customProviderId || !model) return undefined;
-  return { customProviderId, model };
+  return {
+    customProviderId,
+    model,
+    ...(typeof obj.thinkingEnabled === "boolean" ? { thinkingEnabled: obj.thinkingEnabled } : {}),
+    ...(typeof obj.reasoning === "string" && (REASONING_LEVELS as string[]).includes(obj.reasoning)
+      ? { reasoning: obj.reasoning as ReasoningLevel }
+      : {}),
+  };
 }
 
 export function parseSelectedModelJson(json: string | null | undefined): SelectedModel | undefined {
@@ -1528,12 +1814,24 @@ export function normalizeCustomSettings(
       normalizeSelectedModel(obj.commitMessageModel),
       customProviders,
     ),
+    // 缺省开启：老配置无此字段时保持澄清按钮可见（与上线前行为一致）。
+    promptClarifyEnabled: obj.promptClarifyEnabled !== false,
+    promptClarifyModel: normalizeSelectedModelForProviders(
+      normalizeSelectedModel(obj.promptClarifyModel),
+      customProviders,
+    ),
     chatSidebar: {
       projectsCollapsed: chatSidebar.projectsCollapsed === true,
       recentCollapsed: chatSidebar.recentCollapsed === true,
     },
+    sidebarShortcuts: normalizeSidebarShortcuts(obj.sidebarShortcuts),
     chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
     rightDock: normalizeRightDockSettings(obj.rightDock),
+    // 三档枚举：历史配置无此字段或值不合法（含曾设想过的 "auto"）一律落回默认的统计状态栏。
+    composerContextDisplay:
+      obj.composerContextDisplay === "ring" || obj.composerContextDisplay === "both"
+        ? obj.composerContextDisplay
+        : "statsBar",
     // fontFamily was the single pre-split preference. Read it only to migrate
     // saved local settings into the new interface-specific field.
     interfaceFontFamily: normalizeFontFamily(obj.interfaceFontFamily ?? obj.fontFamily),
@@ -1557,12 +1855,16 @@ export function getDefaultSettings(): AppSettings {
       executionMode: "tools",
       workdir: "",
       commandSafetyMode: "auto",
+      browserAutomationMode: "auto",
+      defaultTimeZone: "",
       workspaceProjects: [],
       workspaceProjectGroups: [],
       activeWorkspaceProjectId: undefined,
       hiddenWorkspaceProjectPaths: [],
       missingWorkspaceProjectPaths: [],
       archivedWorkspaceProjectPaths: [],
+      workspaceProjectOrder: [],
+      sidebarPinnedOrder: [],
       workspaceResourceSettings: {},
       systemProxy: getDefaultSystemProxyConfig(),
     },
@@ -1578,8 +1880,11 @@ export function getDefaultSettings(): AppSettings {
     },
     remote: {
       enabled: false,
+      managedLocal: false,
+      localGatewayPort: 50052,
+      localGatewayToken: "",
       gatewayUrl: OFFICIAL_GATEWAY_URL,
-      gatewayPort: OFFICIAL_GATEWAY_PORT,
+      gatewayPort: 443,
       token: "",
       agentId: "",
       autoReconnect: true,
@@ -1593,6 +1898,7 @@ export function getDefaultSettings(): AppSettings {
     memory: normalizeMemorySettings({}, customProviders),
     customSettings: normalizeCustomSettings({}, customProviders),
     modelFailover: normalizeModelFailoverSettings({}, customProviders),
+    retryErrorSettings: normalizeRetryErrorSettings({}),
     updates: normalizeUpdateSettings({}),
     skills: {
       enabled: true,
@@ -1619,6 +1925,21 @@ export function normalizeSettings(input?: Partial<AppSettings> | null): AppSetti
   const locale = Object.hasOwn(obj, "locale") ? obj.locale : defaults.locale;
 
   return {
+    ...(typeof obj.backendConfigurationVersion === "string"
+      ? { backendConfigurationVersion: obj.backendConfigurationVersion }
+      : {}),
+    ...(typeof obj.uiPreferencesRevision === "string"
+      ? { uiPreferencesRevision: obj.uiPreferencesRevision }
+      : {}),
+    ...(obj.settingsSyncProtocol === "zeroagent.settings-sync.v1"
+      ? { settingsSyncProtocol: obj.settingsSyncProtocol }
+      : {}),
+    ...(typeof obj.configurationRevision === "string"
+      ? { configurationRevision: obj.configurationRevision }
+      : {}),
+    ...(typeof obj.nativeConfigurationRevision === "string"
+      ? { nativeConfigurationRevision: obj.nativeConfigurationRevision }
+      : {}),
     system: normalizeSystemSettings(obj.system ?? defaults.system),
     customProviders,
     mcp: normalizeMcpSettings(obj.mcp ?? defaults.mcp),
@@ -1634,6 +1955,9 @@ export function normalizeSettings(input?: Partial<AppSettings> | null): AppSetti
     modelFailover: normalizeModelFailoverSettings(
       obj.modelFailover ?? defaults.modelFailover,
       customProviders,
+    ),
+    retryErrorSettings: normalizeRetryErrorSettings(
+      obj.retryErrorSettings ?? defaults.retryErrorSettings,
     ),
     updates: normalizeUpdateSettings(obj.updates ?? defaults.updates),
     skills: normalizeSkillsSettings(obj.skills ?? defaults.skills),
@@ -1802,6 +2126,33 @@ export function resolveWorkspaceResources(
   };
 }
 
+export function resolveEffectivePromptSettings(
+  settings: AppSettings,
+  workdir: string,
+): EffectivePromptSettings {
+  const globalTemplate = settings.agents.find(
+    (template) => template.enabled && template.prompt.trim(),
+  );
+  const globalTemplates = globalTemplate ? [globalTemplate] : [];
+  const globalPrompt = globalTemplate?.prompt.trim() ?? "";
+  const pathKey = workspaceProjectPathKey(workdir);
+  const entry = pathKey ? settings.system.workspaceResourceSettings[pathKey] : undefined;
+  const projectPrompt = entry?.projectPrompt.trim() ?? "";
+  const projectPromptStrategy = entry?.projectPromptStrategy ?? "append";
+  const prompt = projectPrompt
+    ? projectPromptStrategy === "replace" || !globalPrompt
+      ? projectPrompt
+      : `${globalPrompt}\n\n${projectPrompt}`
+    : globalPrompt;
+  return {
+    globalTemplates,
+    globalPrompt,
+    projectPrompt,
+    projectPromptStrategy,
+    prompt,
+  };
+}
+
 export function filterMcpSettingsForWorkspace(
   mcp: McpSettings,
   resources: Pick<EffectiveWorkspaceResources, "mode" | "mcpServerIds">,
@@ -1815,13 +2166,40 @@ export function filterMcpSettingsForWorkspace(
 export function updateWorkspaceResourceSettings(
   prev: AppSettings,
   workdir: string,
-  patch: Pick<WorkspaceResourceSettings, "mode" | "skillNames" | "mcpServerIds">,
+  patch: Pick<WorkspaceResourceSettings, "mode" | "skillNames" | "mcpServerIds"> &
+    Partial<Pick<WorkspaceResourceSettings, "projectPrompt" | "projectPromptStrategy">>,
 ): AppSettings {
   const pathKey = workspaceProjectPathKey(workdir);
   if (!pathKey) return prev;
   const entries = { ...prev.system.workspaceResourceSettings };
   const current = entries[pathKey];
   entries[pathKey] = normalizeWorkspaceResourceSettingsEntry({
+    ...current,
+    ...patch,
+    stateVersion: (current?.stateVersion ?? 0) + 1,
+    writerId: getRightDockWriterId(),
+    updatedAt: Date.now(),
+  });
+  return normalizeSettings({
+    ...prev,
+    system: { ...prev.system, workspaceResourceSettings: entries },
+  });
+}
+
+export function updateWorkspacePromptSettings(
+  prev: AppSettings,
+  workdir: string,
+  patch: { projectPrompt: string; projectPromptStrategy: ProjectPromptStrategy },
+): AppSettings {
+  const pathKey = workspaceProjectPathKey(workdir);
+  if (!pathKey) return prev;
+  const entries = { ...prev.system.workspaceResourceSettings };
+  const current = entries[pathKey];
+  entries[pathKey] = normalizeWorkspaceResourceSettingsEntry({
+    ...current,
+    mode: current?.mode ?? "inherit",
+    skillNames: current?.skillNames ?? [],
+    mcpServerIds: current?.mcpServerIds ?? [],
     ...patch,
     stateVersion: (current?.stateVersion ?? 0) + 1,
     writerId: getRightDockWriterId(),
@@ -1838,6 +2216,8 @@ export function resetWorkspaceResourceSettings(prev: AppSettings, workdir: strin
     mode: "inherit",
     skillNames: [],
     mcpServerIds: [],
+    projectPrompt: "",
+    projectPromptStrategy: "append",
   });
 }
 
@@ -1908,6 +2288,25 @@ export function updateCustomSettings(
       ...patch,
     },
   });
+}
+
+/**
+ * 澄清提示词的模型覆盖解析（两端共用）。返回 null 表示「跟随当前对话模型」：
+ * 未选择、供应商已删或模型已停用（与 commitMessageModel 同一回退契约——
+ * normalize 已在落库时清掉失效选择，这里再挡一次会话内的时序空窗）。
+ */
+export function resolvePromptClarifyModel(
+  settings: AppSettings,
+): { provider: CustomProvider; model: string } | null {
+  const selected = settings.customSettings.promptClarifyModel;
+  if (!selected) {
+    return null;
+  }
+  const provider = settings.customProviders.find((item) => item.id === selected.customProviderId);
+  if (!provider?.activeModels.includes(selected.model)) {
+    return null;
+  }
+  return { provider, model: selected.model };
 }
 
 export function updateModelFailover(

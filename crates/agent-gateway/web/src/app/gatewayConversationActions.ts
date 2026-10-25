@@ -3,7 +3,11 @@ import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import type { SidebarShortcutId } from "@liveagent/ui/lib/settings/sidebarShortcuts";
+import type { ConversationOpenOptions } from "@liveagent/ui/lib/sidebar/openController";
 import type { SidebarStore } from "@liveagent/ui/lib/sidebar/store";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
@@ -21,6 +25,9 @@ import { isMobileSidebarLayout } from "./historyUtils";
 import type { SendChatFn } from "./types";
 
 type CreateGatewayConversationActionsOptions = {
+  activateConversationWorkspace: (cwd?: string) => void;
+  activateSearchConversationWorkspace: (cwd?: string) => void;
+  clearSearchConversationWorkspace: () => void;
   activeView: ApplicationViewId;
   activeWorkspaceProjectPath: string;
   api: GatewayWebSocketClient | null;
@@ -28,6 +35,7 @@ type CreateGatewayConversationActionsOptions = {
   branchInFlightRef: MutableRefObject<boolean>;
   cacheVisibleComposerDraft: (conversationId?: string) => void;
   clearCachedComposerDraft: (conversationId?: string) => void;
+  clearPersistedConversationSelection: () => void;
   composerDraftCacheRef: MutableRefObject<Map<string, MentionComposerDraft>>;
   composerDraftOwnerRef: MutableRefObject<string>;
   composerRef: MutableRefObject<MentionComposerHandle | null>;
@@ -42,7 +50,10 @@ type CreateGatewayConversationActionsOptions = {
   isConversationBusy: (conversationId: string) => boolean;
   isLocalDraftConversationId: (conversationId: string) => boolean;
   markVisibleConversationRevision: () => number;
-  openController: { cancel: () => void; open: (conversationId: string) => void };
+  openController: {
+    cancel: () => void;
+    open: (conversationId: string, options?: ConversationOpenOptions) => void;
+  };
   pendingDisplayedConversationAutoBottomRef: MutableRefObject<string | null>;
   prepareComposerForConversationChange: () => void;
   protectedConversationRef: MutableRefObject<string>;
@@ -69,6 +80,7 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     workdir?: string;
     preserveCurrentComposerDraft?: boolean;
   }) => {
+    options.clearPersistedConversationSelection();
     const currentConversationId = options.getVisibleComposerConversationId().trim();
     if (currentConversationId) {
       options.transcriptStoreRegistry.peek(currentConversationId)?.foldSettledTurns();
@@ -87,6 +99,7 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     options.composerDraftOwnerRef.current = "";
     options.composerRef.current?.clear();
     const nextWorkdir = startOptions?.workdir?.trim() || "";
+    if (!options.isAgentMode || nextWorkdir) options.clearSearchConversationWorkspace();
     if (nextWorkdir) options.conversationWorkdirsRef.current.set(nextConversationId, nextWorkdir);
     options.conversationIdRef.current = nextConversationId;
     options.selectedHistoryIdRef.current = nextConversationId;
@@ -116,17 +129,33 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     });
   };
 
-  const handleSidebarSelectConversation = (id: string) => {
+  const handleSidebarSelectConversation = (id: string, openOptions?: ConversationOpenOptions) => {
     if (isMobileSidebarLayout()) options.setSidebarOpen(false);
     options.setActiveView("chat");
     const targetConversationId = id.trim();
     if (!targetConversationId) return;
+    if (openOptions?.source === "search") {
+      options.openController.open(targetConversationId, {
+        source: "search",
+        beforeCommit: (conversation) => {
+          options.activateSearchConversationWorkspace(conversation.cwd);
+          options.sidebarStore.upsertLocal(conversation, { reveal: true });
+          options.prepareComposerForConversationChange();
+        },
+        afterCommit: () => {
+          options.restoreCachedComposerDraft(targetConversationId);
+          openOptions.afterCommit?.();
+        },
+      });
+      return;
+    }
     const currentConversationId = options.getVisibleComposerConversationId().trim();
     if (currentConversationId !== targetConversationId) {
       options.prepareComposerForConversationChange();
     }
     options.pendingDisplayedConversationAutoBottomRef.current = targetConversationId;
     if (options.isLocalDraftConversationId(targetConversationId)) {
+      options.clearPersistedConversationSelection();
       options.openController.cancel();
       options.invalidateHistoryLoad();
       options.markVisibleConversationRevision();
@@ -143,7 +172,20 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
       options.restoreCachedComposerDraft(targetConversationId);
       return;
     }
-    options.openController.open(targetConversationId);
+    // 侧栏会话树跨工作空间点选:会话提交后(afterCommit)再把它所属的
+    // 工作空间置为当前,右侧文件树/终端/Git 随之切到该工作空间根目录
+    // (#787)。等提交而不是点选瞬间,避免作用域先行刷新与打开流程互相
+    // 打架;cwd 优先取本次历史响应写入的权威 workdir。
+    options.openController.open(targetConversationId, {
+      afterCommit: () => {
+        if (!options.isAgentMode) return;
+        options.activateConversationWorkspace(
+          options.conversationWorkdirsRef.current.get(targetConversationId)?.trim() ||
+            options.sidebarStore.peek(targetConversationId)?.cwd?.trim() ||
+            "",
+        );
+      },
+    });
     options.restoreCachedComposerDraft(targetConversationId);
   };
 
@@ -184,7 +226,7 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
       });
     }
   };
-  const openHub = (view: "skills-hub" | "mcp-hub") => {
+  const openHub = (view: Exclude<ApplicationViewId, "chat">) => {
     options.setRightDockOpen(false);
     if (isMobileSidebarLayout()) options.setSidebarOpen(false);
     options.cacheVisibleComposerDraft();
@@ -194,6 +236,7 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     messageRef: HistoryMessageRef,
     text: string,
     uploadedFiles: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => {
     const activeConversationId = options.conversationIdRef.current.trim();
     if (
@@ -210,9 +253,11 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     options.composerRef.current?.clear();
     options.setPendingUploadsForConversation(activeConversationId, []);
     try {
+      const editedDraft = createTextComposerDraft(normalized, referencedConversations);
       await options.sendChatRef.current?.(normalized, {
         conversationId: activeConversationId,
         uploadedFiles,
+        referencedConversations: editedDraft.conversationMentions,
         editMessageRef: messageRef,
       });
     } catch (error) {
@@ -257,8 +302,7 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     handleSidebarConversationsRemoved,
     handleSidebarLocalDraftDeleted,
     handleSidebarNewConversation,
-    handleSidebarOpenMcpHub: () => openHub("mcp-hub"),
-    handleSidebarOpenSkillsHub: () => openHub("skills-hub"),
+    handleSidebarOpenResourceHub: (resource: SidebarShortcutId) => openHub(`${resource}-hub`),
     handleSidebarSelectConversation,
     startNewConversation,
   };

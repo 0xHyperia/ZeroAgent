@@ -34,7 +34,7 @@ use crate::services::workspace_watch::WorkspaceWatchService;
 /// 网关 v2 protobuf 生成模块。业务消息与帧壳属于同一包。
 /// 仅生成消息，不生成客户端或服务端。
 pub mod gateway_proto {
-    #[allow(dead_code)]
+    #[allow(clippy::large_enum_variant, dead_code)]
     pub mod v2 {
         include!(concat!(env!("OUT_DIR"), "/liveagent.gateway.v2.rs"));
     }
@@ -46,10 +46,13 @@ mod chat;
 mod chat_inbox;
 mod chat_ingress;
 mod chat_ingress_transport;
+mod clarify;
+mod composer_action;
 mod connection;
 mod controller;
 mod envelope_handler;
 mod history_sync;
+mod kbrain_history;
 mod managed_process;
 mod settings_sync;
 mod sftp;
@@ -63,6 +66,8 @@ mod ws_transport;
 pub(crate) use chat::*;
 pub(crate) use chat_inbox::*;
 pub(crate) use chat_ingress::*;
+pub(crate) use clarify::*;
+pub(crate) use composer_action::*;
 pub(crate) use connection::*;
 pub(crate) use history_sync::*;
 pub use history_sync::{build_history_sync_delete, build_history_sync_upsert};
@@ -73,6 +78,7 @@ pub use types::*;
 pub(crate) use util::*;
 pub(crate) use ws_transport::*;
 
+#[cfg(test)]
 pub(crate) const UI_ONLY_SETTINGS_SYNC_FIELDS: &[&str] = &[
     "skills",
     "chatRuntimeControls",
@@ -128,6 +134,7 @@ pub struct GatewayController {
     managed_process_registry: Arc<ManagedProcessRegistry>,
     pub(crate) git_clone_task_registry: Arc<GitCloneTaskRegistry>,
     config_tx: watch::Sender<RemoteSettingsPayload>,
+    local_gateway: Arc<crate::services::local_gateway::LocalGatewayManager>,
     runner_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     status: Mutex<GatewayStatusSnapshot>,
     outbound_tx: Mutex<Option<GatewayOutboundSender>>,
@@ -142,6 +149,8 @@ pub struct GatewayController {
     pub(crate) tunnel_proxy: TunnelProxy,
     pub(crate) workspace_watch: Arc<WorkspaceWatchService>,
     pending_chat_queue_requests: Mutex<HashMap<String, oneshot::Sender<proto::ChatQueueResponse>>>,
+    pending_clarify_turns: Mutex<HashMap<String, oneshot::Sender<proto::ClarifyTurnResponse>>>,
+    pending_composer_actions: Mutex<HashMap<String, oneshot::Sender<ComposerActionOutcome>>>,
     chat_ingress: ChatIngressMirror,
     chat_ingress_flush_lock: tokio::sync::Mutex<()>,
     terminal_forwarder_once: Once,

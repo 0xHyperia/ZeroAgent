@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
-const loader = createTsModuleLoader();
+const loader = createTsModuleLoader({ mocks: {
+  "./managedCredentials": {
+    managedModelBinding: (providerId) => providerId === "relay-key-9" ? undefined : ({ providerId, baseUrl: "http://127.0.0.1:40001", apiKey: `opaque-${providerId}` }),
+    replaceManagedModelCredentials: async (_origin, credentials) => new Map(credentials.map(({providerId}) => [providerId, { providerId, baseUrl: "http://127.0.0.1:40001", apiKey: `opaque-${providerId}` }])),
+  },
+} });
 const relay = loader.loadModule("src/lib/relay/providers.ts");
 const settingsModule = loader.loadModule("src/lib/settings/index.ts");
 
@@ -81,14 +86,15 @@ test("binding relay keys removes third-party providers and selects an available 
 
   assert.equal(bound.customProviders.length, 1);
   assert.equal(bound.customProviders[0].id, "relay-key-42");
-  assert.equal(bound.customProviders[0].baseUrl, "https://usa0.top");
-  assert.equal(bound.customProviders[0].apiKey, "sk-relay-key");
+  assert.equal(bound.customProviders[0].baseUrl, "http://127.0.0.1:40001");
+  assert.equal(bound.customProviders[0].apiKey, "opaque-relay-key-42");
+  assert.doesNotMatch(JSON.stringify(bound), /sk-relay-key/);
   assert.equal(bound.customProviders[0].requestFormat, "openai-responses");
   assert.equal(bound.selectedModel.customProviderId, "relay-key-42");
   assert.equal(bound.selectedModel.model, "gpt-5.4");
 });
 
-test("runtime constraint rejects injected providers and restores relay URLs", () => {
+test("runtime constraint rejects injected providers and disables unregistered managed keys", () => {
   const constrained = relay.enforceRelayProviderConstraint({
     customProviders: [
       {
@@ -109,7 +115,9 @@ test("runtime constraint rejects injected providers and restores relay URLs", ()
 
   assert.equal(constrained.customProviders.length, 1);
   assert.equal(constrained.customProviders[0].id, "relay-key-9");
-  assert.equal(constrained.customProviders[0].baseUrl, "https://usa0.top");
+  assert.equal(constrained.customProviders[0].baseUrl, "");
+  assert.equal(constrained.customProviders[0].apiKeyConfigured, false);
+  assert.deepEqual(constrained.customProviders[0].activeModels, []);
   assert.equal(constrained.selectedModel, undefined);
 });
 

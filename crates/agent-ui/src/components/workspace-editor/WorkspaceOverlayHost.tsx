@@ -76,7 +76,12 @@ type WorkspaceOverlayHostProps = {
   onSshTerminalFocusLeasedSession?: (sessionId: string) => void;
   onSshTerminalSessionTabDragStart?: (
     session: TerminalSession,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
 };
 
@@ -86,7 +91,8 @@ function WorkspaceOverlayLoading(props: { className: string; label: string }) {
     <div
       className={cn(
         className,
-        "absolute inset-0 flex min-h-0 flex-col border-r border-border bg-background text-sm text-muted-foreground shadow-2xl",
+        "absolute inset-0 flex min-h-0 flex-col",
+        "border-r border-border bg-background text-sm text-muted-foreground shadow-2xl",
         workspaceOverlayStackClassName,
       )}
     >

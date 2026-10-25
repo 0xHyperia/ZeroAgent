@@ -4,12 +4,12 @@
 |---|---|
 | 状态 | Release baseline / 正式版实现基线（目标架构与当前实现边界分列记录） |
 | 版本 | v0.5 |
-| 日期 | 2026-08-20 |
-| 适用基线 | PR #521 HEAD `31244950e56d18f454b7c230c2f1c3bfff9efbae`；Native Drop 跨 Pane 目标会话仍待修复 |
+| 日期 | 2026-08-31 |
+| 适用基线 | Issue #659 / PR #662；Desktop 与 WebUI 共享多 Pane Workbench |
 
 研究依据：[OTTY 多会话、分块、焦点与文件 Pane 架构拆解](../reverse-engineering/otty/1.3.1/pane-architecture.md) · [OTTY 当前实现](../reverse-engineering/otty/1.3.1/current-state.md)
 
-> **当前实现说明**：本文件保留窗口级布局持久化、恢复和完整三平台验收等目标设计，不能将这些目标段落视为当前代码已启用的能力。正式版当前默认开启 Workbench，但启动时创建单 Root Pane，不恢复历史多 Pane 布局；`VITE_LIVEAGENT_SESSION_WORKBENCH=0` 仅用于回退。Native Drop 的命中坐标已覆盖多 Pane，但最终 upload 目标仍需在 drop 时同步绑定 `conversationId`，完成前不应宣称发布验收全部通过。
+> **当前实现说明**：Workbench 默认开启，`VITE_LIVEAGENT_SESSION_WORKBENCH=0` 仅用于回退。Desktop 将布局拓扑保存在本机，恢复出的终端先进入 dormant 占位，用户确认后才创建 PTY/SSH；WebUI 每次打开固定从当前会话的单 Root Pane 开始，不恢复浏览器中的旧布局。两端附件 drop/paste 都在事件落点同步携带 `conversationId`。
 
 ## 1. 本轮需求结论
 
@@ -62,7 +62,7 @@ LiveAgent 会话页应从：
 | Right Dock 项目 | 当前激活项目 | 当前聚焦 Surface 的显式项目引用 |
 | 实施顺序 | 先 Active Conversation Host | 先拆 Conversation Controller，再开放多会话 Pane |
 
-保留 v0.4 中正确的边界：PaneTree/Runtime 分离、唯一交互 View Lease、整数几何、Revision CAS、未知 Surface 无损往返、Native Drop 坐标适配和三平台实机门槛。本机布局持久化仍是目标设计，当前正式版不启用。
+保留 v0.4 中正确的边界：PaneTree/Runtime 分离、唯一交互 View Lease、整数几何、Revision CAS、未知 Surface 无损往返、Native Drop 坐标适配和三平台实机门槛。Desktop 启用本机布局持久化；WebUI 显式关闭布局持久化。
 
 ## 3. 产品交互定义
 
@@ -506,9 +506,21 @@ canvas-edge > divider > pane-edge > pane-center
 - xterm Fit 可按帧计算，Runtime Resize 约 80～100ms 去重节流，Pointer Up 最终 Flush。
 - Conversation Transcript 只响应宽度，不在每帧重建虚拟列表。
 
-### 13.3 应用内 Drag 与 Native Drop 分离
+### 13.3 布局 Drag、路径引用 Drag 与 Native Drop 分离
 
-Pane/侧栏用 Pointer Event；Finder/Explorer/File Manager 文件用 Tauri Native Drop：
+Pane/侧栏使用 Workbench Pointer Drag；File Tree 节点使用独立的
+`workspacePath` 内容拖拽；Finder/Explorer/File Manager 文件使用 Tauri
+Native Drop。三者不能共享 payload 或提交路径：
+
+```ts
+type WorkspacePathDragPayload = {
+  kind: "workspacePath";
+  projectPathKey: string;
+  cwd: string;
+  relativePath: string;
+  entryKind: "file" | "dir";
+};
+```
 
 ```ts
 type NativeDropTarget =
@@ -519,6 +531,11 @@ type NativeDropTarget =
 ```
 
 当前工作树已把上传区收窄到 Composer，必须保留。文件只准备附件、不自动发送；路径只转义插入 Terminal、不自动回车。
+
+File Tree 内部节点拖到 Composer 时插入现有文件/目录 Mention，不上传或复制文件；
+拖到同项目 Local/Gateway Terminal 时由 xterm paste 管线插入绝对路径，并按
+POSIX、PowerShell 或 cmd 规则转义。跨项目目标与没有显式本地/远端根映射的
+SSH Terminal 一律 blocked。
 
 ## 14. Focus、快捷键与 Right Dock 上下文
 
@@ -575,20 +592,40 @@ TerminalPaneSurface
 5. Local Terminal cwd 必须在所属主项目允许范围。
 6. SSH Prompt 通过 `operationToken + paneId + promptId` 绑定。
 7. 恢复只显示 stale 启动规格；用户显式点击才启动/重连。
-8. 关闭采用 Detach-first：Pane 的 × 是默认且安全的动作，静默 Detach 视图并把 Session 交回 Right Dock，进程与连接不受影响。
-9. Pane 内不叠加文字终止控件；终止进程/断开连接统一在 Right Dock 的会话管理入口完成。
-10. 裁决理由：关闭视图远比终止进程高频，默认确认会训练用户盲点头并误杀长任务；终端进程的生命周期与视图解耦后，Detach 可随时从 dock 找回或重新拖入，破坏性动作集中在会话管理入口。
+8. 关闭 = 终止（2026-09-02 改判，替代此前的 Detach-first）：Pane 的 × 与 `Meta/Ctrl+Alt+W`
+   关闭该终端。运行中的会话先在 Pane 内顶部弹出红色确认条（与 Right Dock 的
+   "关闭正在运行的终端「…」？" 同款），确认后 `client.close`；已退出的会话直接 close；
+   无会话的休眠/占位 Pane 直接关视图。实现：`lib/workbench/terminalPaneClose.ts`
+   （`useTerminalPaneCloseFlow` / `resolveTerminalPaneCloseAction`）。
+9. Pane 不会在 close 之前先消失：Pane 由页面的 `closed` 事件联动收掉（事件丢失时在
+   会话确认离开列表后兜底），租约因此一直握到进程结束，Session 不会在 Right Dock
+   的 tab / 右上角计数徽标里闪现。
+10. 改判理由：Detach 回 dock 让 Session 在右上角"忽闪"，且用户预期关闭即结束；
+    危险动作靠 Pane 内就地确认兜住，Right Dock 的会话管理入口仍可终止/断开。
 
-## 16. Right Dock 与文件树边界
+## 16. File Tree Surface 与 Right Dock 边界
 
-首期文件树明确不进入 PaneTree：
+File Tree 已从 Right Dock 专用面板解耦为共享 Surface，并进入 PaneTree：
 
 - Right Dock 保留 File、Git、SSH/Connection、Tunnel、Background Tasks。
-- 文件按钮默认打开 File Tab，并可折叠 Dock。
+- File Tab 支持拖出或通过菜单在分屏中打开，使用 `fileTree:${projectPathKey}`
+  作为稳定身份。
 - File Tree 展开、选择、滚动状态按 `projectPathKey` 分桶。
 - Right Dock 可调宽；Canvas 狭窄时 Overlay 打开，不永久压缩全部 Pane。
-- 中央 Pane 不复用 Right Dock 单一 File Tree UI State。
-- 后续 Folder Pane 需重新评审数据层、权限和多实例状态，不能直接搬 DOM。
+- 同一项目只挂一个交互式 File Tree 视图；Surface 在 Workbench 时，Right Dock
+  隐藏对应标签、内容和新建入口，避免重复数据请求、workspace activity 订阅和
+  状态竞争。Pane 的 × 关闭整个工具（`releaseProjectToolFromDock`）：dock tab 与
+  持久化的 `tools.fileTree` 一并移除，租约释放后 tab 不会弹回；只有 Pane 因布局
+  清空等非显式关闭而消失时，Dock 才复用项目级状态恢复树。
+- `FileTreeSurface` 通过显式 project/state/client/action props 挂载，不依赖
+  `RightDockContext`；Right Dock 与 Pane Host 只是不同适配层。
+- 文件树 Pane 关闭 = 关闭文件树工具（2026-09-02 起与其它项目工具同口径，见 §17）：
+  `tools.fileTree` 连同其中的展开 / 选择 / 搜索 UI 状态一并移除，再次从「开始使用」
+  打开以默认状态重建；不修改项目、会话或文件。
+
+> 2026-09-02 起，Git 审查、内网穿透、SSH 连接与后台任务也按同一套单例 + 租约语义进入
+> PaneTree（`ProjectToolWorkbenchSurface`），Right Dock 只保留终端会话列表作为必留入口。
+> 设计与落地见 [workbench-project-tool-panes.md](workbench-project-tool-panes.md)。
 
 运行终端列表是 Detach 后的找回入口，必须保留；持有 Workbench Lease 的 Session 从 dock 的终端 tab 中整体隐藏（终端在任一时刻只出现在一个宿主里），Pane Detach 释放租约后自动回归 dock。SSH overlay 的 shell tab 保持「占位 + 聚焦 Pane」互斥（overlay 是 SSH 连接管理入口，tab 需持续可见）。
 
@@ -597,14 +634,16 @@ TerminalPaneSurface
 | Surface | 主关闭动作 | 运行对象结果 |
 |---|---|---|
 | Conversation | 关闭视图 | 不删除历史；运行/队列按后台策略继续 |
-| 运行 Local Terminal | Detach 视图并回 Right Dock | 进程树继续运行，Session 保留，可再次拖入 |
-| 已退出 Local Terminal | 关闭视图 | 保留历史按现有策略清理 |
-| 已连接 SSH Terminal | Detach 视图并回 Right Dock | 连接保持，Session 保留，可再次拖入 |
+| File Tree / Git 审查 / 内网穿透 / SSH 连接 / 后台任务 | 关闭 Pane = 关闭工具（`releaseProjectToolFromDock`） | 不修改项目、文件、隧道、SSH 会话或后台进程；dock tab 与 `tools[kind]`（文件树含 UI 状态）一并移除，不弹回 dock；后台任务快照当前进程 id 后隐藏 |
+| 运行 Local Terminal | Pane 内红条确认后终止 | 进程树结束，Session 移除，Pane 随 `closed` 事件关闭 |
+| 已退出 Local Terminal | 关闭视图并回收 Session | 保留历史按现有策略清理 |
+| 已连接 SSH Terminal | Pane 内红条确认后断开 | 连接断开，Session 移除，Pane 随 `closed` 事件关闭 |
 | stale Terminal | 关闭视图 | 无 Runtime |
 
-终止进程树和断开 SSH 不在 Pane 关闭路径上：两者统一从 Right Dock 的终端会话管理入口执行，Pane 内不再叠加文字按钮。
+Pane 的关闭路径即终止路径（§15 第 8 条）；Right Dock 的终端会话管理入口仍可终止/断开
+dock 内的会话。
 
-反向联动（dock → Pane）：Right Dock 关闭一个被 Pane 租用的 Session 意味着终止进程 **并连带关闭该 Pane**（`closed` 事件驱动，按 Runtime Binding 而非 Lease 查找，覆盖宿主尚未取得租约的 connecting 窗口）。宿主对「本次挂载见过、随后从会话列表消失」的绑定停在 `session-closed` 占位（可显式重启），**绝不按 launchSpec 自动重建**——launchSpec 自动重建只属于应用重启后的恢复路径（从未见过该 sessionId 存活）。否则 dock 关闭会触发「杀旧进程 + 复活新进程」循环，表现为终端关不掉。应用退出的 `close_all` 经退出护栏豁免此联动，布局落盘保留全部终端 Pane 供重启恢复。
+联动（Session → Pane）：任何来源（Pane 的 ×、Right Dock、close_project）关闭一个被 Pane 租用的 Session 都 **连带关闭该 Pane**（`closed` 事件驱动，按 Runtime Binding 而非 Lease 查找，覆盖宿主尚未取得租约的 connecting 窗口）。宿主对「本次挂载见过、随后从会话列表消失」的绑定停在 `session-closed` 占位（可显式重启），绝不自行复活。应用重启后的恢复 Surface 也没有自动启动授权，统一停在 dormant 占位；用户点击恢复后，才按 launchSpec 创建本地或 SSH 会话。应用退出的 `close_all` 经退出护栏豁免 closed 联动，布局拓扑仍可落盘。
 
 关闭 Conversation Pane 绝不等于删除会话。会话仍在左侧，可再次拖入复用；后台运行状态继续显示。删除会话时若 Pane 可见，必须确认并原子关闭 View/Runtime，再删除历史。
 
@@ -977,7 +1016,8 @@ Surface Registry 统一 Renderer、尺寸、关闭、唯一性和 Context，避�
 ### 30.1 发布基线
 
 - Session Workbench 正式版默认启用；`VITE_LIVEAGENT_SESSION_WORKBENCH=0` 仅回退旧单 Pane 路径。
-- 冷启动从当前会话创建单 Root Pane；当前版本不持久化或恢复历史多 Pane 布局。
+- WebUI 冷启动从当前会话创建单 Root Pane，不持久化或恢复历史多 Pane 布局；Desktop 恢复本机布局拓扑。
+- Desktop 恢复的终端 Surface 默认为 dormant，用户显式恢复后才创建 PTY/SSH 会话。
 - T-1 cwd 范围校验已完成：Rust 双边 canonicalize + containment，前端 drop/restore/invariant 三道护栏。
 - 终端 Pane、Runtime/草稿/队列/审批隔离、Right Dock 项目上下文和核心回归测试已落地。
 
@@ -987,16 +1027,15 @@ Surface Registry 统一 Renderer、尺寸、关闭、唯一性和 Context，避�
 |---|---|
 | PaneTree、Geometry、Divider、Focus、Move、Swap、Close、Resize | 已完成并有模型/合同测试 |
 | Conversation、Local Terminal、SSH Terminal 宿主 | 已完成，租约与绑定保证单宿主 |
-| Runtime、Draft、Upload、Queue、Approval、Model、Streaming 存储隔离 | 已完成，按 `conversationId` 分桶；Native Drop 的最终目标绑定仍是合入阻塞 |
+| Runtime、Draft、Upload、Queue、Approval、Model、Streaming 存储隔离 | 已完成，按 `conversationId` 分桶；Native/Web Drop 与 Paste 按事件落点绑定目标会话 |
 | T-1 cwd 校验、T-2 stale 恢复、T-3 拖入入口、T-4 关闭语义 | 已完成 |
 | T-5 Right Dock 互斥、T-6 resize 去重、T-7 几何 context | 已完成 |
-| GUI/WebUI/TypeScript/UI boundary/Tauri Rust Check | 当前 PR CI 全部通过 |
+| GUI/WebUI/TypeScript/UI boundary/Tauri Rust Check | 由 `make check-all` 统一验证 |
 
 ### 30.3 合入前阻塞与后续验证
 
-1. **Native Drop P1**：坐标命中已覆盖多 Pane，但异步聚焦完成前，上传管线仍可能读取旧 `currentConversationIdRef`，导致附件写入错误会话。必须在 drop 时同步携带目标 Pane 的 `conversationId`，并补真实 upload-store 断言。
-2. **实机矩阵**：macOS Retina、Windows 混合 DPI、Linux X11/Wayland，以及 IME、键盘、Forced Colors、读屏器和双流式性能冒烟仍需完成。
-3. **独立重构**：剩余的五个页面级瞬态镜像、完整 Composer Controller 化和更深的性能收敛不属于本次正式版合入范围。
+1. **实机矩阵**：macOS Retina、Windows 混合 DPI、Linux X11/Wayland，以及 IME、键盘、Forced Colors、读屏器和双流式性能冒烟仍需完成。
+2. **独立重构**：剩余的页面级瞬态镜像、完整 Composer Controller 化和更深的性能收敛不属于本次正式版合入范围。
 
 ### 30.4 当前验证边界
 

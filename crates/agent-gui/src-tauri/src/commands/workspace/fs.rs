@@ -3132,7 +3132,7 @@ fn fs_write_text_impl(
         path: logical_path,
         mode,
         existed_before,
-        bytes_written: content.as_bytes().len(),
+        bytes_written: content.len(),
         mtime_ms: metadata_mtime_ms(&md),
         content_hash: hash_bytes(content.as_bytes()),
         total_lines: count_text_lines(&content),
@@ -3425,17 +3425,28 @@ fn workspace_open_command(target: &Path, mode: &str) -> Command {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn spawn_workspace_open_command(target: &Path, mode: &str) -> Result<(), String> {
-    workspace_open_command(target, mode)
-        .spawn()
+    // 启动器进程不等，但必须收尸：Child 直接丢掉的话，子进程退出后没人
+    // wait()，每次在 Finder/资源管理器里打开或显示文件都会在本进程下留一个
+    // <defunct>（实测报告里长会话的僵尸累积就是这条路径）。
+    let mut command = workspace_open_command(target, mode);
+    crate::runtime::process::spawn_and_reap(&mut command)
         .map(|_| ())
         .map_err(|e| format!("Failed to open path with macOS open: {e}"))
 }
 
 #[cfg(target_os = "windows")]
 fn workspace_open_command(target: &Path, mode: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+
     let mut command = Command::new("explorer.exe");
     if mode == "reveal" {
-        command.arg(format!("/select,{}", target.display()));
+        // explorer.exe 自行解析命令行:未加引号的路径会在第一个空格处被截断
+        // (例如 `D:\Videos\JianyingPro Materials\a.txt` 会被截成
+        // `D:\Videos\JianyingPro`,路径无效时 explorer 回退打开默认的
+        // "文档" 目录)。而 Rust 标准库默认的引号规则会把整个
+        // `/select,<path>` 包进引号,explorer 同样解析不了。这里用 raw_arg
+        // 绕过默认引号,只给路径部分加引号:`/select,"<path>"`。
+        command.raw_arg(format!("/select,\"{}\"", target.display()));
     } else {
         command.arg(target);
     }
@@ -3444,8 +3455,11 @@ fn workspace_open_command(target: &Path, mode: &str) -> Command {
 
 #[cfg(target_os = "windows")]
 pub(crate) fn spawn_workspace_open_command(target: &Path, mode: &str) -> Result<(), String> {
-    workspace_open_command(target, mode)
-        .spawn()
+    // 启动器进程不等，但必须收尸：Child 直接丢掉的话，子进程退出后没人
+    // wait()，每次在 Finder/资源管理器里打开或显示文件都会在本进程下留一个
+    // <defunct>（实测报告里长会话的僵尸累积就是这条路径）。
+    let mut command = workspace_open_command(target, mode);
+    crate::runtime::process::spawn_and_reap(&mut command)
         .map(|_| ())
         .map_err(|e| format!("Failed to open path with Windows Explorer: {e}"))
 }
@@ -3464,8 +3478,11 @@ fn workspace_open_command(target: &Path, mode: &str) -> Command {
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 pub(crate) fn spawn_workspace_open_command(target: &Path, mode: &str) -> Result<(), String> {
-    workspace_open_command(target, mode)
-        .spawn()
+    // 启动器进程不等，但必须收尸：Child 直接丢掉的话，子进程退出后没人
+    // wait()，每次在 Finder/资源管理器里打开或显示文件都会在本进程下留一个
+    // <defunct>（实测报告里长会话的僵尸累积就是这条路径）。
+    let mut command = workspace_open_command(target, mode);
+    crate::runtime::process::spawn_and_reap(&mut command)
         .map(|_| ())
         .map_err(|e| format!("Failed to open path with xdg-open: {e}"))
 }
@@ -3796,8 +3813,10 @@ pub(crate) fn fs_list_dirs_sync(
     let mut dirs: Vec<FsDirEntry> = Vec::new();
 
     for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        let Ok(entry) = entry else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
 
         let mut is_dir = file_type.is_dir();
         if !is_dir && file_type.is_symlink() {
@@ -3887,11 +3906,18 @@ fn build_workspace_walker(
     let mut builder = WalkBuilder::new(base);
     builder
         .hidden(!visibility.include_system_hidden)
+        // The workspace root is the semantic boundary of the file views:
+        // ignore rules living in ancestor directories (monorepo parents, an
+        // unrelated ~/.gitignore chain) must not filter entries here (#820).
+        .parents(false)
         .ignore(!visibility.include_ignored)
         .git_ignore(!visibility.include_ignored)
         .git_global(!visibility.include_ignored)
         .git_exclude(!visibility.include_ignored)
-        .require_git(false)
+        // gitignore semantics only exist inside an actual git repository. A
+        // plain folder that happens to contain a .gitignore must not have
+        // entries silently dropped from the file tree (#820).
+        .require_git(true)
         .follow_links(false);
     let filter_macos_hidden = cfg!(target_os = "macos") && !visibility.include_system_hidden;
     if filter_macos_hidden || skip_common_dirs {
@@ -4622,9 +4648,7 @@ fn mention_sort_key(path: &str, kind: &str, query: &str) -> (usize, usize, usize
         .rsplit('/')
         .next()
         .unwrap_or(&normalized_path);
-    let match_rank = if query.is_empty() {
-        0
-    } else if normalized_name.starts_with(query) {
+    let match_rank = if query.is_empty() || normalized_name.starts_with(query) {
         0
     } else if normalized_path.starts_with(query) {
         1
@@ -4737,6 +4761,12 @@ mod tests {
         std::env::temp_dir().join(format!("liveagent-{name}-{suffix}"))
     }
 
+    // require_git(true): fixtures relying on gitignore filtering must look
+    // like a git repository (an empty .git directory is enough).
+    fn init_fake_git_repo(workdir: &Path) {
+        fs::create_dir_all(workdir.join(".git")).expect("create fake .git");
+    }
+
     fn list_test_entries(workdir: &Path, show_hidden: Option<bool>) -> Vec<ListEntry> {
         fs_list_sync(
             workdir.display().to_string(),
@@ -4821,7 +4851,26 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(command.get_program(), std::ffi::OsStr::new("explorer.exe"));
-        assert_eq!(args, vec![r"/select,C:\work\Dangerous.bundle"]);
+        assert_eq!(args, vec![r#"/select,"C:\work\Dangerous.bundle""#]);
+    }
+
+    // 路径含空格时引号必须保住整个路径,否则 explorer 在空格处截断参数,
+    // 回退打开默认的 "文档" 目录(文件树"打开所在目录"空格路径 bug)。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_reveal_quotes_paths_with_spaces() {
+        let target = Path::new(r"D:\Videos\JianyingPro Materials\clip 01.mp4");
+        let command = workspace_open_command(target, "reveal");
+        let args = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(command.get_program(), std::ffi::OsStr::new("explorer.exe"));
+        assert_eq!(
+            args,
+            vec![r#"/select,"D:\Videos\JianyingPro Materials\clip 01.mp4""#]
+        );
     }
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
@@ -5693,6 +5742,7 @@ mod tests {
     #[test]
     fn list_respects_gitignore_and_rejects_outside_paths() {
         let workdir = unique_test_workdir("list-ignore");
+        init_fake_git_repo(&workdir);
         fs::create_dir_all(workdir.join("src")).expect("create src");
         fs::create_dir_all(workdir.join("ignored_dir")).expect("create ignored dir");
         fs::write(
@@ -5747,9 +5797,55 @@ mod tests {
         let _ = fs::remove_dir_all(workdir);
     }
 
+    // #820 regression: a .gitignore inside a plain (non-git) workspace must
+    // not hide entries — digit-leading folders vanished for users whose
+    // stray ignore rules matched patterns like `[0-9]*`.
+    #[test]
+    fn list_ignores_gitignore_outside_git_repository() {
+        let workdir = unique_test_workdir("list-nongit-gitignore");
+        fs::create_dir_all(workdir.join("2024-01")).expect("create digit dir");
+        fs::create_dir_all(workdir.join("alpha")).expect("create alpha");
+        fs::write(workdir.join(".gitignore"), "[0-9]*\n").expect("write gitignore");
+
+        let paths: Vec<String> = list_test_entries(&workdir, Some(false))
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect();
+        assert!(
+            paths.contains(&"2024-01".to_string()),
+            "non-repo .gitignore must not hide entries: {paths:?}"
+        );
+        assert!(paths.contains(&"alpha".to_string()));
+
+        let _ = fs::remove_dir_all(workdir);
+    }
+
+    // #820 regression: ignore rules living in ancestor directories outside
+    // the workspace root must not leak into the workspace listing.
+    #[test]
+    fn list_ignores_ancestor_gitignore_outside_workspace_root() {
+        let parent = unique_test_workdir("list-parent-gitignore");
+        let workdir = parent.join("sub");
+        fs::create_dir_all(workdir.join("10-notes")).expect("create digit dir");
+        init_fake_git_repo(&parent);
+        fs::write(parent.join(".gitignore"), "[0-9]*\n").expect("write parent gitignore");
+
+        let paths: Vec<String> = list_test_entries(&workdir, Some(false))
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect();
+        assert!(
+            paths.contains(&"10-notes".to_string()),
+            "ancestor .gitignore must not filter the workspace listing: {paths:?}"
+        );
+
+        let _ = fs::remove_dir_all(parent);
+    }
+
     #[test]
     fn list_hidden_toggle_includes_and_marks_ignored_and_dot_entries() {
         let workdir = unique_test_workdir("list-hidden-toggle");
+        init_fake_git_repo(&workdir);
         fs::create_dir_all(workdir.join(".hidden_dir")).expect("create hidden dir");
         fs::create_dir_all(workdir.join("ignored_dir")).expect("create ignored dir");
         fs::write(workdir.join(".gitignore"), "ignored_dir/\nignored.txt\n")
@@ -5910,8 +6006,9 @@ mod tests {
     }
 
     #[test]
-    fn mention_list_respects_gitignore_without_git_repository() {
+    fn mention_list_respects_gitignore_inside_git_repository() {
         let workdir = unique_test_workdir("mention-gitignore");
+        init_fake_git_repo(&workdir);
         fs::create_dir_all(workdir.join("src")).expect("create src");
         fs::create_dir_all(workdir.join("ignored_dir")).expect("create ignored dir");
         fs::write(
@@ -5945,6 +6042,7 @@ mod tests {
     #[test]
     fn mention_list_hidden_toggle_includes_and_marks_filtered_entries() {
         let workdir = unique_test_workdir("mention-hidden-toggle");
+        init_fake_git_repo(&workdir);
         fs::create_dir_all(workdir.join("node_modules/pkg")).expect("create node_modules");
         fs::create_dir_all(workdir.join("ignored_dir")).expect("create ignored dir");
         fs::write(workdir.join(".gitignore"), "ignored_dir/\n").expect("write gitignore");

@@ -10,9 +10,9 @@
  * - 非 Tauri 环境（vite dev / WebUI 无此模块）invoke 失败静默。
  */
 
+import { invoke } from "@liveagent/app/shims/tauriCore";
 import type { CronTask } from "@liveagent/ui/lib/automation/types";
 import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
-import { invoke } from "@tauri-apps/api/core";
 import { type Locale, t } from "../../i18n/config";
 import type { AppSettings, Theme, WorkspaceProject } from "../settings";
 import { workspaceProjectPathKey } from "../settings";
@@ -87,7 +87,7 @@ function withCount(template: string, count: number): string {
 /** 快捷键回显：仅启用中的绑定；格式与 muda accelerator 解析兼容。 */
 function enabledAccelerator(action: "summon" | "newChat"): string | null {
   const binding = readGlobalShortcutBindings()[action];
-  if (!binding || binding.enabled === false) return null;
+  if (!binding || binding.enabled === false || binding.scope === "app") return null;
   const accelerator = binding.accelerator.trim();
   return accelerator ? accelerator : null;
 }

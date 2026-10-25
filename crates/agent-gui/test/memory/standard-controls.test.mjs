@@ -10,10 +10,6 @@ const memorySettingsDrawer = readFileSync(
   new URL("../../../agent-ui/src/pages/settings/memory/MemorySettingsDrawer.tsx", import.meta.url),
   "utf8",
 );
-const organizerHistoryModal = readFileSync(
-  new URL("../../../agent-ui/src/pages/settings/memory/OrganizerHistoryModal.tsx", import.meta.url),
-  "utf8",
-);
 
 test("memory settings use shared form and navigation primitives", () => {
   assert.match(memoryPanel, /<Select\b/);
@@ -25,11 +21,13 @@ test("memory settings use shared form and navigation primitives", () => {
   assert.match(memoryPanel, /<Textarea/);
   assert.doesNotMatch(memoryPanel, /<(?:button|select|option|textarea)\b/);
 
-  assert.match(memorySettingsDrawer, /<SheetClose/);
-  assert.match(memorySettingsDrawer, /<Input\b/);
+  assert.match(memorySettingsDrawer, /<DialogContent/);
+  assert.match(memorySettingsDrawer, /<DialogBody/);
+  assert.doesNotMatch(memorySettingsDrawer, /<Sheet/);
+  assert.match(memorySettingsDrawer, /<Button\b/);
+  assert.match(memorySettingsDrawer, /settings\.memoryBackendOwned/);
+  assert.match(memorySettingsDrawer, /settings\.memoryOrganizerUnsupported/);
+  assert.doesNotMatch(memorySettingsDrawer, /memoryOrganizeRunCreate|pokeMemoryOrganizer|ModelPicker|AgentActivationSwitch|DrawerSelect/);
   assert.doesNotMatch(memorySettingsDrawer, /<(?:button|input)\b/);
 
-  assert.match(organizerHistoryModal, /<Button\b/);
-  assert.match(organizerHistoryModal, /<Checkbox\b/);
-  assert.doesNotMatch(organizerHistoryModal, /<(?:button|input)\b/);
 });

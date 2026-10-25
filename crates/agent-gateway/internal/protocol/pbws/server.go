@@ -7,6 +7,7 @@ package pbws
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/config"
+	"github.com/liveagent/agent-gateway/internal/kbrain"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/shared"
 	"github.com/liveagent/agent-gateway/internal/session"
@@ -59,9 +61,11 @@ type Server struct {
 	authenticator AgentAuthenticator
 	accounts      *account.Service
 
-	agentConns    atomic.Int64
-	browserConns  atomic.Int64
-	terminalConns atomic.Int64
+	agentConns     atomic.Int64
+	browserConns   atomic.Int64
+	terminalConns  atomic.Int64
+	kbrainRelay    *kbrain.Relay
+	kbrainTargetID string
 }
 
 // NewServer 构造 v2 协议服务端；tokens 传 nil 仅用于不涉及持久化的单元测试。
@@ -73,7 +77,33 @@ type AgentAuthenticator interface {
 func NewServer(cfg *config.Config, sm *session.Manager, authenticator AgentAuthenticator) *Server {
 	server := &Server{cfg: cfg, sm: sm, authenticator: authenticator}
 	server.accounts, _ = authenticator.(*account.Service)
+	// A single-backend target belongs to an isolated local host. Account traffic retains device leases.
+	if server.accounts == nil && cfg != nil && cfg.KBrainURL != "" && cfg.KBrainAgentID != "" {
+		if client, err := kbrain.New(cfg.KBrainURL, cfg.KBrainToken, nil); err == nil {
+			queuePath := ""
+			if cfg.AgentDB != "" {
+				queuePath = cfg.AgentDB + ".kbrain-queue.json"
+			}
+			relay, relayErr := kbrain.NewRelayWithQueueState(client, cfg.KBrainAgentID,
+				kbrain.ModelRef{Provider: cfg.KBrainProvider, Model: cfg.KBrainModel}, "", queuePath,
+				server.kbrainCallbacks(cfg.KBrainAgentID))
+			if relayErr == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := relay.EnableBackendQueue(ctx, server.kbrainCallbacks(cfg.KBrainAgentID)); err != nil {
+					slog.Warn("K-brain queue capability negotiation failed", "err", err)
+				}
+				cancel()
+				server.kbrainRelay, server.kbrainTargetID = relay, cfg.KBrainAgentID
+			}
+		}
+	}
 	return server
+}
+
+func (s *Server) Close() {
+	if s.kbrainRelay != nil {
+		s.kbrainRelay.Close()
+	}
 }
 
 // acquireConnSlot 在升级前占用一个连接槽位；超限返回 false（调用方回 503）。

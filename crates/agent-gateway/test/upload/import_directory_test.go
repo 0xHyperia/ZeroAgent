@@ -277,6 +277,11 @@ func TestImportDirectoryStreamsPayloadBeyondMessageLimit(t *testing.T) {
 			delivered.Ack(nil)
 			outbound = delivered.GatewayEnvelope
 		case <-time.After(5 * time.Second):
+			select {
+			case <-done:
+				t.Fatalf("directory import returned before agent delivery: HTTP %d: %s", rec.Code, rec.Body.String())
+			default:
+			}
 			t.Fatalf("timed out waiting for directory import to reach agent (chunks so far: %d)", chunkCount)
 		}
 

@@ -316,7 +316,7 @@ test("DeepSeek provider normalization keeps native routing and native search", (
   assert.equal(provider.promptCacheHintMode, undefined);
   assert.equal(provider.nativeWebSearchEnabled, true);
   assert.equal(provider.models[0].contextWindow, 1_000_000);
-  assert.equal(provider.models[0].maxOutputToken, 384_000);
+  assert.equal(provider.models[0].maxOutputToken, 393_216);
 });
 
 test("legacy Codex-group DeepSeek configs stay untouched — migration is user-driven", () => {
@@ -397,6 +397,84 @@ test("custom settings migrate the legacy font family and normalize each typograp
       customSettings: { codeFontFamily: "url(https://evil.example/font.woff2)" },
     }).customSettings.codeFontFamily,
     "",
+  );
+});
+
+test("composer context display normalizes to the three-state union", () => {
+  // 三档枚举（docs/design/composer-context-stats-bar.md §4.7）：默认统计状态栏。
+  assert.equal(settings.getDefaultSettings().customSettings.composerContextDisplay, "statsBar");
+  assert.equal(
+    settings.normalizeSettings({ customSettings: {} }).customSettings.composerContextDisplay,
+    "statsBar",
+  );
+  assert.equal(
+    settings.normalizeSettings({ customSettings: { composerContextDisplay: "ring" } })
+      .customSettings.composerContextDisplay,
+    "ring",
+  );
+  assert.equal(
+    settings.normalizeSettings({ customSettings: { composerContextDisplay: "both" } })
+      .customSettings.composerContextDisplay,
+    "both",
+  );
+  // 脏值/历史遗留值（如曾经设想过的 "auto"）一律落回默认，不留第四态。
+  assert.equal(
+    settings.normalizeSettings({ customSettings: { composerContextDisplay: "auto" } })
+      .customSettings.composerContextDisplay,
+    "statsBar",
+  );
+});
+
+test("prompt clarify settings keep the follow-current fallback contract", () => {
+  // 总开关缺省开启：老配置无此字段时澄清按钮保持可见（上线前行为）。
+  assert.equal(settings.getDefaultSettings().customSettings.promptClarifyEnabled, true);
+  assert.equal(
+    settings.normalizeSettings({ customSettings: {} }).customSettings.promptClarifyEnabled,
+    true,
+  );
+  assert.equal(
+    settings.normalizeSettings({ customSettings: { promptClarifyEnabled: false } }).customSettings
+      .promptClarifyEnabled,
+    false,
+  );
+
+  const provider = {
+    id: "provider-1",
+    name: "P1",
+    type: "claude_code",
+    baseUrl: "https://api.example.com",
+    apiKey: "key",
+    models: ["model-1"],
+    activeModels: ["model-1"],
+  };
+  // 有效选择保留；模型失效清空回「跟随当前对话模型」（commitMessageModel 同契约）。
+  const kept = settings.normalizeSettings({
+    customProviders: [provider],
+    customSettings: { promptClarifyModel: { customProviderId: "provider-1", model: "model-1" } },
+  });
+  assert.deepEqual(kept.customSettings.promptClarifyModel, {
+    customProviderId: "provider-1",
+    model: "model-1",
+  });
+  assert.equal(
+    settings.normalizeSettings({
+      customProviders: [provider],
+      customSettings: { promptClarifyModel: { customProviderId: "provider-1", model: "gone" } },
+    }).customSettings.promptClarifyModel,
+    undefined,
+  );
+
+  // 运行时解析器（两端共用）：未选/失效回退 null，由调用方落回当前对话模型。
+  assert.deepEqual(settings.resolvePromptClarifyModel(kept), {
+    provider: kept.customProviders.find((item) => item.id === "provider-1"),
+    model: "model-1",
+  });
+  assert.equal(
+    settings.resolvePromptClarifyModel({
+      ...kept,
+      customSettings: { ...kept.customSettings, promptClarifyModel: undefined },
+    }),
+    null,
   );
 });
 
@@ -570,6 +648,7 @@ test("chat runtime controls default and follow provider model reasoning support"
   assert.deepEqual(defaults.chatRuntimeControls, {
     thinkingEnabled: true,
     nativeWebSearchEnabled: true,
+    planModeEnabled: false,
     reasoning: "high",
     reasoningByProvider: {
       claude_code: "high",
@@ -579,6 +658,7 @@ test("chat runtime controls default and follow provider model reasoning support"
       xai: "high",
       deepseek: "high",
     },
+    reasoningByModel: {},
   });
 
   // 没有 modelId 就无法解析目录，拿不到任何档位。
@@ -698,15 +778,19 @@ test("chat runtime controls default and follow provider model reasoning support"
     {
       thinkingEnabled: false,
       nativeWebSearchEnabled: false,
+      planModeEnabled: false,
+      // 读路径只钳展示值(reasoning):窄表模型的钳制绝不回写存储桶,否则会
+      // 抹掉宽表模型选的表外档(旧实现正是「档位被重置」的元凶)。
       reasoning: "high",
       reasoningByProvider: {
         claude_code: "xhigh",
         codex_openai_responses: "xhigh",
         codex_openai_completions: "xhigh",
-        gemini: "high",
+        gemini: "xhigh",
         xai: "xhigh",
         deepseek: "xhigh",
       },
+      reasoningByModel: {},
     },
   );
   assert.deepEqual(
@@ -714,6 +798,7 @@ test("chat runtime controls default and follow provider model reasoning support"
       {
         thinkingEnabled: true,
         nativeWebSearchEnabled: true,
+        planModeEnabled: false,
         reasoning: "xhigh",
         reasoningByProvider: {
           codex_openai_completions: "xhigh",
@@ -728,21 +813,23 @@ test("chat runtime controls default and follow provider model reasoning support"
     {
       thinkingEnabled: true,
       nativeWebSearchEnabled: true,
-      // 目录未命中（聚合命名）走标准四档兜底：存量 xhigh 钳回默认 high。
+      planModeEnabled: false,
+      // 目录未命中（聚合命名）走标准四档兜底：存量 xhigh 只在展示值上钳回
+      // 默认 high,reasoningByProvider 原样透传。
       reasoning: "high",
       reasoningByProvider: {
         claude_code: "xhigh",
         codex_openai_responses: "xhigh",
-        codex_openai_completions: "high",
-        // gemini / xai 未在 reasoningByProvider 输入里显式给出，也未参与本次调用
-        // 的当前 provider key，因此只继承顶层 reasoning 原值，不做钳制。
+        codex_openai_completions: "xhigh",
         gemini: "xhigh",
         xai: "xhigh",
         deepseek: "xhigh",
       },
+      reasoningByModel: {},
     },
   );
 
+  // 档位写入按 (供应商类型, 模型) 落模型桶,供应商桶保持默认不动。
   assert.deepEqual(
     settings.updateChatRuntimeControlsForProvider(
       defaults.chatRuntimeControls,
@@ -757,14 +844,18 @@ test("chat runtime controls default and follow provider model reasoning support"
     {
       thinkingEnabled: true,
       nativeWebSearchEnabled: true,
+      planModeEnabled: false,
       reasoning: "xhigh",
       reasoningByProvider: {
         claude_code: "high",
-        codex_openai_responses: "xhigh",
+        codex_openai_responses: "high",
         codex_openai_completions: "high",
         gemini: "high",
         xai: "high",
         deepseek: "high",
+      },
+      reasoningByModel: {
+        codex_openai_responses: { "gpt-5.2": "xhigh" },
       },
     },
   );
@@ -815,6 +906,7 @@ test("chat runtime controls default and follow provider model reasoning support"
   assert.deepEqual(normalized.chatRuntimeControls, {
     thinkingEnabled: false,
     nativeWebSearchEnabled: false,
+    planModeEnabled: false,
     reasoning: "high",
     reasoningByProvider: {
       claude_code: "high",
@@ -824,7 +916,149 @@ test("chat runtime controls default and follow provider model reasoning support"
       xai: "high",
       deepseek: "high",
     },
+    reasoningByModel: {},
   });
+});
+
+test("chat reasoning levels are stored per model and never bleed across models", () => {
+  const defaults = settings.getDefaultSettings();
+
+  // 场景还原:glm-5.3-flash(表 [low,high,max] 恒开)与 claude-sonnet-5
+  // (表含 xhigh)同属不同供应商桶;旧单桶方案里一边设 max/xhigh,另一边
+  // 显示钳成 high 且会被回写,表现为「切会话/分屏另一栏被重置」。
+  const withGlmMax = settings.updateChatRuntimeControlsForProvider(
+    defaults.chatRuntimeControls,
+    { reasoning: "max" },
+    { providerId: "deepseek", modelId: "glm-5.3-flash" },
+  );
+  assert.deepEqual(withGlmMax.reasoningByModel, {
+    deepseek: { "glm-5.3-flash": "max" },
+  });
+  // 本模型读回 max(表内档原样展示)。
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(withGlmMax, {
+      providerId: "deepseek",
+      modelId: "glm-5.3-flash",
+    }).reasoning,
+    "max",
+  );
+  // 同供应商类型下的其他模型不串档:回落供应商桶默认 high。
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(withGlmMax, {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+    }).reasoning,
+    "high",
+  );
+  // 另一供应商类型再写一档,互不影响。
+  const withClaudeXhigh = settings.updateChatRuntimeControlsForProvider(withGlmMax, {
+    reasoning: "xhigh",
+  }, { providerId: "claude_code", modelId: "claude-sonnet-5" });
+  assert.deepEqual(withClaudeXhigh.reasoningByModel, {
+    deepseek: { "glm-5.3-flash": "max" },
+    claude_code: { "claude-sonnet-5": "xhigh" },
+  });
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(withClaudeXhigh, {
+      providerId: "claude_code",
+      modelId: "claude-sonnet-5",
+    }).reasoning,
+    "xhigh",
+  );
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(withClaudeXhigh, {
+      providerId: "deepseek",
+      modelId: "glm-5.3-flash",
+    }).reasoning,
+    "max",
+  );
+
+  // 回归锁定(粘性重置):在窄表模型上只改非 reasoning 控件(如联网开关),
+  // 不得触碰任何档位桶——旧实现会把当前模型表外档钳平回写。
+  const webSearchToggled = settings.updateChatRuntimeControlsForProvider(
+    withClaudeXhigh,
+    { nativeWebSearchEnabled: false },
+    { providerId: "gemini", modelId: "gemini-2.5-flash" },
+  );
+  assert.deepEqual(webSearchToggled.reasoningByModel, withClaudeXhigh.reasoningByModel);
+  assert.equal(webSearchToggled.nativeWebSearchEnabled, false);
+
+  // 写时钳制:菜单只会提供表内档,这里兜住过期表单——glm 表没有 xhigh,
+  // 落桶值钳为默认 high,而不是存进一个永远展示不出的档。
+  const clampedWrite = settings.updateChatRuntimeControlsForProvider(
+    defaults.chatRuntimeControls,
+    { reasoning: "xhigh" },
+    { providerId: "deepseek", modelId: "glm-5.3-flash" },
+  );
+  assert.deepEqual(clampedWrite.reasoningByModel, {
+    deepseek: { "glm-5.3-flash": "high" },
+  });
+
+  // 读取优先级:模型桶 > 供应商桶 > 全局默认。
+  const withLegacyBucket = settings.normalizeChatRuntimeControlsForProvider(
+    {
+      ...defaults.chatRuntimeControls,
+      reasoningByProvider: {
+        ...defaults.chatRuntimeControls.reasoningByProvider,
+        deepseek: "low",
+      },
+      reasoningByModel: { deepseek: { "glm-5.3-flash": "max" } },
+    },
+    { providerId: "deepseek", modelId: "glm-5.3-flash" },
+  );
+  assert.equal(withLegacyBucket.reasoning, "max");
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(
+      {
+        ...defaults.chatRuntimeControls,
+        reasoningByProvider: {
+          ...defaults.chatRuntimeControls.reasoningByProvider,
+          deepseek: "low",
+        },
+        reasoningByModel: { deepseek: { "glm-5.3-flash": "max" } },
+      },
+      { providerId: "deepseek", modelId: "deepseek-v4-flash" },
+    ).reasoning,
+    "low",
+  );
+
+  // 写入的 modelId 会 trim 后落桶,读取同样按 trim 后的 id 命中。
+  const trimmedWrite = settings.updateChatRuntimeControlsForProvider(
+    defaults.chatRuntimeControls,
+    { reasoning: "low" },
+    { providerId: "deepseek", modelId: "  glm-5.3-flash  " },
+  );
+  assert.deepEqual(trimmedWrite.reasoningByModel, {
+    deepseek: { "glm-5.3-flash": "low" },
+  });
+  assert.equal(
+    settings.normalizeChatRuntimeControlsForProvider(trimmedWrite, {
+      providerId: "deepseek",
+      modelId: "glm-5.3-flash",
+    }).reasoning,
+    "low",
+  );
+
+  // 归一化清洗:未知供应商 key、空模型 id、非法档位值一律丢弃;modelId trim。
+  assert.deepEqual(
+    settings.normalizeChatRuntimeControls({
+      reasoningByModel: {
+        deepseek: { " glm-5.3-flash ": "max", "": "low", broken: "nonsense" },
+        not_a_provider: { "some-model": "high" },
+      },
+    }).reasoningByModel,
+    { deepseek: { "glm-5.3-flash": "max" } },
+  );
+
+  // 无 modelId 的极端兜底:退回旧语义写供应商桶。此时无档位表(解析不到
+  // 目录),写时钳制与读路径同规则回落默认档 high。
+  const noModelFallback = settings.updateChatRuntimeControlsForProvider(
+    defaults.chatRuntimeControls,
+    { reasoning: "low" },
+    { providerId: "deepseek" },
+  );
+  assert.deepEqual(noModelFallback.reasoningByModel, {});
+  assert.equal(noModelFallback.reasoningByProvider.deepseek, "high");
 });
 
 test("memory model settings only keep enabled provider models", () => {
@@ -1199,6 +1433,41 @@ test("ssh keyboard-interactive hosts normalize without credential secrets or sec
   assert.equal(payload.ssh.hosts[0].privateKeyPassphraseConfigured, false);
   assert.equal(payload.ssh.hosts[0].proxy.password, "");
   assert.equal(payload.ssh.hosts[0].proxy.passwordConfigured, true);
+});
+
+test("ssh proxy app-proxy reuse flag normalizes strictly and defaults to false", () => {
+  const appSettings = settings.normalizeSettings({
+    ssh: {
+      hosts: [
+        {
+          id: "reuse",
+          name: "Reuse",
+          host: "reuse.example.com",
+          authType: "password",
+          proxy: { useSystemProxy: true },
+        },
+        {
+          id: "manual",
+          name: "Manual",
+          host: "manual.example.com",
+          authType: "password",
+          proxy: { type: "http", url: "http://127.0.0.1", port: 8080, useSystemProxy: "yes" },
+        },
+        {
+          id: "legacy",
+          name: "Legacy",
+          host: "legacy.example.com",
+          authType: "password",
+        },
+      ],
+    },
+  });
+
+  assert.equal(appSettings.ssh.hosts[0].proxy.useSystemProxy, true);
+  // Non-boolean input must not accidentally opt a host into the app proxy.
+  assert.equal(appSettings.ssh.hosts[1].proxy.useSystemProxy, false);
+  assert.equal(appSettings.ssh.hosts[1].proxy.url, "http://127.0.0.1");
+  assert.equal(appSettings.ssh.hosts[2].proxy.useSystemProxy, false);
 });
 
 test("legacy ssh agent hosts fall back to password auth", () => {
@@ -2093,6 +2362,7 @@ test("gateway settings update payload uses sshPatch when hosts are explicitly de
           username: "",
           password: "",
           passwordConfigured: false,
+          useSystemProxy: false,
         },
       },
       after: null,
@@ -2352,6 +2622,75 @@ test("only one agent prompt template remains enabled after normalization", () =>
   );
 });
 
+test("effective prompts append or replace project prompts after the active global template", () => {
+  const appSettings = settings.normalizeSettings({
+    agents: [
+      { id: "a", name: "A", prompt: "Global A", enabled: true },
+      { id: "b", name: "B", prompt: "Global B", enabled: true },
+      { id: "c", name: "C", prompt: "Disabled", enabled: false },
+    ],
+    system: {
+      workspaceResourceSettings: {
+        "/repo/append": {
+          projectPrompt: "Project append",
+          projectPromptStrategy: "append",
+          stateVersion: 1,
+          writerId: "test",
+          updatedAt: 1,
+        },
+        "/repo/replace": {
+          projectPrompt: "Project replace",
+          projectPromptStrategy: "replace",
+          stateVersion: 1,
+          writerId: "test",
+          updatedAt: 1,
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    settings.resolveEffectivePromptSettings(appSettings, "/repo/append").prompt,
+    "Global A\n\nProject append",
+  );
+  assert.equal(
+    settings.resolveEffectivePromptSettings(appSettings, "/repo/replace").prompt,
+    "Project replace",
+  );
+  assert.equal(
+    settings.resolveEffectivePromptSettings(appSettings, "/repo/unconfigured").prompt,
+    "Global A",
+  );
+});
+
+test("project prompt updates preserve workspace Skill and MCP configuration", () => {
+  const initial = settings.normalizeSettings({
+    system: {
+      workspaceResourceSettings: {
+        "/repo": {
+          mode: "custom",
+          skillNames: ["skill-a"],
+          mcpServerIds: ["mcp-a"],
+          stateVersion: 2,
+          writerId: "test",
+          updatedAt: 1,
+        },
+      },
+    },
+  });
+  const updated = settings.updateWorkspacePromptSettings(initial, "/repo", {
+    projectPrompt: "Project",
+    projectPromptStrategy: "replace",
+  });
+  const entry = updated.system.workspaceResourceSettings["/repo"];
+
+  assert.equal(entry.mode, "custom");
+  assert.deepEqual(entry.skillNames, ["skill-a"]);
+  assert.deepEqual(entry.mcpServerIds, ["mcp-a"]);
+  assert.equal(entry.projectPrompt, "Project");
+  assert.equal(entry.projectPromptStrategy, "replace");
+});
+
 test("mcp and remote settings normalize transport, selection, ports, and tokens", () => {
   const mcp = settings.normalizeMcpSettings({
     servers: [
@@ -2401,22 +2740,55 @@ test("mcp and remote settings normalize transport, selection, ports, and tokens"
   assert.equal(remoteWithSlowHeartbeat.heartbeatInterval, 300);
 });
 
+test("mcp auth config keeps oauth with trimmed fields and drops none/invalid shapes", () => {
+  const oauth = settings.normalizeMcpServerConfig({
+    id: "srv",
+    enabled: true,
+    transport: "http",
+    url: "https://mcp.example.com/mcp",
+    auth: { type: "oauth", scope: " mcp.read mcp.write ", clientId: " cid " },
+  });
+  assert.deepEqual(oauth.auth, { type: "oauth", scope: "mcp.read mcp.write", clientId: "cid" });
+
+  const oauthBare = settings.normalizeMcpServerConfig({
+    id: "srv",
+    enabled: true,
+    transport: "http",
+    url: "https://mcp.example.com/mcp",
+    auth: { type: "oauth", scope: "  ", clientId: "" },
+  });
+  assert.deepEqual(oauthBare.auth, { type: "oauth" });
+
+  // "none"/未知/非对象 一律不落壳对象——旧配置形态零变化。
+  for (const auth of [{ type: "none" }, { type: "basic" }, "oauth", 42, null, undefined]) {
+    const normalized = settings.normalizeMcpServerConfig({
+      id: "srv",
+      enabled: true,
+      transport: "http",
+      url: "https://mcp.example.com/mcp",
+      auth,
+    });
+    assert.equal(normalized.auth, undefined);
+    assert.ok(!("auth" in normalized));
+  }
+});
+
 test("font scale settings normalize invalid values to 1 and clamp out-of-range values", () => {
   const defaults = settings.normalizeFontScaleSettings(undefined);
-  assert.deepEqual(defaults, { sidebar: 1, chat: 1, rightDock: 1 });
+  assert.deepEqual(defaults, { sidebar: 1, chat: 1, rightDock: 1, settings: 1 });
 
   const normalized = settings.normalizeFontScaleSettings({
     sidebar: "big",
     chat: 2.5,
     rightDock: 0.5,
   });
-  assert.deepEqual(normalized, { sidebar: 1, chat: 1.4, rightDock: 0.8 });
+  assert.deepEqual(normalized, { sidebar: 1, chat: 1.4, rightDock: 0.8, settings: 1 });
 
   const kept = settings.normalizeFontScaleSettings({ sidebar: 0.9, chat: 1.1, rightDock: 1.2 });
-  assert.deepEqual(kept, { sidebar: 0.9, chat: 1.1, rightDock: 1.2 });
+  assert.deepEqual(kept, { sidebar: 0.9, chat: 1.1, rightDock: 1.2, settings: 1 });
 
   const custom = settings.normalizeCustomSettings({ fontScale: { chat: 1.2 } }, []);
-  assert.deepEqual(custom.fontScale, { sidebar: 1, chat: 1.2, rightDock: 1 });
+  assert.deepEqual(custom.fontScale, { sidebar: 1, chat: 1.2, rightDock: 1, settings: 1 });
 });
 
 test("chat transcript width defaults, clamps, and updates locally", () => {
@@ -2601,8 +2973,8 @@ test("gateway sync merge keeps system proxy password against redacted payloads",
 test("xai provider model defaults come from the generated model catalog", () => {
   assert.equal(settings.getProviderModelDefaults("xai", "grok-4.5").contextWindow, 500_000);
   // 上游（models.dev）已下架的旧模型与目录未收录的模型一样吃供应商兜底值。
-  assert.equal(settings.getProviderModelDefaults("xai", "grok-3").contextWindow, 258_000);
-  assert.equal(settings.getProviderModelDefaults("xai", "grok-unknown").contextWindow, 258_000);
+  assert.equal(settings.getProviderModelDefaults("xai", "grok-3").contextWindow, 400_000);
+  assert.equal(settings.getProviderModelDefaults("xai", "grok-unknown").contextWindow, 400_000);
 });
 
 test("gateway sync keeps all desktop font families local", () => {
@@ -2630,6 +3002,23 @@ test("gateway sync keeps all desktop font families local", () => {
   assert.equal(merged.interfaceFontFamily, "Inter");
   assert.equal(merged.chatFontFamily, "Charter");
   assert.equal(merged.codeFontFamily, "Menlo");
+});
+
+test("gateway sync carries the composer context display mode across surfaces", () => {
+  // 与字体/宽度等设备本地偏好不同：展示样式是全局产品偏好，不进
+  // syncableCustomSettings 的重置清单，桌面端与 WebUI 同步生效。
+  const current = settings.normalizeSettings({});
+  for (const mode of ["ring", "both"]) {
+    const incoming = sync.buildGatewaySettingsSyncPayload(
+      settings.normalizeSettings({ customSettings: { composerContextDisplay: mode } }),
+    );
+    assert.equal(incoming.customSettings.composerContextDisplay, mode);
+    assert.equal(
+      sync.applyGatewaySettingsSyncPayload(current, incoming).customSettings
+        .composerContextDisplay,
+      mode,
+    );
+  }
 });
 
 test("degenerate catalog limits (output == context window) are clamped in the snapshot", () => {
@@ -2672,7 +3061,7 @@ test("cross-provider models resolve real catalog limits instead of provider fall
     "deepseek-v4-flash",
   );
   assert.equal(deepseekUnderClaude.contextWindow, 1_000_000);
-  assert.equal(deepseekUnderClaude.maxOutputToken, 384_000);
+  assert.equal(deepseekUnderClaude.maxOutputToken, 393_216);
   const glmUnderCodex = settings.getProviderModelDefaults("codex", "glm-4.7");
   assert.equal(glmUnderCodex.contextWindow, 204_800);
   assert.equal(glmUnderCodex.maxOutputToken, 131_072);
@@ -2737,7 +3126,7 @@ test("legacy configs without limitsSource infer catalog/fallback/user by matchin
   assert.equal(catalogMatch.limitsSource, "catalog");
   // 推断规则 2：落库值等于当前供应商兜底常量、且目录/跨供应商都查不到 → fallback。
   const fallbackMatch = settings.normalizeProviderModelConfig(
-    { id: "relay-only-model", contextWindow: 258_000, maxOutputToken: 142_000 },
+    { id: "relay-only-model", contextWindow: 400_000, maxOutputToken: 142_000 },
     "xai",
   );
   assert.equal(fallbackMatch.limitsSource, "fallback");
@@ -2789,6 +3178,21 @@ test("provider-declared limits from a fresh /v1/models response are always tagge
   );
   assert.equal(declared.contextWindow, 300_000);
   assert.equal(declared.maxOutputToken, 50_000);
+  assert.equal(declared.limitsSource, "provider");
+});
+
+test("K-brain model discovery limits accept camelCase response fields", () => {
+  const declared = settings.normalizeProviderModelConfig(
+    {
+      id: "kbrain-model",
+      contextWindow: 200_000,
+      maxOutputTokens: 64_000,
+      maxOutputToken: 32_000,
+    },
+    "codex",
+  );
+  assert.equal(declared.contextWindow, 200_000);
+  assert.equal(declared.maxOutputToken, 64_000);
   assert.equal(declared.limitsSource, "provider");
 });
 
@@ -3147,6 +3551,8 @@ test("resetting a removed workspace leaves an inherit tombstone for the same pat
           mode: "custom",
           skillNames: ["workspace-skill"],
           mcpServerIds: ["workspace-mcp"],
+          projectPrompt: "Removed project prompt",
+          projectPromptStrategy: "replace",
           stateVersion: 4,
           writerId: "old-writer",
           updatedAt: 10,
@@ -3161,6 +3567,8 @@ test("resetting a removed workspace leaves an inherit tombstone for the same pat
   assert.equal(tombstone.stateVersion, 5);
   assert.deepEqual(tombstone.skillNames, []);
   assert.deepEqual(tombstone.mcpServerIds, []);
+  assert.equal(tombstone.projectPrompt, "");
+  assert.equal(tombstone.projectPromptStrategy, "append");
   const readded = settings.resolveWorkspaceResources(reset, "/repo/removed");
   assert.ok(readded.skillNames.includes("global-skill"));
   assert.deepEqual(readded.mcpServers.map((server) => server.id), ["global-mcp"]);
@@ -3251,11 +3659,20 @@ test("workspace resource normalization expires only old inherit tombstones", () 
       writerId: "test",
       updatedAt: now,
     },
+    "/repo/project-prompt": {
+      mode: "inherit",
+      projectPrompt: "Keep project context",
+      projectPromptStrategy: "append",
+      stateVersion: 2,
+      writerId: "test",
+      updatedAt: old,
+    },
   });
   assert.equal(normalized["/repo/old-tombstone"], undefined);
   assert.equal(normalized["/repo/custom"].mode, "custom");
   assert.equal(normalized["/repo/off"].mode, "off");
   assert.equal(normalized["/repo/recent-tombstone"].mode, "inherit");
+  assert.equal(normalized["/repo/project-prompt"].projectPrompt, "Keep project context");
 });
 
 test("workspace resource overflow prefers active entries and newest tombstones deterministically", () => {
@@ -3305,4 +3722,64 @@ test("workspace resource overflow uses locale-independent Unicode code-point ord
   assert.ok(normalized["/repo/_"]);
   assert.ok(normalized["/repo/a"]);
   assert.equal(normalized["/repo/ä"], undefined);
+});
+
+
+test("sidebar shortcut migration tolerates partial and malformed preferences", () => {
+  for (const input of [null, [], "hidden", {}]) {
+    assert.deepEqual(settings.normalizeCustomSettings({ sidebarShortcuts: input }, []).sidebarShortcuts,
+      { skills: true, mcp: true, cron: true, memory: true, planning: true, "image-studio": true });
+  }
+  assert.deepEqual(settings.normalizeCustomSettings({ sidebarShortcuts: {
+    skills: false, mcp: "false", cron: null, memory: true,
+  } }, []).sidebarShortcuts, { skills: false, mcp: true, cron: true, memory: true, planning: true, "image-studio": true });
+});
+
+test("desktop snapshots synchronize sidebar shortcuts to WebUI", () => {
+  const desktop = settings.normalizeSettings({ customSettings: {
+    sidebarShortcuts: { skills: false, mcp: true, cron: false, memory: true },
+  } });
+  const web = settings.normalizeSettings({ customSettings: {
+    sidebarShortcuts: { skills: true, mcp: false, cron: true, memory: false },
+  } });
+  const snapshot = sync.buildGatewaySettingsSyncPayload(desktop);
+  assert.deepEqual(snapshot.customSettings.sidebarShortcuts, desktop.customSettings.sidebarShortcuts);
+  const hydrated = sync.applyGatewaySettingsSyncPayload(web, snapshot);
+  assert.deepEqual(hydrated.customSettings.sidebarShortcuts, desktop.customSettings.sidebarShortcuts);
+  assert.equal(sync.buildGatewaySettingsSyncUpdatePayload(desktop, hydrated).customSettings, undefined);
+});
+
+for (const resource of ["skills", "mcp", "cron", "memory", "planning", "image-studio"]) {
+  test(`WebUI ${resource} shortcut edits synchronize in both directions without changing resources`, () => {
+    let desktop = settings.normalizeSettings({});
+    let web = sync.applyGatewaySettingsSyncPayload(
+      settings.normalizeSettings({}), sync.buildGatewaySettingsSyncPayload(desktop),
+    );
+    for (const enabled of [false, true]) {
+      const edited = settings.updateCustomSettings(web, {
+        sidebarShortcuts: { ...web.customSettings.sidebarShortcuts, [resource]: enabled },
+      });
+      const update = sync.buildGatewaySettingsSyncUpdatePayload(web, edited);
+      assert.deepEqual(Object.keys(update), ["customSettings"]);
+      assert.equal(update.customSettings.sidebarShortcuts[resource], enabled);
+      const received = sync.applyGatewaySettingsSyncPayload(desktop, update);
+      assert.deepEqual(received.customSettings.sidebarShortcuts, edited.customSettings.sidebarShortcuts);
+      for (const key of ["skills", "mcp", "memory"]) {
+        assert.deepEqual(received[key], desktop[key]);
+      }
+      desktop = received;
+      web = sync.applyGatewaySettingsSyncPayload(edited, sync.buildGatewaySettingsSyncPayload(desktop));
+      assert.deepEqual(sync.buildGatewaySettingsSyncUpdatePayload(edited, web), {});
+    }
+  });
+}
+
+test("legacy gateway messages without sidebar shortcuts preserve the current preference", () => {
+  const current = settings.normalizeSettings({ customSettings: {
+    sidebarShortcuts: { skills: false, mcp: false, cron: false, memory: false },
+  } });
+  for (const incoming of [{}, { customSettings: {} }, { customSettings: { promptClarifyEnabled: false } }]) {
+    const applied = sync.applyGatewaySettingsSyncPayload(current, incoming);
+    assert.deepEqual(applied.customSettings.sidebarShortcuts, current.customSettings.sidebarShortcuts);
+  }
 });

@@ -1,5 +1,5 @@
 //! 会话级文件检查点:fs 写入类命令在落盘前把被改文件的"前像"存到
-//! `~/.liveagent/checkpoints/<conversationId>/`,供 rewind 把工作区回退到
+//! 当前 ZeroAgent profile 的 `settings/checkpoints/<conversationId>/`，供 rewind 把工作区回退到
 //! 某轮开始前的状态。
 //!
 //! 设计要点(schema v2):
@@ -150,9 +150,7 @@ fn sanitize_conversation_id(id: &str) -> Option<String> {
 }
 
 fn checkpoints_root() -> Result<PathBuf, String> {
-    let home =
-        dirs::home_dir().ok_or_else(|| "Failed to locate the user home directory".to_string())?;
-    Ok(home.join(".liveagent").join("checkpoints"))
+    Ok(crate::commands::settings::config_dir()?.join("checkpoints"))
 }
 
 fn conversation_dir(conversation_id: &str) -> Result<PathBuf, String> {
@@ -790,7 +788,7 @@ fn canonical_authorized_roots(roots: &[String]) -> Vec<PathBuf> {
 /// 被 `git init` 过。无界地走上去会把整个主目录(乃至整块盘)变成可写的回退
 /// 目标,等于把授权根开成通配符,所以这两类候选一律不采信。
 fn enclosing_repo_root(start: &Path) -> Option<PathBuf> {
-    let home = dirs::home_dir().and_then(|h| fs::canonicalize(h).ok());
+    let home = crate::runtime::data_home::home_dir().and_then(|h| fs::canonicalize(h).ok());
     let mut cursor = Some(start);
     while let Some(dir) = cursor {
         // 没有 parent 说明已经到文件系统/盘符根,不能当仓库根。

@@ -1,3 +1,4 @@
+import { accountFetch } from "./accountRequest";
 import { notifyRelaySessionExpired } from "./relay/client";
 
 export type ExecutionWorkspace = {
@@ -114,7 +115,7 @@ async function accountRequest<T>(
   init?: RequestInit,
   expireSessionOnUnauthorized = true,
 ): Promise<T> {
-  const response = await fetch(path, {
+  const response = await accountFetch(path, {
     ...init,
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
@@ -196,7 +197,7 @@ export function encodeSelectionCredential(selection: ExecutionSelection) {
 export async function validateExecutionSelection(selection: ExecutionSelection): Promise<boolean> {
   if (selection.runtime_kind !== "device_agent" || !selection.selection_lease.trim()) return false;
   try {
-    const response = await fetch("/api/status", {
+    const response = await accountFetch("/api/status", {
       credentials: "include",
       headers: {
         Accept: "application/json",

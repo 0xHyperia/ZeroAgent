@@ -39,7 +39,21 @@ const DEFAULT_WORKDIRS_FALLBACK_MS = 300_000;
 const DEFAULT_WORKDIRS_DEBOUNCE_MS = 2_000;
 const DEFAULT_POSITION_LOCK_MS = 1_200;
 
+export const WORKSPACE_HISTORY_PAGE_SIZE = 10;
+
+export type WorkspaceHistoryState = {
+  cwd: string;
+  limit: number;
+  requestedLimit: number;
+  hasMore: boolean;
+  totalCount: number;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+};
+
 export type SidebarSnapshot = {
+  workspaceHistory: ReadonlyMap<string, WorkspaceHistoryState>;
   revision: number;
   scopeKey: string;
   conversations: readonly SidebarConversation[];
@@ -76,13 +90,14 @@ export type SidebarStore = {
   prefetch(scope: SidebarScope): Promise<void>;
   refresh(options?: { reason?: SidebarRefreshReason }): Promise<void>;
   loadMore(): Promise<void>;
+  loadWorkspaceHistory(cwd: string, more?: boolean): Promise<void>;
   refreshWorkdirs(reason: SidebarWorkdirsRefreshReason): Promise<void>;
   rename(id: string, title: string): Promise<boolean>;
   setPinned(id: string, isPinned: boolean): Promise<boolean>;
   setCwd(id: string, cwd: string): Promise<boolean>;
   remove(id: string): Promise<boolean>;
   clearMutationError(id: string): void;
-  upsertLocal(conversation: SidebarConversation): void;
+  upsertLocal(conversation: SidebarConversation, options?: { reveal?: boolean }): void;
   removeLocal(conversationId: string): void;
   applyRunningPatch(patch: {
     conversationId: string;
@@ -129,6 +144,7 @@ export function createSidebarStore(
   const runningStatusUpdatedAt = new Map<string, number>();
   const positionLocks = new Map<string, number>();
   let snapshot: SidebarSnapshot = {
+    workspaceHistory: new Map(),
     revision: 0,
     scopeKey: sidebarScopeKey(scope),
     conversations: [],
@@ -156,12 +172,19 @@ export function createSidebarStore(
   // pre-disconnect loadMore failure from landing after the fresh page succeeds
   // and resurrecting a stale listError.
   let listGeneration = 0;
+  // Local upserts newer than a first-page request: that response was computed
+  // before the row existed (an edit-resend branch, a just-created session), so
+  // its absence there proves nothing. Only a request issued after the upsert
+  // may confirm or drop the row.
+  let localUpsertSeq = 0;
+  const localUpsertSeqById = new Map<string, number>();
   let loadedPageCount = 0;
   let listRequestInFlight = false;
   let queuedListRequest: { authoritative: boolean } | null = null;
   let loadMoreRequestToken: symbol | null = null;
   let workdirsInFlight = false;
   let workdirsQueued = false;
+  let workdirsRequestSeq = 0;
   let wasDisconnected = false;
   let unsubscribeEvents: (() => void) | null = null;
   let unsubscribeConnection: (() => void) | null = null;
@@ -174,6 +197,171 @@ export function createSidebarStore(
     for (const listener of listeners) {
       listener();
     }
+  };
+
+  // Each expanded project owns its limit and request. Fetch the requested
+  // prefix so pinning/deletion between clicks cannot shift an offset and skip rows.
+  let workspaceGeneration = 0;
+  let workspaceDeleteVersion = 0;
+  const workspaceDeletedIds = new Map<string, number>();
+  const loadWorkspaceHistory = async (cwd: string, more = false) => {
+    const key = workspaceProjectPathKey(cwd);
+    if (!key) return;
+    const previous = snapshot.workspaceHistory.get(key);
+    if (previous?.loading) return;
+    const limit = previous?.error
+      ? previous.requestedLimit
+      : (previous?.limit ?? WORKSPACE_HISTORY_PAGE_SIZE) +
+        (more && previous?.loaded ? WORKSPACE_HISTORY_PAGE_SIZE : 0);
+    const deleteVersion = workspaceDeleteVersion;
+    const generation = workspaceGeneration;
+    const before = byId;
+    const loading = {
+      cwd,
+      limit: previous?.limit ?? limit,
+      requestedLimit: limit,
+      hasMore: previous?.hasMore ?? false,
+      totalCount: previous?.totalCount ?? 0,
+      loaded: previous?.loaded ?? false,
+      loading: true,
+      error: null,
+    };
+    // Child effects may ask for a project before the parent starts the store.
+    // Remember that request; start() will load it once the transport is owned.
+    if (startCount === 0) {
+      commit({
+        workspaceHistory: new Map(snapshot.workspaceHistory).set(key, {
+          ...loading,
+          loading: false,
+        }),
+      });
+      return;
+    }
+    commit({ workspaceHistory: new Map(snapshot.workspaceHistory).set(key, loading) });
+    try {
+      // The gateway caps individual requests at 200. Read additional pages
+      // for larger expanded lists instead of getting stuck at that cap.
+      const pinnedCount = Array.from(byId.values()).filter(
+        (item) => workspaceProjectPathKey(item.cwd ?? "") === key && item.isPinned,
+      ).length;
+      const batchSize = Math.min(limit + pinnedCount, 200);
+      const page = await backend.listConversations(1, batchSize, { kind: "workdir", cwd });
+      let pageNumber = 1;
+      while (
+        page.items.filter((item) => !item.isPinned).length < limit &&
+        page.items.length < page.totalCount
+      ) {
+        if (generation !== workspaceGeneration) return;
+        const next = await backend.listConversations(++pageNumber, batchSize, {
+          kind: "workdir",
+          cwd,
+        });
+        page.totalCount = next.totalCount;
+        if (next.items.length === 0) break;
+        page.items.push(...next.items);
+      }
+      if (generation !== workspaceGeneration) return;
+      const incomingIds = new Set(page.items.map((item) => item.id));
+      byId = new Map(byId);
+      for (const incoming of page.items) {
+        // A concurrent event/mutation owns newer data, including deletion.
+        if (
+          (workspaceDeletedIds.get(incoming.id) ?? 0) > deleteVersion ||
+          byId.get(incoming.id) !== before.get(incoming.id) ||
+          snapshot.mutations.has(incoming.id)
+        )
+          continue;
+        byId.set(incoming.id, mergeSidebarConversation(byId.get(incoming.id), incoming));
+      }
+      if (page.items.length >= page.totalCount) {
+        for (const [id, item] of before) {
+          if (
+            workspaceProjectPathKey(item.cwd ?? "") === key &&
+            !incomingIds.has(id) &&
+            byId.get(id) === item &&
+            !item.isPending &&
+            !snapshot.mutations.has(id)
+          )
+            byId.delete(id);
+        }
+      }
+      commit({
+        byId,
+        workspaceHistory: new Map(snapshot.workspaceHistory).set(key, {
+          cwd,
+          limit,
+          requestedLimit: limit,
+          hasMore: page.items.length < page.totalCount,
+          totalCount: page.totalCount,
+          loaded: true,
+          loading: false,
+          error: null,
+        }),
+      });
+    } catch (error) {
+      if (generation !== workspaceGeneration) return;
+      commit({
+        workspaceHistory: new Map(snapshot.workspaceHistory).set(key, {
+          ...loading,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    }
+  };
+  let pinnedRequest: symbol | null = null;
+  const refreshPinnedHistory = async () => {
+    if (!backend.listPinnedConversations || startCount === 0 || pinnedRequest) return;
+    const token = Symbol();
+    pinnedRequest = token;
+    const generation = workspaceGeneration;
+    const deleteVersion = workspaceDeleteVersion;
+    const before = byId;
+    try {
+      const pinned = await backend.listPinnedConversations();
+      if (generation !== workspaceGeneration) return;
+      const ids = new Set(pinned.map((item) => item.id));
+      byId = new Map(byId);
+      for (const item of pinned) {
+        if (
+          byId.get(item.id) !== before.get(item.id) ||
+          snapshot.mutations.has(item.id) ||
+          (workspaceDeletedIds.get(item.id) ?? 0) > deleteVersion
+        )
+          continue;
+        byId.set(item.id, mergeSidebarConversation(byId.get(item.id), item));
+      }
+      for (const [id, item] of before) {
+        if (item.isPinned && !ids.has(id) && byId.get(id) === item && !snapshot.mutations.has(id))
+          byId.set(id, { ...item, isPinned: false, pinnedAt: null });
+      }
+      commit({ byId });
+    } catch (error) {
+      if (generation === workspaceGeneration)
+        commit({
+          listError: "listFailed",
+          listErrorDetail: error instanceof Error ? error.message : String(error),
+        });
+    } finally {
+      if (pinnedRequest === token) pinnedRequest = null;
+    }
+  };
+  const invalidateWorkspaceRequests = () => {
+    workspaceGeneration += 1;
+    pinnedRequest = null;
+    commit({
+      workspaceHistory: new Map(
+        Array.from(snapshot.workspaceHistory, ([key, value]) => [
+          key,
+          { ...value, loading: false },
+        ]),
+      ),
+    });
+  };
+  const refreshWorkspaceHistory = () => {
+    void refreshPinnedHistory();
+    for (const state of snapshot.workspaceHistory.values())
+      void loadWorkspaceHistory(state.cwd, false);
   };
 
   const activePositionLockIds = () => {
@@ -189,8 +377,14 @@ export function createSidebarStore(
     return ids;
   };
 
-  const retainedConversationIds = () => {
+  let revealedConversationId: string | null = null;
+
+  const retainedConversationIds = (upsertSeqAtRequest = Number.POSITIVE_INFINITY) => {
     const ids = new Set<string>(snapshot.mutations.keys());
+    for (const [id, seq] of localUpsertSeqById) {
+      if (seq > upsertSeqAtRequest) ids.add(id);
+    }
+    if (revealedConversationId) ids.add(revealedConversationId);
     for (const id of backend.getProtectedConversationIds?.() ?? []) {
       const trimmed = id.trim();
       if (trimmed) ids.add(trimmed);
@@ -305,6 +499,7 @@ export function createSidebarStore(
         return;
       }
       case "delete": {
+        workspaceDeletedIds.set(event.conversationId, ++workspaceDeleteVersion);
         if (byId.has(event.conversationId)) {
           byId = new Map(byId);
           byId.delete(event.conversationId);
@@ -399,6 +594,7 @@ export function createSidebarStore(
   const runFirstPageRequest = async (authoritative: boolean) => {
     const seq = requestSeq;
     const generation = ++listGeneration;
+    const upsertSeqAtRequest = localUpsertSeq;
     // Release the current-generation pagination gate immediately. Its
     // transport promise may still settle later, but the generation checks
     // make that result inert and a fresh page-2 request need not wait for it.
@@ -433,8 +629,12 @@ export function createSidebarStore(
         return;
       }
       const authoritativeItems = filterConversationsForScope(page.items, requestScope);
+      // Upserts this response already covers are settled by it either way.
+      for (const [id, upsertSeq] of localUpsertSeqById) {
+        if (upsertSeq <= upsertSeqAtRequest) localUpsertSeqById.delete(id);
+      }
       const reconciled = reconcileSidebarConversations(snapshot.conversations, authoritativeItems, {
-        retainConversationIds: retainedConversationIds(),
+        retainConversationIds: retainedConversationIds(upsertSeqAtRequest),
         preserveUpdatedAtConversationIds: activePositionLockIds(),
         authoritativeComplete: page.items.length < pageSize,
       });
@@ -488,11 +688,12 @@ export function createSidebarStore(
     try {
       do {
         workdirsQueued = false;
-        const seq = requestSeq;
+        // Workdirs are global; conversation scope changes cannot invalidate them.
+        const seq = workdirsRequestSeq;
         try {
           const workdirs = await backend.listWorkdirs();
-          if (seq !== requestSeq || startCount === 0) {
-            return;
+          if (seq !== workdirsRequestSeq || startCount === 0) {
+            continue;
           }
           let workdirActivity = snapshot.workdirActivity;
           for (const workdir of workdirs) {
@@ -500,6 +701,7 @@ export function createSidebarStore(
           }
           commit({ workdirs, workdirActivity });
         } catch {
+          if (seq !== workdirsRequestSeq) continue;
           // Workdir summaries are auxiliary (project ordering/activity); the
           // conversation list and the next scheduled refresh are unaffected.
           return;
@@ -713,6 +915,7 @@ export function createSidebarStore(
       unsubscribeConnection =
         backend.subscribeConnection?.((connected) => {
           if (!connected) {
+            invalidateWorkspaceRequests();
             wasDisconnected = true;
             return;
           }
@@ -720,14 +923,17 @@ export function createSidebarStore(
             wasDisconnected = false;
             void fetchFirstPage(false);
             void refreshWorkdirs("reconnect");
+            refreshWorkspaceHistory();
           }
         }) ?? null;
       reconcileTimer = setInterval(() => {
+        refreshWorkspaceHistory();
         void fetchFirstPage(false);
       }, reconcileIntervalMs);
       workdirsFallbackTimer = setInterval(() => {
         void refreshWorkdirs("fallback");
       }, workdirsFallbackMs);
+      refreshWorkspaceHistory();
       void refreshWorkdirs("initial");
       void fetchFirstPage(true);
     },
@@ -740,6 +946,7 @@ export function createSidebarStore(
       if (startCount > 0) {
         return;
       }
+      invalidateWorkspaceRequests();
       requestSeq += 1;
       listGeneration += 1;
       unsubscribeEvents?.();
@@ -760,6 +967,7 @@ export function createSidebarStore(
       }
       queuedListRequest = null;
       loadMoreRequestToken = null;
+      workdirsRequestSeq++;
       workdirsQueued = false;
       wasDisconnected = false;
     },
@@ -794,6 +1002,7 @@ export function createSidebarStore(
     prefetch,
     refresh,
     loadMore,
+    loadWorkspaceHistory,
     refreshWorkdirs,
 
     rename: (id, title) =>
@@ -861,8 +1070,14 @@ export function createSidebarStore(
       commit({ mutationErrors });
     },
 
-    upsertLocal: (conversation) => {
-      const merged = mergeSidebarConversation(byId.get(conversation.id), conversation);
+    upsertLocal: (conversation, options) => {
+      if (options?.reveal) revealedConversationId = conversation.id;
+      localUpsertSeqById.set(conversation.id, ++localUpsertSeq);
+      const existing = byId.get(conversation.id);
+      const merged = mergeSidebarConversation(
+        options?.reveal && existing ? { ...existing, cwd: conversation.cwd } : existing,
+        conversation,
+      );
       byId = new Map(byId);
       byId.set(merged.id, merged);
       const inScope = conversationMatchesScope(merged, scope);
@@ -885,6 +1100,8 @@ export function createSidebarStore(
     },
 
     removeLocal: (conversationId) => {
+      localUpsertSeqById.delete(conversationId);
+      workspaceDeletedIds.set(conversationId, ++workspaceDeleteVersion);
       if (!byId.has(conversationId)) {
         return;
       }
@@ -916,7 +1133,10 @@ export function createSidebarStore(
         const conversationId = item.conversationId.trim();
         if (!conversationId) continue;
         const hasUpdatedAt = typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt);
-        const updatedAt = hasUpdatedAt ? item.updatedAt! : now();
+        const updatedAt =
+          typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt)
+            ? item.updatedAt
+            : now();
         const statusUpdatedAt = runningStatusUpdatedAt.get(conversationId);
         const current = running.get(conversationId);
         const staleAgainstKnownStatus =

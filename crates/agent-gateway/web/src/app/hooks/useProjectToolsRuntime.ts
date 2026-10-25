@@ -17,6 +17,7 @@ type UseProjectToolsRuntimeParams = {
   statusSessionId?: string | null;
   terminalProjectPath: string;
   terminalProjectPathKey: string;
+  terminalIdentity?: { conversationId?: string; runId?: string } | null;
   rightDockFileTreeOpen: boolean;
   rightDockSshTunnelOpen: boolean;
 };
@@ -31,6 +32,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     statusSessionId,
     terminalProjectPath,
     terminalProjectPathKey,
+    terminalIdentity,
     rightDockFileTreeOpen,
     rightDockSshTunnelOpen,
   } = params;
@@ -60,6 +62,17 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     terminalSessionsVersionRef.current += 1;
     setTerminalSessions(sortTerminalSessions(sessions));
   }, []);
+
+  // 函数式变体:回调方按 React 当前值合并,而不是按 render 闭包里的快照。
+  // 两个事件在一次重渲染之间到达(SSH 面板 snapshot 紧跟 reconcile)时,
+  // 整表提交会让后者覆盖前者;这里与 dock 侧 `sessionsRef.current` 同口径。
+  const updateProjectTerminalSessions = useCallback(
+    (updater: (current: readonly TerminalSession[]) => readonly TerminalSession[]) => {
+      terminalSessionsVersionRef.current += 1;
+      setTerminalSessions((current) => sortTerminalSessions(updater(current)));
+    },
+    [],
+  );
 
   useEffect(() => {
     // Loaded flips false whenever the gates or the gateway session identity
@@ -97,7 +110,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     let cancelled = false;
     const requestVersion = terminalSessionsVersionRef.current;
     void terminalClient
-      .list()
+      .list(undefined, terminalIdentity ?? undefined)
       .then((sessions) => {
         if (!cancelled && terminalSessionsVersionRef.current === requestVersion) {
           setTerminalSessions(sortTerminalSessions(sessions));
@@ -118,6 +131,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     statusOnline,
     statusSessionId,
     terminalClient,
+    terminalIdentity,
     webTerminalSessionsEnabled,
   ]);
 
@@ -144,7 +158,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
 
     let cancelled = false;
     void terminalClient
-      .list(terminalProjectPathKey)
+      .list(terminalProjectPathKey, terminalIdentity ?? undefined)
       .then((sessions) => {
         if (cancelled) return;
         terminalSessionsVersionRef.current += 1;
@@ -162,6 +176,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     settingsSyncReady,
     statusOnline,
     terminalClient,
+    terminalIdentity,
     terminalProjectPathKey,
     webTerminalSessionsEnabled,
   ]);
@@ -182,6 +197,7 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
     terminalStatusSessionIdRef,
     projectTerminalSessions,
     handleProjectTerminalSessionsChange,
+    updateProjectTerminalSessions,
     resetTerminalSessions,
   };
 }

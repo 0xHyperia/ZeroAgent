@@ -2,56 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
-// typescript 7 (native tsc) no longer ships the JS compiler API the loader
-// needs (transpileModule/ModuleKind), so the transpile step stays on the
-// aliased typescript 6 package.
-const workspaceRequire = createRequire(path.join(process.cwd(), "package.json"));
-const helperRequire = createRequire(import.meta.url);
-
-function resolveTestDependency(id) {
-  try {
-    return workspaceRequire.resolve(id);
-  } catch {
-    return helperRequire.resolve(id);
-  }
-}
-
-const ts = workspaceRequire(resolveTestDependency("typescript-transpile"));
+import { fileURLToPath } from "node:url";
+import { Compile } from "typebox/compile";
+import { transpileTypeScriptModule } from "../../../../scripts/typescript-source-tools.mjs";
 
 const DEFAULT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
-
-// Real json-parse/validation implementations from pi-ai (imported by file URL
-// to bypass the package exports map) so argument-integrity and schema-check
-// code paths behave exactly like runtime.
-const workspacePiAiDistDir = path.join(
-  process.cwd(),
-  "node_modules/@earendil-works/pi-ai/dist",
-);
-const helperPiAiDistDir = fileURLToPath(
-  new URL("../../node_modules/@earendil-works/pi-ai/dist/", import.meta.url),
-);
-const piAiDistDir = fs.existsSync(workspacePiAiDistDir)
-  ? workspacePiAiDistDir
-  : helperPiAiDistDir;
-const piAiJsonParse = await import(
-  pathToFileURL(path.join(piAiDistDir, "utils/json-parse.js")).href
-);
-const piAiValidation = await import(
-  pathToFileURL(path.join(piAiDistDir, "utils/validation.js")).href
-);
-const piAiEventStream = await import(
-  pathToFileURL(path.join(piAiDistDir, "utils/event-stream.js")).href
-);
-const piAiRetry = await import(
-  pathToFileURL(path.join(piAiDistDir, "utils/retry.js")).href
-);
-const piAiProvidersAll = await import(
-  pathToFileURL(path.join(piAiDistDir, "providers/all.js")).href
-);
-const piAiModels = await import(
-  pathToFileURL(path.join(piAiDistDir, "models.js")).href
-);
 
 function createDefaultMocks() {
   const typeboxMock = {
@@ -96,65 +51,6 @@ function createDefaultMocks() {
   };
 
   return {
-    "@earendil-works/pi-ai": {
-      getModel(id, config = {}) {
-        return {
-          id,
-          provider: config.provider ?? "mock",
-          api: config.api ?? "mock",
-          maxTokens: config.maxTokens ?? 128_000,
-          ...config,
-        };
-      },
-      streamSimple() {
-        throw new Error("streamSimple mock was not expected to be called");
-      },
-      validateToolArguments: piAiValidation.validateToolArguments,
-      parseJsonWithRepair: piAiJsonParse.parseJsonWithRepair,
-      parseStreamingJson: piAiJsonParse.parseStreamingJson,
-      repairJson: piAiJsonParse.repairJson,
-      getSupportedThinkingLevels: piAiModels.getSupportedThinkingLevels,
-      clampThinkingLevel: piAiModels.clampThinkingLevel,
-      isRetryableAssistantError: piAiRetry.isRetryableAssistantError,
-      createAssistantMessageEventStream: piAiEventStream.createAssistantMessageEventStream,
-      EventStream: class EventStream {
-        constructor() {
-          throw new Error("EventStream mock was not expected to be constructed");
-        }
-      },
-    },
-    "@earendil-works/pi-ai/api/anthropic-messages": {
-      stream() {
-        throw new Error("stream (anthropic-messages) mock was not expected to be called");
-      },
-    },
-    "@earendil-works/pi-ai/api/openai-completions": {
-      stream() {
-        throw new Error("stream (openai-completions) mock was not expected to be called");
-      },
-    },
-    "@earendil-works/pi-ai/api/openai-responses": {
-      stream() {
-        throw new Error("stream (openai-responses) mock was not expected to be called");
-      },
-    },
-    "@earendil-works/pi-ai/api/google-generative-ai": {
-      stream() {
-        throw new Error("stream (google-generative-ai) mock was not expected to be called");
-      },
-    },
-    "@earendil-works/pi-ai/providers/all": {
-      getBuiltinModel: piAiProvidersAll.getBuiltinModel,
-      getBuiltinModels: piAiProvidersAll.getBuiltinModels,
-      getBuiltinProviders: piAiProvidersAll.getBuiltinProviders,
-    },
-    "@earendil-works/pi-ai/compat": {
-      EventStream: piAiEventStream.EventStream,
-      validateToolArguments: piAiValidation.validateToolArguments,
-      streamSimple() {
-        throw new Error("streamSimple mock was not expected to be called");
-      },
-    },
     "@tauri-apps/api/core": {
       invoke() {
         throw new Error("tauri invoke mock was not expected to be called");
@@ -220,17 +116,17 @@ export function createTsModuleLoader(options = {}) {
     : path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const hostSourceDir = path.join(rootDir, "src");
   const sharedSourceDir = fileURLToPath(new URL("../../../agent-ui/src", import.meta.url));
-  const requireFromRoot = createRequire(path.join(rootDir, "package.json"));
   const cache = new Map();
   const defaultMocks = createDefaultMocks();
   const mocks = new Map(Object.entries(defaultMocks));
-  // Tests conventionally override a mocked module by supplying only the
-  // handful of exports they care about (e.g. { getModel() {...} } for
-  // "@earendil-works/pi-ai"), expecting every other default export — like
-  // the real isRetryableAssistantError/createAssistantMessageEventStream —
-  // to keep working underneath. Shallow-merge instead of replacing so those
-  // partial overrides don't silently drop unrelated default exports.
-  for (const [specifier, override] of Object.entries(options.mocks ?? {})) {
+  const optionMocks = options.mocks ?? {};
+  // Tests often key mocks with `new URL(..., import.meta.url).pathname`. On Windows that yields
+  // "/D:/x/src/lib/host.ts" while module resolution produces "D:\x\src\lib\host.ts", so the mock
+  // silently never matched. Normalize such keys to the native path form.
+  const normalizeMockKey = (specifier) =>
+    /^\/[A-Za-z]:\//.test(specifier) ? path.normalize(decodeURIComponent(specifier.slice(1))) : specifier;
+  for (const [rawSpecifier, override] of Object.entries(optionMocks)) {
+    const specifier = normalizeMockKey(rawSpecifier);
     const base = defaultMocks[specifier];
     const isPlainMerge =
       base &&
@@ -240,6 +136,20 @@ export function createTsModuleLoader(options = {}) {
       typeof override === "object" &&
       !Array.isArray(override);
     mocks.set(specifier, isPlainMerge ? { ...base, ...override } : override);
+  }
+
+  const hostModulePath = path.join(hostSourceDir, "lib/host.ts");
+  const hasExplicitHostMock =
+    Object.keys(optionMocks).some((key) => normalizeMockKey(key) === hostModulePath) ||
+    Object.hasOwn(optionMocks, "@liveagent/app/lib/host");
+  if (Object.hasOwn(optionMocks, "@tauri-apps/api/core") && !hasExplicitHostMock) {
+    const hostModule = loadModule("src/lib/host.ts");
+    mocks.set(hostModulePath, {
+      ...hostModule,
+      isKBrainBackendEnabled: () => false,
+      isTauriHost: () => true,
+      isKBrainBrowserHost: () => false,
+    });
   }
 
   function resolveLocal(specifier, parentDir = rootDir) {
@@ -271,6 +181,9 @@ export function createTsModuleLoader(options = {}) {
     if (
       specifier.startsWith(".") ||
       path.isAbsolute(specifier) ||
+      specifier.startsWith("src/") ||
+      specifier.startsWith("test/") ||
+      specifier.startsWith("src-tauri/") ||
       specifier.startsWith("@liveagent/ui/") ||
       specifier.startsWith("@liveagent/app/") ||
       specifier.startsWith("@liveagent/adapters/")
@@ -286,10 +199,7 @@ export function createTsModuleLoader(options = {}) {
     if (mock !== undefined) return mock;
     if (specifier.endsWith(".css")) return {};
 
-    if (specifier === "@earendil-works/pi-agent-core") {
-      const packageJson = requireFromRoot.resolve("@earendil-works/pi-agent-core/package.json");
-      return loadModule(path.join(path.dirname(packageJson), "dist/agent.js"));
-    }
+
 
     const isRootRelative =
       specifier.startsWith("src/") ||
@@ -300,7 +210,7 @@ export function createTsModuleLoader(options = {}) {
       specifier.startsWith("@liveagent/adapters/");
 
     if (!isRootRelative && !specifier.startsWith(".") && !path.isAbsolute(specifier)) {
-      return requireFromRoot(specifier);
+      return createRequire(path.join(parentDir, "__liveagent_test_loader__.js"))(specifier);
     }
 
     const filePath = resolveLocal(specifier, isRootRelative ? rootDir : parentDir);
@@ -313,31 +223,7 @@ export function createTsModuleLoader(options = {}) {
     }
 
     const source = fs.readFileSync(filePath, "utf8");
-    const transpiled = ts.transpileModule(source, {
-      fileName: filePath,
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX,
-        esModuleInterop: true,
-        allowSyntheticDefaultImports: true,
-        moduleResolution: ts.ModuleResolutionKind.Node10 ?? ts.ModuleResolutionKind.NodeJs,
-        resolveJsonModule: true,
-        ignoreDeprecations: "6.0",
-      },
-      reportDiagnostics: true,
-    });
-
-    const diagnostics = transpiled.diagnostics ?? [];
-    const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
-    if (fatalDiagnostics.length > 0) {
-      const message = ts.formatDiagnosticsWithColorAndContext(fatalDiagnostics, {
-        getCanonicalFileName: (name) => name,
-        getCurrentDirectory: () => rootDir,
-        getNewLine: () => "\n",
-      });
-      throw new Error(message);
-    }
+    const outputText = transpileTypeScriptModule(source, filePath);
 
     const module = { exports: {} };
     cache.set(filePath, module);
@@ -351,9 +237,9 @@ export function createTsModuleLoader(options = {}) {
       nextSpecifier.startsWith("@liveagent/app/") ||
       nextSpecifier.startsWith("@liveagent/adapters/")
         ? resolveLocal(nextSpecifier, dirname)
-        : requireFromRoot.resolve(nextSpecifier);
+        : createRequire(path.join(dirname, "__liveagent_test_loader__.js")).resolve(nextSpecifier);
 
-    const wrapped = `(function (exports, require, module, __filename, __dirname) {\n${transpiled.outputText}\n})`;
+    const wrapped = `(function (exports, require, module, __filename, __dirname) {\n${outputText}\n})`;
     const script = new vm.Script(wrapped, { filename: filePath });
     const previousWindow = globalThis.window;
     if (typeof globalThis.window === "undefined") {
@@ -376,9 +262,18 @@ export function createTsModuleLoader(options = {}) {
     return module.exports;
   }
 
+  function validateToolArguments(tool, toolCall) {
+    const validator = Compile(tool.parameters);
+    if (!validator.Check(toolCall.arguments)) {
+      throw new Error(`Invalid arguments for ${toolCall.name}`);
+    }
+    return toolCall.arguments;
+  }
+
   return {
     rootDir,
     loadModule,
     resolveLocal,
+    validateToolArguments,
   };
 }

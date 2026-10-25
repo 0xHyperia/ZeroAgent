@@ -18,14 +18,25 @@ const adapterSources = [
   ),
 ];
 
-test("managed key copy requires USA-Zero password verification on every surface", () => {
-  for (const source of managedProviderSources) {
-    const verification = source.indexOf("await verifyRelayPassword(user.email, password)");
-    const clipboardWrite = source.indexOf("await navigator.clipboard.writeText(copyTarget.key)");
-    assert.notEqual(verification, -1);
-    assert.notEqual(clipboardWrite, -1);
-    assert.ok(verification < clipboardWrite, "password verification must precede key exposure");
-  }
+test("desktop managed key copy uses the password-bound native reveal result", () => {
+  const source = managedProviderSources[0];
+  const verification = source.indexOf("await revealRelayApiKey(copyTarget.id, password)");
+  const clipboardWrite = source.indexOf("await navigator.clipboard.writeText(value)");
+  assert.notEqual(verification, -1);
+  assert.notEqual(clipboardWrite, -1);
+  assert.ok(verification < clipboardWrite, "native key authorization must complete before clipboard exposure");
+  assert.doesNotMatch(source, /clipboard\.writeText\(copyTarget\.key\)/);
+  const client = readFileSync(new URL("../../src/lib/relay/client.ts", import.meta.url), "utf8");
+  assert.match(client, /isTauriHost\(\)\) return nativeRevealKey\(id, password\)/);
+});
+
+test("web managed key copy still requires USA-Zero password verification", () => {
+  const source = managedProviderSources[1];
+  const verification = source.indexOf("await verifyRelayPassword(user.email, password)");
+  const clipboardWrite = source.indexOf("await navigator.clipboard.writeText(copyTarget.key)");
+  assert.notEqual(verification, -1);
+  assert.notEqual(clipboardWrite, -1);
+  assert.ok(verification < clipboardWrite, "password verification must precede key exposure");
 });
 
 test("generic provider settings cannot bypass the managed USA-Zero provider boundary", () => {

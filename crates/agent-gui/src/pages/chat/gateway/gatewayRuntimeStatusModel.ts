@@ -12,16 +12,31 @@ export type GatewayRuntimeStatus = {
   lastError?: string | null;
 };
 
-export function isRemoteSettingsConfigured(remote: AppSettings["remote"]) {
-  return remote.gatewayUrl.trim() !== "";
+type GatewayFallbackSettings = Pick<
+  AppSettings["remote"],
+  "enabled" | "gatewayUrl" | "token" | "managedLocal" | "localGatewayPort" | "localGatewayToken"
+>;
+
+export function isRemoteSettingsConfigured(remote: GatewayFallbackSettings) {
+  if (remote.managedLocal) {
+    return (
+      Number.isInteger(remote.localGatewayPort) &&
+      remote.localGatewayPort >= 1 &&
+      remote.localGatewayPort <= 65_535 &&
+      remote.localGatewayToken.trim() !== ""
+    );
+  }
+  return remote.gatewayUrl.trim() !== "" && remote.token.trim() !== "";
 }
 
-export function buildFallbackGatewayStatus(remote: AppSettings["remote"]): GatewayRuntimeStatus {
+export function buildFallbackGatewayStatus(remote: GatewayFallbackSettings): GatewayRuntimeStatus {
   return {
     online: false,
     enabled: remote.enabled,
     configured: isRemoteSettingsConfigured(remote),
-    gatewayUrl: remote.gatewayUrl.trim(),
+    gatewayUrl: remote.managedLocal
+      ? `http://127.0.0.1:${remote.localGatewayPort}`
+      : remote.gatewayUrl.trim(),
     sessionId: null,
     connectedSince: null,
     lastHeartbeat: null,

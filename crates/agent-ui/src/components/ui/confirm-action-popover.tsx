@@ -11,8 +11,9 @@ export function ConfirmActionPopover(props: {
   confirmLabel: string;
   onConfirm: () => void;
   // Popover edge to align with the trigger; "end" suits right-aligned action
-  // rows (settings lists), "start" left-aligned ones (assistant reply row).
-  align?: "start" | "end";
+  // rows (settings lists), "start" left-aligned ones (assistant reply row),
+  // "center" wide self-centered triggers (e.g. the full-width stats bar row).
+  align?: "start" | "center" | "end";
   // Preferred trigger side to open from; the positioner flips on collision.
   side?: "top" | "bottom";
   // Visual intent: "destructive" (default) for irreversible actions,
@@ -49,7 +50,7 @@ export function ConfirmActionPopover(props: {
         side={side}
         align={align}
         sideOffset={6}
-        className="confirm-action-popover-popup w-64 p-0"
+        className="w-64 p-0"
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
@@ -59,13 +60,13 @@ export function ConfirmActionPopover(props: {
           <div className="flex items-start gap-2.5">
             <div
               className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                "flex size-8 shrink-0 items-center justify-center rounded-lg",
                 tone === "destructive" ? "bg-destructive/10" : "bg-primary/10",
               )}
             >
               <AlertTriangle
                 className={cn(
-                  "h-4 w-4",
+                  "size-4",
                   tone === "destructive" ? "text-destructive" : "text-primary",
                 )}
               />

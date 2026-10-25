@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const uiRoot = new URL("../../../agent-ui/src/", import.meta.url);
 
@@ -21,7 +22,6 @@ test("installed Skill card actions do not bubble into the card preview trigger",
 
 test("installed Skill cards follow the global Skills activation state", () => {
   const cardSource = readUiSource("pages/skills-hub/InstalledSkillCard.tsx");
-  const pageSource = readUiSource("pages/skills-hub/SkillsHubPage.tsx");
 
   assert.match(cardSource, /const effectivelyEnabled = skillsEnabled && checked/);
   assert.match(
@@ -29,36 +29,69 @@ test("installed Skill cards follow the global Skills activation state", () => {
     /<ResourceActivationSwitch[\s\S]*checked=\{effectivelyEnabled\}[\s\S]*disabled=\{!skillsEnabled\}/,
   );
   assert.match(cardSource, /effectivelyEnabled \? \([\s\S]*settings\.skillsHubEnabledBadge/);
-  assert.match(cardSource, /: effectivelyEnabled\s*\? "border-emerald-600\/25"/);
-  assert.match(pageSource, /<InstalledSkillCard[\s\S]*skillsEnabled=\{skillsEnabled\}/);
+  assert.match(cardSource, /!effectivelyEnabled && !alwaysEnabled && "opacity-75"/);
+  const InstalledSkillCard = () => null;
+  const { loadModule } = createTsModuleLoader({
+    mocks: {
+      "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key }) },
+      "./InstalledSkillCard": { InstalledSkillCard },
+    },
+  });
+  const { InstalledSkillsView } = loadModule(
+    "@liveagent/ui/pages/skills-hub/InstalledSkillsView.tsx",
+  );
+  function findCard(node) {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.type === InstalledSkillCard) return node;
+    const children = Array.isArray(node) ? node : [node.props?.children];
+    for (const child of children) {
+      const card = findCard(child);
+      if (card) return card;
+    }
+  }
+  for (const skillsEnabled of [false, true]) {
+    const view = InstalledSkillsView({
+      items: [{ skill: { name: "test-skill" }, categories: [] }],
+      skillsEnabled,
+      selected: new Set(["test-skill"]),
+      bulkSelection: new Set(),
+      categoryCounts: new Map(),
+      rootDir: "/skills",
+      loading: false,
+      initialContentPending: false,
+      bulkMode: false,
+      hasSkills: true,
+      loadError: null,
+      category: "all",
+      searchQuery: "",
+      filter: "",
+      deletingSkillName: null,
+      onRescan: () => {},
+      onToggle: () => {},
+      onEnterBulkMode: () => {},
+      onToggleBulkSelection: () => {},
+      onBulkCardClick: () => {},
+      onOpenPreview: () => {},
+      onDelete: () => {},
+      onSelectCategory: () => {},
+    });
+    const card = findCard(view);
+    assert.ok(card, "the installed skill must render");
+    assert.equal(card.props.skillsEnabled, skillsEnabled);
+    assert.equal(card.props.checked, true, "global activation must preserve selection");
+  }
 });
 
-test("installed Skill switches stay right-aligned while delete appears in the card footer", () => {
+test("installed Skill actions stay grouped on the right side of the resource row", () => {
   const source = readUiSource("pages/skills-hub/InstalledSkillCard.tsx");
+  const toolbarIndex = source.indexOf('data-card-action-zone=""');
   const switchIndex = source.indexOf("<ResourceActivationSwitch");
-  const footerIndex = source.indexOf(
-    '<div className="mt-3 flex min-w-0 items-center gap-2 border-t border-border pt-2">',
-  );
-  const deleteIndex = source.indexOf('data-card-delete-zone=""');
+  const deleteIndex = source.indexOf("<ConfirmDeletePopover");
 
-  assert.ok(switchIndex > -1 && switchIndex < footerIndex);
-  assert.ok(footerIndex < deleteIndex);
-  assert.match(
-    source,
-    /data-card-delete-zone=""[\s\S]*group-hover:opacity-100[\s\S]*group-focus-within:opacity-100/,
-  );
-  assert.match(
-    source,
-    /group-hover:opacity-0 group-focus-within:opacity-0 \[@media\(hover:none\)\]:opacity-0/,
-  );
-  assert.match(
-    source,
-    /pointer-events-none col-start-1 row-start-1 inline-flex[\s\S]*data-card-delete-zone=""[\s\S]*relative z-10/,
-  );
-  assert.match(
-    source,
-    /data-card-delete-zone=""[\s\S]*className="h-8 w-8 text-muted-foreground hover:bg-destructive\/10 hover:text-destructive"/,
-  );
+  assert.ok(toolbarIndex > -1 && deleteIndex > toolbarIndex && switchIndex > deleteIndex);
+  assert.match(source, /data-card-action-zone=""[\s\S]*role="toolbar"/);
+  assert.match(source, /<ConfirmDeletePopover[\s\S]*hover:bg-destructive\/10/);
+  assert.match(source, /<ResourceActivationSwitch[\s\S]*compact[\s\S]*stopPropagation/);
 });
 
 test("resource switches isolate pointer, mouse, click, and keyboard events when requested", () => {

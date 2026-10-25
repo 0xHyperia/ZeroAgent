@@ -1,6 +1,8 @@
+import type { ImageStudioClient } from "@liveagent/ui/lib/imaging/types";
 import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import type { RelayDashboardStats, RelayUser } from "../../lib/relay/client";
+import type { ReleaseAnnouncementController } from "../../lib/releaseAnnouncement";
 import type { AppSettings, SttProviderId } from "../../lib/settings";
 import type { SettingsSaveState } from "../../lib/settings/storage";
 
@@ -10,6 +12,8 @@ export type SectionId =
   | "account"
   | "system"
   | "shortcuts"
+  | "skills"
+  | "mcp"
   | "systemTools"
   | "stt"
   | "providers"
@@ -18,11 +22,23 @@ export type SectionId =
   | "memory"
   | "hooks"
   | "cron"
+  | "image-studio"
+  | "planning"
   | "remote"
+  | "cua"
   | "about";
 
+import type { SettingsHostAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
+
 export type SettingsPageProps = {
+  relayUser: RelayUser;
+  relayStats: RelayDashboardStats | null;
+  onRelayUserChange: (user: RelayUser) => void;
+  onRelayStatsChange: (stats: RelayDashboardStats) => void;
   settings: AppSettings;
+  settingsHost?: SettingsHostAdapter;
+  imageClient?: ImageStudioClient;
+  registerLeaveGuard?: (guard: () => boolean) => () => void;
   setSettings: SetSettingsFn;
   saveState: SettingsSaveState;
   onBack: () => void;
@@ -31,15 +47,27 @@ export type SettingsPageProps = {
   initialProviderId?: string;
   hiddenSections?: SectionId[];
   appUpdate: AppUpdateController;
-  relayUser: RelayUser;
-  relayStats: RelayDashboardStats | null;
-  onRelayUserChange: (user: RelayUser) => void;
-  onRelayStatsChange: (stats: RelayDashboardStats) => void;
+  releaseAnnouncement: ReleaseAnnouncementController;
   sttSettingsService: SttSettingsService;
   /** 临时切换语音输入运行供应商，不触发配置保存。 */
   onSttProviderChange?: (provider: SttProviderId) => void;
   /** 绕过 setSettings 从 SQLite 重新载入（备份还原后用，见 SettingsSectionProps）。 */
   reloadSettings?: () => Promise<void>;
+  /** 旧供应商导入被 K-brain 拒绝的记录，用于在供应商设置里给出可见提示。 */
+  rejectedLegacyProviders?: SettingsRejectedLegacyProvider[];
+  /** 用户点击“重试导入”时调用。 */
+  onRetryRejectedLegacyProviders?: () => void | Promise<void>;
+  /** 用户确认关闭提示后调用；关闭不可撤销。 */
+  onDismissRejectedLegacyProviders?: () => void;
+};
+
+/** 一条旧供应商导入失败的本地记录（与 agent-gui 的持久化结构一致）。 */
+export type SettingsRejectedLegacyProvider = {
+  id: string;
+  name: string;
+  fingerprint: string;
+  reason: string;
+  rejectedAt: number;
 };
 
 export type SettingsSectionProps = {

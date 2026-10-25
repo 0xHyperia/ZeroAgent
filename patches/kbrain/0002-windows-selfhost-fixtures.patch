@@ -1,0 +1,179 @@
+diff --git a/internal/mcp/e2e_stdio_test.go b/internal/mcp/e2e_stdio_test.go
+index 4255617e4baed26496daf9328d515cb0c12ca3ba..7f8be5f7915f93281c989d39663ee2e4e411131c 100644
+--- a/internal/mcp/e2e_stdio_test.go
++++ b/internal/mcp/e2e_stdio_test.go
+@@ -4,8 +4,7 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"os"
+-	"os/exec"
+-	"path/filepath"
++	"runtime"
+ 	"strings"
+ 	"testing"
+ 	"time"
+@@ -15,12 +14,11 @@ func TestStdioServerEndToEnd(t *testing.T) {
+ 	if os.Getenv("K_BRAIN_TEST_SELFHOST") == "" {
+ 		t.Skip("set K_BRAIN_TEST_SELFHOST=1 to run")
+ 	}
+-	bin := filepath.Join(t.TempDir(), "k-brain")
+-	if out, err := exec.CommandContext(context.Background(), "go", "build", "-o", bin, "../../cmd/kn").CombinedOutput(); err != nil {
+-		t.Fatalf("build: %v\n%s", err, out)
+-	}
++	bin := selfHostBinary(t)
+ 
+ 	m := NewManager(map[string]ServerConfig{"self": {Command: []string{bin, "mcp", "serve"}}})
++	t.Cleanup(m.Close)
++	t.Log("starting compiled self-host MCP session")
+ 	m.Start(context.Background())
+ 	s := m.servers["self"]
+ 	select {
+@@ -43,7 +41,11 @@ func TestStdioServerEndToEnd(t *testing.T) {
+ 		t.Error("post-Close status should not be ready")
+ 	}
+ 
+-	m2 := NewManager(map[string]ServerConfig{"bad": {Command: []string{"sh", "-c", "echo dying-loudly >&2; exit 1"}, StartupTimeout: 5}})
++	badCommand := []string{"sh", "-c", "echo dying-loudly >&2; exit 1"}
++	if runtime.GOOS == "windows" {
++		badCommand = []string{"cmd.exe", "/d", "/c", "echo dying-loudly 1>&2 & exit /b 1"}
++	}
++	m2 := NewManager(map[string]ServerConfig{"bad": {Command: badCommand, StartupTimeout: 5}})
+ 	m2.Start(context.Background())
+ 	defer m2.Close()
+ 	s2 := m2.servers["bad"]
+diff --git a/internal/mcp/selfhost_fixture_test.go b/internal/mcp/selfhost_fixture_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8f09f7c0be265b04ad89536dbd2816153be4a51
+--- /dev/null
++++ b/internal/mcp/selfhost_fixture_test.go
+@@ -0,0 +1,65 @@
++package mcp
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"runtime"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++const selfHostFixturePrefix = "kbrain-selfhost-fixture-"
++
++var selfHostBuild struct {
++	once              sync.Once
++	directory, binary string
++	err               error
++}
++
++func TestMain(m *testing.M) {
++	code := m.Run()
++	if selfHostBuild.directory != "" {
++		directory, err := filepath.Abs(selfHostBuild.directory)
++		temporary, tempErr := filepath.Abs(os.TempDir())
++		if err != nil || tempErr != nil || filepath.Dir(directory) != filepath.Clean(temporary) || !strings.HasPrefix(filepath.Base(directory), selfHostFixturePrefix) {
++			fmt.Fprintln(os.Stderr, "refusing to remove an unowned self-host fixture directory")
++			code = 1
++		} else if err := os.RemoveAll(directory); err != nil {
++			fmt.Fprintln(os.Stderr, "failed to remove the owned self-host fixture directory")
++			code = 1
++		}
++	}
++	os.Exit(code)
++}
++
++func selfHostBinary(t *testing.T) string {
++	t.Helper()
++	selfHostBuild.once.Do(func() {
++		t.Log("building shared self-host CLI with CGO=0, trimpath and production stripped linking")
++		started := time.Now()
++		selfHostBuild.directory, selfHostBuild.err = os.MkdirTemp("", selfHostFixturePrefix)
++		if selfHostBuild.err != nil {
++			return
++		}
++		selfHostBuild.binary = filepath.Join(selfHostBuild.directory, "k-brain")
++		if runtime.GOOS == "windows" {
++			selfHostBuild.binary += ".exe"
++		}
++		command := exec.CommandContext(context.Background(), "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", selfHostBuild.binary, "../../cmd/kn")
++		command.Env = append(os.Environ(), "CGO_ENABLED=0")
++		if out, err := command.CombinedOutput(); err != nil {
++			selfHostBuild.err = fmt.Errorf("build self-host CLI: %w\n%s", err, out)
++			return
++		}
++		t.Logf("shared self-host CLI built in %s", time.Since(started))
++	})
++	if selfHostBuild.err != nil {
++		t.Fatal(selfHostBuild.err)
++	}
++	return selfHostBuild.binary
++}
+diff --git a/internal/mcp/selfhost_test.go b/internal/mcp/selfhost_test.go
+index 9d5013bfad336a76f60642b7e65e70b3ef9474fd..caa0b8219ab84e3680ef4b6fa20f9b1219ca391f 100644
+--- a/internal/mcp/selfhost_test.go
++++ b/internal/mcp/selfhost_test.go
+@@ -4,8 +4,6 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"os"
+-	"os/exec"
+-	"path/filepath"
+ 	"strings"
+ 	"testing"
+ 	"time"
+@@ -15,11 +13,9 @@ func TestServeSelfHost(t *testing.T) {
+ 	if os.Getenv("K_BRAIN_TEST_SELFHOST") == "" {
+ 		t.Skip("builds the k-brain binary; set K_BRAIN_TEST_SELFHOST=1 to run")
+ 	}
+-	bin := filepath.Join(t.TempDir(), "k-brain")
+-	if out, err := exec.CommandContext(context.Background(), "go", "build", "-o", bin, "../../cmd/kn").CombinedOutput(); err != nil {
+-		t.Fatalf("build: %v\n%s", err, out)
+-	}
++	bin := selfHostBinary(t)
+ 	m := NewManager(map[string]ServerConfig{"self": {Command: []string{bin, "mcp", "serve"}, StartupTimeout: 15, ToolTimeout: 15}})
++	t.Log("starting compiled self-host MCP session")
+ 	m.Start(context.Background())
+ 	t.Cleanup(m.Close)
+ 	s := m.servers["self"]
+diff --git a/internal/mcp/serve_test.go b/internal/mcp/serve_test.go
+index fa456b8e33c2ac4f12de24bc4efad49d2ab23d32..d90ed3788f77efc641e12b5ee1a47feee3e10d93 100644
+--- a/internal/mcp/serve_test.go
++++ b/internal/mcp/serve_test.go
+@@ -29,12 +29,16 @@ func TestServeInProcess(t *testing.T) {
+ 	t.Cleanup(func() {
+ 		cancel()
+ 		_ = inW.Close()
++		_ = outW.Close()
++		_ = outR.Close()
+ 		select {
+ 		case <-done:
+ 		case <-time.After(10 * time.Second):
+ 			t.Error("Serve did not return after stdin close + cancel")
+ 		}
+ 		os.Stdin, os.Stdout = oldIn, oldOut
++		_ = inR.Close()
++		_ = outW.Close()
+ 	})
+ 
+ 	cli := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "test-client", Version: "0"}, nil)
+@@ -42,7 +46,15 @@ func TestServeInProcess(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatalf("connect: %v", err)
+ 	}
+-	defer func() { _ = cs.Close() }()
++	defer func() {
++		// Close both fixture-owned write peers before read-side Close on
++		// Windows, where a synchronous pipe read can hold File.Close waiting.
++		cancel()
++		_ = inW.Close()
++		_ = outW.Close()
++		_ = outR.Close()
++		_ = cs.Close()
++	}()
+ 
+ 	list, err := cs.ListTools(ctx, nil)
+ 	if err != nil {

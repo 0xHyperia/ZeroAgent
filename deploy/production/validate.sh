@@ -9,5 +9,14 @@ fi
 trap '$network_created && docker network rm usa0-edge >/dev/null 2>&1 || true' EXIT
 ENV_FILE="$dir/.env.example" docker compose --env-file "$dir/.env.example" -f "$dir/compose.yaml" config --quiet
 grep -Eq '^APP_IMAGE=.*@sha256:' "$dir/.env.example"
-! rg -n 'ports:' "$dir/compose.yaml"
+if grep -n 'ports:' "$dir/compose.yaml"; then
+  echo "production compose must not publish host ports" >&2
+  exit 1
+else
+  ports_status=$?
+  if [ "$ports_status" -ne 1 ]; then
+    echo "could not inspect production compose for published ports" >&2
+    exit "$ports_status"
+  fi
+fi
 echo "zeroagent production deploy assets are valid"

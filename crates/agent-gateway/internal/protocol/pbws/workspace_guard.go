@@ -33,21 +33,14 @@ func normalizeRemoteWorkspacePath(value string) (string, bool) {
 	return strings.ToLower(strings.TrimRight(prefix+strings.Join(clean, "/"), "/")), true
 }
 
-func (c *browserConn) workspaceAllows(workdir string) bool {
+// SelectionAllowsWorkdir applies the same published-project boundary to WS and HTTP uploads.
+func SelectionAllowsWorkdir(lease *account.SelectionLease, workspaces []account.Workspace, workdir string) bool {
 	normalized, ok := normalizeRemoteWorkspacePath(workdir)
-	if !ok || normalized == "" {
+	if !ok || normalized == "" || lease == nil {
 		return false
 	}
-	workspaces := c.allowedWorkspaces
-	if c.srv != nil && c.srv.accounts != nil && strings.TrimSpace(c.boundAgentID) != "" {
-		current, err := c.srv.accounts.AgentWorkspaces(context.Background(), c.boundAgentID)
-		if err != nil {
-			return false
-		}
-		workspaces = current
-	}
 	for _, workspace := range workspaces {
-		if c.selectionScope == account.SelectionScopeWorkspace && workspace.ID != c.workspaceID {
+		if lease.EffectiveScope() == account.SelectionScopeWorkspace && workspace.ID != lease.WorkspaceID {
 			continue
 		}
 		candidate, candidateOK := normalizeRemoteWorkspacePath(workspace.Path)
@@ -56,6 +49,18 @@ func (c *browserConn) workspaceAllows(workdir string) bool {
 		}
 	}
 	return false
+}
+
+func (c *browserConn) workspaceAllows(workdir string) bool {
+	workspaces := c.allowedWorkspaces
+	if c.srv != nil && c.srv.accounts != nil && strings.TrimSpace(c.boundAgentID) != "" {
+		current, err := c.srv.accounts.AgentWorkspaces(context.Background(), c.boundAgentID)
+		if err != nil {
+			return false
+		}
+		workspaces = current
+	}
+	return SelectionAllowsWorkdir(&account.SelectionLease{Scope: c.selectionScope, WorkspaceID: c.workspaceID}, workspaces, workdir)
 }
 
 func (c *browserConn) vetChatWorkdir(workdir string) error {

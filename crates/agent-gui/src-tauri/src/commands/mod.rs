@@ -6,14 +6,19 @@ pub mod automation_commands;
 pub mod config_commands;
 #[path = "history/mod.rs"]
 pub mod history_commands;
+#[cfg(desktop)]
+pub mod image_export;
 #[path = "integration/mod.rs"]
 pub mod integration_commands;
+pub mod planning;
 #[path = "runtime/mod.rs"]
 pub mod runtime_commands;
 #[path = "workspace/mod.rs"]
 pub mod workspace_commands;
 
 pub use app_commands::app;
+pub use app_commands::fonts;
+pub use app_commands::proxy_detect;
 pub use app_commands::system;
 #[cfg(desktop)]
 pub use app_commands::tray;
@@ -28,8 +33,11 @@ pub use history_commands::chat_history;
 pub use history_commands::history_db;
 pub use history_commands::subagent_store;
 
+pub use integration_commands::browser;
+pub use integration_commands::cua_driver;
 pub use integration_commands::gateway;
 pub use integration_commands::mcp;
+pub use integration_commands::mcp_oauth;
 pub use integration_commands::memory;
 
 pub use runtime_commands::process;

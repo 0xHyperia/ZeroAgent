@@ -205,18 +205,86 @@ test("uploaded file helpers preserve display text and strip model-hidden metadat
     ["assets/diagram.png", 3 * 1024 * 1024],
   ]);
 
-  const message = uploadedFiles.createUserMessageWithUploads(" Please review ", [fileA], 1234);
+  const referencedConversation = {
+    id: "conversation-source",
+    title: "Source conversation",
+    cwd: "/workspace/source",
+  };
+  const message = uploadedFiles.createUserMessageWithUploads(
+    " Please review ",
+    [fileA],
+    1234,
+    [referencedConversation],
+  );
   assert.ok(message);
   assert.equal(message.role, "user");
   assert.equal(message.timestamp, 1234);
   assert.equal(uploadedFiles.getUserMessageDisplayText(message), " Please review ");
   assert.deepEqual(uploadedFiles.getUserMessageAttachments(message), [fileA]);
+  assert.deepEqual(uploadedFiles.getUserMessageReferencedConversations(message), [
+    referencedConversation,
+  ]);
   assert.match(message.content, /The user attached the files below/);
   assert.match(message.content, /Use Read with these exact paths/);
+  assert.match(message.content, /keep paging/);
+  assert.match(message.content, /\/workspace\/src\/App\.tsx \(text, 2 KB\)/);
+  assert.equal(
+    uploadedFiles.formatUploadedFileInstructionLine(fileA),
+    "- /workspace/src/App.tsx (text, 2 KB)",
+  );
+  assert.equal(
+    uploadedFiles.matchesUploadedFileInstructionLine(
+      "- /workspace/src/App.tsx (text, 2 KB)",
+      fileA,
+    ),
+    true,
+  );
+  assert.equal(
+    uploadedFiles.matchesUploadedFileInstructionLine("- /workspace/src/App.tsx (text)", fileA),
+    true,
+  );
+
+  const projected = conversationState.createConversationStateFromContext({
+    messages: [message],
+  });
+  assert.deepEqual(projected.transcript.items[0].referencedConversations, [
+    referencedConversation,
+  ]);
 
   const stripped = uploadedFiles.stripUploadedFilesMessageMetadata(message);
   assert.equal(uploadedFiles.getUserMessageDisplayText(stripped), message.content);
   assert.deepEqual(uploadedFiles.getUserMessageAttachments(stripped), []);
+  assert.deepEqual(uploadedFiles.getUserMessageReferencedConversations(stripped), []);
+});
+
+test("uploaded file merge prefers stable dedupe keys over staging paths", () => {
+  const current = {
+    ...fileC,
+    relativePath: "uploads/first/report.docx",
+    dedupeKey: "content:report.docx:abc",
+  };
+  const replacement = {
+    ...fileC,
+    relativePath: "uploads/second/report.docx",
+    absolutePath: "/Users/me/.liveagent/uploads/2/report.docx",
+    dedupeKey: "content:report.docx:abc",
+  };
+  const differentContent = {
+    ...replacement,
+    relativePath: "uploads/third/report.docx",
+    dedupeKey: "content:report.docx:def",
+  };
+
+  const merged = uploadedFiles.mergePendingUploadedFilesWithStats(
+    [current],
+    [replacement, differentContent],
+  );
+
+  assert.equal(merged.duplicateCount, 1);
+  assert.deepEqual(
+    merged.files.map((file) => file.relativePath),
+    ["uploads/second/report.docx", "uploads/third/report.docx"],
+  );
 });
 
 test("request context can preserve uploaded file metadata for native provider adapters", () => {
@@ -268,9 +336,9 @@ test("uploaded file helpers preserve office and archive attachment kinds", () =>
     },
   ]);
   assert.ok(message);
-  assert.match(message.content, /\/\.liveagent\/uploads\/1\/report\.docx \(word\)/);
-  assert.match(message.content, /\/\.liveagent\/uploads\/1\/workbook\.xlsx \(spreadsheet\)/);
-  assert.match(message.content, /\/\.liveagent\/uploads\/1\/assets\.zip \(archive\)/);
+  assert.match(message.content, /\/\.liveagent\/uploads\/1\/report\.docx \(word, 4 KB\)/);
+  assert.match(message.content, /\/\.liveagent\/uploads\/1\/workbook\.xlsx \(spreadsheet, 8 KB\)/);
+  assert.match(message.content, /\/\.liveagent\/uploads\/1\/assets\.zip \(archive, 16 KB\)/);
   assert.deepEqual(
     uploadedFiles.getUserMessageAttachments(message).map((file) => file.kind),
     ["word", "spreadsheet", "archive"],
@@ -375,7 +443,6 @@ test("UI message builder groups assistant rounds and attaches matching tool resu
       api: "openai-responses",
       stopReason: "stop",
       usage: { totalTokens: 42 },
-      liveAgentContextUsage: { totalTokens: 84, fixedTokens: 20 },
       timestamp: 4,
     },
   ];
@@ -388,8 +455,37 @@ test("UI message builder groups assistant rounds and attaches matching tool resu
   assert.equal(ui[1].rounds.length, 2);
   assert.equal(uiMessages.getRoundThinkingText(ui[1].rounds[0]), "checking");
   assert.equal(uiMessages.getRoundToolTrace(ui[1].rounds[0])[0].toolResult.content[0].text, "file contents");
-  assert.equal(ui[1].rounds[1].meta.usageTotalTokens, 42);
-  assert.equal(ui[1].rounds[1].meta.contextUsageTokens, 84);
+  // meta 只携带原始事实（usage/stopReason），用量环锚点在读取时现算。
+  assert.equal(ui[1].rounds[1].meta.usage.totalTokens, 42);
+  assert.equal(ui[1].rounds[1].meta.stopReason, "stop");
+  assert.equal("usageTotalTokens" in ui[1].rounds[1].meta, false);
+  assert.equal("contextUsageTokens" in ui[1].rounds[1].meta, false);
+});
+
+test("UI message builder stores Responses reasoning replay units on thinking blocks", () => {
+  const signature = JSON.stringify({
+    id: "rs_1",
+    type: "reasoning",
+    encrypted_content: "A".repeat(800),
+  });
+  const ui = uiMessages.buildUiMessages([
+    { role: "user", content: "hi", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "short", thinkingSignature: signature },
+        { type: "text", text: "ok" },
+      ],
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      api: "openai-responses",
+      stopReason: "stop",
+      timestamp: 2,
+    },
+  ]);
+  const thinking = ui[1].rounds[0].blocks.find((block) => block.kind === "thinking");
+  assert.equal(thinking.text, "short");
+  assert.ok(thinking.replayTokenUnits > 100, `replayTokenUnits=${thinking.replayTokenUnits}`);
 });
 
 test("UI message builder preserves provider hosted search blocks", () => {

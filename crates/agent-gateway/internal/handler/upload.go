@@ -16,6 +16,7 @@ const maxReadableUploadBytes int64 = 100 << 20 // 100 MiB
 func ImportReadableFiles(
 	sm *session.Manager,
 	requestTimeout time.Duration,
+	authorizeWorkdir func(string) bool,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
@@ -46,6 +47,11 @@ func ImportReadableFiles(
 		workdir := strings.TrimSpace(r.FormValue("workdir"))
 		if workdir == "" {
 			writeError(w, http.StatusBadRequest, "workdir is required")
+			return
+		}
+
+		if authorizeWorkdir != nil && !authorizeWorkdir(workdir) {
+			writeError(w, http.StatusForbidden, "workdir is outside the selected device projects")
 			return
 		}
 
@@ -122,6 +128,7 @@ func ImportReadableFiles(
 			files = append(files, map[string]any{
 				"relativePath": file.GetRelativePath(),
 				"absolutePath": file.GetAbsolutePath(),
+				"dedupeKey":    file.GetDedupeKey(),
 				"fileName":     file.GetFileName(),
 				"kind":         file.GetKind(),
 				"sizeBytes":    file.GetSizeBytes(),

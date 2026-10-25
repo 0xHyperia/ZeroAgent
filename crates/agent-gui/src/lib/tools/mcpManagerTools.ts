@@ -1,8 +1,9 @@
-import type { Tool, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Tool, ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
+import { invoke } from "@liveagent/app/shims/tauriCore";
 import type { SystemToolRuntimeScope } from "@liveagent/ui/lib/tools/systemToolOptions";
-import { invoke } from "@tauri-apps/api/core";
 import { Type } from "typebox";
 import {
+  type McpAuthConfig,
   type McpServerConfig,
   type McpSettings,
   type McpSettingsOp,
@@ -60,6 +61,8 @@ type McpRuntimeTestResponse = {
   tools: McpDiagnosticToolInfo[];
   error?: string | null;
   stderrTail?: string | null;
+  /** 实际使用的 MCP 协议版本：modern（如 2026-07-28）或 legacy 握手协商结果。 */
+  protocolVersion?: string | null;
 };
 
 type McpStopServerResponse = {
@@ -114,6 +117,30 @@ const RUNTIME_CONNECTING_ACTIONS = new Set<McpManagerAction>([
 
 const MCP_STRING_MAP_SCHEMA = Type.Record(Type.String(), Type.String());
 
+// OAuth 2.1 auth for http/sse servers. token/client_secret never live here —
+// only the non-secret config does (type/scope/clientId); credentials are held
+// by the Rust keychain store. Kept in sync with McpAuthConfig in settings/types.
+const MCP_AUTH_PARAMETERS = Type.Object(
+  {
+    type: Type.Union([Type.Literal("none"), Type.Literal("oauth")]),
+    scope: Type.Optional(
+      Type.String({
+        description:
+          "Optional space-separated OAuth scopes overriding the server's advertised set.",
+      }),
+    ),
+    clientId: Type.Optional(
+      Type.String({
+        description: "Optional static OAuth client_id; omit to use RFC 7591 dynamic registration.",
+      }),
+    ),
+  },
+  {
+    description:
+      "Optional OAuth 2.1 auth for http/sse servers. Authorization itself is a desktop-only user gesture; this only stores the non-secret config. No credentials are ever accepted or returned here.",
+  },
+);
+
 const MCP_SERVER_PARAMETERS = Type.Object(
   {
     id: Type.Optional(Type.String()),
@@ -140,8 +167,9 @@ const MCP_SERVER_PARAMETERS = Type.Object(
     headers: Type.Optional(MCP_STRING_MAP_SCHEMA),
     timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     messageUrl: Type.Optional(Type.String()),
+    auth: Type.Optional(MCP_AUTH_PARAMETERS),
   },
-  { description: "Full MCP Server config for create/test/validate." } as any,
+  { description: "Full MCP Server config for create/test/validate." },
 );
 
 const MCP_SERVER_PATCH_PARAMETERS = Type.Object(
@@ -169,8 +197,9 @@ const MCP_SERVER_PATCH_PARAMETERS = Type.Object(
     headers: Type.Optional(MCP_STRING_MAP_SCHEMA),
     timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     messageUrl: Type.Optional(Type.String()),
+    auth: Type.Optional(MCP_AUTH_PARAMETERS),
   },
-  { description: "Partial MCP Server config for update. The id field cannot be changed." } as any,
+  { description: "Partial MCP Server config for update. The id field cannot be changed." },
 );
 
 const MCP_MANAGER_PARAMETERS = Type.Object({
@@ -296,6 +325,9 @@ function validateRawServerShape(raw: Record<string, unknown>, label: string) {
   if (Object.hasOwn(raw, "headers")) {
     normalizeStringMap(raw.headers, `${label}.headers`);
   }
+  if (Object.hasOwn(raw, "auth")) {
+    normalizeAuthInput(raw.auth, `${label}.auth`);
+  }
 }
 
 function normalizePatch(input: unknown): Partial<McpServerConfig> {
@@ -342,6 +374,9 @@ function normalizePatch(input: unknown): Partial<McpServerConfig> {
           `McpManager.patch.${key}`,
         );
         break;
+      case "auth":
+        patch.auth = normalizeAuthInput(value, "McpManager.patch.auth");
+        break;
       case "timeoutMs": {
         const numeric = typeof value === "number" ? value : Number(value);
         if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -372,6 +407,34 @@ function normalizeStringMap(value: unknown, label: string): Record<string, strin
     out[normalizedKey] = rawValue.trim();
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// Mirror of normalizeMcpAuthConfig in settings: only `type:"oauth"` is stored;
+// "none"/undefined collapses to no auth so the server config stays at its
+// current (static-headers) behavior. Secrets never pass through here.
+function normalizeAuthInput(value: unknown, label: string): McpAuthConfig | undefined {
+  if (value === null || typeof value === "undefined") return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  const obj = value as Record<string, unknown>;
+  if (Object.hasOwn(obj, "type") && obj.type !== "none" && obj.type !== "oauth") {
+    throw new Error(`${label}.type must be one of: none, oauth.`);
+  }
+  if (obj.type !== "oauth") return undefined;
+  if (Object.hasOwn(obj, "scope") && typeof obj.scope !== "string") {
+    throw new Error(`${label}.scope must be a string.`);
+  }
+  if (Object.hasOwn(obj, "clientId") && typeof obj.clientId !== "string") {
+    throw new Error(`${label}.clientId must be a string.`);
+  }
+  const scope = typeof obj.scope === "string" ? obj.scope.trim() : "";
+  const clientId = typeof obj.clientId === "string" ? obj.clientId.trim() : "";
+  return {
+    type: "oauth",
+    ...(scope ? { scope } : {}),
+    ...(clientId ? { clientId } : {}),
+  };
 }
 
 function validateUrl(value: string, label: string, base?: string) {
@@ -465,7 +528,7 @@ async function stopRuntime(serverId: string, warnings: string[]) {
   try {
     const stopped = await invoke<McpStopServerResponse>("mcp_stop_server", {
       server_id: serverId,
-    } as any);
+    });
     return stopped.stopped;
   } catch (err) {
     warnings.push(`failed to stop runtime for ${serverId}: ${asErrorMessage(err)}`);
@@ -474,7 +537,7 @@ async function stopRuntime(serverId: string, warnings: string[]) {
 }
 
 async function runtimeStatus(serverId: string) {
-  return invoke<McpRuntimeStatus>("mcp_runtime_status", { server_id: serverId } as any);
+  return invoke<McpRuntimeStatus>("mcp_runtime_status", { server_id: serverId });
 }
 
 async function runtimeTest(
@@ -487,7 +550,7 @@ async function runtimeTest(
     server,
     include_schema: includeSchema,
     persist,
-  } as any);
+  });
 }
 
 function applyRuntimeTestOutputOptions(
@@ -534,6 +597,7 @@ function formatServerLine(server: McpServerConfig) {
   const metadata = [
     server.description ? `description=${JSON.stringify(server.description)}` : null,
     server.docsUrl ? `docsUrl=${JSON.stringify(server.docsUrl)}` : null,
+    server.auth?.type === "oauth" ? "auth=oauth" : null,
   ].filter(Boolean);
   const suffix = metadata.length > 0 ? ` | ${metadata.join(" | ")}` : "";
   return `- ${server.id} | transport=${server.transport} | enabled=${server.enabled ? "true" : "false"}${suffix}`;
@@ -567,6 +631,7 @@ function formatMcpManagerResult(result: McpManagerExecutionResult) {
       `test=${result.test.ok ? "ok" : "failed"} phase=${result.test.phase} durationMs=${result.test.durationMs}`,
     );
     lines.push(`tools=${result.test.toolsCount}`);
+    if (result.test.protocolVersion) lines.push(`protocolVersion=${result.test.protocolVersion}`);
     if (result.test.error) lines.push(`error=${result.test.error}`);
     if (result.test.stderrTail) lines.push(result.test.stderrTail);
   }
@@ -880,9 +945,20 @@ export function createMcpManagerTools(params: {
 
     if (action === "delete") {
       const serverId = requireServerId(args.server_id);
+      const deleted = requireExistingServer(currentSettings(), serverId);
       commitDelete(serverId);
       const runtimeWarnings: string[] = [];
       const stopped = await stopRuntimeAfterCommit([serverId], runtimeWarnings, signal);
+      // OAuth server：卸载即清 keychain 条目（roadmap 验收项）；best effort。
+      if (deleted.auth?.type === "oauth") {
+        try {
+          await invoke("mcp_oauth_clear", { server_id: serverId });
+        } catch (err) {
+          runtimeWarnings.push(
+            `failed to clear OAuth credentials for ${serverId}: ${asErrorMessage(err)}`,
+          );
+        }
+      }
       return { action, serverId, changed: true, stopped, runtimeWarnings };
     }
 
@@ -919,7 +995,7 @@ export function createMcpManagerTools(params: {
       const serverId = requireServerId(args.server_id);
       const stopped = await invoke<McpStopServerResponse>("mcp_stop_server", {
         server_id: serverId,
-      } as any);
+      });
       return { action, serverId, stopped: stopped.stopped, changed: false };
     }
 

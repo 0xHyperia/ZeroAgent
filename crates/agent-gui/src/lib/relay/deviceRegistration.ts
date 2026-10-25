@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isTauriHost } from "../host";
+import { accountStorageScope } from "../kbrain/profile";
 import type { AppSettings } from "../settings";
 import { getRelayCurrentUser, getValidRelayAccessToken, RELAY_ORIGIN } from "./client";
 import { desktopRequest } from "./desktopRequest";
 import { getInstallationID } from "./installation";
+import { nativeSessionHandle, requireNativeSession } from "./nativeSession";
 
 export type CredentialRecord = {
   agentId?: string;
@@ -20,7 +23,7 @@ function effectiveAgentToken(record: CredentialRecord | null) {
 }
 
 export function deviceCredentialAccountScope(userId: number) {
-  return `${RELAY_ORIGIN}|user:${userId}`;
+  return accountStorageScope(RELAY_ORIGIN, userId);
 }
 
 async function currentAccountScope() {
@@ -33,6 +36,23 @@ async function currentAccountScope() {
 
 export async function registerDesktopDevice(settings: AppSettings) {
   if (!settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return null;
+  if (isTauriHost()) {
+    const session = await requireNativeSession();
+    const origin = new URL(settings.remote.gatewayUrl);
+    if (settings.remote.gatewayPort > 0) origin.port = String(settings.remote.gatewayPort);
+    const device = await invoke<{ id: string; agent_id?: string }>("account_device_register", {
+      request: {
+        sessionHandle: session.sessionHandle,
+        origin: origin.origin,
+        installationId: getInstallationID(),
+        platform: navigator.platform || "desktop",
+        version: "",
+      },
+    });
+    if (nativeSessionHandle() !== session.sessionHandle)
+      throw new Error("USA-Zero account session changed");
+    return device;
+  }
   await getValidRelayAccessToken();
   const accountScope = await currentAccountScope();
   await invoke("device_credential_activate", { accountScope });
@@ -85,6 +105,13 @@ export async function registerDesktopDevice(settings: AppSettings) {
 }
 
 export async function rotateDesktopAgentToken(settings: AppSettings, agentId: string) {
+  if (isTauriHost()) {
+    const session = await requireNativeSession();
+    await invoke("account_device_rotate", { sessionHandle: session.sessionHandle, agentId });
+    if (nativeSessionHandle() !== session.sessionHandle)
+      throw new Error("USA-Zero account session changed");
+    return;
+  }
   await getValidRelayAccessToken();
   const accountScope = await currentAccountScope();
   await invoke("device_credential_activate", { accountScope });

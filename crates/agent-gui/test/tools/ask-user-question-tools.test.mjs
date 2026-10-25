@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateToolArguments } from "@earendil-works/pi-ai";
 import * as typebox from "typebox";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
+
+const validateToolArguments = (tool, toolCall) =>
+  createTsModuleLoader({ mocks: { typebox } }).validateToolArguments(tool, toolCall);
 
 function loadModules() {
   const loader = createTsModuleLoader({ mocks: { typebox } });
@@ -105,14 +107,15 @@ test("parseAskUserQuestionItems enforces limits, ids, and single recommendation"
     /duplicate question id/,
   );
 
-  // 同一轮各题选项数必须一致。
-  assert.throws(
-    () =>
-      shared.parseAskUserQuestionItems([
-        { prompt: "三个选项", options: [{ label: "a" }, { label: "b" }, { label: "c" }] },
-        { prompt: "两个选项", options: [{ label: "x" }, { label: "y" }] },
-      ]),
-    /same number of options/,
+  // 同一轮各题的选项数可以不同：卡片一次只渲染一题，高度本就随 prompt 与
+  // description 变化，强行对齐换不来布局稳定，只会白白拒掉合法提问。
+  const mixed = shared.parseAskUserQuestionItems([
+    { prompt: "三个选项", options: [{ label: "a" }, { label: "b" }, { label: "c" }] },
+    { prompt: "两个选项", options: [{ label: "x" }, { label: "y" }] },
+  ]);
+  assert.deepEqual(
+    mixed.map((question) => question.options.length),
+    [3, 2],
   );
 
   const parsed = shared.parseAskUserQuestionItems(buildQuestionsArgs().questions);
@@ -357,6 +360,62 @@ test("conversation disposal cancels its pending questions only", async () => {
   assert.equal(accepted.ok, true);
   const resultB = await promiseB;
   assert.equal(resultB.isError, false);
+});
+
+test("pending questions are observable per conversation for the sidebar badge", async () => {
+  const { tools } = loadModules();
+  const bundleA = tools.createAskUserQuestionTools({ conversationId: "conv-a" });
+  const bundleB = tools.createAskUserQuestionTools({ conversationId: "conv-b" });
+
+  let notifiedA = 0;
+  let notifiedB = 0;
+  const unsubscribeA = tools.subscribeAskUserQuestionsForConversation("conv-a", () => {
+    notifiedA += 1;
+  });
+  const unsubscribeB = tools.subscribeAskUserQuestionsForConversation("conv-b", () => {
+    notifiedB += 1;
+  });
+
+  assert.deepEqual(tools.getPendingAskUserQuestionsSnapshot("conv-a"), []);
+  // The empty snapshot must be a stable reference: useSyncExternalStore tears
+  // if the same state yields a fresh array each read.
+  assert.equal(
+    tools.getPendingAskUserQuestionsSnapshot("conv-a"),
+    tools.getPendingAskUserQuestionsSnapshot("conv-b"),
+  );
+
+  const promiseA = bundleA.executeToolCall(createToolCall(buildQuestionsArgs(), "call-obs-a"));
+  const promiseB = bundleB.executeToolCall(createToolCall(buildQuestionsArgs(), "call-obs-b"));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  // Registering emits, and each conversation only sees its own question.
+  assert.equal(notifiedA, 1);
+  assert.equal(notifiedB, 1);
+  const snapshotA = tools.getPendingAskUserQuestionsSnapshot("conv-a");
+  assert.equal(snapshotA.length, 1);
+  assert.equal(snapshotA[0].toolCallId, "call-obs-a");
+  assert.equal(typeof snapshotA[0].deadlineAt, "number");
+  // Cached until the next change, so a re-render reads the same array.
+  assert.equal(tools.getPendingAskUserQuestionsSnapshot("conv-a"), snapshotA);
+
+  // Answering emits and clears — this is what drops the badge.
+  tools.answerAskUserQuestion("call-obs-a", [
+    { questionId: "storage", selectedLabel: "工作区根目录" },
+    { questionId: "q2", selectedLabel: "迁移" },
+  ]);
+  await promiseA;
+  assert.equal(notifiedA, 2);
+  assert.deepEqual(tools.getPendingAskUserQuestionsSnapshot("conv-a"), []);
+  assert.equal(notifiedB, 1, "settling one conversation must not notify another");
+
+  // Conversation teardown emits too.
+  tools.cancelPendingAskUserQuestionsForConversation("conv-b");
+  await promiseB;
+  assert.equal(notifiedB > 1, true);
+  assert.deepEqual(tools.getPendingAskUserQuestionsSnapshot("conv-b"), []);
+
+  unsubscribeA();
+  unsubscribeB();
 });
 
 test("invalid arguments fail fast with a validation error result", async () => {

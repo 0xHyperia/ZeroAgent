@@ -806,6 +806,31 @@ mod tests {
             .collect()
     }
 
+    fn finish_session(
+        manager: &ShellSessionManager,
+        id: &str,
+        mut response: ShellSessionResponse,
+    ) -> (ShellSessionResponse, String) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut text = collect_text(&response);
+        while response.status == ShellSessionStatus::Running {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                let _ = manager.stop(id, Some(response.cursor));
+                panic!("session {id} did not complete within the fixture bound");
+            }
+            response = manager
+                .wait(
+                    id,
+                    Some(response.cursor),
+                    Some(remaining.as_millis().min(5_000) as u64),
+                )
+                .expect("session should remain waitable");
+            text.push_str(&collect_text(&response));
+        }
+        (response, text)
+    }
+
     #[test]
     fn uuid_session_miss_points_at_managed_process_wait() {
         let id = "c7c220e6-bd2a-4fb5-9ffa-35634c22c79d";
@@ -822,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn short_command_completes_during_initial_yield() {
+    fn short_command_completes_and_retains_output_across_waits() {
         let manager = ShellSessionManager::default();
         let response = manager
             .start(
@@ -836,9 +861,11 @@ mod tests {
                 None,
             )
             .expect("short command should run");
+        // A bounded initial yield may return Running on a loaded Windows host.
+        let (response, text) = finish_session(&manager, "short", response);
         assert_eq!(response.status, ShellSessionStatus::Completed);
         assert_eq!(response.exit_code, Some(0));
-        assert_eq!(collect_text(&response), "ready");
+        assert_eq!(text, "ready");
     }
 
     #[test]
@@ -858,14 +885,10 @@ mod tests {
             .expect("long command should start");
         assert_eq!(first.status, ShellSessionStatus::Running);
 
-        let second = manager
-            .wait("long", Some(first.cursor), Some(5_000))
-            .expect("long command should remain waitable");
+        let (second, text) = finish_session(&manager, "long", first);
         assert_eq!(second.status, ShellSessionStatus::Completed);
-        assert_eq!(
-            format!("{}{}", collect_text(&first), collect_text(&second)),
-            "beginend"
-        );
+        assert_eq!(second.exit_code, Some(0));
+        assert_eq!(text, "beginend");
     }
 
     #[test]
@@ -885,11 +908,11 @@ mod tests {
             .expect("command should start without a hard timeout");
         assert_eq!(first.status, ShellSessionStatus::Running);
         assert_eq!(first.timeout_ms, None);
-        let final_response = manager
-            .wait("no-timeout", Some(first.cursor), Some(5_000))
-            .expect("command should finish naturally");
+        let (final_response, text) = finish_session(&manager, "no-timeout", first);
         assert_eq!(final_response.status, ShellSessionStatus::Completed);
-        assert_eq!(collect_text(&final_response), "survived");
+        assert_eq!(final_response.timeout_ms, None);
+        assert_eq!(final_response.exit_code, Some(0));
+        assert_eq!(text, "survived");
     }
 
     #[test]
@@ -1235,11 +1258,7 @@ mod tests {
 
     #[test]
     fn expired_terminal_sessions_are_removed() {
-        let config = ShellSessionConfig {
-            terminal_retention: Duration::from_millis(1),
-            ..ShellSessionConfig::default()
-        };
-        let manager = ShellSessionManager::with_config(config);
+        let mut manager = ShellSessionManager::with_config(ShellSessionConfig::default());
         let response = manager
             .start(
                 "expired".to_string(),
@@ -1252,8 +1271,15 @@ mod tests {
                 None,
             )
             .expect("terminal session should start");
+        let response = if response.status == ShellSessionStatus::Running {
+            manager
+                .wait("expired", Some(response.cursor), Some(30_000))
+                .expect("wait for terminal completion")
+        } else {
+            response
+        };
         assert_eq!(response.status, ShellSessionStatus::Completed);
-        std::thread::sleep(Duration::from_millis(5));
+        manager.config.terminal_retention = Duration::ZERO;
         manager.cleanup_expired();
         assert!(manager.wait("expired", None, Some(5_000)).is_err());
     }
@@ -1315,7 +1341,10 @@ mod tests {
                 None,
             )
             .expect("terminal session should be evicted for replacement");
+        let (replacement, text) = finish_session(&manager, "replacement", replacement);
         assert_eq!(replacement.status, ShellSessionStatus::Completed);
+        assert_eq!(text, "ok");
+        assert!(manager.wait("running", None, Some(0)).is_err());
     }
 
     #[test]

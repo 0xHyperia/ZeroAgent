@@ -1,4 +1,6 @@
-import type { Context } from "@earendil-works/pi-ai";
+import type { Context } from "@liveagent/app/lib/agentTypes";
+import type { ImageStudioHost } from "@liveagent/ui/application/imageStudioHost";
+import type { ResourceHostCapabilities } from "@liveagent/ui/lib/resourceHost";
 import type { ReactNode } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import type { RelayDashboardStats, RelayUser } from "../../lib/relay/client";
@@ -10,6 +12,9 @@ export type ChatPageProps = {
   relayStats: RelayDashboardStats | null;
   onRefreshRelayAccount: () => Promise<void>;
   settings: AppSettings;
+  resourceHost?: ResourceHostCapabilities;
+  imageStudioHost?: ImageStudioHost;
+  onImageStudioWorkspaceChange?: (workspace: string) => void;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   sttProviderOverride?: SttProviderId | null;
   getMcpSettings: () => AppSettings["mcp"];

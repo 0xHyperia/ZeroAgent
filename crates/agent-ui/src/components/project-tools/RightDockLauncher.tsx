@@ -1,9 +1,9 @@
-import { ChevronRight, Cpu, Plus, Terminal } from "@liveagent/ui/components/IconSet";
+import { ChevronRight, Columns2, Cpu, Plus, Terminal } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalShellOption } from "../../lib/terminal/types";
-import { buttonVariants } from "../ui/button";
+import { Button, buttonVariants } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,10 +13,21 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { NO_LEASED_RIGHT_DOCK_TOOLS, type RightDockLeasedToolKind } from "./rightDockModel";
 import { RIGHT_DOCK_TOOL_DEFINITIONS, type RightDockSingletonTabKind } from "./rightDockRegistry";
 
+export type RightDockToolDragStartEvent = {
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  currentTarget?: EventTarget | null;
+};
+
 type RightDockLauncherActions = {
+  /** Tools whose surface lives in a workbench pane: no launcher entry for them. */
+  leasedTools?: ReadonlySet<RightDockLeasedToolKind>;
   onCreateTerminal: (shell?: string) => void;
+  onOpenNewTerminalInWorkbench?: () => void;
   onStartTool: (kind: RightDockSingletonTabKind) => void;
   // Opens the derived background-tasks tab via ephemeral session state; it
   // is not a registry tool and never writes persisted right-dock settings.
@@ -38,6 +49,7 @@ type RightDockChooserProps = RightDockLauncherActions & {
   terminalReady: boolean;
   terminalDisabledMessage?: string;
   disabledMessage?: string;
+  tunnelDisabledMessage?: string;
   projectReady: boolean;
   tunnelAvailable: boolean;
   creating: boolean;
@@ -47,11 +59,17 @@ type RightDockChooserProps = RightDockLauncherActions & {
    * 存在时"新建终端"入口可拖出到工作台画板(拖到落点新建终端 Pane);
    * 点击行为不变(新建并进 dock)。拖拽阈值与点击抑制由工作台拖拽会话处理。
    */
-  onNewTerminalDragStart?: (event: { pointerId: number; clientX: number; clientY: number }) => void;
+  onNewTerminalDragStart?: (event: RightDockToolDragStartEvent) => void;
+  /**
+   * 存在时每个工具入口(文件树/审查/内网穿透/SSH/后台任务)可拖出到工作台
+   * 画板,在落点直接打开该工具 Pane;点击行为不变(在 dock 内打开)。
+   */
+  onToolDragStart?: (kind: RightDockLeasedToolKind, event: RightDockToolDragStartEvent) => void;
 };
 
 export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
   const {
+    leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
     open,
     onOpenChange,
     shellOptions,
@@ -61,6 +79,7 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
     tunnelAvailable,
     creating,
     onCreateTerminal,
+    onOpenNewTerminalInWorkbench,
     onStartTool,
     onOpenBackgroundTasks,
   } = props;
@@ -69,21 +88,21 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
   const terminalItem =
     shellOptions.length > 1 ? (
       <DropdownMenuSub>
-        <DropdownMenuSubTrigger disabled={!terminalReady || creating} className="gap-2 text-xs">
-          <Terminal className="h-3.5 w-3.5" />
+        <DropdownMenuSubTrigger disabled={!terminalReady || creating} className="gap-2">
+          <Terminal className="size-3.5" />
           <span className="min-w-0 flex-1">{t("projectTools.newTerminal")}</span>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronRight className="size-3.5 text-muted-foreground" />
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="min-w-36">
+        <DropdownMenuSubContent variant="soft" className="min-w-36">
           {shellOptions.map((option) => (
             <DropdownMenuItem
               key={option.id}
               onSelect={() => onCreateTerminal(option.id)}
               disabled={!terminalReady || creating}
-              className="gap-2 text-xs"
+              className="gap-2"
               title={option.command || option.label}
             >
-              <Terminal className="h-3.5 w-3.5" />
+              <Terminal className="size-3.5" />
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
             </DropdownMenuItem>
           ))}
@@ -93,10 +112,10 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
       <DropdownMenuItem
         onSelect={() => onCreateTerminal()}
         disabled={!terminalReady || creating}
-        className="gap-2 text-xs"
+        className="gap-2"
         title={terminalDisabledMessage}
       >
-        <Terminal className="h-3.5 w-3.5" />
+        <Terminal className="size-3.5" />
         {t("projectTools.newTerminal")}
       </DropdownMenuItem>
     );
@@ -110,28 +129,43 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
         title={t("projectTools.newProjectTool")}
         className={cn(
           buttonVariants({ variant: "ghost", size: "icon" }),
-          "h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground",
+          "size-8 rounded-lg text-muted-foreground hover:text-foreground",
         )}
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="min-w-40">
+      <DropdownMenuContent variant="soft" align="end" sideOffset={6} className="min-w-40">
         {terminalItem}
-        {RIGHT_DOCK_TOOL_DEFINITIONS.map((definition) => (
+        {onOpenNewTerminalInWorkbench ? (
           <DropdownMenuItem
-            key={definition.kind}
-            onSelect={() => onStartTool(definition.kind)}
-            disabled={definition.projectRequired ? !projectReady : !tunnelAvailable}
-            className="gap-2 text-xs"
+            onSelect={onOpenNewTerminalInWorkbench}
+            disabled={!terminalReady || creating}
+            className="gap-2"
+            title={terminalDisabledMessage}
           >
-            {definition.icon("h-3.5 w-3.5")}
-            {t(definition.createTitleKey)}
+            <Columns2 className="size-3.5" />
+            {t("workbench.openNewTerminalInSplit")}
           </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem onSelect={onOpenBackgroundTasks} className="gap-2 text-xs">
-          <Cpu className="h-3.5 w-3.5" />
-          {t("projectTools.backgroundTasksTitle")}
-        </DropdownMenuItem>
+        ) : null}
+        {RIGHT_DOCK_TOOL_DEFINITIONS.filter((definition) => !leasedTools.has(definition.kind)).map(
+          (definition) => (
+            <DropdownMenuItem
+              key={definition.kind}
+              onSelect={() => onStartTool(definition.kind)}
+              disabled={definition.projectRequired ? !projectReady : !tunnelAvailable}
+              className="gap-2"
+            >
+              {definition.icon("size-3.5")}
+              {t(definition.createTitleKey)}
+            </DropdownMenuItem>
+          ),
+        )}
+        {leasedTools.has("backgroundTasks") ? null : (
+          <DropdownMenuItem onSelect={onOpenBackgroundTasks} className="gap-2">
+            <Cpu className="size-3.5" />
+            {t("projectTools.backgroundTasksTitle")}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -139,9 +173,11 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
 
 export function RightDockChooser(props: RightDockChooserProps) {
   const {
+    leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
     terminalReady,
     terminalDisabledMessage,
     disabledMessage,
+    tunnelDisabledMessage,
     projectReady,
     tunnelAvailable,
     creating,
@@ -151,15 +187,30 @@ export function RightDockChooser(props: RightDockChooserProps) {
     onStartTool,
     onOpenBackgroundTasks,
     onNewTerminalDragStart,
+    onToolDragStart,
   } = props;
   const { t } = useLocale();
   const terminalTileDisabled = !terminalReady || creating;
+  // Drag-out arms on primary-button mouse/pen only; touch keeps scrolling the
+  // chooser (same rule as the terminal tile and dock tab drag-out).
+  const toolDragHandler = (kind: RightDockLeasedToolKind, disabled: boolean) =>
+    onToolDragStart && !disabled
+      ? (event: ReactPointerEvent<HTMLButtonElement>) => {
+          if (event.button !== 0 || event.pointerType === "touch") return;
+          onToolDragStart(kind, {
+            pointerId: event.pointerId,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            currentTarget: event.currentTarget,
+          });
+        }
+      : undefined;
   const tools = [
     {
       key: "terminal",
       title: t("projectTools.newTerminal"),
       description: t("projectTools.terminalDescription"),
-      icon: <Terminal className="h-4.5 w-4.5" />,
+      icon: <Terminal className="size-4.5" />,
       disabled: terminalTileDisabled,
       titleAttr: terminalDisabledMessage,
       onClick: () => onCreateTerminal(),
@@ -171,50 +222,73 @@ export function RightDockChooser(props: RightDockChooserProps) {
                 pointerId: event.pointerId,
                 clientX: event.clientX,
                 clientY: event.clientY,
+                currentTarget: event.currentTarget,
               });
             }
           : undefined,
     },
-    ...RIGHT_DOCK_TOOL_DEFINITIONS.map((definition) => ({
-      key: definition.kind,
-      title: t(definition.createTitleKey),
-      description: t(definition.descriptionKey),
-      icon: definition.icon("h-4.5 w-4.5"),
-      disabled: definition.projectRequired ? !projectReady : !tunnelAvailable,
-      titleAttr: definition.projectRequired ? disabledMessage : undefined,
-      onClick: () => onStartTool(definition.kind),
-      onPointerDown: undefined,
-    })),
-    {
-      key: "backgroundTasks",
-      title: t("projectTools.backgroundTasksTitle"),
-      description: t("projectTools.backgroundTasksDescription"),
-      icon: <Cpu className="h-4.5 w-4.5" />,
-      disabled: false,
-      titleAttr: undefined,
-      onClick: onOpenBackgroundTasks,
-      onPointerDown: undefined,
-    },
+    ...RIGHT_DOCK_TOOL_DEFINITIONS.filter((definition) => !leasedTools.has(definition.kind)).map(
+      (definition) => {
+        const disabled = definition.projectRequired ? !projectReady : !tunnelAvailable;
+        return {
+          key: definition.kind,
+          title: t(definition.createTitleKey),
+          description: t(definition.descriptionKey),
+          icon: definition.icon("size-4.5"),
+          disabled,
+          titleAttr: definition.projectRequired ? disabledMessage : tunnelDisabledMessage,
+          onClick: () => onStartTool(definition.kind),
+          onPointerDown: toolDragHandler(definition.kind, disabled),
+        };
+      },
+    ),
+    ...(leasedTools.has("backgroundTasks")
+      ? []
+      : [
+          {
+            key: "backgroundTasks",
+            title: t("projectTools.backgroundTasksTitle"),
+            description: t("projectTools.backgroundTasksDescription"),
+            icon: <Cpu className="size-4.5" />,
+            disabled: false,
+            titleAttr: undefined,
+            onClick: onOpenBackgroundTasks,
+            onPointerDown: toolDragHandler("backgroundTasks", false),
+          },
+        ]),
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-5 py-6">
+    <div
+      className={cn("flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-5", "py-6")}
+    >
       <div className="flex flex-col items-center gap-1">
         <h3 className="text-sm font-medium text-foreground">{t("projectTools.getStarted")}</h3>
         <p className="text-xs text-muted-foreground">{t("projectTools.getStartedHint")}</p>
       </div>
       <div className="flex w-full max-w-xs flex-col gap-2">
         {tools.map((tool) => (
-          <button
+          <Button
+            variant="outline"
             key={tool.key}
             type="button"
             onClick={tool.onClick}
             onPointerDown={tool.onPointerDown}
             disabled={tool.disabled}
             title={tool.titleAttr}
-            className="group flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3.5 py-3 text-left text-sm text-foreground transition-all hover:border-border hover:bg-muted/60 hover:shadow-sm disabled:pointer-events-none disabled:opacity-50"
+            className={cn(
+              "group flex h-auto w-full items-center justify-start gap-3 whitespace-normal",
+              "rounded-lg border border-border/60 bg-background px-3.5 py-3",
+              "text-left text-sm text-foreground",
+              "hover:bg-settings-tile-hover",
+            )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted/80 text-muted-foreground transition-colors group-hover:bg-muted group-hover:text-foreground">
+            <div
+              className={cn(
+                "flex size-9 shrink-0 items-center justify-center",
+                "rounded-md bg-muted/80 text-muted-foreground transition-colors group-hover:bg-muted group-hover:text-foreground",
+              )}
+            >
               {tool.icon}
             </div>
             <div className="min-w-0 flex-1">
@@ -223,7 +297,7 @@ export function RightDockChooser(props: RightDockChooserProps) {
                 {tool.description}
               </div>
             </div>
-          </button>
+          </Button>
         ))}
       </div>
       {loading ? (

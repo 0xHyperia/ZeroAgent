@@ -1,11 +1,12 @@
 import { Loader2, Terminal } from "@liveagent/ui/components/IconSet";
+import { EmptyState } from "@liveagent/ui/components/ui/empty-state";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "../../../lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "../../../lib/terminal/types";
 import { XTermViewport } from "../../project-tools/XTermViewport";
 import { Button } from "../../ui/button";
 
-export type TerminalPaneSurfacePhase = "connecting" | "ready" | "exited" | "error";
+export type TerminalPaneSurfacePhase = "dormant" | "connecting" | "ready" | "exited" | "error";
 
 export type LocalTerminalPaneSurfaceProps = {
   paneId: string;
@@ -33,7 +34,10 @@ export function LocalTerminalPaneSurface(props: LocalTerminalPaneSurfaceProps) {
     session && phase === "error" ? (
       <div
         data-terminal-pane-banner="error"
-        className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+        className={cn(
+          "flex shrink-0 items-center gap-2",
+          "border-b border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs text-destructive",
+        )}
       >
         <span className="min-w-0 flex-1 truncate">
           {errorMessage || t("workbench.terminalError")}
@@ -47,7 +51,10 @@ export function LocalTerminalPaneSurface(props: LocalTerminalPaneSurfaceProps) {
     ) : session && phase === "exited" ? (
       <div
         data-terminal-pane-banner="exited"
-        className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground"
+        className={cn(
+          "flex shrink-0 items-center gap-2",
+          "border-b border-border/60 bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground",
+        )}
       >
         <span className="min-w-0 flex-1 truncate">
           {t("workbench.terminalExited")}
@@ -83,27 +90,33 @@ export function LocalTerminalPaneSurface(props: LocalTerminalPaneSurfaceProps) {
           />
         </div>
       ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/70">
+        <EmptyState variant="workspace">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/70">
             {phase === "connecting" ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="size-5 animate-spin" />
             ) : (
-              <Terminal className="h-5 w-5" />
+              <Terminal className="size-5" />
             )}
           </div>
           <div className={cn(phase === "error" && "text-destructive")}>
             {phase === "connecting"
               ? t("workbench.terminalConnecting")
-              : phase === "exited"
-                ? t("workbench.terminalExited")
-                : errorMessage || t("workbench.terminalError")}
+              : phase === "dormant"
+                ? t("workbench.terminalRestoreRequired")
+                : phase === "exited"
+                  ? t("workbench.terminalExited")
+                  : errorMessage || t("workbench.terminalError")}
           </div>
           {phase !== "connecting" && onRetry ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              {phase === "exited" ? t("workbench.terminalRestart") : t("workbench.terminalRetry")}
+              {phase === "dormant"
+                ? t("workbench.terminalRestore")
+                : phase === "exited"
+                  ? t("workbench.terminalRestart")
+                  : t("workbench.terminalRetry")}
             </Button>
           ) : null}
-        </div>
+        </EmptyState>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Message, ToolCall, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
+import type { Message, ToolCall, ToolResultMessage, Usage } from "@liveagent/app/lib/agentTypes";
 import type { SharedChatEntry } from "@liveagent/ui/contracts/chatEntry";
 import {
   getUserMessageAttachments,
@@ -22,8 +22,6 @@ type GatewayAssistantMeta = {
   api?: string;
   stopReason?: string;
   usage?: Usage;
-  usageTotalTokens?: number;
-  contextUsageTokens?: number;
   contextRelevant?: boolean;
 };
 

@@ -1,5 +1,10 @@
+import type { ToolCall, ToolResultMessage } from "@liveagent/ui/lib/chat/agentTypes";
+import {
+  assembleContinuousReply,
+  type ReplyStitchClass,
+  stitchCompactedReplies,
+} from "@liveagent/ui/lib/chat/replyContinuity";
 import type { SubagentBatchDetails } from "@liveagent/ui/lib/subagents/protocol";
-import type { ToolCall, ToolResultMessage } from "@/lib/agentTypes";
 import {
   appendTextDeltaToRound,
   appendThinkingDeltaToRound,
@@ -174,6 +179,69 @@ export function buildRowsFromEntries(
   entries: ChatEntry[],
   origin: TranscriptRowOrigin,
 ): TranscriptRow[] {
+  return stitchCompactedRows(buildRawRowsFromEntries(entries, origin));
+}
+
+function classifyRow(row: TranscriptRow): ReplyStitchClass {
+  if (row.kind === "assistant") return "assistant";
+  if (row.kind === "checkpoint") return "checkpoint";
+  return "other";
+}
+
+// A compaction that fires inside a reply is persisted as
+// `assistant → checkpoint → assistant` with no user entry between the
+// halves. The raw pass emits that as two assistant rows around a card;
+// this pass folds the chain into ONE assistant row whose round list carries
+// the checkpoint as a zero-block seam round, so the reply renders with one
+// avatar, one processing trace (seam milestone inline) and one footer.
+// A checkpoint that ends the chain — idle manual compaction, a run stopped
+// right after compacting — stays a standalone divider card. Round keys
+// already carry a group-unique prefix, so no positional re-keying.
+export function stitchCompactedRows(rows: TranscriptRow[]): TranscriptRow[] {
+  const groups = stitchCompactedReplies(rows, classifyRow);
+  if (groups.every((group) => group.kind === "single")) return rows;
+  const stitched: TranscriptRow[] = [];
+  for (const group of groups) {
+    if (group.kind === "single") {
+      stitched.push(group.item);
+      continue;
+    }
+    const leader = group.items[0];
+    if (!leader || leader.kind !== "assistant") continue;
+    if (group.items.length === 1) {
+      stitched.push(leader);
+      continue;
+    }
+    const reply = assembleContinuousReply<TranscriptRow, GatewayTranscriptRound>(group.items, {
+      classify: classifyRow,
+      roundsOf: (row) => (row.kind === "assistant" ? row.rounds : []),
+      seamOf: (row) => {
+        if (row.kind !== "checkpoint") throw new Error("seamOf called on a non-checkpoint row");
+        return row;
+      },
+      rekeyParts: false,
+    });
+    let timestamp = leader.timestamp;
+    let turnKey = leader.turnKey;
+    for (const item of group.items) {
+      if (item.kind !== "assistant") continue;
+      if (item.timestamp !== undefined) timestamp = item.timestamp;
+      if (item.turnKey !== undefined) turnKey = item.turnKey;
+    }
+    stitched.push({
+      ...leader,
+      rounds: reply.rounds as GatewayTranscriptRound[],
+      timestamp,
+      ...(turnKey !== undefined ? { turnKey } : {}),
+    });
+  }
+  return stitched;
+}
+
+function buildRawRowsFromEntries(
+  entries: ChatEntry[],
+  origin: TranscriptRowOrigin,
+): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   let assistantGroup: AssistantGroupBuilder | null = null;
 
@@ -207,6 +275,7 @@ export function buildRowsFromEntries(
           kind: "user",
           text: entry.text,
           attachments: entry.attachments,
+          referencedConversations: entry.referencedConversations ?? [],
           messageRef: entry.messageRef,
           timestamp: entry.timestamp,
         });
@@ -254,13 +323,39 @@ export function buildRowsFromEntries(
 
     if (entry.kind === "thinking") {
       const sanitizedThinking = stripRecoveredToolCallMarkup(entry.text);
-      if (sanitizedThinking === "") {
+      const replayTokenUnits =
+        typeof entry.replayTokenUnits === "number" &&
+        Number.isFinite(entry.replayTokenUnits) &&
+        entry.replayTokenUnits > 0
+          ? Math.ceil(entry.replayTokenUnits)
+          : 0;
+      if (sanitizedThinking === "" && replayTokenUnits <= 0) {
         continue;
       }
-      updateTranscriptRound(assistantGroup, roundNumber, (round) => ({
-        ...(appendThinkingDeltaToRound(round, sanitizedThinking) as GatewayTranscriptRound),
-        thinkingOpen: true,
-      }));
+      updateTranscriptRound(assistantGroup, roundNumber, (round) => {
+        const next = sanitizedThinking
+          ? (appendThinkingDeltaToRound(round, sanitizedThinking) as GatewayTranscriptRound)
+          : round;
+        if (replayTokenUnits <= 0) {
+          return { ...next, thinkingOpen: true };
+        }
+        const blocks = next.blocks.slice();
+        const last = blocks[blocks.length - 1];
+        if (last?.kind === "thinking") {
+          blocks[blocks.length - 1] = {
+            ...last,
+            replayTokenUnits: (last.replayTokenUnits ?? 0) + replayTokenUnits,
+          };
+        } else {
+          blocks.push({
+            kind: "thinking",
+            id: `th-replay-${round.round}`,
+            text: "",
+            replayTokenUnits,
+          });
+        }
+        return { ...next, blocks, thinkingOpen: true };
+      });
       continue;
     }
 
@@ -282,10 +377,12 @@ export function buildRowsFromEntries(
             .map((item) => item.toolCall.id)
             .filter((id): id is string => Boolean(id)),
         );
-        const runningToolCallIds = runningCandidateIds.reduce(
-          (ids, id) => (visibleToolCallIds.has(id) && !ids.includes(id) ? [...ids, id] : ids),
-          withToolCall.runningToolCallIds,
-        );
+        const runningToolCallIds = [...withToolCall.runningToolCallIds];
+        for (const id of runningCandidateIds) {
+          if (visibleToolCallIds.has(id) && !runningToolCallIds.includes(id)) {
+            runningToolCallIds.push(id);
+          }
+        }
         return { ...withToolCall, runningToolCallIds };
       });
       continue;
@@ -371,6 +468,7 @@ export function buildTurnRows(turn: Turn): TranscriptRow[] {
       kind: "user",
       text: turn.user.text,
       attachments: turn.user.attachments,
+      referencedConversations: turn.user.referencedConversations ?? [],
       messageRef: turn.user.messageRef,
       timestamp: turn.user.timestamp,
     });
@@ -400,7 +498,15 @@ export function buildTurnRows(turn: Turn): TranscriptRow[] {
 // the card twice; the later copy is dropped instead (region order puts the
 // history copy first, and the shared key keeps React/measurement identity
 // stable when the rendering source flips).
-export function dedupeRowKeys(rows: TranscriptRow[], seen = new Set<string>()): TranscriptRow[] {
+type RowKeyRegistry = {
+  has(key: string): boolean;
+  add(key: string): unknown;
+};
+
+export function dedupeRowKeys(
+  rows: TranscriptRow[],
+  seen: RowKeyRegistry = new Set<string>(),
+): TranscriptRow[] {
   let next: TranscriptRow[] | null = null;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -424,4 +530,22 @@ export function dedupeRowKeys(rows: TranscriptRow[], seen = new Set<string>()): 
     next?.push(row);
   }
   return next ?? rows;
+}
+
+/**
+ * 运行中回合的计时起点：只认紧挨在 live 回复之前、属于本回合的用户消息。
+ * 回复先于用户消息到达（store 建出 `user: null` 的 live 回合）时，往前会
+ * 越过上一轮回复摸到旧用户消息，用它计时会让「处理中」跳成旧消息的年龄；
+ * 此时返回 undefined，由 work trace 退回挂载时刻。
+ */
+export function findLiveTurnStartTimestamp(
+  rows: readonly TranscriptRow[],
+  assistantIndex: number,
+): number | undefined {
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row?.kind === "user") return row.timestamp;
+    if (row?.kind !== "checkpoint") return undefined;
+  }
+  return undefined;
 }

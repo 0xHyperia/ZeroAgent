@@ -1,4 +1,9 @@
-import { type CatalogModelEntry, type CatalogProviderId, MODEL_CATALOG } from "./catalog.generated";
+import {
+  type CatalogInputModality,
+  type CatalogModelEntry,
+  type CatalogProviderId,
+  MODEL_CATALOG,
+} from "./catalog.generated";
 
 // ---------------------------------------------------------------------------
 // 模型元信息目录（限额的单一真源）
@@ -6,11 +11,11 @@ import { type CatalogModelEntry, type CatalogProviderId, MODEL_CATALOG } from ".
 // 数据来自 catalog.generated.ts（构建期由 scripts/generate-model-catalog.mjs
 // 对 OpenAI 采用 Codex models.json 优先、models.dev 补充，其余供应商来自
 // models.dev；由 update-model-catalog.yml 定时刷新）。本文件与生成文件均由共享包提供。
-// 思考档位/API 选择/compat 等请求路径行为不归这里管——那些是流式运行时
-// （pi-ai）的领域；这里只回答"这个模型的窗口和输出上限是多少"。
+// 思考档位/API 选择/compat 等请求路径行为不归这里管——这些属于流式运行时；
+// 这里只回答"这个模型的窗口/输出上限与输入模态是什么"。
 
 export { MODEL_CATALOG, MODEL_CATALOG_SNAPSHOT_DATE } from "./catalog.generated";
-export type { CatalogModelEntry, CatalogProviderId };
+export type { CatalogInputModality, CatalogModelEntry, CatalogProviderId };
 
 // 与 settings 的 ProviderId 结构相同；本模块不 import settings（避免环）。
 export type CatalogAppProviderId = "claude_code" | "codex" | "gemini" | "xai" | "deepseek";
@@ -26,12 +31,18 @@ export const CATALOG_PROVIDER_BY_APP_PROVIDER: Record<CatalogAppProviderId, Cata
   deepseek: "deepseek",
 };
 
-/** 目录未命中时的供应商兜底限额（xai 与 codex 同为 OpenAI 兼容生态，共用兜底值）。 */
+/**
+ * 目录未命中时的供应商兜底限额（xai 与 codex 同为 OpenAI 兼容生态，共用兜底值）。
+ * contextWindow 一律为含输出的总窗口语义（与目录一致）：codex/xai 的 400K =
+ * 258K 输入侧预算 + 142K 输出，与生成期对 Codex context_window 的换算同源。
+ * 旧值直接存 258K 输入预算，"窗口 − 输出预留"型的压缩阈值会被 142K 的大输出
+ * 挤到 45K，几乎每轮都触发压缩。
+ */
 export const PROVIDER_FALLBACK_LIMITS: Record<CatalogAppProviderId, ModelLimits> = {
   claude_code: { contextWindow: 200_000, maxOutputToken: 32_000 },
-  codex: { contextWindow: 258_000, maxOutputToken: 142_000 },
+  codex: { contextWindow: 400_000, maxOutputToken: 142_000 },
   gemini: { contextWindow: 1_048_576, maxOutputToken: 65_536 },
-  xai: { contextWindow: 258_000, maxOutputToken: 142_000 },
+  xai: { contextWindow: 400_000, maxOutputToken: 142_000 },
   deepseek: { contextWindow: 128_000, maxOutputToken: 32_000 },
 };
 
@@ -68,16 +79,26 @@ export function normalizeModelIdCandidates(modelId: string): string[] {
   push(withoutAtVersion);
   const withoutContextSuffix = withoutAtVersion.replace(/\[1m\]$/i, "");
   push(withoutContextSuffix);
-  push(withoutContextSuffix.replace(/-20\d{6}$/, ""));
+  for (const candidate of withoutDateSuffix(withoutContextSuffix)) push(candidate);
   // 中转聚合商常在模型 id 前加自家路径前缀（bailian/deepseek-v4-pro、
   // openrouter/xxx 等），目录里存的是裸 id。放链尾——所有精确形态、
   // 全部分区都查空后才尝试剥前缀，避免裸段误撞目录里无关的同名模型。
   const lastSegment = withoutContextSuffix.split("/").pop() ?? "";
   if (lastSegment !== withoutContextSuffix) {
     push(lastSegment);
-    push(lastSegment.replace(/-20\d{6}$/, ""));
+    for (const candidate of withoutDateSuffix(lastSegment)) push(candidate);
   }
   return candidates;
+}
+
+// 日期后缀有两种写法：完整的 -20260115 和中转站常用的四位月日 -0813 /
+// -0731（deepseek-ai/deepseek-v4-pro-0813）。四位形态只在没有完整日期
+// 时才剥，且只认合法的月日，避免把 -2024 之类的年份或型号数字误当日期。
+function withoutDateSuffix(modelId: string): string[] {
+  const withoutFullDate = modelId.replace(/-20\d{6}$/, "");
+  if (withoutFullDate !== modelId) return [withoutFullDate];
+  const withoutMonthDay = modelId.replace(/-(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/, "");
+  return withoutMonthDay !== modelId ? [withoutMonthDay] : [];
 }
 
 const catalogIndexByProvider = new Map<CatalogProviderId, Map<string, CatalogModelEntry>>();
@@ -135,6 +156,18 @@ export function findCatalogModelAcrossProviders(
   return undefined;
 }
 
+// 展示用的输入模态查询：先按供应商作用域查，未命中再跨供应商回查（与限额
+// 解析同一回查策略——中转聚合常把别家模型挂在本供应商类型下）。返回目录
+// 快照数据；用户的 inputModalities 覆盖是否优先由调用方决定（覆盖只表达
+// text/image 门控，与目录的完整模态集合语义不同）。
+export function resolveModelInputModalities(
+  providerId: CatalogAppProviderId,
+  modelId: string | undefined,
+): readonly CatalogInputModality[] | undefined {
+  const entry = findCatalogModel(providerId, modelId) ?? findCatalogModelAcrossProviders(modelId);
+  return entry?.inputModalities;
+}
+
 export function resolveModelLimitsAcrossProviders(
   modelId: string | undefined,
 ): ModelLimits | undefined {
@@ -176,13 +209,26 @@ export function extractProviderDeclaredLimits(
       ? (obj.top_provider as Record<string, unknown>)
       : undefined;
 
+  const hasCamelCaseProviderLimits =
+    obj.maxOutputTokens != null ||
+    topProvider?.maxOutputTokens != null ||
+    topProvider?.maxOutputToken != null;
   const contextWindow =
-    asPositiveInt(obj.context_length) ?? asPositiveInt(topProvider?.context_length);
+    asPositiveInt(obj.context_length) ??
+    asPositiveInt(topProvider?.context_length) ??
+    (hasCamelCaseProviderLimits ? asPositiveInt(obj.contextWindow) : undefined) ??
+    (hasCamelCaseProviderLimits ? asPositiveInt(obj.context_window) : undefined) ??
+    (hasCamelCaseProviderLimits ? asPositiveInt(topProvider?.contextWindow) : undefined) ??
+    (hasCamelCaseProviderLimits ? asPositiveInt(topProvider?.context_window) : undefined);
   if (!contextWindow) return undefined;
 
   const maxOutputToken =
     asPositiveInt(topProvider?.max_completion_tokens) ??
     asPositiveInt(obj.max_completion_tokens) ??
+    asPositiveInt(topProvider?.maxOutputTokens) ??
+    asPositiveInt(topProvider?.maxOutputToken) ??
+    asPositiveInt(obj.maxOutputTokens) ??
+    asPositiveInt(obj.maxOutputToken) ??
     // 部分中转商不单独公布输出上限，仅给窗口——按目录同一规则钳到保守预留值。
     normalizeModelLimits({ contextWindow, maxOutputToken: contextWindow }).maxOutputToken;
 

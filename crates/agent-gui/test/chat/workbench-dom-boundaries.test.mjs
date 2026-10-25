@@ -1,3 +1,4 @@
+import { assertJsxDimensions } from "../helpers/style-dimensions.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -22,17 +23,17 @@ const conversationViewTabsSource = readFileSync(
   new URL("../../../agent-ui/src/components/chat/ConversationViewTabs.tsx", import.meta.url),
   "utf8",
 );
-const commonComponentsCss = readFileSync(
-  new URL("../../../agent-ui/src/styles/common-components.css", import.meta.url),
+const markdownStylesSource = readFileSync(
+  new URL("../../../agent-ui/src/components/markdown/markdownStyles.ts", import.meta.url),
   "utf8",
 );
 const rightDockPanelSource = readFileSync(
   new URL("../../../agent-ui/src/components/project-tools/RightDockPanel.tsx", import.meta.url),
   "utf8",
 );
-const rightDockWidthSource = readFileSync(
+const workspacePanelsSource = readFileSync(
   new URL(
-    "../../../agent-ui/src/components/project-tools/useRightDockPanelWidth.ts",
+    "../../../agent-ui/src/components/project-tools/WorkspacePanels.tsx",
     import.meta.url,
   ),
   "utf8",
@@ -43,6 +44,10 @@ const conversationSurfaceSource = readFileSync(
 );
 const conversationPaneHostSource = readFileSync(
   new URL("../../src/pages/chat/surfaces/ConversationPaneHost.tsx", import.meta.url),
+  "utf8",
+);
+const paneComposerDraftSessionSource = readFileSync(
+  new URL("../../src/pages/chat/surfaces/paneComposerDraftSession.ts", import.meta.url),
   "utf8",
 );
 const conversationPaneEnvironmentSource = readFileSync(
@@ -64,44 +69,49 @@ const conversationPaneHarnessModelSource = readFileSync(
   "utf8",
 );
 
-test("application chrome is attached to the center column instead of the right dock", () => {
+test("application chrome is a shell row above both sidebars and the resizable workspace", () => {
   assert.match(chatPageSource, /data-app-frame="three-column"/);
   assert.match(
     chatPageSource,
-    /data-app-frame-column="main"[\s\S]*?<AppWorkbenchChrome[\s\S]*?<ApplicationView/,
+    /data-app-frame="three-column"[\s\S]*?<AppWorkbenchChrome[\s\S]*?data-app-workbench-body[\s\S]*?<WorkspacePanelGroup[\s\S]*?<ApplicationView/,
   );
   assert.match(chatPageSource, /<AppWorkbenchChrome/);
   assert.ok(chatPageSource.indexOf("<AppWorkbenchChrome") < chatPageSource.indexOf("<ApplicationView"));
   assert.ok(chatPageSource.indexOf("<ApplicationView") < chatPageSource.indexOf("<RightDockPanel"));
   assert.doesNotMatch(applicationViewSource, /ChatHeader|headerOverlay|headerClassName/);
-  assert.match(chromeSource, /layer-panel pointer-events-none relative h-12 shrink-0/);
+  assert.match(chromeSource, /relative z-20 h-12 shrink-0/);
   assert.doesNotMatch(chromeSource, /absolute inset-x-0 top-0/);
   assert.doesNotMatch(chromeSource, /left-\[272px\]|right-0/);
   assert.match(
     chatPageSource,
     /data-app-frame-column="main"[\s\S]*?className="relative flex flex-col min-h-0/,
   );
+  assert.doesNotMatch(headerSource, /createPortal|document\.body|\bfixed\b|pl-232px|pr-24/);
   assert.doesNotMatch(chromeSource, /autoHideActions/);
   assert.doesNotMatch(headerSource, /autoHideActions|app-workbench-chrome-actions/);
-  assert.doesNotMatch(commonComponentsCss, /\.app-workbench-chrome-actions/);
+  assert.doesNotMatch(markdownStylesSource, /\.app-workbench-chrome-actions/);
 });
 
-test("conversation view switcher lives in the chrome and waits for an assistant reply", () => {
+test("conversation view switcher stays in the main header region on the shared titlebar row", () => {
   const chromeIndex = chatPageSource.indexOf("<AppWorkbenchChrome");
   const tabsIndex = chatPageSource.indexOf("<ConversationViewTabs");
   const applicationViewIndex = chatPageSource.indexOf("<ApplicationView");
 
   assert.ok(chromeIndex >= 0);
   assert.ok(tabsIndex > chromeIndex);
+  assert.match(headerSource, /data-conversation-header/);
+  assert.match(headerSource, /data-app-header-navigation/);
+  assert.match(headerSource, /var\(--sidebar-width\)-1rem/);
+  assert.doesNotMatch(chatPageSource, /<header\s+data-conversation-header/);
   assert.ok(tabsIndex < applicationViewIndex);
   assert.equal(chatPageSource.match(/<ConversationViewTabs/g)?.length, 1);
   assert.match(headerSource, /leadingActions\?: ReactNode/);
   assert.match(headerSource, /<PanelLeft[\s\S]*?\{leadingActions\}/);
   assert.match(
     chatPageSource,
-    /const hasConversationReply =[\s\S]*?!isDraftConversation &&[\s\S]*?trajectoryMessages\.some\(\(message\) => message\.role === "assistant"\)/,
+    /const hasConversationReply = useHasConversationReply\(\s*transcriptItems,\s*liveTranscriptStore,\s*isDraftConversation,/,
   );
-  assert.match(chatPageSource, /activeView === "chat" && hasConversationReply/);
+  assert.match(chatPageSource, /activeView\s*===\s*"chat"\s*&&\s*hasConversationReply/);
   assert.match(
     chatPageSource,
     /useConversationViewState\(currentConversationId\)/,
@@ -119,14 +129,8 @@ test("multi-pane conversation panes reveal trajectory and close controls togethe
   );
   // The toggle is a top-left dot styled exactly like the top-right close dot.
   assert.match(paneChromeSource, /data-workbench-pane-trajectory-toggle/);
-  assert.match(
-    paneChromeSource,
-    /left-1\.5 top-1\/2 flex h-3\.5 w-3\.5 -translate-y-1\/2 items-center justify-center rounded-full/,
-  );
-  assert.match(
-    paneChromeSource,
-    /right-1\.5 top-1\/2 flex h-3\.5 w-3\.5 -translate-y-1\/2 items-center justify-center rounded-full/,
-  );
+  assertJsxDimensions(paneChromeSource, "button", { width: "3.5", height: "3.5" }, ["left-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
+  assertJsxDimensions(paneChromeSource, "button", { width: "3.5", height: "3.5" }, ["right-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
   // Both dots share the hover-reveal treatment and palette.
   assert.equal(
     paneChromeSource.match(/bg-muted-foreground\/25 text-background/g)?.length,
@@ -146,7 +150,7 @@ test("multi-pane conversation panes reveal trajectory and close controls togethe
   // Multi-pane hides the chrome-level tabs; the pane dot owns the switch.
   assert.match(
     chatPageSource,
-    /activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes/,
+    /activeView\s*===\s*"chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes/,
   );
   assert.match(
     chatPageSource,
@@ -165,39 +169,39 @@ test("closing a conversation pane resets its trajectory projection", () => {
   );
   assert.match(
     chatPageSource,
-    /if \(!item && conversationPersistenceCursorRef\.current\.has\(conversationId\)\) \{\s*handleWorkbenchClosePane\(pane\.paneId\);/,
+    /if\s*\(\s*!item\s*&&\s*conversationPersistenceCursorRef\.current\.has\(conversationId\)\s*\)\s*\{\s*handleWorkbenchClosePane\(pane\.paneId\);/,
   );
 });
 
-test("right dock width moves the center-column chrome with the panel", () => {
-  assert.match(
-    rightDockPanelSource,
-    /transition-\[width,opacity,transform\] duration-200 ease-out/,
-  );
-  assert.match(
-    rightDockWidthSource,
-    /setWidthCollapsed\(true\);\s*const timer = window\.setTimeout\(\(\) => \{\s*setShouldRenderContent\(false\);/,
-  );
-  assert.match(
-    rightDockPanelSource,
-    /\(isResizing \|\| \(collapseImmediately && !isOpen\)\) && "md:transition-none"/,
-  );
+test("sidebar layout and right dock resizing are delegated to standard shells", () => {
+  assert.match(chatPageSource, /<WorkspacePanelGroup/);
+  assert.match(workspacePanelsSource, /<ResizablePanelGroup/);
+  assert.match(workspacePanelsSource, /<ResizableHandle/);
+  assert.match(workspacePanelsSource, /<Sheet\s+open=\{open\}/);
+  assert.match(workspacePanelsSource, /meta.isUserInteraction/);
+  assert.doesNotMatch(rightDockPanelSource, /useRightDockPanelWidth|AnimatePresence|handleResizeStart/);
+  assert.match(rightDockPanelSource, /inert=\{!isOpen\}/);
 });
 
 test("conversation transcript and composer share one stable workbench surface", () => {
   assert.match(chatPageSource, /<ConversationPaneHost/);
   assert.match(chatPageSource, /<ConversationPaneHostEnvironmentProvider/);
-  assert.match(chatPageSource, /conversationId=\{currentConversationId\}/);
-  assert.match(chatPageSource, /project=\{conversationSurfaceProject\}/);
+  assert.doesNotMatch(chatPageSource, /<ConversationPaneHost[\s\S]{0,180}conversationId=/);
   assert.doesNotMatch(chatPageSource, /<ChatTranscript|<ChatComposerBar/);
   assert.doesNotMatch(conversationPaneHostSource, /controller:\s*ConversationSurfaceController/);
-  assert.match(conversationPaneHostSource, /useConversationPaneBinding/);
-  assert.match(conversationPaneEnvironmentSource, /resolvePane\(identity: ConversationPaneIdentity\)/);
+  assert.match(conversationPaneHostSource, /useConversationPaneRegistration/);
+  assert.match(conversationPaneEnvironmentSource, /resolvePane\(paneId: string\)/);
+  assert.match(conversationPaneEnvironmentSource, /registrationsByPaneId\.get\(paneId\.trim\(\)\)/);
   assert.match(conversationSurfaceSource, /useConversationSurfaceSnapshot\(controller\)/);
   assert.match(conversationPaneHostSource, /const composerRef = useRef/);
   assert.match(conversationPaneHostSource, /const scrollFollowRef = useRef/);
-  assert.match(conversationPaneHostSource, /controller\.getSnapshot\(\)\.draft/);
-  assert.match(conversationPaneHostSource, /controller\.setDraft\(nextDraft\)/);
+  assert.match(
+    conversationPaneHostSource,
+    /const composer = composerRef\.current;\s*return beginPaneComposerDraftSession\(composer,\s*\{/,
+  );
+  assert.doesNotMatch(conversationPaneHostSource, /controllerRef/);
+  assert.match(paneComposerDraftSessionSource, /const draft = controller\.getDraft\(\)/);
+  assert.match(paneComposerDraftSessionSource, /controller\.setDraft\(nextDraft\)/);
   assert.match(conversationPaneHostSource, /<ChatTranscript/);
   assert.match(conversationPaneHostSource, /<ChatComposerBar/);
   assert.match(conversationPaneHostSource, /pendingUploadedFiles=\{snapshot\.uploads\}/);

@@ -31,8 +31,8 @@ test("failed desktop token refresh clears credentials and returns to the login g
   try {
     const loader = createTsModuleLoader({
       mocks: {
-        "@liveagent/ui/lib/providers/proxy": {
-          prepareProxyRequest: async (_providerId, baseUrl, headers) => ({ baseUrl, headers }),
+        "./accountProxy": {
+          prepareAccountRequest: async (baseUrl, headers) => ({ baseUrl, headers }),
         },
       },
     });
@@ -83,8 +83,8 @@ test("an HTML 401 response still clears the desktop session before its body is p
   try {
     const loader = createTsModuleLoader({
       mocks: {
-        "@liveagent/ui/lib/providers/proxy": {
-          prepareProxyRequest: async (_providerId, baseUrl, headers) => ({ baseUrl, headers }),
+        "./accountProxy": {
+          prepareAccountRequest: async (baseUrl, headers) => ({ baseUrl, headers }),
         },
       },
     });

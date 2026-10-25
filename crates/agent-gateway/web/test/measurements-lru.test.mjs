@@ -16,8 +16,12 @@ const { SCROLL_FOLLOW_IGNORE_KEYS_ATTRIBUTE } = loader.loadModule(
   "@liveagent/ui/lib/chat-scroll/scrollFollowCore.ts",
 );
 const width = loader.loadModule("@liveagent/ui/lib/transcript-width/transcriptWidthModel.ts");
-const transcriptStylesSource = readFileSync(
-  new URL("../src/styles/base-chat.css", import.meta.url),
+const transcriptStyleSource = readFileSync(
+  new URL("../src/lib/webStyleClasses.ts", import.meta.url),
+  "utf8",
+);
+const composerSource = readFileSync(
+  new URL("../../../agent-ui/src/pages/chat/ChatComposerBar.tsx", import.meta.url),
   "utf8",
 );
 const transcriptWidthControlsSource = readFileSync(
@@ -48,12 +52,12 @@ test("unmeasured layouts produce a blank key so nothing is cached", () => {
   assert.equal(lru.restore("conv-1", buildTranscriptLayoutKey(0, 768)), null);
 });
 
-test("gateway transcript grid consumes the stage width directly", () => {
-  assert.match(
-    transcriptStylesSource,
-    /minmax\(\s*0,\s*min\(var\(--chat-transcript-content-width,\s*768px\),\s*100%\)\s*\)/,
-  );
-  assert.doesNotMatch(transcriptStylesSource, /--gateway-transcript-column-width/);
+test("gateway transcript and composer columns both drop the retired avatar rail", () => {
+  // Both consumers must retain the same retired-avatar compensation, even when grouped.
+  const column = /grid-cols-\[[^"\n]*--chat-transcript-content-width[^"\n]*var\(--spacing-40px\)/;
+  assert.match(transcriptStyleSource, column);
+  assert.match(composerSource, column);
+  assert.doesNotMatch(`${transcriptStyleSource}\n${composerSource}`, /--gateway-transcript-column-width/);
 });
 
 test("keyboard width controls do not detach transcript scroll follow", () => {
@@ -138,7 +142,7 @@ test("empty snapshots, blank ids, and blank layout keys are not stored", () => {
 });
 
 test("capacity evicts the least recently used entry", () => {
-  const lru = createTranscriptMeasurementsLru(2);
+  const lru = createTranscriptMeasurementsLru({ capacity: 2 });
   lru.save("conv-1", layoutKey(800, 768), [item("a", 1)]);
   lru.save("conv-2", layoutKey(800, 768), [item("b", 2)]);
   // Touch conv-1 so conv-2 becomes the eviction candidate.

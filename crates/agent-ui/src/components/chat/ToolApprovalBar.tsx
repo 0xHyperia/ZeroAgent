@@ -1,17 +1,24 @@
-// 集中式工具审批栏:策略为 ask 的工具在执行前挂起等待用户批准。渲染在输入框上方,
-// 汇总当前会话所有待审批项——顶部一键「全部允许/全部拒绝」,下方逐条(单条允许/拒绝)。
-// 取代此前埋在每个 Tool Activity 折叠项里的分散卡片(并行多个时逐个展开点击很繁琐)。
+// 集中式工具审批面板:策略为 ask 的工具在执行前挂起等待用户批准。待审批时直接替换
+// 输入卡片；一次只呈现最早的一项，其余数量与批量动作收进极简的计数/下拉入口。
 //
 // 纯展示 + 决定回调;数据(pending 列表)与提交动作由各端注入:GUI 直连桌面审批服务,
 // WebUI 走网关 tool_approval，端差异一律留在各端宿主。
 
-import { Shield } from "@liveagent/ui/components/IconSet";
+import { ChevronDown, Loader2, Terminal } from "@liveagent/ui/components/IconSet";
+import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@liveagent/ui/components/ui/dropdown-menu";
 
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { useEffect, useState } from "react";
+import { cn } from "@liveagent/ui/lib/shared/utils";
+import { useEffect, useRef, useState } from "react";
 import { ASK_USER_QUESTION_TIMEOUT_MS } from "../../lib/chat/askUserQuestion";
 
-/** approve:本次放行;deny:本次拒绝;approve_session:本会话内该工具后续免审。 */
+/** approve:本次放行;deny:本次拒绝;approve_session:请后端在本会话内记住这条授权范围。 */
 export type ToolApprovalDecision = "approve" | "deny" | "approve_session";
 
 export type ToolApprovalSubmitOutcome = { ok: boolean; message?: string };
@@ -23,6 +30,12 @@ export type PendingApprovalItem = {
   summary?: string;
   /** 权威应答截止时间戳(毫秒);缺省以挂载时刻近似。 */
   deadlineAt?: number;
+  /** 后端会记住本会话授权时为 true 才提供 approve_session;缺省不提供(远端旧数据同样不显示)。 */
+  allowSession?: boolean;
+  /** approve_session 生效的授权范围(如 call:click),显示在该选项里。 */
+  sessionScope?: string;
+  /** 本次允许即对本会话同类操作生效(如 Computer Use);正文与按钮据此说明。 */
+  sessionWide?: boolean;
 };
 
 function formatCountdown(remainingMs: number) {
@@ -61,120 +74,274 @@ export function ToolApprovalBar({
   onDecideAll: (decision: "approve" | "deny") => Promise<void>;
 }) {
   const { t } = useLocale();
-  const [submitting, setSubmitting] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const [submittingAction, setSubmittingAction] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<{
+    toolCallId: string;
+    text: string;
+  } | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const panelRef = useRef<HTMLElement | null>(null);
   const deadlines = pending
     .map((item) => item.deadlineAt)
     .filter((value): value is number => typeof value === "number");
   const remainingMs = useEarliestCountdown(pending.length > 0, deadlines);
+  const submitting = submittingAction !== null;
+  const currentToolCallId = pending[0]?.toolCallId ?? "";
+
+  useEffect(() => {
+    if (!currentToolCallId) return;
+    // Approvals arrive mid-turn, whenever the model happens to call a tool — so
+    // this can land while the user is mid-word in a rename field or the
+    // new-group draft. Grabbing focus there drops their keystrokes and, for the
+    // sidebar's blur-to-commit inputs, silently discards the row. The keyboard
+    // shortcuts this focus enables are worth less than not stealing an active
+    // caret; the user can Tab or click into the bar.
+    //
+    // The composer is the exception: this bar replaces it (ChatComposerBar
+    // hides the card), so there is no caret left to protect there. Focus still
+    // sits on the hidden textarea at commit time — the browser's focus fixup
+    // runs later — so an editable activeElement only counts when it is still
+    // rendered; otherwise Enter/Escape would silently stop working right after
+    // sending a message, which is the common case.
+    const active = document.activeElement as HTMLElement | null;
+    const activeIsEditable =
+      active !== null &&
+      (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+    if (activeIsEditable && active.getClientRects().length > 0) {
+      return;
+    }
+    panelRef.current?.focus({ preventScroll: true });
+  }, [currentToolCallId]);
 
   if (pending.length === 0) return null;
 
-  const runGuarded = async (task: () => Promise<ToolApprovalSubmitOutcome | void>) => {
+  const current = pending[0];
+  const displayToolName =
+    current.toolName.toLowerCase() === "bash" ? t("chat.toolApproval.terminal") : current.toolName;
+  const errorText = submissionError?.toolCallId === current.toolCallId ? submissionError.text : "";
+  const offerSession = current.allowSession === true;
+  const hasMoreActions = offerSession || pending.length > 1;
+  const sessionTarget = current.sessionScope
+    ? `${displayToolName} · ${current.sessionScope}`
+    : displayToolName;
+
+  const runGuarded = async (
+    action: string,
+    task: (() => Promise<ToolApprovalSubmitOutcome>) | (() => Promise<void>),
+  ) => {
     if (submitting) return;
-    setSubmitting(true);
-    setErrorText("");
+    setMoreOpen(false);
+    setSubmittingAction(action);
+    setSubmissionError(null);
     try {
       const outcome = await task();
       if (outcome && !outcome.ok) {
-        setErrorText(outcome.message || t("chat.toolApproval.failed"));
+        setSubmissionError({
+          toolCallId: current.toolCallId,
+          text: outcome.message || t("chat.toolApproval.failed"),
+        });
       }
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : t("chat.toolApproval.failed"));
+      setSubmissionError({
+        toolCallId: current.toolCallId,
+        text: error instanceof Error ? error.message : t("chat.toolApproval.failed"),
+      });
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
   return (
-    <div className="tool-expand mx-auto mb-[-1px] w-[calc(100%-1.5rem)] max-w-[720px] overflow-hidden rounded-t-xl border border-b-0 border-amber-500/35 bg-amber-500/[0.06] backdrop-blur-2xl dark:border-amber-400/25 dark:bg-amber-400/[0.05]">
-      <div className="flex flex-col gap-2 px-3 py-2.5">
-        {/* 顶部:标题 + 全部允许/全部拒绝 + 倒计时 */}
-        <div className="flex items-center gap-2">
-          <Shield className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span className="min-w-0 flex-1 truncate text-[calc(12.5px*var(--zone-font-scale,1))] font-medium leading-[1.5] text-foreground/90">
-            {t("chat.toolApproval.barTitle").replace("{count}", String(pending.length))}
-          </span>
-          <span className="shrink-0 text-[calc(11px*var(--zone-font-scale,1))] tabular-nums leading-none text-muted-foreground/55">
-            {formatCountdown(remainingMs)} {t("chat.toolApproval.timeoutHint")}
+    <section
+      ref={panelRef}
+      tabIndex={-1}
+      aria-label={t("chat.toolApproval.title")}
+      onKeyDown={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          event.repeat ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey ||
+          submitting ||
+          moreOpen
+        ) {
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          void runGuarded(`deny:${current.toolCallId}`, () => onDecide(current.toolCallId, "deny"));
+          return;
+        }
+        const target = event.target;
+        if (
+          event.key !== "Enter" ||
+          (target instanceof Element &&
+            target.closest("button,input,textarea,select,[contenteditable=true],[role=menuitem]"))
+        ) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        void runGuarded(`approve:${current.toolCallId}`, () =>
+          onDecide(current.toolCallId, "approve"),
+        );
+      }}
+      className={cn(
+        "@container relative flex min-h-32 w-full flex-col",
+        "rounded-3xl border border-black/[0.055] bg-white/72 shadow-ui-toolapprovalbar-18 outline-none backdrop-blur-2xl backdrop-saturate-[165%]",
+        "dark:border-white/[0.10] dark:bg-white/[0.06] dark:shadow-ui-toolapprovalbar-19",
+      )}
+    >
+      <div className="min-h-0 flex-auto overflow-hidden px-4 pt-3">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <Terminal className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-xs leading-none">{displayToolName}</span>
+          <span
+            role="timer"
+            title={`${formatCountdown(remainingMs)} ${t("chat.toolApproval.timeoutHint")}`}
+            className="shrink-0 text-tiny tabular-nums text-muted-foreground/65"
+          >
+            {pending.length > 1 ? `1 / ${pending.length} · ` : null}
+            {formatCountdown(remainingMs)}
           </span>
         </div>
 
-        {/* 「全部允许/全部拒绝」仅在多于一个待审批时显示;单个时与逐条按钮重复,故隐藏。 */}
-        {pending.length > 1 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => void runGuarded(() => onDecideAll("approve"))}
-              className="rounded-lg bg-primary px-3 py-1.5 text-[calc(11px*var(--zone-font-scale,1))] font-medium leading-none text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
-            >
-              {t("chat.toolApproval.approveAll")}
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => void runGuarded(() => onDecideAll("deny"))}
-              className="rounded-lg border border-border/60 px-3 py-1.5 text-[calc(11px*var(--zone-font-scale,1))] font-medium leading-none text-red-600 transition-colors hover:bg-red-500/[0.06] disabled:pointer-events-none disabled:opacity-40 dark:border-white/[0.12] dark:text-red-400"
-            >
-              {t("chat.toolApproval.denyAll")}
-            </button>
-          </div>
-        ) : null}
+        {/* Wraps instead of truncating: on phones the session-wide explanation must stay readable. */}
+        <p className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92">
+          {current.sessionWide
+            ? t("chat.toolApproval.sessionWideBody")
+            : t("chat.toolApproval.body").replace("{tool}", displayToolName)}
+        </p>
 
-        {/* 逐条:顶行工具名 + 允许/拒绝按钮(固定,不被长命令挤走);下方命令块完整展示 */}
-        <ul className="flex flex-col gap-1">
-          {pending.map((item) => (
-            <li
-              key={item.toolCallId}
-              className="flex flex-col gap-1.5 rounded-md border border-black/[0.05] bg-background/40 px-2 py-1.5 dark:border-white/[0.06]"
-            >
-              <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-[calc(11px*var(--zone-font-scale,1))] font-medium leading-none text-foreground/80">
-                  {item.toolName}
-                </code>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void runGuarded(() => onDecide(item.toolCallId, "approve"))}
-                  className="shrink-0 rounded-md px-2 py-1 text-[calc(10.5px*var(--zone-font-scale,1))] font-medium leading-none text-emerald-600 transition-colors hover:bg-emerald-500/[0.08] disabled:pointer-events-none disabled:opacity-40 dark:text-emerald-400"
-                >
-                  {t("chat.toolApproval.approve")}
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() =>
-                    void runGuarded(() => onDecide(item.toolCallId, "approve_session"))
-                  }
-                  className="shrink-0 rounded-md px-2 py-1 text-[calc(10.5px*var(--zone-font-scale,1))] font-medium leading-none text-foreground/70 transition-colors hover:bg-foreground/[0.05] disabled:pointer-events-none disabled:opacity-40"
-                >
-                  {t("chat.toolApproval.approveSession")}
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void runGuarded(() => onDecide(item.toolCallId, "deny"))}
-                  className="shrink-0 rounded-md px-2 py-1 text-[calc(10.5px*var(--zone-font-scale,1))] font-medium leading-none text-red-600 transition-colors hover:bg-red-500/[0.06] disabled:pointer-events-none disabled:opacity-40 dark:text-red-400"
-                >
-                  {t("chat.toolApproval.deny")}
-                </button>
-              </div>
-              {item.summary ? (
-                <pre className="chat-queue-scroll max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded bg-foreground/[0.04] px-2 py-1.5 font-mono text-[calc(11px*var(--zone-font-scale,1))] leading-[1.45] text-foreground/70 dark:bg-white/[0.04]">
-                  {item.summary}
-                </pre>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-
-        {errorText ? (
-          <div className="text-[calc(11px*var(--zone-font-scale,1))] leading-[1.5] text-red-500">
-            {errorText}
-          </div>
+        {current.summary ? (
+          <pre
+            title={current.summary}
+            className="mt-1.5 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs leading-1p45 text-muted-foreground"
+          >
+            {current.summary}
+          </pre>
         ) : null}
       </div>
-    </div>
+
+      <div className="flex h-9 shrink-0 items-center justify-end gap-1.5 px-3 pb-2">
+        {errorText ? (
+          <span role="alert" className="mr-auto min-w-0 flex-1 truncate text-tiny text-destructive">
+            {errorText}
+          </span>
+        ) : null}
+
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={submitting}
+          aria-busy={submittingAction === `deny:${current.toolCallId}`}
+          aria-keyshortcuts="Escape"
+          onClick={() =>
+            void runGuarded(`deny:${current.toolCallId}`, () =>
+              onDecide(current.toolCallId, "deny"),
+            )
+          }
+          className="h-7 shrink-0 px-3 text-xs"
+        >
+          {submittingAction === `deny:${current.toolCallId}` ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : null}
+          {t("chat.toolApproval.deny")}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "rounded bg-muted px-1 py-0.5",
+              "font-sans text-tiny font-normal leading-none text-muted-foreground",
+            )}
+          >
+            Esc
+          </span>
+        </Button>
+
+        <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
+          <div className="flex shrink-0">
+            <Button
+              size="sm"
+              disabled={submitting}
+              aria-busy={submittingAction === `approve:${current.toolCallId}`}
+              aria-keyshortcuts="Enter"
+              onClick={() =>
+                void runGuarded(`approve:${current.toolCallId}`, () =>
+                  onDecide(current.toolCallId, "approve"),
+                )
+              }
+              className={cn("h-7 px-3 text-xs shadow-none", hasMoreActions && "rounded-r-none")}
+            >
+              {submittingAction === `approve:${current.toolCallId}` ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : null}
+              {t(
+                current.sessionWide
+                  ? "chat.toolApproval.approveForSession"
+                  : "chat.toolApproval.approve",
+              )}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "rounded bg-primary-foreground/10 px-1 py-0.5",
+                  "font-sans text-tiny font-normal leading-none text-primary-foreground/75",
+                )}
+              >
+                ↵
+              </span>
+            </Button>
+            {hasMoreActions ? (
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    size="sm"
+                    disabled={submitting}
+                    className="h-7 w-6 rounded-l-none border-l border-primary-foreground/20 px-0 shadow-none"
+                  />
+                }
+                aria-label={t("chat.toolApproval.moreActions")}
+              >
+                <ChevronDown className="size-3" />
+              </DropdownMenuTrigger>
+            ) : null}
+          </div>
+          <DropdownMenuContent variant="soft" side="top" align="end" className="min-w-32">
+            {offerSession ? (
+              <DropdownMenuItem
+                disabled={submitting}
+                onSelect={() =>
+                  void runGuarded(`session:${current.toolCallId}`, () =>
+                    onDecide(current.toolCallId, "approve_session"),
+                  )
+                }
+              >
+                {t("chat.toolApproval.approveSession").replace("{tool}", sessionTarget)}
+              </DropdownMenuItem>
+            ) : null}
+            {pending.length > 1 ? (
+              <>
+                <DropdownMenuItem
+                  disabled={submitting}
+                  onSelect={() => void runGuarded("approve-all", () => onDecideAll("approve"))}
+                >
+                  {t("chat.toolApproval.approveAll")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={submitting}
+                  onSelect={() => void runGuarded("deny-all", () => onDecideAll("deny"))}
+                  className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+                >
+                  {t("chat.toolApproval.denyAll")}
+                </DropdownMenuItem>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </section>
   );
 }

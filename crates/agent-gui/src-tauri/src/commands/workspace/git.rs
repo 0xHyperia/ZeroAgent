@@ -13,8 +13,9 @@ use tempfile::NamedTempFile;
 use wait_timeout::ChildExt;
 
 use crate::commands::system::validate_project_folder_name;
+use crate::runtime::platform::strip_windows_verbatim_prefix;
 use crate::runtime::process::{
-    configure_child_process_group, kill_child_process_tree_best_effort,
+    configure_child_process_group, kill_child_process_tree_best_effort, spawn_and_reap,
     terminate_process_tree_by_pid,
 };
 
@@ -396,7 +397,7 @@ impl GitCloneTaskRegistry {
             .values()
             .map(|entry| entry.task.clone())
             .collect::<Vec<_>>();
-        tasks.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+        tasks.sort_by_key(|task| std::cmp::Reverse(task.started_at));
         Ok(tasks)
     }
 
@@ -643,10 +644,19 @@ fn git_output_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Output, String> {
-    let mut stdout_file =
-        NamedTempFile::new().map_err(|error| format!("创建 git stdout 缓存失败：{error}"))?;
-    let mut stderr_file =
-        NamedTempFile::new().map_err(|error| format!("创建 git stderr 缓存失败：{error}"))?;
+    // On Windows, creating a file whose name collides with an existing directory returns
+    // AccessDenied, which tempfile cannot retry as AlreadyExists. Keep Git captures out of
+    // the default .tmp namespace used by temporary directories and use a longer suffix.
+    let mut stdout_file = tempfile::Builder::new()
+        .prefix("zeroagent-git-stdout-")
+        .rand_bytes(16)
+        .tempfile()
+        .map_err(|error| format!("创建 git stdout 缓存失败：{error}"))?;
+    let mut stderr_file = tempfile::Builder::new()
+        .prefix("zeroagent-git-stderr-")
+        .rand_bytes(16)
+        .tempfile()
+        .map_err(|error| format!("创建 git stderr 缓存失败：{error}"))?;
     let stdout_target = stdout_file
         .reopen()
         .map_err(|error| format!("打开 git stdout 缓存失败：{error}"))?;
@@ -655,9 +665,14 @@ fn git_output_with_timeout(
         .map_err(|error| format!("打开 git stderr 缓存失败：{error}"))?;
     let mut command = Command::new("git");
     configure_child_process_group(&mut command);
+    let process_workdir = strip_windows_verbatim_prefix(PathBuf::from(workdir));
+    let process_args: Vec<PathBuf> = args
+        .iter()
+        .map(|arg| strip_windows_verbatim_prefix(PathBuf::from(arg)))
+        .collect();
     let mut child = command
-        .args(args)
-        .current_dir(workdir)
+        .args(process_args)
+        .current_dir(process_workdir)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         // Pin the message locale: callers (transient-lock retry, the
@@ -1216,7 +1231,7 @@ pub(crate) fn git_branches_sync(workdir: String) -> Result<GitBranchesResponse, 
 }
 
 fn normalized_worktree_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    strip_windows_verbatim_prefix(fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
 }
 
 fn worktree_paths_match(left: &Path, right: &Path) -> bool {
@@ -1240,7 +1255,9 @@ fn parse_git_worktree_records(output: &str, current_repo_root: &str) -> Vec<GitW
             if !record.path.is_empty() {
                 records.push(std::mem::take(&mut record));
             }
-            record.path = path.to_string();
+            record.path = normalized_worktree_path(Path::new(path))
+                .to_string_lossy()
+                .into_owned();
         } else if let Some(branch) = field.strip_prefix("branch refs/heads/") {
             record.branch = branch.to_string();
         } else if field == "locked" || field.starts_with("locked ") {
@@ -1357,9 +1374,10 @@ fn spawn_system_file_manager(program: &str, args: &[String]) -> Result<(), Strin
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| format!("打开系统资源管理器失败：{error}"))?;
+        .stderr(Stdio::null());
+    // 启动器不等，但必须收尸：`Child` 直接丢掉的话，子进程退出后没人 wait()，
+    // 每次"在文件管理器中显示"都会在本进程下留一个 <defunct>。
+    spawn_and_reap(&mut command).map_err(|error| format!("打开系统资源管理器失败：{error}"))?;
     Ok(())
 }
 
@@ -1833,8 +1851,7 @@ pub(crate) fn git_create_branch_sync(
 /// Worktree 存储基目录（`~/.liveagent/worktree`）。Worktree 是仓库的检出
 /// 副本，落在应用存储域，避免污染工作区目录结构。
 fn worktree_storage_base() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法定位用户目录。".to_string())?;
-    let dir = home.join(".liveagent").join("worktree");
+    let dir = crate::commands::settings::config_dir()?.join("worktree");
     fs::create_dir_all(&dir).map_err(|error| format!("创建 worktree 目录失败：{error}"))?;
     Ok(dir)
 }
@@ -1842,7 +1859,9 @@ fn worktree_storage_base() -> Result<PathBuf, String> {
 /// 稳定且唯一的 repo id：`<sanitized-basename>-<fnv1a64 完整 64 位 hex>`。
 /// 同一仓库根路径永远映射到同一 id，目录可读；64 位哈希碰撞概率可忽略。
 fn repo_worktree_id(repo_root: &str) -> String {
-    let basename = Path::new(repo_root)
+    let normalized_root = strip_windows_verbatim_prefix(PathBuf::from(repo_root));
+    let repo_root = normalized_root.to_string_lossy().into_owned();
+    let basename = Path::new(&repo_root)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| repo_root.to_string());
@@ -1899,7 +1918,9 @@ fn validate_worktree_parent_directory(parent: &str) -> Result<PathBuf, String> {
         return Err("Worktree 父目录必须是文件夹。".to_string());
     }
     fs::read_dir(&parent_path).map_err(|error| format!("Worktree 父目录不可访问：{error}"))?;
-    fs::canonicalize(&parent_path).map_err(|error| format!("无法解析 Worktree 父目录：{error}"))
+    fs::canonicalize(&parent_path)
+        .map(strip_windows_verbatim_prefix)
+        .map_err(|error| format!("无法解析 Worktree 父目录：{error}"))
 }
 
 pub(crate) fn git_create_worktree_sync(
@@ -1954,6 +1975,7 @@ fn git_create_worktree_with_base(
             fs::create_dir_all(&repo_dir)
                 .map_err(|error| format!("创建 Worktree 目录失败：{error}"))?;
             fs::canonicalize(&repo_dir)
+                .map(strip_windows_verbatim_prefix)
                 .map_err(|error| format!("无法解析 Worktree 目录：{error}"))?
         }
     };
@@ -1994,10 +2016,12 @@ fn git_create_worktree_with_base(
     let response_state = git_status_sync(workdir)?;
     match result {
         Ok(output) => {
-            let worktree_path = fs::canonicalize(&target)
-                .map_err(|error| format!("无法解析 Worktree 路径：{error}"))?
-                .to_string_lossy()
-                .into_owned();
+            let worktree_path = strip_windows_verbatim_prefix(
+                fs::canonicalize(&target)
+                    .map_err(|error| format!("无法解析 Worktree 路径：{error}"))?,
+            )
+            .to_string_lossy()
+            .into_owned();
             Ok(GitWorktreeResponse {
                 ok: true,
                 state: response_state,
@@ -4019,7 +4043,7 @@ mod tests {
     #[test]
     fn parses_porcelain_v2_branch_and_counts() {
         let raw = b"# branch.head feature\0# branch.upstream origin/feature\0# branch.ab +2 -1\0\
-# stash 3\01 .M N... 100644 100644 100644 a b src/main.rs\0? new.txt\0";
+# stash 3\x001 .M N... 100644 100644 100644 a b src/main.rs\0? new.txt\0";
         let (head, upstream, ahead, behind, stash_count, entries) = parse_status_porcelain_v2(raw);
         assert_eq!(head, "feature");
         assert_eq!(upstream, "origin/feature");
@@ -4375,7 +4399,8 @@ mod tests {
         )
         .expect("start gateway clone task");
         let task_id = started["id"].as_str().expect("clone task id").to_string();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // This checks asynchronous completion and its branch/files, not clone latency.
+        let deadline = Instant::now() + Duration::from_secs(30);
         loop {
             let task = registry.task(&task_id).expect("clone task state");
             if task.status != "running" && task.status != "cancelling" {
@@ -5209,7 +5234,10 @@ mod tests {
                 .join("feature-alpha"),
         )
         .expect("resolve expected worktree path");
-        assert_eq!(PathBuf::from(&created.worktree_path), expected);
+        assert!(worktree_paths_match(
+            Path::new(&created.worktree_path),
+            &expected
+        ));
         assert!(expected.is_dir(), "worktree directory should exist");
 
         // 新 worktree 检出到同名新分支
@@ -5243,8 +5271,10 @@ mod tests {
         assert_eq!(created.directory_name, "custom-folder");
         assert_eq!(
             PathBuf::from(&created.worktree_path),
-            fs::canonicalize(custom_parent.path().join("custom-folder"))
-                .expect("canonical custom worktree"),
+            strip_windows_verbatim_prefix(
+                fs::canonicalize(custom_parent.path().join("custom-folder"))
+                    .expect("canonical custom worktree")
+            ),
         );
         assert!(
             !default_root

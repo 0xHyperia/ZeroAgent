@@ -1,12 +1,7 @@
-import {
-  CheckCircle2,
-  ChevronDown,
-  Download,
-  Key,
-  Loader2,
-  RefreshCw,
-} from "@liveagent/ui/components/IconSet";
-import { Button } from "@liveagent/ui/components/ui/button";
+import { invoke } from "@liveagent/app/shims/tauriCore";
+import { CheckCircle2, Download, Key, Loader2, RefreshCw } from "@liveagent/ui/components/IconSet";
+import { Button, RefreshButton } from "@liveagent/ui/components/ui/button";
+import { CopyButton } from "@liveagent/ui/components/ui/copy-button";
 import {
   Dialog,
   DialogActions,
@@ -17,31 +12,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@liveagent/ui/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@liveagent/ui/components/ui/dropdown-menu";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import type { CustomHeader } from "@liveagent/ui/lib/providers/customHeaders";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import type { ProviderModelDiscoveryInput } from "@liveagent/ui/pages/settings/providerSettingsAdapter";
 import {
   createDraftModelConfig,
-  fetchModelsFromApi,
   mergeFetchedModels,
 } from "@liveagent/ui/pages/settings/providerUtils";
-import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import ccswitchLogoUrl from "../../src-tauri/icons/custom/ccswitch.png";
 import cherryStudioLogoUrl from "../../src-tauri/icons/custom/cherrystudio.png";
+import { createKBrainClient } from "../lib/kbrain/client";
 import type { ProviderModelConfig } from "../lib/settings";
 import {
   type AppSettings,
   type CodexRequestFormat,
   type CustomProvider,
   getDefaultUsageQueryConfig,
+  normalizeProviderModelConfigs,
   type ProviderId,
   updateCustomProviders,
 } from "../lib/settings";
@@ -51,6 +40,33 @@ import {
   CherryStudioImportModal,
 } from "../pages/settings/CherryStudioImportModal";
 import type { SetSettingsFn } from "../pages/settings/types";
+
+export async function discoverProviderModels(
+  input: ProviderModelDiscoveryInput,
+): Promise<ProviderModelConfig[]> {
+  const response = await createKBrainClient().discoverProviderModels(input.providerId, input);
+  const models = Array.isArray(response)
+    ? response
+    : response && typeof response === "object"
+      ? (response as { models?: unknown }).models
+      : undefined;
+  if (!Array.isArray(models)) throw new Error("Malformed provider model discovery response");
+  return normalizeProviderModelConfigs(models, input.type);
+}
+
+export const providerCredentialsRedacted = true;
+
+/**
+ * Reads the stored provider API key back from the local K-brain backend. Only called on an
+ * explicit user action (the eye button); returns null when nothing is stored.
+ */
+export async function revealStoredProviderApiKey(providerId: string): Promise<string | null> {
+  if (providerId.startsWith("relay-key-")) {
+    throw new Error("托管密钥只能在 USA-零 密钥页完成二次验证后复制。");
+  }
+  const secrets = await createKBrainClient().revealProviderSecrets(providerId);
+  return secrets.apiKey?.trim() ? secrets.apiKey : null;
+}
 
 type CcsProviderImportItem = {
   sourceId: string;
@@ -63,6 +79,7 @@ type CcsProviderImportItem = {
   apiKey: string;
   requestFormat: CodexRequestFormat;
   models?: string[];
+  customHeaders?: CustomHeader[];
 };
 
 type CcsProvidersResponse = {
@@ -143,6 +160,7 @@ export function providerFromCcs(
     apiKeyConfigured: item.apiKey.trim().length > 0,
     models,
     activeModels: models.map((model) => model.id),
+    customHeaders: item.customHeaders?.map((header) => ({ ...header })) ?? [],
     requestFormat:
       item.providerType === "xai"
         ? "openai-responses"
@@ -181,7 +199,7 @@ function cherryProviderName(item: CherryProviderImportItem, allItems: CherryProv
 }
 
 function cherryEffectiveApiKey(item: CherryProviderImportItem, existing?: CustomProvider) {
-  return existing?.apiKey?.trim() ? existing.apiKey : item.apiKey;
+  return existing?.apiKey?.trim() || existing?.apiKeyConfigured ? existing.apiKey : item.apiKey;
 }
 
 export function providerFromCherry(
@@ -199,9 +217,13 @@ export function providerFromCherry(
     isFullUrl: existing?.isFullUrl ?? false,
     ...(existing?.modelsUrl ? { modelsUrl: existing.modelsUrl } : {}),
     apiKey,
-    apiKeyConfigured: apiKey.trim().length > 0,
+    apiKeyConfigured: apiKey.trim().length > 0 || existing?.apiKeyConfigured === true,
     models: existing?.models ?? [],
     activeModels: existing?.activeModels ?? [],
+    customHeaders:
+      existing?.customHeaders?.map((header) => ({ ...header })) ??
+      item.customHeaders?.map((header) => ({ ...header })) ??
+      [],
     requestFormat:
       item.providerType === "xai"
         ? "openai-responses"
@@ -241,7 +263,6 @@ function isLikelyCherryChatModel(modelId: string) {
 }
 
 function CcsImportModal(props: {
-  activeTab: ProviderId;
   items: CcsProviderImportItem[];
   existingProviders: CustomProvider[];
   importing: boolean;
@@ -249,12 +270,12 @@ function CcsImportModal(props: {
   onImport: (items: CcsProviderImportItem[]) => void;
   onClose: () => void;
 }) {
-  const { activeTab, items, existingProviders, importing, result, onImport, onClose } = props;
+  const { items, existingProviders, importing, result, onImport, onClose } = props;
   const existing = useMemo(
     () => new Set(existingProviders.map(ccsImportIdentity)),
     [existingProviders],
   );
-  const rows = items.filter((item) => item.providerType === activeTab);
+  const rows = items;
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const selectedItems = rows.filter((item) => selected.has(ccsItemKey(item)));
 
@@ -271,17 +292,17 @@ function CcsImportModal(props: {
   return (
     <Dialog open onOpenChange={(open) => !open && !importing && onClose()}>
       <DialogContent
-        className="flex h-[min(34rem,85dvh)] max-w-xl flex-col p-0"
+        className="flex h-dialog-34rem-dvh max-w-xl flex-col p-0"
         closeDisabled={importing}
         closeLabel="关闭"
         showCloseButton
       >
         <DialogHeader className="flex-row items-center gap-3 px-6">
-          {sourceLogo("ccswitch", "h-9 w-9")}
+          {sourceLogo("ccswitch", "size-9")}
           <div className="min-w-0 flex-1">
             <DialogTitle className="text-sm leading-normal">从 CC Switch 导入</DialogTitle>
             <DialogDescription className="mt-0.5 text-xs">
-              导入当前供应商类型的配置，并在后台获取模型列表
+              选择要导入的配置，并在后台获取模型列表
             </DialogDescription>
           </div>
         </DialogHeader>
@@ -315,7 +336,7 @@ function CcsImportModal(props: {
                       {item.baseUrl || "未配置 Base URL"}
                     </div>
                   </div>
-                  {item.apiKey.trim() ? <Key className="h-3.5 w-3.5" /> : null}
+                  {item.apiKey.trim() ? <Key className="size-3.5" /> : null}
                   {alreadyImported ? (
                     <span className="text-xs text-emerald-600">已导入</span>
                   ) : null}
@@ -324,13 +345,13 @@ function CcsImportModal(props: {
             })
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              当前类型未发现可导入配置
+              未发现可导入配置
             </div>
           )}
         </DialogBody>
         {result ? (
           <div className="flex items-start gap-2 border-t px-6 py-3 text-xs text-emerald-600">
-            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
             <span>{result}</span>
           </div>
         ) : null}
@@ -345,9 +366,9 @@ function CcsImportModal(props: {
               disabled={importing || selectedItems.length === 0}
             >
               {importing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <Download className="h-3.5 w-3.5" />
+                <Download className="size-3.5" />
               )}
               导入 {selectedItems.length} 项
             </Button>
@@ -358,13 +379,35 @@ function CcsImportModal(props: {
   );
 }
 
+/** 桌面端复制内容：Base URL 与 API Key 各占一行，空值省略。 */
+export function formatProviderCopyConfig(provider: Pick<CustomProvider, "baseUrl" | "apiKey">) {
+  return [provider.baseUrl.trim(), provider.apiKey.trim()].filter(Boolean).join("\n");
+}
+
+/**
+ * 供应商卡片上的一键复制按钮（仅桌面端）：把 Base URL 与 API Key 复制到
+ * 剪贴板。WebUI 会对 API Key 做脱敏，因此 gateway 端的同名适配器返回 null。
+ */
+export function ProviderCopyConfigButton(props: {
+  provider: Pick<CustomProvider, "baseUrl" | "apiKey">;
+}) {
+  const { provider } = props;
+  const { t } = useLocale();
+  return (
+    <CopyButton
+      value={formatProviderCopyConfig(provider)}
+      label={t("settings.providerCopyConfig")}
+      copiedLabel={t("settings.providerCopyConfigCopied")}
+    />
+  );
+}
+
 export function ProviderSettingsExtension(props: {
-  activeTab: ProviderId;
   settings: AppSettings;
   setSettings: SetSettingsFn;
   triggerClassName?: string;
 }) {
-  const { activeTab, settings, setSettings, triggerClassName } = props;
+  const { settings, setSettings, triggerClassName } = props;
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -410,16 +453,17 @@ export function ProviderSettingsExtension(props: {
     const results = await Promise.all(
       providers.map(async (provider) => {
         try {
-          const models = await fetchModelsFromApi(
-            provider.type,
-            provider.baseUrl,
-            provider.apiKey,
-            {
-              useSystemProxy: provider.useSystemProxy,
-              isFullUrl: provider.isFullUrl,
-              modelsUrl: provider.modelsUrl,
-            },
-          );
+          const models = await discoverProviderModels({
+            type: provider.type,
+            requestFormat: provider.requestFormat,
+            baseUrl: provider.baseUrl,
+            apiKey: provider.apiKey,
+            useSystemProxy: provider.useSystemProxy,
+            isFullUrl: provider.isFullUrl,
+            modelsUrl: provider.modelsUrl,
+            providerId: provider.id,
+            customHeaders: provider.customHeaders,
+          });
           return { id: provider.id, models, ok: true };
         } catch {
           return {
@@ -430,26 +474,33 @@ export function ProviderSettingsExtension(props: {
         }
       }),
     );
+    const resultById = new Map<string, (typeof results)[number]>();
+    for (const result of results) {
+      if (!resultById.has(result.id)) resultById.set(result.id, result);
+    }
     setSettings((current) =>
       updateCustomProviders(
         current,
         current.customProviders.map((provider) => {
-          const result = results.find((item) => item.id === provider.id);
+          const result = resultById.get(provider.id);
           if (!result?.ok) return provider;
           const models = mergeFetchedModels(result.models, provider.models);
           return {
             ...provider,
             models,
-            activeModels: models.map((model) => model.id),
+            activeModels: [
+              ...provider.activeModels,
+              ...models
+                .filter((model) => !provider.models.some((existing) => existing.id === model.id))
+                .map((model) => model.id),
+            ],
           };
         }),
       ),
     );
     const failed = results.filter((result) => !result.ok).length;
     setMessage(
-      failed > 0
-        ? `已导入配置，${failed} 个供应商模型获取失败`
-        : "已导入配置并激活获取到的全部模型",
+      failed > 0 ? `已导入配置，${failed} 个供应商模型获取失败` : "已导入配置并激活新获取的模型",
     );
   }
 
@@ -503,8 +554,26 @@ export function ProviderSettingsExtension(props: {
       importable.map(async (item) => {
         const id = cherryProviderId(item);
         try {
+          const provider = providerFromCherry(
+            item,
+            allItems,
+            settings.customProviders.find((provider) => provider.id === id),
+          );
+          // K-brain redacts a saved key on reload. Use the imported key only for
+          // this discovery request; keep the persisted provider key untouched.
+          const discoveryApiKey = provider.apiKey.trim() || item.apiKey.trim();
           const models = (
-            await fetchModelsFromApi(item.providerType, item.baseUrl, item.apiKey)
+            await discoverProviderModels({
+              type: provider.type,
+              requestFormat: provider.requestFormat,
+              providerId: provider.id,
+              baseUrl: provider.baseUrl,
+              apiKey: discoveryApiKey,
+              modelsUrl: provider.modelsUrl,
+              isFullUrl: provider.isFullUrl,
+              useSystemProxy: provider.useSystemProxy,
+              customHeaders: provider.customHeaders,
+            })
           ).filter((model) => isLikelyCherryChatModel(model.id));
           return { id, models, ok: true };
         } catch {
@@ -512,18 +581,28 @@ export function ProviderSettingsExtension(props: {
         }
       }),
     );
+    const importedIdSet = new Set(importedIds);
+    const resultById = new Map<string, (typeof results)[number]>();
+    for (const result of results) {
+      if (!resultById.has(result.id)) resultById.set(result.id, result);
+    }
     setSettings((current) =>
       updateCustomProviders(
         current,
         current.customProviders.map((provider) => {
-          if (!importedIds.includes(provider.id)) return provider;
-          const result = results.find((item) => item.id === provider.id);
+          if (!importedIdSet.has(provider.id)) return provider;
+          const result = resultById.get(provider.id);
           if (!result?.ok) return provider;
           const models = mergeFetchedModels(result.models, provider.models);
           return {
             ...provider,
             models,
-            activeModels: models.map((model) => model.id),
+            activeModels: [
+              ...provider.activeModels,
+              ...models
+                .filter((model) => !provider.models.some((existing) => existing.id === model.id))
+                .map((model) => model.id),
+            ],
           };
         }),
       ),
@@ -532,7 +611,7 @@ export function ProviderSettingsExtension(props: {
     setMessage(
       failed > 0
         ? `已同步 ${importable.length} 个 Cherry Studio 供应商，${failed} 个模型列表获取失败`
-        : `已同步 ${importable.length} 个 Cherry Studio 供应商并激活全部模型`,
+        : `已同步 ${importable.length} 个 Cherry Studio 供应商并激活新获取的模型`,
     );
     setCherryModalOpen(false);
     setImporting(false);
@@ -567,77 +646,82 @@ export function ProviderSettingsExtension(props: {
       .finally(() => setScanning(false));
   }
 
-  const ccsCount =
-    ccsResponse?.providers.filter((item) => item.providerType === activeTab).length ?? 0;
-  const cherryCount =
-    cherryResponse?.providers.filter((item) => item.providerType === activeTab && item.importable)
-      .length ?? 0;
+  const ccsCount = ccsResponse?.providers.length ?? 0;
+  const cherryCount = cherryResponse?.providers.filter((item) => item.importable).length ?? 0;
 
   return (
     <>
-      <span className="settings-provider-action-slot">
-        <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn("settings-provider-action", triggerClassName)}
-                title={message ?? t("settings.importProvidersHint")}
-                aria-label={t("settings.importProvidersHint")}
-              />
-            }
-          >
-            {scanning ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-            <span className="settings-provider-action-label">{t("settings.importProviders")}</span>
-            <ChevronDown
-              className={cn("h-3.5 w-3.5 shrink-0 transition-transform", menuOpen && "rotate-180")}
-            />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel>桌面配置同步</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void scan()} disabled={scanning} className="gap-2">
-              <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
-              重新扫描本地配置
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={triggerClassName}
+        onClick={() => handleMenuOpenChange(true)}
+        aria-label={t("settings.importProviders")}
+      >
+        <Download className="size-3.5" />
+        {t("settings.importProviders")}
+      </Button>
+      <Dialog open={menuOpen} onOpenChange={handleMenuOpenChange}>
+        <DialogContent className="max-w-md" showCloseButton closeLabel={t("settings.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.importProviders")}</DialogTitle>
+            <DialogDescription>选择配置来源，再选择要导入的供应商。</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <Button
+              variant="ghost"
               disabled={scanning || ccsCount === 0}
-              onSelect={() => setCcsModalOpen(true)}
-              className="gap-3 py-2.5"
+              onClick={() => {
+                setMenuOpen(false);
+                setCcsModalOpen(true);
+              }}
+              className="h-auto w-full justify-start gap-3 rounded-xl bg-settings-tile p-4 text-left"
             >
-              {sourceLogo("ccswitch", "h-8 w-8")}
+              {sourceLogo("ccswitch", "size-9")}
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">CC Switch</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  当前类型发现 {ccsCount} 项配置
-                </span>
+                <span className="block text-xs text-muted-foreground">发现 {ccsCount} 项配置</span>
               </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
+            </Button>
+            <Button
+              variant="ghost"
               disabled={scanning || cherryCount === 0}
-              onSelect={() => setCherryModalOpen(true)}
-              className="gap-3 py-2.5"
+              onClick={() => {
+                setMenuOpen(false);
+                setCherryModalOpen(true);
+              }}
+              className="h-auto w-full justify-start gap-3 rounded-xl bg-settings-tile p-4 text-left"
             >
-              {sourceLogo("cherry", "h-8 w-8")}
+              {sourceLogo("cherry", "size-9")}
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">Cherry Studio</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  当前类型发现 {cherryCount} 项可同步配置
+                <span className="block text-xs text-muted-foreground">
+                  发现 {cherryCount} 项可同步配置
                 </span>
               </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </span>
+            </Button>
+            {message && (
+              <p role="status" className="text-xs text-muted-foreground">
+                {message}
+              </p>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <RefreshButton
+              aria-busy={scanning}
+              variant="ghost"
+              onClick={() => void scan()}
+              disabled={scanning}
+            >
+              <RefreshCw data-refresh-icon className={cn("size-4", scanning && "animate-spin")} />
+              {scanning ? "正在扫描…" : "重新扫描本地配置"}
+            </RefreshButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {ccsModalOpen ? (
         <CcsImportModal
-          activeTab={activeTab}
           items={ccsResponse?.providers ?? []}
           existingProviders={settings.customProviders}
           importing={importing}
@@ -648,7 +732,9 @@ export function ProviderSettingsExtension(props: {
       ) : null}
       {cherryModalOpen && cherryResponse ? (
         <CherryStudioImportModal
-          initialType={activeTab}
+          initialType={
+            cherryResponse.providers.find((item) => item.importable)?.providerType ?? "claude_code"
+          }
           response={cherryResponse}
           importing={importing}
           scanning={scanning}

@@ -4,6 +4,7 @@ export type SettingsStorageErrorCode =
   | "load_failed"
   | "save_failed"
   | "gateway_sync_failed"
+  | "native_settings_changed"
   | "ssh_settings_changed";
 
 function errorText(error: unknown) {
@@ -30,6 +31,11 @@ export function getSettingsErrorMessage(
   translate: (key: string, locale: Locale) => string,
 ) {
   if (error instanceof SettingsStorageError) {
+    if (error.code === "native_settings_changed") {
+      return locale === "en-US"
+        ? "Settings changed elsewhere. Review the latest settings and submit your edit again."
+        : "配置已由其他窗口或后台更新，请核对最新内容后重新提交修改。";
+    }
     if (error.code === "ssh_settings_changed") {
       return translate("app.settingsSshSettingsChanged", locale);
     }

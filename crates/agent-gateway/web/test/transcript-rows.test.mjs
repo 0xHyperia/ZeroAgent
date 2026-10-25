@@ -76,7 +76,49 @@ test("thinking-only rounds count as content", () => {
   assert.equal(rows[0].kind, "assistant");
 });
 
-test("checkpoint and error entries flush the assistant group", () => {
+test("a mid-reply checkpoint stitches both halves into one assistant row with a seam round", () => {
+  const rows = buildRowsFromEntries(
+    [
+      { id: "a-1", kind: "assistant", text: "before", round: 1 },
+      {
+        id: "checkpoint-s1",
+        kind: "checkpoint",
+        content: "summary",
+        summaryId: "s1",
+        coveredMessageCount: 3,
+        generatedBy: { providerId: "liveagent", model: "summary" },
+        contextUsageTokens: 1200,
+      },
+      { id: "a-2", kind: "assistant", text: "after", round: 1, timestamp: 42 },
+      { id: "err-1", kind: "error", text: "boom" },
+    ],
+    "history",
+  );
+  assert.deepEqual(
+    rows.map((row) => row.kind),
+    ["assistant", "error"],
+  );
+  assert.equal(rows[0].key, "ag:a-1", "the leading part keys the stitched row");
+  assert.equal(rows[0].timestamp, 42, "the reply timestamp is the last part's");
+  assert.deepEqual(
+    rows[0].rounds.map((round) => [round.key, round.blocks.length, Boolean(round.checkpoint)]),
+    [
+      ["ag:a-1:r1", 1, false],
+      ["checkpoint-s1", 0, true],
+      ["ag:a-2:r1", 1, false],
+    ],
+  );
+  assert.equal(rows[0].rounds[1].checkpoint.summaryId, "s1");
+  assert.equal(rows[0].rounds[1].checkpoint.contextUsageTokens, 1200);
+  assert.deepEqual(
+    rows[0].rounds.map((round) =>
+      round.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join(""),
+    ),
+    ["before", "", "after"],
+  );
+});
+
+test("a checkpoint that ends the chain stays a standalone card; errors still flush", () => {
   const rows = buildRowsFromEntries(
     [
       { id: "a-1", kind: "assistant", text: "before", round: 1 },
@@ -88,17 +130,17 @@ test("checkpoint and error entries flush the assistant group", () => {
         coveredMessageCount: 3,
         generatedBy: { providerId: "liveagent", model: "summary" },
       },
-      { id: "a-2", kind: "assistant", text: "after", round: 1 },
       { id: "err-1", kind: "error", text: "boom" },
+      { id: "a-2", kind: "assistant", text: "after", round: 1 },
     ],
     "history",
   );
   assert.deepEqual(
     rows.map((row) => row.kind),
-    ["assistant", "checkpoint", "assistant", "error"],
+    ["assistant", "checkpoint", "error", "assistant"],
   );
   assert.equal(rowText(rows[0]), "before");
-  assert.equal(rowText(rows[2]), "after");
+  assert.equal(rowText(rows[3]), "after");
 });
 
 test("buildTurnRows emits the user bubble before any assistant content, tagged with the turn key", () => {
@@ -115,23 +157,34 @@ test("buildTurnRows emits the user bubble before any assistant content, tagged w
   assert.equal(rows[1].turnKey, "req:c1");
 });
 
-test("stream token metadata preserves authoritative context usage and render-only markers", () => {
+test("stream token metadata preserves raw usage and render-only markers", () => {
+  // meta 只携带原始事实：用量环锚点由倒扫从 usage + stopReason 现算，
+  // 事件不再携带任何派生 token 字段。
   let turn = createTurn({ key: "run:usage", runId: "run-usage" });
   turn = applyEventToTurn(turn, {
     type: "token",
     text: "memory status",
     round: 2,
-    usage: { totalTokens: 10_000 },
-    contextUsageTokens: 150_000,
+    stopReason: "stop",
+    usage: { input: 9_000, cacheRead: 800, output: 200, totalTokens: 10_000 },
     contextRelevant: false,
   });
   const rows = buildTurnRows(turn);
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].kind, "assistant");
-  assert.equal(rows[0].rounds[0].meta.usageTotalTokens, 10_000);
-  assert.equal(rows[0].rounds[0].meta.contextUsageTokens, 150_000);
+  assert.deepEqual(rows[0].rounds[0].meta.usage, {
+    input: 9_000,
+    cacheRead: 800,
+    cacheWrite: 0,
+    output: 200,
+    totalTokens: 10_000,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  });
+  assert.equal(rows[0].rounds[0].meta.stopReason, "stop");
   assert.equal(rows[0].rounds[0].meta.contextRelevant, false);
+  assert.equal("contextUsageTokens" in rows[0].rounds[0].meta, false);
+  assert.equal("usageTotalTokens" in rows[0].rounds[0].meta, false);
 });
 
 test("interleaved thinking and tool results keep one assistant row and stable block identities", () => {
@@ -351,7 +404,7 @@ test("persisted checkpoints retain the post-compaction context token snapshot", 
   assert.equal(rows[0].contextUsageTokens, 43_210);
 });
 
-test("persisted assistant messages retain the desktop context usage snapshot", () => {
+test("persisted assistant messages carry raw usage; legacy stamps are dead data", () => {
   const entries = parseHistoryMessagesJson(
     JSON.stringify([
       {
@@ -361,7 +414,8 @@ test("persisted assistant messages retain the desktop context usage snapshot", (
         model: "gpt-test",
         api: "openai-responses",
         stopReason: "stop",
-        usage: { totalTokens: 10_000 },
+        usage: { input: 9_500, output: 500, totalTokens: 10_000 },
+        // 旧口径印章：读取侧已无任何消费方，锚点从 usage 现算。
         liveAgentContextUsage: { totalTokens: 150_000, fixedTokens: 25_000 },
         timestamp: 1,
       },
@@ -370,7 +424,9 @@ test("persisted assistant messages retain the desktop context usage snapshot", (
   const rows = buildRowsFromEntries(entries, "history");
 
   assert.equal(rows[0].kind, "assistant");
-  assert.equal(rows[0].rounds[0].meta.contextUsageTokens, 150_000);
+  assert.equal(rows[0].rounds[0].meta.usage.totalTokens, 10_000);
+  assert.equal(rows[0].rounds[0].meta.stopReason, "stop");
+  assert.equal("contextUsageTokens" in rows[0].rounds[0].meta, false);
 });
 
 test("thinking-first persisted replies emit a meta carrier that rows suppress", () => {
@@ -652,4 +708,30 @@ test("groupHistoryEntriesIntoTurns keeps a headless leading turn", () => {
   assert.equal(turns.length, 2);
   assert.equal(turns[0].user, null);
   assert.equal(turns[1].user?.id, "hu:m1");
+});
+
+test("findLiveTurnStartTimestamp only uses the user message that started the live turn", () => {
+  const { findLiveTurnStartTimestamp } = loader.loadModule("src/lib/chat/transcript/rows.ts");
+  const user = (key, timestamp) => ({ key, kind: "user", timestamp });
+  const assistant = (key) => ({ key, kind: "assistant", rounds: [] });
+  const checkpoint = (key) => ({ key, kind: "checkpoint" });
+
+  assert.equal(findLiveTurnStartTimestamp([user("u1", 1_000), assistant("a1")], 1), 1_000);
+  assert.equal(
+    findLiveTurnStartTimestamp([user("u1", 1_000), checkpoint("c1"), assistant("a1")], 2),
+    1_000,
+  );
+  // 回复先于用户消息到达：前面是上一轮回复，不能借用上一轮的用户时间戳。
+  assert.equal(
+    findLiveTurnStartTimestamp([user("u1", 1_000), assistant("a1"), assistant("a2")], 2),
+    undefined,
+  );
+  assert.equal(
+    findLiveTurnStartTimestamp(
+      [user("u1", 1_000), { key: "e1", kind: "error", text: "boom" }, assistant("a2")],
+      2,
+    ),
+    undefined,
+  );
+  assert.equal(findLiveTurnStartTimestamp([assistant("a1")], 0), undefined);
 });

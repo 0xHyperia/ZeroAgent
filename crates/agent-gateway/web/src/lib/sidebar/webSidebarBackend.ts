@@ -1,3 +1,4 @@
+import { listPinnedSidebarConversations } from "@liveagent/ui/lib/sidebar/pinnedHistory";
 // Web-only SidebarBackend adapter over the gateway WebSocket client. NOT
 // byte-mirrored: everything gateway-specific (snake_case summaries, epoch
 // units, the activity-store bridge) is normalized here so the mirrored store
@@ -110,6 +111,11 @@ function scopeToHistoryListFilter(scope: SidebarScope): HistoryListFilter | null
     }
     case "unscoped":
       return { cwdEmpty: true };
+    case "all":
+      // Gateway history is remote and may retain conversations whose local
+      // project path is unavailable after a reload. The all scope must remain
+      // unfiltered so those rows survive a reload.
+      return null;
     case "none":
       return null;
   }
@@ -154,12 +160,20 @@ export function createWebSidebarBackend(deps: WebSidebarBackendDeps): SidebarBac
   const { api, activityStore } = deps;
 
   return {
+    listPinnedConversations: () =>
+      listPinnedSidebarConversations(async (page, pageSize) => {
+        const response = await api.listHistory(page, pageSize);
+        return {
+          items: response.conversations.map(normalizeGatewayConversationSummary),
+          totalCount: response.total_count,
+        };
+      }),
     async listConversations(page, pageSize, scope): Promise<SidebarListPage> {
-      const filter = scopeToHistoryListFilter(scope);
-      if (!filter) {
+      if (scope.kind === "none") {
         return { items: [], totalCount: 0 };
       }
-      const response = await api.listHistory(page, pageSize, filter);
+      const filter = scopeToHistoryListFilter(scope);
+      const response = await api.listHistory(page, pageSize, filter ?? undefined);
       // Authoritative running snapshot rides along with every page; keep the
       // activity store in sync exactly like the old reloadHistory did.
       activityStore.hydrate(normalizeRunningConversationItems(response.running_conversations), {

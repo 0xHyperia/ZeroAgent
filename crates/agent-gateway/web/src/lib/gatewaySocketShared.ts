@@ -1,4 +1,8 @@
 import { buildHistoryMessageRefPayload } from "@liveagent/ui/lib/chat/historyMessageRef";
+import {
+  type ConversationMentionReference,
+  normalizeConversationMentionReferences,
+} from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import type { GatewaySettingsSyncPayload } from "@liveagent/ui/lib/settings/sync";
 import type { SftpTransferEvent } from "@liveagent/ui/lib/sftp/types";
@@ -55,13 +59,15 @@ export type ChatCommandUpdateListener = (update: ChatCommandUpdate) => void;
 export type WorkspaceActivityListener = (event: WorkspaceActivityEventPayload) => void;
 
 export type PendingRequest = {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
   timeoutId: number;
+  onDelta?: (delta: string) => void;
 };
 
 export type GatewayRequestOptions = {
   timeoutMs?: number;
+  onDelta?: (delta: string) => void;
 };
 
 export type GatewayChatSystemSettings = {
@@ -78,10 +84,16 @@ export type GatewayChatCommandInput = {
   systemSettings?: GatewayChatSystemSettings;
   signal?: AbortSignal;
   uploadedFiles?: PendingUploadedFile[];
+  referencedConversations?: ConversationMentionReference[];
   clientRequestId?: string;
   runtimeControls?: GatewayChatRuntimeControls;
   baseMessageRef?: HistoryMessageRef;
   queuePolicy?: "auto" | "append" | "interrupt";
+  /** 输入框“/”指令的单轮语义：经 K-brain 的 goal 接口开始本轮，或本条是提示词指令。 */
+  goalAction?: "set" | "resume";
+  goalText?: string;
+  promptCommand?: boolean;
+  planCommand?: boolean;
 };
 
 export type SkillListResponse = {
@@ -97,6 +109,46 @@ export type SshKnownHostResetResult = {
 export type MentionListResponse = {
   entries: Array<{ path: string; kind: "file" | "dir"; hidden: boolean }>;
   truncated: boolean;
+};
+
+/** 桌面宿主的已安装应用（@ 应用提及）；字段对齐桌面 InstalledApp 的
+ *  camelCase 序列化，空串表示缺失（无 bundle id / 取不到图标）。 */
+export type InstalledAppsListResponse = {
+  apps: Array<{ name: string; bundleId: string; path: string; iconDataUrl: string }>;
+};
+
+/** 桌面端“/”指令目录：action 由客户端处理，prompt 由 K-brain 展开。 */
+export type SlashCommandSummary = {
+  name: string;
+  description: string;
+  argumentHint: string;
+  kind: string;
+  source: string;
+};
+
+export type SlashCommandListResponse = {
+  commands: SlashCommandSummary[];
+};
+
+export type GoalManageResponse = {
+  conversationId: string;
+  goal: string;
+  status: string;
+  round: number;
+  maxRounds: number;
+  reason: string;
+};
+
+export type LoopSummary = {
+  id: string;
+  interval: string;
+  cron: string;
+  prompt: string;
+  enabled: boolean;
+};
+
+export type LoopManageResponse = {
+  loops: LoopSummary[];
 };
 
 export type FsRoot = {
@@ -487,6 +539,15 @@ export function buildChatCommandPayload(input: GatewayChatCommandInput) {
           kind: file.kind,
           size_bytes: file.sizeBytes,
         })) ?? [],
+      referenced_conversations: normalizeConversationMentionReferences(
+        input.referencedConversations,
+        input.conversationId,
+      ).map((reference) => ({
+        id: reference.id,
+        title: reference.title,
+        cwd: reference.cwd ?? "",
+        updated_at: reference.updatedAt ?? 0,
+      })),
       selected_model: input.selectedModel
         ? {
             custom_provider_id: input.selectedModel.customProviderId,
@@ -494,11 +555,16 @@ export function buildChatCommandPayload(input: GatewayChatCommandInput) {
             provider_type: input.selectedModel.providerType,
           }
         : undefined,
+      goal_action: input.goalAction ?? "",
+      goal_text: input.goalText ?? "",
+      prompt_command: input.promptCommand === true,
+      plan_command: input.planCommand === true,
       runtime_controls: input.runtimeControls
         ? {
             thinking_enabled: input.runtimeControls.thinkingEnabled,
             native_web_search_enabled: input.runtimeControls.nativeWebSearchEnabled,
             reasoning: input.runtimeControls.reasoning,
+            plan_mode_enabled: input.runtimeControls.planModeEnabled === true,
           }
         : undefined,
       queue_policy: input.queuePolicy ?? "auto",
@@ -542,13 +608,15 @@ export function parseJsonPayload<T>(raw: string | undefined, fallback: T): T {
 
 export function normalizeChatQueueResponse(input: RawChatQueueResponse): ChatQueueResponse {
   const normalized = input as RawChatQueueResponse & Partial<ChatQueueResponse>;
+  const item =
+    normalized.item ?? parseJsonPayload<ChatQueueResponse["item"]>(input.item_json, undefined);
   return {
     accepted: input.accepted === true,
     message: input.message,
     snapshot:
       normalized.snapshot ??
       parseJsonPayload<ChatQueueSnapshot | undefined>(input.snapshot_json, undefined),
-    item: normalized.item ?? parseJsonPayload(input.item_json, undefined),
+    item: item ? { ...item, uploadedFilesJson: item.uploadedFilesJson?.trim() || "[]" } : undefined,
     errorCode: normalized.errorCode ?? input.error_code,
     revision: input.revision,
   };
@@ -573,6 +641,7 @@ export function normalizeChatQueueSnapshot(
   return {
     conversationId,
     revision,
+    ...(typeof raw.paused === "boolean" ? { paused: raw.paused } : {}),
     items: Array.isArray(raw.items) ? raw.items : [],
   };
 }
@@ -867,6 +936,7 @@ export function isUnsupportedChatPrepareError(error: unknown) {
 }
 
 export const RECOVERABLE_MEMORY_MANAGE_COMMANDS = new Set([
+  "chat_history_search",
   "memory_list",
   "memory_read",
   "memory_search",

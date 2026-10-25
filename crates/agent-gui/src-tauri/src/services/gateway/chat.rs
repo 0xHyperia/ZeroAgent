@@ -172,7 +172,12 @@ impl GatewayController {
             workdir,
             command_safety_mode,
             uploaded_files,
+            referenced_conversations,
             queue_policy,
+            goal_action,
+            goal_text,
+            prompt_command,
+            plan_command,
         } = request;
         let selected_model = selected_model.map(|selected_model| GatewaySelectedModelEvent {
             custom_provider_id: selected_model.custom_provider_id,
@@ -184,6 +189,7 @@ impl GatewayController {
                 thinking_enabled: runtime_controls.thinking_enabled,
                 native_web_search_enabled: runtime_controls.native_web_search_enabled,
                 reasoning: runtime_controls.reasoning,
+                plan_mode_enabled: runtime_controls.plan_mode_enabled,
             });
         let base_message_ref =
             base_message_ref.map(|base_message_ref| GatewayChatMessageRefEvent {
@@ -194,6 +200,35 @@ impl GatewayController {
                 role: base_message_ref.role,
                 content_hash: base_message_ref.content_hash,
             });
+        let current_conversation_id = conversation_id.trim();
+        let mut seen_conversation_references = std::collections::HashSet::new();
+        let referenced_conversations = referenced_conversations
+            .into_iter()
+            .filter_map(|reference| {
+                let id = reference.id.trim().to_string();
+                let title = reference
+                    .title
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if id.is_empty()
+                    || title.is_empty()
+                    || id == current_conversation_id
+                    || id.chars().count() > 256
+                    || id.chars().any(char::is_control)
+                    || !seen_conversation_references.insert(id.clone())
+                {
+                    return None;
+                }
+                Some(GatewayConversationReferenceEvent {
+                    id,
+                    title: title.chars().take(240).collect(),
+                    cwd: reference.cwd.trim().to_string(),
+                    updated_at: reference.updated_at,
+                })
+            })
+            .take(3)
+            .collect();
         GatewayChatRequestEvent {
             request_id,
             conversation_id,
@@ -216,7 +251,12 @@ impl GatewayController {
                     size_bytes: file.size_bytes,
                 })
                 .collect(),
+            referenced_conversations,
             queue_policy,
+            goal_action: goal_action.trim().to_string(),
+            goal_text: goal_text.trim().to_string(),
+            prompt_command,
+            plan_command,
         }
     }
 
@@ -366,18 +406,26 @@ impl GatewayController {
         &self,
         input: GatewayChatQueueEventInput,
     ) -> Result<(), String> {
-        self.send_agent_envelope(proto::AgentEnvelope {
-            request_id: format!("chat-queue-event-{}", Uuid::new_v4()),
-            timestamp: now_unix_seconds(),
-            payload: Some(proto::agent_envelope::Payload::ChatQueueEvent(
-                proto::ChatQueueEvent {
-                    conversation_id: input.conversation_id,
-                    snapshot_json: input.snapshot_json,
-                    revision: input.revision,
-                },
-            )),
-        })
-        .await
+        let result = self
+            .send_agent_envelope(build_chat_queue_event_envelope(input))
+            .await;
+        ignore_gateway_outbound_offline(result)
+    }
+}
+
+pub(crate) fn build_chat_queue_event_envelope(
+    input: GatewayChatQueueEventInput,
+) -> proto::AgentEnvelope {
+    proto::AgentEnvelope {
+        request_id: format!("chat-queue-event-{}", Uuid::new_v4()),
+        timestamp: now_unix_seconds(),
+        payload: Some(proto::agent_envelope::Payload::ChatQueueEvent(
+            proto::ChatQueueEvent {
+                conversation_id: input.conversation_id,
+                snapshot_json: input.snapshot_json,
+                revision: input.revision,
+            },
+        )),
     }
 }
 

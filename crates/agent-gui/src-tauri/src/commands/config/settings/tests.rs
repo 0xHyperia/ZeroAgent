@@ -20,6 +20,44 @@ mod tests {
     }
 
     #[test]
+    fn save_system_preserves_sidebar_order_across_database_reopen() {
+        let temp = tempfile::tempdir().expect("temp database");
+        let path = temp.path().join("settings.sqlite");
+        let order = json!(["/workspace/b", "/workspace/a"]);
+        let pins = json!([
+            "workspace:/workspace/a",
+            "conversation:one",
+            "workspace:/workspace/b"
+        ]);
+        {
+            let mut conn = Connection::open(&path).expect("open database");
+            initialize_schema(&conn).expect("initialize database");
+            save_system_with_default_workdir(
+                &mut conn,
+                json!({
+                    "workspaceProjectOrder": order,
+                    "sidebarPinnedOrder": pins,
+                }),
+                "/workspace/default",
+            )
+            .expect("save sidebar preferences");
+        }
+        let mut conn = Connection::open(&path).expect("reopen database");
+        let mut loaded =
+            load_system_with_defaults(&conn, "/workspace/default").expect("load preferences");
+        assert_eq!(loaded.get(SYSTEM_WORKSPACE_PROJECT_ORDER_KEY), Some(&order));
+        assert_eq!(loaded.get(SYSTEM_SIDEBAR_PINNED_ORDER_KEY), Some(&pins));
+        loaded["executionMode"] = json!("tools");
+        save_system_with_default_workdir(&mut conn, loaded, "/workspace/default")
+            .expect("save unrelated setting");
+        let loaded = load_system(&conn)
+            .expect("reload preferences")
+            .expect("system settings");
+        assert_eq!(loaded.get(SYSTEM_SIDEBAR_PINNED_ORDER_KEY), Some(&pins));
+        assert_eq!(loaded.get(SYSTEM_WORKSPACE_PROJECT_ORDER_KEY), Some(&order));
+    }
+
+    #[test]
     fn initialize_schema_creates_all_tables() {
         let conn = open_memory_db();
 
@@ -116,26 +154,48 @@ mod tests {
     }
 
     #[test]
-    fn normalize_remote_settings_repairs_single_slash_gateway_url() {
-        let normalized = normalize_remote_settings_payload_with_overrides(
-            RemoteSettingsPayload {
-                enabled: true,
-                gateway_url: "https://ignored.example.com".to_string(),
-                gateway_port: 443,
-                token: " agent-token-dev ".to_string(),
-                agent_id: " mac-mini ".to_string(),
-                auto_reconnect: true,
-                heartbeat_interval: 30,
-                enable_web_terminal: false,
-                enable_web_ssh_terminal: false,
-                enable_web_git: false,
-                enable_web_tunnels: false,
-            },
-            Some(" https:/agent.cnweb.org/ "),
-            None,
+    fn new_profile_keeps_account_gateway_and_rejects_settings_supplied_credentials() {
+        let mut conn = open_memory_db();
+        ensure_remote_agent_id(&mut conn).unwrap();
+        let settings = load_remote_settings(&conn).unwrap();
+        assert!(
+            !settings.managed_local,
+            "initialization must not redirect account traffic to a local Gateway"
         );
+        assert!(
+            !settings.enabled,
+            "remote access remains an explicit user preference"
+        );
+        assert_eq!(settings.gateway_url, OFFICIAL_GATEWAY_URL);
+        let mut input = serde_json::to_value(settings).unwrap();
+        input["token"] = json!("injected-other-account-token");
+        let saved = save_remote(&mut conn, input).unwrap();
+        assert!(saved.token.is_empty());
+        assert!(load_remote_settings(&conn).unwrap().token.is_empty());
+    }
 
-        assert_eq!(normalized.gateway_url, "https://agent.cnweb.org");
+    #[test]
+    fn normalize_remote_settings_repairs_single_slash_gateway_url() {
+        let normalized = normalize_remote_settings_payload(RemoteSettingsPayload {
+            enabled: true,
+            gateway_url: " https:/agent.cnweb.org/ ".to_string(),
+            gateway_port: 443,
+            token: " agent-token-dev ".to_string(),
+            agent_id: " mac-mini ".to_string(),
+            auto_reconnect: true,
+            heartbeat_interval: 30,
+            enable_web_terminal: false,
+            enable_web_ssh_terminal: false,
+            enable_web_git: false,
+            enable_web_tunnels: false,
+            ..RemoteSettingsPayload::default()
+        });
+
+        assert_eq!(
+            normalize_base_url_text(" https:/agent.cnweb.org/ "),
+            "https://agent.cnweb.org"
+        );
+        assert_eq!(normalized.gateway_url, OFFICIAL_GATEWAY_URL);
         assert_eq!(normalized.token, "agent-token-dev");
         assert_eq!(normalized.agent_id, "mac-mini");
     }
@@ -207,6 +267,7 @@ mod tests {
                 enable_web_ssh_terminal: true,
                 enable_web_git: true,
                 enable_web_tunnels: true,
+                ..RemoteSettingsPayload::default()
             },
         )
         .expect("seed manual Agent ID");
@@ -350,12 +411,18 @@ mod tests {
             load_gateway_settings_sync_snapshot(&conn).expect("load gateway settings snapshot");
         assert_eq!(snapshot["customProviders"][0]["apiKey"], Value::Null);
         assert_eq!(snapshot["customProviders"][0]["apiKeyConfigured"], true);
-        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["apiKey"], Value::Null);
+        assert_eq!(
+            snapshot["customProviders"][0]["usageQuery"]["apiKey"],
+            Value::Null
+        );
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["apiKeyConfigured"],
             true
         );
-        assert_eq!(snapshot["customProviders"][0]["usageQuery"]["accessToken"], Value::Null);
+        assert_eq!(
+            snapshot["customProviders"][0]["usageQuery"]["accessToken"],
+            Value::Null
+        );
         assert_eq!(
             snapshot["customProviders"][0]["usageQuery"]["accessTokenConfigured"],
             true
@@ -418,8 +485,7 @@ mod tests {
             ""
         );
         assert_eq!(
-            load_stt_secret(&conn, "aliyun_dashscope", "apiKey")
-                .expect("reveal local STT secret"),
+            load_stt_secret(&conn, "aliyun_dashscope", "apiKey").expect("reveal local STT secret"),
             "desktop-only-secret"
         );
         assert!(load_stt_secret(&conn, "aliyun_dashscope", "websocketUrl").is_err());
@@ -462,7 +528,8 @@ mod tests {
                             "url": "http://127.0.0.1",
                             "port": "1080",
                             "username": "proxy-user",
-                            "password": "proxy-password"
+                            "password": "proxy-password",
+                            "useSystemProxy": true
                         }
                     },
                     {
@@ -530,7 +597,8 @@ mod tests {
                 "port": 1080,
                 "username": "proxy-user",
                 "password": "proxy-password",
-                "passwordConfigured": true
+                "passwordConfigured": true,
+                "useSystemProxy": true
             })
         );
         assert_eq!(
@@ -558,7 +626,8 @@ mod tests {
                             "port": 1080,
                             "username": "proxy-user",
                             "password": "proxy-password",
-                            "passwordConfigured": true
+                            "passwordConfigured": true,
+                            "useSystemProxy": true
                         }
                     },
                     {
@@ -582,7 +651,8 @@ mod tests {
                             "port": 0,
                             "username": "",
                             "password": "",
-                            "passwordConfigured": false
+                            "passwordConfigured": false,
+                            "useSystemProxy": false
                         }
                     }
                 ],
@@ -1186,13 +1256,16 @@ mod tests {
         };
         let loaded = load_system(&conn).expect("load system");
 
-        assert_eq!(row_count, 12);
+        assert_eq!(row_count, 15);
         assert_eq!(
             keys,
             vec![
                 SYSTEM_ACTIVE_WORKSPACE_PROJECT_ID_KEY.to_string(),
                 SYSTEM_ARCHIVED_WORKSPACE_PROJECT_PATHS_KEY.to_string(),
+                SYSTEM_BROWSER_AUTOMATION_MODE_KEY.to_string(),
                 SYSTEM_COMMAND_SAFETY_MODE_KEY.to_string(),
+                SYSTEM_CUA_ALLOW_SELF_TARGETING_KEY.to_string(),
+                SYSTEM_DEFAULT_TIME_ZONE_KEY.to_string(),
                 SYSTEM_EXECUTION_MODE_KEY.to_string(),
                 SYSTEM_HIDDEN_WORKSPACE_PROJECT_PATHS_KEY.to_string(),
                 SYSTEM_MISSING_WORKSPACE_PROJECT_PATHS_KEY.to_string(),
@@ -1208,12 +1281,15 @@ mod tests {
             loaded,
             Some(json!({
                 "activeWorkspaceProjectId": DEFAULT_WORKSPACE_PROJECT_ID,
+                "cuaAllowSelfTargeting": false,
                 "executionMode": "tools",
                 "hiddenWorkspaceProjectPaths": [],
                 "missingWorkspaceProjectPaths": [],
                 "archivedWorkspaceProjectPaths": [],
                 "workspaceResourceSettings": {},
                 "commandSafetyMode": "auto",
+                "browserAutomationMode": "auto",
+                "defaultTimeZone": "",
                 "systemProxy": default_system_proxy_json(),
                 "workdir": default_workdir.clone(),
                 "toolPolicies": { "Bash": "ask", "server:docs-mcp": "deny" },
@@ -1320,6 +1396,8 @@ mod tests {
                         "mode": "custom",
                         "skillNames": ["review", "review", ""],
                         "mcpServerIds": ["github", "github", 42],
+                        "projectPrompt": " Review this project. ",
+                        "projectPromptStrategy": "replace",
                         "stateVersion": 3,
                         "writerId": " client-a ",
                         "updatedAt": 100
@@ -1328,6 +1406,8 @@ mod tests {
                         "mode": "inherit",
                         "skillNames": ["ignored"],
                         "mcpServerIds": ["ignored"],
+                        "projectPrompt": 42,
+                        "projectPromptStrategy": "invalid",
                         "stateVersion": 4,
                         "writerId": "client-b",
                         "updatedAt": now
@@ -1348,6 +1428,8 @@ mod tests {
                     "mode": "custom",
                     "skillNames": ["review"],
                     "mcpServerIds": ["github"],
+                    "projectPrompt": "Review this project.",
+                    "projectPromptStrategy": "replace",
                     "stateVersion": 3,
                     "writerId": "client-a",
                     "updatedAt": 100
@@ -1356,6 +1438,8 @@ mod tests {
                     "mode": "inherit",
                     "skillNames": [],
                     "mcpServerIds": [],
+                    "projectPrompt": "",
+                    "projectPromptStrategy": "append",
                     "stateVersion": 4,
                     "writerId": "client-b",
                     "updatedAt": now
@@ -1382,7 +1466,9 @@ mod tests {
             })
             .collect::<Map<String, Value>>();
         let normalized = normalize_workspace_resource_settings(Some(&Value::Object(entries)));
-        let normalized = normalized.as_object().expect("normalized workspace resources");
+        let normalized = normalized
+            .as_object()
+            .expect("normalized workspace resources");
         assert_eq!(normalized.len(), 150);
         assert_eq!(
             normalized["/tmp/project-149"]["skillNames"],
@@ -1418,13 +1504,30 @@ mod tests {
                 "mode": "inherit",
                 "stateVersion": 1,
                 "updatedAt": now
+            },
+            "/tmp/project-prompt": {
+                "mode": "inherit",
+                "projectPrompt": " Keep project context ",
+                "projectPromptStrategy": "replace",
+                "stateVersion": 1,
+                "updatedAt": old
             }
         })));
-        let normalized = normalized.as_object().expect("normalized workspace resources");
+        let normalized = normalized
+            .as_object()
+            .expect("normalized workspace resources");
         assert!(!normalized.contains_key("/tmp/old-tombstone"));
         assert_eq!(normalized["/tmp/custom"]["mode"], "custom");
         assert_eq!(normalized["/tmp/off"]["mode"], "off");
         assert_eq!(normalized["/tmp/recent-tombstone"]["mode"], "inherit");
+        assert_eq!(
+            normalized["/tmp/project-prompt"]["projectPrompt"],
+            "Keep project context"
+        );
+        assert_eq!(
+            normalized["/tmp/project-prompt"]["projectPromptStrategy"],
+            "replace"
+        );
     }
 
     #[test]
@@ -1455,14 +1558,27 @@ mod tests {
                 }),
             );
         }
+        entries.insert(
+            "/tmp/project-prompt".to_string(),
+            json!({
+                "mode": "inherit",
+                "projectPrompt": "Keep project context",
+                "projectPromptStrategy": "append",
+                "stateVersion": 1,
+                "updatedAt": 1
+            }),
+        );
         let normalized = normalize_workspace_resource_settings(Some(&Value::Object(entries)));
-        let normalized = normalized.as_object().expect("normalized workspace resources");
+        let normalized = normalized
+            .as_object()
+            .expect("normalized workspace resources");
         assert_eq!(normalized.len(), MAX_WORKSPACE_RESOURCE_SETTINGS);
         for index in 0..20 {
             assert!(normalized.contains_key(&format!("/tmp/custom-{index:02}")));
         }
-        assert!(normalized.contains_key("/tmp/tombstone-235"));
-        assert!(!normalized.contains_key("/tmp/tombstone-236"));
+        assert!(normalized.contains_key("/tmp/project-prompt"));
+        assert!(normalized.contains_key("/tmp/tombstone-234"));
+        assert!(!normalized.contains_key("/tmp/tombstone-235"));
     }
 
     #[test]
@@ -1481,7 +1597,9 @@ mod tests {
             );
         }
         let normalized = normalize_workspace_resource_settings(Some(&Value::Object(entries)));
-        let normalized = normalized.as_object().expect("normalized workspace resources");
+        let normalized = normalized
+            .as_object()
+            .expect("normalized workspace resources");
         assert_eq!(normalized.len(), MAX_WORKSPACE_RESOURCE_SETTINGS);
         assert!(normalized.contains_key("/tmp/A"));
         assert!(normalized.contains_key("/tmp/_"));
@@ -1507,12 +1625,15 @@ mod tests {
             loaded,
             Some(json!({
                 "activeWorkspaceProjectId": DEFAULT_WORKSPACE_PROJECT_ID,
+                "cuaAllowSelfTargeting": false,
                 "executionMode": "tools",
                 "hiddenWorkspaceProjectPaths": [],
                 "missingWorkspaceProjectPaths": [],
                 "archivedWorkspaceProjectPaths": [],
                 "workspaceResourceSettings": {},
                 "commandSafetyMode": "auto",
+                "browserAutomationMode": "auto",
+                "defaultTimeZone": "",
                 "systemProxy": default_system_proxy_json(),
                 "workdir": "/tmp/liveagent-default-project",
                 "toolPolicies": null,
@@ -1561,12 +1682,15 @@ mod tests {
             loaded,
             Some(json!({
                 "activeWorkspaceProjectId": DEFAULT_WORKSPACE_PROJECT_ID,
+                "cuaAllowSelfTargeting": false,
                 "executionMode": "tools",
                 "hiddenWorkspaceProjectPaths": [],
                 "missingWorkspaceProjectPaths": [],
                 "archivedWorkspaceProjectPaths": [],
                 "workspaceResourceSettings": {},
                 "commandSafetyMode": "auto",
+                "browserAutomationMode": "auto",
+                "defaultTimeZone": "",
                 "systemProxy": default_system_proxy_json(),
                 "workdir": "/tmp/liveagent-default-project",
                 "toolPolicies": null,
@@ -1602,7 +1726,15 @@ mod tests {
             json!("auto")
         );
         // 合法值原样保留(含空白裁剪)。
-        for mode in ["ask", "auto", "sandbox", "sandboxOffline"] {
+        for mode in [
+            "ask",
+            "auto",
+            "autoEdit",
+            "always",
+            "autoReview",
+            "sandbox",
+            "sandboxOffline",
+        ] {
             assert_eq!(
                 normalize_command_safety_mode_value(Some(&json!(format!(" {mode} ")))),
                 json!(mode)
@@ -1624,20 +1756,29 @@ mod tests {
     }
 
     #[test]
-    fn load_system_with_defaults_returns_agent_mode_and_default_project() {        let conn = open_memory_db();
-        let loaded = load_system_with_defaults(&conn, "/tmp/liveagent-default-project")
+    fn load_system_with_defaults_returns_agent_mode_and_default_project() {
+        let conn = open_memory_db();
+        let mut loaded = load_system_with_defaults(&conn, "/tmp/liveagent-default-project")
             .expect("load system");
+        let resolved = loaded
+            .as_object_mut()
+            .and_then(|map| map.remove(SYSTEM_RESOLVED_TIME_ZONE_KEY))
+            .expect("resolvedTimeZone injected");
+        assert_eq!(resolved, json!(os_time_zone()));
 
         assert_eq!(
             loaded,
             json!({
                 "activeWorkspaceProjectId": DEFAULT_WORKSPACE_PROJECT_ID,
+                "cuaAllowSelfTargeting": false,
                 "executionMode": "tools",
                 "hiddenWorkspaceProjectPaths": [],
                 "missingWorkspaceProjectPaths": [],
                 "archivedWorkspaceProjectPaths": [],
                 "workspaceResourceSettings": {},
                 "commandSafetyMode": "auto",
+                "browserAutomationMode": "auto",
+                "defaultTimeZone": "",
                 "systemProxy": default_system_proxy_json(),
                 "workdir": "/tmp/liveagent-default-project",
                 "workspaceProjects": [
@@ -1652,6 +1793,97 @@ mod tests {
                 ]
             })
         );
+    }
+
+    #[test]
+    fn normalize_default_time_zone_value_accepts_only_known_iana_zones() {
+        assert_eq!(normalize_default_time_zone_value(None), json!(""));
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!(null))),
+            json!("")
+        );
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!(8))),
+            json!("")
+        );
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!("   "))),
+            json!("")
+        );
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!("Mars/Olympus"))),
+            json!("")
+        );
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!(" Asia/Shanghai "))),
+            json!("Asia/Shanghai")
+        );
+        assert_eq!(
+            normalize_default_time_zone_value(Some(&json!("UTC"))),
+            json!("UTC")
+        );
+    }
+
+    #[test]
+    fn resolve_default_time_zone_prefers_setting_then_os() {
+        assert_eq!(
+            resolve_default_time_zone(Some("America/New_York")),
+            "America/New_York"
+        );
+        assert_eq!(resolve_default_time_zone(Some("")), os_time_zone());
+        assert_eq!(
+            resolve_default_time_zone(Some("bogus/zone")),
+            os_time_zone()
+        );
+        assert_eq!(resolve_default_time_zone(None), os_time_zone());
+        assert!(os_time_zone().parse::<chrono_tz::Tz>().is_ok());
+    }
+
+    #[test]
+    fn save_system_persists_default_time_zone_without_resolved_value() {
+        let mut conn = open_memory_db();
+        save_system_with_default_workdir(
+            &mut conn,
+            json!({
+                "executionMode": "tools",
+                "defaultTimeZone": "Europe/Berlin",
+                "resolvedTimeZone": "Asia/Tokyo",
+            }),
+            "/tmp/liveagent-default-project",
+        )
+        .expect("save system");
+
+        let stored = load_system(&conn)
+            .expect("load system")
+            .expect("system rows");
+        assert_eq!(stored["defaultTimeZone"], json!("Europe/Berlin"));
+        assert!(stored.get(SYSTEM_RESOLVED_TIME_ZONE_KEY).is_none());
+        let resolved_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?1",
+                params![SYSTEM_RESOLVED_TIME_ZONE_KEY],
+                |row| row.get(0),
+            )
+            .expect("count resolved rows");
+        assert_eq!(resolved_rows, 0);
+
+        let loaded = load_system_with_defaults(&conn, "/tmp/liveagent-default-project")
+            .expect("load system with defaults");
+        assert_eq!(loaded["defaultTimeZone"], json!("Europe/Berlin"));
+        assert_eq!(loaded["resolvedTimeZone"], json!(os_time_zone()));
+
+        save_system_with_default_workdir(
+            &mut conn,
+            json!({ "executionMode": "tools", "defaultTimeZone": "Nowhere/Invalid" }),
+            "/tmp/liveagent-default-project",
+        )
+        .expect("save system with invalid zone");
+        let loaded = load_system_with_defaults(&conn, "/tmp/liveagent-default-project")
+            .expect("reload system");
+        assert_eq!(loaded["defaultTimeZone"], json!(""));
+        let resolved = loaded["resolvedTimeZone"].as_str().expect("resolved zone");
+        assert!(!resolved.is_empty());
+        assert_eq!(resolved, os_time_zone());
     }
 
     #[test]
@@ -1828,11 +2060,105 @@ mod tests {
     }
 
     #[test]
-    fn ccs_maps_grokbuild_app_type_to_xai() {
+    fn imported_provider_headers_preserve_order_and_filter_unsafe_duplicates() {
+        let first = json!({
+            "extraHeaders": [
+                ["X-Trace", "one"],
+                ["X-Empty", ""],
+                ["X-Bad", "line\nfeed"]
+            ]
+        });
+        let second = json!({
+            "custom_headers": [
+                ["x-trace", "replacement"],
+                {"key": "X-Second", "value": "two"}
+            ]
+        });
+
+        let headers = imported_headers_from_values(&[&first, &second]);
         assert_eq!(
-            ccs_provider_type_from_app_type("grokbuild"),
-            Some("xai")
+            headers,
+            vec![
+                ImportedProviderHeader {
+                    key: "X-Trace".into(),
+                    value: "one".into()
+                },
+                ImportedProviderHeader {
+                    key: "X-Empty".into(),
+                    value: "".into()
+                },
+                ImportedProviderHeader {
+                    key: "X-Second".into(),
+                    value: "two".into()
+                },
+            ]
         );
+    }
+
+    #[test]
+    fn ccs_imports_custom_headers_from_config_and_meta() {
+        let config = json!({
+            "env": {
+                "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1",
+                "DEEPSEEK_API_KEY": "sk-deepseek"
+            },
+            "extra_headers": {"X-Config": "config-value"}
+        });
+        let meta = json!({
+            "customHeaders": [{"key": "X-Meta", "value": "meta-value"}]
+        });
+        let item = ccs_provider_from_value(
+            "deepseek-with-headers",
+            "deepseek",
+            "DeepSeek",
+            &config,
+            &meta,
+        )
+        .expect("provider should import");
+
+        assert_eq!(
+            item.custom_headers,
+            vec![
+                ImportedProviderHeader {
+                    key: "X-Config".into(),
+                    value: "config-value".into()
+                },
+                ImportedProviderHeader {
+                    key: "X-Meta".into(),
+                    value: "meta-value".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn cherry_v1_imports_custom_headers() {
+        let provider = json!({
+            "id": "headers-provider",
+            "name": "Headers Provider",
+            "type": "openai",
+            "apiKey": "secret",
+            "apiHost": "https://example.test/v1",
+            "extra_headers": {"X-Provider": "provider-value"},
+            "models": [{"id": "chat-model", "endpoint_type": "openai-chat-completions", "type": ["text"]}]
+        });
+        let mut imported = Vec::new();
+
+        cherry_append_v1_provider(&provider, "1.9.9", &mut imported);
+
+        assert_eq!(imported.len(), 1);
+        assert_eq!(
+            imported[0].custom_headers,
+            vec![ImportedProviderHeader {
+                key: "X-Provider".into(),
+                value: "provider-value".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn ccs_maps_grokbuild_app_type_to_xai() {
+        assert_eq!(ccs_provider_type_from_app_type("grokbuild"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("grok"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("xai"), Some("xai"));
         assert_eq!(ccs_provider_type_from_app_type("Grok-Build"), Some("xai"));
@@ -1853,6 +2179,7 @@ mod tests {
             "deepseek",
             "DeepSeek Official",
             &config,
+            &json!({}),
         )
         .expect("deepseek provider should import");
 
@@ -1875,10 +2202,10 @@ mod tests {
         });
 
         let official_item =
-            ccs_provider_from_value("official", "codex", "Official", &official)
+            ccs_provider_from_value("official", "codex", "Official", &official, &json!({}))
                 .expect("official config should import");
         let aggregate_item =
-            ccs_provider_from_value("aggregate", "codex", "Aggregate", &aggregate)
+            ccs_provider_from_value("aggregate", "codex", "Aggregate", &aggregate, &json!({}))
                 .expect("aggregate config should import");
 
         assert_eq!(official_item.provider_type, "deepseek");
@@ -1899,6 +2226,7 @@ mod tests {
             "grokbuild",
             "PackyCode",
             &config,
+            &json!({}),
         )
         .expect("grokbuild provider should import");
 
@@ -1918,6 +2246,7 @@ mod tests {
             "grokbuild",
             "Grok Official",
             &config,
+            &json!({}),
         )
         .expect("official grok seed should still map");
         assert_eq!(item.provider_type, "xai");
@@ -1926,35 +2255,440 @@ mod tests {
         assert_eq!(item.request_format, "openai-responses");
     }
 
+    #[test]
+    fn ccs_maps_claude_desktop_app_type_to_claude_code() {
+        assert_eq!(
+            ccs_provider_type_from_app_type("claude-desktop"),
+            Some("claude_code")
+        );
+        assert_eq!(
+            ccs_provider_type_from_app_type("claude_desktop"),
+            Some("claude_code")
+        );
+        assert_eq!(
+            ccs_provider_type_from_app_type("claudeDesktop"),
+            Some("claude_code")
+        );
+    }
+
+    #[test]
+    fn ccs_imports_claude_desktop_direct_mode_provider() {
+        // 与 cc-switch Claude Desktop 直连模式写库形状对齐：
+        // env 存 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN，模型在 meta 的路由表里。
+        let config = json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://relay.example.test/",
+                "ANTHROPIC_AUTH_TOKEN": "sk-desktop"
+            }
+        });
+        let meta = json!({
+            "claudeDesktopMode": "direct",
+            "apiFormat": "anthropic",
+            "claudeDesktopModelRoutes": {
+                "claude-sonnet-4-5": { "model": "claude-sonnet-4-5" },
+                "claude-opus-4-5": { "model": "claude-opus-4-5" }
+            }
+        });
+        let item = ccs_provider_from_value(
+            "desktop-1",
+            "claude-desktop",
+            "Desktop Relay",
+            &config,
+            &meta,
+        )
+        .expect("claude desktop direct provider should import");
+
+        assert_eq!(item.provider_type, "claude_code");
+        assert_eq!(item.app_type, "claude-desktop");
+        assert_eq!(item.base_url, "https://relay.example.test");
+        assert_eq!(item.api_key, "sk-desktop");
+        assert_eq!(item.models, vec!["claude-opus-4-5", "claude-sonnet-4-5"]);
+    }
+
+    #[test]
+    fn ccs_imports_claude_desktop_proxy_mode_anthropic_upstream() {
+        // 映射模式 + Anthropic 上游：模型取 route.model（真实上游模型）。
+        let config = json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://gateway.example.test",
+                "ANTHROPIC_API_KEY": "sk-proxy"
+            }
+        });
+        let meta = json!({
+            "claudeDesktopMode": "proxy",
+            "apiFormat": "anthropic",
+            "claudeDesktopModelRoutes": {
+                "claude-sonnet-4-5": { "model": "kimi-k2", "labelOverride": "Kimi" }
+            }
+        });
+        let item = ccs_provider_from_value(
+            "desktop-2",
+            "claude-desktop",
+            "Desktop Proxy",
+            &config,
+            &meta,
+        )
+        .expect("anthropic-format proxy provider should import");
+
+        assert_eq!(item.provider_type, "claude_code");
+        assert_eq!(item.api_key, "sk-proxy");
+        assert_eq!(item.models, vec!["kimi-k2"]);
+    }
+
+    #[test]
+    fn ccs_skips_claude_desktop_non_anthropic_upstreams() {
+        // 映射模式声明 openai_chat / openai_responses / gemini_native 上游时，
+        // 依赖 cc-switch 内置网关转协议，不能直接当 Anthropic 供应商导入。
+        let config = json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://api.openai.example.test/v1",
+                "ANTHROPIC_AUTH_TOKEN": "sk-openai"
+            }
+        });
+        for format in ["openai_chat", "openai_responses", "gemini_native"] {
+            let meta = json!({
+                "claudeDesktopMode": "proxy",
+                "apiFormat": format,
+                "claudeDesktopModelRoutes": {
+                    "claude-sonnet-4-5": { "model": "gpt-5.2" }
+                }
+            });
+            assert!(
+                ccs_provider_from_value("desktop-3", "claude-desktop", "GPT", &config, &meta)
+                    .is_none(),
+                "{format} upstream should be skipped"
+            );
+        }
+    }
+
+    #[test]
+    fn ccs_imports_claude_desktop_official_seed_without_meta_format() {
+        // 官方种子 settings_config 为 {"env":{}}，meta 无 apiFormat：
+        // 应按 Anthropic 处理并保留（前端以空 base_url/api_key 置灰）。
+        let config = json!({ "env": {} });
+        let item = ccs_provider_from_value(
+            "claude-desktop-official",
+            "claude-desktop",
+            "Claude Desktop 官方",
+            &config,
+            &json!({}),
+        )
+        .expect("official claude desktop seed should map");
+        assert_eq!(item.provider_type, "claude_code");
+        assert_eq!(item.base_url, "");
+        assert_eq!(item.api_key, "");
+        assert!(item.models.is_empty());
+    }
+
+    #[test]
+    fn ccs_db_query_returns_claude_desktop_rows_with_meta() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("cc-switch.db");
+        {
+            let conn = Connection::open(&db_path).expect("create ccswitch db");
+            conn.execute_batch(
+                "CREATE TABLE providers (
+                   id TEXT NOT NULL,
+                   app_type TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   settings_config TEXT NOT NULL,
+                   category TEXT,
+                   created_at INTEGER,
+                   sort_index INTEGER,
+                   meta TEXT NOT NULL DEFAULT '{}',
+                   is_current BOOLEAN NOT NULL DEFAULT 0,
+                   PRIMARY KEY (id, app_type)
+                 );",
+            )
+            .expect("create providers table");
+            let insert = |id: &str, app_type: &str, name: &str, config: &str, meta: &str| {
+                conn.execute(
+                    "INSERT INTO providers (id, app_type, name, settings_config, meta, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+                    rusqlite::params![id, app_type, name, config, meta],
+                )
+                .expect("insert provider row");
+            };
+            insert(
+                "cli-1",
+                "claude",
+                "CLI Relay",
+                r#"{"env":{"ANTHROPIC_BASE_URL":"https://cli.example.test","ANTHROPIC_AUTH_TOKEN":"sk-cli"}}"#,
+                "{}",
+            );
+            insert(
+                "desktop-direct",
+                "claude-desktop",
+                "Desktop Relay",
+                r#"{"env":{"ANTHROPIC_BASE_URL":"https://desktop.example.test","ANTHROPIC_AUTH_TOKEN":"sk-desktop"}}"#,
+                r#"{"claudeDesktopMode":"direct","apiFormat":"anthropic","claudeDesktopModelRoutes":{"claude-sonnet-4-5":{"model":"claude-sonnet-4-5"}}}"#,
+            );
+            insert(
+                "desktop-openai",
+                "claude-desktop",
+                "Desktop OpenAI Proxy",
+                r#"{"env":{"ANTHROPIC_BASE_URL":"https://openai.example.test/v1","ANTHROPIC_AUTH_TOKEN":"sk-openai"}}"#,
+                r#"{"claudeDesktopMode":"proxy","apiFormat":"openai_chat","claudeDesktopModelRoutes":{"claude-sonnet-4-5":{"model":"gpt-5.2"}}}"#,
+            );
+        }
+
+        let providers =
+            list_ccswitch_liveagent_providers_from_db(&db_path).expect("query providers");
+        let ids: Vec<&str> = providers
+            .iter()
+            .map(|item| item.source_id.as_str())
+            .collect();
+        assert!(ids.contains(&"cli-1"), "claude CLI row should import");
+        assert!(
+            ids.contains(&"desktop-direct"),
+            "claude desktop direct row should import"
+        );
+        assert!(
+            !ids.contains(&"desktop-openai"),
+            "non-anthropic desktop upstream should be skipped"
+        );
+
+        let desktop = providers
+            .iter()
+            .find(|item| item.source_id == "desktop-direct")
+            .expect("desktop provider present");
+        assert_eq!(desktop.provider_type, "claude_code");
+        assert_eq!(desktop.base_url, "https://desktop.example.test");
+        assert_eq!(desktop.api_key, "sk-desktop");
+        assert_eq!(desktop.models, vec!["claude-sonnet-4-5"]);
+    }
+
+    #[test]
+    fn ccs_db_query_tolerates_missing_meta_column() {
+        // ccswitch v0 老库没有 meta 列；LiveAgent 只读打开、不做迁移，
+        // 查询需退化为空 meta 而不是整体失败。
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("cc-switch.db");
+        {
+            let conn = Connection::open(&db_path).expect("create ccswitch db");
+            conn.execute_batch(
+                "CREATE TABLE providers (
+                   id TEXT NOT NULL,
+                   app_type TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   settings_config TEXT NOT NULL,
+                   sort_index INTEGER,
+                   created_at INTEGER,
+                   PRIMARY KEY (id, app_type)
+                 );",
+            )
+            .expect("create legacy providers table");
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config, created_at)
+                 VALUES ('cli-legacy', 'claude', 'Legacy CLI',
+                         '{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://legacy.example.test\",\"ANTHROPIC_AUTH_TOKEN\":\"sk-legacy\"}}', 1)",
+                [],
+            )
+            .expect("insert legacy provider row");
+        }
+
+        let providers =
+            list_ccswitch_liveagent_providers_from_db(&db_path).expect("query legacy providers");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].source_id, "cli-legacy");
+        assert_eq!(providers[0].provider_type, "claude_code");
+        assert_eq!(providers[0].base_url, "https://legacy.example.test");
+    }
+
+    #[test]
+    fn provider_import_acceptance_databases_match_frontend_fixture() {
+        let fixture: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../test/fixtures/provider-import-acceptance.json"
+        )))
+        .expect("provider import fixture");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ccs_path = dir.path().join("cc-switch.db");
+        let ccs = &fixture["ccs"];
+        {
+            let conn = Connection::open(&ccs_path).expect("create CC Switch database");
+            conn.execute_batch(
+                "CREATE TABLE providers (id TEXT, app_type TEXT, name TEXT,
+                 settings_config TEXT, meta TEXT, sort_index INTEGER, created_at INTEGER);",
+            )
+            .expect("create providers table");
+            conn.execute(
+                "INSERT INTO providers VALUES (?1, ?2, ?3, ?4, ?5, 0, 1)",
+                rusqlite::params![
+                    ccs["id"].as_str(),
+                    ccs["appType"].as_str(),
+                    ccs["name"].as_str(),
+                    ccs["settingsConfig"].to_string(),
+                    ccs["meta"].to_string()
+                ],
+            )
+            .expect("insert CC Switch fixture");
+        }
+        let ccs_before = std::fs::read(&ccs_path).expect("read CC Switch database");
+        let imported =
+            list_ccswitch_liveagent_providers_from_db(&ccs_path).expect("scan CC Switch");
+        assert_eq!(
+            serde_json::to_value(imported).unwrap(),
+            json!([ccs["expected"]])
+        );
+        assert_eq!(std::fs::read(&ccs_path).unwrap(), ccs_before);
+
+        let cherry_path = dir.path().join("cherrystudio.sqlite");
+        let cherry = &fixture["cherry"];
+        {
+            let conn = Connection::open(&cherry_path).expect("create Cherry Studio database");
+            conn.execute_batch(
+                "CREATE TABLE user_provider (provider_id TEXT, name TEXT, endpoint_configs TEXT,
+                 default_chat_endpoint TEXT, api_keys TEXT, auth_config TEXT,
+                 provider_settings TEXT, is_enabled BOOLEAN, order_key INTEGER);
+                 CREATE TABLE user_model (provider_id TEXT, model_id TEXT, endpoint_types TEXT,
+                 capabilities TEXT, output_modalities TEXT, is_enabled BOOLEAN,
+                 is_hidden BOOLEAN, order_key INTEGER);",
+            )
+            .expect("create Cherry Studio tables");
+            conn.execute(
+                "INSERT INTO user_provider VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 0)",
+                rusqlite::params![
+                    cherry["id"].as_str(),
+                    cherry["name"].as_str(),
+                    cherry["endpointConfigs"].to_string(),
+                    cherry["defaultChatEndpoint"].as_str(),
+                    cherry["apiKeys"].to_string(),
+                    cherry["authConfig"].to_string(),
+                    cherry["providerSettings"].to_string()
+                ],
+            )
+            .expect("insert Cherry Studio fixture");
+            for model in cherry["models"].as_array().unwrap() {
+                conn.execute(
+                    "INSERT INTO user_model VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                    rusqlite::params![
+                        cherry["id"].as_str(),
+                        model["id"].as_str(),
+                        model["endpointTypes"].to_string(),
+                        model["capabilities"].to_string(),
+                        model["outputModalities"].to_string(),
+                        model["enabled"].as_bool(),
+                        model["hidden"].as_bool()
+                    ],
+                )
+                .expect("insert Cherry Studio model");
+            }
+        }
+        let cherry_before = std::fs::read(&cherry_path).expect("read Cherry Studio database");
+        let imported = cherry_scan_candidates(&[dir.path().to_path_buf()], true)
+            .expect("scan Cherry Studio data directory");
+        assert_eq!(imported.status, "success");
+        assert_eq!(
+            serde_json::to_value(imported.providers).unwrap(),
+            json!([cherry["expected"]])
+        );
+        assert_eq!(std::fs::read(&cherry_path).unwrap(), cherry_before);
+    }
+
     // ===== 配置备份：采集 / 校验 / 应用 =====
+
+    #[test]
+    fn fresh_schema_does_not_create_or_read_old_provider_archives() {
+        let conn = open_memory_db();
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='zeroagent_provider_archive')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!exists);
+        conn.execute_batch(
+            "CREATE TABLE zeroagent_provider_archive(untouched TEXT);
+             INSERT INTO zeroagent_provider_archive VALUES('original-data');",
+        )
+        .unwrap();
+        initialize_schema(&conn).unwrap();
+        let value: String = conn
+            .query_row(
+                "SELECT untouched FROM zeroagent_provider_archive",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(value, "original-data");
+    }
 
     fn sample_backup_document() -> String {
         let snapshot = BackupSnapshot {
-            providers: Some(json!([{ "id": "p-1", "name": "P1", "apiKey": "sk-plain" }])),
+            selected_model: None,
+            providers: None,
             mcp: Some(json!({ "servers": [{ "id": "s-1" }], "selected": ["s-1"] })),
             system: Some(json!({ "executionMode": "tools" })),
-            skills: Some(json!({ "enabled": true, "selected": ["skill-a"] })),
+            agents: Some(json!([
+                { "id": "t-1", "name": "T1", "prompt": "prompt", "enabled": true }
+            ])),
+            model_failover: Some(json!({ "claude_code": { "queue": ["p-1"] } })),
+            stt: Some(json!({
+                "provider": "aliyun_dashscope",
+                "providers": { "aliyun_dashscope": { "id": "aliyun_dashscope", "apiKey": "sk" } }
+            })),
         };
         let manifest = build_backup_manifest(&snapshot);
         serialize_backup_document(&snapshot, &manifest).expect("serialize document")
     }
 
     #[test]
-    fn backup_document_round_trips_all_four_domains() {
+    fn backup_export_budget_includes_manifest_and_pretty_printing() {
+        let mut snapshot = BackupSnapshot {
+            agents: Some(json!([{"id":"template", "prompt":""}])),
+            ..Default::default()
+        };
+        let overhead = serde_json::to_vec(&snapshot).unwrap().len();
+        snapshot.agents.as_mut().unwrap()[0]["prompt"] =
+            json!("x".repeat(BACKUP_MAX_FILE_BYTES as usize - overhead - 1));
+        validate_backup_snapshot(&snapshot).unwrap();
+        let manifest = build_backup_manifest(&snapshot);
+        assert!(serialize_backup_document(&snapshot, &manifest)
+            .unwrap_err()
+            .contains("大小上限"));
+        assert!(
+            parse_backup_document(&" ".repeat(BACKUP_MAX_FILE_BYTES as usize + 1))
+                .unwrap_err()
+                .contains("大小上限")
+        );
+    }
+
+    #[test]
+    fn backup_document_round_trips_all_domains() {
         let raw = sample_backup_document();
         let (snapshot, manifest) = parse_backup_document(&raw).expect("parse document");
 
         assert_eq!(manifest.protocol_version, BACKUP_PROTOCOL_VERSION);
         assert_eq!(manifest.schema_version, BACKUP_SCHEMA_VERSION);
         assert_eq!(manifest.encryption, "none");
-        // 计数用于 UI 摘要：mcp 数服务器条目，skills 数选中项。
-        assert_eq!(manifest.domains.providers, 1);
+        // 计数用于 UI 摘要：mcp 数服务器条目，stt 数已配置的供应商。
+        assert_eq!(manifest.domains.providers, 0);
         assert_eq!(manifest.domains.mcp, 1);
-        assert_eq!(manifest.domains.skills, 1);
+        assert_eq!(manifest.domains.agents, 1);
+        assert_eq!(manifest.domains.model_failover, 1);
+        assert_eq!(manifest.domains.stt, 1);
         assert_eq!(
-            snapshot.skills,
-            Some(json!({ "enabled": true, "selected": ["skill-a"] }))
+            snapshot.model_failover,
+            Some(json!({ "claude_code": { "queue": ["p-1"] } }))
         );
+        assert!(snapshot.agents.is_some());
+        assert!(snapshot.stt.is_some());
+    }
+
+    #[test]
+    fn parse_backup_document_rejects_older_versions_without_importing_domains() {
+        for version in 0..BACKUP_SCHEMA_VERSION {
+            let mut document: Value =
+                serde_json::from_str(&sample_backup_document()).expect("parse json");
+            document["_manifest"]["schemaVersion"] = json!(version);
+            document["providers"] = json!([{ "id": "legacy", "apiKey": "old-secret" }]);
+            let error = parse_backup_document(&document.to_string())
+                .expect_err("old schemas are outside the fresh-install scope");
+            assert!(error.contains("不导入旧版配置"));
+            assert!(!error.contains("old-secret"));
+        }
     }
 
     #[test]
@@ -1971,14 +2705,51 @@ mod tests {
     }
 
     #[test]
+    fn current_backup_rejects_provider_and_model_domains() {
+        for (key, value) in [
+            (
+                "providers",
+                json!([{"id":"injected","apiKey":"untrusted-key"}]),
+            ),
+            ("providers", json!([])),
+            (
+                "selectedModel",
+                json!({"customProviderId":"injected","model":"m"}),
+            ),
+        ] {
+            let mut document: Value = serde_json::from_str(&sample_backup_document()).unwrap();
+            document[key] = value;
+            let error = parse_backup_document(&document.to_string()).unwrap_err();
+            assert!(error.contains("当前 USA-Zero 账户"));
+            assert!(!error.contains("untrusted-key"));
+        }
+    }
+
+    #[test]
+    fn current_backup_rejects_removed_archive_domains_without_reflecting_values() {
+        let mut document: Value = serde_json::from_str(&sample_backup_document()).unwrap();
+        document["archivedProviders"] = json!([{ "id": "old", "apiKey": "old-secret" }]);
+        let error = parse_backup_document(&document.to_string()).unwrap_err();
+        assert!(error.contains("数据格式无效"));
+        assert!(!error.contains("old-secret"));
+    }
+
+    #[test]
     fn parse_backup_document_rejects_unknown_encryption() {
         let mut document: Value =
             serde_json::from_str(&sample_backup_document()).expect("parse json");
-        document["_manifest"]["encryption"] = json!("aes-256-gcm");
+        document["_manifest"]["encryption"] = json!("untrusted-secret-in-encryption-field");
 
         let err = parse_backup_document(&document.to_string())
             .expect_err("unknown encryption must be rejected");
-        assert!(err.contains("aes-256-gcm"), "错误信息应含加密方式：{err}");
+        assert!(
+            err.contains("加密方式"),
+            "错误信息应说明不支持的加密方式：{err}"
+        );
+        assert!(
+            !err.contains("untrusted-secret"),
+            "错误信息不能回显未经信任的元信息"
+        );
     }
 
     #[test]
@@ -2012,6 +2783,7 @@ mod tests {
             profile: "default".to_string(),
             auto_sync: true,
             last_sync_at: Some(1_700_000_000_000),
+            last_uploaded_snapshot_hash: None,
             last_error: Some("sentinel-error".to_string()),
         };
         persist_backup_sync_config(&conn, &credentials).expect("persist sync config");
@@ -2025,11 +2797,18 @@ mod tests {
 
         let mut conn = conn;
         save_providers(&mut conn, json!([{ "id": "p-1", "name": "P1" }])).expect("seed providers");
-        save_mcp(&mut conn, json!({ "servers": [], "selected": [] })).expect("seed mcp");
+        save_mcp(
+            &mut conn,
+            json!({
+                "servers": [{ "id": "backup-fixture", "transport": "stdio", "command": "node", "enabled": false }],
+                "selected": []
+            }),
+        )
+        .expect("seed nonempty disabled mcp");
 
-        let snapshot = collect_backup_snapshot(&conn, None).expect("collect snapshot");
+        let snapshot = collect_backup_snapshot(&conn).expect("collect snapshot");
         let serialized = serde_json::to_string(&snapshot).expect("serialize snapshot");
-        assert!(snapshot.providers.is_some(), "前提：快照非空");
+        assert!(snapshot.mcp.is_some(), "前提：快照非空");
 
         assert!(!serialized.contains("backupSync"), "快照不应含同步配置");
         for leaked in [
@@ -2043,7 +2822,115 @@ mod tests {
                 "快照泄漏了设备级同步配置字段 {leaked}：{serialized}"
             );
         }
-        assert!(snapshot.skills.is_none(), "skills 只能由前端传入");
+    }
+
+    #[test]
+    fn collect_backup_snapshot_keeps_only_portable_system_keys() {
+        // system 域里 workdir / 工作区路径 / 系统代理是设备本地态：
+        // 绝对路径在另一台机器上不存在，代理密码明文外流也毫无意义。
+        let mut conn = open_memory_db();
+        save_system_with_default_workdir(
+            &mut conn,
+            json!({
+                "executionMode": "tools",
+                "commandSafetyMode": "ask",
+                "toolPolicies": { "Bash": "ask" },
+                "workdir": "/home/alice/secret-project",
+                "systemProxy": {
+                    "enabled": true,
+                    "type": "http",
+                    "host": "127.0.0.1",
+                    "port": 7890,
+                    "username": "proxy-user",
+                    "password": "proxy-sentinel-password"
+                }
+            }),
+            "/home/alice/secret-project",
+        )
+        .expect("seed system");
+
+        let snapshot = collect_backup_snapshot(&conn).expect("collect snapshot");
+        let serialized = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        let system = snapshot.system.expect("system domain present");
+        let system = system.as_object().expect("system is object");
+
+        assert_eq!(system.get("executionMode"), Some(&json!("tools")));
+        assert_eq!(system.get("commandSafetyMode"), Some(&json!("ask")));
+        assert_eq!(system.get("toolPolicies"), Some(&json!({ "Bash": "ask" })));
+        for device_local in [
+            "workdir",
+            "systemProxy",
+            "workspaceProjects",
+            "workspaceProjectGroups",
+            "activeWorkspaceProjectId",
+            "hiddenWorkspaceProjectPaths",
+            "missingWorkspaceProjectPaths",
+            "archivedWorkspaceProjectPaths",
+            "workspaceResourceSettings",
+        ] {
+            assert!(
+                !system.contains_key(device_local),
+                "设备本地键 {device_local} 不应进快照"
+            );
+        }
+        assert!(
+            !serialized.contains("proxy-sentinel-password"),
+            "代理密码不得进快照"
+        );
+        assert!(!serialized.contains("secret-project"), "本机路径不得进快照");
+    }
+
+    #[test]
+    fn merge_portable_system_overlays_whitelist_and_preserves_device_local_values() {
+        // 应用快照时 system 走「可移植键叠加」：快照里的 executionMode 等
+        // 覆盖本机，workdir / 代理保持本机原值；v1 快照混入的设备本地键被丢弃。
+        let mut conn = open_memory_db();
+        save_system_with_default_workdir(
+            &mut conn,
+            json!({
+                "executionMode": "tools",
+                "commandSafetyMode": "auto",
+                "workdir": "/local/workdir",
+                "systemProxy": {
+                    "enabled": true,
+                    "type": "http",
+                    "host": "127.0.0.1",
+                    "port": 7890,
+                    "username": "",
+                    "password": "local-proxy-password"
+                }
+            }),
+            "/local/workdir",
+        )
+        .expect("seed local system");
+
+        let snapshot_system = json!({
+            "executionMode": "chat",
+            "commandSafetyMode": "ask",
+            // v1 快照可能带设备本地键，必须被忽略而不是覆盖本机。
+            "workdir": "/remote/other-device",
+            "systemProxy": { "enabled": false }
+        });
+        let merged = merge_portable_system(&conn, &snapshot_system).expect("merge");
+        save_system_with_default_workdir(&mut conn, merged, "/local/workdir")
+            .expect("apply merged system");
+
+        let system = load_system(&conn)
+            .expect("load system")
+            .expect("system present");
+        assert_eq!(system["executionMode"], json!("chat"), "可移植键应被覆盖");
+        assert_eq!(system["commandSafetyMode"], json!("ask"));
+        assert_eq!(
+            system["workdir"],
+            json!("/local/workdir"),
+            "workdir 保持本机原值"
+        );
+        assert_eq!(
+            system["systemProxy"]["password"],
+            json!("local-proxy-password"),
+            "本机代理配置不受快照影响"
+        );
+        assert_eq!(system["systemProxy"]["enabled"], json!(true));
     }
 
     #[test]
@@ -2073,22 +2960,75 @@ mod tests {
         let mut conn = open_memory_db();
         save_providers(&mut conn, json!([{ "id": "stale", "name": "Stale" }]))
             .expect("seed providers");
+        save_agents(
+            &mut conn,
+            json!([{ "id": "stale-t", "name": "Stale", "prompt": "old" }]),
+        )
+        .expect("seed agents");
 
         let snapshot = BackupSnapshot {
             providers: Some(json!([{ "id": "p-1", "name": "P1" }])),
+            selected_model: None,
             mcp: Some(json!({ "servers": [{ "id": "s-1" }], "selected": ["s-1"] })),
             system: None,
-            skills: None,
+            agents: Some(json!([
+                { "id": "t-1", "name": "T1", "prompt": "prompt", "enabled": true }
+            ])),
+            model_failover: Some(json!({ "claude_code": { "queue": ["p-1"] } })),
+            stt: Some(json!({
+                "provider": "aliyun_dashscope",
+                "providers": {
+                    "aliyun_dashscope": {
+                        "id": "aliyun_dashscope",
+                        "websocketUrl": "wss://example.com/stt",
+                        "model": "m",
+                        "apiKey": "sk-stt"
+                    }
+                }
+            })),
         };
         apply_backup_snapshot_to_db(&mut conn, &snapshot).expect("apply snapshot");
 
-        // 整域覆盖：导入侧原有的 stale provider 必须消失。
+        // 整域覆盖：导入侧原有的 stale provider / 模板必须消失。
         assert_eq!(
             load_providers(&conn).expect("load providers"),
             Some(json!([{ "id": "p-1", "name": "P1" }]))
         );
         let mcp = load_mcp(&conn).expect("load mcp").expect("mcp present");
         assert_eq!(mcp["selected"], json!(["s-1"]));
+        let agents = load_agents(&conn)
+            .expect("load agents")
+            .expect("agents present");
+        assert_eq!(agents[0]["id"], json!("t-1"), "旧模板应被整域覆盖");
+        assert_eq!(
+            load_model_failover(&conn).expect("load model failover"),
+            Some(json!({ "claude_code": { "queue": ["p-1"] } }))
+        );
+        let stt = load_stt_raw(&conn).expect("load stt").expect("stt present");
+        assert_eq!(
+            stt["providers"]["aliyun_dashscope"]["apiKey"],
+            json!("sk-stt"),
+            "STT 密钥应随快照落库"
+        );
+    }
+
+    #[test]
+    fn apply_backup_snapshot_accepts_intentionally_incomplete_stt() {
+        // 源设备清空过密钥的 STT 配置当初已被源侧 save_stt 接受，
+        // 应用侧不应再按表单提交的标准复验（allowIncomplete 注入）。
+        let mut conn = open_memory_db();
+        let snapshot = BackupSnapshot {
+            stt: Some(json!({
+                "provider": "tencent_cloud",
+                "providers": {
+                    "tencent_cloud": { "id": "tencent_cloud", "appId": "", "secretId": "" }
+                }
+            })),
+            ..Default::default()
+        };
+        apply_backup_snapshot_to_db(&mut conn, &snapshot)
+            .expect("incomplete stt from a valid source must apply");
+        assert!(load_stt_raw(&conn).expect("load stt").is_some());
     }
 
     #[test]
@@ -2103,6 +3043,167 @@ mod tests {
         assert_eq!(
             load_providers(&conn).expect("load providers"),
             Some(json!([{ "id": "keep", "name": "Keep" }]))
+        );
+    }
+
+    #[test]
+    fn apply_backup_snapshot_remaps_provider_ids_to_local_identity() {
+        // 两台设备各自「添加」过同一个服务商时 UUID 必不同。导入若原样落
+        // 源 id，本机会话 / 默认模型 / 记忆 / 定时任务里存的
+        // {customProviderId} 全部失配，规范化时被静默清空。
+        let mut conn = open_memory_db();
+        save_providers(
+            &mut conn,
+            json!([
+                {
+                    "id": "local-uuid-claude",
+                    "type": "claude_code",
+                    "baseUrl": "",
+                    "name": "Claude",
+                    "apiKey": "sk-local-old"
+                },
+                { "id": "builtin-codex", "type": "codex", "baseUrl": "", "name": "Codex" }
+            ]),
+        )
+        .expect("seed local providers");
+
+        let snapshot = BackupSnapshot {
+            providers: Some(json!([
+                // 身份相同（type+baseUrl+name）、id 不同 → 改写为本机 id。
+                {
+                    "id": "source-uuid-claude",
+                    "type": "claude_code",
+                    "baseUrl": "",
+                    "name": "Claude",
+                    "apiKey": "sk-source-new"
+                },
+                // id 相同（内置槽位）→ 原样保留。
+                { "id": "builtin-codex", "type": "codex", "baseUrl": "", "name": "Codex" },
+                // 本机不存在的新 provider → 保留源 id。
+                {
+                    "id": "source-uuid-fresh",
+                    "type": "openai_compatible",
+                    "baseUrl": "https://fresh.example.com/v1",
+                    "name": "Fresh"
+                }
+            ])),
+            model_failover: Some(json!({
+                "claude_code": { "queue": ["source-uuid-claude", "source-uuid-fresh"] }
+            })),
+            ..Default::default()
+        };
+        apply_backup_snapshot_to_db(&mut conn, &snapshot).expect("apply snapshot");
+
+        let providers = load_providers(&conn)
+            .expect("load providers")
+            .expect("providers present");
+        let ids: Vec<&str> = providers
+            .as_array()
+            .expect("providers array")
+            .iter()
+            .map(|provider| provider["id"].as_str().expect("provider id"))
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["local-uuid-claude", "builtin-codex", "source-uuid-fresh"],
+            "同身份 provider 应保留本机 id，其余保持不变"
+        );
+        // id 保留本机，内容以备份为准。
+        assert_eq!(providers[0]["apiKey"], json!("sk-source-new"));
+        // failover 队列随 providers 一起改写，域间引用保持一致。
+        assert_eq!(
+            load_model_failover(&conn).expect("load model failover"),
+            Some(json!({
+                "claude_code": { "queue": ["local-uuid-claude", "source-uuid-fresh"] }
+            }))
+        );
+    }
+
+    #[test]
+    fn provider_id_map_matches_by_endpoint_and_refuses_ambiguity() {
+        let as_array = |value: &Value| value.as_array().expect("array").clone();
+
+        // 第 3 级：仅改过显示名，type+baseUrl（尾斜杠归一）两侧唯一即可配对。
+        let incoming = json!([
+            {
+                "id": "source-a",
+                "type": "openai_compatible",
+                "baseUrl": "https://api.example.com/v1",
+                "name": "改名后"
+            }
+        ]);
+        let local = json!([
+            {
+                "id": "local-a",
+                "type": "openai_compatible",
+                "baseUrl": "https://api.example.com/v1/",
+                "name": "旧名"
+            }
+        ]);
+        let id_map = build_provider_id_map(&as_array(&incoming), &as_array(&local));
+        assert_eq!(id_map.get("source-a"), Some(&"local-a".to_string()));
+
+        // 同端点出现两个本机候选（多账号）时无法分辨，宁可不配也不错配。
+        let ambiguous_local = json!([
+            {
+                "id": "local-1",
+                "type": "openai_compatible",
+                "baseUrl": "https://api.example.com/v1",
+                "name": "账号一"
+            },
+            {
+                "id": "local-2",
+                "type": "openai_compatible",
+                "baseUrl": "https://api.example.com/v1",
+                "name": "账号二"
+            }
+        ]);
+        let id_map = build_provider_id_map(&as_array(&incoming), &as_array(&ambiguous_local));
+        assert!(id_map.is_empty(), "歧义候选不得配对：{id_map:?}");
+
+        // 缺 type 的条目不参与身份配对，避免把碰巧同名的配置错认成同一个。
+        let untyped_incoming = json!([{ "id": "source-x", "name": "同名" }]);
+        let untyped_local = json!([{ "id": "local-x", "name": "同名" }]);
+        let id_map = build_provider_id_map(&as_array(&untyped_incoming), &as_array(&untyped_local));
+        assert!(id_map.is_empty(), "缺 type 不得配对：{id_map:?}");
+    }
+
+    #[test]
+    fn provider_id_rewrite_updates_legacy_failover_queue_entries() {
+        // 旧版 failover queue 存 { customProviderId, model } 对象，改写需兼容。
+        let mut snapshot = BackupSnapshot {
+            providers: Some(json!([
+                { "id": "source-a", "type": "claude_code", "baseUrl": "", "name": "Claude" }
+            ])),
+            model_failover: Some(json!({
+                "claude_code": {
+                    "queue": [
+                        { "customProviderId": "source-a", "model": "claude-4.6" },
+                        "unrelated-id"
+                    ]
+                }
+            })),
+            ..Default::default()
+        };
+        let id_map = HashMap::from([("source-a".to_string(), "local-a".to_string())]);
+        rewrite_snapshot_provider_ids(&mut snapshot, &id_map);
+
+        assert_eq!(
+            snapshot.providers,
+            Some(json!([
+                { "id": "local-a", "type": "claude_code", "baseUrl": "", "name": "Claude" }
+            ]))
+        );
+        assert_eq!(
+            snapshot.model_failover,
+            Some(json!({
+                "claude_code": {
+                    "queue": [
+                        { "customProviderId": "local-a", "model": "claude-4.6" },
+                        "unrelated-id"
+                    ]
+                }
+            }))
         );
     }
 
@@ -2132,10 +3233,24 @@ mod tests {
             ),
             (
                 BackupSnapshot {
-                    skills: Some(json!("nope")),
+                    agents: Some(json!({})),
                     ..Default::default()
                 },
-                "skills",
+                "agents",
+            ),
+            (
+                BackupSnapshot {
+                    model_failover: Some(json!([])),
+                    ..Default::default()
+                },
+                "modelFailover",
+            ),
+            (
+                BackupSnapshot {
+                    stt: Some(json!("nope")),
+                    ..Default::default()
+                },
+                "stt",
             ),
         ];
 
@@ -2166,15 +3281,8 @@ mod tests {
         )
         .expect("seed providers");
 
-        let snapshot = collect_backup_snapshot(&conn, None).expect("collect snapshot");
-        assert_eq!(
-            snapshot.providers,
-            Some(json!([{
-                "id": "local-provider",
-                "name": "Local",
-                "apiKey": "local-secret"
-            }]))
-        );
+        let snapshot = collect_backup_snapshot(&conn).expect("collect snapshot");
+        assert!(snapshot.providers.is_none());
         let serialized = serde_json::to_string(&snapshot).expect("serialize snapshot");
         assert!(!serialized.contains("relay-key-42"));
         assert!(!serialized.contains("managed-secret-must-not-leak"));
@@ -2220,6 +3328,7 @@ mod tests {
             profile: "work".to_string(),
             auto_sync: false,
             last_sync_at: Some(1_700_000_000_000),
+            last_uploaded_snapshot_hash: None,
             last_error: None,
         }
     }
@@ -2297,11 +3406,11 @@ mod tests {
         let config = sample_sync_config();
         assert_eq!(
             backup_remote_segments(&config),
-            vec!["liveagent", "v1", "work"]
+            vec!["liveagent", "v3", "work"]
         );
         assert_eq!(
             backup_remote_file_segments(&config, "config.json"),
-            vec!["liveagent", "v1", "work", "config.json"]
+            vec!["liveagent", "v3", "work", "config.json"]
         );
         // 不同 profile 必须落在不同远端目录，否则两套配置会互相覆盖。
         let mut other = sample_sync_config();
@@ -2363,13 +3472,13 @@ mod tests {
             "encryption": "none",
             "domains": { "providers": 1, "mcp": 0, "system": 0, "skills": 0 },
             "size": 42,
-            "sha256": "abc123",
+            "sha256": backup_sha256_hex(b"fixture"),
         })
         .to_string();
 
         let parsed = parse_backup_remote_manifest(body.as_bytes()).expect("parse remote manifest");
         assert_eq!(parsed.size, 42);
-        assert_eq!(parsed.sha256, "abc123");
+        assert_eq!(parsed.sha256, backup_sha256_hex(b"fixture"));
         assert_eq!(parsed.manifest.device_name, "box-a");
     }
 
@@ -2377,20 +3486,20 @@ mod tests {
     fn remote_manifest_rejects_future_protocol_version() {
         let body = json!({
             "protocolVersion": 99,
-            "schemaVersion": 1,
+            "schemaVersion": BACKUP_SCHEMA_VERSION,
             "snapshotId": "s-1",
             "createdAt": "2026-08-17T00:00:00Z",
             "deviceName": "box-a",
             "appVersion": "1.0.0",
             "encryption": "none",
             "size": 1,
-            "sha256": "ab",
+            "sha256": backup_sha256_hex(b"x"),
         })
         .to_string();
 
         let err = parse_backup_remote_manifest(body.as_bytes())
             .expect_err("future protocol version must be rejected");
-        assert!(err.contains("升级应用"), "{err}");
+        assert!(err.contains("99") && err.contains("不一致"), "{err}");
     }
 
     #[test]
@@ -2461,6 +3570,7 @@ mod tests {
             profile: "default".to_string(),
             auto_sync: false,
             last_sync_at: None,
+            last_uploaded_snapshot_hash: None,
             last_error: None,
         };
         let creds = backup_credentials(&config).expect("credentials");
@@ -2478,8 +3588,13 @@ mod tests {
         )
         .expect("seed mcp on device A");
 
-        let snapshot = collect_backup_snapshot(&device_a, Some(json!({ "enabled": ["skill-x"] })))
-            .expect("collect snapshot");
+        save_agents(
+            &mut device_a,
+            json!([{ "id": "t-live", "name": "实机模板", "prompt": "live prompt" }]),
+        )
+        .expect("seed agents on device A");
+
+        let snapshot = collect_backup_snapshot(&device_a).expect("collect snapshot");
         let manifest = build_backup_manifest(&snapshot);
         let document = serialize_backup_document(&snapshot, &manifest).expect("serialize");
         let body = document.into_bytes();
@@ -2493,7 +3608,8 @@ mod tests {
             "appVersion": manifest.app_version,
             "encryption": "none",
             "domains": {
-                "providers": 1, "mcp": 1, "system": 0, "skills": 1,
+                "providers": 0, "mcp": 1, "system": 0,
+                "agents": 1, "modelFailover": 0, "stt": 0,
             },
             "size": body.len(),
             "sha256": backup_sha256_hex(&body),
@@ -2561,35 +3677,35 @@ mod tests {
             .expect_err("篡改后必须校验失败");
         assert!(err.contains("校验和不匹配"), "{err}");
 
-        // AC7：应用到设备 B，四域应与设备 A 一致。
+        // AC7：应用到设备 B，各域应与设备 A 一致。
         let text = String::from_utf8(config_bytes).expect("utf-8 config");
         let (parsed_snapshot, _) = parse_backup_document(&text).expect("parse document");
         let mut device_b = open_memory_db();
-        save_providers(&mut device_b, json!([{ "id": "stale-b", "name": "旧配置" }]))
-            .expect("seed providers on device B");
+        save_providers(
+            &mut device_b,
+            json!([{ "id": "stale-b", "name": "旧配置" }]),
+        )
+        .expect("seed providers on device B");
+        let before_b = load_providers(&device_b).unwrap();
         apply_backup_snapshot_to_db(&mut device_b, &parsed_snapshot).expect("apply on device B");
 
         assert_eq!(
             load_providers(&device_b).expect("load providers on B"),
-            load_providers(&device_a).expect("load providers on A"),
-            "设备 B 的 providers 应与设备 A 一致"
+            before_b,
+            "设备 B 的账号 providers 不随备份变化"
         );
         assert_eq!(
             load_mcp(&device_b).expect("load mcp on B"),
             load_mcp(&device_a).expect("load mcp on A"),
             "设备 B 的 mcp 应与设备 A 一致"
         );
-        // 技能启用态不落库，只随快照回传给前端。
         assert_eq!(
-            parsed_snapshot.skills,
-            Some(json!({ "enabled": ["skill-x"] })),
-            "skills 应原样往返"
+            load_agents(&device_b).expect("load agents on B"),
+            load_agents(&device_a).expect("load agents on A"),
+            "设备 B 的提示词模板应与设备 A 一致"
         );
         // 设备级凭据绝不能随快照流转（S2）。
-        assert!(
-            !text.contains(&config.username),
-            "快照不得含 WebDAV 用户名"
-        );
+        assert!(!text.contains(&config.username), "快照不得含 WebDAV 用户名");
         assert!(!text.contains("backupSync"), "快照不得含同步配置");
         eprintln!("设备 B 还原一致，且快照不含 WebDAV 凭据");
     }

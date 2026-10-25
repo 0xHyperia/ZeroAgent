@@ -95,6 +95,7 @@ export function DividerLayer(props: DividerLayerProps) {
       {dividers.map((divider) => {
         const ratioNow = clampFor(divider, currentRatio(divider, dividerSize));
         return (
+          // biome-ignore lint/a11y/useSemanticElements: This is an interactive, draggable separator with value semantics; hr cannot implement pointer capture or keyboard resizing.
           <div
             key={divider.splitId}
             data-workbench-divider={divider.splitId}
@@ -189,8 +190,8 @@ export function DividerLayer(props: DividerLayerProps) {
                 "forced-colors:bg-[CanvasText]",
                 "group-hover/divider:forced-colors:bg-[Highlight] group-focus-visible/divider:forced-colors:bg-[Highlight]",
                 divider.axis === "horizontal"
-                  ? "h-full w-px group-hover/divider:w-[3px] group-focus-visible/divider:w-[3px]"
-                  : "h-px w-full -translate-y-px group-hover/divider:h-[3px] group-focus-visible/divider:h-[3px]",
+                  ? "h-full w-px group-hover/divider:w-3px group-focus-visible/divider:w-3px"
+                  : "h-px w-full -translate-y-px group-hover/divider:h-3px group-focus-visible/divider:h-3px",
               )}
             />
           </div>

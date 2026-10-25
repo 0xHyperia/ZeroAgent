@@ -2,6 +2,7 @@ import { useDirectoryPicker } from "@liveagent/adapters/directoryPicker";
 import {
   type AppSettings,
   DEFAULT_WORKSPACE_PROJECT_ID,
+  type ProjectPromptStrategy,
   type WorkspaceProject,
   type WorkspaceResourceSettingsMode,
   workspaceProjectPathKey,
@@ -16,7 +17,7 @@ import { cn } from "@liveagent/ui/lib/shared/utils";
 import { isAlwaysEnabledSkillName, type SkillSummary } from "@liveagent/ui/lib/skills/index";
 import { useEffect, useMemo, useState } from "react";
 import type { StoreCategoryValue } from "../../pages/skills-hub/SkillCategoryControls";
-import { Blend, FolderTree, Loader2, Settings } from "../IconSet";
+import { Blend, BookOpen, FolderTree, Loader2, Settings } from "../IconSet";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -24,10 +25,12 @@ import {
   DialogBody,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import { ProjectPromptSettingsPanel } from "./ProjectPromptEditorModal";
 import { WorkspaceDirectorySettingsPanel } from "./workspace-project-settings/WorkspaceDirectorySettingsPanel";
 import { WorkspaceGeneralSettingsPanel } from "./workspace-project-settings/WorkspaceGeneralSettingsPanel";
 import {
@@ -39,7 +42,7 @@ import {
   rootAliasFromPath,
 } from "./workspace-project-settings/workspaceProjectSettingsUtils";
 
-type ProjectSettingsPanel = "general" | "directories" | "resources";
+type ProjectSettingsPanel = "general" | "directories" | "resources" | "prompt";
 
 export type {
   WorkspaceProjectRootAccess,
@@ -53,6 +56,8 @@ type ResourceSettingsDraft = {
   mode: WorkspaceResourceSettingsMode;
   skillNames: string[];
   mcpServerIds: string[];
+  projectPrompt: string;
+  projectPromptStrategy: ProjectPromptStrategy;
 };
 
 export function WorkspaceProjectSettingsModal(props: {
@@ -98,6 +103,10 @@ export function WorkspaceProjectSettingsModal(props: {
   );
   const [mcpServerIds, setMcpServerIds] = useState<Set<string>>(
     () => new Set(saved?.mode === "custom" ? saved.mcpServerIds : globalMcpIds),
+  );
+  const [projectPrompt, setProjectPrompt] = useState(saved?.projectPrompt ?? "");
+  const [projectPromptStrategy, setProjectPromptStrategy] = useState<ProjectPromptStrategy>(
+    saved?.projectPromptStrategy ?? "append",
   );
   const [tab, setTab] = useState<WorkspaceResourceTab>("skills");
   const [query, setQuery] = useState("");
@@ -253,6 +262,8 @@ export function WorkspaceProjectSettingsModal(props: {
         mode,
         skillNames: [...skillNames],
         mcpServerIds: [...mcpServerIds],
+        projectPrompt: projectPrompt.trim(),
+        projectPromptStrategy,
       });
       requestClose();
     } catch (error) {
@@ -263,19 +274,6 @@ export function WorkspaceProjectSettingsModal(props: {
 
   const visibleSkillSelection = mode === "inherit" ? globalSkillNames : skillNames;
   const visibleMcpSelection = mode === "inherit" ? globalMcpIds : mcpServerIds;
-  const selectableSkills = listedSkills.filter(
-    ({ skill }) => !isAlwaysEnabledSkillName(skill.name),
-  );
-  const visibleSelectedSkillCount =
-    settings.skills.enabled && mode !== "off"
-      ? selectableSkills.filter(({ skill }) => visibleSkillSelection.has(skill.name)).length
-      : 0;
-  const visibleSelectedMcpCount =
-    mode !== "off"
-      ? settings.mcp.servers.filter(
-          (server) => server.enabled && visibleMcpSelection.has(server.id),
-        ).length
-      : 0;
   const projectKindLabel = t(
     `chat.workspaceSettingsKind${project.kind[0].toUpperCase()}${project.kind.slice(1)}`,
   );
@@ -295,6 +293,11 @@ export function WorkspaceProjectSettingsModal(props: {
       icon: Blend,
       label: t("chat.workspaceSettingsResources"),
     },
+    {
+      id: "prompt" as const,
+      icon: BookOpen,
+      label: t("chat.projectPromptTitle"),
+    },
   ];
 
   if (directoryPickerActive) {
@@ -312,42 +315,32 @@ export function WorkspaceProjectSettingsModal(props: {
       }}
     >
       <DialogContent
-        className="flex h-[min(650px,calc(100dvh-2rem))] max-w-[940px] flex-col p-0"
+        className="flex h-[min(40rem,calc(100dvh-2rem))] max-w-4xl flex-col overflow-hidden p-0"
         closeDisabled={saving}
         closeLabel={t("window.close")}
         layout="fullscreen-mobile"
         showCloseButton
       >
-        <DialogHeader className="flex-row items-center gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/35 text-foreground">
-              <FolderTree className="h-4.5 w-4.5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <DialogTitle
-                  id="workspace-project-settings-title"
-                  className="truncate text-sm leading-normal"
-                >
-                  {t("chat.workspaceSettingsTitle")}
-                </DialogTitle>
-                <span className="max-w-[240px] truncate rounded-full border bg-muted/60 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                  {normalizedProjectName || project.name}
-                </span>
-              </div>
-              <div
-                className="mt-0.5 max-w-[620px] truncate text-[11px] text-muted-foreground"
-                title={project.path}
-              >
-                {project.path}
-              </div>
-            </div>
-          </div>
+        <DialogHeader>
+          <DialogTitle id="workspace-project-settings-title" className="truncate">
+            {t("chat.workspaceSettingsTitle")}
+          </DialogTitle>
+          {/* The path is already shown (and copyable) on the 通用配置 panel, so the
+              header only needs to say which workspace this is. */}
+          <DialogDescription
+            className="truncate text-xs"
+            title={normalizedProjectName || project.name}
+          >
+            {normalizedProjectName || project.name}
+          </DialogDescription>
         </DialogHeader>
 
-        <DialogBody className="flex overflow-hidden p-0 max-[720px]:flex-col">
+        <DialogBody className="flex gap-2 overflow-hidden px-4 py-0 max-[720px]:flex-col">
           <nav
-            className="flex w-[188px] shrink-0 flex-col gap-1 border-r bg-muted/30 p-2.5 max-[720px]:w-full max-[720px]:flex-row max-[720px]:overflow-x-auto max-[720px]:border-b max-[720px]:border-r-0 max-[720px]:px-2.5 max-[720px]:py-2"
+            className={cn(
+              "flex w-48 shrink-0 flex-col gap-1 rounded-xl bg-settings-rail p-2.5",
+              "max-[720px]:w-full max-[720px]:flex-row max-[720px]:overflow-x-auto max-[720px]:px-2.5 max-[720px]:py-2",
+            )}
             aria-label={t("chat.workspaceSettingsNavigation")}
           >
             {navigation.map(({ id, icon: Icon, label }) => (
@@ -355,13 +348,17 @@ export function WorkspaceProjectSettingsModal(props: {
                 key={id}
                 type="button"
                 className={cn(
-                  "flex h-10 items-center gap-2 rounded-lg px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground max-[720px]:min-w-max max-[720px]:flex-1 max-[720px]:justify-center max-[720px]:px-2 max-[720px]:text-xs",
-                  activePanel === id && "bg-primary/10 font-medium text-primary",
+                  "flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3",
+                  "text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "max-[720px]:min-w-max max-[720px]:flex-1 max-[720px]:justify-center max-[720px]:px-2 max-[720px]:text-xs",
+                  activePanel === id
+                    ? "bg-settings-active text-foreground"
+                    : "text-foreground/70 hover:bg-settings-tile-hover hover:text-foreground",
                 )}
                 onClick={() => setActivePanel(id)}
                 aria-current={activePanel === id ? "page" : undefined}
               >
-                <Icon className="h-4 w-4 shrink-0 max-[720px]:h-3.5 max-[720px]:w-3.5" />
+                <Icon className="size-4 shrink-0 max-[720px]:size-3.5" />
                 {label}
               </button>
             ))}
@@ -416,7 +413,6 @@ export function WorkspaceProjectSettingsModal(props: {
                 tab={tab}
                 query={query}
                 category={category}
-                listedSkills={listedSkills}
                 filteredSkills={filteredSkills}
                 filteredMcp={filteredMcp}
                 skillCategoryCounts={skillCategoryCounts}
@@ -424,8 +420,6 @@ export function WorkspaceProjectSettingsModal(props: {
                 visibleMcpSelection={visibleMcpSelection}
                 skillNames={skillNames}
                 mcpServerIds={mcpServerIds}
-                visibleSelectedSkillCount={visibleSelectedSkillCount}
-                visibleSelectedMcpCount={visibleSelectedMcpCount}
                 onModeChange={selectMode}
                 onTabChange={(nextTab) => {
                   setTab(nextTab);
@@ -437,13 +431,23 @@ export function WorkspaceProjectSettingsModal(props: {
                 onMcpServerIdsChange={setMcpServerIds}
               />
             ) : null}
+
+            {activePanel === "prompt" ? (
+              <ProjectPromptSettingsPanel
+                plain
+                projectPrompt={projectPrompt}
+                strategy={projectPromptStrategy}
+                onProjectPromptChange={setProjectPrompt}
+                onStrategyChange={setProjectPromptStrategy}
+              />
+            ) : null}
           </main>
         </DialogBody>
 
-        <DialogFooter className="bg-muted/20 py-3.5 min-[821px]:justify-between">
+        <DialogFooter className="min-[821px]:justify-between">
           <div
             className={cn(
-              "min-w-0 truncate text-xs text-muted-foreground max-[520px]:hidden",
+              "min-w-0 flex-1 truncate text-xs text-muted-foreground max-[520px]:hidden",
               rootError && "text-destructive",
             )}
           >
@@ -455,19 +459,20 @@ export function WorkspaceProjectSettingsModal(props: {
                     .replace("{mcp}", String(mcpServerIds.size))
                 : null}
           </div>
-          <DialogActions className="ml-auto max-[520px]:w-full">
+          <DialogActions>
             <DialogClose
               disabled={saving}
-              render={<Button type="button" variant="outline" className="max-[520px]:flex-1" />}
+              render={<Button type="button" variant="outline" size="sm" />}
             >
               {t("chat.cancel")}
             </DialogClose>
             <Button
               onClick={() => void handleSave()}
               disabled={saving || !dialogOpen || projectNameInvalid}
-              className="min-w-20 max-[520px]:flex-1"
+              size="sm"
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("workspaceEditor.save")}
+              {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("workspaceEditor.save")}
             </Button>
           </DialogActions>
         </DialogFooter>

@@ -94,6 +94,77 @@ func newAccountTestRuntime(t *testing.T) (*Service, *MemoryStore, http.Handler) 
 	return service, store, mux
 }
 
+func TestStaleTabCannotUseOrLogOutAnotherAccountsCookie(t *testing.T) {
+	_, store, handler := newAccountTestRuntime(t)
+	now := time.Now()
+	for _, id := range []int64{1, 2} {
+		session := &Session{ID: fmt.Sprintf("owner-%d", id), UserID: id, User: json.RawMessage(fmt.Sprintf(`{"id":%d}`, id)), AccessToken: fmt.Sprintf("access-%d", id), AccessExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour)}
+		if err := store.PutSession(context.Background(), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/environments"},
+		{http.MethodGet, "/api/web-chat/conversations"},
+		{http.MethodPost, "/api/web-chat/conversations"},
+		{http.MethodPost, "/api/auth/logout"},
+	} {
+		req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"title":"must not create"}`))
+		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "owner-2"})
+		req.Header.Set("X-ZeroAgent-Account-ID", "1")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict || rec.Header().Get("X-ZeroAgent-Account-Mismatch") != "1" || len(rec.Result().Cookies()) != 0 {
+			t.Fatalf("stale tab request %s: status=%d cookies=%v body=%s", route.path, rec.Code, rec.Result().Cookies(), rec.Body.String())
+		}
+	}
+	if _, err := store.GetSession(context.Background(), "owner-2"); err != nil {
+		t.Fatalf("stale logout revoked account B: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/web-chat/conversations", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "owner-2"})
+	req.Header.Set("X-ZeroAgent-Account-ID", "2")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "must not create") {
+		t.Fatalf("owner B data changed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestExpiredBootstrapAndOwnedLogoutCannotEraseNewerBrowserCookie(t *testing.T) {
+	_, store, handler := newAccountTestRuntime(t)
+	expired := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	expired.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "expired"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, expired)
+	if rec.Code != http.StatusUnauthorized || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("expired bootstrap must not clear a newer browser cookie: %d %#v", rec.Code, rec.Result().Cookies())
+	}
+	now := time.Now()
+	session := &Session{ID: "logout-owner", UserID: 2, User: json.RawMessage(`{"id":2}`), AccessToken: "access-2", AccessExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour)}
+	if err := store.PutSession(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	logout := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logout.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID})
+	logout.Header.Set("X-ZeroAgent-Account-ID", "2")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, logout)
+	if rec.Code != http.StatusNoContent || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("late logout cookie mutation: %d %#v", rec.Code, rec.Result().Cookies())
+	}
+	if _, err := store.GetSession(context.Background(), session.ID); err == nil {
+		t.Fatal("logout must still revoke the server session")
+	}
+	noCookie := httptest.NewRequest(http.MethodGet, "/api/environments", nil)
+	noCookie.Header.Set("X-ZeroAgent-Account-ID", "2")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, noCookie)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("owner assertion must never authenticate: %d", rec.Code)
+	}
+}
+
 func TestAccountLoginUsesSecureHttpOnlyCookieAndDoesNotExposeTokens(t *testing.T) {
 	_, _, handler := newAccountTestRuntime(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"email":"one@example.com","password":"password"}`))

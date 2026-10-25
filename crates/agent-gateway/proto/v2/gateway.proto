@@ -66,6 +66,16 @@ message GatewayEnvelope {
     ImportDirectoryRequest import_directory = 97;
     CheckpointRequest checkpoint = 98;
     TrajectoryFetchRequest trajectory_fetch = 99;
+    InstalledAppsListRequest installed_apps_list = 100;
+    ClarifyTurnRequest clarify_turn = 101;
+    CuaDriverRequest cua_driver = 102;
+    PlanningRequest planning = 103;
+    PromptTemplateListRequest prompt_template_list = 104;
+    PromptTemplateExpandRequest prompt_template_expand = 105;
+    SlashCommandListRequest slash_command_list = 106;
+    GoalManageRequest goal_manage = 107;
+    LoopManageRequest loop_manage = 108;
+    ProxyDetectRequest proxy_detect = 109;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -145,6 +155,18 @@ message AgentEnvelope {
     ImportDirectoryResponse import_directory_resp = 102;
     CheckpointResponse checkpoint_resp = 103;
     TrajectoryFetchResponse trajectory_fetch_resp = 104;
+    InstalledAppsListResponse installed_apps_list_resp = 105;
+    ClarifyTurnResponse clarify_turn_resp = 106;
+    CuaDriverResponse cua_driver_resp = 107;
+    ClarifyTurnDelta clarify_turn_delta = 108;
+    PlanningResponse planning_resp = 109;
+    PlanningChanged planning_changed = 110;
+    PromptTemplateListResponse prompt_template_list_resp = 111;
+    PromptTemplateExpandResponse prompt_template_expand_resp = 112;
+    SlashCommandListResponse slash_command_list_resp = 113;
+    GoalManageResponse goal_manage_resp = 114;
+    LoopManageResponse loop_manage_resp = 115;
+    ProxyDetectResponse proxy_detect_resp = 116;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -162,6 +184,33 @@ message ChatRuntimeControls {
   bool thinking_enabled = 1;
   bool native_web_search_enabled = 2;
   string reasoning = 3;
+  // Plan mode(计划模式):true 表示本轮只注入只读工具 + ExitPlanMode。
+  // 限制性开关,桌面端按"只能收紧"合并(任一来源为 true 即生效);缺省 false
+  // 不得关闭桌面本地已开启的 plan mode。
+  bool plan_mode_enabled = 4;
+}
+
+// 澄清轮次（Web 计划 2）：浏览器经 gateway 转发到桌面 agent 的一次纯文本补全。
+// messages 走 JSON 字符串（ClarifyMessage[]，见 agent-ui clarifyTypes），system
+// 提示词（含工作区上下文）已在 Web 侧拼入 messages，无需单独字段；provider/
+// model/runtime 由 Web 当前选中下发，桌面端按 provider_id 查本地配置构造 runtime。
+message ClarifyTurnRequest {
+  string messages_json = 1;
+  string provider_id = 2;
+  string model = 3;
+  ChatRuntimeControls runtime_controls = 4;
+}
+
+message ClarifyTurnResponse {
+  string final_text = 1;
+  string error_code = 2;
+  string error_message = 3;
+}
+
+// 澄清轮次流式增量。与 ClarifyTurnRequest 共用 request_id，但不结束 unary
+// 等待：gateway 拦截后转给发起该轮的浏览器，最终仍以 clarify_turn_resp 收束。
+message ClarifyTurnDelta {
+  string text = 1;
 }
 
 message ChatUploadedFile {
@@ -170,6 +219,7 @@ message ChatUploadedFile {
   string file_name = 3;
   string kind = 4;
   int64 size_bytes = 5;
+  string dedupe_key = 6;
 }
 
 message UploadReadableFile {
@@ -427,6 +477,9 @@ message MemoryManageResponse {
 
 message TerminalRequest {
   string action = 1;
+  // Canonical K-brain run identity for run-owned terminal operations.
+  string conversation_id = 22;
+  string run_id = 23;
   string session_id = 2;
   string project_path_key = 3;
   string cwd = 4;
@@ -681,6 +734,18 @@ message ChatRequest {
   // 命令安全模式(ask/auto/sandbox/sandboxOffline)。远端 WebUI 直带,桌面端据此
   // 覆盖本地 settings.system.commandSafetyMode;空串表示未指定(回落本地设置)。
   string command_safety_mode = 11;
+  // Structured conversation references selected through the WebUI @ menu.
+  // The desktop runtime binds ReadConversation authorization to this list;
+  // a markdown conversation token is display-only and cannot grant access.
+  repeated ChatConversationReference referenced_conversations = 12;
+  // WebUI 输入框“/”指令带来的单轮语义。goal_action 非空表示经 K-brain 的 goal
+  // 接口开始这一轮（set/resume）；prompt_command 表示 message 是提示词指令，
+  // 由 K-brain 展开后交给模型，历史与界面保留原文。
+  string goal_action = 13;
+  string goal_text = 14;
+  bool prompt_command = 15;
+  // A single /plan task, distinct from ordinary chat with plan mode enabled.
+  bool plan_command = 16;
 }
 
 message ChatMessageRef {
@@ -1042,6 +1107,94 @@ message SkillFilesListResponse {
   bool truncated = 3;
 }
 
+// Markdown 提示词模板（输入框“/”指令）：桌面端转调 K-brain 的
+// GET /v1/prompts?workdir= 与 POST /v1/prompts/templates/{name}/expand。
+// 项目级模板是否生效由 K-brain 按项目信任状态决定。
+message PromptTemplateListRequest {
+  string workdir = 1;
+}
+
+message PromptTemplateSummary {
+  string name = 1;
+  string description = 2;
+  string argument_hint = 3;
+}
+
+message PromptTemplateListResponse {
+  repeated PromptTemplateSummary templates = 1;
+}
+
+message PromptTemplateExpandRequest {
+  string name = 1;
+  // 指令名之后的原始参数文本，由 K-brain 按命令行规则切分。
+  string text = 2;
+  string workdir = 3;
+}
+
+message PromptTemplateExpandResponse {
+  string name = 1;
+  string text = 2;
+}
+
+// 会话目标的非运行动作（目前只有 clear）。set/resume 会开始一轮运行，走
+// ChatRequest 的 goal_action，复用聊天的流式与镜像链路。
+message GoalManageRequest {
+  string conversation_id = 1;
+  string action = 2;
+}
+
+message GoalManageResponse {
+  string conversation_id = 1;
+  string goal = 2;
+  // none、active、continuing、met、paused 或 cleared。
+  string status = 3;
+  int32 round = 4;
+  int32 max_rounds = 5;
+  string reason = 6;
+}
+
+// 桌面端“/”指令目录：动作由客户端按名称处理，prompt 由 K-brain 展开。
+message SlashCommandListRequest {
+  string workdir = 1;
+}
+
+message SlashCommandSummary {
+  string name = 1;
+  string description = 2;
+  string argument_hint = 3;
+  // action 或 prompt。
+  string kind = 4;
+  string source = 5;
+}
+
+message SlashCommandListResponse {
+  repeated SlashCommandSummary commands = 1;
+}
+
+// 会话内按间隔重复的提示词，落在 K-brain 的 cron 上。
+message LoopManageRequest {
+  string conversation_id = 1;
+  // create、list 或 cancel。
+  string action = 2;
+  string cron = 3;
+  string interval = 4;
+  string prompt = 5;
+  string reasoning = 6;
+  string loop_id = 7;
+}
+
+message LoopSummary {
+  string id = 1;
+  string interval = 2;
+  string cron = 3;
+  string prompt = 4;
+  bool enabled = 5;
+}
+
+message LoopManageResponse {
+  repeated LoopSummary loops = 1;
+}
+
 message SkillMetadataReadRequest {
   string path = 1;
 }
@@ -1086,6 +1239,62 @@ message FileMentionEntry {
 message FileMentionListResponse {
   repeated FileMentionEntry entries = 1;
   bool truncated = 2;
+}
+
+// 桌面宿主的已安装应用（computer use 操作目标），供 WebUI 的 @ 弹层展示
+// 应用分组。Gateway 只直通转发，不自己枚举；字段对齐桌面 InstalledApp
+// 的序列化契约（services/cua_driver/installed_apps.rs）。
+message InstalledAppsListRequest {}
+
+message InstalledAppEntry {
+  string name = 1;
+  // macOS bundle id；Windows 等无 bundle id 的平台留空，身份以 path 兜底。
+  string bundle_id = 2;
+  string path = 3;
+  // `data:image/png;base64,…` 应用图标；取不到时留空。
+  string icon_data_url = 4;
+}
+
+message InstalledAppsListResponse {
+  repeated InstalledAppEntry apps = 1;
+}
+
+// Computer Use（CUA）驱动的只读引导状态，供 WebUI 的 Computer Use 设置页
+// 展示桌面宿主上装没装 cua-driver、macOS 的 TCC 授权给了没有。Gateway 只
+// 直通转发，不自己探测。
+//
+// 安装与授权**有意不在这条通道上**：安装是在宿主上联网下载并执行 shell
+// 脚本，授权会在宿主屏幕上弹 macOS 系统对话框——浏览器这端的人既确认不了
+// 前者的命令全文，也点不到后者的弹窗，只能在桌面端做。
+message CuaDriverRequest {
+  // "probe" | "permissions_status"。写动作不走这里，网关侧亦按白名单拒绝。
+  string action = 1;
+}
+
+message CuaDriverResponse {
+  string action = 1;
+  // 与桌面 invoke 同一份序列化：services/cua_driver 的 CuaDriverProbe /
+  // CuaDriverPermissions（camelCase）。走 JSON 而不是在 proto 里再刻一份
+  // 结构化镜像，是为了让两端拿到的就是同一个对象，不会各自漂移。
+  string result_json = 2;
+}
+
+// 应用代理设置里的「检测到的代理服务」：检测与测速都在桌面宿主上执行，
+// 检测的是运行 ZeroAgent 的那台电脑，不是浏览器所在的设备。Gateway 只按
+// action 白名单直通转发。
+message ProxyDetectRequest {
+  // "detect" | "test"。
+  string action = 1;
+  // test 的参数 {"type":"http"|"socks5","host":...,"port":...}；detect 为空。
+  // 桌面端只接受本进程检测到过的代理，不会替请求方连任意地址。
+  string input_json = 2;
+}
+
+message ProxyDetectResponse {
+  string action = 1;
+  // 与桌面 invoke 同一份序列化：services/proxy_detect 的 ProxyDetectResult /
+  // ProxyTestResult（camelCase），不含任何凭据。
+  string result_json = 2;
 }
 
 message FsRoot {
@@ -1266,6 +1475,18 @@ message ErrorResponse {
   string message = 2;
 }
 
+message ProviderCustomHeader {
+  string name = 1;
+  string value = 2;
+}
+
+// 包一层 message 只为拿到字段存在性：repeated 无法区分「草稿没带」与「草稿把头
+// 清空了」，而这两种情况在已保存供应商分支上的处理相反（前者沿用落库的头，
+// 后者按空集发请求）。与 is_full_url 的 optional 同一套三态语义。
+message ProviderCustomHeaders {
+  repeated ProviderCustomHeader headers = 1;
+}
+
 message ProviderModelsRequest {
   string provider_type = 1;
   string base_url = 2;
@@ -1277,6 +1498,11 @@ message ProviderModelsRequest {
   string provider_id = 6;
   // 当前草稿是否把 base_url 作为完整聊天端点解释；未提供时沿用已保存配置。
   optional bool is_full_url = 7;
+  // 用户在供应商设置里显式配置的自定义请求头；未提供时沿用已保存配置。
+  // 鉴权头与 host/content-length 等仍由落地侧的保留头名单兜底，不可被覆盖。
+  ProviderCustomHeaders custom_headers = 8;
+  // 供应商请求格式由 K-brain 统一执行；保存 codex/custom provider 时保留该选择。
+  string request_format = 9;
 }
 
 message ProviderModelsResponse {
@@ -1454,4 +1680,23 @@ message CheckpointRequest {
 message CheckpointResponse {
   string action = 1;
   string result_json = 2;
+}
+
+message ChatConversationReference {
+  string id = 1;
+  string title = 2;
+  string cwd = 3;
+  int64 updated_at = 4;
+}
+
+// Planning payloads use the validated Rust/TypeScript domain contract.
+message PlanningRequest {
+  string action = 1;
+  string input_json = 2;
+}
+message PlanningResponse {
+  string result_json = 1;
+}
+message PlanningChanged {
+  uint64 seq = 1;
 }

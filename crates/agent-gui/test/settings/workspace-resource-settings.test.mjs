@@ -41,6 +41,17 @@ const sharedSidebar = readFileSync(
   new URL("../../../agent-ui/src/components/chat/ChatHistorySidebarRows.tsx", import.meta.url),
   "utf8",
 );
+const sharedProjectPromptEditor = readFileSync(
+  new URL(
+    "../../../agent-ui/src/components/chat/ProjectPromptEditorModal.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const sharedAgentsSection = readFileSync(
+  new URL("../../../agent-ui/src/pages/settings/AgentsSection.tsx", import.meta.url),
+  "utf8",
+);
 const sendRuntime = readFileSync(
   new URL("../../src/pages/chat/runtime/useSendChatTurn.ts", import.meta.url),
   "utf8",
@@ -101,11 +112,20 @@ const sharedMcpServerCard = readFileSync(
 test("workspace configuration uses one entry and one shared two-column modal", () => {
   assert.match(sharedSidebar, /chat\.workspaceConfigure/);
   assert.match(sharedSidebar, /onConfigureProject\(project\)/);
+  assert.doesNotMatch(sharedSidebar, /chat\.workspaceEditPrompt/);
+  assert.doesNotMatch(sharedSidebar, /onEditProjectPrompt\(project\)/);
   assert.match(sharedSidebar, /onDoubleClick=\{\(event\)[\s\S]*onConfigureProject\(project\)/);
   assert.doesNotMatch(sharedSidebar, /chat\.workspaceRename/);
   assert.match(sharedDrawer, /WorkspaceProjectSettingsModal as WorkspaceResourceSettingsDrawer/);
-  assert.match(sharedProjectSettings, /"general" \| "directories" \| "resources"/);
-  assert.match(sharedResourcePanel, /\["inherit", "custom", "off"\]/);
+  assert.match(sharedProjectSettings, /"general" \| "directories" \| "resources" \| "prompt"/);
+  assert.match(sharedProjectSettings, /id: "prompt"/);
+  assert.match(sharedProjectSettings, /<ProjectPromptSettingsPanel/);
+  // The three resource modes are mutually exclusive settings, not views —
+  // they must stay a radiogroup rather than drifting back to a tab strip.
+  assert.match(sharedResourcePanel, /value: "inherit"/);
+  assert.match(sharedResourcePanel, /value: "custom"/);
+  assert.match(sharedResourcePanel, /value: "off"/);
+  assert.match(sharedResourcePanel, /role="radiogroup"/);
   assert.match(sharedResourcePanel, /value: "skills"/);
   assert.match(sharedResourcePanel, /value: "mcp"/);
   assert.match(sharedResourcePanel, /<ResourceTabsList/);
@@ -151,8 +171,8 @@ test("workspace configuration uses one entry and one shared two-column modal", (
   assert.doesNotMatch(sharedProjectSettings, /window\.requestAnimationFrame/);
   assert.match(webRemotePathPicker, /selectedPathRef\.current = path/);
   assert.match(webRemotePathPicker, /pending\.resolve\(selectedPathRef\.current\)/);
-  assert.match(webRemotePathPicker, /h-\[min\(650px,92vh\)\]/);
-  assert.match(webRemotePathPicker, /max-h-\[92vh\]/);
+  assert.match(webRemotePathPicker, /h-dialog-650px-vh/);
+  assert.match(webRemotePathPicker, /max-h-92vh/);
   assert.match(webRemotePathPicker, /max-w-4xl/);
   assert.doesNotMatch(webRemotePathPicker, /forceRender/);
   assert.doesNotMatch(webRemotePathPicker, /overlayClassName|viewportClassName|z-\[\d+\]/);
@@ -170,11 +190,61 @@ test("workspace configuration uses one entry and one shared two-column modal", (
   assert.match(sharedDirectoryPanel, /maxLength=\{32\}/);
   assert.match(sharedDirectoryPanel, /pattern="\[a-z\]\[a-z0-9_-\]\{0,31\}"/);
   assert.match(sharedDirectoryPanel, /<Input/);
-  assert.match(sharedDirectoryPanel, /<Select\b/);
-  assert.match(sharedDirectoryPanel, /<SelectItem value="read"/);
-  assert.match(sharedDirectoryPanel, /<SelectItem value="write"/);
+  assert.match(sharedDirectoryPanel, /\["read", "write"\] as const/);
+  assert.match(sharedDirectoryPanel, /aria-pressed=\{value === option\}/);
   assert.doesNotMatch(sharedDirectoryPanel, /<(?:input|select|option)\b/);
   assert.doesNotMatch(sharedResourcePanel, /McpImportView|McpRegistryBrowser|SkillsStoreView/);
+});
+
+test("prompt templates expose global and project scopes with append or replace editing", () => {
+  assert.match(sharedProjectPromptEditor, /value: "append" as const/);
+  assert.match(sharedProjectPromptEditor, /value: "replace" as const/);
+  // The strategy switch must stay on the shared tabs component — it was once a
+  // hand-rolled fieldset that drifted to its own height, border and type size.
+  assert.match(sharedProjectPromptEditor, /<ResourceTabsList/);
+  assert.doesNotMatch(sharedProjectPromptEditor, /aria-pressed/);
+  assert.doesNotMatch(sharedProjectPromptEditor, /projectPromptEffectivePreview/);
+  assert.match(guiChatPage, /onConfigureProject=\{setProjectSettingsProject\}/);
+  assert.match(webGatewayAppView, /onConfigureProject=\{setProjectSettingsProject\}/);
+  assert.doesNotMatch(guiChatPage, /onEditProjectPrompt/);
+  assert.doesNotMatch(webGatewayAppView, /onEditProjectPrompt/);
+  assert.match(sendRuntime, /resolveConversationPromptWorkdir\(workdirResolution\)/);
+  assert.match(sendRuntime, /resolveEffectivePromptSettings\(settings, promptWorkdir\)/);
+  assert.match(sendRuntime, /historyCwd/);
+});
+
+test("global and project prompt cards share row and action layout", () => {
+  const projectCards = sharedAgentsSection.slice(sharedAgentsSection.indexOf("{projects.map"));
+  const previewButton = projectCards.indexOf('title={t("settings.agentsShowPrompt")}');
+  const editButton = projectCards.indexOf('title={t("settings.agentsProjectEdit")}');
+
+  assert.match(projectCards, /settings-card-row flex items-center gap-3 px-4 py-3/);
+  assert.match(projectCards, /settings-card-actions flex items-center gap-1\.5/);
+  assert.match(projectCards, /ml-1 flex items-center gap-0\.5/);
+  assert.ok(previewButton >= 0 && previewButton < editButton);
+  assert.match(projectCards, /disabled=\{!configured\}/);
+  assert.match(
+    projectCards,
+    /size="icon-sm"[\s\S]*title=\{t\("settings\.agentsProjectEdit"\)\}/,
+  );
+  assert.doesNotMatch(
+    projectCards,
+    /size="sm"[\s\S]*\{t\("settings\.agentsProjectEdit"\)\}/,
+  );
+});
+
+test("project prompt preview renders the effective prompt with scope labels in one reading column", () => {
+  assert.match(
+    sharedAgentsSection,
+    /resolveEffectivePromptSettings\(settings, viewingProject\.path\)/,
+  );
+  assert.match(sharedAgentsSection, /hidePromptHeader/);
+  assert.match(sharedAgentsSection, /label: t\("chat\.globalPromptTitle"\)/);
+  assert.match(sharedAgentsSection, /\{segment.label\}/);
+  assert.match(sharedAgentsSection, /\{segment.prompt\}/);
+  assert.match(sharedAgentsSection, /whitespace-pre-wrap break-words/);
+  assert.doesNotMatch(sharedAgentsSection, /md:grid-cols-model-picker/);
+
 });
 
 test("chat runtime resolves and snapshots workspace resources from the effective workdir", () => {
@@ -184,7 +254,18 @@ test("chat runtime resolves and snapshots workspace resources from the effective
   assert.match(sendRuntime, /getMcpSettings: getEffectiveMcpSettings/);
   assert.match(sendRuntime, /missing\.length > 0 && workspaceResources\.mode !== "custom"/);
   assert.match(guiChatPage, /resolveWorkspaceResources\(settings, displayedConversationWorkdir\)/);
-  assert.match(guiChatPage, /skillsEnabled: settings\.skills\.enabled && isAgentMode/);
+  assert.match(
+    guiChatPage,
+    /skillsEnabled\s*:\s*!kBrainBackendEnabled\s*&&\s*settings\.skills\.enabled\s*&&\s*isAgentMode/,
+  );
+  assert.match(
+    guiChatPage,
+    /const\s+skillsEnabled\s*=\s*!kBrainBackendEnabled\s*&&\s*activeWorkspaceResources\.skillsEnabled\s*&&\s*isAgentMode/,
+  );
+  assert.match(
+    sendRuntime,
+    /const effectiveSkillsEnabled =\s*capabilities\.frontendContext && workspaceResources\.skillsEnabled && effectiveIsAgentMode/,
+  );
   assert.match(sharedProjectSettings, /chat\.workspaceResourcesMissingSkill/);
 });
 

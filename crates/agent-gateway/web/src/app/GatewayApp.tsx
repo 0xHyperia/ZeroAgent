@@ -3,25 +3,57 @@ import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
-import type { NotifyItem } from "@liveagent/ui/components/chat/NotifyToast";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
+import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { type ToastTone, toast } from "@liveagent/ui/components/ui/toast-manager";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
+import {
+  clearCommandRecoveries,
+  moveCommandRecovery,
+} from "@liveagent/ui/lib/chat/composerCommandRecovery";
+import { searchMentionConversations } from "@liveagent/ui/lib/chat/conversationSearch";
+import {
+  clearSearchJumpTarget,
+  getSearchJumpTargetSnapshot,
+  resolveSearchJumpRowKey,
+  subscribeSearchJumpTarget,
+} from "@liveagent/ui/lib/chat/searchJumpTarget";
+import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
+import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
+import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/releaseProjectToolFromDock";
+import { cn } from "@liveagent/ui/lib/shared/utils";
+import type { ConversationOpenRequest } from "@liveagent/ui/lib/sidebar/openController";
 import {
   type ConversationOpenState,
   createConversationOpenController,
 } from "@liveagent/ui/lib/sidebar/openController";
 import { createSidebarStore } from "@liveagent/ui/lib/sidebar/store";
 import { useSidebarSelector } from "@liveagent/ui/lib/sidebar/useSidebarSelector";
-import { terminalSessionBelongsToProject } from "@liveagent/ui/lib/terminal/sessionStore";
+import {
+  sortTerminalSessions,
+  terminalSessionBelongsToProject,
+} from "@liveagent/ui/lib/terminal/sessionStore";
 import { useWorkspaceProjectDeletion } from "@liveagent/ui/lib/useWorkspaceProjectRemoval";
+import { projectToolSurfaceTitleKey } from "@liveagent/ui/lib/workbench/projectToolSurfaces";
 import { useWorkspaceProjectSettingsActions } from "@liveagent/ui/lib/workspaceProjectRemoval";
 import type { ChatQueueTurnPreview } from "@liveagent/ui/pages/chat/ChatComposerBar";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { TrustedGatewayImageIdentity } from "@/agent-ui-adapters/imageStudio";
 import { createGatewayWorkspaceProjectRootClient } from "@/agent-ui-adapters/workspaceProjectRoots";
 import type { GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
+import { ACCOUNT_CHANGED_EVENT, ACCOUNT_SESSION_STORAGE_KEY } from "@/lib/accountRequest";
 import { registerAskUserQuestionAnswerHandler } from "@/lib/chat/askUserQuestionBridge";
 import type { HistoryWindowState } from "@/lib/chat/historyWindow";
+import { registerPlanDecisionHandler } from "@/lib/chat/planModeBridge";
 import { createActivityStore } from "@/lib/chat/stream/activityStore";
 import {
   ChatCommandPipeline,
@@ -30,6 +62,7 @@ import {
 import type { ChatCommandUpdate } from "@/lib/chat/stream/streamTypes";
 import { createTranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { registerToolApprovalDecisionHandler } from "@/lib/chat/toolApprovalBridge";
+import { transcriptRowsToJumpCandidates } from "@/lib/chat/transcript/searchJumpCandidates";
 import type {
   AgentStatus,
   ChatEvent,
@@ -55,6 +88,12 @@ import {
   workspaceProjectPathKey,
 } from "@/lib/settings";
 import { createIdleSidebarBackend, createWebSidebarBackend } from "@/lib/sidebar/webSidebarBackend";
+import {
+  GATEWAY_CHAT_FRAME_CLASS,
+  GATEWAY_MAIN_BACKDROP_CLASS,
+  GATEWAY_MAIN_SHELL_CLASS,
+  GATEWAY_SHELL_CLASS,
+} from "@/lib/webStyleClasses";
 import { AccountLoginPage } from "@/pages/AccountLoginPage";
 import { CloudChatPage } from "@/pages/CloudChatPage";
 import { SettingsSyncLoading } from "@/pages/SettingsSyncLoading";
@@ -66,14 +105,28 @@ import {
 } from "./chatEventUtils";
 import { HISTORY_LIST_PAGE_SIZE, PROTECTED_DRAFT_CONVERSATION } from "./constants";
 import { GatewayAppView } from "./GatewayAppView";
-import { createGatewayChatCommandActions } from "./gatewayChatCommandActions";
+import {
+  createGatewayChatCommandActions,
+  type QueuedEditSession,
+} from "./gatewayChatCommandActions";
 import { createGatewayConversationActions } from "./gatewayConversationActions";
+import {
+  clearGatewayConversationSelection,
+  loadGatewayConversationSelection,
+  resolveGatewayConversationRestoreTarget,
+  saveGatewayConversationSelection,
+} from "./gatewayConversationRestore";
 import {
   createOpenConversationInitial,
   createRefreshDisplayedConversationHistorySnapshot,
 } from "./gatewayHistoryWindowActions";
-import { createLocalDraftConversationId, isLocalDraftConversationId } from "./gatewayLocalDraft";
-import { resolveVisibleConversationId, shouldOpenSidebarByDefault } from "./historyUtils";
+import {
+  createGatewayHomeConversationState,
+  createLocalDraftConversationId,
+  isLocalDraftConversationId,
+} from "./gatewayLocalDraft";
+import { resolveVisibleConversationId } from "./historyUtils";
+import { resolveConversationUploadWorkdir } from "./hooks/uploadWorkdirRouting";
 import { useDirectoryDropActions } from "./hooks/useDirectoryDropActions";
 import { useGatewayChatConfiguration } from "./hooks/useGatewayChatConfiguration";
 import { useGatewayChatPresentation } from "./hooks/useGatewayChatPresentation";
@@ -95,6 +148,11 @@ import { useGatewayWorkspaceProjects } from "./hooks/useGatewayWorkspaceProjects
 import { usePendingUploads } from "./hooks/usePendingUploads";
 import { useStableCallback } from "./hooks/useStableCallback";
 import type { SendChatFn } from "./types";
+import { shouldRestorePageComposerDraft } from "./workbench/pageComposerDraftRestore";
+import { sessionWorkbench } from "./workbench/sessionWorkbench";
+import { useGatewayWorkbench } from "./workbench/useGatewayWorkbench";
+
+const SEARCH_JUMP_MAX_PAGES = 20;
 
 function useGatewayAppController() {
   const historyShareToken = useMemo(() => parseHistoryShareToken(), []);
@@ -115,9 +173,14 @@ function useGatewayAppController() {
     applyExecutionPresence,
     clearSession,
   } = useGatewaySession(historyShareToken);
-  const { api, terminalClient, sftpClient, gitClient } = useGatewayClients(token);
+  const terminalIdentityRef = useRef<{ conversationId?: string; runId?: string } | null>(null);
+  const getTerminalIdentity = useCallback(() => terminalIdentityRef.current, []);
+  const { api, terminalClient, sftpClient, gitClient } = useGatewayClients(
+    token,
+    getTerminalIdentity,
+  );
   const selectedAgentId = selection?.agent_id?.trim() || selection?.device_id?.trim() || "";
-  const [activeAgentId, setActiveAgentId] = useState(() => selectedAgentId || api?.getActiveAgent() || "");
+  const [activeAgentId, setActiveAgentId] = useState(() => api?.getActiveAgent() ?? "");
   const activeAgentIdRef = useRef(activeAgentId);
   const activeAgentScope = selectedAgentId || activeAgentId || api?.getActiveAgent() || "";
   useEffect(() => {
@@ -140,7 +203,11 @@ function useGatewayAppController() {
   // A cached Agent status is usable only after it has been observed on the
   // currently authenticated browser-socket epoch.
   const [sidebarAgentStatusFresh, setSidebarAgentStatusFresh] = useState(false);
-  const [conversationId, setConversationId] = useState("");
+  // The homepage is a real unsaved conversation. A stable local-draft id keeps
+  // the initial Workbench root valid and lets the first sidebar/dock drop form
+  // an actual split without changing the visible homepage experience.
+  const [initialHomeConversation] = useState(createGatewayHomeConversationState);
+  const [conversationId, setConversationId] = useState(initialHomeConversation.conversationId);
   // 本地未持久化的会话模型切换（按会话 id 键）；发消息随 selected_model
   // 落库后由 history-sync 回声在清理 effect 中收敛删除。
   const [conversationModelOverrides, setConversationModelOverrides] = useState<
@@ -176,22 +243,24 @@ function useGatewayAppController() {
     },
     [],
   );
-  // Top-right toast stack for upload/attachment feedback — mirrors the GUI's
-  // NotifyToast usage so upload failures never render as conversation output.
-  const [notifyItems, setNotifyItems] = useState<NotifyItem[]>([]);
-  const notifyIdCounter = useRef(0);
-  const addNotify = useCallback((type: NotifyItem["type"], message: string) => {
-    const id = `notify-${++notifyIdCounter.current}`;
-    setNotifyItems((prev) => [...prev, { id, type, message }]);
-  }, []);
-  const dismissNotify = useCallback((id: string) => {
-    setNotifyItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const addNotify = useCallback(
+    (type: ToastTone, message: string) =>
+      toast[type](message, { id: `app-notify:${type}:${message}` }),
+    [],
+  );
   // Sidebar errors raised outside the sidebar store (project removal flow).
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
   const [queuedChatTurns, setQueuedChatTurns] = useState<ChatQueueItemSummary[]>([]);
+  const [queuePausedState, setQueuePausedState] = useState<{
+    conversationId: string;
+    paused: boolean;
+  } | null>(null);
+  const [queueControlConversationId, setQueueControlConversationId] = useState("");
+  const queueControlInFlightRef = useRef(false);
   const [, setChatQueueRevision] = useState(0);
-  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const [selectedHistoryId, setSelectedHistoryId] = useState(
+    initialHomeConversation.selectedHistoryId,
+  );
   const [selectedHistory, setSelectedHistory] = useState<HistoryDetail | null>(null);
   // Two-phase conversation open (openController): "opening" gates the
   // composer/transcript loading affordances; showOverlay drives the switch
@@ -209,16 +278,39 @@ function useGatewayAppController() {
   const [pendingCommandRevision, setPendingCommandRevision] = useState(0);
   const { settings, setSettings, settingsSyncReady, settingsSyncError, settingsSaveState } =
     useGatewaySettingsSync({ token, api, activeAgentId: activeAgentScope });
-  const [relayUser, setRelayUser] = useState<RelayUser | null>(accountUser);
-  const [relayStats, setRelayStats] = useState<RelayDashboardStats | null>(null);
+  const accountUserIdRef = useRef(accountUser?.id);
+  accountUserIdRef.current = accountUser?.id;
+  const [relayUserRecord, setRelayUser] = useState<RelayUser | null>(accountUser);
+  const relayUser = relayUserRecord?.id === accountUser?.id ? relayUserRecord : accountUser;
+  const [relayStatsRecord, setRelayStatsRecord] = useState<{
+    ownerId: number;
+    value: RelayDashboardStats;
+  } | null>(null);
+  const relayStats =
+    relayStatsRecord && relayStatsRecord.ownerId === accountUser?.id
+      ? relayStatsRecord.value
+      : null;
+  const acceptRelayUser = useCallback((user: RelayUser) => {
+    if (user.id === accountUserIdRef.current) setRelayUser(user);
+  }, []);
+  const setRelayStats = useCallback(
+    (value: RelayDashboardStats) => {
+      const ownerId = accountUser?.id;
+      if (ownerId && ownerId === accountUserIdRef.current) setRelayStatsRecord({ ownerId, value });
+    },
+    [accountUser?.id],
+  );
   useEffect(() => {
     setRelayUser(accountUser);
   }, [accountUser]);
   const refreshRelayAccount = useCallback(async () => {
+    const expectedUser = accountUserIdRef.current;
     const [profile, stats] = await Promise.all([getRelayProfile(), getRelayDashboardStats()]);
-    setRelayUser(profile);
+    if (!expectedUser || expectedUser !== accountUserIdRef.current || profile.id !== expectedUser)
+      return;
+    acceptRelayUser(profile);
     setRelayStats(stats);
-  }, []);
+  }, [acceptRelayUser, setRelayStats]);
   useEffect(() => {
     if (!accountUser) return;
     void refreshRelayAccount().catch(() => undefined);
@@ -227,14 +319,21 @@ function useGatewayAppController() {
     () => (api ? createGatewayWorkspaceProjectRootClient(api) : undefined),
     [api],
   );
+  const [workspaceRootRevision, setWorkspaceRootRevision] = useState(0);
+  const handleWorkspaceDirectoriesMounted = useCallback(() => {
+    setWorkspaceRootRevision((revision) => revision + 1);
+  }, []);
   const effectiveTheme = resolveEffectiveTheme(settings.theme);
   const isAgentMode = settings.system.executionMode !== "text";
-  const [sidebarOpen, setSidebarOpen] = useState(shouldOpenSidebarByDefault);
+  const sidebar = useSidebar();
+  const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
+  const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
   const {
     settingsOpen,
     overlay,
     openSettings,
     closeSettings,
+    registerSettingsLeaveGuard,
     handleSettingsTransitionEnd,
     resetSettingsOverlay,
     settingsSection,
@@ -262,6 +361,11 @@ function useGatewayAppController() {
     viewport: transcriptViewport,
     listenerRoot: transcriptScrollAreaRoot,
     trackKeys: true,
+    // 回贴区为 0：只有真正到达底部（8px 容差内）才恢复跟随。默认的 192px
+    // 回贴区会在滚轮下行进入该区间的那一 tick 直接 pin 到底，读者看到的是
+    // 正文突然上跳一段（复现页实测单 tick 231px），即"磁吸"。到达底部后向下
+    // 滚轮、手势落底、指针在底部释放三种路径仍会重新贴底。
+    config: { reattachZonePx: 0 },
   });
   // 楼层导航：当前楼层由转写区上报，跳转经 navRef 直达虚拟列表；粘底跟随
   // 激活时程序化滚动会被立即拽回底部——跳转前先按「跳入历史」语义解除跟随。
@@ -276,6 +380,14 @@ function useGatewayAppController() {
   );
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const composerDraftCacheRef = useRef<Map<string, MentionComposerDraft>>(new Map());
+  // 草稿 id → 真实会话 id。Pane 宿主草稿 effect 的 cleanup 闭包捕获的是旧
+  // conversationId:draft→real 原位重绑时 cleanup 在 rename 之后才执行,
+  // 若直接写 draft key 会落进永远读不到的孤儿条目,宿主新 effect 随即
+  // clear() 掉用户正在输入的内容。读写统一经本映射改写到真实 id。
+  const boundComposerDraftIdsRef = useRef<Map<string, string>>(new Map());
+  const resolveComposerDraftKey = useCallback((conversationId: string) => {
+    return boundComposerDraftIdsRef.current.get(conversationId) ?? conversationId;
+  }, []);
   const composerDraftOwnerRef = useRef("");
   const conversationIdRef = useRef(conversationId);
   const selectedHistoryIdRef = useRef(selectedHistoryId);
@@ -283,7 +395,8 @@ function useGatewayAppController() {
   const queuedChatTurnsRef = useRef<ChatQueueItemSummary[]>([]);
   const chatQueueConversationIdRef = useRef("");
   const chatQueueRevisionRef = useRef(0);
-  const queuedChatEditSessionRef = useRef<{ itemId: string; revision: number } | null>(null);
+  const queuedChatEditSessionRef = useRef<QueuedEditSession | null>(null);
+  const queuedChatEditPendingRef = useRef(false);
   const selectedHistoryRef = useRef(selectedHistory);
   // Per-conversation runtime workdir (drafts have no persisted summary yet).
   const conversationWorkdirsRef = useRef<Map<string, string>>(new Map());
@@ -300,10 +413,12 @@ function useGatewayAppController() {
   } | null>(null);
   const displayedConversationBusyRef = useRef(false);
   const historyLoadSequenceRef = useRef(0);
+  const restoredConversationAgentRef = useRef("");
+  const restoringConversationRef = useRef<{ agentId: string; conversationId: string } | null>(null);
   const visibleConversationRevisionRef = useRef(0);
   const previousDisplayedConversationIdRef = useRef("");
   const pendingDisplayedConversationAutoBottomRef = useRef<string | null>(null);
-  const protectedConversationRef = useRef("");
+  const protectedConversationRef = useRef(PROTECTED_DRAFT_CONVERSATION);
   const chatRuntimePreparePromiseRef = useRef<Promise<AgentStatus> | null>(null);
   const submitInFlightRef = useRef(false);
   // clientRequestId → draft conversation id, until the command binds.
@@ -311,6 +426,18 @@ function useGatewayAppController() {
   const sendChatRef = useRef<SendChatFn | null>(null);
   const isImportingPastedTextRef = useRef(false);
   const resetProjectToolsRuntimeRef = useRef<() => void>(() => undefined);
+
+  const resetToFreshHomeConversation = useCallback(() => {
+    const next = createGatewayHomeConversationState();
+    conversationIdRef.current = next.conversationId;
+    selectedHistoryIdRef.current = next.selectedHistoryId;
+    selectedHistoryRef.current = null;
+    protectedConversationRef.current = PROTECTED_DRAFT_CONVERSATION;
+    setConversationId(next.conversationId);
+    setSelectedHistoryId(next.selectedHistoryId);
+    setSelectedHistory(null);
+    setChatError(null);
+  }, []);
 
   // --- Chat streaming infrastructure (Phase 4) -----------------------------
   // Transcript stores (one per conversation), the global activity map, and
@@ -408,10 +535,31 @@ function useGatewayAppController() {
     };
   }, [api, sidebarStore]);
 
+  // 思考档位运行期补充（models.dev）：启动后台拉一次，TTL 内幂等；失败静默，
+  // 档位解析维持在「快照 + 兜底」的现状。models.dev 带 ACAO:*，浏览器直连可达，
+  // 无需经 gateway 代理。
+  useEffect(() => {
+    void loadThinkingLiveSupplement();
+  }, []);
+
   // Narrow app-root subscriptions: workdirs (rare commits — project merge
   // inputs) and the byId index (list commits only; never running/idle ticks).
   const sidebarWorkdirs = useSidebarSelector(sidebarStore, (snapshot) => snapshot.workdirs);
   const sidebarConversationsById = useSidebarSelector(sidebarStore, (snapshot) => snapshot.byId);
+  const mentionableConversations = useMemo(
+    () =>
+      [...sidebarConversationsById.values()]
+        .filter((item) => !item.isPending)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(({ id, title, cwd, updatedAt, messageCount }) => ({
+          id,
+          title,
+          cwd,
+          updatedAt,
+          messageCount,
+        })),
+    [sidebarConversationsById],
+  );
   const {
     handleCloseShareModal,
     handleDisableSharedHistory,
@@ -444,6 +592,10 @@ function useGatewayAppController() {
   >(() => "");
   const {
     activateWorkspaceProject,
+    activateConversationWorkspace,
+    activateSearchConversationWorkspace,
+    clearSearchConversationWorkspace,
+    searchConversationWorkdir,
     activeWorkspaceProject,
     activeWorkspaceProjectPath,
     archivedWorkspaceProjectPathKeys,
@@ -493,13 +645,13 @@ function useGatewayAppController() {
   // established history window in the single open phase — messages above the
   // window edge stay unfetched until the user pages up. Deps go through refs
   // (assigned per render) so the controller instance stays stable.
-  const openInitialRef = useRef<(id: string) => Promise<"cache-hit" | "painted">>(() =>
-    Promise.resolve("painted"),
-  );
+  const openInitialRef = useRef<
+    (id: string, request?: ConversationOpenRequest) => Promise<"cache-hit" | "painted">
+  >(() => Promise.resolve("painted"));
   const openController = useMemo(
     () =>
       createConversationOpenController({
-        openInitial: (id) => openInitialRef.current(id),
+        openInitial: (id, request) => openInitialRef.current(id, request),
         onStateChange: setConversationOpenState,
       }),
     [],
@@ -531,23 +683,47 @@ function useGatewayAppController() {
       activeWorkspaceProject,
       workspaceProjectRootClient,
       onWorkspaceCreated: handleWorkdirPickerSelect,
+      onWorkspaceDirectoriesMounted: handleWorkspaceDirectoriesMounted,
     });
 
   // 无会话兜底：等价于点一次“新对话”，返回新草稿会话 id 供上传立即挂靠。
   const ensureUploadConversation = useCallback(() => startNewConversationRef.current(), []);
+  const workdirForConversation = useCallback(
+    (targetConversationId: string) => {
+      const targetId = targetConversationId.trim();
+      const displayedId = resolveVisibleConversationId(
+        selectedHistoryIdRef.current,
+        conversationIdRef.current,
+      );
+      return resolveConversationUploadWorkdir({
+        targetConversationId: targetId,
+        displayedConversationId: displayedId,
+        persistedWorkdir: sidebarStore.peek(targetId)?.cwd,
+        runtimeWorkdir: conversationWorkdirsRef.current.get(targetId),
+        isAgentMode,
+        activeWorkspacePath: activeWorkspaceProjectPath,
+        defaultWorkdir: settings.system.workdir,
+      });
+    },
+    [activeWorkspaceProjectPath, isAgentMode, settings.system.workdir, sidebarStore],
+  );
 
   const {
     pendingUploadedFiles,
     isUploadingFiles,
+    uploadingConversationId,
     isFileDropActive,
     fileInputRef,
+    folderInputRef,
     setUploadingFiles,
     getPendingUploadsForConversation,
+    subscribePendingUploads,
     setPendingUploadsForConversation,
     updatePendingUploadsForConversation,
     moveConversationUploads,
     clearPendingUploads,
     handleImportReadableFiles,
+    handleImportSelectedDirectoryFiles,
     handleFileDragEnter,
     handleFileDragOver: handlePendingFileDragOver,
     handleFileDragLeave,
@@ -568,6 +744,7 @@ function useGatewayAppController() {
     addNotify,
     onDropDirectories: mountDroppedDirectories,
     ensureUploadConversation,
+    workdirForConversation,
   });
 
   const applyChatQueueSnapshot = useCallback((snapshot: ChatQueueSnapshot | null | undefined) => {
@@ -589,7 +766,57 @@ function useGatewayAppController() {
     queuedChatTurnsRef.current = snapshot.items.slice();
     setChatQueueRevision(revision);
     setQueuedChatTurns(snapshot.items.slice());
+    setQueuePausedState(
+      typeof snapshot.paused === "boolean"
+        ? { conversationId: snapshot.conversationId, paused: snapshot.paused }
+        : null,
+    );
   }, []);
+
+  const handleQueuePausedChange = useCallback(
+    async (paused: boolean) => {
+      const target = resolveVisibleConversationId(
+        selectedHistoryIdRef.current,
+        conversationIdRef.current,
+      );
+      if (
+        !api ||
+        !target ||
+        queueControlInFlightRef.current ||
+        chatQueueConversationIdRef.current !== target
+      )
+        return;
+      const revision = chatQueueRevisionRef.current;
+      queueControlInFlightRef.current = true;
+      setQueueControlConversationId(target);
+      try {
+        const response = await api.chatQueueSetPaused(target, paused, revision);
+        applyChatQueueSnapshot(response.snapshot);
+        if (!response.accepted)
+          throw new Error(
+            response.message || translate("chat.queue.controlFailed", settings.locale),
+          );
+      } catch (error) {
+        if (
+          resolveVisibleConversationId(selectedHistoryIdRef.current, conversationIdRef.current) ===
+          target
+        ) {
+          setChatError(
+            asErrorMessage(error, translate("chat.queue.controlFailed", settings.locale)),
+          );
+        }
+        // A dropped acknowledgement does not imply that the mutation failed.
+        void api
+          .chatQueueGet(target)
+          .then((response) => applyChatQueueSnapshot(response.snapshot))
+          .catch(() => undefined);
+      } finally {
+        queueControlInFlightRef.current = false;
+        setQueueControlConversationId("");
+      }
+    },
+    [api, applyChatQueueSnapshot, settings.locale],
+  );
 
   useEffect(() => {
     if (!api) return;
@@ -634,10 +861,11 @@ function useGatewayAppController() {
       registerToolApprovalDecisionHandler(null);
       return;
     }
-    registerToolApprovalDecisionHandler(async (toolCallId, decision) => {
-      const conversationIdValue = resolveVisibleConversationId(
-        selectedHistoryIdRef.current,
-        conversationIdRef.current,
+    registerToolApprovalDecisionHandler(async (toolCallId, decision, targetConversationId) => {
+      // 背景 Pane 显式携带自己的会话 id;主视图缺省仍按当前展示会话路由。
+      const conversationIdValue = (
+        targetConversationId?.trim() ||
+        resolveVisibleConversationId(selectedHistoryIdRef.current, conversationIdRef.current)
       ).trim();
       if (!conversationIdValue) {
         return { ok: false, message: "No active conversation." };
@@ -654,6 +882,39 @@ function useGatewayAppController() {
       }
     });
     return () => registerToolApprovalDecisionHandler(null);
+  }, [api]);
+
+  // 计划卡片的决定出口：经网关 chat_queue.plan_decision 送达桌面端计划挂起表;
+  // 桌面端据此批准/退回计划,结果照常以 tool_result 事件流回本端。
+  useEffect(() => {
+    if (!api) {
+      registerPlanDecisionHandler(null);
+      return;
+    }
+    registerPlanDecisionHandler(async (toolCallId, answer) => {
+      const conversationIdValue = resolveVisibleConversationId(
+        selectedHistoryIdRef.current,
+        conversationIdRef.current,
+      ).trim();
+      if (!conversationIdValue) {
+        return { ok: false, message: "No active conversation." };
+      }
+      try {
+        const response = await api.chatQueuePlanDecision(
+          conversationIdValue,
+          toolCallId,
+          JSON.stringify(answer),
+        );
+        return {
+          ok: response.accepted,
+          message: response.message || undefined,
+          errorCode: response.errorCode || undefined,
+        };
+      } catch (error) {
+        return { ok: false, message: asErrorMessage(error, "Failed to submit the decision.") };
+      }
+    });
+    return () => registerPlanDecisionHandler(null);
   }, [api]);
 
   const {
@@ -741,6 +1002,12 @@ function useGatewayAppController() {
     return historyLoadSequenceRef.current;
   }, []);
 
+  // Session Workbench：草稿转正时把承载草稿的 Pane 原位重绑到真实会话 id，
+  // 与 setConversationId 同批提交——聚焦 Pane 不会闪现只读预览，DOM 不重挂载。
+  // workbenchController 在下方创建后回填本 ref。
+  const workbenchRenameConversationRef = useRef<(fromId: string, toId: string) => void>(() => {});
+  const workbenchClearRef = useRef<() => void>(() => {});
+
   // A draft conversation got its real id (authoritative `command_update
   // bound`): re-key every draft-scoped resource onto the real conversation.
   const bindDraftConversation = useCallback(
@@ -752,6 +1019,8 @@ function useGatewayAppController() {
       }
 
       transcriptStoreRegistry.move(previousId, nextId);
+      moveCommandRecovery(previousId, nextId);
+      workbenchRenameConversationRef.current(previousId, nextId);
 
       const windowState = historyWindowStatesRef.current.get(previousId);
       if (windowState !== undefined) {
@@ -765,6 +1034,12 @@ function useGatewayAppController() {
         conversationWorkdirsRef.current.set(nextId, workdir);
       }
 
+      // 先登记改写映射再搬缓存:宿主草稿 effect 的 cleanup 会在 rename 提交
+      // 后仍以旧 id 写回,经映射落到真实 id 上,不产生孤儿条目。
+      for (const [draftId, boundId] of boundComposerDraftIdsRef.current) {
+        if (boundId === previousId) boundComposerDraftIdsRef.current.set(draftId, nextId);
+      }
+      boundComposerDraftIdsRef.current.set(previousId, nextId);
       const cachedComposerDraft = composerDraftCacheRef.current.get(previousId);
       if (cachedComposerDraft) {
         composerDraftCacheRef.current.delete(previousId);
@@ -910,7 +1185,7 @@ function useGatewayAppController() {
       // transcript keeps the pipeline's error entry.
       sidebarStore.removeLocal(conversationIdValue);
     }
-    if (isDisplayedConversation(conversationIdValue)) {
+    if (!pending.waitForStart && isDisplayedConversation(conversationIdValue)) {
       setChatError(message);
     }
   };
@@ -953,14 +1228,31 @@ function useGatewayAppController() {
     }
     const stack = mobileNavigationStackRef.current;
     const last = stack.at(-1);
-    if (
-      last?.projectId !== previous.projectId ||
-      last.conversationId !== previous.conversationId
-    ) {
+    if (last?.projectId !== previous.projectId || last.conversationId !== previous.conversationId) {
       stack.push(previous);
       if (stack.length > 50) stack.splice(0, stack.length - 50);
     }
   }, [activeWorkspaceProject?.id, displayedConversationId]);
+
+  const terminalConversationId = displayedConversationId.trim();
+  const terminalActivity = terminalConversationId
+    ? activityStore.get(terminalConversationId)
+    : null;
+  const terminalActiveRun = terminalConversationId
+    ? transcriptStoreRegistry.peek(terminalConversationId)?.getSnapshot().activeRun
+    : null;
+  const terminalRunId = terminalActivity?.runId?.trim() || terminalActiveRun?.runId?.trim() || "";
+  const terminalIdentity = useMemo(() => {
+    if (
+      !terminalConversationId ||
+      isLocalDraftConversationId(terminalConversationId) ||
+      !terminalRunId
+    ) {
+      return null;
+    }
+    return { conversationId: terminalConversationId, runId: terminalRunId };
+  }, [terminalConversationId, terminalRunId]);
+  terminalIdentityRef.current = terminalIdentity;
 
   // 会话生效模型：本地 override > sidebar 行携带的持久化选择 > 全局默认。
   const selectionForConversation = useCallback(
@@ -993,7 +1285,10 @@ function useGatewayAppController() {
       if (
         persisted &&
         persisted.customProviderId === override.customProviderId &&
-        persisted.model === override.model
+        persisted.model === override.model &&
+        (override.thinkingEnabled === undefined ||
+          persisted.thinkingEnabled === override.thinkingEnabled) &&
+        (override.reasoning === undefined || persisted.reasoning === override.reasoning)
       ) {
         next.delete(id);
         changed = true;
@@ -1088,6 +1383,85 @@ function useGatewayAppController() {
 
   openInitialRef.current = openConversationInitial;
 
+  // Restore the last real conversation only after the authenticated client has
+  // selected an Agent. The existing open controller owns the history fetch and
+  // transcript replacement; this effect only supplies its initial target.
+  useEffect(() => {
+    const agentId = activeAgentScope.trim();
+    if (!api || !agentId || historyShareToken || restoredConversationAgentRef.current === agentId) {
+      return;
+    }
+    restoredConversationAgentRef.current = agentId;
+    const conversationIdValue = loadGatewayConversationSelection(agentId);
+    if (!conversationIdValue || isLocalDraftConversationId(conversationIdValue)) {
+      clearGatewayConversationSelection(agentId);
+      return;
+    }
+    restoringConversationRef.current = { agentId, conversationId: conversationIdValue };
+    openController.open(conversationIdValue, {
+      afterCommit: () => {
+        const pending = restoringConversationRef.current;
+        if (
+          pending &&
+          pending.agentId === agentId &&
+          pending.conversationId === conversationIdValue
+        ) {
+          restoringConversationRef.current = null;
+        }
+      },
+    });
+  }, [activeAgentScope, api, historyShareToken, openController]);
+
+  useEffect(() => {
+    const pending = restoringConversationRef.current;
+    if (
+      conversationOpenState.phase !== "failed" ||
+      !pending ||
+      pending.conversationId !== conversationOpenState.conversationId
+    ) {
+      return;
+    }
+    restoringConversationRef.current = null;
+    clearGatewayConversationSelection(pending.agentId);
+    openController.cancel();
+    resetToFreshHomeConversation();
+  }, [conversationOpenState, openController, resetToFreshHomeConversation]);
+
+  // Persist only real conversations. Starting a new conversation explicitly
+  // clears this key, so the new-conversation button remains a new-conversation
+  // intent rather than becoming an implicit reload shortcut.
+  useEffect(() => {
+    const agentId = activeAgentScope.trim();
+    const conversationIdValue = displayedConversationId.trim();
+    if (
+      !agentId ||
+      !conversationIdValue ||
+      isLocalDraftConversationId(conversationIdValue) ||
+      historyShareToken
+    ) {
+      return;
+    }
+    const detailConversationId = selectedHistory?.conversation_id.trim();
+    const sessionId = resolveGatewayConversationRestoreTarget({
+      conversationId: conversationIdValue,
+      historyConversationId: selectedHistory?.conversation_id,
+      historySessionId:
+        detailConversationId === conversationIdValue
+          ? selectedHistory?.conversation?.session_id
+          : undefined,
+      sidebarSessionId: sidebarConversationsById.get(conversationIdValue)?.sessionId,
+    });
+    // Active first turns may precede history summaries; the relay persists their alias mapping.
+    if (!sessionId) return;
+    saveGatewayConversationSelection(agentId, sessionId);
+  }, [
+    activeAgentScope,
+    displayedConversationId,
+    historyShareToken,
+    selectedHistory,
+    sidebarConversationsById,
+  ]);
+
   const prepareChatRuntime = useGatewayRuntimePreparation({
     api,
     historyShareToken,
@@ -1108,11 +1482,13 @@ function useGatewayAppController() {
     handleSidebarConversationsRemoved,
     handleSidebarLocalDraftDeleted,
     handleSidebarNewConversation,
-    handleSidebarOpenMcpHub,
-    handleSidebarOpenSkillsHub,
+    handleSidebarOpenResourceHub,
     handleSidebarSelectConversation,
     startNewConversation,
   } = createGatewayConversationActions({
+    activateConversationWorkspace,
+    activateSearchConversationWorkspace,
+    clearSearchConversationWorkspace,
     activeView,
     activeWorkspaceProjectPath,
     api,
@@ -1120,6 +1496,7 @@ function useGatewayAppController() {
     branchInFlightRef,
     cacheVisibleComposerDraft,
     clearCachedComposerDraft,
+    clearPersistedConversationSelection: () => clearGatewayConversationSelection(activeAgentScope),
     composerDraftCacheRef,
     composerDraftOwnerRef,
     composerRef,
@@ -1164,10 +1541,7 @@ function useGatewayAppController() {
     while (stack.length > 0) {
       const entry = stack.pop();
       if (!entry) return false;
-      if (
-        entry.projectId === currentProjectId &&
-        entry.conversationId === currentConversationId
-      ) {
+      if (entry.projectId === currentProjectId && entry.conversationId === currentConversationId) {
         continue;
       }
       restoringMobileNavigationRef.current = entry;
@@ -1306,6 +1680,7 @@ function useGatewayAppController() {
     },
     [activityStore, sidebarStore],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: workbench setter and version ref are stable hook outputs declared later in the composition
   const pruneWorkspaceProjectTerminalSessions = useCallback((pathKey: string) => {
     terminalSessionsVersionRef.current += 1;
     setTerminalSessions((current) =>
@@ -1347,64 +1722,81 @@ function useGatewayAppController() {
 
   const handleComposerBusyChange = useCallback((_isBusy: boolean) => {}, []);
 
-  const handleLogout = useCallback(() => {
-    invalidateHistoryLoad();
-    markVisibleConversationRevision();
-    // Dropping the api swaps in a fresh (empty) sidebar store; the start/stop
-    // effect stops the old one.
-    openController.cancel();
-    clearSession();
-    chatCommandPipeline.reset();
-    transcriptStoreRegistry.clear();
-    activityStore.clear();
-    draftClientRequestsRef.current.clear();
-    historyWindowStatesRef.current.clear();
-    conversationWorkdirsRef.current.clear();
-    composerDraftCacheRef.current.clear();
-    composerDraftOwnerRef.current = "";
-    composerRef.current?.clear();
-    conversationIdRef.current = "";
-    selectedHistoryIdRef.current = "";
-    selectedHistoryRef.current = null;
-    resetSharedHistory();
-    clearPendingUploads();
-    protectedConversationRef.current = "";
-    submitInFlightRef.current = false;
-    setUserMenuOpen(false);
-    setProjectSettingsProject(null);
-    resetSettingsOverlay();
-    setStatus(null);
-    setStatusError(null);
-    setConversationId("");
-    setChatError(null);
-    setSidebarActionError(null);
-    setFullHistoryLoading(false);
-    queuedChatTurnsRef.current = [];
-    chatQueueConversationIdRef.current = "";
-    chatQueueRevisionRef.current = 0;
-    queuedChatEditSessionRef.current = null;
-    setQueuedChatTurns([]);
-    setChatQueueRevision(0);
-    resetProjectToolsRuntimeRef.current();
-    setSelectedHistoryId("");
-    setSelectedHistory(null);
-  }, [
-    activityStore,
-    chatCommandPipeline,
-    clearPendingUploads,
-    clearSession,
-    invalidateHistoryLoad,
-    markVisibleConversationRevision,
-    openController,
-    resetSharedHistory,
-    transcriptStoreRegistry,
-    resetSettingsOverlay,
-    setProjectSettingsProject,
-  ]);
+  const handleLogout = useCallback(
+    (revokeRemotely = true) => {
+      invalidateHistoryLoad();
+      markVisibleConversationRevision();
+      // Dropping the api swaps in a fresh (empty) sidebar store; the start/stop
+      // effect stops the old one.
+      openController.cancel();
+      clearSession(revokeRemotely);
+      chatCommandPipeline.reset();
+      clearCommandRecoveries();
+      transcriptStoreRegistry.clear();
+      activityStore.clear();
+      draftClientRequestsRef.current.clear();
+      historyWindowStatesRef.current.clear();
+      conversationWorkdirsRef.current.clear();
+      composerDraftCacheRef.current.clear();
+      boundComposerDraftIdsRef.current.clear();
+      composerDraftOwnerRef.current = "";
+      composerRef.current?.clear();
+      resetSharedHistory();
+      clearPendingUploads();
+      submitInFlightRef.current = false;
+      setUserMenuOpen(false);
+      setProjectSettingsProject(null);
+      resetSettingsOverlay();
+      setStatus(null);
+      setStatusError(null);
+      setChatError(null);
+      setSidebarActionError(null);
+      setFullHistoryLoading(false);
+      queuedChatTurnsRef.current = [];
+      chatQueueConversationIdRef.current = "";
+      chatQueueRevisionRef.current = 0;
+      queuedChatEditSessionRef.current = null;
+      setQueuedChatTurns([]);
+      setChatQueueRevision(0);
+      resetProjectToolsRuntimeRef.current();
+      workbenchClearRef.current();
+      restoredConversationAgentRef.current = "";
+      resetToFreshHomeConversation();
+    },
+    [
+      activityStore,
+      chatCommandPipeline,
+      clearPendingUploads,
+      clearSession,
+      invalidateHistoryLoad,
+      markVisibleConversationRevision,
+      openController,
+      resetSharedHistory,
+      resetToFreshHomeConversation,
+      transcriptStoreRegistry,
+      resetSettingsOverlay,
+      setProjectSettingsProject,
+    ],
+  );
 
   useEffect(() => {
-    window.addEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
-    return () => window.removeEventListener(RELAY_SESSION_EXPIRED_EVENT, handleLogout);
+    // Expiry can belong to a stale request; never revoke whichever account now owns the cookie.
+    const expired = () => handleLogout(false);
+    const changed = () => {
+      handleLogout(false);
+      window.location.reload();
+    };
+    const cookieChanged = (event: StorageEvent) => {
+      if (event.key === ACCOUNT_SESSION_STORAGE_KEY && event.newValue) changed();
+    };
+    window.addEventListener(RELAY_SESSION_EXPIRED_EVENT, expired);
+    window.addEventListener(ACCOUNT_CHANGED_EVENT, changed);
+    window.addEventListener("storage", cookieChanged);
+    return () => {
+      window.removeEventListener(RELAY_SESSION_EXPIRED_EVENT, expired);
+      window.removeEventListener(ACCOUNT_CHANGED_EVENT, changed);
+      window.removeEventListener("storage", cookieChanged);
+    };
   }, [handleLogout]);
 
   const currentUserLabel = translate("common.currentUser", settings.locale);
@@ -1428,20 +1820,18 @@ function useGatewayAppController() {
       markVisibleConversationRevision();
       openController.cancel();
       chatCommandPipeline.reset();
+      clearCommandRecoveries();
       transcriptStoreRegistry.clear();
       activityStore.clear();
       draftClientRequestsRef.current.clear();
       conversationWorkdirsRef.current.clear();
       composerDraftCacheRef.current.clear();
+      boundComposerDraftIdsRef.current.clear();
       composerDraftOwnerRef.current = "";
       composerRef.current?.clear();
       clearPendingUploads();
       pendingUploadContextRef.current = null;
-      protectedConversationRef.current = "";
       submitInFlightRef.current = false;
-      conversationIdRef.current = "";
-      selectedHistoryIdRef.current = "";
-      selectedHistoryRef.current = null;
       previousDisplayedConversationIdRef.current = "";
       pendingDisplayedConversationAutoBottomRef.current = null;
       displayedConversationWorkdirRef.current = "";
@@ -1454,9 +1844,6 @@ function useGatewayAppController() {
       setStatus(null);
       setSidebarAgentStatusFresh(false);
       setGatewayConnectionLost(false);
-      setConversationId("");
-      setSelectedHistoryId("");
-      setSelectedHistory(null);
       setConversationModelOverrides(new Map());
       setFullHistoryLoading(false);
       setQueuedChatTurns([]);
@@ -1466,8 +1853,12 @@ function useGatewayAppController() {
       resetSettingsOverlay();
       setActiveView("chat");
       setRightDockOpen(false);
-      setNotifyItems([]);
+      toast.dismiss();
       resetProjectToolsRuntimeRef.current();
+      workbenchClearRef.current();
+      restoringConversationRef.current = null;
+      restoredConversationAgentRef.current = "";
+      resetToFreshHomeConversation();
     },
     [
       activityStore,
@@ -1477,6 +1868,7 @@ function useGatewayAppController() {
       markVisibleConversationRevision,
       openController,
       resetSharedHistory,
+      resetToFreshHomeConversation,
       transcriptStoreRegistry,
       setRightDockOpen,
       setActiveView,
@@ -1491,7 +1883,11 @@ function useGatewayAppController() {
   const resourceWorkdir =
     sidebarConversationsById.get(displayedConversationId)?.cwd?.trim() ||
     conversationWorkdirsRef.current.get(displayedConversationId)?.trim() ||
-    (isAgentMode ? activeWorkspaceProjectPath || settings.system.workdir.trim() : "");
+    (searchConversationWorkdir === ""
+      ? ""
+      : isAgentMode
+        ? activeWorkspaceProjectPath || settings.system.workdir.trim()
+        : "");
   const {
     activeProviders,
     availableSkills,
@@ -1509,6 +1905,7 @@ function useGatewayAppController() {
     modelOptions,
     selectedValue,
     skillsRootDir,
+    workspaceResources,
   } = useGatewayChatConfiguration({
     activeSelectedModel,
     displayedConversationId,
@@ -1518,8 +1915,12 @@ function useGatewayAppController() {
     setSettings,
     settings,
   });
+  // @ 弹层的应用候选：门控与 GUI 完全同源（agent 模式 + 工作区挂
+  // cua-driver），列表经 Gateway 直通中继自桌面宿主本机。
+  const mentionApps = useMentionApps(workspaceResources.mcpServers, isAgentMode);
   const {
     cancelChat,
+    cancelQueuedChatEdit,
     commitQueuedChatEdit,
     editQueuedTurn,
     materializeComposerDraftForSend,
@@ -1542,7 +1943,6 @@ function useGatewayAppController() {
     composerRef,
     conversationIdRef,
     conversationWorkdirsRef,
-    currentChatProvider,
     displayedConversationWorkdirRef,
     draftClientRequestsRef,
     getDisplayedConversationId,
@@ -1555,6 +1955,8 @@ function useGatewayAppController() {
     prepareChatRuntime,
     protectedConversationRef,
     queuedChatEditSessionRef,
+    queuedChatEditPendingRef,
+    visibleConversationRevisionRef,
     refreshChatQueueSnapshot,
     resolveActiveAgentID,
     selectedHistoryIdRef,
@@ -1572,6 +1974,15 @@ function useGatewayAppController() {
     transcriptStoreRegistry,
   });
 
+  const cancelQueuedChatEditRef = useRef(cancelQueuedChatEdit);
+  cancelQueuedChatEditRef.current = cancelQueuedChatEdit;
+  useEffect(() => {
+    const session = queuedChatEditSessionRef.current;
+    if (session && session.conversationId !== displayedConversationId) {
+      void cancelQueuedChatEditRef.current();
+    }
+  }, [displayedConversationId]);
+
   const canShareHistory = Boolean(
     api &&
       settings.remote.enabled &&
@@ -1587,7 +1998,20 @@ function useGatewayAppController() {
   const displayedConversationWorkdir =
     currentConversationPersistedCwd ||
     currentConversationRuntimeWorkdir ||
-    (isAgentMode ? activeWorkspaceProjectPath || settings.system.workdir.trim() : "");
+    (searchConversationWorkdir === ""
+      ? ""
+      : isAgentMode
+        ? activeWorkspaceProjectPath || settings.system.workdir.trim()
+        : "");
+  const searchMentionableConversations = useCallback(
+    (query: string) =>
+      searchMentionConversations({
+        query,
+        currentConversationId: displayedConversationId,
+        currentWorkdir: displayedConversationWorkdir,
+      }),
+    [displayedConversationId, displayedConversationWorkdir],
+  );
   displayedConversationWorkdirRef.current = displayedConversationWorkdir;
   // Switching conversations keeps every conversation's uploads, but a workdir
   // change within the same conversation (a draft switching projects)
@@ -1667,6 +2091,7 @@ function useGatewayAppController() {
     handleOpenSshTerminal,
     handleOpenWorkspaceFile,
     handleProjectTerminalSessionsChange,
+    updateProjectTerminalSessions,
     handleRightDockClose,
     handleRightDockFileTreeStateChange,
     handleRightDockInsertCodeReviewSkill,
@@ -1680,7 +2105,6 @@ function useGatewayAppController() {
     handleWorkspaceEditorHide,
     handleWorkspaceFilePreviewClosed,
     hideWorkspaceSshTerminalOverlay,
-    isSuggestionTyping,
     openWorkspaceEditorFile,
     openWorkspaceFilePreview,
     projectTerminalSessions,
@@ -1717,6 +2141,7 @@ function useGatewayAppController() {
     composerRef,
     displayedConversationId,
     displayedConversationWorkdir,
+    terminalIdentity,
     isAgentMode,
     resetProjectToolsRuntimeRef,
     setRightDockOpen,
@@ -1726,6 +2151,79 @@ function useGatewayAppController() {
     status,
     terminalClient,
   });
+
+  const verifyTerminalSessionAlive = useCallback(
+    async (_sessionId: string) => {
+      if (!terminalClient) return;
+      try {
+        const sessions = await terminalClient.list();
+        terminalSessionsVersionRef.current += 1;
+        setTerminalSessions(sortTerminalSessions(sessions));
+      } catch {
+        // 瞬时网关错误不应把仍存活的终端误判为幽灵会话。
+      }
+    },
+    [setTerminalSessions, terminalClient, terminalSessionsVersionRef],
+  );
+
+  // --- Session Workbench（多看板分屏）----------------------------------------
+  // 布局与聚焦语义复用共享 reducer；聚焦 Pane 的会话 === 页面当前会话
+  // （与桌面端相同不变式）。每个会话 Pane 渲染同一套完整宿主，焦点切换
+  // 只换绑定不拆 DOM；侧栏选中走 syncCurrentConversation（已有 Pane 则
+  // 聚焦，否则重绑聚焦 Pane）。拖拽体系与桌面端共用。
+  const workbenchController = useGatewayWorkbench({
+    enabled: sessionWorkbench.enabled,
+    displayedConversationId,
+    sidebarStore,
+    workspaceProjects,
+    archivedProjectPathKeys: archivedWorkspaceProjectPathKeys,
+    missingProjectPathKeys: missingWorkspaceProjectPathKeys,
+    activateWorkspaceProject,
+    terminalClient,
+    terminalSessions,
+    terminalProjectPath,
+    newTerminalTitle: translate("projectTools.newTerminal", settings.locale),
+    projectToolTitle: (tool) => translate(projectToolSurfaceTitleKey(tool), settings.locale),
+    selectConversation: handleSidebarSelectConversation,
+    startConversationForProject: handleNewConversationForProject,
+    conversationWorkdirFor: (conversationId) =>
+      conversationWorkdirsRef.current.get(conversationId)?.trim() ||
+      sidebarStore.peek(conversationId)?.cwd?.trim() ||
+      null,
+    onNoSpaceForSplit: () =>
+      addNotify("error", translate("workbench.noSpaceForSplit", settings.locale)),
+    onDropStateChanged: () =>
+      addNotify("error", translate("workbench.dropStateChanged", settings.locale)),
+    onWorkspaceDropFailed: (error) =>
+      addNotify(
+        "error",
+        asErrorMessage(error, translate("workbench.workspaceDropFailed", settings.locale)),
+      ),
+    onConversationAlreadyOpen: () =>
+      addNotify("success", translate("workbench.conversationAlreadyOpen", settings.locale)),
+    onProjectToolPaneClosed: (tool, projectPathKey) =>
+      setSettings((prev) => releaseProjectToolFromDock(prev, tool, projectPathKey)),
+    onTerminalCloseFailed: (message) => addNotify("error", message),
+  });
+  workbenchRenameConversationRef.current = workbenchController.workbench.renameConversation;
+  workbenchClearRef.current = workbenchController.clearWorkbench;
+
+  // 会话从权威索引消失（批量删除等）：先收起对应 Pane，再走既有移除通路；
+  // displayed 被删时的选中迁移完成后，syncCurrentConversation 会把聚焦 Pane
+  // 重新绑定到新的当前会话。草稿 id 必须跳过——草稿转正会经 removeLocal 把
+  // 草稿 id 移出权威索引，此时 Pane 已由 rename 通路原位重绑，收 Pane 会误关
+  // 聚焦面板；与底层处理器跳过草稿的口径一致。用户手动删草稿走
+  // onLocalDraftDeleted 通路。
+  const handleSidebarConversationsRemovedWithWorkbench = (ids: readonly string[]) => {
+    workbenchController.closePanesForRemovedConversations(
+      ids.filter((id) => !isLocalDraftConversationId(id)),
+    );
+    handleSidebarConversationsRemoved(ids);
+  };
+  const handleSidebarLocalDraftDeletedWithWorkbench = (id: string) => {
+    workbenchController.closePanesForRemovedConversations([id]);
+    handleSidebarLocalDraftDeleted(id);
+  };
   useEffect(() => {
     if (activeView !== "chat") {
       return;
@@ -1737,13 +2235,24 @@ function useGatewayAppController() {
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      const composer = composerRef.current;
-      if (
-        !composer ||
-        (composerDraftOwnerRef.current === targetConversationId && composer.hasContent())
-      ) {
+      // Workbench 开启后草稿始终由稳定 Pane 宿主管理，包括布局从多 Pane
+      // 收敛回单 Pane 的一帧；页面级 restore 只能服务关闭 Workbench 的
+      // legacy composer，否则会用旧缓存覆盖宿主里尚未写回的输入。
+      if (sessionWorkbench.enabled) {
+        composerDraftOwnerRef.current = targetConversationId;
         return;
       }
+      const composer = composerRef.current;
+      if (!composer) return;
+      if (
+        !shouldRestorePageComposerDraft({
+          workbenchEnabled: false,
+          targetConversationId,
+          ownerConversationId: composerDraftOwnerRef.current,
+          composerHasContent: composer.hasContent(),
+        })
+      )
+        return;
       restoreCachedComposerDraft(targetConversationId);
     });
 
@@ -1754,6 +2263,7 @@ function useGatewayAppController() {
 
   const {
     approvalBar,
+    approvalConversationIds,
     canDropUpload,
     chatProtocolIncompatibleMessage,
     composerCompactionBlocked,
@@ -1818,6 +2328,46 @@ function useGatewayAppController() {
     token,
     transcriptStoreRegistry,
   });
+
+  // 会话搜索跳转：与桌面端 ChatTranscript 相同，目标在已加载窗口内就滚过去，
+  // 否则逐页加载更早历史，直到命中或没有更多历史（最多 SEARCH_JUMP_MAX_PAGES 页）。
+  const searchJumpPagesRef = useRef(0);
+  const pendingSearchJump = useSyncExternalStore(
+    subscribeSearchJumpTarget,
+    getSearchJumpTargetSnapshot,
+  );
+  useEffect(() => {
+    if (transcriptHistoryLoading || loadingOlderHistory) return;
+    const target =
+      pendingSearchJump?.conversationId === displayedConversationId ? pendingSearchJump : null;
+    if (!target) {
+      searchJumpPagesRef.current = 0;
+      return;
+    }
+    const rowKey = resolveSearchJumpRowKey(transcriptRowsToJumpCandidates(transcriptRows), target);
+    if (rowKey) {
+      clearSearchJumpTarget(target);
+      searchJumpPagesRef.current = 0;
+      const frame = requestAnimationFrame(() => handleFloorJump(rowKey));
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!selectedHistoryHasMore || searchJumpPagesRef.current >= SEARCH_JUMP_MAX_PAGES) {
+      clearSearchJumpTarget(target);
+      searchJumpPagesRef.current = 0;
+      return;
+    }
+    searchJumpPagesRef.current += 1;
+    handleLoadEarlierHistory();
+  }, [
+    displayedConversationId,
+    handleFloorJump,
+    pendingSearchJump,
+    handleLoadEarlierHistory,
+    loadingOlderHistory,
+    selectedHistoryHasMore,
+    transcriptHistoryLoading,
+    transcriptRows,
+  ]);
 
   useEffect(() => {
     const nextDisplayedConversationId = displayedConversationId.trim();
@@ -1902,7 +2452,7 @@ function useGatewayAppController() {
       <LocaleContext.Provider value={localeContextValue}>
         <CloudChatPage
           user={relayUser ?? accountUser}
-          onUserChange={setRelayUser}
+          onUserChange={acceptRelayUser}
           environments={environments}
           selection={selection}
           settings={settings}
@@ -1924,10 +2474,16 @@ function useGatewayAppController() {
   if (!settingsSyncReady) {
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <div className="gateway-shell">
-          <main className="gateway-main-shell">
-            <div className="gateway-main-backdrop" />
-            <div className="gateway-chat-frame flex items-center justify-center">
+        <div className={GATEWAY_SHELL_CLASS}>
+          <main className={GATEWAY_MAIN_SHELL_CLASS}>
+            <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
+            <div
+              className={cn(
+                GATEWAY_CHAT_FRAME_CLASS,
+                "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
+                "items-center justify-center max-820:h-full",
+              )}
+            >
               <SettingsSyncLoading locale={settings.locale} />
             </div>
           </main>
@@ -1935,14 +2491,39 @@ function useGatewayAppController() {
       </LocaleContext.Provider>
     );
   }
+  // --- 多看板背景 Pane 的按会话绑定能力(复刻桌面端 buildBackgroundPaneBinding
+  // 的数据面):工作区、草稿缓存、附件导入全部按显式 conversationId 路由。---
+  const getCachedComposerDraft = (targetConversationId: string) =>
+    composerDraftCacheRef.current.get(resolveComposerDraftKey(targetConversationId));
+  const setCachedComposerDraft = (targetConversationId: string, draft: MentionComposerDraft) => {
+    composerDraftCacheRef.current.set(resolveComposerDraftKey(targetConversationId), draft);
+  };
+  const importFilesForConversation = (
+    targetConversationId: string,
+    workdir: string,
+    files: File[],
+  ) => handleImportReadableFiles(files, { conversationId: targetConversationId, workdir });
+
   const viewModel = {
+    environments,
+    switchExecutionTarget,
+    selection,
+    relayUser,
+    relayStats,
+    refreshRelayAccount,
+
+    imageStudioToken: token,
+    setChatError,
+    registerSettingsLeaveGuard,
     activeFloorKey,
+    activeSelectedModel,
     activeView,
     activeWorkspaceProject,
     activeWorkspaceProjectPath,
     addNotify,
     api,
     approvalBar,
+    approvalConversationIds,
     archivedWorkspaceProjectPathKeys,
     associatedSshHostIds,
     availableSkills,
@@ -1950,6 +2531,7 @@ function useGatewayAppController() {
     canDropUpload,
     canShareHistory,
     cancelChat,
+    cancelQueuedChatEdit,
     changedFilesActions,
     chatError,
     chatProtocolIncompatibleMessage,
@@ -1968,9 +2550,9 @@ function useGatewayAppController() {
     contextUsageTokensSource,
     conversationId,
     conversationOpenState,
+    currentChatProvider,
     currentModelContextWindow,
     currentModelLabel,
-    dismissNotify,
     displayedConversationBusyRef,
     displayedConversationId,
     displayedConversationWorkdir,
@@ -1983,8 +2565,12 @@ function useGatewayAppController() {
     fileDropLimitHint,
     fileDropTitle,
     fileInputRef,
+    folderInputRef,
     gatewayConnectionLost,
+    getCachedComposerDraft,
     getDisplayedConversationId,
+    getPendingUploadsForConversation,
+    subscribePendingUploads,
     gitClient,
     gitDisabledMessage,
     gitReviewFocusRequest,
@@ -2011,6 +2597,7 @@ function useGatewayAppController() {
     handleFloorJump,
     handleGitReviewFocusRequestHandled,
     handleImportReadableFiles,
+    handleImportSelectedDirectoryFiles,
     handleInsertCodeMention,
     handleLoadEarlierHistory,
     handleLoadSharedHistoryStatus,
@@ -2031,6 +2618,7 @@ function useGatewayAppController() {
     handleOpenWorkspaceFolder,
     handleOpenWorktree,
     handleProjectTerminalSessionsChange,
+    updateProjectTerminalSessions,
     handleRefreshSharedHistoryStatuses,
     handleRemoveWorkspaceProject,
     handleRenameWorkspaceGroup,
@@ -2049,11 +2637,10 @@ function useGatewayAppController() {
     handleSetSharedHistoryRedactToolContent,
     handleSetWorkspaceProjectPinned,
     handleSettingsTransitionEnd,
-    handleSidebarConversationsRemoved,
-    handleSidebarLocalDraftDeleted,
+    handleSidebarConversationsRemoved: handleSidebarConversationsRemovedWithWorkbench,
+    handleSidebarLocalDraftDeleted: handleSidebarLocalDraftDeletedWithWorkbench,
     handleSidebarNewConversation,
-    handleSidebarOpenMcpHub,
-    handleSidebarOpenSkillsHub,
+    handleSidebarOpenResourceHub,
     handleSidebarProjectsCollapsedChange,
     handleSidebarRecentCollapsedChange,
     handleSidebarSelectConversation,
@@ -2069,22 +2656,26 @@ function useGatewayAppController() {
     hideWorkspaceSshTerminalOverlay,
     historyDetailLoadingTitle,
     historyShareToken,
+    importFilesForConversation,
     isAgentDevExecutionMode,
     isAgentMode,
+    isConversationBusy,
     isFileDropActive,
     isImportingPastedTextRef,
-    isSuggestionTyping,
     isUploadingFiles,
+    uploadingConversationId,
     loadComposerHistoryPrompts,
     loadingOlderHistory,
     localeContextValue,
     manualCompactPending,
     manualCompactTransientConversations,
+    mentionableConversations,
+    searchMentionableConversations,
     materializeComposerDraftForSend,
+    mentionApps,
     missingWorkspaceProjectPathKeys,
     modelOptions,
     moveQueuedTurnUp,
-    notifyItems,
     openSettings,
     openWorkspaceEditorFile,
     openWorkspaceFilePreview,
@@ -2096,9 +2687,12 @@ function useGatewayAppController() {
     projectToolsDisabledMessage,
     queuedChatEditSessionRef,
     queuedChatTurnsForDisplayedConversation,
-    refreshRelayAccount,
-    relayStats,
-    relayUser,
+    queuePaused:
+      queuePausedState?.conversationId === displayedConversationId
+        ? queuePausedState.paused
+        : undefined,
+    queueControlPending: queueControlConversationId === displayedConversationId,
+    handleQueuePausedChange,
     removeQueuedTurn,
     requestWorkspaceFilePreviewClose,
     projectSettingsProject,
@@ -2108,12 +2702,15 @@ function useGatewayAppController() {
     runQueuedTurnNow,
     selectedHistoryHasMore,
     selectedValue,
+    selectionForConversation,
     sendChat,
     setActiveFloorKey,
+    setCachedComposerDraft,
     setPendingUploadsForConversation,
     setProjectPickerOpen,
     setProjectSettingsProject,
     setRightDockOpen,
+    setActiveView,
     setSettings,
     setSharedManagerOpen,
     setSidebarOpen,
@@ -2166,18 +2763,19 @@ function useGatewayAppController() {
     transcriptNavRef,
     transcriptRows,
     transcriptStageRef,
+    transcriptStoreRegistry,
     transcriptToolStatus,
     transcriptToolStatusIsCompaction,
     transcriptViewport,
     tunnelDisabledMessage,
     tunnelEnabled,
     updatePendingUploadsForConversation,
-    environments,
-    selection,
-    switchExecutionTarget,
+    verifyTerminalSessionAlive,
     userAvatarLabel,
     userMenuLabel,
     userMenuOpen,
+    workbenchController,
+    workdirForConversation,
     workspaceActivityClient,
     workspaceCloneTasks,
     workspaceCreateModalOpen,
@@ -2193,6 +2791,7 @@ function useGatewayAppController() {
     workspaceFolderDropHandlers,
     workspaceProjects,
     workspaceProjectRootClient,
+    workspaceRootRevision,
     workspaceSshTerminalMounted,
     workspaceSshTerminalOpen,
     workspaceSshTerminalOpenRequest,
@@ -2205,10 +2804,19 @@ export type GatewayAppViewModel = Extract<
   { activeFloorKey: string | null }
 >;
 
-export default function GatewayApp() {
+type GatewayAppProps = { imageStudioIdentity?: TrustedGatewayImageIdentity };
+
+export default function GatewayApp(props: GatewayAppProps) {
+  return (
+    <SidebarProvider>
+      <GatewayAppContent {...props} />
+    </SidebarProvider>
+  );
+}
+function GatewayAppContent({ imageStudioIdentity }: GatewayAppProps) {
   const result = useGatewayAppController();
   if (!result || !("activeFloorKey" in result)) {
     return result;
   }
-  return <GatewayAppView viewModel={result} />;
+  return <GatewayAppView viewModel={result} imageStudioIdentity={imageStudioIdentity} />;
 }

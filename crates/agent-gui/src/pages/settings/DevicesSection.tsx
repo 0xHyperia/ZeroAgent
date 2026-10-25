@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, MonitorSmartphone, Pencil, RefreshCw, Trash2 } from "@liveagent/ui/components/IconSet";
+import {
+  Loader2,
+  MonitorSmartphone,
+  RefreshCw,
+  SquarePen,
+  Trash2,
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
+import { useCallback, useEffect, useState } from "react";
 import {
   type DesktopEnvironment,
   getDesktopEnvironments,
@@ -222,7 +228,7 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
                       setDraftName(device.device_name || device.name);
                     }}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <SquarePen className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"

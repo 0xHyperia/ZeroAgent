@@ -3,6 +3,7 @@ import type {
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
 import { normalizeLogicalLineEndings } from "@liveagent/ui/lib/chat/composerText";
+import { normalizeConversationMentionReferences } from "@liveagent/ui/lib/chat/mentionReferences";
 import { queuedChatTurnHasContent } from "@liveagent/ui/lib/chat/queuedChatTurn";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { mergePendingUploadedFiles } from "@liveagent/ui/lib/chat/uploadedFiles";
@@ -21,6 +22,7 @@ import type { GatewayWebSocketClient } from "@/lib/gatewaySocket";
 import type { ChatQueueSnapshot } from "@/lib/gatewayTypes";
 import {
   type AppSettings,
+  applyConversationThinking,
   normalizeChatRuntimeControlsForProvider,
   type SelectedModel,
 } from "@/lib/settings";
@@ -36,7 +38,13 @@ import { CHAT_RUNTIME_PREPARE_TIMEOUT_MS } from "./constants";
 import { createLocalDraftConversationId } from "./gatewayLocalDraft";
 import type { ModelProviderSource, SendChatFn, SendChatOptions } from "./types";
 
-type QueuedEditSession = { itemId: string; revision: number };
+export type QueuedEditSession = {
+  conversationId: string;
+  itemId: string;
+  revision: number;
+  composerRevision: number | null;
+  operation?: "commit" | "cancel";
+};
 
 type GatewayChatCommandActionOptions = {
   activeProviders: ModelProviderSource[];
@@ -52,7 +60,6 @@ type GatewayChatCommandActionOptions = {
   composerRef: MutableRefObject<MentionComposerHandle | null>;
   conversationIdRef: MutableRefObject<string>;
   conversationWorkdirsRef: MutableRefObject<Map<string, string>>;
-  currentChatProvider: AppSettings["customProviders"][number] | undefined;
   displayedConversationWorkdirRef: MutableRefObject<string>;
   draftClientRequestsRef: MutableRefObject<Map<string, string>>;
   getDisplayedConversationId: () => string;
@@ -69,6 +76,8 @@ type GatewayChatCommandActionOptions = {
   ) => Promise<unknown>;
   protectedConversationRef: MutableRefObject<string>;
   queuedChatEditSessionRef: MutableRefObject<QueuedEditSession | null>;
+  queuedChatEditPendingRef: MutableRefObject<boolean>;
+  visibleConversationRevisionRef: MutableRefObject<number>;
   refreshChatQueueSnapshot: (conversationId: string) => void;
   resolveActiveAgentID: () => Promise<string>;
   selectedHistoryIdRef: MutableRefObject<string>;
@@ -78,13 +87,31 @@ type GatewayChatCommandActionOptions = {
   setConversationId: Dispatch<SetStateAction<string>>;
   setPendingUploadsForConversation: (conversationId: string, files: PendingUploadedFile[]) => void;
   setSelectedHistoryId: Dispatch<SetStateAction<string>>;
-  setUploadingFiles: (active: boolean) => void;
+  setUploadingFiles: (active: boolean, targetConversationId?: string) => void;
   settings: AppSettings;
   sidebarStore: SidebarStore;
   token: string;
   transcriptFollow: ScrollFollowHandle;
   transcriptStoreRegistry: TranscriptStoreRegistry;
 };
+
+export function resolveConversationRuntimeControls(input: {
+  activeProviders: ModelProviderSource[];
+  selectedModel: SelectedModel | undefined;
+  runtimeControls: AppSettings["chatRuntimeControls"];
+}) {
+  const provider = input.activeProviders.find(
+    (entry) => entry.id === input.selectedModel?.customProviderId,
+  );
+  return normalizeChatRuntimeControlsForProvider(
+    applyConversationThinking(input.runtimeControls, input.selectedModel),
+    {
+      providerId: provider?.type,
+      requestFormat: provider?.requestFormat,
+      modelId: input.selectedModel?.model,
+    },
+  );
+}
 
 export function createGatewayChatCommandActions(options: GatewayChatCommandActionOptions) {
   const {
@@ -101,7 +128,6 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     composerRef,
     conversationIdRef,
     conversationWorkdirsRef,
-    currentChatProvider,
     displayedConversationWorkdirRef,
     draftClientRequestsRef,
     getDisplayedConversationId,
@@ -114,6 +140,8 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     prepareChatRuntime,
     protectedConversationRef,
     queuedChatEditSessionRef,
+    queuedChatEditPendingRef,
+    visibleConversationRevisionRef,
     refreshChatQueueSnapshot,
     resolveActiveAgentID,
     selectedHistoryIdRef,
@@ -189,22 +217,21 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       });
     }
 
-    const runtimeControls = normalizeChatRuntimeControlsForProvider(
-      sendOptions?.runtimeControls ?? settings.chatRuntimeControls,
-      {
-        providerId: currentChatProvider?.type,
-        requestFormat: currentChatProvider?.requestFormat,
-        modelId: turnSelectedModel?.model,
-      },
-    );
+    const runtimeControls = resolveConversationRuntimeControls({
+      activeProviders,
+      selectedModel: turnSelectedModel,
+      runtimeControls: sendOptions?.runtimeControls ?? settings.chatRuntimeControls,
+    });
     const outcome = await chatCommandPipeline.submit({
       conversationId: activeConversationId,
       clientRequestId,
       message,
       attachments: uploadedFiles,
+      referencedConversations: sendOptions?.referencedConversations,
       isEditResend: Boolean(sendOptions?.editMessageRef),
       baseMessageRef: sendOptions?.editMessageRef,
       optimistic: sendOptions?.optimisticEcho !== false,
+      waitForStart: sendOptions?.waitForStart,
       submit: async () => {
         await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
         return api.chatCommand({
@@ -214,10 +241,15 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
           selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
           systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
           uploadedFiles,
+          referencedConversations: sendOptions?.referencedConversations,
           clientRequestId,
           runtimeControls,
           baseMessageRef: sendOptions?.editMessageRef,
           queuePolicy: sendOptions?.queuePolicy ?? "auto",
+          goalAction: sendOptions?.goalAction,
+          goalText: sendOptions?.goalText,
+          promptCommand: sendOptions?.promptCommand,
+          planCommand: sendOptions?.planCommand,
         });
       },
     });
@@ -263,6 +295,8 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     draft: MentionComposerDraft,
     files: PendingUploadedFile[],
     workdir: string,
+    // 大段粘贴导入期间的"上传中"状态归属会话:多 Pane 下只禁用目标 Pane。
+    targetConversationId?: string,
   ) => {
     let text = normalizeLogicalLineEndings(
       isAgentMode && draft.largePastes.length > 0
@@ -273,7 +307,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     if (isAgentMode && draft.largePastes.length > 0) {
       setChatError(null);
       isImportingPastedTextRef.current = true;
-      setUploadingFiles(true);
+      setUploadingFiles(true, targetConversationId);
       try {
         const agentID = await resolveActiveAgentID();
         const imported = await importPastedTextsAsFiles({
@@ -292,7 +326,11 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         setUploadingFiles(false);
       }
     }
-    return { text, uploadedFiles };
+    return {
+      text,
+      uploadedFiles,
+      referencedConversations: normalizeConversationMentionReferences(draft.conversationMentions),
+    };
   };
 
   const clearCurrentComposerDraftForQueuedTurn = (conversationId: string) => {
@@ -309,49 +347,72 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     const uploadedFiles = pendingUploadedFiles.slice();
     let clearedComposer = false;
     if (!api || !conversationId || !queuedChatTurnHasContent(draft, uploadedFiles)) return false;
+
+    // A first submit from the home draft may still be waiting for the gateway
+    // to bind its run to a canonical conversation. Route the follow-up through
+    // that canonical id before clearing the composer; otherwise the request
+    // can be sent as a second draft and the original input is lost on remap.
+    let targetConversationId = chatCommandPipeline.resolveConversationId(conversationId).trim();
+    if (
+      targetConversationId === conversationId &&
+      isLocalDraftConversationId(conversationId) &&
+      chatCommandPipeline.hasPending(conversationId)
+    ) {
+      targetConversationId =
+        (await chatCommandPipeline.waitForConversationBinding(conversationId))?.trim() ?? "";
+    }
+    if (!targetConversationId || !isDisplayedConversation(targetConversationId)) return false;
+
     const workdir = (
-      conversationWorkdirsRef.current.get(conversationId) ??
+      conversationWorkdirsRef.current.get(targetConversationId) ??
       displayedConversationWorkdirRef.current ??
       activeWorkspaceProjectPath ??
       settings.system.workdir
     ).trim();
     try {
-      const materialized = await materializeComposerDraftForSend(draft, uploadedFiles, workdir);
+      const materialized = await materializeComposerDraftForSend(
+        draft,
+        uploadedFiles,
+        workdir,
+        targetConversationId,
+      );
       if (!materialized.text && materialized.uploadedFiles.length === 0) return false;
-      clearCurrentComposerDraftForQueuedTurn(conversationId);
+      clearCurrentComposerDraftForQueuedTurn(targetConversationId);
       clearedComposer = true;
-      if (chatCommandPipeline.hasPending(conversationId)) {
+      if (chatCommandPipeline.hasPending(targetConversationId)) {
         await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
         await api.chatCommand({
           type: "chat.submit",
           message: materialized.text,
-          conversationId: isLocalDraftConversationId(conversationId) ? undefined : conversationId,
+          conversationId: targetConversationId,
           selectedModel: buildGatewaySelectedModel(
-            selectionForConversation(conversationId),
+            selectionForConversation(targetConversationId),
             activeProviders,
           ),
           systemSettings: buildGatewaySystemSettings(settings, workdir),
           uploadedFiles: materialized.uploadedFiles,
+          referencedConversations: materialized.referencedConversations,
           clientRequestId: createUuid(),
           runtimeControls: chatRuntimeControlsForCurrentProvider,
           queuePolicy,
         });
-        refreshChatQueueSnapshot(conversationId);
+        refreshChatQueueSnapshot(targetConversationId);
         return true;
       }
       const outcome = await sendChat(materialized.text, {
-        conversationId,
+        conversationId: targetConversationId,
         uploadedFiles: materialized.uploadedFiles,
+        referencedConversations: materialized.referencedConversations,
         runtimeControls: chatRuntimeControlsForCurrentProvider,
         workdir,
         queuePolicy,
         optimisticEcho: false,
       });
       if (!outcome) {
-        if (getDisplayedConversationId() === conversationId) {
+        if (getDisplayedConversationId() === targetConversationId) {
           if (!composerRef.current?.hasContent()) composerRef.current?.setDraft(draft);
-          if (getPendingUploadsForConversation(conversationId).length === 0) {
-            setPendingUploadsForConversation(conversationId, uploadedFiles);
+          if (getPendingUploadsForConversation(targetConversationId).length === 0) {
+            setPendingUploadsForConversation(targetConversationId, uploadedFiles);
           }
         }
         return false;
@@ -359,24 +420,65 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       if (outcome.kind === "failed") throw new Error(outcome.message);
       return true;
     } catch (error) {
-      if (clearedComposer && getDisplayedConversationId() === conversationId) {
+      if (clearedComposer && getDisplayedConversationId() === targetConversationId) {
         if (!composerRef.current?.hasContent()) composerRef.current?.setDraft(draft);
-        if (getPendingUploadsForConversation(conversationId).length === 0) {
-          setPendingUploadsForConversation(conversationId, uploadedFiles);
+        if (getPendingUploadsForConversation(targetConversationId).length === 0) {
+          setPendingUploadsForConversation(targetConversationId, uploadedFiles);
         }
       }
-      reportChatQueueActionError(conversationId, error, "queued chat request failed");
+      reportChatQueueActionError(targetConversationId, error, "queued chat request failed");
       return false;
+    }
+  };
+
+  const finishQueuedChatEdit = (session: QueuedEditSession) => {
+    if (queuedChatEditSessionRef.current !== session) return;
+    queuedChatEditSessionRef.current = null;
+    if (session.composerRevision === null) return;
+    if (
+      getDisplayedConversationId() === session.conversationId &&
+      visibleConversationRevisionRef.current !== session.composerRevision
+    )
+      return;
+    clearCurrentComposerDraftForQueuedTurn(session.conversationId);
+    setPendingUploadsForConversation(session.conversationId, []);
+    clearCachedComposerDraft(session.conversationId);
+  };
+
+  const cancelQueuedChatEdit = async () => {
+    const session = queuedChatEditSessionRef.current;
+    if (!session || !api || session.operation) return false;
+    session.operation = "cancel";
+    try {
+      const response = await api.chatQueueEditCancel(session.conversationId, session.itemId);
+      if (!response.accepted) {
+        reportChatQueueActionError(
+          session.conversationId,
+          response.message,
+          "queued edit cancel failed",
+        );
+        return false;
+      }
+      finishQueuedChatEdit(session);
+      applyChatQueueSnapshot(response.snapshot);
+      return true;
+    } catch (error) {
+      reportChatQueueActionError(session.conversationId, error, "queued edit cancel failed");
+      return false;
+    } finally {
+      session.operation = undefined;
     }
   };
 
   const commitQueuedChatEdit = async () => {
     const session = queuedChatEditSessionRef.current;
-    const conversationId = getDisplayedConversationId();
-    if (!session || !api || !conversationId) return false;
+    if (!session || !api || session.operation) return false;
+    const conversationId = session.conversationId;
+    if (getDisplayedConversationId() !== conversationId) return false;
     const draft = composerRef.current?.getDraft() ?? null;
-    const uploadedFiles = pendingUploadedFiles.slice();
+    const uploadedFiles = getPendingUploadsForConversation(conversationId).slice();
     if (!queuedChatTurnHasContent(draft, uploadedFiles)) return false;
+    session.operation = "commit";
     try {
       const response = await api.chatQueueEditCommit({
         conversationId,
@@ -393,15 +495,20 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         );
         return false;
       }
-      queuedChatEditSessionRef.current = null;
-      composerRef.current?.clear();
-      setPendingUploadsForConversation(conversationId, []);
-      clearCachedComposerDraft(conversationId);
+      finishQueuedChatEdit(session);
       applyChatQueueSnapshot(response.snapshot);
       return true;
     } catch (error) {
       reportChatQueueActionError(conversationId, error, "queued edit failed");
       return false;
+    } finally {
+      session.operation = undefined;
+      if (
+        queuedChatEditSessionRef.current === session &&
+        getDisplayedConversationId() !== conversationId
+      ) {
+        await cancelQueuedChatEdit();
+      }
     }
   };
 
@@ -445,40 +552,56 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         reportChatQueueActionError(conversationId, error, "queued chat remove failed"),
       );
   };
-  const editQueuedTurn = (id: string) => {
+  const editQueuedTurn = async (id: string) => {
     const conversationId = getDisplayedConversationId();
-    if (!api || !conversationId) return;
-    void (async () => {
-      if (queuedChatEditSessionRef.current) {
-        if (!(await commitQueuedChatEdit())) return;
+    if (!api || !conversationId || queuedChatEditPendingRef.current) return;
+    const revision = visibleConversationRevisionRef.current;
+    const isCurrent = () =>
+      getDisplayedConversationId() === conversationId &&
+      visibleConversationRevisionRef.current === revision &&
+      apiRef.current === api;
+    queuedChatEditPendingRef.current = true;
+    try {
+      const previousSession = queuedChatEditSessionRef.current;
+      if (previousSession) {
+        const finished =
+          previousSession.conversationId === conversationId
+            ? await commitQueuedChatEdit()
+            : await cancelQueuedChatEdit();
+        if (!finished) return;
       } else {
         const currentDraft = composerRef.current?.getDraft() ?? null;
-        const currentUploads = pendingUploadedFiles.slice();
+        const currentUploads = getPendingUploadsForConversation(conversationId).slice();
         if (
           queuedChatTurnHasContent(currentDraft, currentUploads) &&
           !(await submitCurrentComposerToGuiQueue("append"))
-        ) {
+        )
           return;
-        }
       }
+      if (!isCurrent()) return;
       const response = await api.chatQueueEditBegin(conversationId, id);
       if (!response.accepted || !response.item) {
         if (!response.accepted) {
-          reportChatQueueActionError(
-            conversationId,
-            response.message || "queued edit failed",
-            "queued edit failed",
-          );
+          reportChatQueueActionError(conversationId, response.message, "queued edit failed");
         }
+        return;
+      }
+      const session: QueuedEditSession = {
+        conversationId,
+        itemId: response.item.id,
+        revision: response.snapshot?.revision ?? chatQueueRevisionRef.current,
+        composerRevision: null,
+      };
+      // edit_begin removes the item; stale or invalid responses must restore its slot.
+      queuedChatEditSessionRef.current = session;
+      if (!isCurrent()) {
+        await cancelQueuedChatEdit();
         return;
       }
       try {
         const draft = JSON.parse(response.item.draftJson) as MentionComposerDraft;
         const uploadedFiles = JSON.parse(response.item.uploadedFilesJson) as PendingUploadedFile[];
-        queuedChatEditSessionRef.current = {
-          itemId: response.item.id,
-          revision: response.snapshot?.revision ?? chatQueueRevisionRef.current,
-        };
+        session.composerRevision = revision;
         composerRef.current?.setDraft(draft);
         setPendingUploadsForConversation(
           conversationId,
@@ -486,17 +609,24 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         );
         clearCachedComposerDraft(conversationId);
         applyChatQueueSnapshot(response.snapshot);
-        window.requestAnimationFrame(() => composerRef.current?.focus());
+        window.requestAnimationFrame(() => {
+          if (isCurrent() && queuedChatEditSessionRef.current === session)
+            composerRef.current?.focus();
+        });
       } catch (error) {
+        await cancelQueuedChatEdit();
         throw new Error(asErrorMessage(error, "invalid queued edit payload"));
       }
-    })().catch((error) =>
-      reportChatQueueActionError(conversationId, error, "queued chat edit failed"),
-    );
+    } catch (error) {
+      reportChatQueueActionError(conversationId, error, "queued chat edit failed");
+    } finally {
+      queuedChatEditPendingRef.current = false;
+    }
   };
 
   return {
     cancelChat,
+    cancelQueuedChatEdit,
     commitQueuedChatEdit,
     editQueuedTurn,
     materializeComposerDraftForSend,

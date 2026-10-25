@@ -1,7 +1,9 @@
+import type { ClarifyMessage } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { buildHistoryMessageRefPayload } from "@liveagent/ui/lib/chat/historyMessageRef";
 import type {
   GatewaySettingsSyncPayload,
   GatewaySettingsSyncUpdatePayload,
+  GatewaySettingsUpdateReceipt,
 } from "@liveagent/ui/lib/settings/sync";
 import {
   normalizeSftpActionResponse,
@@ -53,6 +55,7 @@ import type {
   ChatCommandAccepted,
   ConversationStreamHandlers,
 } from "@/lib/chat/stream/streamTypes";
+import type { ChatRuntimeControls } from "@/lib/settings";
 import {
   buildChatCommandPayload,
   CHAT_COMMAND_ACK_TIMEOUT_MS,
@@ -77,10 +80,13 @@ import {
   type GatewayWorkspaceRootGrant,
   type GatewayWorkspaceRootGrantDraft,
   type GatewayWorkspaceRootGrantsResponse,
+  type GoalManageResponse,
   type HistoryGetOptions,
+  type InstalledAppsListResponse,
   isConnectionSetupTimeoutError,
   isRecoverableGatewayTransportError,
   isRequestTimeoutError,
+  type LoopManageResponse,
   type ManagedProcessLogPayload,
   type ManagedProcessStatePayload,
   type MentionListResponse,
@@ -98,6 +104,7 @@ import {
   type SkillManagePayload,
   type SkillMetadataResponse,
   type SkillTextResponse,
+  type SlashCommandListResponse,
   type SshKnownHostResetResult,
   sftpPathPayload,
   shouldRecoverMemoryManageRequest,
@@ -122,7 +129,14 @@ import type {
 
 const LEGACY_SETTINGS_CHANGED_MESSAGE = "SSH 设置已在另一端更新，已刷新为最新状态，请重新提交。";
 
-export type GatewaySettingsUpdateErrorCode = "settings_changed";
+export type GatewaySettingsUpdateErrorCode = "settings_changed" | "configuration_changed";
+
+/** clarify.prompt_turn 的响应形态（snake_case 对齐 envelope 映射）。 */
+export type ClarifyTurnResult = {
+  final_text: string;
+  error_code?: string;
+  error_message?: string;
+};
 
 export class GatewaySettingsUpdateError extends Error {
   readonly code: GatewaySettingsUpdateErrorCode;
@@ -149,6 +163,19 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
       await this.requestWithRecovery<RawChatQueueResponse>("chat_queue.get", {
         conversation_id: conversationId,
       }),
+    );
+  }
+
+  async chatQueueSetPaused(
+    conversationId: string,
+    paused: boolean,
+    revision: number,
+  ): Promise<ChatQueueResponse> {
+    return normalizeChatQueueResponse(
+      await this.requestWithRecovery<RawChatQueueResponse>(
+        paused ? "chat_queue.pause" : "chat_queue.resume",
+        { conversation_id: conversationId, revision },
+      ),
     );
   }
 
@@ -266,6 +293,21 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
   ): Promise<ChatQueueResponse> {
     return normalizeChatQueueResponse(
       await this.requestWithRecovery<RawChatQueueResponse>("chat_queue.tool_approval", {
+        conversation_id: conversationId,
+        item_id: toolCallId,
+        request_json: decisionJson,
+      }),
+    );
+  }
+
+  /** 提交对桌面端挂起计划的决定：item_id 为 toolCallId，request_json 为 {"decision":...,"feedback"?}。 */
+  async chatQueuePlanDecision(
+    conversationId: string,
+    toolCallId: string,
+    decisionJson: string,
+  ): Promise<ChatQueueResponse> {
+    return normalizeChatQueueResponse(
+      await this.requestWithRecovery<RawChatQueueResponse>("chat_queue.plan_decision", {
         conversation_id: conversationId,
         item_id: toolCallId,
         request_json: decisionJson,
@@ -434,6 +476,10 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     };
   }
 
+  async planningManage<T = unknown>(action: string, input?: unknown): Promise<T> {
+    return this.request<T>("planning.manage", { action, input });
+  }
+
   async cronManage(payload: CronManagePayload): Promise<CronManageResponse> {
     return this.request<CronManageResponse>("cron.manage", payload);
   }
@@ -465,6 +511,37 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
         ? {}
         : { include_subagent_runs: payload.include_subagent_runs }),
     });
+  }
+
+  async clarifyPromptTurn(
+    input: {
+      messages: ClarifyMessage[];
+      providerId: string;
+      model: string;
+      runtimeControls?: ChatRuntimeControls;
+    },
+    options?: { onDelta?: (delta: string) => void },
+  ): Promise<ClarifyTurnResult> {
+    return this.request<ClarifyTurnResult>(
+      "clarify.prompt_turn",
+      {
+        messages: input.messages,
+        provider_id: input.providerId,
+        model: input.model,
+        runtime_controls: input.runtimeControls
+          ? {
+              thinking_enabled: input.runtimeControls.thinkingEnabled,
+              native_web_search_enabled: input.runtimeControls.nativeWebSearchEnabled,
+              reasoning: input.runtimeControls.reasoning,
+              plan_mode_enabled: input.runtimeControls.planModeEnabled === true,
+            }
+          : undefined,
+      },
+      // The desktop bridge reserves up to 120s for slow clarifications
+      // (final drafts / complex follow-ups); match that window instead of
+      // the 30s default request timeout.
+      { timeoutMs: 120_000, onDelta: options?.onDelta },
+    );
   }
 
   async gitRequest<T = unknown>(
@@ -659,18 +736,32 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     );
   }
 
-  async listTerminals(projectPathKey?: string): Promise<TerminalSession[]> {
-    const projectKey = projectPathKey?.trim() ?? "";
-    const response = await this.requestWithRecovery<RawTerminalResponse>(
-      "terminal.list",
-      projectKey ? { project_path_key: projectKey } : {},
-    );
+  async listTerminals(
+    params?:
+      | string
+      | {
+          projectPathKey?: string;
+          conversationId?: string;
+          runId?: string;
+        },
+  ): Promise<TerminalSession[]> {
+    const options = typeof params === "string" ? { projectPathKey: params } : params;
+    const projectKey = options?.projectPathKey?.trim() ?? "";
+    const conversationId = options?.conversationId?.trim() ?? "";
+    const runId = options?.runId?.trim() ?? "";
+    const response = await this.requestWithRecovery<RawTerminalResponse>("terminal.list", {
+      ...(projectKey ? { project_path_key: projectKey } : {}),
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(runId ? { run_id: runId } : {}),
+    });
     return (response.sessions ?? []).map(normalizeTerminalSession);
   }
 
   async createTerminal(params: {
     cwd: string;
     projectPathKey: string;
+    conversationId?: string;
+    runId?: string;
     shell?: string;
     title?: string;
     cols?: number;
@@ -1052,14 +1143,22 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     return this.requestWithRecovery<GatewaySettingsSyncPayload>("settings.get", {});
   }
 
-  async updateSettings(payload: GatewaySettingsSyncUpdatePayload): Promise<void> {
+  async updateSettings(
+    payload: GatewaySettingsSyncUpdatePayload,
+  ): Promise<GatewaySettingsUpdateReceipt | void> {
     const response = await this.request<GatewaySettingsUpdateResponse>("settings.update", payload);
     if (response?.accepted === false) {
       const message = response.message?.trim() || "Gateway settings update rejected";
+      if (message === "configuration_changed")
+        throw new GatewaySettingsUpdateError("configuration_changed", message);
       if (message === "settings_changed" || message === LEGACY_SETTINGS_CHANGED_MESSAGE) {
         throw new GatewaySettingsUpdateError("settings_changed", message);
       }
       throw new Error(message);
+    }
+    if (response?.message?.startsWith("{")) {
+      const receipt = JSON.parse(response.message) as GatewaySettingsUpdateReceipt;
+      if (receipt.protocol === "zeroagent.settings-sync.v1") return receipt;
     }
   }
 
@@ -1093,6 +1192,83 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
       query,
       show_hidden: showHidden,
     });
+  }
+
+  /** 桌面端“/”指令目录。列表不是状态变更，可安全重试。 */
+  async listCommands(workdir?: string): Promise<SlashCommandListResponse> {
+    return this.requestWithRecovery<SlashCommandListResponse>("commands.list", {
+      workdir: workdir ?? "",
+    });
+  }
+
+  /** /goal clear：清除会话目标（set/resume 会开始一轮运行，走聊天请求）。改状态的请求不自动重发。 */
+  async clearGoal(conversationId: string): Promise<GoalManageResponse> {
+    return this.request<GoalManageResponse>("goal.manage", {
+      conversationId,
+      action: "clear",
+    });
+  }
+
+  async listLoops(conversationId: string): Promise<LoopManageResponse> {
+    return this.requestWithRecovery<LoopManageResponse>("loops.manage", {
+      conversationId,
+      action: "list",
+    });
+  }
+
+  /** 创建 /loop。断线后不自动重发：桌面端可能已经建好，重发会多出一条重复的定时任务。 */
+  async createLoop(input: {
+    conversationId: string;
+    cron?: string;
+    interval: string;
+    prompt: string;
+    reasoning?: string;
+  }): Promise<LoopManageResponse> {
+    return this.request<LoopManageResponse>("loops.manage", {
+      conversationId: input.conversationId,
+      action: "create",
+      cron: input.cron ?? "",
+      interval: input.interval,
+      prompt: input.prompt,
+      reasoning: input.reasoning ?? "",
+    });
+  }
+
+  async cancelLoop(conversationId: string, loopId: string): Promise<LoopManageResponse> {
+    return this.request<LoopManageResponse>("loops.manage", {
+      conversationId,
+      action: "cancel",
+      loopId,
+    });
+  }
+
+  /** 桌面宿主的已安装应用（@ 应用提及）；返回条目数组，与 GUI 端
+   *  Tauri 命令 `cua_driver_list_installed_apps` 的载荷一致。 */
+  async listInstalledApps(): Promise<InstalledAppsListResponse["apps"]> {
+    const response = await this.requestWithRecovery<InstalledAppsListResponse>(
+      "apps.installed.list",
+      {},
+    );
+    return response.apps;
+  }
+
+  /**
+   * Computer Use 设置页的只读引导状态。`action` 与桌面端的 Tauri 命令同名，
+   * 返回的就是那条命令的原始返回值（camelCase JSON），由调用方按 CuaProbe /
+   * CuaPermissions 解读——两端读的是同一个对象。
+   */
+  async cuaDriverStatus<T>(action: "probe" | "permissions_status"): Promise<T> {
+    return this.requestWithRecovery<T>(`cua.driver.${action}`, {});
+  }
+
+  /** 应用代理设置的代理服务检测与测速，在桌面宿主上执行；返回值与 GUI 端
+   *  Tauri 命令 `system_proxy_detect` / `system_proxy_test` 的载荷一致。 */
+  async detectProxies<T>(): Promise<T> {
+    return this.requestWithRecovery<T>("proxy.detect", {});
+  }
+
+  async testProxy<T>(input: { type: string; host: string; port: number }): Promise<T> {
+    return this.request<T>("proxy.test", input);
   }
 
   async listFsRoots(): Promise<FsRootsResponse> {
@@ -1307,6 +1483,8 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     modelsUrl = "",
     providerId = "",
     isFullUrl?: boolean,
+    customHeaders?: readonly { key: string; value: string }[],
+    requestFormat?: string,
   ): Promise<unknown> {
     return this.requestWithRecovery("provider.models", {
       type,
@@ -1316,6 +1494,8 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
       models_url: modelsUrl,
       provider_id: providerId,
       is_full_url: isFullUrl,
+      custom_headers: customHeaders,
+      request_format: requestFormat,
     });
   }
 

@@ -1,0 +1,1862 @@
+diff --git a/internal/mcp/client_identity_test.go b/internal/mcp/client_identity_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b2f8905302a9b9693a845e01db616dbef134c27c
+--- /dev/null
++++ b/internal/mcp/client_identity_test.go
+@@ -0,0 +1,146 @@
++package mcp
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/Stack-Cairn/K-brain/internal/tools"
++	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
++	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
++)
++
++func TestMCPZeroAgentClientIdentityOnWire(t *testing.T) {
++	for _, mode := range []string{"modern-http", "legacy-http", "legacy-sse"} {
++		for _, operation := range []string{"runtime", "probe"} {
++			t.Run(mode+"/"+operation, func(t *testing.T) {
++				rpc := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "identity-fixture"}, nil)
++				sdkmcp.AddTool(rpc, &sdkmcp.Tool{Name: "echo"}, func(_ context.Context, _ *sdkmcp.CallToolRequest, input struct {
++					Value string `json:"value"`
++				}) (*sdkmcp.CallToolResult, any, error) {
++					return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: input.Value}}}, nil, nil
++				})
++				if mode != "modern-http" {
++					rpc.AddReceivingMiddleware(func(next sdkmcp.MethodHandler) sdkmcp.MethodHandler {
++						return func(ctx context.Context, method string, request sdkmcp.Request) (sdkmcp.Result, error) {
++							if method == "server/discover" {
++								return nil, &jsonrpc.Error{Code: -32601, Message: "legacy fixture"}
++							}
++							return next(ctx, method, request)
++						}
++					})
++				}
++				var delegate http.Handler = sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return rpc }, &sdkmcp.StreamableHTTPOptions{Stateless: mode == "modern-http"})
++				if mode == "legacy-sse" {
++					delegate = sdkmcp.NewSSEHandler(func(*http.Request) *sdkmcp.Server { return rpc }, nil)
++				}
++				type observation struct {
++					Method string
++					Info   *sdkmcp.Implementation
++				}
++				var mu sync.Mutex
++				var observed []observation
++				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					if r.Method == http.MethodPost {
++						raw, err := io.ReadAll(r.Body)
++						if err != nil {
++							t.Errorf("read actual request: %v", err)
++							w.WriteHeader(400)
++							return
++						}
++						r.Body = io.NopCloser(bytes.NewReader(raw))
++						var request struct {
++							Method string `json:"method"`
++							Params struct {
++								ClientInfo *sdkmcp.Implementation     `json:"clientInfo"`
++								Meta       map[string]json.RawMessage `json:"_meta"`
++							} `json:"params"`
++						}
++						if err := json.Unmarshal(raw, &request); err != nil {
++							t.Errorf("decode actual request: %v", err)
++							w.WriteHeader(400)
++							return
++						}
++						if request.Method == "server/discover" || request.Method == "initialize" || request.Method == "tools/list" || request.Method == "tools/call" {
++							info := request.Params.ClientInfo
++							if wire := request.Params.Meta[sdkmcp.MetaKeyClientInfo]; len(wire) != 0 {
++								if err := json.Unmarshal(wire, &info); err != nil {
++									t.Errorf("decode wire clientInfo: %v", err)
++								}
++							}
++							mu.Lock()
++							observed = append(observed, observation{request.Method, info})
++							mu.Unlock()
++						}
++					}
++					delegate.ServeHTTP(w, r)
++				}))
++				t.Cleanup(func() { server.CloseClientConnections(); server.Close() })
++				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
++				defer cancel()
++				cfg := ServerConfig{URL: server.URL, StartupTimeout: 5}
++				if mode == "legacy-sse" {
++					cfg.URL += "/sse"
++					cfg.remoteTransport = "sse"
++				}
++				if operation == "probe" {
++					result := Probe(ctx, "identity", cfg)
++					if result.Status != StatusReady || len(result.ToolNames) != 1 {
++						t.Fatalf("probe=%+v", result)
++					}
++				} else {
++					manager := NewManager(map[string]ServerConfig{"identity": cfg})
++					t.Cleanup(manager.Close)
++					manager.Start(ctx)
++					select {
++					case <-manager.servers["identity"].ready:
++					case <-ctx.Done():
++						t.Fatal(ctx.Err())
++					}
++					if status := manager.Statuses()[0]; status.Status != StatusReady {
++						t.Fatalf("runtime=%+v", status)
++					}
++					result := tools.Execute(ctx, manager.Tools(), "mcp__identity__echo", json.RawMessage("{\"value\":\"identity-ok\"}"))
++					if result != "identity-ok" {
++						t.Fatalf("tool result=%q", result)
++					}
++				}
++				mu.Lock()
++				snapshot := append([]observation(nil), observed...)
++				mu.Unlock()
++				seen := map[string]bool{}
++				for _, item := range snapshot {
++					seen[item.Method] = true
++					if item.Info == nil {
++						if item.Method == "initialize" || mode == "modern-http" {
++							t.Errorf("%s omitted wire clientInfo", item.Method)
++						}
++						continue
++					}
++					if item.Info.Name != "ZeroAgent" || item.Info.Title != "ZeroAgent" {
++						t.Errorf("%s wire identity=%+v", item.Method, item.Info)
++					}
++				}
++				if !seen["tools/list"] {
++					t.Fatal("no actual tools/list request")
++				}
++				if operation == "runtime" && !seen["tools/call"] {
++					t.Fatal("no actual tool execution")
++				}
++				if mode == "modern-http" {
++					if !seen["server/discover"] || seen["initialize"] {
++						t.Fatalf("modern fixture did not exercise modern negotiation: %v", seen)
++					}
++				} else if !seen["initialize"] {
++					t.Fatal("legacy fixture did not exercise initialize")
++				}
++			})
++		}
++	}
++}
+diff --git a/internal/mcp/control_transport.go b/internal/mcp/control_transport.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..83857498f21744b387db8af4fd9e3f6e28b2e1eb
+--- /dev/null
++++ b/internal/mcp/control_transport.go
+@@ -0,0 +1,37 @@
++package mcp
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"time"
++)
++
++// The SDK gives cancellation notifications a detached context and gracefully
++// closes sessions only after retiring outgoing calls. Bound cleanup exchanges
++// independently of the unchanged startup/tool budgets.
++type boundedMCPControlTransport struct{ base http.RoundTripper }
++
++func (t *boundedMCPControlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
++	control := req.Method == http.MethodDelete
++	if req.Method == http.MethodPost && req.GetBody != nil {
++		body, err := req.GetBody()
++		if err == nil {
++			raw, readErr := io.ReadAll(io.LimitReader(body, 4097))
++			_ = body.Close()
++			if readErr == nil && len(raw) <= 4096 {
++				var message struct {
++					Method string `json:"method"`
++				}
++				control = json.Unmarshal(raw, &message) == nil && message.Method == "notifications/cancelled"
++			}
++		}
++	}
++	if !control {
++		return t.base.RoundTrip(req)
++	}
++	ctx, cancel := context.WithTimeout(req.Context(), time.Second)
++	defer cancel()
++	return t.base.RoundTrip(req.Clone(ctx))
++}
+diff --git a/internal/mcp/control_transport_test.go b/internal/mcp/control_transport_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4e9777ea4c2e5afaa6bd4d41e13a51c37f9798b
+--- /dev/null
++++ b/internal/mcp/control_transport_test.go
+@@ -0,0 +1,98 @@
++package mcp
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"path/filepath"
++	"sync"
++	"testing"
++	"time"
++)
++
++func TestLiveManagerSSECloseBoundsDetachedCancellation(t *testing.T) {
++	started, notification, expired := make(chan struct{}), make(chan struct{}), make(chan struct{})
++	release := make(chan struct{})
++	var notifyOnce, expireOnce sync.Once
++	rpc := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "sse-cleanup"}, nil)
++	sdkmcp.AddTool(rpc, &sdkmcp.Tool{Name: "block", InputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, any, error) {
++		close(started)
++		select {
++		case <-ctx.Done():
++			return nil, nil, ctx.Err()
++		case <-release:
++			return &sdkmcp.CallToolResult{}, nil, nil
++		}
++	})
++	handler := sdkmcp.NewSSEHandler(func(*http.Request) *sdkmcp.Server { return rpc }, nil)
++	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.Method == http.MethodPost {
++			raw, err := io.ReadAll(r.Body)
++			if err != nil {
++				return
++			}
++			r.Body = io.NopCloser(bytes.NewReader(raw))
++			var message struct {
++				Method string `json:"method"`
++			}
++			_ = json.Unmarshal(raw, &message)
++			if message.Method == "notifications/cancelled" {
++				notifyOnce.Do(func() { close(notification) })
++				select {
++				case <-r.Context().Done():
++					expireOnce.Do(func() { close(expired) })
++				case <-release:
++				}
++				return
++			}
++		}
++		handler.ServeHTTP(w, r)
++	}))
++	defer func() { close(release); remote.CloseClientConnections(); remote.Close() }()
++	live, err := NewLiveManager(t.Context(), filepath.Join(t.TempDir(), "mcp.json"), LiveSettings{Servers: []LiveServer{{ID: "sse", Enabled: true, Transport: "sse", URL: remote.URL}}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(live.Close)
++	waitLiveStatus(t, live, "sse", "ready")
++	result := make(chan error, 1)
++	available := live.ToolsFor(t.Context(), "", nil)
++	if len(available) != 1 {
++		t.Fatal("SSE tool did not become available")
++	}
++	go func() { _, err := available[0].Run(t.Context(), nil); result <- err }()
++	select {
++	case <-started:
++	case <-time.After(5 * time.Second):
++		t.Fatal("SSE call did not start")
++	}
++	stop := make(chan struct{})
++	go func() { live.Close(); close(stop) }()
++	select {
++	case <-notification:
++	case <-time.After(3 * time.Second):
++		t.Fatal("SDK cancellation was not sent")
++	}
++	select {
++	case <-stop:
++	case <-time.After(3 * time.Second):
++		t.Fatal("SSE close waited on an unbounded cancellation POST")
++	}
++	select {
++	case <-expired:
++	case <-time.After(time.Second):
++		t.Fatal("cleanup deadline did not cancel the HTTP exchange")
++	}
++	select {
++	case err := <-result:
++		if err == nil {
++			t.Fatal("canceled call succeeded")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("canceled call remained registered")
++	}
++}
+diff --git a/internal/mcp/coverage_test.go b/internal/mcp/coverage_test.go
+index 2520708fc069c3ff7fec309223e9a7e8ca2f4781..5e6b12c4c5858a6375f59392cf21ff63c3bd8584 100644
+--- a/internal/mcp/coverage_test.go
++++ b/internal/mcp/coverage_test.go
+@@ -146,6 +146,12 @@ func TestFlattenRemainingContentTypes(t *testing.T) {
+ }
+ 
+ func TestDefaultTransportResolvesHeaderSecrets(t *testing.T) {
++	requests := make(chan http.Header, 1)
++	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		requests <- r.Header.Clone()
++		w.WriteHeader(http.StatusNoContent)
++	}))
++	defer fixture.Close()
+ 	t.Setenv("K_BRAIN_MCP_SECRET_TEST", "resolved-token")
+ 	t.Setenv("K_BRAIN_MCP_HEADER_HELPER", "1")
+ 	t.Setenv("K_BRAIN_MCP_SECRET_UNSET", "")
+@@ -154,7 +160,7 @@ func TestDefaultTransportResolvesHeaderSecrets(t *testing.T) {
+ 		t.Fatal(err)
+ 	}
+ 
+-	cfg := ServerConfig{URL: "https://mcp.example.com", Headers: map[string]string{
++	cfg := ServerConfig{URL: fixture.URL, Headers: map[string]string{
+ 		"Authorization": "${K_BRAIN_MCP_SECRET_TEST}",
+ 		"X-Cmd":         `!"` + exe + `" -test.run=^TestHeaderSecretCommandHelper$`,
+ 		"X-Literal":     "plain",
+@@ -171,15 +177,17 @@ func TestDefaultTransportResolvesHeaderSecrets(t *testing.T) {
+ 	if !ok {
+ 		t.Fatalf("transport type %T", tr)
+ 	}
+-	ht, ok := st.HTTPClient.Transport.(headerTransport)
+-	if !ok {
+-		t.Fatalf("inner transport type %T", st.HTTPClient.Transport)
++	response, err := st.HTTPClient.Get(fixture.URL)
++	if err != nil {
++		t.Fatal(err)
+ 	}
+-	if ht["Authorization"] != "resolved-token" || ht["X-Cmd"] != "cmd-token" || ht["X-Literal"] != "plain" {
++	response.Body.Close()
++	ht := <-requests
++	if ht.Get("Authorization") != "resolved-token" || ht.Get("X-Cmd") != "cmd-token" || ht.Get("X-Literal") != "plain" {
+ 		t.Fatalf("resolved headers: %+v", ht)
+ 	}
+ 	if _, present := ht["X-Dropped"]; present {
+-		t.Fatalf("unresolvable reference must be dropped, got %q", ht["X-Dropped"])
++		t.Fatalf("unresolvable reference must be dropped, got %q", ht.Get("X-Dropped"))
+ 	}
+ }
+ 
+diff --git a/internal/mcp/lifecycle.go b/internal/mcp/lifecycle.go
+index 3e0324f903143c380f2938fb1841b9a47c0d968c..8d667b53bf74cd02bd85df95ff1dedf4b6e2f7d8 100644
+--- a/internal/mcp/lifecycle.go
++++ b/internal/mcp/lifecycle.go
+@@ -1,6 +1,9 @@
+ package mcp
+ 
+-import "context"
++import (
++	"context"
++	"sync"
++)
+ 
+ func (m *Manager) ownsLocked(s *server) bool {
+ 	return !m.closed && m.servers[s.name] == s && s.ctx.Err() == nil
+@@ -48,6 +51,7 @@ func (s *server) stopSession(m *Manager) {
+ 	m.onChangeMu.Lock()
+ 	s.mu.Lock()
+ 	sess := s.sess
++	calls := s.cancelCallsLocked()
+ 	s.sess, s.defs, s.instr = nil, nil, ""
+ 	s.gen++
+ 	changed := !m.closed && m.servers[s.name] == s
+@@ -56,6 +60,7 @@ func (s *server) stopSession(m *Manager) {
+ 	}
+ 	s.mu.Unlock()
+ 	m.onChangeMu.Unlock()
++	waitCalls(calls)
+ 	if sess != nil {
+ 		_ = sess.Close()
+ 	}
+@@ -75,3 +80,21 @@ func (s *server) setStateLocked(st Status, errMsg string) {
+ 		close(s.ready)
+ 	}
+ }
++
++// Caller holds s.mu. A new session receives a distinct context, so enabling or
++// reconnecting cannot revive work abandoned by an older generation.
++func (s *server) cancelCallsLocked() *sync.WaitGroup {
++	workers := s.callWorkers
++	if s.callCancel != nil {
++		s.callCancel()
++	}
++	s.callCancel, s.callCtx = nil, nil
++	s.callWorkers = nil
++	return workers
++}
++
++func waitCalls(workers *sync.WaitGroup) {
++	if workers != nil {
++		workers.Wait()
++	}
++}
+diff --git a/internal/mcp/manager.go b/internal/mcp/manager.go
+index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565cbf11452 100644
+--- a/internal/mcp/manager.go
++++ b/internal/mcp/manager.go
+@@ -3,11 +3,11 @@ package mcp
+ import (
+ 	"context"
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"maps"
+ 	"net/http"
+ 	"os"
+-	"os/exec"
+ 	"sort"
+ 	"strconv"
+ 	"strings"
+@@ -58,14 +58,17 @@ type server struct {
+ 	name string
+ 	cfg  ServerConfig
+ 
+-	status Status
+-	err    string
+-	note   string
+-	defs   []*sdkmcp.Tool
+-	instr  string
+-	sess   *sdkmcp.ClientSession
+-	gen    int
+-	stderr *ringBuffer
++	status      Status
++	err         string
++	note        string
++	defs        []*sdkmcp.Tool
++	instr       string
++	sess        *sdkmcp.ClientSession
++	callCtx     context.Context
++	callCancel  context.CancelFunc
++	callWorkers *sync.WaitGroup
++	gen         int
++	stderr      *ringBuffer
+ 
+ 	ready   chan struct{}
+ 	settled bool
+@@ -218,9 +221,11 @@ func (m *Manager) RemoveServers(names ...string) {
+ 		s.mu.Lock()
+ 		s.cfg.Enabled = new(false)
+ 		old := s.sess
++		calls := s.cancelCallsLocked()
+ 		s.sess, s.defs, s.instr = nil, nil, ""
+ 		s.gen++
+ 		s.mu.Unlock()
++		waitCalls(calls)
+ 		if old != nil {
+ 			_ = old.Close()
+ 		}
+@@ -318,7 +323,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+ 
+ 	transport, err := m.connectTransport(ctx, cfg, s.stderr)
+ 	if err == nil {
+-		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "k-brain", Title: "k-brain"}, nil)
++		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "ZeroAgent", Title: "ZeroAgent"}, nil)
+ 		var sess *sdkmcp.ClientSession
+ 		sess, err = client.Connect(ctx, transport, nil)
+ 		if err == nil {
+@@ -340,6 +345,9 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+ 				s.defs = listed.Tools
+ 				s.instr = instr
+ 				s.sess = sess
++				s.cancelCallsLocked()
++				s.callCtx, s.callCancel = context.WithCancel(s.ctx)
++				s.callWorkers = new(sync.WaitGroup)
+ 				s.gen++
+ 				s.autoTries = 0
+ 				gen := s.gen
+@@ -351,6 +359,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+ 					s.mu.Lock()
+ 					stale := !m.ownsLocked(s) || s.gen != gen
+ 					if !stale {
++						s.cancelCallsLocked()
+ 						s.sess = nil
+ 						s.defs = nil
+ 						s.instr = ""
+@@ -452,23 +461,30 @@ func (s *server) bridge(d *sdkmcp.Tool) tools.Tool {
+ const connectGrace = 5 * time.Second
+ 
+ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (output string, callErr error) {
+-
+ 	s.mu.Lock()
+-	settled, sess, status, errMsg := s.settled, s.sess, s.status, s.err
+-	toolTimeout := s.cfg.ToolTimeoutDuration()
+ 	history := s.cfg.nativeHistory
+ 	s.mu.Unlock()
+ 	defer func() {
+ 		if history != nil {
+ 			output = history.redactValue(output)
+ 			if callErr != nil {
+-				message := history.redactValue(callErr.Error())
+-				if message != callErr.Error() {
+-					callErr = &credentialOutputError{message: message, cause: callErr}
+-				}
++				callErr = &credentialOutputError{message: history.redactValue(callErr.Error()), cause: callErr}
+ 			}
+ 		}
+ 	}()
++	res, err := s.callResult(ctx, tool, args)
++	if err != nil {
++		return "", err
++	}
++	return flattenResultWithHistory(res, history), nil
++}
++
++func (s *server) callResult(ctx context.Context, tool string, args json.RawMessage) (*sdkmcp.CallToolResult, error) {
++
++	s.mu.Lock()
++	settled, sess, status, errMsg := s.settled, s.sess, s.status, s.err
++	toolTimeout := s.cfg.ToolTimeoutDuration()
++	s.mu.Unlock()
+ 	if !settled {
+ 
+ 		grace, cancel := context.WithTimeout(ctx, connectGrace)
+@@ -477,9 +493,9 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+ 		case <-grace.Done():
+ 			cancel()
+ 			if ctx.Err() != nil {
+-				return "", ctx.Err()
++				return nil, ctx.Err()
+ 			}
+-			return "", fmt.Errorf("mcp server %q is still connecting — retry in a moment (/mcp shows status)", s.name)
++			return nil, fmt.Errorf("mcp server %q is still connecting — retry in a moment (/mcp shows status)", s.name)
+ 		}
+ 		cancel()
+ 		s.mu.Lock()
+@@ -490,13 +506,13 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+ 		switch status {
+ 		case StatusFailed:
+ 			if errMsg != "" {
+-				return "", fmt.Errorf("mcp server %q unavailable: %s (/mcp %s reconnect)", s.name, errMsg, s.name)
++				return nil, fmt.Errorf("mcp server %q unavailable: %s (/mcp %s reconnect)", s.name, errMsg, s.name)
+ 			}
+-			return "", fmt.Errorf("mcp server %q unavailable (/mcp %s reconnect)", s.name, s.name)
++			return nil, fmt.Errorf("mcp server %q unavailable (/mcp %s reconnect)", s.name, s.name)
+ 		case StatusDisabled:
+-			return "", fmt.Errorf("mcp server %q is disabled (/mcp %s enable)", s.name, s.name)
++			return nil, fmt.Errorf("mcp server %q is disabled (/mcp %s enable)", s.name, s.name)
+ 		default:
+-			return "", fmt.Errorf("mcp server %q is %s", s.name, status)
++			return nil, fmt.Errorf("mcp server %q is %s", s.name, status)
+ 		}
+ 	}
+ 
+@@ -504,24 +520,55 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+ 	case s.calling <- struct{}{}:
+ 		defer func() { <-s.calling }()
+ 	case <-ctx.Done():
+-		return "", ctx.Err()
++		return nil, ctx.Err()
+ 	}
+ 	ctx, cancel := context.WithTimeout(ctx, toolTimeout)
+ 	defer cancel()
++	// Cancel calls before the SDK's graceful Close waits for them. A queued
++	// invocation cannot migrate to a different session after a restart.
++	s.mu.Lock()
++	callCtx := s.callCtx
++	workers := s.callWorkers
++	current := s.sess == sess && !s.cfg.Disabled() && callCtx != nil && workers != nil
++	if current {
++		workers.Add(1)
++	}
++	s.mu.Unlock()
++	if !current {
++		return nil, errors.New("MCP session changed")
++	}
++	defer workers.Done()
++	stop := context.AfterFunc(callCtx, cancel)
++	defer stop()
++	if callCtx.Err() != nil {
++		cancel()
++	}
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
+ 	var argMap map[string]any
+ 	if len(args) > 0 {
+ 		if err := json.Unmarshal(args, &argMap); err != nil {
+-			return "", fmt.Errorf("invalid tool arguments: %w", err)
++			return nil, fmt.Errorf("invalid tool arguments: %w", err)
+ 		}
+ 	}
+ 	res, err := sess.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: argMap})
+ 	if err != nil {
+ 		if ctx.Err() == context.DeadlineExceeded {
+-			return "", fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
++			return nil, fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
+ 		}
+-		return "", err
++		return nil, err
+ 	}
+-	return flattenResultWithHistory(res, history), nil
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
++	s.mu.Lock()
++	current = s.sess == sess && s.callCtx == callCtx && !s.cfg.Disabled()
++	s.mu.Unlock()
++	if !current || callCtx.Err() != nil {
++		return nil, context.Canceled
++	}
++	return res, nil
+ }
+ 
+ func flattenResult(res *sdkmcp.CallToolResult) string {
+@@ -612,11 +659,13 @@ func (m *Manager) Disable(name string) bool {
+ 		s.connectCancel()
+ 	}
+ 	old := s.sess
++	calls := s.cancelCallsLocked()
+ 	s.sess, s.defs, s.instr = nil, nil, ""
+ 	s.gen++
+ 	s.setStateLocked(StatusDisabled, "")
+ 	s.mu.Unlock()
+ 	m.onChangeMu.Unlock()
++	waitCalls(calls)
+ 	if old != nil {
+ 		_ = old.Close()
+ 	}
+@@ -726,6 +775,7 @@ func (m *Manager) Reconnect(name string) bool {
+ 		s.connectCancel()
+ 	}
+ 	old := s.sess
++	calls := s.cancelCallsLocked()
+ 	s.sess, s.defs, s.instr = nil, nil, ""
+ 	s.gen++
+ 	s.autoTries = 0
+@@ -735,6 +785,7 @@ func (m *Manager) Reconnect(name string) bool {
+ 	s.mu.Unlock()
+ 	m.startLocked(context.Background(), s)
+ 	m.onChangeMu.Unlock()
++	waitCalls(calls)
+ 	if old != nil {
+ 		_ = old.Close()
+ 	}
+@@ -749,12 +800,17 @@ func (m *Manager) Close() {
+ 	m.closeOnce.Do(func() {
+ 		m.onChangeMu.Lock()
+ 		m.closed = true
+-		var sessions []*sdkmcp.ClientSession
++		type closingSession struct {
++			session *sdkmcp.ClientSession
++			calls   *sync.WaitGroup
++		}
++		var sessions []closingSession
+ 		for _, s := range m.servers {
+ 			s.cancel()
+ 			s.mu.Lock()
++			calls := s.cancelCallsLocked()
+ 			if s.sess != nil {
+-				sessions = append(sessions, s.sess)
++				sessions = append(sessions, closingSession{s.sess, calls})
+ 			}
+ 			s.sess, s.defs, s.instr = nil, nil, ""
+ 			s.gen++
+@@ -763,7 +819,8 @@ func (m *Manager) Close() {
+ 		}
+ 		m.onChangeMu.Unlock()
+ 		for _, sess := range sessions {
+-			_ = sess.Close()
++			waitCalls(sess.calls)
++			_ = sess.session.Close()
+ 		}
+ 		m.workers.Wait()
+ 	})
+@@ -795,6 +852,7 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+ 			client.Transport = &nativeCredentialTransport{base: client.Transport, endpoint: cfg.URL, resolve: cfg.nativeCredential, history: cfg.nativeHistory}
+ 			client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+ 		}
++		client.Transport = &boundedMCPControlTransport{base: client.Transport}
+ 		if cfg.remoteTransport == "sse" {
+ 			return &ownedSSEClientTransport{endpoint: cfg.URL, client: client}, nil
+ 		}
+@@ -806,7 +864,10 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+ 		}, nil
+ 	}
+ 
+-	cmd := exec.CommandContext(context.WithoutCancel(ctx), cfg.Command[0], cfg.Command[1:]...)
++	cmd, err := newStdioCommand(ctx, cfg.Command, cfg.Cwd)
++	if err != nil {
++		return nil, err
++	}
+ 
+ 	env, err := config.ResolveEnvMapContext(ctx, cfg.Env)
+ 	if err != nil {
+@@ -814,15 +875,12 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+ 	}
+ 
+ 	cmd.Env = append(os.Environ(), envPairs(env)...)
+-	if cfg.Cwd != "" {
+-		cmd.Dir = cfg.Cwd
+-	}
+ 	if stderr != nil {
+ 		cmd.Stderr = stderr
+ 	}
+ 
+ 	process.Configure(cmd, false)
+-	return &sdkmcp.CommandTransport{Command: cmd, TerminateDuration: 3 * time.Second}, nil
++	return &ownedStdioTransport{command: cmd}, nil
+ }
+ 
+ func envPairs(env map[string]string) []string {
+diff --git a/internal/mcp/manager_more_test.go b/internal/mcp/manager_more_test.go
+index 4c7916a17321d97334733afd98bc1525f997d4df..18730ad4246abfc191531109858c9c4a87e8e34a 100644
+--- a/internal/mcp/manager_more_test.go
++++ b/internal/mcp/manager_more_test.go
+@@ -6,6 +6,7 @@ import (
+ 	"errors"
+ 	"net/http"
+ 	"net/http/httptest"
++	"os"
+ 	"reflect"
+ 	"slices"
+ 	"strings"
+@@ -31,20 +32,24 @@ func TestEnvPairs(t *testing.T) {
+ 
+ func TestDefaultTransportStdio(t *testing.T) {
+ 	dir := t.TempDir()
++	executable, err := os.Executable()
++	if err != nil {
++		t.Fatal(err)
++	}
+ 	stderr := newRingBuffer(64)
+ 	tr, err := defaultTransport(context.Background(), ServerConfig{
+-		Command: []string{"srv", "--stdio"},
++		Command: []string{executable, "--stdio"},
+ 		Cwd:     dir,
+ 		Env:     map[string]string{"K_BRAIN_MCP_TRANSPORT_TEST": "yes"},
+ 	}, stderr)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	ct, ok := tr.(*sdkmcp.CommandTransport)
++	ct, ok := tr.(*ownedStdioTransport)
+ 	if !ok {
+-		t.Fatalf("transport type %T, want *sdkmcp.CommandTransport", tr)
++		t.Fatalf("transport type %T, want *ownedStdioTransport", tr)
+ 	}
+-	cmd := ct.Command
++	cmd := ct.command
+ 	if cmd.Dir != dir {
+ 		t.Errorf("cwd = %q, want %q", cmd.Dir, dir)
+ 	}
+@@ -60,7 +65,7 @@ func TestDefaultTransportStdio(t *testing.T) {
+ 	if cmd.SysProcAttr == nil || cmd.Cancel == nil {
+ 		t.Error("child must get its own process group")
+ 	}
+-	if !strings.HasSuffix(cmd.Path, "srv") || !reflect.DeepEqual(cmd.Args[1:], []string{"--stdio"}) {
++	if cmd.Path != executable || !reflect.DeepEqual(cmd.Args[1:], []string{"--stdio"}) {
+ 		t.Errorf("command = %v (%q)", cmd.Args, cmd.Path)
+ 	}
+ }
+diff --git a/internal/mcp/manager_test.go b/internal/mcp/manager_test.go
+index ca2ff6ad70a91a5de41cb360acac1cbf64352359..3f8bbd8e8b3822aca1c46c7610fd9ecb33ed40ad 100644
+--- a/internal/mcp/manager_test.go
++++ b/internal/mcp/manager_test.go
+@@ -510,19 +510,25 @@ func TestProbe(t *testing.T) {
+ 	if res.Status != StatusFailed {
+ 		t.Errorf("ghost probe = %+v", res)
+ 	}
+-	if res.Elapsed <= 0 {
+-		t.Error("probe should report elapsed time")
++	if res.Err == "" || res.Elapsed < 0 {
++		t.Error("failed probe must report its error and a nonnegative duration")
+ 	}
+ 
+ 	if testing.Short() {
+ 		return
+ 	}
+ 
+-	res = Probe(context.Background(), "silent", ServerConfig{Command: []string{"sh", "-c", "sleep 5"}, StartupTimeout: 1})
++	cfg, _ := ownedFixtureConfig(t, "hold")
++	cfg.StartupTimeout = 1
++	started := time.Now()
++	res = Probe(t.Context(), "silent", cfg)
+ 	if res.Status != StatusFailed || res.Err == "" {
+ 		t.Errorf("silent probe = %+v", res)
+ 	}
+-	if res.Elapsed > 15*time.Second {
++	if res.Elapsed < time.Second {
++		t.Errorf("silent probe did not wait for its startup deadline: %s", res.Elapsed)
++	}
++	if res.Elapsed > 15*time.Second || time.Since(started) > 15*time.Second {
+ 		t.Errorf("probe blew far past the startup timeout: %s", res.Elapsed)
+ 	}
+ }
+diff --git a/internal/mcp/owned_stdio.go b/internal/mcp/owned_stdio.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..9de89c3f50a32bf10711a9b765b0d1787c0b3eab
+--- /dev/null
++++ b/internal/mcp/owned_stdio.go
+@@ -0,0 +1,184 @@
++package mcp
++
++import (
++	"context"
++	"errors"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
++	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
++)
++
++// Process ownership is separate from SDK protocol/session handling. In
++// particular, abort can close a blocked pipe before ClientSession.Close waits
++// for outgoing calls, and descendants cannot retain the session's handles.
++type stdioProcessOwner interface {
++	started(*exec.Cmd) error
++	exited(*exec.Cmd) (bool, error)
++	terminate(*exec.Cmd) error
++	release() error
++}
++
++type ownedStdioTransport struct {
++	command    *exec.Cmd
++	connection atomic.Pointer[ownedStdioConnection]
++}
++type ownedStdioConnection struct {
++	sdkmcp.Connection
++	command                         *exec.Cmd
++	owner                           stdioProcessOwner
++	input                           *os.File
++	output                          *os.File
++	inputOnce, abortOnce, closeOnce sync.Once
++	aborted                         chan struct{}
++	abortErr, closeErr              error
++}
++
++func (t *ownedStdioTransport) Connect(ctx context.Context) (sdkmcp.Connection, error) {
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
++	owner, err := newStdioProcessOwner(t.command)
++	if err != nil {
++		return nil, err
++	}
++	stdout, err := t.command.StdoutPipe()
++	if err != nil {
++		_ = owner.release()
++		return nil, err
++	}
++	stdin, err := t.command.StdinPipe()
++	if err != nil {
++		_ = stdout.Close()
++		_ = owner.release()
++		return nil, err
++	}
++	// StdoutPipe/StdinPipe are OS pipes for exec.Cmd. Retain their actual closers,
++	// rather than the SDK CommandTransport's deliberately non-closing stdout.
++	input, inputOK := stdin.(*os.File)
++	output, outputOK := stdout.(*os.File)
++	if !inputOK || !outputOK {
++		_ = stdin.Close()
++		_ = stdout.Close()
++		_ = owner.release()
++		return nil, errors.New("MCP command did not create owned OS pipes")
++	}
++	t.command.WaitDelay = 3 * time.Second
++	if err := t.command.Start(); err != nil {
++		_ = stdin.Close()
++		_ = stdout.Close()
++		_ = owner.release()
++		return nil, err
++	}
++	wire, wireErr := (&sdkmcp.IOTransport{Reader: output, Writer: input}).Connect(ctx)
++	if wireErr != nil {
++		_ = owner.terminate(t.command)
++		_ = stdin.Close()
++		_ = stdout.Close()
++		_ = t.command.Wait()
++		_ = owner.release()
++		return nil, wireErr
++	}
++	connection := &ownedStdioConnection{Connection: wire, command: t.command, owner: owner, input: input, output: output, aborted: make(chan struct{})}
++	t.connection.Store(connection)
++	if err := owner.started(t.command); err != nil {
++		connection.abort()
++		_ = connection.Close()
++		return nil, err
++	}
++	if err := ctx.Err(); err != nil {
++		connection.abort()
++		_ = connection.Close()
++		return nil, err
++	}
++	return connection, nil
++}
++
++func (c *ownedStdioConnection) closeInput() { c.inputOnce.Do(func() { _ = c.input.Close() }) }
++func (c *ownedStdioConnection) abort() {
++	c.abortOnce.Do(func() {
++		// Terminate first: closing a pipe with a blocked OS write must not prevent
++		// the process tree from losing its read handle.
++		c.abortErr = c.owner.terminate(c.command)
++		c.closeInput()
++		_ = c.output.Close()
++		close(c.aborted)
++	})
++}
++func (c *ownedStdioConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
++	message, err := c.Connection.Read(ctx)
++	if err != nil {
++		c.abort()
++	}
++	return message, err
++}
++func (c *ownedStdioConnection) Write(ctx context.Context, message jsonrpc.Message) error {
++	if err := ctx.Err(); err != nil {
++		return err
++	}
++	if request, ok := message.(*jsonrpc.Request); ok && request.Method == "notifications/cancelled" {
++		var cancel context.CancelFunc
++		ctx, cancel = context.WithTimeout(ctx, time.Second)
++		defer cancel()
++	}
++	stop := context.AfterFunc(ctx, c.abort)
++	defer stop()
++	err := c.Connection.Write(ctx, message)
++	if ctx.Err() != nil {
++		return ctx.Err()
++	}
++	if err != nil {
++		c.abort()
++	}
++	return err
++}
++func (c *ownedStdioConnection) Close() error {
++	c.closeOnce.Do(func() {
++		go c.closeInput()
++		// Keep the root unreaped until its tree has been terminated. This retains
++		// the original process identity while a graceful EOF shutdown is pending.
++		grace := time.NewTimer(3 * time.Second)
++		defer grace.Stop()
++		tick := time.NewTicker(10 * time.Millisecond)
++		defer tick.Stop()
++	wait:
++		for {
++			select {
++			case <-c.aborted:
++				break wait
++			case <-grace.C:
++				break wait
++			case <-tick.C:
++				exited, err := c.owner.exited(c.command)
++				if exited || err != nil {
++					break wait
++				}
++			}
++		}
++		c.abort()
++		waitErr := c.command.Wait()
++		_ = c.Connection.Close()
++		c.closeErr = errors.Join(c.abortErr, waitErr, c.owner.release())
++	})
++	return c.closeErr
++}
++
++func expandStdioHome(value string) string {
++	if value == "~" {
++		if home, err := os.UserHomeDir(); err == nil {
++			return home
++		}
++	}
++	if strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
++		if home, err := os.UserHomeDir(); err == nil {
++			return filepath.Join(home, value[2:])
++		}
++	}
++	return value
++}
+diff --git a/internal/mcp/owned_stdio_darwin.go b/internal/mcp/owned_stdio_darwin.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..076cae1d40081fe50579759ec9c385fc5c526583
+--- /dev/null
++++ b/internal/mcp/owned_stdio_darwin.go
+@@ -0,0 +1,18 @@
++package mcp
++
++import (
++	"golang.org/x/sys/unix"
++	"os/exec"
++)
++
++// SZOMB in the supported Darwin process state ABI. Sysctl observes the root
++// without reaping it, so its process-group identity remains reserved.
++const stdioDarwinZombie = 5
++
++func stdioExitedWithoutReaping(cmd *exec.Cmd) (bool, error) {
++	info, err := unix.SysctlKinfoProc("kern.proc.pid", cmd.Process.Pid)
++	if err != nil {
++		return false, err
++	}
++	return info.Proc.P_stat == stdioDarwinZombie, nil
++}
+diff --git a/internal/mcp/owned_stdio_darwin_test.go b/internal/mcp/owned_stdio_darwin_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..30639a19d7159f27a4661a6991361e9125987085
+--- /dev/null
++++ b/internal/mcp/owned_stdio_darwin_test.go
+@@ -0,0 +1,8 @@
++package mcp
++
++import "golang.org/x/sys/unix"
++
++func ownedTestProcessAlive(pid int) bool {
++	info, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
++	return err == nil && info.Proc.P_stat != stdioDarwinZombie
++}
+diff --git a/internal/mcp/owned_stdio_linux.go b/internal/mcp/owned_stdio_linux.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..80eee44208be030f74e7283b253e4c9364e827a6
+--- /dev/null
++++ b/internal/mcp/owned_stdio_linux.go
+@@ -0,0 +1,12 @@
++package mcp
++
++import (
++	"golang.org/x/sys/unix"
++	"os/exec"
++)
++
++func stdioExitedWithoutReaping(cmd *exec.Cmd) (bool, error) {
++	var info unix.Siginfo
++	err := unix.Waitid(unix.P_PID, cmd.Process.Pid, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
++	return info.Signo != 0, err
++}
+diff --git a/internal/mcp/owned_stdio_linux_test.go b/internal/mcp/owned_stdio_linux_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c77595e4855250e76845c7f61dc09b4fa0d76907
+--- /dev/null
++++ b/internal/mcp/owned_stdio_linux_test.go
+@@ -0,0 +1,16 @@
++package mcp
++
++import (
++	"fmt"
++	"os"
++	"strings"
++)
++
++func ownedTestProcessAlive(pid int) bool {
++	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
++	if err != nil {
++		return false
++	}
++	at := strings.LastIndexByte(string(data), ')')
++	return at >= 0 && len(data) > at+2 && data[at+2] != 'Z' && data[at+2] != 'X'
++}
+diff --git a/internal/mcp/owned_stdio_other.go b/internal/mcp/owned_stdio_other.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b78e40c90b205063931d40e51b365f3cee9a803
+--- /dev/null
++++ b/internal/mcp/owned_stdio_other.go
+@@ -0,0 +1,10 @@
++//go:build !windows && !linux && !darwin
++
++package mcp
++
++import (
++	"github.com/Stack-Cairn/K-brain/internal/process"
++	"os/exec"
++)
++
++func stdioExitedWithoutReaping(cmd *exec.Cmd) (bool, error) { return !process.Alive(cmd), nil }
+diff --git a/internal/mcp/owned_stdio_other_test.go b/internal/mcp/owned_stdio_other_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c5a2b28712b706004efea595002460b02fa3948
+--- /dev/null
++++ b/internal/mcp/owned_stdio_other_test.go
+@@ -0,0 +1,5 @@
++//go:build !windows && !linux && !darwin
++
++package mcp
++
++func ownedTestProcessAlive(pid int) bool { return ownedProcessAliveByHandle(pid) }
+diff --git a/internal/mcp/owned_stdio_test.go b/internal/mcp/owned_stdio_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4ab5e9f153fd43f343289d37f2db5460d793984
+--- /dev/null
++++ b/internal/mcp/owned_stdio_test.go
+@@ -0,0 +1,373 @@
++package mcp
++
++import (
++	"bufio"
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/Stack-Cairn/K-brain/internal/process"
++	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
++	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
++)
++
++const ownedFixtureFlag = "ZEROAGENT_MCP_OWNED_FIXTURE"
++
++type ownedFixturePIDs struct{ Root, Child int }
++
++func TestNativeOwnedStdioProcessFixture(t *testing.T) {
++	if os.Getenv(ownedFixtureFlag) != "1" {
++		return
++	}
++	at := 0
++	for i, arg := range os.Args {
++		if arg == "--" {
++			at = i + 1
++			break
++		}
++	}
++	if at == 0 || at >= len(os.Args) {
++		os.Exit(2)
++	}
++	mode := os.Args[at]
++	if mode == "hold" {
++		for {
++			time.Sleep(time.Hour)
++		}
++	}
++	if mode == "args" {
++		_ = json.NewEncoder(os.Stdout).Encode(os.Args[at+1:])
++		os.Exit(0)
++	}
++	executable, _ := os.Executable()
++	child := exec.Command(executable, "-test.run=^TestNativeOwnedStdioProcessFixture$", "--", "hold")
++	child.Env = os.Environ()
++	child.Stdout = os.Stdout
++	child.Stderr = os.Stderr
++	if child.Start() != nil {
++		os.Exit(3)
++	}
++	record := func() {
++		data, _ := json.Marshal(ownedFixturePIDs{Root: os.Getpid(), Child: child.Process.Pid})
++		if os.WriteFile(os.Getenv("ZEROAGENT_MCP_PIDFILE"), data, 0600) != nil {
++			os.Exit(4)
++		}
++	}
++	announce := func(state string) {
++		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{"level": "debug", "data": map[string]any{"fixture": "owned-stdio", "state": state, "root": os.Getpid(), "child": child.Process.Pid}}})
++	}
++	switch mode {
++	case "blocked":
++		record()
++		for {
++			time.Sleep(time.Hour)
++		}
++	case "orphan":
++		record()
++		_, _ = io.Copy(io.Discard, os.Stdin)
++		os.Exit(0)
++	case "mcp-blocked":
++		reader := bufio.NewReader(os.Stdin)
++		for {
++			line, err := reader.ReadBytes('\n')
++			if err != nil {
++				os.Exit(0)
++			}
++			var request struct {
++				ID     json.RawMessage `json:"id"`
++				Method string          `json:"method"`
++				Params map[string]any  `json:"params"`
++			}
++			if json.Unmarshal(line, &request) != nil {
++				os.Exit(5)
++			}
++			if len(request.ID) == 0 {
++				continue
++			}
++			reply := map[string]any{"jsonrpc": "2.0", "id": request.ID}
++			switch request.Method {
++			case "server/discover":
++				reply["error"] = map[string]any{"code": -32601, "message": "method not found"}
++			case "initialize":
++				reply["result"] = map[string]any{"protocolVersion": request.Params["protocolVersion"], "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "owned-stdio", "version": "1"}}
++			case "tools/list":
++				reply["result"] = map[string]any{"tools": []any{map[string]any{"name": "block", "inputSchema": map[string]any{"type": "object"}}}}
++			default:
++				os.Exit(6)
++			}
++			encoded, _ := json.Marshal(reply)
++			fmt.Fprintln(os.Stdout, string(encoded))
++			if request.Method == "tools/list" {
++				announce("ready")
++				// Find actual payload bytes rather than assuming RPC field order.
++				// Consume at most one small pipe buffer, leaving the MiB write blocked.
++				var prefix []byte
++				chunk := make([]byte, 64)
++				for !bytes.Contains(prefix, bytes.Repeat([]byte{'x'}, 64)) && len(prefix) < 4096 {
++					if _, err := io.ReadFull(reader, chunk); err != nil {
++						os.Exit(8)
++					}
++					prefix = append(prefix, chunk...)
++				}
++				if !bytes.Contains(prefix, bytes.Repeat([]byte{'x'}, 64)) {
++					fmt.Fprintf(os.Stderr, "unexpected call prefix: %.256q", prefix)
++					os.Exit(9)
++				}
++				announce("blocked")
++				for {
++					time.Sleep(time.Hour)
++				}
++			}
++		}
++	default:
++		os.Exit(7)
++	}
++}
++
++func ownedFixtureConfig(t *testing.T, mode string) (ServerConfig, string) {
++	t.Helper()
++	executable, err := os.Executable()
++	if err != nil {
++		t.Fatal(err)
++	}
++	file := filepath.Join(t.TempDir(), "pids.json")
++	return ServerConfig{Command: []string{executable, "-test.run=^TestNativeOwnedStdioProcessFixture$", "--", mode}, Env: map[string]string{ownedFixtureFlag: "1", "ZEROAGENT_MCP_PIDFILE": file}}, file
++}
++func waitOwnedFixture(t *testing.T, file string) ownedFixturePIDs {
++	t.Helper()
++	deadline := time.Now().Add(5 * time.Second)
++	for time.Now().Before(deadline) {
++		if data, err := os.ReadFile(file); err == nil {
++			var pids ownedFixturePIDs
++			if json.Unmarshal(data, &pids) == nil && pids.Root > 0 && pids.Child > 0 {
++				return pids
++			}
++		}
++		time.Sleep(5 * time.Millisecond)
++	}
++	t.Fatal("owned fixture did not publish its process identities")
++	return ownedFixturePIDs{}
++}
++func assertOwnedFixtureExited(t *testing.T, pids ownedFixturePIDs) {
++	t.Helper()
++	deadline := time.Now().Add(2 * time.Second)
++	for time.Now().Before(deadline) {
++		if !ownedTestProcessAlive(pids.Root) && !ownedTestProcessAlive(pids.Child) {
++			return
++		}
++		time.Sleep(5 * time.Millisecond)
++	}
++	t.Fatalf("owned process tree remained alive: root=%d child=%d", pids.Root, pids.Child)
++}
++
++func TestNativeOwnedStdioBlockedWriteCancellationReapsTree(t *testing.T) {
++	cfg, file := ownedFixtureConfig(t, "blocked")
++	transport, err := defaultTransport(t.Context(), cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	wire, err := transport.Connect(t.Context())
++	if err != nil {
++		t.Fatal(err)
++	}
++	connection := wire.(*ownedStdioConnection)
++	defer connection.Close()
++	defer connection.abort()
++	pids := waitOwnedFixture(t, file)
++	ctx, cancel := context.WithCancel(t.Context())
++	defer cancel()
++	id, _ := jsonrpc.MakeID(float64(1))
++	raw, _ := json.Marshal(map[string]string{"payload": strings.Repeat("x", 1<<20)})
++	done := make(chan error, 1)
++	go func() { done <- wire.Write(ctx, &jsonrpc.Request{ID: id, Method: "tools/call", Params: raw}) }()
++	select {
++	case err := <-done:
++		t.Fatalf("fixture did not block its input: %v", err)
++	case <-time.After(50 * time.Millisecond):
++	}
++	cancel()
++	select {
++	case err := <-done:
++		if err == nil {
++			t.Fatal("canceled blocked write succeeded")
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("blocked stdin write ignored cancellation")
++	}
++	_ = connection.Close()
++	assertOwnedFixtureExited(t, pids)
++}
++
++func TestNativeOwnedStdioEOFReapsRootAndOrphanedPipeHolders(t *testing.T) {
++	cfg, file := ownedFixtureConfig(t, "orphan")
++	transport, err := defaultTransport(t.Context(), cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	wire, err := transport.Connect(t.Context())
++	if err != nil {
++		t.Fatal(err)
++	}
++	connection := wire.(*ownedStdioConnection)
++	defer connection.abort()
++	defer connection.Close()
++	pids := waitOwnedFixture(t, file)
++	done := make(chan error, 1)
++	go func() { done <- connection.Close() }()
++	select {
++	case <-done:
++	case <-time.After(4 * time.Second):
++		connection.abort()
++		t.Fatal("EOF shutdown waited on inherited pipes")
++	}
++	assertOwnedFixtureExited(t, pids)
++}
++
++func TestNativeOwnedStdioManagerStopInterruptsBlockedCall(t *testing.T) {
++	cfg, _ := ownedFixtureConfig(t, "mcp-blocked")
++	manager := NewManager(map[string]ServerConfig{"owned": cfg})
++	var mu sync.Mutex
++	var current *ownedStdioTransport
++	signals := &ownedFixtureSignals{ready: make(chan ownedFixturePIDs, 1), writing: make(chan struct{})}
++	manager.connectTransport = func(ctx context.Context, cfg ServerConfig, stderr *ringBuffer) (sdkmcp.Transport, error) {
++		transport, err := defaultTransport(ctx, cfg, stderr)
++		if owned, ok := transport.(*ownedStdioTransport); ok {
++			mu.Lock()
++			current = owned
++			mu.Unlock()
++		}
++		if err != nil {
++			return nil, err
++		}
++		return &ownedObservedTransport{Transport: transport, signals: signals}, nil
++	}
++	t.Cleanup(func() {
++		mu.Lock()
++		owned := current
++		mu.Unlock()
++		if owned != nil {
++			if connection := owned.connection.Load(); connection != nil {
++				connection.abort()
++			}
++		}
++		manager.Close()
++	})
++	manager.Start(t.Context())
++	var pids ownedFixturePIDs
++	select {
++	case pids = <-signals.ready:
++	case <-time.After(5 * time.Second):
++		t.Fatal("stdio fixture did not announce readiness")
++	}
++	if pids.Root <= 0 || pids.Child <= 0 {
++		t.Fatal("fixture did not provide owned process identities")
++	}
++	deadline := time.Now().Add(5 * time.Second)
++	for len(manager.Tools()) == 0 && time.Now().Before(deadline) {
++		time.Sleep(5 * time.Millisecond)
++	}
++	tools := manager.Tools()
++	if len(tools) != 1 {
++		t.Fatal("stdio tool did not become ready")
++	}
++	raw, _ := json.Marshal(map[string]string{"payload": strings.Repeat("x", 1<<20)})
++	result := make(chan error, 1)
++	go func() { _, err := tools[0].Run(t.Context(), raw); result <- err }()
++	// Confirm the peer actually received the start of a call larger than its
++	// pipe buffer. A sleep could cancel before the client entered Write at all,
++	// exercising a three-second graceful close instead of blocked-write abort.
++	select {
++	case <-signals.writing:
++	case err := <-result:
++		t.Fatalf("fixture did not block tool write: %v", err)
++	case <-time.After(2 * time.Second):
++		t.Fatalf("fixture did not receive payload prefix: %+v", manager.Statuses())
++	}
++	stopped := make(chan struct{})
++	go func() { manager.Disable("owned"); close(stopped) }()
++	select {
++	case <-stopped:
++	case <-time.After(3 * time.Second):
++		t.Fatal("manager stop waited on a blocked stdio call")
++	}
++	select {
++	case err := <-result:
++		if err == nil {
++			t.Fatal("abandoned stdio call succeeded")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("stdio call remained registered")
++	}
++	assertOwnedFixtureExited(t, pids)
++}
++
++type ownedObservedTransport struct {
++	sdkmcp.Transport
++	signals *ownedFixtureSignals
++}
++
++type ownedFixtureSignals struct {
++	ready                  chan ownedFixturePIDs
++	writing                chan struct{}
++	readyOnce, writingOnce sync.Once
++}
++
++func (t *ownedObservedTransport) Connect(ctx context.Context) (sdkmcp.Connection, error) {
++	connection, err := t.Transport.Connect(ctx)
++	if err != nil {
++		return nil, err
++	}
++	return &ownedObservedConnection{Connection: connection, signals: t.signals}, nil
++}
++
++type ownedObservedConnection struct {
++	sdkmcp.Connection
++	signals *ownedFixtureSignals
++}
++
++func (c *ownedObservedConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
++	for {
++		message, err := c.Connection.Read(ctx)
++		if err != nil {
++			return message, err
++		}
++		if request, ok := message.(*jsonrpc.Request); ok && request.Method == "notifications/message" {
++			var params struct {
++				Data struct {
++					Fixture, State string
++					Root, Child    int
++				}
++			}
++			if json.Unmarshal(request.Params, &params) == nil && params.Data.Fixture == "owned-stdio" {
++				switch params.Data.State {
++				case "ready":
++					c.signals.readyOnce.Do(func() { c.signals.ready <- ownedFixturePIDs{Root: params.Data.Root, Child: params.Data.Child} })
++				case "blocked":
++					c.signals.writingOnce.Do(func() { close(c.signals.writing) })
++				}
++				continue
++			}
++		}
++		return message, nil
++	}
++}
++
++// Used by platform tests too: only inspect identities, never kill a PID obtained
++// from the OS inventory. All cleanup goes through the owned connection/job.
++func ownedProcessAliveByHandle(pid int) bool {
++	p, err := os.FindProcess(pid)
++	if err != nil {
++		return false
++	}
++	defer p.Release()
++	return process.Alive(&exec.Cmd{Process: p})
++}
+diff --git a/internal/mcp/owned_stdio_unix.go b/internal/mcp/owned_stdio_unix.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5746bad57d0cb5b3d20441a98bf9332b7868ea9
+--- /dev/null
++++ b/internal/mcp/owned_stdio_unix.go
+@@ -0,0 +1,31 @@
++//go:build !windows
++
++package mcp
++
++import (
++	"context"
++	"errors"
++	"os/exec"
++	"syscall"
++
++	"github.com/Stack-Cairn/K-brain/internal/process"
++)
++
++type unixStdioOwner struct{}
++
++func newStdioProcessOwner(*exec.Cmd) (stdioProcessOwner, error) { return unixStdioOwner{}, nil }
++func (unixStdioOwner) started(*exec.Cmd) error                  { return nil }
++func (unixStdioOwner) exited(cmd *exec.Cmd) (bool, error)       { return stdioExitedWithoutReaping(cmd) }
++func (unixStdioOwner) terminate(cmd *exec.Cmd) error {
++	err := process.Kill(cmd)
++	if errors.Is(err, syscall.ESRCH) {
++		return nil
++	}
++	return err
++}
++func (unixStdioOwner) release() error { return nil }
++func newStdioCommand(ctx context.Context, argv []string, cwd string) (*exec.Cmd, error) {
++	cmd := exec.CommandContext(context.WithoutCancel(ctx), expandStdioHome(argv[0]), argv[1:]...)
++	cmd.Dir = expandStdioHome(cwd)
++	return cmd, nil
++}
+diff --git a/internal/mcp/owned_stdio_windows.go b/internal/mcp/owned_stdio_windows.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3c0217537887dab1ea1f4082ad9be5ab1764484
+--- /dev/null
++++ b/internal/mcp/owned_stdio_windows.go
+@@ -0,0 +1,232 @@
++package mcp
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"syscall"
++	"unsafe"
++
++	"golang.org/x/sys/windows"
++)
++
++type windowsStdioOwner struct {
++	mu  sync.Mutex
++	job windows.Handle
++}
++
++func newStdioProcessOwner(cmd *exec.Cmd) (stdioProcessOwner, error) {
++	job, err := windows.CreateJobObject(nil, nil)
++	if err != nil {
++		return nil, err
++	}
++	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
++	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
++	if _, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
++		_ = windows.CloseHandle(job)
++		return nil, err
++	}
++	if cmd.SysProcAttr == nil {
++		cmd.SysProcAttr = &syscall.SysProcAttr{}
++	}
++	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
++	return &windowsStdioOwner{job: job}, nil
++}
++func (o *windowsStdioOwner) started(cmd *exec.Cmd) error {
++	var assignment error
++	if err := cmd.Process.WithHandle(func(h uintptr) { assignment = windows.AssignProcessToJobObject(o.job, windows.Handle(h)) }); err != nil {
++		return err
++	}
++	if assignment != nil {
++		return assignment
++	}
++	return resumeStdioPrimaryThread(uint32(cmd.Process.Pid))
++}
++func (o *windowsStdioOwner) exited(cmd *exec.Cmd) (bool, error) {
++	var done bool
++	var queryErr error
++	err := cmd.Process.WithHandle(func(h uintptr) {
++		var state uint32
++		state, queryErr = windows.WaitForSingleObject(windows.Handle(h), 0)
++		done = state == windows.WAIT_OBJECT_0
++	})
++	return done, errors.Join(err, queryErr)
++}
++func (o *windowsStdioOwner) terminate(cmd *exec.Cmd) error {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	var jobErr error
++	if o.job != 0 {
++		jobErr = windows.TerminateJobObject(o.job, 1)
++	}
++	// Activation may fail before assignment. The root is still suspended and
++	// belongs to this exec.Cmd; terminate it explicitly in that case too.
++	rootErr := cmd.Process.Kill()
++	if errors.Is(rootErr, os.ErrProcessDone) {
++		rootErr = nil
++	}
++	if errors.Is(rootErr, windows.ERROR_ACCESS_DENIED) {
++		if exited, err := o.exited(cmd); exited && err == nil {
++			rootErr = nil
++		}
++	}
++	return errors.Join(jobErr, rootErr)
++}
++func (o *windowsStdioOwner) release() error {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	if o.job == 0 {
++		return nil
++	}
++	err := windows.CloseHandle(o.job)
++	o.job = 0
++	return err
++}
++
++var stdioGetThreadTimes = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetThreadTimes")
++
++func resumeStdioPrimaryThread(pid uint32) error {
++	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
++	if err != nil {
++		return err
++	}
++	defer windows.CloseHandle(snapshot)
++	var entry windows.ThreadEntry32
++	entry.Size = uint32(unsafe.Sizeof(entry))
++	var primary windows.Handle
++	var oldest uint64
++	defer func() {
++		if primary != 0 {
++			_ = windows.CloseHandle(primary)
++		}
++	}()
++	for err = windows.Thread32First(snapshot, &entry); err == nil; err = windows.Thread32Next(snapshot, &entry) {
++		if entry.OwnerProcessID != pid {
++			continue
++		}
++		thread, openErr := windows.OpenThread(windows.THREAD_SUSPEND_RESUME|windows.THREAD_QUERY_LIMITED_INFORMATION, false, entry.ThreadID)
++		if openErr != nil {
++			return openErr
++		}
++		var created, exited, kernel, user windows.Filetime
++		ok, _, timeErr := stdioGetThreadTimes.Call(uintptr(thread), uintptr(unsafe.Pointer(&created)), uintptr(unsafe.Pointer(&exited)), uintptr(unsafe.Pointer(&kernel)), uintptr(unsafe.Pointer(&user)))
++		if ok == 0 {
++			_ = windows.CloseHandle(thread)
++			return timeErr
++		}
++		time := uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime)
++		if primary == 0 || time < oldest {
++			if primary != 0 {
++				_ = windows.CloseHandle(primary)
++			}
++			primary, oldest = thread, time
++		} else {
++			_ = windows.CloseHandle(thread)
++		}
++	}
++	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
++		return err
++	}
++	if primary == 0 {
++		return errors.New("MCP command primary thread was not found")
++	}
++	previous, err := windows.ResumeThread(primary)
++	if err != nil {
++		return err
++	}
++	if previous != 1 {
++		return errors.New("MCP command primary thread was not suspended exactly once")
++	}
++	return nil
++}
++
++func newStdioCommand(ctx context.Context, argv []string, cwd string) (*exec.Cmd, error) {
++	cwd = expandStdioHome(cwd)
++	program := expandStdioHome(argv[0])
++	if !filepath.IsAbs(program) && strings.ContainsAny(program, `/\`) {
++		if cwd != "" {
++			program = filepath.Join(cwd, program)
++		}
++	}
++	if cwd != "" && !filepath.IsAbs(program) && !strings.ContainsAny(program, `/\`) {
++		for _, extension := range []string{"", ".exe", ".com", ".cmd", ".bat"} {
++			candidate := filepath.Join(cwd, program+extension)
++			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
++				program = candidate
++				break
++			}
++		}
++	}
++	resolved, err := exec.LookPath(program)
++	if err != nil {
++		return nil, err
++	}
++	resolved, err = filepath.Abs(resolved)
++	if err != nil {
++		return nil, err
++	}
++	if strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat") {
++		absolute, err := filepath.Abs(resolved)
++		if err != nil {
++			return nil, err
++		}
++		shell := filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
++		cmd := exec.CommandContext(context.WithoutCancel(ctx), shell)
++		cmd.Dir = cwd
++		// The script path is parsed once; arguments are parsed both by cmd /C
++		// and by the script's %* forwarding line (e.g. npm/npx shims).
++		quoted := []string{quoteStdioBatchCommand(absolute)}
++		for _, value := range argv[1:] {
++			part, err := quoteStdioBatchArgument(value)
++			if err != nil {
++				return nil, err
++			}
++			quoted = append(quoted, part)
++		}
++		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: syscall.EscapeArg(shell) + ` /E:ON /V:OFF /D /S /C "` + strings.Join(quoted, " ") + `"`}
++		return cmd, nil
++	}
++	cmd := exec.CommandContext(context.WithoutCancel(ctx), resolved, argv[1:]...)
++	cmd.Dir = cwd
++	return cmd, nil
++}
++func quoteStdioBatchArgument(value string) (string, error) {
++	if strings.ContainsAny(value, "\x00\r\n") {
++		return "", fmt.Errorf("MCP batch arguments cannot contain NUL, CR or LF")
++	}
++	var out strings.Builder
++	out.WriteByte('"')
++	slashes := 0
++	for _, char := range value {
++		if char == '\\' {
++			slashes++
++		} else {
++			if char == '"' {
++				out.WriteString(strings.Repeat(`\`, slashes+1))
++			}
++			slashes = 0
++		}
++		out.WriteRune(char)
++	}
++	out.WriteString(strings.Repeat(`\`, slashes))
++	out.WriteByte('"')
++	return escapeStdioBatchMeta(escapeStdioBatchMeta(out.String())), nil
++}
++
++func quoteStdioBatchCommand(value string) string { return escapeStdioBatchMeta(value) }
++
++func escapeStdioBatchMeta(value string) string {
++	var out strings.Builder
++	for _, char := range value {
++		if strings.ContainsRune("()[]%!^\"`<>&|;, \t*?", char) {
++			out.WriteByte('^')
++		}
++		out.WriteRune(char)
++	}
++	return out.String()
++}
+diff --git a/internal/mcp/owned_stdio_windows_test.go b/internal/mcp/owned_stdio_windows_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..a929e98d6cb7f9a1e95b9795cb115a4df1b92fcf
+--- /dev/null
++++ b/internal/mcp/owned_stdio_windows_test.go
+@@ -0,0 +1,114 @@
++package mcp
++
++import (
++	"encoding/binary"
++	"os"
++	"path/filepath"
++	"reflect"
++	"strings"
++	"testing"
++	"time"
++	"unicode/utf16"
++
++	"github.com/Stack-Cairn/K-brain/internal/process"
++	"golang.org/x/sys/windows"
++)
++
++func ownedTestProcessAlive(pid int) bool { return ownedProcessAliveByHandle(pid) }
++
++func TestNativeOwnedStdioWindowsBatchPreservesArgumentBoundaries(t *testing.T) {
++	dir := filepath.Join(t.TempDir(), "batch with spaces")
++	if err := os.Mkdir(dir, 0700); err != nil {
++		t.Fatal(err)
++	}
++	program := filepath.Join(dir, "wrapper.CmD")
++	// Echo exposes the command line after both real cmd parsing passes.
++	// Decode it with Windows' legacy argv API, which detects the same doubled
++	// quote problem as Go's parser, without starting the entire test suite again.
++	script := "@echo off\r\necho %*\r\n"
++	if err := os.WriteFile(program, []byte(script), 0600); err != nil {
++		t.Fatal(err)
++	}
++	args := []string{"", "a b", "tab\tvalue", `C:\trailing\`, `embedded"quote`, `slashes\\"quote`, "%PATH%", "!PATH!", "&|<>^()[];,`*?", "中文"}
++	command, err := newStdioCommand(t.Context(), append([]string{"wrapper.CmD"}, args...), dir)
++	if err != nil {
++		t.Fatal(err)
++	}
++	process.Configure(command, false)
++	if command.SysProcAttr == nil || !command.SysProcAttr.HideWindow {
++		t.Fatal("MCP batch command did not hide its window")
++	}
++	// Unicode output avoids depending on the machine's OEM code page. /U only
++	// changes this built-in receiver's output, not the argument escaping.
++	command.SysProcAttr.CmdLine = strings.Replace(command.SysProcAttr.CmdLine, " /E:ON", " /U /E:ON", 1)
++	timeout := time.AfterFunc(5*time.Second, func() { _ = process.Kill(command) })
++	defer timeout.Stop()
++	output, err := command.CombinedOutput()
++	if err != nil {
++		t.Fatalf("batch failed: %v output=%x", err, output)
++	}
++	if len(output)%2 != 0 {
++		t.Fatal("receiver did not emit UTF-16")
++	}
++	units := make([]uint16, len(output)/2)
++	for i := range units {
++		units[i] = binary.LittleEndian.Uint16(output[2*i:])
++	}
++	raw := strings.TrimSuffix(string(utf16.Decode(units)), "\r\n")
++	received := ownedDecodeWindowsArgv(t, "fixture "+raw)[1:]
++	if !reflect.DeepEqual(received, args) {
++		t.Fatalf("batch argv=%q want=%q raw=%q", received, args, raw)
++	}
++	if reflect.DeepEqual(ownedDecodeWindowsArgv(t, `fixture "embedded""quote" "next"`)[1:], []string{`embedded"quote`, "next"}) {
++		t.Fatal("receiver did not detect the original doubled-quote incompatibility")
++	}
++}
++
++func ownedDecodeWindowsArgv(t *testing.T, line string) []string {
++	t.Helper()
++	out, err := windows.DecomposeCommandLine(line)
++	if err != nil || len(out) == 0 {
++		t.Fatalf("native argv decoder: %v", err)
++	}
++	return out
++}
++
++func TestNativeOwnedStdioWindowsBatchRejectsUnrepresentableArguments(t *testing.T) {
++	for _, value := range []string{"line\nfeed", "carriage\rreturn", "nul\x00byte"} {
++		if _, err := quoteStdioBatchArgument(value); err == nil {
++			t.Fatal("unrepresentable batch argument accepted")
++		}
++	}
++}
++
++func TestNativeOwnedStdioWindowsBatchShutdownReapsDescendants(t *testing.T) {
++	cfg, file := ownedFixtureConfig(t, "orphan")
++	dir := filepath.Join(t.TempDir(), "batch tree with spaces")
++	if err := os.Mkdir(dir, 0700); err != nil {
++		t.Fatal(err)
++	}
++	program := filepath.Join(dir, "wrapper.bAt")
++	script := "@echo off\r\n\"" + cfg.Command[0] + "\" %*\r\n"
++	if err := os.WriteFile(program, []byte(script), 0600); err != nil {
++		t.Fatal(err)
++	}
++	cfg.Command[0] = "wrapper.bAt"
++	cfg.Cwd = dir
++	transport, err := defaultTransport(t.Context(), cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	wire, err := transport.Connect(t.Context())
++	if err != nil {
++		t.Fatal(err)
++	}
++	connection := wire.(*ownedStdioConnection)
++	defer connection.Close()
++	defer connection.abort()
++	pids := waitOwnedFixture(t, file)
++	_ = connection.Close()
++	assertOwnedFixtureExited(t, pids)
++	if ownedTestProcessAlive(connection.command.Process.Pid) {
++		t.Fatal("batch shell remained alive")
++	}
++}

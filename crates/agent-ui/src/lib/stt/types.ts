@@ -59,5 +59,7 @@ export interface SttSettingsService {
   revealSecret?: (provider: SttProviderId, field: SttSecretField) => Promise<string>;
   get: () => Promise<AppSettings["stt"]>;
   update: (settings: AppSettings["stt"]) => Promise<AppSettings["stt"]>;
+  /** Accept an already committed snapshot without submitting it a second time. */
+  acceptPersisted?: (settings: AppSettings["stt"]) => void;
   test: (provider: SttProviderId) => Promise<SttConnectionTestResponse>;
 }

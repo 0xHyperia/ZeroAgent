@@ -1,5 +1,11 @@
 import type { McpServerConfig } from "@liveagent/app/lib/settings/index";
 import { AlertTriangle, McpLogo, Plus, Save } from "@liveagent/ui/components/IconSet";
+import {
+  FormField,
+  FormFieldDescription,
+  FormFieldLabel,
+} from "@liveagent/ui/components/settings/FormField";
+import { SettingsNotice } from "@liveagent/ui/components/settings/SettingsNotice";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   Dialog,
@@ -11,7 +17,6 @@ import {
   DialogTitle,
 } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
-import { Label } from "@liveagent/ui/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,8 +39,10 @@ type ServerDraft = {
   argsText: string;
   envText: string;
   url: string;
-  messageUrl: string;
   headersText: string;
+  authType: "none" | "oauth";
+  authScope: string;
+  authClientId: string;
 };
 
 function formatKeyValueRecord(input: Record<string, string> | undefined) {
@@ -53,7 +60,7 @@ function parseLineList(input: string) {
     .filter(Boolean);
 }
 
-function parseKeyValueDraft(input: string, errorPrefix: string) {
+export function parseKeyValueDraft(input: string, errorPrefix: string, configured: string[] = []) {
   const out: Record<string, string> = {};
   for (const line of input.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -64,7 +71,7 @@ function parseKeyValueDraft(input: string, errorPrefix: string) {
     }
     const key = trimmed.slice(0, eq).trim();
     const value = trimmed.slice(eq + 1).trim();
-    if (!key || !value) {
+    if (!key || (!value && !configured.includes(key))) {
       throw new Error(`${errorPrefix}${trimmed}`);
     }
     out[key] = value;
@@ -95,8 +102,10 @@ function blankDraft(existingIds: string[]): ServerDraft {
     argsText: "",
     envText: "",
     url: "",
-    messageUrl: "",
     headersText: "",
+    authType: "none",
+    authScope: "",
+    authClientId: "",
   };
 }
 
@@ -113,8 +122,10 @@ function draftFromServer(server: McpServerConfig): ServerDraft {
     argsText: (server.args ?? []).join("\n"),
     envText: formatKeyValueRecord(server.env),
     url: server.url ?? "",
-    messageUrl: server.messageUrl ?? "",
     headersText: formatKeyValueRecord(server.headers),
+    authType: server.auth?.type === "oauth" ? "oauth" : "none",
+    authScope: server.auth?.scope ?? "",
+    authClientId: server.auth?.clientId ?? "",
   };
 }
 
@@ -151,11 +162,16 @@ function buildServerFromDraft(
       command,
       args: parseLineList(draft.argsText),
       cwd: draft.cwd.trim() || undefined,
-      env: parseKeyValueDraft(draft.envText, `${t("mcpHub.invalidKeyValue")} `),
+      env: parseKeyValueDraft(
+        draft.envText,
+        `${t("mcpHub.invalidKeyValue")} `,
+        base?.envConfigured,
+      ),
       url: "",
       messageUrl: undefined,
       headers: undefined,
       timeoutMs,
+      auth: undefined,
     };
   }
 
@@ -163,6 +179,8 @@ function buildServerFromDraft(
   if (!url) {
     throw new Error(t("mcpHub.invalidUrl"));
   }
+  const authScope = draft.authScope.trim();
+  const authClientId = draft.authClientId.trim();
   return {
     ...(base ?? {}),
     id,
@@ -173,11 +191,23 @@ function buildServerFromDraft(
     command: "",
     args: [],
     url,
-    messageUrl: draft.transport === "sse" ? draft.messageUrl.trim() || undefined : undefined,
-    headers: parseKeyValueDraft(draft.headersText, `${t("mcpHub.invalidKeyValue")} `),
+    messageUrl: undefined,
+    headers: parseKeyValueDraft(
+      draft.headersText,
+      `${t("mcpHub.invalidKeyValue")} `,
+      base?.headersConfigured,
+    ),
     cwd: undefined,
     env: undefined,
     timeoutMs,
+    auth:
+      draft.authType === "oauth"
+        ? {
+            type: "oauth",
+            ...(authScope ? { scope: authScope } : {}),
+            ...(authClientId ? { clientId: authClientId } : {}),
+          }
+        : undefined,
   };
 }
 export function McpServerEditModal(props: {
@@ -225,7 +255,6 @@ export function McpServerEditModal(props: {
   }
 
   const isStdio = draft.transport === "stdio";
-  const isSse = draft.transport === "sse";
   const title = mode === "add" ? t("mcpHub.addTitle") : t("mcpHub.editTitle");
   const subtitleRaw =
     mode === "add"
@@ -236,15 +265,15 @@ export function McpServerEditModal(props: {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="flex max-h-[92dvh] max-w-3xl flex-col p-0"
+        className="flex h-[min(48rem,calc(100dvh-2rem))] max-w-xl flex-col p-0"
         closeLabel={t("settings.cancel")}
         layout="fullscreen-mobile"
         showCloseButton
       >
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="flex-row items-center gap-3 px-6 py-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <McpLogo className="h-5 w-5" />
+          <DialogHeader className="flex-row items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <McpLogo className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
               <DialogTitle>{title}</DialogTitle>
@@ -254,7 +283,7 @@ export function McpServerEditModal(props: {
             </div>
           </DialogHeader>
 
-          <DialogBody className="px-6 py-5">
+          <DialogBody>
             <div className="space-y-6">
               <section aria-labelledby="mcp-edit-basics-heading" className="space-y-3">
                 <h3
@@ -263,26 +292,27 @@ export function McpServerEditModal(props: {
                 >
                   {t("mcpHub.basicSettings")}
                 </h3>
-                <div className="grid gap-x-3 gap-y-4 sm:grid-cols-4">
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="mcp-edit-id" className="text-xs text-muted-foreground">
+                <div className="grid gap-x-3 gap-y-4">
+                  <FormField density="compact">
+                    <FormFieldLabel htmlFor="mcp-edit-id" size="compact">
                       {t("mcpHub.serverName")}
-                    </Label>
+                    </FormFieldLabel>
                     <Input
+                      variant="plain"
                       id="mcp-edit-id"
                       value={draft.id}
                       placeholder={t("mcpHub.serverNamePlaceholder")}
                       aria-describedby="mcp-edit-id-hint"
                       onChange={(event) => updateDraft({ id: event.currentTarget.value })}
                     />
-                    <p id="mcp-edit-id-hint" className="text-xs leading-5 text-muted-foreground">
+                    <FormFieldDescription id="mcp-edit-id-hint">
                       {t("mcpHub.serverNameHint")}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mcp-edit-transport" className="text-xs text-muted-foreground">
+                    </FormFieldDescription>
+                  </FormField>
+                  <FormField density="compact">
+                    <FormFieldLabel htmlFor="mcp-edit-transport" size="compact">
                       {t("mcpHub.transport")}
-                    </Label>
+                    </FormFieldLabel>
                     <Select
                       value={draft.transport}
                       onValueChange={(value) => {
@@ -291,7 +321,7 @@ export function McpServerEditModal(props: {
                         updateDraft({ transport });
                       }}
                     >
-                      <SelectTrigger id="mcp-edit-transport">
+                      <SelectTrigger variant="plain" id="mcp-edit-transport">
                         <SelectValue placeholder={t("mcpHub.selectTransport")} />
                       </SelectTrigger>
                       <SelectContent>
@@ -300,12 +330,13 @@ export function McpServerEditModal(props: {
                         <SelectItem value="sse">{t("mcpHub.sse")}</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mcp-edit-timeout" className="text-xs text-muted-foreground">
+                  </FormField>
+                  <FormField density="compact">
+                    <FormFieldLabel htmlFor="mcp-edit-timeout" size="compact">
                       {t("mcpHub.timeout")}
-                    </Label>
+                    </FormFieldLabel>
                     <Input
+                      variant="plain"
                       id="mcp-edit-timeout"
                       type="text"
                       inputMode="numeric"
@@ -314,7 +345,7 @@ export function McpServerEditModal(props: {
                       placeholder="60000"
                       onChange={(event) => updateDraft({ timeoutMs: event.currentTarget.value })}
                     />
-                  </div>
+                  </FormField>
                 </div>
               </section>
 
@@ -330,38 +361,41 @@ export function McpServerEditModal(props: {
                 </h3>
                 {isStdio ? (
                   <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mcp-edit-command" className="text-xs text-muted-foreground">
+                    <div className="grid gap-3">
+                      <FormField density="compact">
+                        <FormFieldLabel htmlFor="mcp-edit-command" size="compact">
                           {t("mcpHub.command")}
-                        </Label>
+                        </FormFieldLabel>
                         <Input
+                          variant="plain"
                           id="mcp-edit-command"
                           value={draft.command}
                           placeholder="npx"
-                          className="font-mono text-[12.5px]"
+                          className="font-mono text-xs"
                           onChange={(event) => updateDraft({ command: event.currentTarget.value })}
                         />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mcp-edit-cwd" className="text-xs text-muted-foreground">
+                      </FormField>
+                      <FormField density="compact">
+                        <FormFieldLabel htmlFor="mcp-edit-cwd" size="compact">
                           {t("mcpHub.cwd")}
-                        </Label>
+                        </FormFieldLabel>
                         <Input
+                          variant="plain"
                           id="mcp-edit-cwd"
                           value={draft.cwd}
                           placeholder={t("mcpHub.cwdDefault")}
-                          className="font-mono text-[12.5px]"
+                          className="font-mono text-xs"
                           onChange={(event) => updateDraft({ cwd: event.currentTarget.value })}
                         />
-                      </div>
+                      </FormField>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mcp-edit-args" className="text-xs text-muted-foreground">
+                    <div className="grid gap-3">
+                      <FormField density="compact">
+                        <FormFieldLabel htmlFor="mcp-edit-args" size="compact">
                           {t("mcpHub.args")}
-                        </Label>
+                        </FormFieldLabel>
                         <Textarea
+                          variant="plain"
                           id="mcp-edit-args"
                           rows={4}
                           value={draft.argsText}
@@ -369,12 +403,13 @@ export function McpServerEditModal(props: {
                           className="resize-y font-mono text-xs"
                           onChange={(event) => updateDraft({ argsText: event.currentTarget.value })}
                         />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mcp-edit-env" className="text-xs text-muted-foreground">
+                      </FormField>
+                      <FormField density="compact">
+                        <FormFieldLabel htmlFor="mcp-edit-env" size="compact">
                           {t("mcpHub.env")}
-                        </Label>
+                        </FormFieldLabel>
                         <Textarea
+                          variant="plain"
                           id="mcp-edit-env"
                           rows={4}
                           value={draft.envText}
@@ -382,16 +417,22 @@ export function McpServerEditModal(props: {
                           className="resize-y font-mono text-xs"
                           onChange={(event) => updateDraft({ envText: event.currentTarget.value })}
                         />
-                      </div>
+                        {!!initialServer?.envConfigured?.length && (
+                          <FormFieldDescription>
+                            {t("mcpHub.storedPrivateValueHint")}
+                          </FormFieldDescription>
+                        )}
+                      </FormField>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="mcp-edit-url" className="text-xs text-muted-foreground">
+                    <FormField density="compact">
+                      <FormFieldLabel htmlFor="mcp-edit-url" size="compact">
                         {draft.transport === "http" ? t("mcpHub.urlHttp") : t("mcpHub.urlSse")}
-                      </Label>
+                      </FormFieldLabel>
                       <Input
+                        variant="plain"
                         id="mcp-edit-url"
                         value={draft.url}
                         placeholder={
@@ -399,36 +440,16 @@ export function McpServerEditModal(props: {
                             ? "http://127.0.0.1:3000/mcp"
                             : "http://127.0.0.1:3000/sse"
                         }
-                        className="font-mono text-[12.5px]"
+                        className="font-mono text-xs"
                         onChange={(event) => updateDraft({ url: event.currentTarget.value })}
                       />
-                    </div>
-                    {isSse ? (
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="mcp-edit-message-url"
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t("mcpHub.messageUrl")}
-                        </Label>
-                        <Input
-                          id="mcp-edit-message-url"
-                          value={draft.messageUrl}
-                          placeholder="http://127.0.0.1:3000/message"
-                          className="font-mono text-[12.5px]"
-                          onChange={(event) =>
-                            updateDraft({
-                              messageUrl: event.currentTarget.value,
-                            })
-                          }
-                        />
-                      </div>
-                    ) : null}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="mcp-edit-headers" className="text-xs text-muted-foreground">
+                    </FormField>
+                    <FormField density="compact">
+                      <FormFieldLabel htmlFor="mcp-edit-headers" size="compact">
                         {t("mcpHub.headers")}
-                      </Label>
+                      </FormFieldLabel>
                       <Textarea
+                        variant="plain"
                         id="mcp-edit-headers"
                         rows={4}
                         value={draft.headersText}
@@ -440,6 +461,71 @@ export function McpServerEditModal(props: {
                           })
                         }
                       />
+                      {!!initialServer?.headersConfigured?.length && (
+                        <FormFieldDescription>
+                          {t("mcpHub.storedPrivateValueHint")}
+                        </FormFieldDescription>
+                      )}
+                    </FormField>
+                    <div className="grid gap-x-3 gap-y-4">
+                      <FormField density="compact">
+                        <FormFieldLabel htmlFor="mcp-edit-auth-type" size="compact">
+                          {t("mcpHub.authType")}
+                        </FormFieldLabel>
+                        <Select
+                          value={draft.authType}
+                          onValueChange={(value) =>
+                            updateDraft({ authType: value === "oauth" ? "oauth" : "none" })
+                          }
+                        >
+                          <SelectTrigger variant="plain" id="mcp-edit-auth-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">{t("mcpHub.authNone")}</SelectItem>
+                            <SelectItem value="oauth">{t("mcpHub.authOauth")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormFieldDescription>
+                          {draft.authType === "oauth"
+                            ? t("mcpHub.authOauthHint")
+                            : t("mcpHub.authNoneHint")}
+                        </FormFieldDescription>
+                      </FormField>
+                      {draft.authType === "oauth" ? (
+                        <>
+                          <FormField density="compact">
+                            <FormFieldLabel htmlFor="mcp-edit-auth-scope" size="compact">
+                              {t("mcpHub.authScope")}
+                            </FormFieldLabel>
+                            <Input
+                              variant="plain"
+                              id="mcp-edit-auth-scope"
+                              value={draft.authScope}
+                              placeholder={t("mcpHub.authScopePlaceholder")}
+                              className="font-mono text-xs"
+                              onChange={(event) =>
+                                updateDraft({ authScope: event.currentTarget.value })
+                              }
+                            />
+                          </FormField>
+                          <FormField density="compact">
+                            <FormFieldLabel htmlFor="mcp-edit-auth-client-id" size="compact">
+                              {t("mcpHub.authClientId")}
+                            </FormFieldLabel>
+                            <Input
+                              variant="plain"
+                              id="mcp-edit-auth-client-id"
+                              value={draft.authClientId}
+                              placeholder={t("mcpHub.authClientIdPlaceholder")}
+                              className="font-mono text-xs"
+                              onChange={(event) =>
+                                updateDraft({ authClientId: event.currentTarget.value })
+                              }
+                            />
+                          </FormField>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 )}
@@ -455,12 +541,13 @@ export function McpServerEditModal(props: {
                 >
                   {t("mcpHub.optionalDetails")}
                 </h3>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mcp-edit-description" className="text-xs text-muted-foreground">
+                <div className="grid gap-3">
+                  <FormField density="compact">
+                    <FormFieldLabel htmlFor="mcp-edit-description" size="compact">
                       {t("mcpHub.description")}
-                    </Label>
+                    </FormFieldLabel>
                     <Textarea
+                      variant="plain"
                       id="mcp-edit-description"
                       rows={3}
                       value={draft.description}
@@ -468,38 +555,39 @@ export function McpServerEditModal(props: {
                       className="resize-y text-sm"
                       onChange={(event) => updateDraft({ description: event.currentTarget.value })}
                     />
-                  </div>
+                  </FormField>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mcp-edit-docs-url" className="text-xs text-muted-foreground">
+                  <FormField density="compact">
+                    <FormFieldLabel htmlFor="mcp-edit-docs-url" size="compact">
                       {t("mcpHub.docsUrl")}
-                    </Label>
+                    </FormFieldLabel>
                     <Input
+                      variant="plain"
                       id="mcp-edit-docs-url"
                       value={draft.docsUrl}
                       placeholder={t("mcpHub.docsUrlPlaceholder")}
                       className="font-mono text-xs"
                       onChange={(event) => updateDraft({ docsUrl: event.currentTarget.value })}
                     />
-                  </div>
+                  </FormField>
                 </div>
               </section>
 
               {formError ? (
-                <div className="flex items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/[0.06] px-3 py-2.5 text-xs text-destructive">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <SettingsNotice variant="validation">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span>{formError}</span>
-                </div>
+                </SettingsNotice>
               ) : null}
             </div>
           </DialogBody>
 
-          <DialogFooter className="flex-row flex-wrap px-6 py-3.5">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <DialogFooter className="flex-row flex-wrap">
+            <Button size="sm" type="button" variant="outline" onClick={onClose}>
               {t("settings.cancel")}
             </Button>
-            <Button type="submit" className="gap-1.5">
-              {mode === "add" ? <Plus className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            <Button size="sm" type="submit" className="gap-1.5">
+              {mode === "add" ? <Plus className="size-3.5" /> : <Save className="size-3.5" />}
               {submitLabel}
             </Button>
           </DialogFooter>

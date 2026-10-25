@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,9 +26,24 @@ func fatal(msg string, args ...any) {
 	os.Exit(1)
 }
 
+func validateManagedDesktop(cfg *config.Config) error {
+	host, _, err := net.SplitHostPort(cfg.HTTPAddr)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !ip.IsLoopback() || cfg.InstanceNonce == "" || cfg.Token == "" || cfg.TLSCert != "" || cfg.TLSKey != "" {
+		return fmt.Errorf("desktop-owned Gateway requires an authenticated plain HTTP numeric loopback listener and launch nonce")
+	}
+	return nil
+}
+
 func main() {
 	observability.SetupLogging()
 	cfg := config.Load()
+	managedDesktop := os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1"
+	if managedDesktop {
+		if err := validateManagedDesktop(cfg); err != nil {
+			fatal("invalid local Gateway configuration", "err", err)
+		}
+	}
 	//nolint:staticcheck // 读取弃用字段正是为了对旧启动脚本发出弃用警告。
 	if cfg.GRPCAddr != "" {
 		slog.Warn("-grpc-addr is deprecated and ignored: the v1 gRPC listener was removed; desktop clients connect via /ws/v2/agent on the HTTP port")
@@ -38,7 +56,7 @@ func main() {
 	var accountStore account.Store = account.NewMemoryStore()
 	var closeAccountStore func() error
 	var readinessCheck func(context.Context) error
-	if cfg.DatabaseURL != "" || cfg.RedisURL != "" {
+	if !managedDesktop && (cfg.DatabaseURL != "" || cfg.RedisURL != "") {
 		startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		persistentStore, storeErr := account.OpenPersistentStore(startupCtx, cfg.DatabaseURL, cfg.RedisURL)
 		startupCancel()
@@ -49,14 +67,28 @@ func main() {
 		closeAccountStore = persistentStore.Close
 		readinessCheck = persistentStore.Ready
 		slog.Info("account storage enabled", "postgres", true, "redis", true)
-	} else {
+	} else if !managedDesktop {
 		slog.Warn("DATABASE_URL and REDIS_URL are not configured; account sessions and devices use in-memory development storage")
 	}
 	accountService := account.NewService(accountStore, usaClient, cfg.WebSessionTTL, cfg.SelectionLeaseTTL)
 
+	images := server.NewLocalImageHub(cfg)
+	var httpHandler http.Handler
+	if managedDesktop {
+		httpHandler = server.NewHTTPServerWithLocalImages(cfg, sm, nil, images)
+	} else {
+		httpHandler = server.NewHTTPServerWithReadiness(cfg, sm, accountService, readinessCheck)
+	}
+	if closer, ok := httpHandler.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				slog.Warn("http handler cleanup error", "err", err)
+			}
+		}()
+	}
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.NewHTTPServerWithReadiness(cfg, sm, accountService, readinessCheck),
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -78,8 +110,18 @@ func main() {
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+	var parentClosed <-chan struct{}
+	if os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
+		// The desktop retains the pipe's write handle for its whole lifetime and
+		// writes only control lines (Image Studio backend rebinds). EOF also covers
+		// force termination and development rebuilds, where no desktop exit
+		// callback or Rust destructor can run.
+		parentClosed = server.WatchDesktopParent(os.Stdin, images)
+	}
 
 	select {
+	case <-parentClosed:
+		slog.Info("desktop parent exited, shutting down")
 	case sig := <-signalCh:
 		slog.Info("received signal, shutting down", "signal", sig.String())
 	case err := <-errCh:

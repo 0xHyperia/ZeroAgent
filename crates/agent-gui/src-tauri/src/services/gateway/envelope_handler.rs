@@ -1,13 +1,9 @@
 use std::sync::Arc;
 
-use serde_json::Value;
 use tauri::Emitter;
 
 use crate::commands::chat_history::{self};
-use crate::commands::settings::{
-    apply_ssh_patch_with_conn, open_db, redact_gateway_settings_sync_payload,
-    reset_runtime_ssh_known_host, SSH_PATCH_FIELD,
-};
+use crate::commands::settings::reset_runtime_ssh_known_host;
 use crate::services::gateway_bridge;
 use crate::services::workspace_watch::WatchSource;
 
@@ -30,6 +26,31 @@ impl GatewayController {
         envelope: proto::GatewayEnvelope,
     ) -> Result<(), String> {
         let request_id = envelope.request_id.clone();
+        if matches!(
+            envelope.payload.as_ref(),
+            Some(
+                proto::gateway_envelope::Payload::HistoryList(_)
+                    | proto::gateway_envelope::Payload::HistoryWorkdirs(_)
+                    | proto::gateway_envelope::Payload::HistoryGet(_)
+                    | proto::gateway_envelope::Payload::HistoryRename(_)
+                    | proto::gateway_envelope::Payload::HistoryPin(_)
+                    | proto::gateway_envelope::Payload::HistorySetCwd(_)
+                    | proto::gateway_envelope::Payload::HistoryDelete(_)
+            )
+        ) {
+            let controller = Arc::clone(self);
+            tauri::async_runtime::spawn(async move {
+                if let Some(payload) = envelope.payload {
+                    if let Err(error) = controller
+                        .handle_kbrain_history_request(request_id, &payload)
+                        .await
+                    {
+                        eprintln!("gateway K-brain history request failed: {error}");
+                    }
+                }
+            });
+            return Ok(());
+        }
 
         match envelope.payload {
             Some(proto::gateway_envelope::Payload::Ping(ping)) => {
@@ -85,13 +106,41 @@ impl GatewayController {
             Some(proto::gateway_envelope::Payload::ChatQueue(request)) => {
                 self.handle_chat_queue_request(request_id, request).await
             }
+            Some(proto::gateway_envelope::Payload::ClarifyTurn(request)) => {
+                // handle_clarify_turn blocks on a 120s oneshot for slow
+                // completions; spawn it so it never stalls the single-threaded
+                // gateway dispatcher loop.
+                let this = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = this.handle_clarify_turn(request_id, request).await {
+                        eprintln!("handle clarify turn failed: {error}");
+                    }
+                });
+                Ok(())
+            }
             Some(proto::gateway_envelope::Payload::ChatIngressAck(ack)) => {
                 self.handle_chat_ingress_ack(request_id, ack).await
+            }
+            Some(proto::gateway_envelope::Payload::Planning(request)) => {
+                let result =
+                    crate::services::planning::handle_request(&self.app_handle, request).await;
+                match result {
+                    Ok(response) => {
+                        self.send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::PlanningResp(response)),
+                        })
+                        .await
+                    }
+                    Err(error) => self.send_error_response(request_id, 400, error).await,
+                }
             }
             Some(proto::gateway_envelope::Payload::CronManage(request)) => {
                 // Successful apply actions broadcast their own snapshot via the
                 // AutomationStore notifier; no extra refresh is needed here.
                 match gateway_bridge::handle_cron_manage(
+                    self.app_handle.clone(),
                     Arc::clone(&self.automation_store),
                     request,
                 )
@@ -525,7 +574,7 @@ impl GatewayController {
                 Ok(())
             }
             Some(proto::gateway_envelope::Payload::ProviderList(_request)) => {
-                match gateway_bridge::handle_provider_list().await {
+                match gateway_bridge::handle_provider_list(self.app_handle.clone()).await {
                     Ok(response) => {
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,
@@ -559,7 +608,8 @@ impl GatewayController {
                 Ok(())
             }
             Some(proto::gateway_envelope::Payload::ProviderModels(request)) => {
-                match gateway_bridge::handle_provider_models(request).await {
+                match gateway_bridge::handle_provider_models(self.app_handle.clone(), request).await
+                {
                     Ok(response) => {
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,
@@ -573,198 +623,184 @@ impl GatewayController {
                     Err(error) => self.send_error_response(request_id, 502, error).await,
                 }
             }
+            Some(proto::gateway_envelope::Payload::PromptTemplateList(_))
+            | Some(proto::gateway_envelope::Payload::PromptTemplateExpand(_)) => {
+                // 提示词模板已并入指令目录（slash_command_list）与 ChatRequest.prompt_command，
+                // Gateway 也不再放行这两条通道；保留 proto 字段只为兼容。
+                self.send_error_response(
+                    request_id,
+                    410,
+                    "prompt template requests are retired; use slash_command_list and prompt_command"
+                        .to_string(),
+                )
+                .await
+            }
+            // 以下三类都要等 K-brain 或 WebView 回应，一律 spawn，避免卡住单线程的分发循环。
+            Some(proto::gateway_envelope::Payload::SlashCommandList(request)) => {
+                let controller = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    let result = match gateway_bridge::handle_slash_command_list(
+                        controller.app_handle.clone(),
+                        request,
+                    )
+                    .await
+                    {
+                        Ok(response) => {
+                            controller
+                                .send_agent_envelope(proto::AgentEnvelope {
+                                    request_id: request_id.clone(),
+                                    timestamp: now_unix_seconds(),
+                                    payload: Some(
+                                        proto::agent_envelope::Payload::SlashCommandListResp(
+                                            response,
+                                        ),
+                                    ),
+                                })
+                                .await
+                        }
+                        Err(error) => controller.send_error_response(request_id, 502, error).await,
+                    };
+                    if let Err(error) = result {
+                        eprintln!("handle slash command list failed: {error}");
+                    }
+                });
+                Ok(())
+            }
+            Some(proto::gateway_envelope::Payload::GoalManage(request)) => {
+                let controller = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = controller.handle_goal_manage(request_id, request).await {
+                        eprintln!("handle goal manage failed: {error}");
+                    }
+                });
+                Ok(())
+            }
+            Some(proto::gateway_envelope::Payload::LoopManage(request)) => {
+                let controller = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = controller.handle_loop_manage(request_id, request).await {
+                        eprintln!("handle loop manage failed: {error}");
+                    }
+                });
+                Ok(())
+            }
             Some(proto::gateway_envelope::Payload::SettingsGet(_request)) => {
+                // Keep replies on the stream that received the request, across a slow commit.
+                let response_sender = self.current_outbound_sender()?;
                 match self.current_settings_snapshot().await {
                     Ok(snapshot) => {
                         let settings_json = match serialize_settings_sync_payload(&snapshot) {
                             Ok(settings_json) => settings_json,
                             Err(error) => {
-                                return self.send_error_response(request_id, 500, error).await;
+                                return send_agent_envelope_to(
+                                    response_sender.clone(),
+                                    build_error_response_envelope(request_id, 500, error),
+                                )
+                                .await;
                             }
                         };
-                        self.send_agent_envelope(proto::AgentEnvelope {
-                            request_id,
-                            timestamp: now_unix_seconds(),
-                            payload: Some(proto::agent_envelope::Payload::SettingsGetResp(
-                                proto::SettingsGetResponse { settings_json },
-                            )),
-                        })
+                        send_agent_envelope_to(
+                            response_sender.clone(),
+                            proto::AgentEnvelope {
+                                request_id,
+                                timestamp: now_unix_seconds(),
+                                payload: Some(proto::agent_envelope::Payload::SettingsGetResp(
+                                    proto::SettingsGetResponse { settings_json },
+                                )),
+                            },
+                        )
                         .await
                     }
-                    Err(error) => self.send_error_response(request_id, 500, error).await,
+                    Err(error) => {
+                        send_agent_envelope_to(
+                            response_sender.clone(),
+                            build_error_response_envelope(request_id, 500, error),
+                        )
+                        .await
+                    }
                 }
             }
             Some(proto::gateway_envelope::Payload::SettingsUpdate(request)) => {
-                match parse_settings_sync_payload(&request.settings_json) {
-                    Ok(snapshot) => {
-                        if snapshot.get(SSH_PATCH_FIELD).is_some() {
-                            let patch_payload = snapshot.clone();
-                            let apply_response =
-                                match tauri::async_runtime::spawn_blocking(move || {
-                                    let mut conn = open_db()?;
-                                    apply_ssh_patch_with_conn(&mut conn, patch_payload)
-                                })
-                                .await
-                                .map_err(|e| format!("settings ssh patch join failed: {e}"))
-                                {
-                                    Ok(Ok(response)) => response,
-                                    Ok(Err(error)) | Err(error) => {
-                                        return self
-                                            .send_error_response(request_id, 500, error)
-                                            .await;
-                                    }
-                                };
-                            if let Some(conflict) = apply_response.conflict {
-                                return self
-                                    .send_agent_envelope(proto::AgentEnvelope {
-                                        request_id,
-                                        timestamp: now_unix_seconds(),
-                                        payload: Some(
-                                            proto::agent_envelope::Payload::SettingsUpdateResp(
-                                                proto::SettingsUpdateResponse {
-                                                    accepted: false,
-                                                    message: conflict.gateway_message().to_string(),
-                                                },
-                                            ),
-                                        ),
-                                    })
-                                    .await;
-                            }
-
-                            let fresh_snapshot = match self.current_settings_snapshot().await {
-                                Ok(snapshot) => snapshot,
-                                Err(error) => {
-                                    return self.send_error_response(request_id, 500, error).await;
-                                }
-                            };
-                            let merged_ssh =
-                                fresh_snapshot.get("ssh").cloned().unwrap_or(Value::Null);
-                            let event_payload =
-                                match build_local_settings_update_event_payload_with_ssh(
-                                    snapshot.clone(),
-                                    merged_ssh,
-                                ) {
-                                    Ok(payload) => payload,
-                                    Err(error) => {
-                                        return self
-                                            .send_error_response(request_id, 400, error)
-                                            .await;
-                                    }
-                                };
-                            if let Err(error) = self
-                                .app_handle
-                                .emit(GATEWAY_SETTINGS_SYNC_EVENT, event_payload)
-                            {
-                                return self
-                                    .send_error_response(
-                                        request_id,
-                                        500,
-                                        format!("emit gateway settings sync failed: {error}"),
-                                    )
-                                    .await;
-                            }
-                            if let Err(error) = self.publish_settings_sync(fresh_snapshot).await {
-                                eprintln!("publish gateway ssh settings sync failed: {error}");
-                            }
-                            return self
-                                .send_agent_envelope(proto::AgentEnvelope {
-                                    request_id,
-                                    timestamp: now_unix_seconds(),
-                                    payload: Some(
-                                        proto::agent_envelope::Payload::SettingsUpdateResp(
-                                            proto::SettingsUpdateResponse {
-                                                accepted: true,
-                                                message: "ok".to_string(),
-                                            },
-                                        ),
-                                    ),
-                                })
-                                .await;
-                        }
-
-                        let event_payload =
-                            match build_local_settings_update_event_payload(snapshot.clone()) {
-                                Ok(payload) => payload,
-                                Err(error) => {
-                                    return self.send_error_response(request_id, 400, error).await;
-                                }
-                            };
-                        let public_update = match redact_gateway_settings_sync_payload(snapshot) {
-                            Ok(payload) => payload,
-                            Err(error) => {
-                                return self.send_error_response(request_id, 400, error).await;
-                            }
-                        };
-                        // The update is a partial payload (only changed fields, e.g.
-                        // {"theme":"dark"}). Overlay it onto the current full snapshot;
-                        // storing it as-is would drop every other cached field and let
-                        // rebuilt snapshots revert UI-only settings like theme.
-                        let current_snapshot = match self.current_settings_snapshot().await {
-                            Ok(snapshot) => snapshot,
-                            Err(error) => {
-                                return self.send_error_response(request_id, 500, error).await;
-                            }
-                        };
-                        let removed_project_ids = match removed_workspace_project_ids(
-                            &current_snapshot,
-                            &public_update,
-                        ) {
-                            Ok(project_ids) => project_ids,
-                            Err(error) => {
-                                return self.send_error_response(request_id, 400, error).await;
-                            }
-                        };
-                        let merged_snapshot = match merge_settings_update_into_snapshot(
-                            current_snapshot,
-                            public_update,
-                        ) {
-                            Ok(payload) => payload,
-                            Err(error) => {
-                                return self.send_error_response(request_id, 400, error).await;
-                            }
-                        };
-                        if let Err(error) =
-                            crate::commands::root_grants::revoke_workspace_root_grants_for_projects(
-                                removed_project_ids,
-                            )
-                            .await
-                        {
-                            return self.send_error_response(request_id, 500, error).await;
-                        }
-                        if let Err(error) = self.store_settings_snapshot(merged_snapshot) {
-                            return self.send_error_response(request_id, 500, error).await;
-                        }
-                        match self
-                            .app_handle
-                            .emit(GATEWAY_SETTINGS_SYNC_EVENT, event_payload)
-                        {
-                            Ok(()) => {
-                                self.send_agent_envelope(proto::AgentEnvelope {
-                                    request_id,
-                                    timestamp: now_unix_seconds(),
-                                    payload: Some(
-                                        proto::agent_envelope::Payload::SettingsUpdateResp(
-                                            proto::SettingsUpdateResponse {
-                                                accepted: true,
-                                                message: "ok".to_string(),
-                                            },
-                                        ),
-                                    ),
-                                })
-                                .await
-                            }
-                            Err(error) => {
-                                self.send_error_response(
-                                    request_id,
-                                    500,
-                                    format!("emit gateway settings sync failed: {error}"),
-                                )
-                                .await
-                            }
-                        }
+                // Keep replies on the stream that received the request, across a slow commit.
+                let response_sender = self.current_outbound_sender()?;
+                let input = match parse_settings_sync_payload(&request.settings_json) {
+                    Ok(input) => input,
+                    Err(error) => {
+                        return send_agent_envelope_to(
+                            response_sender.clone(),
+                            build_error_response_envelope(request_id, 400, error),
+                        )
+                        .await
                     }
-                    Err(error) => self.send_error_response(request_id, 400, error).await,
+                };
+                let mut saved = match crate::commands::settings::save_device_configuration(
+                    self.app_handle.clone(),
+                    input,
+                )
+                .await
+                {
+                    Ok(saved) => saved,
+                    Err(error)
+                        if error.contains("ZEROAGENT_CONFIGURATION_")
+                            || error.contains("ZEROAGENT_NATIVE_CONFIGURATION_")
+                            || error.contains("ZEROAGENT_UI_PREFERENCES_") =>
+                    {
+                        return send_agent_envelope_to(
+                            response_sender.clone(),
+                            proto::AgentEnvelope {
+                                request_id,
+                                timestamp: now_unix_seconds(),
+                                payload: Some(proto::agent_envelope::Payload::SettingsUpdateResp(
+                                    proto::SettingsUpdateResponse {
+                                        accepted: false,
+                                        message: "configuration_changed".into(),
+                                    },
+                                )),
+                            },
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        return send_agent_envelope_to(
+                            response_sender.clone(),
+                            build_error_response_envelope(request_id, 400, error),
+                        )
+                        .await
+                    }
+                };
+                // From this point on persistence succeeded. Notification/transport failures
+                // must not report that the configuration was rejected or save it again.
+                if self
+                    .app_handle
+                    .emit(
+                        GATEWAY_SETTINGS_SYNC_EVENT,
+                        serde_json::json!({"committed":true}),
+                    )
+                    .is_err()
+                {
+                    saved.warning = Some("配置已保存，桌面界面暂未刷新".into());
                 }
+                if let Some(snapshot) = saved.snapshot.clone() {
+                    if self.publish_settings_sync(snapshot).await.is_err() {
+                        saved.warning = Some("配置已保存，设备广播暂未完成，请重新读取设置".into());
+                    }
+                }
+                let message =
+                    serde_json::to_string(&saved).map_err(|_| "无法序列化设备保存回执")?;
+                send_agent_envelope_to(
+                    response_sender.clone(),
+                    proto::AgentEnvelope {
+                        request_id,
+                        timestamp: now_unix_seconds(),
+                        payload: Some(proto::agent_envelope::Payload::SettingsUpdateResp(
+                            proto::SettingsUpdateResponse {
+                                accepted: true,
+                                message,
+                            },
+                        )),
+                    },
+                )
+                .await
             }
             Some(proto::gateway_envelope::Payload::SettingsResetSshKnownHost(request)) => {
                 let host = request.host.trim().to_string();
@@ -1014,6 +1050,59 @@ impl GatewayController {
                     Err(error) => self.send_error_response(request_id, 500, error).await,
                 }
             }
+            Some(proto::gateway_envelope::Payload::InstalledAppsList(_request)) => {
+                let host_identifier = self.app_handle.config().identifier.clone();
+                match gateway_bridge::handle_installed_apps_list(host_identifier).await {
+                    Ok(response) => {
+                        self.send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::InstalledAppsListResp(
+                                response,
+                            )),
+                        })
+                        .await
+                    }
+                    Err(error) => self.send_error_response(request_id, 500, error).await,
+                }
+            }
+            Some(proto::gateway_envelope::Payload::CuaDriver(request)) => {
+                match gateway_bridge::handle_cua_driver(request).await {
+                    Ok(response) => {
+                        self.send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::CuaDriverResp(response)),
+                        })
+                        .await
+                    }
+                    Err(error) => self.send_error_response(request_id, 500, error).await,
+                }
+            }
+            Some(proto::gateway_envelope::Payload::ProxyDetect(request)) => {
+                // 检测要等握手超时（约 1.5s），测速最长 10s；spawn 出去，别让 Ping、
+                // 聊天探活（ChatPrepareTimeout 2s）在单线程调度循环里排队。
+                let this = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    let result = match gateway_bridge::handle_proxy_detect(request).await {
+                        Ok(response) => {
+                            this.send_agent_envelope(proto::AgentEnvelope {
+                                request_id: request_id.clone(),
+                                timestamp: now_unix_seconds(),
+                                payload: Some(proto::agent_envelope::Payload::ProxyDetectResp(
+                                    response,
+                                )),
+                            })
+                            .await
+                        }
+                        Err(error) => this.send_error_response(request_id, 400, error).await,
+                    };
+                    if let Err(error) = result {
+                        eprintln!("handle proxy detect failed: {error}");
+                    }
+                });
+                Ok(())
+            }
             Some(proto::gateway_envelope::Payload::UploadReadableFiles(request)) => {
                 match gateway_bridge::handle_upload_readable_files(request).await {
                     Ok(response) => {
@@ -1142,6 +1231,7 @@ impl GatewayController {
                     Err(error) => self.send_error_response(request_id, 500, error).await,
                 }
             }
+
             Some(proto::gateway_envelope::Payload::SftpRequest(request)) => {
                 match self.handle_sftp_request(request).await {
                     Ok(response) => {
@@ -1188,5 +1278,18 @@ impl GatewayController {
             }
             None => Ok(()),
         }
+    }
+}
+
+impl GatewayController {
+    pub(crate) async fn publish_planning_changed(&self, seq: u64) -> Result<(), String> {
+        self.send_agent_envelope(proto::AgentEnvelope {
+            request_id: String::new(),
+            timestamp: now_unix_seconds(),
+            payload: Some(proto::agent_envelope::Payload::PlanningChanged(
+                proto::PlanningChanged { seq },
+            )),
+        })
+        .await
     }
 }

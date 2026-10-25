@@ -1,12 +1,18 @@
-import { fetchModelsFromApi } from "@liveagent/ui/pages/settings/providerUtils";
+import { createKBrainClient } from "../kbrain/client";
 import {
-  getDefaultUsageQueryConfig,
   type AppSettings,
   type CustomProvider,
+  getDefaultUsageQueryConfig,
+  normalizeProviderModelConfigs,
   type ProviderId,
   type ProviderModelConfig,
 } from "../settings";
 import { RELAY_ORIGIN, type RelayApiKey, type RelayGroup } from "./client";
+import {
+  type ManagedModelBinding,
+  managedModelBinding,
+  replaceManagedModelCredentials,
+} from "./managedCredentials";
 
 const RELAY_PROVIDER_PREFIX = "relay-key-";
 
@@ -45,6 +51,7 @@ function buildRelayProvider(
   group: RelayGroup,
   existing?: CustomProvider,
   fetchedModels?: ProviderModelConfig[],
+  binding?: ManagedModelBinding,
 ): CustomProvider | null {
   const type = relayProviderTypeForPlatform(group.platform);
   if (!type) return null;
@@ -55,10 +62,10 @@ function buildRelayProvider(
     id: relayProviderId(key.id),
     name: `${group.name} / ${key.name}`,
     type,
-    baseUrl: relayProviderBaseUrl(type),
+    baseUrl: binding?.baseUrl ?? "",
     isFullUrl: false,
-    apiKey: key.key,
-    apiKeyConfigured: Boolean(key.key.trim()),
+    apiKey: binding?.apiKey ?? "",
+    apiKeyConfigured: Boolean(binding),
     customHeaders: [],
     models,
     activeModels,
@@ -76,10 +83,16 @@ function resolveKeyGroup(key: RelayApiKey, groups: RelayGroup[]) {
 }
 
 export function enforceRelayProviderConstraint(settings: AppSettings): AppSettings {
-  const customProviders = settings.customProviders.filter(isRelayProvider).map((provider) => ({
-    ...provider,
-    baseUrl: relayProviderBaseUrl(provider.type),
-  }));
+  const customProviders = settings.customProviders.filter(isRelayProvider).map((provider) => {
+    const binding = managedModelBinding(provider.id);
+    return {
+      ...provider,
+      baseUrl: binding?.baseUrl ?? "",
+      apiKey: binding?.apiKey ?? "",
+      apiKeyConfigured: Boolean(binding),
+      activeModels: binding ? provider.activeModels : [],
+    };
+  });
   const selectedModel = settings.selectedModel;
   const selectedProvider = selectedModel
     ? customProviders.find((provider) => provider.id === selectedModel.customProviderId)
@@ -124,6 +137,15 @@ export async function buildRelayProviders(
   const activeKeys = keys.filter(
     (key) => key.status === "active" && key.group_id != null && key.key.trim().length > 0,
   );
+  const bindings = await replaceManagedModelCredentials(
+    RELAY_ORIGIN,
+    activeKeys
+      .filter((key) => {
+        const group = resolveKeyGroup(key, groups);
+        return group?.status === "active" && relayProviderTypeForPlatform(group.platform);
+      })
+      .map((key) => ({ providerId: relayProviderId(key.id) })),
+  );
 
   const providers = await Promise.all(
     activeKeys.map(async (key) => {
@@ -131,16 +153,28 @@ export async function buildRelayProviders(
       if (!group || group.status !== "active") return null;
       const type = relayProviderTypeForPlatform(group.platform);
       if (!type) return null;
+      const binding = bindings.get(relayProviderId(key.id));
+      if (!binding) throw new Error("Managed model credential registration failed");
       const existing = existingById.get(relayProviderId(key.id));
       let models: ProviderModelConfig[] | undefined;
       if (forceModelRefresh || !existing?.models.length) {
         try {
-          models = await fetchModelsFromApi(type, relayProviderBaseUrl(type), key.key);
+          const response = await createKBrainClient().discoverProviderModels(undefined, {
+            type,
+            baseUrl: binding.baseUrl,
+            apiKey: binding.apiKey,
+            useSystemProxy: false,
+          });
+          const list = Array.isArray(response)
+            ? response
+            : (response as { models?: unknown })?.models;
+          if (!Array.isArray(list)) throw new Error("Invalid managed model catalog");
+          models = normalizeProviderModelConfigs(list, type);
         } catch {
           models = existing?.models ?? [];
         }
       }
-      return buildRelayProvider(key, group, existing, models);
+      return buildRelayProvider(key, group, existing, models, binding);
     }),
   );
 

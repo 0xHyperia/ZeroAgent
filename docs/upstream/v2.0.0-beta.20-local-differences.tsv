@@ -1,0 +1,768 @@
+status	area	added	removed	binary	untracked	old_path	path
+M	Other	1	0	0	0		.dockerignore
+M	Scripts CI deploy skills	2	2	0	0		.github/CONTRIBUTING.md
+M	Scripts CI deploy skills	2	2	0	0		.github/ISSUE_TEMPLATE/bug_report.yml
+M	Scripts CI deploy skills	2	2	0	0		.github/ISSUE_TEMPLATE/config.yml
+A	Scripts CI deploy skills	16	0	0	0		.github/release-notes-public/v0.3.15.md
+A	Scripts CI deploy skills	23	0	0	0		.github/release-notes-public/v0.3.16.md
+A	Scripts CI deploy skills	23	0	0	0		.github/release-notes-public/v0.3.17.md
+A	Scripts CI deploy skills	21	0	0	0		.github/release-notes-public/v0.3.18.md
+A	Scripts CI deploy skills	25	0	0	0		.github/release-notes-public/v0.3.19.md
+A	Scripts CI deploy skills	19	0	0	0		.github/release-notes-public/v0.3.20.md
+A	Scripts CI deploy skills	21	0	0	0		.github/release-notes-public/v0.3.21.md
+A	Scripts CI deploy skills	30	0	0	0		.github/release-notes-public/v0.3.22.md
+A	Scripts CI deploy skills	24	0	0	0		.github/release-notes-public/v0.3.23.md
+A	Scripts CI deploy skills	20	0	0	0		.github/release-notes/v0.3.15.md
+A	Scripts CI deploy skills	28	0	0	0		.github/release-notes/v0.3.16.md
+A	Scripts CI deploy skills	27	0	0	0		.github/release-notes/v0.3.17.md
+A	Scripts CI deploy skills	25	0	0	0		.github/release-notes/v0.3.18.md
+A	Scripts CI deploy skills	28	0	0	0		.github/release-notes/v0.3.19.md
+A	Scripts CI deploy skills	22	0	0	0		.github/release-notes/v0.3.20.md
+A	Scripts CI deploy skills	24	0	0	0		.github/release-notes/v0.3.21.md
+A	Scripts CI deploy skills	38	0	0	0		.github/release-notes/v0.3.22.md
+A	Scripts CI deploy skills	27	0	0	0		.github/release-notes/v0.3.23.md
+A	Scripts CI deploy skills	549	0	0	0		.github/upstream-ownership.yaml
+A	Scripts CI deploy skills	6	0	0	0		.github/upstream-sync.json
+A	Scripts CI deploy skills	230	0	0	0		.github/workflows/android-release.yml
+M	Scripts CI deploy skills	92	186	0	0		.github/workflows/ci.yml
+M	Scripts CI deploy skills	154	211	0	0		.github/workflows/desktop-release.yml
+M	Scripts CI deploy skills	34	4	0	0		.github/workflows/gateway-docker.yml
+D	Scripts CI deploy skills	0	183	0	0		.github/workflows/pr-governance.yml
+D	Scripts CI deploy skills	0	36	0	0		.github/workflows/stale.yml
+M	Scripts CI deploy skills	4	10	0	0		.github/workflows/update-model-catalog.yml
+D	Scripts CI deploy skills	0	70	0	0		.github/workflows/update-star-history.yml
+M	Other	2	0	0	0		.gitignore
+A	Other	26	0	0	0		AGENTS.md
+M	Other	1	1	0	0		biome.json
+M	Other	189	77	0	0		Cargo.lock
+M	Gateway Go	3	1	0	0		crates/agent-gateway/buf.gen.yaml
+A	Gateway Go	26	0	0	1		crates/agent-gateway/cmd/gateway/main_test.go
+M	Gateway Go	52	32	0	0		crates/agent-gateway/cmd/gateway/main.go
+M	Gateway Go	4	10	0	0		crates/agent-gateway/go.mod
+M	Gateway Go	12	49	0	0		crates/agent-gateway/go.sum
+A	Gateway Go	39	0	0	1		crates/agent-gateway/internal/account/desktop_bound_selection_test.go
+A	Gateway Go	95	0	0	0		crates/agent-gateway/internal/account/device_presence_test.go
+A	Gateway Go	752	0	0	0		crates/agent-gateway/internal/account/http_test.go
+A	Gateway Go	601	0	0	0		crates/agent-gateway/internal/account/http.go
+A	Gateway Go	133	0	0	1		crates/agent-gateway/internal/account/password_verification_test.go
+A	Gateway Go	58	0	0	1		crates/agent-gateway/internal/account/password_verification.go
+A	Gateway Go	745	0	0	0		crates/agent-gateway/internal/account/persistent_store.go
+A	Gateway Go	1033	0	0	0		crates/agent-gateway/internal/account/service.go
+A	Gateway Go	474	0	0	0		crates/agent-gateway/internal/account/store.go
+A	Gateway Go	169	0	0	0		crates/agent-gateway/internal/account/types.go
+A	Gateway Go	678	0	0	0		crates/agent-gateway/internal/account/usa_client.go
+A	Gateway Go	295	0	0	0		crates/agent-gateway/internal/account/web_chat_http.go
+A	Gateway Go	65	0	0	0		crates/agent-gateway/internal/account/workspace_snapshot_test.go
+D	Gateway Go	0	302	0	0		crates/agent-gateway/internal/auth/agenttoken/store_benchmark_test.go
+D	Gateway Go	0	625	0	0		crates/agent-gateway/internal/auth/agenttoken/store_test.go
+D	Gateway Go	0	519	0	0		crates/agent-gateway/internal/auth/agenttoken/store.go
+A	Gateway Go	19	0	0	1		crates/agent-gateway/internal/auth/bearer_test.go
+M	Gateway Go	18	26	0	0		crates/agent-gateway/internal/auth/http_middleware.go
+M	Gateway Go	27	61	0	0		crates/agent-gateway/internal/config/config_test.go
+M	Gateway Go	116	141	0	0		crates/agent-gateway/internal/config/config.go
+D	Gateway Go	0	47	0	0		crates/agent-gateway/internal/db/db.go
+D	Gateway Go	0	37	0	0		crates/agent-gateway/internal/db/sqlite.go
+D	Gateway Go	0	202	0	0		crates/agent-gateway/internal/handler/agents.go
+A	Gateway Go	33	0	0	0		crates/agent-gateway/internal/handler/health_test.go
+M	Gateway Go	23	1	0	0		crates/agent-gateway/internal/handler/health.go
+M	Gateway Go	6	0	0	0		crates/agent-gateway/internal/handler/upload.go
+A	Gateway Go	85	0	0	0		crates/agent-gateway/internal/handler/usa_zero_proxy_test.go
+A	Gateway Go	89	0	0	0		crates/agent-gateway/internal/handler/usa_zero_proxy.go
+M	Gateway Go	2	2	0	0		crates/agent-gateway/internal/proto/v2/chat_ingress_test.go
+M	Gateway Go	450	259	0	0		crates/agent-gateway/internal/proto/v2/gateway_ws.pb.go
+M	Gateway Go	2	2	0	0		crates/agent-gateway/internal/proto/v2/gateway.pb.go
+M	Gateway Go	58	7	0	0		crates/agent-gateway/internal/protocol/pbws/agent_conn.go
+M	Gateway Go	57	12	0	0		crates/agent-gateway/internal/protocol/pbws/browser_conn.go
+M	Gateway Go	30	14	0	0		crates/agent-gateway/internal/protocol/pbws/browser_local.go
+M	Gateway Go	6	0	0	0		crates/agent-gateway/internal/protocol/pbws/browser_relay.go
+A	Gateway Go	46	0	0	1		crates/agent-gateway/internal/protocol/pbws/controller_selection.go
+M	Gateway Go	18	5	0	0		crates/agent-gateway/internal/protocol/pbws/handshake.go
+M	Gateway Go	36	14	0	0		crates/agent-gateway/internal/protocol/pbws/server.go
+M	Gateway Go	58	21	0	0		crates/agent-gateway/internal/protocol/pbws/terminal_conn.go
+A	Gateway Go	98	0	0	0		crates/agent-gateway/internal/protocol/pbws/workspace_guard_test.go
+A	Gateway Go	135	0	0	0		crates/agent-gateway/internal/protocol/pbws/workspace_guard.go
+M	Gateway Go	4	2	0	0		crates/agent-gateway/internal/protocol/shared/origin.go
+M	Gateway Go	103	11	0	0		crates/agent-gateway/internal/server/http_test.go
+M	Gateway Go	122	53	0	0		crates/agent-gateway/internal/server/http.go
+A	Gateway Go	64	0	0	1		crates/agent-gateway/internal/server/local_http.go
+M	Gateway Go	6	0	0	0		crates/agent-gateway/internal/session/manager_history_sync.go
+D	Gateway Go	0	65	0	0		crates/agent-gateway/internal/session/manager_settings_sync_stt_test.go
+A	Gateway Go	59	0	0	0		crates/agent-gateway/internal/session/manager_settings_sync_test.go
+M	Gateway Go	14	4	0	0		crates/agent-gateway/internal/session/manager.go
+M	Gateway Go	53	0	0	0		crates/agent-gateway/internal/session/tunnel_state_test.go
+M	Gateway Go	40	4	0	0		crates/agent-gateway/internal/session/tunnel_state.go
+D	Gateway Go	0	187	0	0		crates/agent-gateway/internal/stt/aliyun_dashscope.go
+D	Gateway Go	0	195	0	0		crates/agent-gateway/internal/stt/baidu_cloud.go
+D	Gateway Go	0	315	0	0		crates/agent-gateway/internal/stt/common.go
+D	Gateway Go	0	221	0	0		crates/agent-gateway/internal/stt/http.go
+D	Gateway Go	0	63	0	0		crates/agent-gateway/internal/stt/live_provider_test.go
+D	Gateway Go	0	165	0	0		crates/agent-gateway/internal/stt/manager.go
+D	Gateway Go	0	307	0	0		crates/agent-gateway/internal/stt/settings.go
+D	Gateway Go	0	837	0	0		crates/agent-gateway/internal/stt/stt_test.go
+D	Gateway Go	0	161	0	0		crates/agent-gateway/internal/stt/tencent_cloud.go
+D	Gateway Go	0	293	0	0		crates/agent-gateway/internal/stt/volcengine_seed_v3.go
+D	Gateway Go	0	314	0	0		crates/agent-gateway/internal/stt/volcengine_v2.go
+A	Gateway Go	28	0	0	1		crates/agent-gateway/internal/transport/wscore/authorization_test.go
+M	Gateway Go	5	0	0	0		crates/agent-gateway/internal/transport/wscore/conn.go
+M	Gateway Go	24	2	0	0		crates/agent-gateway/proto/v2/gateway_ws.proto
+M	Gateway Go	2	2	0	0		crates/agent-gateway/proto/v2/gateway.proto
+D	Gateway Go	0	85	0	0		crates/agent-gateway/test/auth/auth_test.go
+D	Gateway Go	0	402	0	0		crates/agent-gateway/test/http/agents_api_test.go
+M	Gateway Go	15	12	0	0		crates/agent-gateway/test/http/http_routes_test.go
+A	Gateway Go	91	0	0	0		crates/agent-gateway/test/testutil/account_fixture.go
+M	Gateway Go	0	1	0	0		crates/agent-gateway/test/tunnel/tunnel_e2e_test.go
+M	Gateway Go	5	0	0	0		crates/agent-gateway/test/upload/import_directory_test.go
+A	Gateway Go	74	0	0	0		crates/agent-gateway/test/websocket/account_isolation_test.go
+A	Gateway Go	456	0	0	1		crates/agent-gateway/test/websocket/account_selection_dispatch_test.go
+D	Gateway Go	0	356	0	0		crates/agent-gateway/test/websocket/agent_token_test.go
+D	Gateway Go	0	196	0	0		crates/agent-gateway/test/websocket/multiagent_benchmark_test.go
+M	Gateway Go	3	3	0	0		crates/agent-gateway/test/websocket/v2_hardening_test.go
+M	Gateway Go	53	0	0	0		crates/agent-gateway/test/websocket/v2_helpers_test.go
+D	Gateway Go	0	334	0	0		crates/agent-gateway/test/websocket/v2_multiagent_test.go
+M	Gateway Go	8	49	0	0		crates/agent-gateway/test/webui/auth-storage.test.mjs
+M	Gateway Go	17	0	0	0		crates/agent-gateway/test/webui/browser-uuid.test.mjs
+M	Gateway Go	1	1	0	0		crates/agent-gateway/test/webui/upload-readable-files.test.mjs
+M	Gateway Go	5	91	0	0		crates/agent-gateway/test/webui/web-settings.test.mjs
+M	Gateway Go	30	1	0	0		crates/agent-gateway/test/webui/workspace-projects.test.mjs
+M	WebUI	6	3	0	0		crates/agent-gateway/web/index.html
+M	WebUI	5	2	0	0		crates/agent-gateway/web/package.json
+D	WebUI	0	107	0	0		crates/agent-gateway/web/public/favicon.svg
+D	WebUI	-	-	1	0		crates/agent-gateway/web/public/icon-simple.png
+A	WebUI	-	-	1	0		crates/agent-gateway/web/public/zeroagent-logo.png
+M	WebUI	1	1	0	0		crates/agent-gateway/web/src/agent-ui-adapters/assistantAvatar.ts
+M	WebUI	46	5	0	0		crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx
+M	WebUI	2	2	0	0		crates/agent-gateway/web/src/app/constants.ts
+M	WebUI	358	69	0	0		crates/agent-gateway/web/src/app/GatewayApp.tsx
+M	WebUI	57	52	0	0		crates/agent-gateway/web/src/app/GatewayAppView.tsx
+M	WebUI	343	77	0	0		crates/agent-gateway/web/src/app/hooks/useGatewaySession.ts
+M	WebUI	38	31	0	0		crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts
+M	WebUI	2	2	0	0		crates/agent-gateway/web/src/app/hooks/useGatewayWorkspaceProjects.ts
+M	WebUI	11	0	0	0		crates/agent-gateway/web/src/app/sidebar/GatewaySidebarContainer.tsx
+M	WebUI	121	44	0	0		crates/agent-gateway/web/src/app/UserMenu.tsx
+A	WebUI	165	0	0	0		crates/agent-gateway/web/src/components/CodeFlowBackground.tsx
+A	WebUI	202	0	0	0		crates/agent-gateway/web/src/components/ExecutionEnvironmentSwitcher.tsx
+A	WebUI	197	0	0	0		crates/agent-gateway/web/src/components/mobile/MobileAppExperience.tsx
+A	WebUI	259	0	0	0		crates/agent-gateway/web/src/components/onboarding/FirstRunOnboarding.tsx
+A	WebUI	115	0	0	0		crates/agent-gateway/web/src/components/relay/GroupMultiSelect.tsx
+A	WebUI	407	0	0	0		crates/agent-gateway/web/src/components/relay/RelayAccessGate.tsx
+A	WebUI	78	0	0	0		crates/agent-gateway/web/src/components/relay/RelayKeyCopyDialog.tsx
+A	WebUI	5	0	0	0		crates/agent-gateway/web/src/components/relay/ZeroAgentLogo.tsx
+M	WebUI	22	6	0	0		crates/agent-gateway/web/src/i18n/config.ts
+M	WebUI	1	0	0	0		crates/agent-gateway/web/src/index.css
+A	WebUI	46	0	0	1		crates/agent-gateway/web/src/lib/accountRequest.ts
+D	WebUI	0	124	0	0		crates/agent-gateway/web/src/lib/adminApi.ts
+M	WebUI	7	0	0	0		crates/agent-gateway/web/src/lib/agentTypes.ts
+M	WebUI	1	1	0	0		crates/agent-gateway/web/src/lib/chatUi.ts
+A	WebUI	236	0	0	0		crates/agent-gateway/web/src/lib/executionTargets.ts
+D	WebUI	0	57	0	0		crates/agent-gateway/web/src/lib/gatewayAuth.ts
+M	WebUI	8	1	0	0		crates/agent-gateway/web/src/lib/gatewaySocket.ts
+M	WebUI	11	2	0	0		crates/agent-gateway/web/src/lib/gatewaySocketRpc.ts
+M	WebUI	10	2	0	0		crates/agent-gateway/web/src/lib/gatewaySocketShared.ts
+M	WebUI	26	5	0	0		crates/agent-gateway/web/src/lib/gatewaySocketTransport.ts
+M	WebUI	21	5	0	0		crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts
+M	WebUI	2	3	0	0		crates/agent-gateway/web/src/lib/imageStudio.ts
+A	WebUI	141	0	0	0		crates/agent-gateway/web/src/lib/mobileAppUpdate.ts
+A	WebUI	472	0	0	0		crates/agent-gateway/web/src/lib/mobileRuntime.ts
+M	WebUI	2	2	0	0		crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts
+M	WebUI	142	44	0	0		crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts
+A	WebUI	542	0	0	0		crates/agent-gateway/web/src/lib/relay/client.ts
+A	WebUI	174	0	0	0		crates/agent-gateway/web/src/lib/relay/providers.ts
+M	WebUI	15	7	0	0		crates/agent-gateway/web/src/lib/storage.ts
+D	WebUI	0	49	0	0		crates/agent-gateway/web/src/lib/stt/webSttSettingsService.ts
+D	WebUI	0	157	0	0		crates/agent-gateway/web/src/lib/stt/webSttTransport.ts
+M	WebUI	8	4	0	0		crates/agent-gateway/web/src/lib/terminal/gatewayTerminalStreamClient.ts
+M	WebUI	1	1	0	0		crates/agent-gateway/web/src/lib/uploadReadableFiles.ts
+M	WebUI	1	2	0	0		crates/agent-gateway/web/src/lib/webSettings.ts
+M	WebUI	13	16	0	0		crates/agent-gateway/web/src/main.tsx
+A	WebUI	404	0	0	0		crates/agent-gateway/web/src/pages/AccountLoginPage.tsx
+A	WebUI	898	0	0	0		crates/agent-gateway/web/src/pages/CloudChatPage.tsx
+D	WebUI	0	22	0	0		crates/agent-gateway/web/src/pages/DevicesAdminPage.tsx
+D	WebUI	0	271	0	0		crates/agent-gateway/web/src/pages/LoginPage.tsx
+A	WebUI	408	0	0	0		crates/agent-gateway/web/src/pages/settings/AccountSection.tsx
+M	WebUI	190	863	0	0		crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx
+A	WebUI	304	0	0	0		crates/agent-gateway/web/src/pages/settings/RelayProvidersSection.tsx
+M	WebUI	8	0	0	0		crates/agent-gateway/web/src/pages/settings/types.ts
+M	WebUI	1	1	0	0		crates/agent-gateway/web/src/pages/SettingsSyncLoading.tsx
+M	WebUI	2	2	0	0		crates/agent-gateway/web/src/pages/SharedHistoryPage.tsx
+D	WebUI	0	1583	0	0		crates/agent-gateway/web/src/pages/StatusDashboardPage.tsx
+M	WebUI	1	1	0	0		crates/agent-gateway/web/src/shims/tauriCore.ts
+A	WebUI	260	0	0	0		crates/agent-gateway/web/src/styles/zeroagent.css
+M	WebUI	4	0	0	0		crates/agent-gateway/web/src/vite-env.d.ts
+A	WebUI	260	0	0	1		crates/agent-gateway/web/src/zeroagent.css
+A	WebUI	16	0	0	0		crates/agent-gateway/web/test/account-login-submit.test.mjs
+A	WebUI	53	0	0	1		crates/agent-gateway/web/test/account-request.test.mjs
+A	WebUI	71	0	0	1		crates/agent-gateway/web/test/account-session-ownership.test.mjs
+A	WebUI	13	0	0	1		crates/agent-gateway/web/test/account-status-settings.test.mjs
+M	WebUI	22	0	0	0		crates/agent-gateway/web/test/ai-approval-settings.test.mjs
+A	WebUI	38	0	0	0		crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs
+A	WebUI	48	0	0	0		crates/agent-gateway/web/test/conversation-grouping.test.mjs
+A	WebUI	182	0	0	0		crates/agent-gateway/web/test/execution-targets.test.mjs
+M	WebUI	19	0	0	0		crates/agent-gateway/web/test/gateway-settings-sync-errors.test.mjs
+M	WebUI	7	1	0	0		crates/agent-gateway/web/test/gateway-v2-adapters.test.mjs
+M	WebUI	2	1	0	0		crates/agent-gateway/web/test/image-studio.test.mjs
+A	WebUI	249	0	0	0		crates/agent-gateway/web/test/mobile-app-update.test.mjs
+A	WebUI	143	0	0	0		crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs
+A	WebUI	363	0	0	0		crates/agent-gateway/web/test/relay-client.test.mjs
+A	WebUI	39	0	0	1		crates/agent-gateway/web/test/relay-password-verification.test.mjs
+D	WebUI	0	44	0	0		crates/agent-gateway/web/test/status-dashboard-settings.test.mjs
+M	WebUI	11	0	0	0		crates/agent-gateway/web/test/trajectory-mobile-layout.test.mjs
+M	WebUI	28	4	0	0		crates/agent-gateway/web/vite.config.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/browser-extension/background.js
+M	Desktop frontend	2	2	0	0		crates/agent-gui/browser-extension/manifest.json
+M	Desktop frontend	7	4	0	0		crates/agent-gui/index.html
+M	Desktop frontend	5	4	0	0		crates/agent-gui/package.json
+D	Desktop frontend	0	107	0	0		crates/agent-gui/public/favicon.svg
+A	Desktop frontend	-	-	1	0		crates/agent-gui/public/zeroagent-logo.png
+M	Desktop frontend	11	0	0	0		crates/agent-gui/README.md
+M	Desktop Native	36	0	0	0		crates/agent-gui/src-tauri/build.rs
+M	Desktop Native	22	12	0	0		crates/agent-gui/src-tauri/Cargo.toml
+A	Desktop Native	12	0	0	0		crates/agent-gui/src-tauri/gen/android/.editorconfig
+A	Desktop Native	20	0	0	0		crates/agent-gui/src-tauri/gen/android/.gitignore
+A	Desktop Native	6	0	0	0		crates/agent-gui/src-tauri/gen/android/app/.gitignore
+A	Desktop Native	71	0	0	0		crates/agent-gui/src-tauri/gen/android/app/build.gradle.kts
+A	Desktop Native	21	0	0	0		crates/agent-gui/src-tauri/gen/android/app/proguard-rules.pro
+A	Desktop Native	53	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/AndroidManifest.xml
+A	Desktop Native	142	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt
+A	Desktop Native	30	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml
+A	Desktop Native	170	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/drawable/ic_launcher_background.xml
+A	Desktop Native	18	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/layout/activity_main.xml
+A	Desktop Native	5	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+A	Desktop Native	6	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/values-night/themes.xml
+A	Desktop Native	10	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/colors.xml
+A	Desktop Native	4	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml
+A	Desktop Native	4	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/strings.xml
+A	Desktop Native	6	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/themes.xml
+A	Desktop Native	5	0	0	0		crates/agent-gui/src-tauri/gen/android/app/src/main/res/xml/file_paths.xml
+A	Desktop Native	22	0	0	0		crates/agent-gui/src-tauri/gen/android/build.gradle.kts
+A	Desktop Native	23	0	0	0		crates/agent-gui/src-tauri/gen/android/buildSrc/build.gradle.kts
+A	Desktop Native	68	0	0	0		crates/agent-gui/src-tauri/gen/android/buildSrc/src/main/java/top/usa0/zeroagent/kotlin/BuildTask.kt
+A	Desktop Native	85	0	0	0		crates/agent-gui/src-tauri/gen/android/buildSrc/src/main/java/top/usa0/zeroagent/kotlin/RustPlugin.kt
+A	Desktop Native	24	0	0	0		crates/agent-gui/src-tauri/gen/android/gradle.properties
+A	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.jar
+A	Desktop Native	6	0	0	0		crates/agent-gui/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+A	Desktop Native	185	0	0	0		crates/agent-gui/src-tauri/gen/android/gradlew
+A	Desktop Native	89	0	0	0		crates/agent-gui/src-tauri/gen/android/gradlew.bat
+A	Desktop Native	3	0	0	0		crates/agent-gui/src-tauri/gen/android/settings.gradle
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/128x128-windows.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/128x128.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/128x128@2x-windows.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/128x128@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/32x32-windows.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/32x32.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/64x64.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png
+M	Desktop Native	2	2	0	0		crates/agent-gui/src-tauri/icons/android/values/ic_launcher_background.xml
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon-1024.png
+D	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon-simple.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon-windows.ico
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon-windows.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon.icns
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon.ico
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/icon.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@1x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@2x-1.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@3x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@1x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@2x-1.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@3x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@1x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@2x-1.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@3x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-512@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-60x60@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-60x60@3x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-76x76@1x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-76x76@2x.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png
+D	Desktop Native	0	3	0	0		crates/agent-gui/src-tauri/icons/liveagent-logo.svg
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square107x107Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square142x142Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square150x150Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square284x284Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square30x30Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square310x310Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square44x44Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square71x71Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/Square89x89Logo.png
+M	Desktop Native	-	-	1	0		crates/agent-gui/src-tauri/icons/StoreLogo.png
+M	Desktop Native	7	7	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-creator/references/agent-skill-format.md
+M	Desktop Native	2	2	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-creator/references/authoring-patterns.md
+M	Desktop Native	3	3	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-creator/SKILL.md
+M	Desktop Native	4	4	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-installer/references/install-sources.md
+M	Desktop Native	4	4	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-installer/references/safety-and-conflicts.md
+M	Desktop Native	5	5	0	0		crates/agent-gui/src-tauri/prompt/skills/skills-installer/SKILL.md
+R098	Desktop Native	2	2	0	0	crates/agent-gui/src-tauri/prompt/skills/liveagent-code-review/SKILL.md	crates/agent-gui/src-tauri/prompt/skills/zeroagent-code-review/SKILL.md
+M	Desktop Native	13	1	0	0		crates/agent-gui/src-tauri/src/commands/app/app.rs
+M	Desktop Native	1	0	0	0		crates/agent-gui/src-tauri/src/commands/app/mod.rs
+M	Desktop Native	63	1	0	0		crates/agent-gui/src-tauri/src/commands/app/system.rs
+M	Desktop Native	13	12	0	0		crates/agent-gui/src-tauri/src/commands/app/update.rs
+M	Desktop Native	2	1	0	0		crates/agent-gui/src-tauri/src/commands/automation/cron.rs
+M	Desktop Native	8	2	0	0		crates/agent-gui/src-tauri/src/commands/automation/hook.rs
+M	Desktop Native	40	10	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/backup_io.rs
+A	Desktop Native	829	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain_tests.rs
+A	Desktop Native	517	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain.rs
+M	Desktop Native	139	36	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/backup_snapshot.rs
+A	Desktop Native	828	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/canonical_configuration.rs
+M	Desktop Native	4	4	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/ccs_import.rs
+M	Desktop Native	2	2	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/cherry_import.rs
+M	Desktop Native	65	18	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/commands.rs
+A	Desktop Native	564	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs
+M	Desktop Native	110	9	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/db.rs
+A	Desktop Native	206	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs
+A	Desktop Native	632	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs
+M	Desktop Native	16	23	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/gateway_sync.rs
+A	Desktop Native	326	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding_tests.rs
+A	Desktop Native	266	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding.rs
+M	Desktop Native	12	0	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/mod.rs
+A	Desktop Native	207	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/native_batch_tests.rs
+A	Desktop Native	420	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/native_batch.rs
+M	Desktop Native	46	13	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/remote.rs
+A	Desktop Native	363	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs
+M	Desktop Native	309	85	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/tests.rs
+M	Desktop Native	7	2	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/types.rs
+A	Desktop Native	133	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences_tests.rs
+A	Desktop Native	148	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences.rs
+A	Desktop Native	228	0	0	1		crates/agent-gui/src-tauri/src/commands/config/settings/webdav_backup_tests.rs
+M	Desktop Native	269	86	0	0		crates/agent-gui/src-tauri/src/commands/config/settings/webdav_sync.rs
+M	Desktop Native	2	0	0	0		crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs
+M	Desktop Native	2	1	0	0		crates/agent-gui/src-tauri/src/commands/history/chat_history/pi_migration.rs
+M	Desktop Native	2	2	0	0		crates/agent-gui/src-tauri/src/commands/image_export.rs
+M	Desktop Native	8	8	0	0		crates/agent-gui/src-tauri/src/commands/integration/browser.rs
+M	Desktop Native	8	3	0	0		crates/agent-gui/src-tauri/src/commands/integration/gateway.rs
+M	Desktop Native	98	9	0	0		crates/agent-gui/src-tauri/src/commands/integration/mcp_oauth.rs
+M	Desktop Native	147	212	0	0		crates/agent-gui/src-tauri/src/commands/integration/mcp.rs
+M	Desktop Native	3	1	0	0		crates/agent-gui/src-tauri/src/commands/mod.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/commands/planning.rs
+M	Desktop Native	2	4	0	0		crates/agent-gui/src-tauri/src/commands/workspace/checkpoint.rs
+M	Desktop Native	3	1	0	0		crates/agent-gui/src-tauri/src/commands/workspace/fs.rs
+M	Desktop Native	42	16	0	0		crates/agent-gui/src-tauri/src/commands/workspace/git.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/commands/workspace/subagent_worktree.rs
+M	Desktop Native	349	131	0	0		crates/agent-gui/src-tauri/src/lib.rs
+M	Desktop Native	28	1	0	0		crates/agent-gui/src-tauri/src/runtime/sandbox.rs
+M	Desktop Native	5	5	0	0		crates/agent-gui/src-tauri/src/runtime/shell_runner.rs
+M	Desktop Native	48	19	0	0		crates/agent-gui/src-tauri/src/runtime/shell_session.rs
+M	Desktop Native	8	2	0	0		crates/agent-gui/src-tauri/src/runtime/terminal/registry.rs
+M	Desktop Native	37	12	0	0		crates/agent-gui/src-tauri/src/runtime/terminal/shell.rs
+M	Desktop Native	2	2	0	0		crates/agent-gui/src-tauri/src/runtime/terminal/state.rs
+M	Desktop Native	6	1	0	0		crates/agent-gui/src-tauri/src/runtime/terminal/tests.rs
+M	Desktop Native	62	18	0	0		crates/agent-gui/src-tauri/src/runtime/windows_sandbox.rs
+A	Desktop Native	420	0	0	1		crates/agent-gui/src-tauri/src/services/account_identity.rs
+A	Desktop Native	1146	0	0	1		crates/agent-gui/src-tauri/src/services/account_session.rs
+A	Desktop Native	682	0	0	1		crates/agent-gui/src-tauri/src/services/account_session/api.rs
+A	Desktop Native	1083	0	0	1		crates/agent-gui/src-tauri/src/services/account_session/gateway.rs
+A	Desktop Native	1597	0	0	1		crates/agent-gui/src-tauri/src/services/account_session/tests.rs
+M	Desktop Native	3	1	0	0		crates/agent-gui/src-tauri/src/services/automation/db.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/automation/mod.rs
+M	Desktop Native	23	0	0	0		crates/agent-gui/src-tauri/src/services/automation/scheduler.rs
+M	Desktop Native	10	0	0	0		crates/agent-gui/src-tauri/src/services/automation/store.rs
+A	Desktop Native	594	0	0	1		crates/agent-gui/src-tauri/src/services/backend_facade.rs
+A	Desktop Native	660	0	0	1		crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs
+A	Desktop Native	94	0	0	1		crates/agent-gui/src-tauri/src/services/backend_profile.rs
+M	Desktop Native	1	2	0	0		crates/agent-gui/src-tauri/src/services/browser/launcher.rs
+A	Desktop Native	244	0	0	1		crates/agent-gui/src-tauri/src/services/configuration_coordinator.rs
+A	Desktop Native	424	0	0	0		crates/agent-gui/src-tauri/src/services/desktop_oauth.rs
+A	Desktop Native	465	0	0	0		crates/agent-gui/src-tauri/src/services/device_credentials.rs
+M	Desktop Native	9	0	0	0		crates/agent-gui/src-tauri/src/services/gateway_bridge.rs
+M	Desktop Native	46	1	0	0		crates/agent-gui/src-tauri/src/services/gateway/connection.rs
+M	Desktop Native	13	2	0	0		crates/agent-gui/src-tauri/src/services/gateway/controller.rs
+M	Desktop Native	103	182	0	0		crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs
+M	Desktop Native	1	0	0	0		crates/agent-gui/src-tauri/src/services/gateway/mod.rs
+M	Desktop Native	16	32	0	0		crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs
+M	Desktop Native	1	0	0	0		crates/agent-gui/src-tauri/src/services/gateway/terminal.rs
+M	Desktop Native	17	7	0	0		crates/agent-gui/src-tauri/src/services/gateway/tests.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/gateway/util.rs
+M	Desktop Native	151	26	0	0		crates/agent-gui/src-tauri/src/services/gateway/ws_transport.rs
+M	Desktop Native	1347	71	0	0		crates/agent-gui/src-tauri/src/services/kbrain_backend.rs
+A	Desktop Native	225	0	0	1		crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs
+A	Desktop Native	521	0	0	1		crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_tests.rs
+A	Desktop Native	803	0	0	1		crates/agent-gui/src-tauri/src/services/managed_model_broker.rs
+A	Desktop Native	315	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/broker.rs
+A	Desktop Native	41	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/retired_extensions_tests.rs
+A	Desktop Native	191	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/rotation_tests.rs
+A	Desktop Native	266	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/tests.rs
+M	Desktop Native	13	19	0	0		crates/agent-gui/src-tauri/src/services/mcp_oauth/discovery.rs
+A	Desktop Native	131	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/error_tests.rs
+M	Desktop Native	17	29	0	0		crates/agent-gui/src-tauri/src/services/mcp_oauth/flow.rs
+M	Desktop Native	219	79	0	0		crates/agent-gui/src-tauri/src/services/mcp_oauth/mod.rs
+M	Desktop Native	7	39	0	0		crates/agent-gui/src-tauri/src/services/mcp_oauth/register.rs
+A	Desktop Native	311	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation.rs
+A	Desktop Native	405	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation/tests.rs
+A	Desktop Native	296	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/scoped_tests.rs
+M	Desktop Native	632	135	0	0		crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs
+A	Desktop Native	109	0	0	1		crates/agent-gui/src-tauri/src/services/mcp_oauth/store/retry_tests.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/memory/maintenance.rs
+M	Desktop Native	0	1	0	0		crates/agent-gui/src-tauri/src/services/memory/mod.rs
+M	Desktop Native	1	6	0	0		crates/agent-gui/src-tauri/src/services/memory/paths.rs
+M	Desktop Native	4	2	0	0		crates/agent-gui/src-tauri/src/services/memory/store.rs
+M	Desktop Native	37	0	0	0		crates/agent-gui/src-tauri/src/services/memory/tests.rs
+A	Desktop Native	612	0	0	0		crates/agent-gui/src-tauri/src/services/mobile_gateway.rs
+A	Desktop Native	301	0	0	1		crates/agent-gui/src-tauri/src/services/mobile_gateway/session.rs
+A	Desktop Native	305	0	0	1		crates/agent-gui/src-tauri/src/services/mobile_gateway/session/tests.rs
+A	Desktop Native	324	0	0	0		crates/agent-gui/src-tauri/src/services/mobile_secure_store.rs
+M	Desktop Native	16	0	0	0		crates/agent-gui/src-tauri/src/services/mod.rs
+M	Desktop Native	3	1	0	0		crates/agent-gui/src-tauri/src/services/planning/backend.rs
+M	Desktop Native	34	7	0	0		crates/agent-gui/src-tauri/src/services/planning/legacy.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/planning/mod.rs
+M	Desktop Native	4	4	0	0		crates/agent-gui/src-tauri/src/services/provider_usage.rs
+M	Desktop Native	88	1	0	0		crates/agent-gui/src-tauri/src/services/proxy.rs
+M	Desktop Native	5	5	0	0		crates/agent-gui/src-tauri/src/services/skills/builtin.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/skills/clawhub.rs
+M	Desktop Native	16	16	0	0		crates/agent-gui/src-tauri/src/services/skills/tests.rs
+M	Desktop Native	1	1	0	0		crates/agent-gui/src-tauri/src/services/stt/baidu_cloud.rs
+M	Desktop Native	7	7	0	0		crates/agent-gui/src-tauri/src/services/tray.rs
+M	Desktop Native	69	4	0	0		crates/agent-gui/src-tauri/src/services/webdav_auto_sync.rs
+A	Desktop Native	30	0	0	0		crates/agent-gui/src-tauri/tauri.android.conf.json
+M	Desktop Native	21	5	0	0		crates/agent-gui/src-tauri/tauri.conf.json
+M	Desktop Native	7	7	0	0		crates/agent-gui/src-tauri/tauri.windows.conf.json
+M	Desktop Native	7	7	0	0		crates/agent-gui/src-tauri/tauri.windows.release.conf.json
+M	Desktop frontend	1	3	0	0		crates/agent-gui/src/agent-ui-adapters/assistantAvatar.ts
+M	Desktop frontend	10	2	0	0		crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts
+M	Desktop frontend	10	3	0	0		crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts
+M	Desktop frontend	3	0	0	0		crates/agent-gui/src/agent-ui-adapters/providerSettings.tsx
+M	Desktop frontend	37	2	0	0		crates/agent-gui/src/agent-ui-adapters/settingsExtension.tsx
+M	Desktop frontend	2	3	0	0		crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx
+M	Desktop frontend	0	2	0	0		crates/agent-gui/src/agent-ui-adapters/systemSettings.tsx
+M	Desktop frontend	417	159	0	0		crates/agent-gui/src/App.tsx
+M	Desktop frontend	2	1	0	0		crates/agent-gui/src/components/app/AppBootShell.tsx
+A	Desktop frontend	153	0	0	0		crates/agent-gui/src/components/chat/UserMenu.tsx
+A	Desktop frontend	165	0	0	0		crates/agent-gui/src/components/CodeFlowBackground.tsx
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/components/cron/CronPromptRunner.tsx
+A	Desktop frontend	154	0	0	0		crates/agent-gui/src/components/DesktopExecutionSwitcher.tsx
+A	Desktop frontend	240	0	0	0		crates/agent-gui/src/components/onboarding/FirstRunOnboarding.tsx
+A	Desktop frontend	130	0	0	0		crates/agent-gui/src/components/relay/GroupMultiSelect.tsx
+A	Desktop frontend	523	0	0	0		crates/agent-gui/src/components/relay/RelayAccessGate.tsx
+A	Desktop frontend	84	0	0	0		crates/agent-gui/src/components/relay/RelayKeyCopyDialog.tsx
+A	Desktop frontend	5	0	0	0		crates/agent-gui/src/components/relay/ZeroAgentLogo.tsx
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/components/ReleaseAnnouncementDialog.tsx
+M	Desktop frontend	2	3	0	0		crates/agent-gui/src/components/WindowsTitleBar.tsx
+M	Desktop frontend	50	19	0	0		crates/agent-gui/src/i18n/config.ts
+M	Desktop frontend	36	7	0	0		crates/agent-gui/src/lib/backup/index.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/host.ts
+M	Desktop frontend	23	2	0	0		crates/agent-gui/src/lib/kbrain/bootstrap.ts
+M	Desktop frontend	41	3	0	0		crates/agent-gui/src/lib/kbrain/client.ts
+A	Desktop frontend	27	0	0	1		crates/agent-gui/src/lib/kbrain/configurationVersion.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/kbrain/goalStore.ts
+M	Desktop frontend	2	13	0	0		crates/agent-gui/src/lib/kbrain/history.ts
+M	Desktop frontend	5	1	0	0		crates/agent-gui/src/lib/kbrain/historyMigration.ts
+M	Desktop frontend	5	1	0	0		crates/agent-gui/src/lib/kbrain/mapping.ts
+M	Desktop frontend	22	15	0	0		crates/agent-gui/src/lib/kbrain/mcp.ts
+A	Desktop frontend	35	0	0	1		crates/agent-gui/src/lib/kbrain/profile.ts
+M	Desktop frontend	22	8	0	0		crates/agent-gui/src/lib/kbrain/prompts.ts
+M	Desktop frontend	5	0	0	0		crates/agent-gui/src/lib/kbrain/runtimeConnection.ts
+M	Desktop frontend	4	4	0	0		crates/agent-gui/src/lib/kbrain/toolPolicies.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/kbrain/turn.ts
+M	Desktop frontend	2	0	0	0		crates/agent-gui/src/lib/kbrain/types.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/memory/prompts/extraction.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/memory/prompts/managerTool.ts
+M	Desktop frontend	3	3	0	0		crates/agent-gui/src/lib/memory/prompts/organizer.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/memory/prompts/shared.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/providers/runtime/providerRuntimeConfig.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/providers/runtime/streamRetry.ts
+A	Desktop frontend	9	0	0	1		crates/agent-gui/src/lib/relay/accountProxy.ts
+A	Desktop frontend	794	0	0	0		crates/agent-gui/src/lib/relay/client.ts
+A	Desktop frontend	164	0	0	0		crates/agent-gui/src/lib/relay/desktopExecution.ts
+A	Desktop frontend	83	0	0	0		crates/agent-gui/src/lib/relay/desktopRequest.ts
+A	Desktop frontend	137	0	0	0		crates/agent-gui/src/lib/relay/deviceRegistration.ts
+A	Desktop frontend	11	0	0	0		crates/agent-gui/src/lib/relay/installation.ts
+A	Desktop frontend	30	0	0	1		crates/agent-gui/src/lib/relay/managedCredentials.ts
+A	Desktop frontend	165	0	0	1		crates/agent-gui/src/lib/relay/nativeGatewaySocket.ts
+A	Desktop frontend	210	0	0	1		crates/agent-gui/src/lib/relay/nativeSession.ts
+A	Desktop frontend	216	0	0	0		crates/agent-gui/src/lib/relay/providers.ts
+A	Desktop frontend	91	0	0	0		crates/agent-gui/src/lib/relay/remoteDeviceState.ts
+M	Desktop frontend	25	2	0	0		crates/agent-gui/src/lib/settings/backendOwnedMerge.ts
+M	Desktop frontend	6	0	0	0		crates/agent-gui/src/lib/settings/errors.ts
+M	Desktop frontend	499	465	0	0		crates/agent-gui/src/lib/settings/storage.ts
+M	Desktop frontend	16	7	0	0		crates/agent-gui/src/lib/startup/render.ts
+M	Desktop frontend	30	6	0	0		crates/agent-gui/src/lib/stt/desktopSttSettingsService.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/subagents/bus.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/browserTools.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/builtinRegistry.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/cronTools.ts
+M	Desktop frontend	15	15	0	0		crates/agent-gui/src/lib/tools/cuaSelfGuard.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/fsTools.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/mcpManagerTools.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/mcpTools.ts
+M	Desktop frontend	3	3	0	0		crates/agent-gui/src/lib/tools/shellTools.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tools/skillAccessPolicy.ts
+M	Desktop frontend	3	3	0	0		crates/agent-gui/src/lib/tools/skillTools.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/lib/tools/sshManagerTools.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tray/trayMenu.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/lib/tray/trayPrefs.ts
+M	Desktop frontend	41	14	0	0		crates/agent-gui/src/main.tsx
+M	Desktop frontend	7	0	0	0		crates/agent-gui/src/pages/chat/chatPageTypes.ts
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/pages/chat/gateway/gatewayComposerActions.ts
+M	Desktop frontend	29	1	0	0		crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts
+M	Desktop frontend	2	0	0	0		crates/agent-gui/src/pages/chat/sidebar/ChatSidebarContainer.tsx
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/pages/chat/workspace/useProjectTerminals.tsx
+M	Desktop frontend	19	5	0	0		crates/agent-gui/src/pages/chat/workspace/useWorkspaceProjects.ts
+M	Desktop frontend	77	10	0	0		crates/agent-gui/src/pages/ChatPage.tsx
+A	Desktop frontend	739	0	0	0		crates/agent-gui/src/pages/RemoteDeviceChatPage.tsx
+M	Desktop frontend	1	1	0	0		crates/agent-gui/src/pages/settings/AboutSection.tsx
+A	Desktop frontend	416	0	0	0		crates/agent-gui/src/pages/settings/AccountSection.tsx
+M	Desktop frontend	16	11	0	0		crates/agent-gui/src/pages/settings/BackupSyncSection.tsx
+M	Desktop frontend	2	2	0	0		crates/agent-gui/src/pages/settings/CherryStudioImportModal.tsx
+A	Desktop frontend	256	0	0	0		crates/agent-gui/src/pages/settings/DevicesSection.tsx
+A	Desktop frontend	310	0	0	0		crates/agent-gui/src/pages/settings/RelayProvidersSection.tsx
+M	Desktop frontend	7	0	0	0		crates/agent-gui/src/pages/settings/types.ts
+M	Desktop frontend	1	0	0	0		crates/agent-gui/src/vite-env.d.ts
+M	Desktop frontend	35	5	0	0		crates/agent-gui/test/backend/cargo-smoke.test.mjs
+A	Desktop frontend	299	0	0	0		crates/agent-gui/test/backend/release-android.test.mjs
+A	Desktop frontend	53	0	0	0		crates/agent-gui/test/backend/release-branding.test.mjs
+M	Desktop frontend	43	10	0	0		crates/agent-gui/test/backend/release-manifest.test.mjs
+M	Desktop frontend	2	2	0	0		crates/agent-gui/test/backend/release-notes.test.mjs
+A	Desktop frontend	67	0	0	0		crates/agent-gui/test/backend/release-upstream-adaptation.test.mjs
+M	Desktop frontend	14	0	0	0		crates/agent-gui/test/backend/release-version.test.mjs
+A	Desktop frontend	41	0	0	0		crates/agent-gui/test/chat/chat-branding.test.mjs
+M	Desktop frontend	31	0	0	0		crates/agent-gui/test/chat/chat-image-viewer.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/chat/chat-stop-timing.test.mjs
+M	Desktop frontend	1	0	0	0		crates/agent-gui/test/chat/conversation-thinking.test.mjs
+M	Desktop frontend	14	1	0	0		crates/agent-gui/test/chat/conversation-title-job.test.mjs
+M	Desktop frontend	36	6	0	0		crates/agent-gui/test/chat/edge-measure-exit.test.mjs
+M	Desktop frontend	65	0	0	0		crates/agent-gui/test/chat/kbrain-bootstrap.test.mjs
+M	Desktop frontend	5	4	0	0		crates/agent-gui/test/chat/kbrain-composer-commands-backend.test.mjs
+M	Desktop frontend	2	2	0	0		crates/agent-gui/test/chat/kbrain-managed-mapping.test.mjs
+M	Desktop frontend	4	1	0	0		crates/agent-gui/test/chat/kbrain-runtime-default.test.mjs
+M	Desktop frontend	3	3	0	0		crates/agent-gui/test/chat/kbrain-settings-page-runtime.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/chat/markdown-image-policy.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/chat/mention-refetch.test.mjs
+M	Desktop frontend	11	5	0	0		crates/agent-gui/test/chat/permission-modes-backend.test.mjs
+M	Desktop frontend	20	0	0	0		crates/agent-gui/test/chat/sidebar-store.test.mjs
+M	Desktop frontend	4	3	0	0		crates/agent-gui/test/chat/workbench-window-session.test.mjs
+A	Desktop frontend	52	0	0	0		crates/agent-gui/test/chat/workspace-parity.test.mjs
+A	Desktop frontend	43	0	0	1		crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs
+A	Desktop frontend	19	0	0	0		crates/agent-gui/test/desktop-execution-switcher-layout.test.mjs
+M	Desktop frontend	35	22	0	0		crates/agent-gui/test/helpers/edge-measure.mjs
+M	Desktop frontend	20	6	0	0		crates/agent-gui/test/helpers/kbrain-trajectory-fixture.mjs
+A	Desktop frontend	61	0	0	1		crates/agent-gui/test/helpers/native-configuration-fixture.mjs
+M	Desktop frontend	1	0	0	0		crates/agent-gui/test/i18n/shared-translations.test.mjs
+M	Desktop frontend	11	1	0	0		crates/agent-gui/test/i18n/translations.test.mjs
+A	Desktop frontend	43	0	0	0		crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs
+M	Desktop frontend	2	1	0	0		crates/agent-gui/test/providers/kbrain-checkpoint-acceptance.mjs
+M	Desktop frontend	15	26	0	0		crates/agent-gui/test/providers/kbrain-history-migration.test.mjs
+M	Desktop frontend	12	6	0	0		crates/agent-gui/test/providers/kbrain-legacy-provider-deleted-reimport.test.mjs
+M	Desktop frontend	0	9	0	0		crates/agent-gui/test/providers/kbrain-legacy-provider-import-retry.test.mjs
+M	Desktop frontend	10	20	0	0		crates/agent-gui/test/providers/kbrain-provider-migration.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/providers/kbrain-reconnect.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/providers/kbrain-turn.test.mjs
+A	Desktop frontend	42	0	0	1		crates/agent-gui/test/providers/native-gateway-socket.test.mjs
+A	Desktop frontend	27	0	0	1		crates/agent-gui/test/providers/native-profile-credential.test.mjs
+A	Desktop frontend	114	0	0	1		crates/agent-gui/test/providers/native-session.test.mjs
+M	Desktop frontend	4	8	0	0		crates/agent-gui/test/providers/provider-runtime-config.test.mjs
+A	Desktop frontend	201	0	0	0		crates/agent-gui/test/providers/relay-binding.test.mjs
+A	Desktop frontend	197	0	0	0		crates/agent-gui/test/providers/relay-client.test.mjs
+A	Desktop frontend	62	0	0	1		crates/agent-gui/test/providers/relay-password-verification.test.mjs
+A	Desktop frontend	107	0	0	0		crates/agent-gui/test/providers/relay-session-expiry.test.mjs
+A	Desktop frontend	22	0	0	0		crates/agent-gui/test/providers/relay-settings-refresh.test.mjs
+A	Desktop frontend	24	0	0	1		crates/agent-gui/test/providers/user-menu-logout.test.mjs
+A	Desktop frontend	40	0	0	1		crates/agent-gui/test/settings/backup-restore.test.mjs
+A	Desktop frontend	106	0	0	1		crates/agent-gui/test/settings/configuration-http.test.mjs
+A	Desktop frontend	55	0	0	1		crates/agent-gui/test/settings/device-settings-version.test.mjs
+A	Desktop frontend	31	0	0	1		crates/agent-gui/test/settings/kbrain-mcp-adapter.test.mjs
+A	Desktop frontend	232	0	0	1		crates/agent-gui/test/settings/native-config-batch.test.mjs
+M	Desktop frontend	17	1	0	0		crates/agent-gui/test/settings/normalization.test.mjs
+M	Desktop frontend	5	4	0	0		crates/agent-gui/test/settings/planning-default-timezone-backend.test.mjs
+M	Desktop frontend	2	2	0	0		crates/agent-gui/test/settings/planning-host.test.mjs
+M	Desktop frontend	15	10	0	0		crates/agent-gui/test/settings/prompts-backend.test.mjs
+M	Desktop frontend	21	17	0	0		crates/agent-gui/test/settings/provider-edit-deeplink.test.mjs
+M	Desktop frontend	3	2	0	0		crates/agent-gui/test/settings/provider-usage-query-form.test.mjs
+A	Desktop frontend	160	0	0	0		crates/agent-gui/test/settings/remote-device-state.test.mjs
+A	Desktop frontend	63	0	0	0		crates/agent-gui/test/settings/service-endpoints.test.mjs
+M	Desktop frontend	59	37	0	0		crates/agent-gui/test/settings/storage.test.mjs
+A	Desktop frontend	63	0	0	1		crates/agent-gui/test/settings/stt-committed-settings.test.mjs
+M	Desktop frontend	9	26	0	0		crates/agent-gui/test/settings/stt-settings.test.mjs
+M	Desktop frontend	21	2	0	0		crates/agent-gui/test/settings/workspace-projects.test.mjs
+A	Desktop frontend	48	0	0	0		crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs
+M	Desktop frontend	5	5	0	0		crates/agent-gui/test/skills/builtin-code-review.test.mjs
+M	Desktop frontend	2	2	0	0		crates/agent-gui/test/skills/explicit-skill-mentions.test.mjs
+A	Desktop frontend	78	0	0	1		crates/agent-gui/test/skills/skills-configuration-version.test.mjs
+M	Desktop frontend	22	0	0	0		crates/agent-gui/test/startup/migration-progress.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/subagents/bus-delta.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/subagents/bus-roster.test.mjs
+M	Desktop frontend	17	17	0	0		crates/agent-gui/test/tools/path-and-system-tools.test.mjs
+M	Desktop frontend	1	1	0	0		crates/agent-gui/test/tools/shell-tools.test.mjs
+M	Desktop frontend	2	2	0	0		crates/agent-gui/test/tray/tray-menu.test.mjs
+M	Desktop frontend	13	0	0	0		crates/agent-gui/tsconfig.json
+M	Desktop frontend	21	9	0	0		crates/agent-gui/vite.config.ts
+M	Shared UI	1	5	0	0		crates/agent-ui/src/components/chat/assistant-bubble/ToolImages.tsx
+M	Shared UI	1	1	0	0		crates/agent-ui/src/components/chat/AssistantReplyShareDialog.tsx
+M	Shared UI	34	16	0	0		crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx
+M	Shared UI	23	0	0	0		crates/agent-ui/src/components/chat/ChatHistorySidebarRows.tsx
+M	Shared UI	12	0	0	0		crates/agent-ui/src/components/chat/ChatHistorySidebarTypes.ts
+M	Shared UI	9	1	0	0		crates/agent-ui/src/components/chat/ComposerAttachmentCard.tsx
+M	Shared UI	17	0	0	0		crates/agent-ui/src/components/chat/ComposerModelControls.tsx
+A	Shared UI	21	0	0	0		crates/agent-ui/src/components/chat/imageLoadState.ts
+M	Shared UI	39	5	0	0		crates/agent-ui/src/components/chat/ImagePreview.tsx
+M	Shared UI	9	1	0	0		crates/agent-ui/src/components/chat/UserAttachmentCards.tsx
+M	Shared UI	2	0	0	0		crates/agent-ui/src/components/IconSet.tsx
+M	Shared UI	7	3	0	0		crates/agent-ui/src/components/ui/scroll-area.tsx
+M	Shared UI	4	4	0	0		crates/agent-ui/src/i18n/planningTranslations.ts
+M	Shared UI	8	5	0	0		crates/agent-ui/src/i18n/translations/enUSCommon.ts
+M	Shared UI	13	12	0	0		crates/agent-ui/src/i18n/translations/enUSSettings.ts
+M	Shared UI	7	5	0	0		crates/agent-ui/src/i18n/translations/zhCNCommon.ts
+M	Shared UI	14	13	0	0		crates/agent-ui/src/i18n/translations/zhCNSettings.ts
+M	Shared UI	1	1	0	0		crates/agent-ui/src/lib/chat/useComposerActions.ts
+M	Shared UI	1	1	0	0		crates/agent-ui/src/lib/providers/customHeaders.ts
+M	Shared UI	17	5	0	0		crates/agent-ui/src/lib/resourceHost.ts
+A	Shared UI	86	0	0	1		crates/agent-ui/src/lib/settings/gatewaySettingsSaveLineage.ts
+M	Shared UI	56	10	0	0		crates/agent-ui/src/lib/settings/index.ts
+M	Shared UI	40	0	0	0		crates/agent-ui/src/lib/settings/sync.ts
+M	Shared UI	18	3	0	0		crates/agent-ui/src/lib/settings/types.ts
+A	Shared UI	10	0	0	1		crates/agent-ui/src/lib/sidebar/recentConversations.ts
+M	Shared UI	31	0	0	0		crates/agent-ui/src/lib/sidebar/store.ts
+M	Shared UI	1	1	0	0		crates/agent-ui/src/lib/skills/index.ts
+M	Shared UI	2	0	0	0		crates/agent-ui/src/lib/stt/types.ts
+M	Shared UI	0	5	0	0		crates/agent-ui/src/lib/workspaceProjects.ts
+M	Shared UI	14	3	0	0		crates/agent-ui/src/pages/chat/ChatComposerBar.tsx
+M	Shared UI	23	28	0	0		crates/agent-ui/src/pages/mcp-hub/McpServerEditModal.tsx
+M	Shared UI	1	1	0	0		crates/agent-ui/src/pages/settings/AIApprovalSection.tsx
+M	Shared UI	2	2	0	0		crates/agent-ui/src/pages/settings/cuaDriverForm.ts
+M	Shared UI	8	1	0	0		crates/agent-ui/src/pages/settings/KBrainComputerSection.tsx
+M	Shared UI	8	1	0	0		crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts
+M	Shared UI	14	11	0	0		crates/agent-ui/src/pages/settings/KBrainSettingsSection.tsx
+M	Shared UI	2	2	0	0		crates/agent-ui/src/pages/settings/providerUtils.ts
+M	Shared UI	214	487	0	0		crates/agent-ui/src/pages/settings/RemoteSection.tsx
+M	Shared UI	1	1	0	0		crates/agent-ui/src/pages/settings/RetryErrorSection.tsx
+M	Shared UI	13	11	0	0		crates/agent-ui/src/pages/settings/SettingsPage.tsx
+M	Shared UI	5	0	0	0		crates/agent-ui/src/pages/settings/SettingsShell.tsx
+M	Shared UI	25	12	0	0		crates/agent-ui/src/pages/settings/SttSection.tsx
+M	Shared UI	222	211	0	0		crates/agent-ui/src/pages/settings/SystemSettingsForm.tsx
+A	Scripts CI deploy skills	9	0	0	0		deploy/.env.dev.example
+A	Scripts CI deploy skills	36	0	0	0		deploy/compose.dev.yaml
+A	Scripts CI deploy skills	54	0	0	0		deploy/compose.integration.yaml
+A	Scripts CI deploy skills	42	0	0	1		deploy/compose.smoke.yaml
+A	Scripts CI deploy skills	35	0	0	0		deploy/production/.env.example
+A	Scripts CI deploy skills	11	0	0	0		deploy/production/backup.sh
+A	Scripts CI deploy skills	67	0	0	0		deploy/production/compose.yaml
+A	Scripts CI deploy skills	37	0	0	0		deploy/production/deploy.sh
+A	Scripts CI deploy skills	27	0	0	0		deploy/production/lib.sh
+A	Scripts CI deploy skills	24	0	0	0		deploy/production/smoke.sh
+A	Scripts CI deploy skills	22	0	0	0		deploy/production/validate.sh
+M	Other	6	2	0	0		Dockerfile
+M	Docs	1	1	0	0		docs/architecture/gui.md
+M	Docs	4	3	0	0		docs/architecture/webui.md
+M	Docs	1	1	0	0		docs/features/config-backup-sync.md
+M	Docs	0	1	0	0		docs/features/tools.md
+A	Docs	-	-	1	0		docs/images/zeroagent-logo.png
+M	Docs	30	10	0	0		docs/operations/deployment.md
+M	Docs	37	16	0	0		docs/operations/development.md
+A	Docs	18	0	0	0		docs/product/decisions/0001-usa-zero-oauth.md
+A	Docs	15	0	0	0		docs/product/decisions/0002-cloud-chat-and-device-agent.md
+A	Docs	15	0	0	0		docs/product/decisions/0003-device-identity-and-sessions.md
+A	Docs	14	0	0	0		docs/product/decisions/0004-managed-key-security.md
+A	Docs	15	0	0	0		docs/product/decisions/0005-private-source-public-distribution.md
+A	Docs	19	0	0	0		docs/product/decisions/0006-published-preview-sync.md
+A	Docs	49	0	0	0		docs/product/decisions/0007-v2-execution-boundaries.md
+A	Docs	58	0	0	1		docs/product/decisions/0008-managed-model-broker.md
+A	Docs	27	0	0	1		docs/product/decisions/0009-web-cookie-account-consistency.md
+A	Docs	53	0	0	1		docs/product/decisions/0010-canonical-configuration-backups.md
+A	Docs	47	0	0	1		docs/product/decisions/0011-windows-backend-cold-start.md
+A	Docs	16	0	0	1		docs/product/decisions/0012-password-verification-preserves-oauth.md
+A	Docs	18	0	0	1		docs/product/decisions/0013-tunnel-desired-state-coalescing.md
+A	Docs	29	0	0	1		docs/product/decisions/0014-explicit-disabled-automation-import.md
+A	Docs	38	0	0	1		docs/product/decisions/0015-legacy-provider-archives.md
+A	Docs	226	0	0	1		docs/product/decisions/0016-native-account-and-config-boundaries.md
+A	Docs	34	0	0	1		docs/product/decisions/0017-native-preference-snapshot-revisions.md
+A	Docs	33	0	0	1		docs/product/decisions/0018-shared-profile-configuration-gate.md
+A	Docs	16	0	0	1		docs/product/decisions/0019-canonical-configuration-batches.md
+A	Docs	17	0	0	1		docs/product/decisions/0020-native-http-configuration-versions.md
+A	Docs	14	0	0	1		docs/product/decisions/0021-native-ui-preferences.md
+A	Docs	20	0	0	1		docs/product/decisions/0022-native-device-settings-commit.md
+A	Docs	14	0	0	1		docs/product/decisions/0023-in-process-source-test-compiler.md
+A	Docs	14	0	0	1		docs/product/decisions/0024-read-bound-skills-http.md
+A	Docs	45	0	0	1		docs/product/decisions/0025-scoped-mcp-oauth-operations.md
+A	Docs	34	0	0	1		docs/product/decisions/0026-canonical-mcp-oauth-targets.md
+A	Docs	65	0	0	1		docs/product/decisions/0027-native-mcp-credential-bridge.md
+A	Docs	36	0	0	1		docs/product/decisions/0028-retained-mcp-refresh-rotation.md
+A	Docs	68	0	0	1		docs/product/decisions/0029-go-mcp-runtime-control.md
+A	Docs	28	0	0	1		docs/product/decisions/0030-mcp-sse-message-endpoint.md
+A	Docs	60	0	0	1		docs/product/decisions/0031-owned-mcp-process-lifecycle.md
+A	Docs	23	0	0	1		docs/product/decisions/0032-inferred-sse-message-endpoints.md
+A	Docs	12	0	0	1		docs/product/decisions/0033-mcp-client-product-identity.md
+A	Docs	27	0	0	1		docs/product/decisions/0034-upstream-first-fresh-preview.md
+A	Docs	357	0	0	0		docs/product/features.yaml
+A	Docs	54	0	0	0		docs/product/PRODUCT_CONTRACT.md
+A	Docs	26	0	0	1		docs/releases/v0.4.0-beta.1.md
+A	Docs	39	0	0	0		docs/upstream/template.md
+A	Docs	74	0	0	0		docs/upstream/v1.2.4.md
+A	Docs	103	0	0	0		docs/upstream/v1.2.5.md
+A	Docs	119	0	0	0		docs/upstream/v1.2.6.md
+A	Docs	112	0	0	1		docs/upstream/v2.0.0-beta.20-backend-validation.md
+A	Docs	577	0	0	1		docs/upstream/v2.0.0-beta.20-conflicts.json
+A	Docs	25728	0	0	1		docs/upstream/v2.0.0-beta.20-inventory.json
+A	Docs	85	0	0	1		docs/upstream/v2.0.0-beta.20-kbrain-patches.md
+A	Docs	198	0	0	1		docs/upstream/v2.0.0-beta.20-linux-native.md
+A	Docs	94	0	0	1		docs/upstream/v2.0.0-beta.20-preview-readiness.md
+A	Docs	123	0	0	1		docs/upstream/v2.0.0-beta.20-slimming-review.md
+A	Docs	1325	0	0	0		docs/upstream/v2.0.0-beta.20.md
+M	Other	84	106	0	0		Makefile
+M	Other	15	10	0	0		package.json
+A	K-brain patch text	729	0	0	1		patches/kbrain/0001-native-mcp-credentials.patch
+A	K-brain patch text	179	0	0	1		patches/kbrain/0002-windows-selfhost-fixtures.patch
+A	K-brain patch text	1291	0	0	1		patches/kbrain/0003-mcp-credential-history-and-legacy-sse.patch
+A	K-brain patch text	1862	0	0	1		patches/kbrain/0004-owned-mcp-lifecycle.patch
+A	K-brain patch text	28	0	0	1		patches/kbrain/manifest.json
+A	K-brain patch text	52	0	0	1		patches/kbrain/README.md
+M	Other	194	0	0	0		pnpm-lock.yaml
+M	Other	97	378	0	0		README.md
+M	Other	98	379	0	0		README.zh-CN.md
+A	Scripts CI deploy skills	52	0	0	1		scripts/check-gateway-docker-smoke.sh
+A	Scripts CI deploy skills	229	0	0	1		scripts/check-zeroagent-migration.mjs
+A	Scripts CI deploy skills	357	0	0	0		scripts/check-zeroagent-product-contract.mjs
+M	Scripts CI deploy skills	2	2	0	0		scripts/check.mjs
+M	Scripts CI deploy skills	2	1	0	0		scripts/generate-model-catalog.mjs
+A	Scripts CI deploy skills	20	0	0	1		scripts/kbrain-startup-budget.mjs
+A	Scripts CI deploy skills	21	0	0	1		scripts/kbrain-startup-budget.test.mjs
+M	Scripts CI deploy skills	43	7	0	0		scripts/release/build-kbrain-source.mjs
+M	Scripts CI deploy skills	6	2	0	0		scripts/release/build-kbrain-source.test.mjs
+M	Scripts CI deploy skills	85	142	0	0		scripts/release/create-ai-release-notes.mjs
+M	Scripts CI deploy skills	12	12	0	0		scripts/release/create-ai-release-notes.test.mjs
+M	Scripts CI deploy skills	6	4	0	0		scripts/release/create-tauri-updater-manifest.mjs
+A	Scripts CI deploy skills	41	0	0	1		scripts/release/kbrain-patches.mjs
+A	Scripts CI deploy skills	160	0	0	1		scripts/release/kbrain-patches.test.mjs
+M	Scripts CI deploy skills	2	5	0	0		scripts/release/prepare-app-version-from-tag.mjs
+M	Scripts CI deploy skills	18	4	0	0		scripts/release/prepare-kbrain.mjs
+M	Scripts CI deploy skills	14	2	0	0		scripts/release/verify-kbrain-packaging.mjs
+M	Scripts CI deploy skills	11	4	0	0		scripts/release/verify-kbrain-packaging.test.mjs
+M	Scripts CI deploy skills	66	12	0	0		scripts/typescript-source-tools.mjs
+A	Scripts CI deploy skills	85	0	0	1		scripts/typescript-source-tools.test.mjs
+D	Scripts CI deploy skills	0	112	0	0		scripts/update-contributors.py
+A	Scripts CI deploy skills	19	0	0	0		scripts/upstream-release.mjs
+A	Scripts CI deploy skills	20	0	0	0		scripts/upstream-release.test.mjs
+A	Scripts CI deploy skills	4	0	0	0		skills/sync-liveagent-release/agents/openai.yaml
+A	Scripts CI deploy skills	49	0	0	0		skills/sync-liveagent-release/references/validation.md
+A	Scripts CI deploy skills	64	0	0	0		skills/sync-liveagent-release/scripts/verify-release.mjs
+A	Scripts CI deploy skills	31	0	0	0		skills/sync-liveagent-release/scripts/verify-release.test.mjs
+A	Scripts CI deploy skills	80	0	0	0		skills/sync-liveagent-release/SKILL.md

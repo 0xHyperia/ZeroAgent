@@ -13,6 +13,7 @@ import (
 var ErrAgentIDRequired = errors.New("agent_id is required")
 var ErrAgentOffline = errors.New("agent offline")
 var ErrChatProtocolIncompatible = errors.New("desktop chat protocol is incompatible; update ZeroAgent desktop")
+var ErrConversationReferencesProtocolIncompatible = errors.New("desktop conversation references are incompatible; update ZeroAgent desktop")
 var ErrTunnelNotFound = errors.New("tunnel not found")
 var ErrTunnelExpired = errors.New("tunnel expired")
 
@@ -29,16 +30,18 @@ type AuthSnapshot struct {
 }
 
 type Manager struct {
-	registry          *sessionRegistry
-	syncHub           *syncHub
-	convStreams       *conversationStreamStore
-	tunnels           *tunnelRuntime
-	workspaceHub      *workspaceActivityHub
-	managedProcesses  *managedProcessHub
-	statusSubs        *statusSubscriberHub
-	historyObserverMu sync.RWMutex
-	historyObserver   HistoryObserver
-	sttSettingsSync   func(context.Context, json.RawMessage) (any, error)
+	registry             *sessionRegistry
+	syncHub              *syncHub
+	convStreams          *conversationStreamStore
+	tunnels              *tunnelRuntime
+	workspaceHub         *workspaceActivityHub
+	managedProcesses     *managedProcessHub
+	statusSubs           *statusSubscriberHub
+	historyObserverMu    sync.RWMutex
+	historyObserver      HistoryObserver
+	sttSettingsSync      func(context.Context, json.RawMessage) (any, error)
+	localWorkspaceOwners map[string]*localWorkspaceActivityOwner
+	clarifyDeltas        *clarifyDeltaHub
 }
 
 type HistoryObserver func(agentID string, event *gatewayv2.HistorySyncEvent)
@@ -86,12 +89,14 @@ type Status struct {
 
 func NewManager() *Manager {
 	m := &Manager{
-		registry:         newSessionRegistry(),
-		syncHub:          newSyncHub(),
-		tunnels:          newTunnelRuntime(),
-		workspaceHub:     newWorkspaceActivityHub(),
-		managedProcesses: newManagedProcessHub(),
-		statusSubs:       newStatusSubscriberHub(),
+		registry:             newSessionRegistry(),
+		syncHub:              newSyncHub(),
+		tunnels:              newTunnelRuntime(),
+		workspaceHub:         newWorkspaceActivityHub(),
+		localWorkspaceOwners: make(map[string]*localWorkspaceActivityOwner),
+		managedProcesses:     newManagedProcessHub(),
+		statusSubs:           newStatusSubscriberHub(),
+		clarifyDeltas:        newClarifyDeltaHub(),
 	}
 	m.convStreams = newConversationStreamStore(m.IsOnline)
 	go m.tunnelExpirySweepLoop()

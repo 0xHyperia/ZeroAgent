@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown } from "@liveagent/ui/components/IconSet";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RelayGroup } from "@/lib/relay/client";
 import { relayProviderTypeForPlatform } from "@/lib/relay/providers";
 

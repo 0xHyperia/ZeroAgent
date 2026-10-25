@@ -91,3 +91,17 @@ test("release version script rejects non-semver tags", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /semver tag like v0\.1\.3/);
 });
+
+test("Gateway Docker releases pass normalized versions and reserve latest for stable tags", () => {
+  const workflow = readFileSync(path.join(repoRoot, ".github/workflows/gateway-docker.yml"), "utf8");
+  const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
+
+  assert.match(workflow, /id: version[\s\S]*prepare-app-version-from-tag\.mjs/);
+  assert.match(workflow, /--github-env "\$GITHUB_ENV" --github-output "\$GITHUB_OUTPUT"/);
+  assert.match(workflow, /app_version: \$\{\{ steps\.version\.outputs\.app_version \}\}/);
+  assert.match(workflow, /is_prerelease: \$\{\{ steps\.version\.outputs\.is_prerelease \}\}/);
+  assert.match(workflow, /LIVEAGENT_APP_VERSION=\$\{\{ needs\.quality-gate\.outputs\.app_version \}\}/);
+  assert.match(workflow, /value=latest,enable=\$\{\{ needs\.quality-gate\.outputs\.is_prerelease == 'false' \}\}/);
+  assert.match(dockerfile, /^ARG LIVEAGENT_APP_VERSION\r?$/m);
+  assert.match(dockerfile, /^RUN LIVEAGENT_APP_VERSION="\$LIVEAGENT_APP_VERSION" pnpm --filter @liveagent\/gateway-webui build\r?$/m);
+});

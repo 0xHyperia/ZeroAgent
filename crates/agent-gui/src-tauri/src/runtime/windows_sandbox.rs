@@ -2773,6 +2773,47 @@ mod tests {
     mod win_only {
         use super::super::win;
 
+        struct GitBashFixture {
+            _directory: tempfile::TempDir,
+            program: std::path::PathBuf,
+        }
+
+        fn git_bash_fixture() -> Option<GitBashFixture> {
+            let source = std::path::Path::new(r"C:\Program Files\Git\usr\bin");
+            if !source.join("bash.exe").is_file() {
+                return None;
+            }
+            // MSYS derives its shared NT object names from the runtime DLL's absolute path.
+            // A system Bash (including another test's normal shell) can own the installed
+            // runtime's Medium-IL objects. Give this sandbox fixture its own DLL path so the
+            // assertions exercise our launcher, without rewriting another process's namespace.
+            let directory = tempfile::tempdir().expect("isolated Git Bash fixture");
+            let bin = directory.path().join("usr").join("bin");
+            std::fs::create_dir_all(&bin).expect("fixture bin directory");
+            let etc = directory.path().join("etc");
+            std::fs::create_dir(&etc).expect("fixture mount directory");
+            // Match Git for Windows' drive aliases and use the launcher's fenced TEMP for /tmp.
+            std::fs::write(etc.join("fstab"), "none / cygdrive binary,posix=0,noacl,user 0 0\nnone /tmp usertemp binary,posix=0,noacl 0 0\n")
+                .expect("fixture mount table");
+            for entry in std::fs::read_dir(source).expect("Git Bash runtime files") {
+                let entry = entry.expect("Git Bash runtime entry");
+                let path = entry.path();
+                if path.is_file()
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("dll"))
+                {
+                    std::fs::copy(&path, bin.join(entry.file_name())).expect("copy runtime DLL");
+                }
+            }
+            let program = bin.join("bash.exe");
+            std::fs::copy(source.join("bash.exe"), &program).expect("copy fixture Bash");
+            Some(GitBashFixture {
+                _directory: directory,
+                program,
+            })
+        }
+
         static SANDBOX_EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         const SANDBOX_ENV_VARS: &[&str] = &[
             "TEMP",
@@ -2982,10 +3023,10 @@ mod tests {
         /// `\BaseNamedObjects\msys-2.0S5-` + 16 位 hex(与 cygwin hash_path_name 对齐)。
         #[test]
         fn msys_object_dir_name_from_git_bash() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             let names = win::msys_object_dir_names_for_test(bash);
             println!("msys object dirs: {names:?}");
             assert!(
@@ -3004,10 +3045,13 @@ mod tests {
 
         #[test]
         fn restricted_token_can_open_stamped_msys_dir() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            // This probe rewrites the same MSYS named-object directory as sandbox_exec.
+            // Keep it under the existing fixture lock until impersonation and handles are gone.
+            let _guard = SandboxTestGuard::acquire();
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             win::restricted_token_can_open_msys_dir(bash)
                 .expect("WRITE_RESTRICTED token should open stamped msys directory");
         }
@@ -3015,10 +3059,10 @@ mod tests {
         /// 真机:Git Bash 在联网 Low IL token 沙箱内必须能启动。
         #[test]
         fn networked_sandbox_git_bash_exit_zero() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             let code = sandbox_exec(bash, &["-c".into(), "exit 0".into()])
                 .expect("networked sandbox Git Bash execute");
             assert_eq!(
@@ -3029,10 +3073,10 @@ mod tests {
 
         #[test]
         fn networked_sandbox_git_bash_echo() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             let code = sandbox_exec(bash, &["-c".into(), "echo sandbox-ok".into()])
                 .expect("networked sandbox Git Bash echo");
             assert_eq!(
@@ -3043,10 +3087,10 @@ mod tests {
 
         #[test]
         fn low_integrity_label_recovers_from_modify_only_owner_dacl() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             let _guard = SandboxTestGuard::acquire();
             let workspace = tempfile::tempdir().expect("workspace");
             win::prepare_modify_only_low_il_probe(workspace.path())
@@ -3117,10 +3161,10 @@ mod tests {
         /// 回归的是 TokenUser 限制性 SID 把“用户可写”路径全部重开的洞。
         #[test]
         fn networked_sandbox_git_bash_write_fence() {
-            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
-            if !bash.is_file() {
+            let Some(runtime) = git_bash_fixture() else {
                 return;
-            }
+            };
+            let bash = runtime.program.as_path();
             let _guard = SandboxTestGuard::acquire();
             let outer = tempfile::tempdir().expect("outer");
             let workspace = outer.path().join("workspace");

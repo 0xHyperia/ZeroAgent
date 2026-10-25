@@ -84,7 +84,7 @@ impl MemoryStore {
         } else {
             format!("{previous_body}\n\n{normalized_bullet}")
         };
-        if body.as_bytes().len() > MAX_DAILY_BODY_BYTES {
+        if body.len() > MAX_DAILY_BODY_BYTES {
             return Err(error_json(
                 "body_too_large",
                 "daily memory body exceeds 32 KB",
@@ -97,7 +97,7 @@ impl MemoryStore {
                 None,
             ));
         }
-        let warning = if body.as_bytes().len() >= DAILY_NEAR_LIMIT_BYTES {
+        let warning = if body.len() >= DAILY_NEAR_LIMIT_BYTES {
             Some(format!(
                 "{slug} is near the 32 KB daily limit; consolidate soon"
             ))
@@ -176,8 +176,13 @@ fn daily_title_for_meta(slug: &str, date_local: Option<&str>) -> String {
         .map(daily_title_for_date)
         .unwrap_or_else(|| slug.trim_start_matches("daily-").to_string())
 }
+/// 全局默认时区(设置 → 通用)下的当前时间;记忆的「今天」与日龄均以此为准。
+fn memory_now() -> DateTime<chrono_tz::Tz> {
+    Utc::now().with_timezone(&crate::commands::settings::runtime_default_tz())
+}
+
 fn today_local(rollover_hour: u32) -> NaiveDate {
-    let now = Local::now();
+    let now = memory_now();
     let hour = rollover_hour.min(23);
     let mut date = now.date_naive();
     if now.hour() < hour {

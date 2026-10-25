@@ -116,7 +116,9 @@ test("STT connection test saves the current form and identifies the active runti
   );
 
   assert.match(section, /if \(!\(await save\(\)\)\) return;/);
-  assert.match(section, />语音输入<\/h3>/);
+  assert.match(section, /<SettingsSection\s+title="通用"/);
+  assert.match(section, /title="开启语音输入"/);
+  assert.doesNotMatch(section, />语音输入<\/h3>/);
   assert.doesNotMatch(section, /语音转文字/);
   assert.match(zhCNSettings, /"settings\.navStt": "语音输入"/);
   assert.doesNotMatch(zhCNSettings, /语音转文字/);
@@ -136,12 +138,10 @@ test("STT connection test saves the current form and identifies the active runti
     /fields: \["websocketUrl", "baiduAppId", "devPid", "baiduApiKey"\]/,
   );
   assert.match(section, /provider === "tencent_cloud" \? "AppId" : "App ID"/);
-  assert.match(section, /delete next\[definition\.id\]/);
   assert.doesNotMatch(section, /service\s*\.get\(\)/);
   assert.match(section, /const displayedStt = settings\.stt/);
   assert.match(section, /checked=\{displayedStt\.enabled\}/);
   assert.match(section, /stt: \{ \.\.\.previous\.stt, enabled, allowIncomplete: true \}/);
-  assert.match(section, /className="w-full min-w-0 space-y-5"/);
   assert.doesNotMatch(webSettingsSync, /receivedSyncedStt/);
   assert.doesNotMatch(webSettingsSync, /webSttSettingsService/);
   assert.match(webSettingsSync, /if \(liveSyncEpochRef\.current === 0\)/);
@@ -153,7 +153,8 @@ test("STT connection test saves the current form and identifies the active runti
   assert.match(desktopService, /runtimeLabel: "桌面端（同步到 Gateway WebUI）"/);
   assert.match(desktopService, /secretRevealMode: "value"/);
   assert.match(desktopService, /settings_reveal_stt_secret/);
-  assert.match(section, /WebUI 的查看按钮只显示字段名/);
+  assert.match(gatewayView, /runtimeLabel: "设备 WebUI"/);
+  assert.match(gatewayView, /设备 WebUI 暂不提供语音输入配置/);
   assert.match(section, /toggleSecretVisibility/);
   assert.match(section, /const SAVED_SECRET_MASK = "saved-secret-placeholder"/);
   assert.match(section, /selectedProvider: SttProviderId/);
@@ -193,7 +194,7 @@ test("STT connection test saves the current form and identifies the active runti
   assert.match(desktopApp, /setSttProviderOverride\(null\)/);
   assert.match(desktopChatPage, /sttSessionKey:\s*currentConversationId/);
   assert.match(desktopChatPage, /sttSessionKey:\s*conversationId/);
-  assert.doesNotMatch(gatewayView, /sttSessionKey=\{displayedConversationId\}/);
+  assert.match(gatewayView, /sttProvider=\{null\}/);
   assert.match(desktopChatPage, /sttProviderConfigured:/);
   assert.doesNotMatch(
     desktopChatPage,
@@ -201,8 +202,12 @@ test("STT connection test saves the current form and identifies the active runti
   );
   assert.match(desktopChatPage, /onSttError:\s*handleSttError/);
   assert.doesNotMatch(gatewayView, /onSttError=\{handleSttError\}/);
-  assert.doesNotMatch(gatewayView, /sttProviderConfigured=/);
+  assert.match(gatewayView, /sttProviderConfigured=\{false\}/);
   assert.match(composerBar, /onError: onSttError/);
+  assert.match(composerBar, /onConfigurationRequired: handleSttConfigurationRequired/);
+  assert.match(composerBar, /id: "stt-provider-configuration-incomplete"/);
+  assert.match(composerBar, /duration: 8_000/);
+  assert.match(composerBar, /onOpenSettings\("stt"\)/);
   assert.match(composerBar, /providerConfigured: sttProviderConfigured/);
   assert.match(composerBar, /sessionKey: sttSessionKey/);
   assert.match(composerBar, /hidden,/);

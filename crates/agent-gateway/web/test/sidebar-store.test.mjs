@@ -159,25 +159,47 @@ test("initial load fills the list and fetches workdirs exactly once", async () =
   store.stop();
 });
 
-test("prefetch hydrates chat conversations without replacing the active project list", async () => {
+test("global workdirs survive startup scope assignment and later project switches", async (t) => {
   const fake = createFakeBackend();
-  fake.state.pages.set("cwd:/tmp/a", [conversation("agent", { cwd: "/tmp/a" })]);
-  fake.state.pages.set("cwd-empty", [conversation("chat", { updatedAt: 2 })]);
+  let resolveWorkdirs;
+  fake.backend.listWorkdirs = () => new Promise((resolve) => { resolveWorkdirs = resolve; });
   const store = createSidebarStore(fake.backend);
-  store.setScope(SCOPE_A);
+  t.after(() => store.stop());
   store.start();
+  store.setScope({ kind: "all" });
+  store.setScope(SCOPE_A);
+  const workdirs = [{ path: "/tmp/a", conversationCount: 5, updatedAt: 100 }];
+  resolveWorkdirs(workdirs);
   await tick();
-
-  await store.prefetch({ kind: "unscoped" });
-
-  assert.deepEqual(
-    store.getSnapshot().conversations.map((item) => item.id),
-    ["agent"],
-  );
-  assert.equal(store.getSnapshot().byId.get("chat")?.id, "chat");
+  assert.deepEqual(store.getSnapshot().workdirs, workdirs);
+  assert.equal(store.getSnapshot().workdirActivity.get("/tmp/a"), 100);
   assert.equal(store.getSnapshot().scopeKey, "cwd:/tmp/a");
-  store.stop();
 });
+
+for (const outcome of ["resolve", "reject"]) {
+  test(`workdirs discard stale ${outcome} but drain the restart refresh`, async (t) => {
+    const fake = createFakeBackend();
+    const requests = [];
+    fake.backend.listWorkdirs = () => new Promise((resolve, reject) => {
+      requests.push({ resolve, reject });
+    });
+    const store = createSidebarStore(fake.backend);
+    t.after(() => store.stop());
+    store.start();
+    store.stop();
+    store.start();
+    store.setScope({ kind: "all" });
+    if (outcome === "resolve") requests[0].resolve([{ path: "/stale", conversationCount: 1, updatedAt: 1 }]);
+    else requests[0].reject(new Error("old connection"));
+    await tick();
+    assert.deepEqual(store.getSnapshot().workdirs, []);
+    assert.equal(requests.length, 2);
+    const workdirs = [{ path: "/fresh", conversationCount: 5, updatedAt: 100 }];
+    requests[1].resolve(workdirs);
+    await tick();
+    assert.deepEqual(store.getSnapshot().workdirs, workdirs);
+  });
+}
 
 test("a failed refresh keeps the visible list and sets an error code", async () => {
   const fake = createFakeBackend();

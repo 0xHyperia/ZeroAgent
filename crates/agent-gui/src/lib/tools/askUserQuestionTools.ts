@@ -1,4 +1,4 @@
-import type { Tool, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Tool, ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
 import {
   ASK_USER_QUESTION_MAX_OPTIONS,
   ASK_USER_QUESTION_MAX_QUESTIONS,
@@ -37,6 +37,74 @@ const pendingByToolCallId = new Map<string, PendingAskUserQuestion>();
 // 同一值，保证 WebUI 卡片倒计时与桌面权威计时对齐。已过期条目按需惰性清理
 // （执行从未开始的调用，如被 guard 拒执的截断调用，不会走 settle 清理）。
 const presetDeadlineByToolCallId = new Map<string, number>();
+
+// 按会话订阅：侧栏用它把「正在等你回答」标到会话行上，与 toolApproval.ts 的
+// listenersByConversation/emitChange 同构。这里不需要全局 listener——提问卡片
+// 本身就在转录里，靠 toolResult 的有无判断是否已落定，只有侧栏需要按会话查询。
+const listenersByConversation = new Map<string, Set<() => void>>();
+const pendingSnapshotsByConversation = new Map<string, PendingAskUserQuestionSummary[]>();
+const EMPTY_PENDING_QUESTIONS: PendingAskUserQuestionSummary[] = [];
+Object.freeze(EMPTY_PENDING_QUESTIONS);
+
+function emitChange(conversationId: string) {
+  const key = conversationId.trim();
+  if (!key) return;
+  pendingSnapshotsByConversation.delete(key);
+  const conversationListeners = listenersByConversation.get(key);
+  if (!conversationListeners) return;
+  for (const listener of Array.from(conversationListeners)) listener();
+}
+
+export function subscribeAskUserQuestionsForConversation(
+  conversationId: string,
+  listener: () => void,
+): () => void {
+  const key = conversationId.trim();
+  if (!key) return () => undefined;
+  const conversationListeners = listenersByConversation.get(key) ?? new Set();
+  conversationListeners.add(listener);
+  listenersByConversation.set(key, conversationListeners);
+  return () => {
+    conversationListeners.delete(listener);
+    if (conversationListeners.size === 0) {
+      listenersByConversation.delete(key);
+    }
+  };
+}
+
+/** 某会话当前全部待应答提问。随 pending 表变更，经
+ *  subscribeAskUserQuestionsForConversation 的订阅响应式刷新。 */
+export type PendingAskUserQuestionSummary = {
+  toolCallId: string;
+  deadlineAt: number;
+};
+
+export function listPendingAskUserQuestionsForConversation(
+  conversationId: string,
+): PendingAskUserQuestionSummary[] {
+  const target = conversationId.trim();
+  const out: PendingAskUserQuestionSummary[] = [];
+  for (const [toolCallId, pending] of pendingByToolCallId) {
+    if (pending.conversationId === target) {
+      out.push({ toolCallId, deadlineAt: pending.deadlineAt });
+    }
+  }
+  return out;
+}
+
+/** 身份稳定的快照：useSyncExternalStore 要求同一状态返回同一引用，否则会撕裂。 */
+export function getPendingAskUserQuestionsSnapshot(
+  conversationId: string,
+): PendingAskUserQuestionSummary[] {
+  const key = conversationId.trim();
+  if (!key) return EMPTY_PENDING_QUESTIONS;
+  const cached = pendingSnapshotsByConversation.get(key);
+  if (cached) return cached;
+  const pending = listPendingAskUserQuestionsForConversation(key);
+  if (pending.length === 0) return EMPTY_PENDING_QUESTIONS;
+  pendingSnapshotsByConversation.set(key, pending);
+  return pending;
+}
 
 function sweepStalePresetDeadlines(now: number) {
   for (const [toolCallId, deadlineAt] of presetDeadlineByToolCallId) {
@@ -98,6 +166,39 @@ export function answerAskUserQuestion(
   return { ok: true };
 }
 
+export function requestBackendQuestion(params: {
+  toolCallId: string;
+  conversationId: string;
+  questions: AskUserQuestionItem[];
+  deadlineAt: number;
+  signal?: AbortSignal;
+}): Promise<AskUserQuestionAnswer[]> {
+  if (params.signal?.aborted) return Promise.reject(new Error("Question cancelled"));
+  if (pendingByToolCallId.has(params.toolCallId))
+    return Promise.reject(new Error("Question is already pending"));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (value: AskUserQuestionSettlement) => {
+      if (settled) return;
+      settled = true;
+      pendingByToolCallId.delete(params.toolCallId);
+      params.signal?.removeEventListener("abort", abort);
+      emitChange(params.conversationId);
+      if (value.kind === "answered") resolve(value.answers);
+      else reject(new Error("Question cancelled"));
+    };
+    const abort = () => settle({ kind: "cancelled" });
+    pendingByToolCallId.set(params.toolCallId, {
+      conversationId: params.conversationId,
+      questions: params.questions,
+      deadlineAt: params.deadlineAt,
+      settle,
+    });
+    params.signal?.addEventListener("abort", abort, { once: true });
+    emitChange(params.conversationId);
+  });
+}
+
 export function hasPendingAskUserQuestion(toolCallId: string) {
   return pendingByToolCallId.has(toolCallId.trim());
 }
@@ -110,6 +211,7 @@ export function cancelPendingAskUserQuestionsForConversation(conversationId: str
       pending.settle({ kind: "cancelled" });
     }
   }
+  emitChange(conversationId);
 }
 
 const ASK_USER_QUESTION_TIMEOUT_MINUTES = Math.round(ASK_USER_QUESTION_TIMEOUT_MS / 60_000);
@@ -119,7 +221,7 @@ const ASK_USER_QUESTION_TOOL_DESCRIPTION = `Ask the user up to ${ASK_USER_QUESTI
 The questions render as an interactive card; execution pauses until the user answers every question, then the selections come back as the tool result. If the user does not answer within ${ASK_USER_QUESTION_TIMEOUT_MINUTES} minutes, the recommended (or first) option of every question is auto-selected and execution continues — the result text tells you which happened.
 
 Rules:
-- Ask 1-${ASK_USER_QUESTION_MAX_QUESTIONS} focused questions per call; each question needs ${ASK_USER_QUESTION_MIN_OPTIONS}-${ASK_USER_QUESTION_MAX_OPTIONS} options (3-4 is ideal), and every question in one call must have the SAME number of options.
+- Ask 1-${ASK_USER_QUESTION_MAX_QUESTIONS} focused questions per call; each question needs ${ASK_USER_QUESTION_MIN_OPTIONS}-${ASK_USER_QUESTION_MAX_OPTIONS} options (3-4 is ideal); different questions may have different option counts.
 - Options must be short, concrete, and mutually exclusive. Set recommended=true on your suggested choice (at most one per question) — it is shown first and becomes the timeout fallback.
 - The UI automatically appends an "Other" free-text option to every question, so the user can always type their own answer. Do NOT add your own catch-all option (e.g. "Other", "Custom", "其他", "自定义"). When the user types an answer, the result marks it as user-typed and returns their exact words instead of a listed label — treat it as authoritative.
 - Give each question a short header (2-6 chars works best) — it becomes the tab label when several questions show at once.
@@ -149,7 +251,7 @@ const askUserQuestionParameters = Type.Object({
           ),
         }),
         {
-          description: `${ASK_USER_QUESTION_MIN_OPTIONS}-${ASK_USER_QUESTION_MAX_OPTIONS} mutually exclusive options (3-4 is ideal). Every question in one call must have the same number of options.`,
+          description: `${ASK_USER_QUESTION_MIN_OPTIONS}-${ASK_USER_QUESTION_MAX_OPTIONS} mutually exclusive options (3-4 is ideal).`,
         },
       ),
     }),
@@ -218,6 +320,9 @@ export function createAskUserQuestionTools(params: {
         pendingByToolCallId.delete(toolCall.id);
         signal?.removeEventListener("abort", onAbort);
         clearTimeout(timeoutId);
+        // 落定的会话来自闭包而非 pending 结构体：settle 定义在 executeToolCall
+        // 内部，此处 pending 已从表中摘除。
+        emitChange(params.conversationId);
         resolve(value);
       };
       const onAbort = () => settle({ kind: "cancelled" });
@@ -232,6 +337,7 @@ export function createAskUserQuestionTools(params: {
         settle,
       });
       signal?.addEventListener("abort", onAbort, { once: true });
+      emitChange(params.conversationId);
     });
 
     if (settlement.kind === "cancelled") {

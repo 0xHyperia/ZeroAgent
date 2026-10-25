@@ -4,6 +4,7 @@ import {
   findCatalogModel,
   findCatalogModelAcrossProviders,
 } from "./modelCatalog";
+import { type LiveThinking, resolveLiveThinking } from "./thinkingLive";
 
 // ---------------------------------------------------------------------------
 // 模型思考能力（档位可用性的单一真源）
@@ -13,7 +14,8 @@ import {
 // 在生成期归一化）。本模块只回答"这个模型有哪些思考档、能否关闭"——UI 档位
 // 列表与请求期钳制都从这里派生，保证两者永不漂移。每档发什么请求参数
 // （adaptive/budget、effort 字段名、值改写）是流式运行时的领域，不归这里管。
-// 本文件是两端思考能力判断的单一真源。
+// 快照未命中时再查运行期 models.dev 补充（thinkingLive，见该文件头注释），
+// 最后才落兜底——快照/补充/兜底三层组成两端思考能力判断的单一真源。
 
 export type ThinkingLevel = CatalogThinkingLevel;
 
@@ -36,6 +38,9 @@ export type ModelThinkingCapability = {
   alwaysOn: boolean;
   /** 目录命中 or 兜底推断（调试/测试用途）。 */
   fromCatalog: boolean;
+  /** true = 档位来自运行期 models.dev 补充（thinkingLive），仅新模型/上游
+   * 补录场景出现；快照命中时恒缺省。 */
+  fromLive?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -109,6 +114,17 @@ function fallbackCapability(providerId: CatalogAppProviderId, modelId: string) {
   return { reasoning: true, levels: [...FALLBACK_LEVELS], alwaysOn: false, fromCatalog: false };
 }
 
+/** 运行期补充（thinkingLive）命中时的能力形态：数据源标记为 fromLive。 */
+function liveCapability(live: LiveThinking): ModelThinkingCapability {
+  return {
+    reasoning: true,
+    levels: [...live.levels],
+    alwaysOn: !live.off,
+    fromCatalog: false,
+    fromLive: true,
+  };
+}
+
 /**
  * 解析模型的思考能力。目录查找与限额同路径：供应商作用域优先，未命中按 id
  * 跨供应商回查（中转挂载的 glm/kimi/deepseek 等命中真实档位），最后才落兜底。
@@ -125,6 +141,10 @@ export function resolveModelThinking(
 
   const entry =
     findCatalogModel(providerId, trimmedId) ?? findCatalogModelAcrossProviders(trimmedId);
+  // 快照未命中，或命中但无 thinking 数据（上游当时没收录推理信息）时，查询
+  // 运行期 models.dev 补充（thinkingLive）——覆盖快照窗口期新发布/补录的模型；
+  // 补充未命中则维持原判定（含"目录明确判非推理模型"的结论，绝不被兜底翻案）。
+  const live = entry?.thinking ? undefined : resolveLiveThinking(trimmedId);
   const capability = entry
     ? entry.thinking
       ? {
@@ -133,8 +153,12 @@ export function resolveModelThinking(
           alwaysOn: !entry.thinking.off,
           fromCatalog: true,
         }
-      : { reasoning: false, levels: [], alwaysOn: false, fromCatalog: true }
-    : fallbackCapability(providerId, trimmedId);
+      : live
+        ? liveCapability(live)
+        : { reasoning: false, levels: [], alwaysOn: false, fromCatalog: true }
+    : live
+      ? liveCapability(live)
+      : fallbackCapability(providerId, trimmedId);
 
   if (providerId === "xai" && capability.reasoning) {
     return { ...capability, alwaysOn: true };
@@ -143,9 +167,9 @@ export function resolveModelThinking(
 }
 
 // ---------------------------------------------------------------------------
-// pi-ai ThinkingLevelMap 派生（GUI 请求路径消费；与 pi-ai 类型结构兼容）
+// ThinkingLevelMap 派生（GUI 请求路径消费；与项目思考档位结构兼容）
 // ---------------------------------------------------------------------------
-// pi-ai getSupportedThinkingLevels 语义：null = 不支持；xhigh/max 必须显式声明
+// 思考档位能力映射约定：null = 不支持；xhigh/max 必须显式声明
 // 才存在；minimal..high 缺省即支持（值透传）。本函数保证
 // getSupportedThinkingLevels(带此 map 的模型) ≡ capability.levels（+off）。
 
@@ -155,9 +179,9 @@ const BASE_LEVELS: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high
 const OPT_IN_LEVELS: readonly ThinkingLevel[] = ["xhigh", "max"];
 
 /**
- * @param wireValues 档位 → 请求值的改写表（如 xai 的 minimal→low、pi-ai 目录
+ * @param wireValues 档位 → 请求值的改写表（如 xai 的 minimal→low、目录
  * 自带的 off→"none"、low→"LOW"），只对 capability 中存在的档位生效——wire 表
- * 不得复活目录裁掉的档，null（pi-ai 的"不支持"标记）一律忽略，可用性只听
+ * 不得复活目录裁掉的档，null（目录的"不支持"标记）一律忽略，可用性只听
  * capability 的。
  */
 export function toThinkingLevelMap(
@@ -191,8 +215,8 @@ export function toThinkingLevelMap(
 }
 
 /**
- * 把（历史设置里的）档位钳到列表内最近档：先向上找、再向下找——与 pi-ai
- * clampThinkingLevel 同算法，供 UI 归一化已保存档位使用。
+ * 把（历史设置里的）档位钳到列表内最近档：先向上找、再向下找，供 UI
+ * 归一化已保存档位使用。
  */
 export function clampThinkingLevelToList(
   level: ThinkingLevel,

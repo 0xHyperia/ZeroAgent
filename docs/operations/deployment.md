@@ -162,7 +162,11 @@ Keychain 中必须是带私钥的 `Developer ID Application` identity。若 macO
 | Windows x64 | `windows-latest` | `LiveAgent-vX.Y.Z-Windows-x64.msi`、`LiveAgent-vX.Y.Z-Windows-x64-Setup.exe`，以及 updater 使用的 `.zip` / `.sig`。 |
 | Linux x64 | `ubuntu-latest` | `LiveAgent-vX.Y.Z-Linux-x86_64.AppImage`、`.deb`、`.rpm`，以及 updater 使用的 `.tar.gz` / `.sig`。 |
 
+macOS DMG 的安装窗口布局（背景图、窗口尺寸、图标位置）落盘在 DMG 根目录的 `.DS_Store`。tauri-bundler 通过 AppleScript 驱动 Finder 写入这份文件，但只要检测到 `CI=true` 就会跳过这一步，产出没有任何布局的白底 DMG。因此 `make desktop-build-macos-release` 不直接发布 tauri-bundler 生成的 DMG，而是在 `.app` 签名校验通过后用 [dmgbuild](https://github.com/dmgbuild/dmgbuild)（`dmgbuild==1.6.5`，CI 由 `desktop-release.yml` 的 `Install deterministic DMG builder` 步骤安装）按 `scripts/release/macos-dmg-settings.py` 重新生成 DMG：dmgbuild 直接写入 Finder 元数据，不依赖 GUI 会话，布局在任何 runner 上都是确定的。随后 DMG 再签名、公证、stapler 校验，并用 `scripts/release/verify-macos-dmg.sh` 挂载校验 `.DS_Store`、`.background.png`、`LiveAgent.app` 与 `Applications` 链接是否齐全，缺失即中止发布。本地排查时可以直接对任意 DMG 运行该脚本（`make desktop-verify-macos` 也会执行它）。
+
 发布 job 会在上传平台产物后生成并上传 `latest.json`。桌面端「设置 -> 关于」会根据用户是否允许预发布，从 GitHub Releases 中筛选带 `latest.json` 的正式 / 预发布版本；未允许预发布时只检查正式 Release。
+
+桌面端在版本变更后的首次启动还会按当前应用版本查找对应的 GitHub Release，并在应用内展示更新公告。关闭公告或选择稍后查看不会写入已读状态；只有确认公告后才会按版本记录已读，之后仍可从「设置 -> 关于 -> 更新公告」重新打开。开发构建会额外显示「调试模式 -> 预览更新公告」入口，用于预览最新 Release 内容且不会改动已读状态；该入口及对应命令不会进入正式发行构建。
 
 ## 桌面版本号来源
 
@@ -194,3 +198,20 @@ node scripts/release/prepare-app-version-from-tag.mjs vX.Y.Z
 Tauri 构建命令通过额外的 `--config "$LIVEAGENT_TAURI_VERSION_CONFIG"` 注入这个版本；Vite 和 Rust build script 通过 `LIVEAGENT_APP_VERSION` 注入同一个版本。这样发布版本以 tag 为事实来源，updater manifest、应用内显示版本和安装包版本会保持一致；忘记改 `package.json` 不会导致发布包仍显示旧版本。
 
 Windows 当前没有代码签名 secret，release workflow 会先自动发布 unsigned 包。接入 Windows `.p12/.pfx` 或 Trusted Signing 后再补签名步骤。
+
+带名字的预发布 tag（`v1.3.6-beta.1`）在打 MSI 时会被 tauri-bundler 拒绝：Windows Installer 要求 MSI 的 `ProductVersion` 必须是纯数字（`major.minor.patch[.build]`），报错为 `optional pre-release identifier in app version must be numeric-only and cannot be greater than 65535 for msi target`；纯数字后缀（`v1.3.6-1`）本来就会被推导成 `1.3.6.1`，不受影响。所以 overlay 会额外注入一个只作用于 MSI 的版本，App 版本（About 页、updater、产物命名）仍然保持 tag 语义：
+
+```json
+{
+  "version": "1.3.6-beta.1",
+  "bundle": {
+    "windows": {
+      "wix": {
+        "version": "1.3.6.1"
+      }
+    }
+  }
+}
+```
+
+推导规则是取预发布标识里最后一个纯数字段作为 build 号（`beta.1` -> `.1`，`beta` / `rc` -> `.0`），超过 65535 时截断到 65535。因此同一个 patch 下 `-beta.1` 与 `-rc.1` 的 MSI 产品版本相同；需要 MSI 版本严格递增时用 `vX.Y.Z-1`、`vX.Y.Z-2` 这类数字后缀。

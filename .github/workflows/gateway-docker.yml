@@ -21,6 +21,10 @@ jobs:
   quality-gate:
     name: Gateway Release Gate
     runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.version.outputs.app_version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,6 +33,11 @@ jobs:
         with: {go-version-file: crates/agent-gateway/go.mod}
       - uses: actions/setup-node@v6
         with: {node-version: 22.19.0}
+      - name: Resolve release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/release/prepare-app-version-from-tag.mjs "$RELEASE_TAG" --github-env "$GITHUB_ENV" --github-output "$GITHUB_OUTPUT" --json
       - run: npm install -g pnpm@10.32.1
       - run: pnpm install --frozen-lockfile && pnpm test && pnpm build && pnpm lint
         working-directory: crates/agent-gateway/web
@@ -64,8 +73,8 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=${{ github.event.inputs.tag || github.ref_name }}
-            type=raw,value=latest
+            type=raw,value=${{ needs.quality-gate.outputs.release_tag }}
+            type=raw,value=latest,enable=${{ needs.quality-gate.outputs.is_prerelease == 'false' }}
 
       - name: Build and push
         id: push
@@ -80,6 +89,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+          build-args: |
+            LIVEAGENT_APP_VERSION=${{ needs.quality-gate.outputs.app_version }}
 
       # Guard against mislabeled variants: v0.1.0 through v1.1.8 advertised
       # arm64 while shipping an x86-64 binary (TARGETARCH defaults in the

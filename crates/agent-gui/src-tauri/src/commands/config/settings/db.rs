@@ -5,12 +5,42 @@ fn now_ms() -> i64 {
     duration.as_millis() as i64
 }
 
-static SCHEMA_INITIALIZED: OnceLock<()> = OnceLock::new();
+static SCHEMA_INITIALIZED: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 static SCHEMA_INITIALIZE_LOCK: Mutex<()> = Mutex::new(());
+static ACTIVE_CONFIG_PROFILE: Mutex<crate::services::backend_profile::BackendProfile> =
+    Mutex::new(crate::services::backend_profile::BackendProfile::Local);
+
+pub(crate) fn set_active_config_profile(
+    profile: crate::services::backend_profile::BackendProfile,
+) -> Result<(), String> {
+    *ACTIVE_CONFIG_PROFILE
+        .lock()
+        .map_err(|_| "Settings profile lock failed")? = profile;
+    Ok(())
+}
 
 pub(crate) fn config_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法定位用户目录".to_string())?;
-    let dir = home.join(format!(".{}", env!("CARGO_PKG_NAME")));
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os("LIVEAGENT_CONFIG_DIR") {
+        let root = PathBuf::from(path);
+        if !root.is_absolute() {
+            return Err("LIVEAGENT_CONFIG_DIR 必须是绝对路径".into());
+        }
+        let profile = ACTIVE_CONFIG_PROFILE
+            .lock()
+            .map_err(|_| "Settings profile lock failed")?;
+        let dir = profile.settings_dir(&root);
+        fs::create_dir_all(&dir).map_err(|e| format!("创建开发配置目录失败：{e}"))?;
+        return Ok(dir);
+    }
+    let home =
+        crate::runtime::data_home::home_dir().ok_or_else(|| "无法定位用户目录".to_string())?;
+    let data_root = home.join(format!(".{}", env!("CARGO_PKG_NAME")));
+    let profile = ACTIVE_CONFIG_PROFILE
+        .lock()
+        .map_err(|_| "Settings profile lock failed")?;
+    // The legacy root is an explicit migration source, never an account's default settings.
+    let dir = profile.settings_dir(&data_root);
     fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败：{e}"))?;
     Ok(dir)
 }
@@ -139,6 +169,8 @@ pub(crate) fn initialize_schema(conn: &Connection) -> Result<(), String> {
         ",
     )
     .map_err(|e| format!("初始化设置表失败：{e}"))?;
+    ensure_native_configuration_revision(conn)?;
+    ensure_ui_preferences_schema(conn)?;
     Ok(())
 }
 
@@ -148,18 +180,93 @@ pub(crate) fn config_db_path() -> Result<PathBuf, String> {
 
 pub(crate) fn open_db() -> Result<Connection, String> {
     let db_path = config_db_path()?;
-    let mut conn = Connection::open(db_path).map_err(|e| format!("打开设置数据库失败：{e}"))?;
+    open_profile_db(db_path)
+}
+
+fn open_profile_db(db_path: PathBuf) -> Result<Connection, String> {
+    let mut conn = Connection::open(&db_path).map_err(|e| format!("打开设置数据库失败：{e}"))?;
+    secure_profile_db_file(&db_path)?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e| format!("设置 SQLite busy_timeout 失败：{e}"))?;
-    if SCHEMA_INITIALIZED.get().is_none() {
+    let initialized = SCHEMA_INITIALIZED.get_or_init(|| Mutex::new(HashSet::new()));
+    if !initialized
+        .lock()
+        .map_err(|_| "Settings schema lock failed")?
+        .contains(&db_path)
+    {
         let _guard = SCHEMA_INITIALIZE_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if SCHEMA_INITIALIZED.get().is_none() {
+        if !initialized
+            .lock()
+            .map_err(|_| "Settings schema lock failed")?
+            .contains(&db_path)
+        {
             initialize_schema(&conn)?;
             ensure_remote_agent_id(&mut conn)?;
-            let _ = SCHEMA_INITIALIZED.set(());
+            initialized
+                .lock()
+                .map_err(|_| "Settings schema lock failed")?
+                .insert(db_path);
         }
     }
     Ok(conn)
+}
+
+pub(crate) fn secure_profile_db_file(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|_| "无法保护当前配置数据库".to_string())?;
+        for suffix in ["-wal", "-shm"] {
+            let mut auxiliary = path.as_os_str().to_os_string();
+            auxiliary.push(suffix);
+            match fs::set_permissions(PathBuf::from(auxiliary), fs::Permissions::from_mode(0o600)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err("无法保护当前配置数据库辅助文件".to_string()),
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+#[cfg(test)]
+mod profile_database_tests {
+    use super::*;
+
+    #[test]
+    fn each_profile_initializes_its_own_schema_and_preserves_other_accounts() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("account-a.db");
+        let b = root.path().join("account-b.db");
+        let first = open_profile_db(a.clone()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&a).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        first.execute("INSERT INTO system_settings(setting_key,payload_json,updated_at) VALUES ('workdir', ?1, 1)", ["\"account-a-only\""]).unwrap();
+        drop(first);
+        let second = open_profile_db(b).unwrap();
+        let count: i64 = second
+            .query_row("SELECT COUNT(*) FROM system_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        let first = open_profile_db(a).unwrap();
+        let value: String = first
+            .query_row(
+                "SELECT payload_json FROM system_settings WHERE setting_key='workdir'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(value.contains("account-a-only"));
+    }
 }

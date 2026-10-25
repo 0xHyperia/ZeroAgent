@@ -1,5 +1,5 @@
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
-import type { NotifyItem } from "@liveagent/ui/components/chat/NotifyToast";
+import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import { useChangedFilesActions } from "@liveagent/ui/lib/chat/useChangedFilesActions";
 import { useChatFileLinkNavigation } from "@liveagent/ui/lib/chat/useChatFileLinkNavigation";
@@ -26,12 +26,13 @@ import { useProjectToolsRuntime } from "./useProjectToolsRuntime";
 
 type UseGatewayProjectToolsOptions = {
   activeWorkspaceProjectPath: string;
-  addNotify: (type: NotifyItem["type"], message: string) => void;
+  addNotify: (type: ToastTone, message: string) => void;
   api: ReturnType<typeof useGatewayClients>["api"];
   codeReviewSkill: ReturnType<typeof useGatewayChatConfiguration>["codeReviewSkill"];
   composerRef: MutableRefObject<MentionComposerHandle | null>;
   displayedConversationId: string;
   displayedConversationWorkdir: string;
+  terminalIdentity?: { conversationId?: string; runId?: string } | null;
   isAgentMode: boolean;
   resetProjectToolsRuntimeRef: MutableRefObject<() => void>;
   setRightDockOpen: Dispatch<SetStateAction<boolean>>;
@@ -50,6 +51,7 @@ export function useGatewayProjectTools({
   composerRef,
   displayedConversationId,
   displayedConversationWorkdir,
+  terminalIdentity,
   isAgentMode,
   resetProjectToolsRuntimeRef,
   setRightDockOpen,
@@ -80,16 +82,16 @@ export function useGatewayProjectTools({
     "sshTunnel",
   );
   const projectToolsDisabledMessage = !settingsSyncReady
-    ? "Syncing desktop settings..."
+    ? translate("projectTools.settingsSyncing", settings.locale)
     : !isAgentMode
-      ? "Project tools require Agent project mode."
+      ? translate("projectTools.agentModeRequired", settings.locale)
       : !terminalProjectPath
-        ? "Select a project to use project tools."
+        ? translate("projectTools.projectRequired", settings.locale)
         : undefined;
   const terminalDisabledMessage =
     projectToolsDisabledMessage ??
     (!settings.remote.enableWebTerminal
-      ? "Enable WebUI Terminal in desktop Remote settings."
+      ? translate("projectTools.webTerminalDisabled", settings.locale)
       : undefined);
   const webTerminalSessionsEnabled =
     settings.remote.enableWebTerminal || settings.remote.enableWebSshTerminal;
@@ -102,13 +104,14 @@ export function useGatewayProjectTools({
     statusSessionId: status?.session_id,
     terminalProjectPath,
     terminalProjectPathKey,
+    terminalIdentity,
     rightDockFileTreeOpen,
     rightDockSshTunnelOpen,
   });
   resetProjectToolsRuntimeRef.current = runtime.resetTerminalSessions;
 
   const gitDisabledMessage = !settings.remote.enableWebGit
-    ? "WebUI Git is disabled in desktop Remote settings."
+    ? translate("projectTools.webGitDisabled", settings.locale)
     : undefined;
   const tunnelEnabled = settingsSyncReady && settings.remote.enableWebTunnels === true;
   const tunnelDisabledMessage = !settingsSyncReady

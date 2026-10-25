@@ -13,13 +13,11 @@ import {
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { SidebarBatchDeleteOptions } from "@liveagent/ui/lib/sidebar/batchDelete";
 import { deleteSidebarConversations } from "@liveagent/ui/lib/sidebar/batchDelete";
-import type { SidebarSnapshot, SidebarStore } from "@liveagent/ui/lib/sidebar/store";
-import { sortSidebarConversations } from "@liveagent/ui/lib/sidebar/reconcile";
+import type { SidebarStore } from "@liveagent/ui/lib/sidebar/store";
 import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import { useSidebarContainerState } from "@liveagent/ui/lib/sidebar/useSidebarContainerState";
-import { useSidebarSelector } from "@liveagent/ui/lib/sidebar/useSidebarSelector";
 import { sortWorkspaceProjectsByActivity } from "@liveagent/ui/lib/workspaceProjects";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DesktopSidebarBrand,
   DesktopSidebarTitleBar,
@@ -29,6 +27,8 @@ import {
 import type { AppUpdateController } from "../../../lib/appUpdates";
 import { normalizeConversationTitle } from "../../../lib/chat/page/chatPageHelpers";
 import type { WorkspaceProject, WorkspaceProjectGroup } from "../../../lib/settings";
+import type { ConversationApprovalStore } from "../conversations/conversationApprovalStore";
+import type { ConversationQuestionStore } from "../conversations/conversationQuestionStore";
 import {
   moveConversationsToWorkspace,
   moveConversationToWorkspace,
@@ -36,6 +36,8 @@ import {
 
 type ChatSidebarContainerProps = ChatHistorySidebarContainerSource & {
   store: SidebarStore;
+  approvalStore: ConversationApprovalStore;
+  questionStore: ConversationQuestionStore;
   workspaceProjectGroups: WorkspaceProjectGroup[];
   onCreateWorkspaceGroup: (name: string) => void;
   onRenameWorkspaceGroup: (groupId: string, name: string) => void;
@@ -49,22 +51,72 @@ type ChatSidebarContainerProps = ChatHistorySidebarContainerSource & {
   onConversationCwdChanged: (id: string, cwd: string) => void;
   onConversationWorkbenchDragIntent?: (
     item: SidebarConversation,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
   onConversationOpenInWorkbenchSplit?: (item: SidebarConversation) => void;
   onProjectWorkbenchDragIntent?: (
     project: WorkspaceProject,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
   appUpdate?: AppUpdateController;
 };
 
-function selectConversationIndex(snapshot: SidebarSnapshot) {
-  return snapshot.byId;
+/** Both the approval and the ask-question registries expose this shape, so one
+ *  hook covers "which visible conversations are blocked on the user". */
+type PendingConversationStore = {
+  getSnapshot: (conversationId: string) => readonly unknown[];
+  subscribe: (conversationId: string, listener: () => void) => () => void;
+};
+
+function useBlockedConversationIds(
+  items: readonly SidebarConversation[],
+  pendingStore: PendingConversationStore,
+): ReadonlySet<string> {
+  const conversationIds = useMemo(() => items.map((item) => item.id), [items]);
+  const readSnapshot = useCallback(() => {
+    const result = new Set<string>();
+    for (const conversationId of conversationIds) {
+      if (pendingStore.getSnapshot(conversationId).length > 0) result.add(conversationId);
+    }
+    return result;
+  }, [pendingStore, conversationIds]);
+  const [blockedConversationIds, setBlockedConversationIds] =
+    useState<ReadonlySet<string>>(readSnapshot);
+
+  useEffect(() => {
+    const notify = () => setBlockedConversationIds(readSnapshot());
+    const unsubscribers = conversationIds.map((conversationId) =>
+      pendingStore.subscribe(conversationId, notify),
+    );
+    // Close the small render→subscribe race by re-reading once subscriptions exist.
+    notify();
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
+  }, [pendingStore, conversationIds, readSnapshot]);
+
+  return blockedConversationIds;
 }
 
 export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
-  const { store, projects, onConversationDeleted, onConversationCwdChanged } = props;
+  const {
+    store,
+    approvalStore,
+    questionStore,
+    projects,
+    onConversationDeleted,
+    onConversationCwdChanged,
+  } = props;
   const { t } = useLocale();
 
   const {
@@ -75,26 +127,27 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
     mutations: busyConversationIds,
     mutationErrors,
     projectActivityInputs,
-  } = useSidebarContainerState(store);
-  const conversationIndex = useSidebarSelector(store, selectConversationIndex);
-  const taskItems = useMemo(
-    () =>
-      sortSidebarConversations(
-        Array.from(conversationIndex.values()).filter((item) => !item.cwd?.trim()),
-      ),
-    [conversationIndex],
-  );
+    workspaceHistory,
+  } = useSidebarContainerState(store, props.showProjects);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const approvalConversationIds = useBlockedConversationIds(items, approvalStore);
+  const questionConversationIds = useBlockedConversationIds(items, questionStore);
 
   const sortedProjects = useMemo(
     () =>
       sortWorkspaceProjectsByActivity(projects, {
+        projectOrder: props.projectOrder,
         projectActivityUpdatedAts: projectActivityInputs.workdirActivity,
         runningProjectPathKeys: projectActivityInputs.runningWorkdirPathKeys,
       }),
-    [projectActivityInputs.runningWorkdirPathKeys, projectActivityInputs.workdirActivity, projects],
+    [
+      projectActivityInputs.runningWorkdirPathKeys,
+      projectActivityInputs.workdirActivity,
+      projects,
+      props.projectOrder,
+    ],
   );
 
   const handleStartRenaming = useCallback(
@@ -198,9 +251,10 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
 
   return (
     <ChatHistorySidebar
+      workspaceHistory={workspaceHistory}
+      onLoadWorkspaceHistory={store.loadWorkspaceHistory}
       {...buildChatHistorySidebarBaseProps(props, {
         items,
-        taskItems,
         runningConversationIds,
         busyConversationIds,
         listState,
@@ -211,6 +265,8 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
         renamingId,
         renameDraft,
       })}
+      approvalConversationIds={approvalConversationIds}
+      questionConversationIds={questionConversationIds}
       {...buildChatHistorySidebarWorkspaceProps(
         props,
         sortedProjects,

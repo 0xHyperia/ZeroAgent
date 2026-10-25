@@ -35,6 +35,7 @@ type browserConn struct {
 	core                *wscore.Conn
 	done                <-chan struct{}
 	controllerSessionID string
+	selectionCurrent    func() bool
 	userID              int64
 	boundAgentID        string
 	workspaceID         string
@@ -107,6 +108,9 @@ func (s *Server) BrowserHandler() http.Handler {
 			HeartbeatGrace:  s.cfg.WebSocketHeartbeatGrace,
 			Remote:          r.RemoteAddr,
 			OnClose:         c.releaseSubscriptions,
+			BeforeWrite: func() bool {
+				return c.selectionCurrent == nil || c.selectionCurrent()
+			},
 		})
 		c.done = c.core.Done()
 		// WS 控制帧 pong 由浏览器网络栈应答（后台节流标签页亦然），必须计入存活证据。
@@ -221,6 +225,7 @@ func (c *browserConn) handshake() bool {
 		} else if device, deviceErr := c.srv.accounts.Device(context.Background(), session.UserID, lease.DeviceID); deviceErr != nil {
 			verdict = helloVerdict{message: "selected device is unavailable"}
 		} else {
+			c.selectionCurrent = c.srv.controllerSelectionCurrent(c.controllerSessionID, hello, session, lease)
 			c.userID = session.UserID
 			c.boundAgentID = device.ID
 			c.workspaceID = lease.WorkspaceID
@@ -262,6 +267,10 @@ func (c *browserConn) handshake() bool {
 }
 
 func (c *browserConn) dispatch(frame *gatewayv2.WebClientFrame) {
+	if c.selectionCurrent != nil && !c.selectionCurrent() {
+		c.core.Close()
+		return
+	}
 	observability.Usage.V2BrowserRequestsTotal.Add(1)
 	requestID := strings.TrimSpace(frame.GetRequestId())
 	// 目标型请求必须显式声明 Agent；目录与全局会话查询不需要目标 id。

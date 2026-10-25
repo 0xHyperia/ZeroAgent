@@ -391,6 +391,19 @@ function validatePaneRecord(pane: PaneRecord): PaneRecordIssue | null {
       }
       return null;
     }
+    case "fileTree":
+    case "gitReview":
+    case "tunnel":
+    case "sshTunnel":
+    case "backgroundTasks": {
+      if (!surface.project.projectId.trim() || !surface.project.projectPathKey.trim()) {
+        return {
+          code: "invalid-layout",
+          message: `${surface.kind} surfaces require a complete project reference.`,
+        };
+      }
+      return null;
+    }
     case "localTerminal":
     case "sshTerminal": {
       if (!surface.surfaceId.trim()) {
@@ -465,10 +478,10 @@ export function applyWorkbenchCommand(
             layout.revision,
           );
         }
-        const surfaceId = pane.surface.kind === "unsupported" ? "" : pane.surface.surfaceId;
+        const surfaceId = surfaceIdentityKey(pane.surface);
         return commandError(
           "duplicate-surface",
-          `Terminal surface '${surfaceId}' is already open in pane '${existingPaneId}'.`,
+          `Surface '${surfaceId}' is already open in pane '${existingPaneId}'.`,
           layout.revision,
         );
       }

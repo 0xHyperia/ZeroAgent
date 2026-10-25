@@ -1,3 +1,4 @@
+import { normalizeFetchedModels } from "@liveagent/ui/pages/settings/providerUtils";
 import {
   type AppSettings,
   type CustomProvider,
@@ -5,7 +6,6 @@ import {
   type ProviderId,
   type ProviderModelConfig,
 } from "@/lib/settings";
-import { normalizeFetchedModels } from "@liveagent/ui/pages/settings/providerUtils";
 import { getRelayProviderModels, RELAY_ORIGIN, type RelayApiKey, type RelayGroup } from "./client";
 
 const RELAY_PROVIDER_PREFIX = "relay-key-";

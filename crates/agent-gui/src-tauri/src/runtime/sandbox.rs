@@ -421,12 +421,13 @@ fn sensitive_home_subdirs() -> [&'static str; 4] {
 }
 
 fn app_config_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(format!(".{}", env!("CARGO_PKG_NAME"))))
+    crate::runtime::data_home::home_dir()
+        .map(|home| home.join(format!(".{}", env!("CARGO_PKG_NAME"))))
 }
 
 fn sensitive_dirs() -> Vec<PathBuf> {
     let mut dirs_out = Vec::new();
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::runtime::data_home::home_dir() {
         for sub in sensitive_home_subdirs() {
             dirs_out.push(home.join(sub));
         }
@@ -556,7 +557,7 @@ pub(crate) fn temp_write_root_is_safe(path: &Path) -> bool {
             return false;
         }
     }
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::runtime::data_home::home_dir() {
         if path_encloses(&root, &canonical_or_self(&home)) {
             return false;
         }
@@ -615,7 +616,7 @@ fn writable_temp_dirs() -> Vec<PathBuf> {
         if !temp_write_root_is_safe(&canonical) {
             return;
         }
-        if !out.iter().any(|existing| *existing == canonical) {
+        if !out.contains(&canonical) {
             out.push(canonical);
         }
     };
@@ -1053,7 +1054,7 @@ mod tests {
     // P1#2:工作区若包含/等于敏感目录,写围栏 re-allow 会重新暴露之 → 拒绝。
     #[test]
     fn validate_workspace_rejects_ancestor_of_sensitive_dir() {
-        let Some(home) = dirs::home_dir() else {
+        let Some(home) = crate::runtime::data_home::home_dir() else {
             return;
         };
         // home 本身包含 ~/.ssh 等敏感目录。
@@ -1063,7 +1064,7 @@ mod tests {
     // P1#2:凭据目录内部的工作区一律拒绝。
     #[test]
     fn validate_workspace_rejects_inside_credential_dir() {
-        let Some(home) = dirs::home_dir() else {
+        let Some(home) = crate::runtime::data_home::home_dir() else {
             return;
         };
         let inside_ssh = home.join(".ssh").join("ws");
@@ -1293,6 +1294,7 @@ mod tests {
     // resolve_program_in_path:本机(Unix)按 Unix 绝对/分隔规则验证“搜绝对目录、套
     // PATHEXT、跳相对项、绝对入参直通”这套算法;Windows 路径语义由 Windows 编译+真机验证。
     #[test]
+    #[cfg(unix)]
     fn resolve_program_searches_absolute_dirs_first_match_wins() {
         let present: std::collections::HashSet<PathBuf> =
             [PathBuf::from("/usr/bin/sh")].into_iter().collect();
@@ -1303,6 +1305,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_program_applies_pathext_to_bare_name() {
         let present: std::collections::HashSet<PathBuf> =
             [PathBuf::from("/tools/pwsh.EXE")].into_iter().collect();
@@ -1326,10 +1329,33 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_program_passes_absolute_input_through_without_probing() {
         let is_file = |_: &Path| panic!("absolute input must not be probed");
         let got = resolve_program_in_path(Path::new("/bin/sh"), "/other", ".EXE", &is_file);
         assert_eq!(got, Some(PathBuf::from("/bin/sh")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_windows_program_uses_absolute_path_entries_pathext_and_absolute_input() {
+        let expected = PathBuf::from(r"C:\tools\pwsh.EXE");
+        let got = resolve_program_in_path(
+            Path::new("pwsh"),
+            r".;relative;C:\tools",
+            ".COM;.EXE",
+            &|path| {
+                assert!(path.is_absolute());
+                path == expected
+            },
+        );
+        assert_eq!(got, Some(expected.clone()));
+        assert_eq!(
+            resolve_program_in_path(&expected, "", "", &|_| panic!(
+                "absolute input must not be probed"
+            )),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -1428,7 +1454,7 @@ mod tests {
     #[test]
     fn temp_write_root_rejects_filesystem_root_and_home() {
         assert!(!temp_write_root_is_safe(Path::new("/")));
-        if let Some(home) = dirs::home_dir() {
+        if let Some(home) = crate::runtime::data_home::home_dir() {
             assert!(!temp_write_root_is_safe(&home));
         }
         assert!(temp_write_root_is_safe(Path::new("/tmp")));
@@ -1449,6 +1475,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_bwrap_skips_workspace_and_relative_path_entries() {
         let present: std::collections::HashSet<PathBuf> = [
             PathBuf::from("/workspace/node_modules/.bin/bwrap"),

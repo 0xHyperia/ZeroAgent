@@ -83,7 +83,9 @@ ZeroAgent Gateway + 内嵌 WebUI
 将仓库根目录的 `Dockerfile` 部署到 Railway 或其他 Docker 平台。一个容器会同时提供 WebUI、HTTP API、健康检查和全部 WebSocket 链路。
 
 ```bash
-docker pull ghcr.io/0xhyperia/zeroagent-gateway:latest
+# 替换为目标发布已核验的镜像摘要。
+GATEWAY_IMAGE=ghcr.io/0xhyperia/zeroagent-gateway@sha256:REPLACE_WITH_VERIFIED_DIGEST
+docker pull "$GATEWAY_IMAGE"
 
 docker run -d \
   --name zeroagent-gateway \
@@ -92,7 +94,7 @@ docker run -d \
   -e USA_ZERO_ORIGIN=https://usa0.top \
   -e DATABASE_URL=postgresql://user:password@host:5432/zeroagent \
   -e REDIS_URL=redis://host:6379/0 \
-  ghcr.io/0xhyperia/zeroagent-gateway:latest
+  "$GATEWAY_IMAGE"
 ```
 
 生产环境需要：
@@ -103,11 +105,11 @@ docker run -d \
 - `USA_ZERO_ORIGIN=https://usa0.top`
 - HTTPS 在容器外终止时设置 `LIVEAGENT_GATEWAY_COOKIE_SECURE=true`
 
-部署完成后访问 `https://你的域名/healthz` 检查服务，再直接打开该域名使用 WebUI。Railway、反向代理和发布说明见 [部署文档](docs/operations/deployment.md)。
+部署完成后用 `/healthz` 检查进程存活，用 `/readyz` 检查 PostgreSQL、Redis 是否就绪，再打开域名使用 WebUI。保留实际部署的镜像摘要以便回退。Railway、反向代理和发布说明见 [部署文档](docs/operations/deployment.md)。
 
 ## Android
 
-Android 客户端内置与浏览器相同的 Gateway WebUI，不再跳转外部网址。首次启动时填写已部署的 Gateway 地址，并在 App 内完成账户登录。原生层把会话和离线只读缓存保留在 WebView 存储之外；远程操作仍需重新申请有效的设备选择 lease。
+Android 客户端内置与浏览器相同的 Gateway WebUI，并连接官方 Gateway `https://agent.usa0.top`。在 App 内完成账户登录即可使用。原生层把会话和离线只读缓存保留在 WebView 存储之外；远程操作仍需重新申请有效的设备选择 lease。
 
 发布 APK 前必须先部署 Gateway。推送 `v*` 版本标签后，`.github/workflows/android-release.yml` 会自动构建并上传 Android APK。
 
@@ -117,14 +119,15 @@ Android 客户端内置与浏览器相同的 Gateway WebUI，不再跳转外部�
 
 - Node.js 22 和 pnpm
 - Rust stable
-- Go 1.25
+- Go 1.25.12（由 `mise.toml` 和 Gateway 的 `go.mod` 固定）
 - Protobuf compiler
 - 对应系统的 Tauri 开发依赖
 
 常用命令：
 
 ```bash
-make dev                 # 启动桌面端开发环境
+make dev-tauri           # 启动桌面端开发环境
+make dev                 # 启动 Gateway/WebUI 开发栈；需先运行 make dev-infra-up
 make dev-gateway         # 启动 Gateway 开发服务
 make dev-webui           # 启动 WebUI 开发服务
 make gateway-docker-smoke

@@ -9,27 +9,40 @@ import {
   Check,
   ChevronRight,
   Columns2,
-  Edit3,
   Folder,
   FolderClosed,
   FolderOpen,
   FolderTree,
+  GitBranch,
   ListChecks,
   Loader2,
+  MessageSquare,
   MoreHorizontal,
   Pin,
   PinOff,
   Plus,
   Settings,
   Share2,
+  SquarePen,
   Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { ContextMenuPopup } from "@liveagent/ui/components/ui/context-menu";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@liveagent/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -38,9 +51,14 @@ import {
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@liveagent/ui/components/ui/tooltip";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import {
+  clearActiveConversationReferenceDrag,
+  writeConversationReferenceDragPayload,
+} from "@liveagent/ui/lib/chat/conversationReferenceDrag";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
   memo,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -50,7 +68,14 @@ import {
   useState,
 } from "react";
 import type { SidebarConversation } from "../../lib/sidebar/types";
+import type { SidebarReorderPointer } from "../../lib/sidebar/useSidebarReorderDrag";
 import type { WorkspaceProjectGroup } from "../../lib/workspaceProjectTypes";
+import { SidebarMenuAction, SidebarMenuButton } from "../ui/sidebar";
+import {
+  HISTORY_RENAME_INPUT_CLASS,
+  PROJECT_ICON_BUTTON_CLASS,
+  SIDEBAR_CONTEXT_MENU_CLASS,
+} from "./ChatHistorySidebarStyles";
 
 export type WorkspaceProjectRemoveOptions = {
   deleteWorktree?: boolean;
@@ -62,16 +87,48 @@ type PendingWorkspaceProjectAction = {
   mode: "remove" | "deleteWorktree";
 };
 
+const CONVERSATION_MENU_ITEM_CLASS = "gap-2 text-xs";
+const CONVERSATION_MENU_ICON_CLASS = "size-3.5 shrink-0";
+
 const MOBILE_MENU_LONG_PRESS_MS = 520;
 const MOBILE_MENU_MOVE_TOLERANCE_PX = 10;
-const PROJECT_ICON_BUTTON_CLASS =
-  "h-7 w-7 rounded-lg !bg-transparent text-muted-foreground transition-colors hover:!bg-transparent hover:!text-foreground active:!bg-transparent focus-visible:!bg-transparent data-[state=open]:!bg-transparent data-[state=open]:text-foreground data-[popup-open]:!bg-transparent data-[popup-open]:text-foreground";
+
+function SidebarDropIndicator({ position }: { position?: "before" | "after" }) {
+  if (!position) return null;
+  return (
+    <span
+      aria-hidden="true"
+      data-sidebar-drop-indicator={position}
+      className={cn(
+        "pointer-events-none absolute inset-x-3 z-20 h-0.5 bg-blue-500",
+        position === "before" ? "-top-px" : "-bottom-px",
+      )}
+    >
+      <span
+        className={cn(
+          "absolute left-0 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2",
+          "rounded-full border-2 border-blue-500 bg-settings-rail",
+        )}
+      />
+    </span>
+  );
+}
 
 type HistoryRowProps = {
+  reorderKey?: string;
+  onReorderPointerDown?: (key: string, event: SidebarReorderPointer) => void;
+  isDragging?: boolean;
+  dropPosition?: "before" | "after";
+
+  showIcon?: boolean;
   item: SidebarConversation;
+  /** Source of a branched conversation when it is loaded in the sidebar. */
+  forkSource?: { id: string; title: string } | null;
   isActive: boolean;
   isBusy: boolean;
   isRunning: boolean;
+  needsApproval: boolean;
+  hasPendingQuestion: boolean;
   isDeleteDisabled: boolean;
   canShareConversation: boolean;
   isRenaming: boolean;
@@ -105,7 +162,12 @@ type HistoryRowProps = {
    */
   onWorkbenchDragIntent?: (
     item: SidebarConversation,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
   /** Menu alternative to dragging: open the conversation in a split pane. */
   onOpenInWorkbenchSplit?: (item: SidebarConversation) => void;
@@ -115,9 +177,12 @@ function areRenderedHistoryItemsEqual(previous: SidebarConversation, next: Sideb
   return (
     previous.id === next.id &&
     previous.title === next.title &&
+    previous.providerId === next.providerId &&
+    previous.model === next.model &&
     previous.cwd === next.cwd &&
     previous.isPinned === next.isPinned &&
     previous.isShared === next.isShared &&
+    previous.forkedFromSessionId === next.forkedFromSessionId &&
     previous.isPending === next.isPending
   );
 }
@@ -125,9 +190,18 @@ function areRenderedHistoryItemsEqual(previous: SidebarConversation, next: Sideb
 function areHistoryRowPropsEqual(previous: HistoryRowProps, next: HistoryRowProps) {
   return (
     areRenderedHistoryItemsEqual(previous.item, next.item) &&
+    previous.forkSource?.id === next.forkSource?.id &&
+    previous.forkSource?.title === next.forkSource?.title &&
+    previous.showIcon === next.showIcon &&
+    previous.reorderKey === next.reorderKey &&
+    previous.onReorderPointerDown === next.onReorderPointerDown &&
+    previous.isDragging === next.isDragging &&
+    previous.dropPosition === next.dropPosition &&
     previous.isActive === next.isActive &&
     previous.isBusy === next.isBusy &&
     previous.isRunning === next.isRunning &&
+    previous.needsApproval === next.needsApproval &&
+    previous.hasPendingQuestion === next.hasPendingQuestion &&
     previous.isDeleteDisabled === next.isDeleteDisabled &&
     previous.canShareConversation === next.canShareConversation &&
     previous.isRenaming === next.isRenaming &&
@@ -162,9 +236,12 @@ function areHistoryRowPropsEqual(previous: HistoryRowProps, next: HistoryRowProp
 export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
   const {
     item,
+    forkSource,
     isActive,
     isBusy,
     isRunning,
+    needsApproval,
+    hasPendingQuestion,
     isDeleteDisabled,
     canShareConversation,
     isRenaming,
@@ -195,18 +272,26 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
     onOpenInWorkbenchSplit,
   } = props;
   const { t } = useLocale();
+  const isBranch = Boolean(item.forkedFromSessionId);
+  const branchHint = isBranch
+    ? forkSource
+      ? t("chat.conversationBranchFrom").replace("{title}", forkSource.title)
+      : t("chat.conversationBranchSourceMissing")
+    : null;
+  // Either blocked state replaces the spinner: the turn is suspended on the
+  // user, not working. Approval wins when both are pending — it is the harder
+  // block and the row has room for only one pill.
+  const blockedBadgeLabel = needsApproval
+    ? t("chat.toolApproval.sidebarStatus")
+    : hasPendingQuestion
+      ? t("chat.askUser.sidebarStatus")
+      : null;
+  const showRunningIndicator = isRunning && !blockedBadgeLabel;
 
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Enter/Escape mark the blur as handled so onBlur commits exactly once —
-  // symmetric with ProjectRow's skipNextBlurCommitRef.
-  const skipNextBlurCommitRef = useRef(false);
-  // Renaming from the menu unmounts the whole dropdown in the commit that
-  // mounts the rename input, and Base UI resolves its return-focus target
-  // synchronously during that unmount — before the input's ref attaches — so
-  // the deferred focus() landed on a fallback element, blurring the input and
-  // committing the untouched title ("rename does nothing" on Windows). The
-  // menu's finalFocus callback consumes this one-shot flag to skip that
-  // return-focus entirely; the isRenaming effect owns focus placement instead.
+  const titleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [contextPoint, setContextPoint] = useState<{ x: number; y: number } | null>(null);
+  // A menu opening a dialog must not reclaim the dialog's initial focus.
   const suppressMenuReturnFocusRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -246,16 +331,20 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
     if (isInteractionDisabled) {
       return;
     }
+    onMenuOpenChange(item.id, false);
+    setContextPoint(null);
     onStartRenaming(item);
-  }, [isInteractionDisabled, item, onStartRenaming]);
+  }, [isInteractionDisabled, item, onMenuOpenChange, onStartRenaming]);
 
   const handleStartRenamingFromMenu = useCallback(() => {
     if (isInteractionDisabled) {
       return;
     }
     suppressMenuReturnFocusRef.current = true;
+    onMenuOpenChange(item.id, false);
+    setContextPoint(null);
     onStartRenaming(item);
-  }, [isInteractionDisabled, item, onStartRenaming]);
+  }, [isInteractionDisabled, item, onMenuOpenChange, onStartRenaming]);
 
   const handleRequestDelete = useCallback(() => {
     if (isInteractionDisabled) {
@@ -310,6 +399,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
       if (open && isInteractionDisabled) {
         return;
       }
+      setContextPoint(null);
       onMenuOpenChange(item.id, open);
     },
     [isInteractionDisabled, item.id, onMenuOpenChange],
@@ -361,6 +451,23 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
 
   const handleTitlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (
+        props.onReorderPointerDown &&
+        props.reorderKey &&
+        !event.altKey &&
+        !isMobileMenuLayout &&
+        !isInteractionDisabled &&
+        !isSelectionMode &&
+        !isRenaming &&
+        !isPendingDelete &&
+        !menuOpen &&
+        event.pointerType !== "touch" &&
+        event.button === 0 &&
+        !item.isPending
+      ) {
+        props.onReorderPointerDown(props.reorderKey, event);
+        return;
+      }
       // Desktop: arm a workbench pane drag from the title area. Touch keeps
       // the long-press menu; renaming/selection/menu states never drag.
       if (
@@ -379,6 +486,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
           pointerId: event.pointerId,
           clientX: event.clientX,
           clientY: event.clientY,
+          currentTarget: event.currentTarget,
         });
       }
       if (isInteractionDisabled || isSelectionMode || !isMobileMenuLayout || isBusy) {
@@ -399,6 +507,8 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
       );
     },
     [
+      props.onReorderPointerDown,
+      props.reorderKey,
       clearLongPressTimer,
       isBusy,
       isInteractionDisabled,
@@ -434,13 +544,27 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
       return;
     }
 
+    // In selection mode the click handler is the single tap path. Handling
+    // pointerup as well would toggle twice and leave the row unselected.
+    if (isSelectionMode) {
+      resetLongPressState();
+      return;
+    }
+
     const shouldSelect = !longPressTriggeredRef.current && !longPressCancelledRef.current;
     resetLongPressState();
 
     if (shouldSelect && !isBusy) {
       handleSelect();
     }
-  }, [handleSelect, isBusy, isInteractionDisabled, isMobileMenuLayout, resetLongPressState]);
+  }, [
+    handleSelect,
+    isBusy,
+    isInteractionDisabled,
+    isMobileMenuLayout,
+    isSelectionMode,
+    resetLongPressState,
+  ]);
 
   const handleTitlePointerCancel = useCallback(() => {
     if (!isMobileMenuLayout) {
@@ -452,21 +576,43 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
   const handleTitleClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       if (isMobileMenuLayout) {
-        event.preventDefault();
-        event.stopPropagation();
+        // Selection mode has no long-press menu. Use the native click as the
+        // mobile fallback because some WebViews do not deliver pointerup for a tap.
+        if (isSelectionMode) {
+          if (event.detail > 1) return;
+          handleSelect({
+            shiftKey: event.shiftKey,
+            toggleKey: event.ctrlKey || event.metaKey,
+          });
+        } else {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
+      if (event.detail > 1) return;
       handleSelect({
         shiftKey: event.shiftKey,
         toggleKey: event.ctrlKey || event.metaKey,
       });
     },
-    [handleSelect, isMobileMenuLayout],
+    [handleSelect, isMobileMenuLayout, isSelectionMode],
   );
 
   const handleTitleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>) => {
       if (!isMobileMenuLayout) {
+        if (
+          (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) &&
+          !isInteractionDisabled &&
+          !isSelectionMode &&
+          !isRenaming
+        ) {
+          event.preventDefault();
+          const bounds = event.currentTarget.getBoundingClientRect();
+          setContextPoint({ x: bounds.left, y: bounds.bottom });
+          onMenuOpenChange(item.id, true);
+        }
         return;
       }
 
@@ -475,30 +621,73 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
         handleSelect();
       }
     },
-    [handleSelect, isMobileMenuLayout],
+    [
+      handleSelect,
+      isMobileMenuLayout,
+      isInteractionDisabled,
+      isSelectionMode,
+      isRenaming,
+      item.id,
+      onMenuOpenChange,
+    ],
   );
 
   const handleTitleContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
-      if (!isMobileMenuLayout) {
-        return;
-      }
-
       event.preventDefault();
       event.stopPropagation();
       setIsLongPressActive(false);
+      if (isMobileMenuLayout || isInteractionDisabled || isSelectionMode || isRenaming) return;
+      setContextPoint({ x: event.clientX, y: event.clientY });
+      onMenuOpenChange(item.id, true);
     },
-    [isMobileMenuLayout],
+    [
+      isMobileMenuLayout,
+      isInteractionDisabled,
+      isSelectionMode,
+      isRenaming,
+      item.id,
+      onMenuOpenChange,
+    ],
+  );
+
+  const handleNativeConversationDragStart = useCallback(
+    (event: ReactDragEvent<HTMLButtonElement>) => {
+      if (
+        onWorkbenchDragIntent ||
+        isInteractionDisabled ||
+        isSelectionMode ||
+        isRenaming ||
+        isPendingDelete ||
+        menuOpen ||
+        item.isPending
+      ) {
+        event.preventDefault();
+        return;
+      }
+      if (
+        !writeConversationReferenceDragPayload(event.dataTransfer, {
+          id: item.id,
+          title: item.title,
+          cwd: item.cwd,
+          updatedAt: item.updatedAt,
+        })
+      ) {
+        event.preventDefault();
+      }
+    },
+    [
+      isInteractionDisabled,
+      isPendingDelete,
+      isRenaming,
+      isSelectionMode,
+      item,
+      menuOpen,
+      onWorkbenchDragIntent,
+    ],
   );
 
   const shouldShowMobilePressFeedback = isMobileMenuLayout && (isLongPressActive || menuOpen);
-
-  useEffect(() => {
-    if (!isRenaming) return;
-    skipNextBlurCommitRef.current = false;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [isRenaming]);
 
   useEffect(() => {
     if (!isInteractionDisabled) {
@@ -510,13 +699,122 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
 
   useEffect(() => () => clearLongPressTimer(), [clearLongPressTimer]);
 
+  const menuItems = (
+    <>
+      {!item.isPending ? (
+        <DropdownMenuItem
+          disabled={isInteractionDisabled}
+          onSelect={handleTogglePinned}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          {item.isPinned ? (
+            <PinOff className={CONVERSATION_MENU_ICON_CLASS} />
+          ) : (
+            <Pin className={CONVERSATION_MENU_ICON_CLASS} />
+          )}
+          {item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem
+        disabled={isInteractionDisabled || isRunning || isBusy}
+        onSelect={handleEnterSelectionMode}
+        className={CONVERSATION_MENU_ITEM_CLASS}
+      >
+        <ListChecks className={CONVERSATION_MENU_ICON_CLASS} />
+        {t("chat.conversationBulkSelect")}
+      </DropdownMenuItem>
+      {forkSource && !item.isPending ? (
+        <DropdownMenuItem
+          disabled={isInteractionDisabled}
+          onSelect={() => onSelectConversation(forkSource.id)}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          <GitBranch className={CONVERSATION_MENU_ICON_CLASS} />
+          {t("chat.conversationOpenBranchSource")}
+        </DropdownMenuItem>
+      ) : null}
+      {onOpenInWorkbenchSplit && !item.isPending ? (
+        <DropdownMenuItem
+          disabled={isInteractionDisabled}
+          onSelect={() => onOpenInWorkbenchSplit(item)}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          <Columns2 className={CONVERSATION_MENU_ICON_CLASS} />
+          {t("workbench.openInSplit")}
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem
+        disabled={isInteractionDisabled}
+        onSelect={handleStartRenamingFromMenu}
+        className={CONVERSATION_MENU_ITEM_CLASS}
+      >
+        <SquarePen className={CONVERSATION_MENU_ICON_CLASS} />
+        {t("chat.conversationRename")}
+      </DropdownMenuItem>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger
+          disabled={isInteractionDisabled || isRunning || isBusy || moveWorkspaces.length === 0}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          <Folder className={CONVERSATION_MENU_ICON_CLASS} />
+          {t("chat.conversationMoveToWorkspace")}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent
+          variant="soft"
+          className={cn(SIDEBAR_CONTEXT_MENU_CLASS, "max-h-72")}
+        >
+          {moveWorkspaces.map((workspace) => (
+            <DropdownMenuItem
+              key={workspace.id}
+              disabled={isInteractionDisabled || isRunning || isBusy || workspace.path === item.cwd}
+              onSelect={() => handleMoveToWorkspace(workspace.path)}
+              className={CONVERSATION_MENU_ITEM_CLASS}
+            >
+              <FolderClosed className={CONVERSATION_MENU_ICON_CLASS} />
+              <span className="min-w-0 truncate font-medium">{workspace.name}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                ({workspace.path})
+              </span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      {canShareConversation && !item.isPending ? (
+        <DropdownMenuItem
+          disabled={isInteractionDisabled}
+          onSelect={handleShare}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          <Share2 className={CONVERSATION_MENU_ICON_CLASS} />
+          {t("chat.conversationShare")}
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem
+        disabled={isInteractionDisabled || isDeleteDisabled}
+        onSelect={handleRequestDelete}
+        className={cn(
+          CONVERSATION_MENU_ITEM_CLASS,
+          "text-destructive focus:bg-destructive/10 focus:text-destructive",
+        )}
+      >
+        <Trash2 className={CONVERSATION_MENU_ICON_CLASS} />
+        {t("chat.conversationDelete")}
+      </DropdownMenuItem>
+    </>
+  );
+
   if (isPendingDelete) {
     return (
-      <div className="chat-history-row rounded-2xl border border-border/70 bg-background px-3 py-2.5 shadow-xs shadow-black/5">
+      <div
+        className={cn(
+          "chat-history-row rounded-2xl border border-border/70 bg-background px-3 py-2.5",
+          "shadow-xs shadow-black/5 [contain:layout_paint_style]",
+        )}
+      >
         <p className="truncate text-sm leading-5 text-foreground/80">
           {t("chat.conversationDeleteConfirm").replace("{title}", item.title)}
         </p>
-        <p className="mt-0.5 text-[calc(11px*var(--zone-font-scale,1))] leading-4 text-muted-foreground">
+        <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
           {t("chat.conversationDeleteWarning")}
         </p>
         <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -546,324 +844,296 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
 
   return (
     <div
+      data-conversation-id={item.id}
+      data-sidebar-reorder-key={props.reorderKey}
+      // Paint containment normally clips this row. The insertion circle extends
+      // across its edge, so let only the active drop target paint outside it.
+      style={props.dropPosition ? { contain: "layout style", zIndex: 1 } : undefined}
       className={cn(
-        "chat-history-row group/item grid h-[30px] grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg pl-1 transition-colors",
+        props.isDragging && "opacity-35",
+        "chat-history-row group/item relative grid sidebar-list-row grid-cols-[minmax(0,1fr)_auto] items-center rounded-md",
+        "pl-1 transition-colors [contain:layout_paint_style]",
         isSelectionMode && isSelected
           ? "bg-primary/10 text-foreground hover:bg-primary/[0.14]"
           : isActive
-            ? "bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.09]"
-            : "text-foreground/85 hover:bg-foreground/[0.05] hover:text-foreground",
+            ? "bg-settings-active font-medium text-foreground hover:bg-settings-active"
+            : "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground",
         isSelectionMode && isSelectionDisabled && "opacity-50",
         !isSelectionMode && shouldShowMobilePressFeedback && "bg-foreground/[0.09] text-foreground",
       )}
     >
-      {isRenaming ? (
-        <div className="flex h-[30px] min-w-0 items-center px-2">
-          <Input
-            ref={inputRef}
-            value={renameDraft}
-            onChange={(e) => onRenameDraftChange(e.currentTarget.value)}
-            onBlur={() => {
-              if (skipNextBlurCommitRef.current) {
-                skipNextBlurCommitRef.current = false;
-                return;
-              }
-              onCommitRename();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                skipNextBlurCommitRef.current = true;
-                onCommitRename();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                skipNextBlurCommitRef.current = true;
-                onCancelRename();
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 text-[calc(14px*var(--zone-font-scale,1))] font-normal shadow-none outline-none focus-visible:border-0 focus-visible:bg-transparent"
-            disabled={isInteractionDisabled || isBusy}
-          />
-        </div>
-      ) : (
-        <DropdownMenu
-          open={!isInteractionDisabled && !isSelectionMode && menuOpen}
-          onOpenChange={handleMenuOpenChange}
-          modal={false}
-        >
-          {/* biome-ignore lint/complexity/noUselessFragments: DropdownMenu keeps trigger and popup siblings under one provider child */}
-          <>
-            <div className="relative min-w-0">
-              {isMobileMenuLayout && !isSelectionMode ? (
-                <DropdownMenuTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-hidden="true"
-                      tabIndex={-1}
-                      className="chat-history-row-title-menu-anchor absolute inset-0 h-full w-full rounded-2xl opacity-0 pointer-events-none"
-                    />
-                  }
-                />
-              ) : null}
-
-              <button
-                type="button"
-                onClick={handleTitleClick}
-                onMouseDown={(event) => {
-                  if (event.shiftKey) event.preventDefault();
-                }}
-                onDoubleClick={(event) => {
-                  event.preventDefault();
-                  if (!isSelectionMode && !isMobileMenuLayout && !isRunning && !isBusy) {
-                    handleStartRenaming();
-                  }
-                }}
-                onContextMenu={handleTitleContextMenu}
-                onKeyDown={handleTitleKeyDown}
-                onPointerDown={handleTitlePointerDown}
-                onPointerMove={handleTitlePointerMove}
-                onPointerUp={handleTitlePointerUp}
-                onPointerCancel={handleTitlePointerCancel}
-                onPointerLeave={handleTitlePointerCancel}
-                aria-pressed={isSelectionMode ? isSelected : undefined}
-                disabled={isInteractionDisabled || (isSelectionMode && isSelectionDisabled)}
-                className="chat-history-row-title-button flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-                title={item.title}
-              >
-                {isSelectionMode ? (
-                  <span
+      <SidebarDropIndicator position={props.dropPosition} />
+      <DropdownMenu
+        open={
+          !isInteractionDisabled && !isSelectionMode && !isRenaming && !contextPoint && menuOpen
+        }
+        onOpenChange={handleMenuOpenChange}
+        modal={false}
+      >
+        {/* biome-ignore lint/complexity/noUselessFragments: DropdownMenu keeps trigger and popup siblings under one provider child */}
+        <>
+          <div className="relative min-w-0">
+            {isMobileMenuLayout && !isSelectionMode ? (
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
                     aria-hidden="true"
-                    className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border transition-colors",
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-muted-foreground/45 bg-background/50",
-                    )}
-                  >
-                    {isSelected ? <Check className="h-3 w-3" /> : null}
-                  </span>
-                ) : null}
-                <span className="sidebar-project-name-fade min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[calc(14px*var(--zone-font-scale,1))] font-normal leading-5">
-                  {item.title}
-                </span>
-              </button>
-            </div>
+                    tabIndex={-1}
+                    className="chat-history-row-title-menu-anchor absolute inset-0 size-full rounded-2xl opacity-0 pointer-events-none"
+                  />
+                }
+              />
+            ) : null}
 
-            <div
+            <SidebarMenuButton
+              isActive={isActive}
+              ref={titleButtonRef}
+              type="button"
+              draggable={!props.onReorderPointerDown && !onWorkbenchDragIntent && !item.isPending}
+              onDragStart={handleNativeConversationDragStart}
+              onDragEnd={clearActiveConversationReferenceDrag}
+              onClick={handleTitleClick}
+              onMouseDown={(event) => {
+                if (event.shiftKey) event.preventDefault();
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                if (!isSelectionMode && !isMobileMenuLayout && !isRunning && !isBusy) {
+                  handleStartRenaming();
+                }
+              }}
+              onContextMenu={handleTitleContextMenu}
+              onKeyDown={handleTitleKeyDown}
+              onPointerDown={handleTitlePointerDown}
+              onPointerMove={handleTitlePointerMove}
+              onPointerUp={handleTitlePointerUp}
+              onPointerCancel={handleTitlePointerCancel}
+              onPointerLeave={handleTitlePointerCancel}
+              aria-current={isActive ? "page" : undefined}
+              aria-pressed={isSelectionMode ? isSelected : undefined}
+              disabled={isInteractionDisabled || (isSelectionMode && isSelectionDisabled)}
               className={cn(
-                "relative flex items-center justify-end overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
-                isSelectionMode && "hidden",
-                isRunning || item.isPinned
-                  ? // Mobile rows render no inline action buttons, so this flex
-                    // box has zero content width AND zero height — max-w alone
-                    // leaves the absolutely-positioned spinner fully clipped by
-                    // overflow-hidden. Reserve the spinner slot explicitly
-                    // (both axes) and skip the hover/focus swap.
-                    isMobileMenuLayout
-                    ? "h-7 w-7 opacity-100"
-                    : "max-w-7 opacity-100 group-hover/item:max-w-16 group-focus-within/item:max-w-16"
-                  : "max-w-0 opacity-0 group-hover/item:max-w-16 group-hover/item:opacity-100 group-focus-within/item:max-w-16 group-focus-within/item:opacity-100",
-                menuOpen && "max-w-16 opacity-100",
+                "flex sidebar-list-row w-full min-w-0 items-center gap-2 rounded-md px-2 py-0",
+                "bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent",
+                "text-left outline-hidden transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-ring web:max-820:[-webkit-touch-callout:none] web:max-820:select-none web:max-820:touch-pan-y",
               )}
+              title={branchHint ? [item.title, branchHint].join("\n") : item.title}
             >
-              {isRunning ? (
-                <span
-                  role="img"
-                  aria-label={t("chat.statusRunningReply")}
-                  title={t("chat.statusRunningReply")}
-                  className={cn(
-                    "pointer-events-none absolute right-1.5 flex h-4 w-4 items-center justify-center text-muted-foreground transition-opacity duration-200",
-                    isMobileMenuLayout
-                      ? "opacity-100"
-                      : [
-                          "opacity-100 group-hover/item:opacity-0 group-focus-within/item:opacity-0",
-                          menuOpen && "opacity-0",
-                        ],
-                  )}
-                >
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </span>
-              ) : item.isPinned ? (
+              {isSelectionMode ? (
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "pointer-events-none absolute right-1.5 flex h-4 w-4 items-center justify-center text-amber-500/90 transition-opacity duration-200",
-                    isMobileMenuLayout
-                      ? "opacity-100"
-                      : [
-                          "opacity-100 group-hover/item:opacity-0 group-focus-within/item:opacity-0",
-                          menuOpen && "opacity-0",
-                        ],
+                    "flex size-4 shrink-0 items-center justify-center rounded-xs border transition-colors",
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-muted-foreground/45 bg-background/50",
                   )}
                 >
-                  <Pin className="h-3 w-3" />
+                  {isSelected ? <Check className="size-3" /> : null}
                 </span>
               ) : null}
-              <div
+              {!isSelectionMode && props.showIcon ? (
+                <span
+                  aria-hidden="true"
+                  className="flex size-4 shrink-0 items-center justify-center"
+                >
+                  <MessageSquare className="size-4 text-muted-foreground" />
+                </span>
+              ) : null}
+              {!isSelectionMode && branchHint ? (
+                <GitBranch
+                  role="img"
+                  aria-label={branchHint}
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+              ) : null}
+              <span className="[mask-image:var(--mask-image-sidebar-project-name-fade)] min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm font-normal leading-5">
+                {item.title}
+              </span>
+              {!isSelectionMode && blockedBadgeLabel ? (
+                <span
+                  className={cn(
+                    "inline-flex h-5 shrink-0 items-center rounded-full bg-emerald-500/[0.14] px-2",
+                    "text-tiny font-medium leading-none text-emerald-700 dark:bg-emerald-400/[0.13] dark:text-emerald-300",
+                  )}
+                >
+                  {blockedBadgeLabel}
+                </span>
+              ) : null}
+            </SidebarMenuButton>
+          </div>
+
+          <div
+            className={cn(
+              "relative flex items-center justify-end overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
+              isSelectionMode && "hidden",
+              showRunningIndicator
+                ? // Mobile rows render no inline action buttons, so this flex
+                  // box has zero content width AND zero height — max-w alone
+                  // leaves the absolutely-positioned spinner fully clipped by
+                  // overflow-hidden. Reserve the spinner slot explicitly
+                  // (both axes) and skip the hover/focus swap.
+                  isMobileMenuLayout
+                  ? "size-7 opacity-100"
+                  : "max-w-7 opacity-100 group-hover/item:max-w-16 group-focus-within/item:max-w-16"
+                : "max-w-0 opacity-0 group-hover/item:max-w-16 group-hover/item:opacity-100 group-focus-within/item:max-w-16 group-focus-within/item:opacity-100",
+              menuOpen && "max-w-16 opacity-100",
+            )}
+          >
+            {showRunningIndicator ? (
+              <span
+                role="img"
+                aria-label={t("chat.statusRunningReply")}
+                title={t("chat.statusRunningReply")}
                 className={cn(
-                  "flex items-center gap-0.5 transition-opacity duration-200",
-                  isRunning || item.isPinned
-                    ? "opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100"
-                    : "opacity-100",
-                  menuOpen && "opacity-100",
+                  "pointer-events-none absolute right-1.5 flex size-4 items-center justify-center text-muted-foreground",
+                  "transition-opacity duration-200",
+                  isMobileMenuLayout
+                    ? "opacity-100"
+                    : [
+                        "opacity-100 group-hover/item:opacity-0 group-focus-within/item:opacity-0",
+                        menuOpen && "opacity-0",
+                      ],
                 )}
               >
-                {!isMobileMenuLayout ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className={PROJECT_ICON_BUTTON_CLASS}
-                      title={
-                        item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")
-                      }
-                      aria-label={
-                        item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")
-                      }
-                      onClick={handleTogglePinned}
-                      disabled={isInteractionDisabled || isBusy || item.isPending}
-                    >
-                      {item.isPinned ? (
-                        <PinOff className="h-3.5 w-3.5" />
-                      ) : (
-                        <Pin className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className={PROJECT_ICON_BUTTON_CLASS}
-                          disabled={isInteractionDisabled || isBusy}
-                          title={t("chat.conversationMore")}
-                          aria-label={t("chat.conversationMore")}
-                          onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) =>
-                            e.stopPropagation()
-                          }
-                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                        />
-                      }
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </DropdownMenuTrigger>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            {!isSelectionMode ? (
-              <DropdownMenuContent
-                side={menuSide}
-                align="start"
-                sideOffset={8}
-                collisionPadding={12}
-                finalFocus={() => {
-                  if (suppressMenuReturnFocusRef.current) {
-                    suppressMenuReturnFocusRef.current = false;
-                    return false;
-                  }
-                  return true;
-                }}
-                className="sidebar-context-menu min-w-[10rem] rounded-xl border-border/60 bg-background/95 backdrop-blur-xl"
-              >
-                {isMobileMenuLayout && !item.isPending ? (
-                  <DropdownMenuItem
-                    disabled={isInteractionDisabled}
-                    onSelect={handleTogglePinned}
-                    className="gap-2"
-                  >
-                    {item.isPinned ? (
-                      <PinOff className="h-3.5 w-3.5" />
-                    ) : (
-                      <Pin className="h-3.5 w-3.5" />
-                    )}
-                    {item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem
-                  disabled={isInteractionDisabled || isRunning || isBusy}
-                  onSelect={handleEnterSelectionMode}
-                  className="gap-2"
-                >
-                  <ListChecks className="h-3.5 w-3.5" />
-                  {t("chat.conversationBulkSelect")}
-                </DropdownMenuItem>
-                {onOpenInWorkbenchSplit && !item.isPending ? (
-                  <DropdownMenuItem
-                    disabled={isInteractionDisabled}
-                    onSelect={() => onOpenInWorkbenchSplit(item)}
-                    className="gap-2"
-                  >
-                    <Columns2 className="h-3.5 w-3.5" />
-                    {t("workbench.openInSplit")}
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem
-                  disabled={isInteractionDisabled}
-                  onSelect={handleStartRenamingFromMenu}
-                  className="gap-2"
-                >
-                  <Edit3 className="h-3.5 w-3.5" />
-                  {t("chat.conversationRename")}
-                </DropdownMenuItem>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger
-                    disabled={
-                      isInteractionDisabled || isRunning || isBusy || moveWorkspaces.length === 0
-                    }
-                    className="gap-2"
-                  >
-                    <Folder className="h-3.5 w-3.5" />
-                    {t("chat.conversationMoveToWorkspace")}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="sidebar-context-menu max-h-[18rem] min-w-[12rem] overflow-y-auto rounded-xl border-border/60 bg-background/95 backdrop-blur-xl">
-                    {moveWorkspaces.map((workspace) => (
-                      <DropdownMenuItem
-                        key={workspace.id}
-                        disabled={
-                          isInteractionDisabled ||
-                          isRunning ||
-                          isBusy ||
-                          workspace.path === item.cwd
-                        }
-                        onSelect={() => handleMoveToWorkspace(workspace.path)}
-                        className="gap-2"
-                      >
-                        <FolderClosed className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{workspace.path}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                {canShareConversation && !item.isPending ? (
-                  <DropdownMenuItem
-                    disabled={isInteractionDisabled}
-                    onSelect={handleShare}
-                    className="gap-2"
-                  >
-                    <Share2 className="h-3.5 w-3.5" />
-                    {t("chat.conversationShare")}
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem
-                  disabled={isInteractionDisabled || isDeleteDisabled}
-                  onSelect={handleRequestDelete}
-                  className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t("chat.conversationDelete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
+                <Loader2 className="size-4 animate-spin [animation-duration:var(--ui-duration-1600ms)] motion-reduce:animate-none" />
+              </span>
             ) : null}
-          </>
-        </DropdownMenu>
-      )}
+            <div
+              className={cn(
+                "flex items-center gap-0.5 transition-opacity duration-200",
+                showRunningIndicator
+                  ? "opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100"
+                  : "opacity-100",
+                menuOpen && "opacity-100",
+              )}
+            >
+              {!isMobileMenuLayout ? (
+                <>
+                  <SidebarMenuAction
+                    type="button"
+                    className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
+                    title={item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
+                    aria-label={
+                      item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")
+                    }
+                    onClick={handleTogglePinned}
+                    disabled={isInteractionDisabled || isBusy || item.isPending}
+                  >
+                    {item.isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                  </SidebarMenuAction>
+                  <DropdownMenuTrigger
+                    render={
+                      <SidebarMenuAction
+                        type="button"
+                        className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
+                        disabled={isInteractionDisabled || isBusy}
+                        title={t("chat.conversationMore")}
+                        aria-label={t("chat.conversationMore")}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    }
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </DropdownMenuTrigger>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <DropdownMenuContent
+            variant="soft"
+            side={menuSide}
+            align="start"
+            sideOffset={8}
+            collisionPadding={12}
+            finalFocus={() => {
+              if (suppressMenuReturnFocusRef.current) {
+                suppressMenuReturnFocusRef.current = false;
+                return false;
+              }
+              return true;
+            }}
+            className={cn(SIDEBAR_CONTEXT_MENU_CLASS, "min-w-40")}
+          >
+            {menuItems}
+          </DropdownMenuContent>
+        </>
+      </DropdownMenu>
+      {contextPoint && menuOpen && !isRenaming && !isSelectionMode && !isInteractionDisabled ? (
+        <ContextMenuPopup
+          point={contextPoint}
+          onClose={() => handleMenuOpenChange(false)}
+          variant="soft"
+          finalFocus={() => {
+            if (suppressMenuReturnFocusRef.current) {
+              suppressMenuReturnFocusRef.current = false;
+              return false;
+            }
+            return titleButtonRef.current;
+          }}
+          className={cn(SIDEBAR_CONTEXT_MENU_CLASS, "min-w-40")}
+        >
+          {menuItems}
+        </ContextMenuPopup>
+      ) : null}
+      {isRenaming ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) onCancelRename();
+          }}
+        >
+          <DialogContent
+            className="max-w-md"
+            showCloseButton
+            closeLabel={t("chat.cancel")}
+            initialFocus={inputRef}
+            finalFocus={titleButtonRef}
+          >
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (renameDraft.trim() && !isInteractionDisabled && !isBusy) onCommitRename();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{t("chat.conversationRenameTitle")}</DialogTitle>
+                <DialogDescription>{t("chat.conversationRenameHint")}</DialogDescription>
+              </DialogHeader>
+              <DialogBody>
+                <Input
+                  ref={inputRef}
+                  variant="plain"
+                  aria-label={t("chat.conversationRenameTitle")}
+                  value={renameDraft}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => onRenameDraftChange(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && event.nativeEvent.isComposing)
+                      event.preventDefault();
+                  }}
+                  disabled={isInteractionDisabled || isBusy}
+                />
+              </DialogBody>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onCancelRename}>
+                  {t("chat.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!renameDraft.trim() || isInteractionDisabled || isBusy}
+                >
+                  {t("chat.conversationRenameSave")}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }, areHistoryRowPropsEqual);
@@ -894,49 +1164,93 @@ export function ProjectGroupHeader(props: {
     onDelete,
   } = props;
   const { t } = useLocale();
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  // Opening an inline input from a menu must not restore focus to the trigger:
+  // "Rename" unmounts this menu in the commit that mounts the input, and the
+  // trigger takes focus back before the input's ref attaches, so the blur
+  // committed the untouched name. finalFocus consumes the one-shot flag and the
+  // effect below owns focus placement.
+  const suppressMenuReturnFocusRef = useRef(false);
+  const skipNextBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!isRenaming) return;
+    skipNextBlurCommitRef.current = false;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [isRenaming]);
 
   if (isRenaming) {
     return (
-      <div className="flex h-[30px] items-center gap-2 rounded-lg pl-2 pr-1">
-        <Input
-          value={renameDraft}
-          onChange={(event) => onRenameDraftChange(event.currentTarget.value)}
-          onBlur={onCommitRename}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
+      // Same geometry as the non-renaming header below, chevron included, so
+      // the name stays put when the row flips into and out of edit mode.
+      <div className="flex sidebar-list-row items-center rounded-lg pl-1">
+        <div className="flex sidebar-list-row min-w-0 flex-1 items-center gap-2 px-2">
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform duration-200",
+                group.collapsed ? "" : "rotate-90",
+              )}
+            />
+          </span>
+          <Input
+            ref={renameInputRef}
+            value={renameDraft}
+            onChange={(event) => onRenameDraftChange(event.currentTarget.value)}
+            onBlur={() => {
+              if (skipNextBlurCommitRef.current) {
+                skipNextBlurCommitRef.current = false;
+                return;
+              }
               onCommitRename();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              onCancelRename();
-            }
-          }}
-          className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 text-[calc(13px*var(--zone-font-scale,1))] font-semibold shadow-none outline-none focus-visible:border-0 focus-visible:bg-transparent"
-          autoFocus
-        />
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                skipNextBlurCommitRef.current = true;
+                onCommitRename();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                skipNextBlurCommitRef.current = true;
+                onCancelRename();
+              }
+            }}
+            className={HISTORY_RENAME_INPUT_CLASS}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="group/project-group flex h-[30px] items-center rounded-lg pl-1 pr-0.5 transition-colors hover:bg-foreground/[0.04]">
+    <div className="group/project-group flex sidebar-list-row items-center rounded-lg pl-1 transition-colors hover:bg-settings-tile-hover">
       <button
         type="button"
-        className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left outline-hidden transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          "flex sidebar-list-row min-w-0 flex-1 items-center gap-2 rounded-md px-2",
+          "text-left outline-hidden transition-colors",
+          "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        )}
         onClick={onToggleCollapsed}
         title={t("chat.workspaceGroupToggle")}
       >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-            group.collapsed ? "" : "rotate-90",
-          )}
-        />
-        <span className="min-w-0 flex-1 truncate text-[calc(13px*var(--zone-font-scale,1))] font-semibold leading-5">
+        {/* 14px chevron in a 16px slot: the slot has to match ProjectRow's
+            folder icon so group names and workspace names share a left edge. */}
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 text-muted-foreground transition-transform duration-200",
+              group.collapsed ? "" : "rotate-90",
+            )}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-5">
           {group.name}
         </span>
-        <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] leading-4 text-muted-foreground">
+        <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-tiny leading-4 text-muted-foreground">
           {memberCount}
         </span>
       </button>
@@ -945,24 +1259,43 @@ export function ProjectGroupHeader(props: {
           render={
             <button
               type="button"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+              className={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors",
+                "hover:bg-foreground/[0.06] hover:text-foreground",
+              )}
             />
           }
           aria-label={t("chat.workspaceGroupActions")}
           title={t("chat.workspaceGroupActions")}
         >
-          <MoreHorizontal className="h-3.5 w-3.5" />
+          <MoreHorizontal className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="min-w-40">
-          <DropdownMenuItem onSelect={onStartRename} className="gap-2 text-xs">
-            <Edit3 className="h-3.5 w-3.5" />
+        <DropdownMenuContent
+          variant="soft"
+          className="min-w-40"
+          finalFocus={() => {
+            if (suppressMenuReturnFocusRef.current) {
+              suppressMenuReturnFocusRef.current = false;
+              return false;
+            }
+            return true;
+          }}
+        >
+          <DropdownMenuItem
+            onSelect={() => {
+              suppressMenuReturnFocusRef.current = true;
+              onStartRename();
+            }}
+            className="gap-2"
+          >
+            <SquarePen className="size-3.5" />
             <span>{t("chat.workspaceGroupRename")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={onDelete}
-            className="gap-2 text-xs text-destructive focus:bg-destructive/10 focus:text-destructive"
+            className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-3.5" />
             <span>{t("chat.workspaceGroupDelete")}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -972,6 +1305,13 @@ export function ProjectGroupHeader(props: {
 }
 
 export const ProjectRow = memo(function ProjectRow(props: {
+  expanded?: boolean;
+  onNewConversation?: (project: WorkspaceProject) => void;
+  reorderKey?: string;
+  onReorderPointerDown?: (key: string, event: SidebarReorderPointer) => void;
+  isDragging?: boolean;
+  dropPosition?: "before" | "after";
+  onToggleExpanded?: (project: WorkspaceProject) => void;
   project: WorkspaceProject;
   isActive: boolean;
   isMissing: boolean;
@@ -1007,7 +1347,12 @@ export const ProjectRow = memo(function ProjectRow(props: {
    */
   onWorkbenchDragIntent?: (
     project: WorkspaceProject,
-    event: { pointerId: number; clientX: number; clientY: number },
+    event: {
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      currentTarget?: EventTarget | null;
+    },
   ) => void;
 }) {
   const {
@@ -1046,7 +1391,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
       (path) => workspaceProjectPathKey(path) === workspaceProjectPathKey(project.path),
     ),
   )?.id;
-  const ProjectFolderIcon = isActive ? FolderOpen : FolderClosed;
+  const ProjectFolderIcon = (props.expanded ?? isActive) ? FolderOpen : FolderClosed;
 
   useEffect(() => {
     if (pendingAction !== "deleteWorktree") {
@@ -1147,7 +1492,12 @@ export const ProjectRow = memo(function ProjectRow(props: {
   if (pendingAction) {
     const deletingWorktree = pendingAction === "deleteWorktree" && Boolean(project.worktree);
     return (
-      <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive shadow-xs shadow-black/5">
+      <div
+        className={cn(
+          "rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5",
+          "text-sm text-destructive shadow-xs shadow-black/5",
+        )}
+      >
         <p className="truncate font-medium leading-5 text-destructive">
           {t(
             deletingWorktree
@@ -1155,7 +1505,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
               : "chat.workspaceRemoveConfirm",
           ).replace("{name}", project.name)}
         </p>
-        <p className="mt-0.5 text-[calc(11px*var(--zone-font-scale,1))] leading-4 text-destructive/75">
+        <p className="mt-0.5 text-xs leading-4 text-destructive/75">
           {isRunning
             ? t("chat.workspaceRemoveRunning")
             : t(
@@ -1166,17 +1516,17 @@ export const ProjectRow = memo(function ProjectRow(props: {
         </p>
         {deletingWorktree ? (
           <>
-            <p className="mt-1 break-all font-mono text-[10px] leading-4 text-destructive/70">
+            <p className="mt-1 break-all font-mono text-tiny leading-4 text-destructive/70">
               {project.path}
             </p>
             {project.worktree?.branch ? (
-              <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] leading-4 text-foreground">
+              <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs leading-4 text-foreground">
                 <input
                   type="checkbox"
                   checked={deleteBranchWithWorktree}
                   onChange={(event) => setDeleteBranchWithWorktree(event.currentTarget.checked)}
                   disabled={isInteractionDisabled || isRunning}
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-destructive"
+                  className="mt-0.5 size-3.5 rounded border-border accent-destructive"
                 />
                 <span>
                   {t("chat.workspaceDeleteWorktreeBranch").replace(
@@ -1214,30 +1564,43 @@ export const ProjectRow = memo(function ProjectRow(props: {
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: this group contains navigation actions, not form fields.
     <div
       ref={rowRef}
+      role="group"
+      aria-label={project.name}
+      data-sidebar-reorder-key={props.reorderKey}
       className={cn(
-        "group/project grid h-[30px] grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg pl-1 transition-colors",
+        props.isDragging && "opacity-35",
+        "group/project relative grid sidebar-list-row grid-cols-[minmax(0,1fr)_auto] items-center rounded-md pl-1",
+        "transition-colors",
         indented && "pl-5",
         isMissing
           ? "text-destructive hover:bg-destructive/10"
           : isArchived
             ? "text-muted-foreground/60 hover:bg-foreground/[0.03]"
             : isActive
-              ? "bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.09]"
-              : "text-foreground/85 hover:bg-foreground/[0.05] hover:text-foreground",
+              ? "bg-settings-active font-medium text-foreground hover:bg-settings-active"
+              : "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground",
       )}
     >
-      <Tooltip disabled={isInteractionDisabled}>
+      <SidebarDropIndicator position={props.dropPosition} />
+      <Tooltip disabled={isInteractionDisabled || props.isDragging}>
         <TooltipTrigger
           delay={0}
           closeOnClick
           render={
-            <button
+            <SidebarMenuButton
+              isActive={isActive}
               type="button"
+              aria-current={isActive ? "page" : undefined}
               aria-disabled={isArchived || undefined}
+              aria-expanded={props.onToggleExpanded ? props.expanded : undefined}
+              draggable={false}
               className={cn(
-                "flex h-[30px] min-w-0 items-center gap-3 rounded-md px-2 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                "flex sidebar-list-row min-w-0 items-center gap-2 rounded-md px-2 py-0",
+                "bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent",
+                "text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                 isMissing
                   ? "hover:text-destructive focus-visible:bg-destructive/10"
                   : isArchived
@@ -1248,10 +1611,25 @@ export const ProjectRow = memo(function ProjectRow(props: {
                 // Archived workspaces cannot be selected, so no new
                 // conversations can start in them.
                 if (!isArchived) {
+                  props.onToggleExpanded?.(project);
                   onSelectProject(project);
                 }
               }}
               onPointerDown={(event) => {
+                if (
+                  props.onReorderPointerDown &&
+                  props.reorderKey &&
+                  !event.altKey &&
+                  !isArchived &&
+                  !isInteractionDisabled &&
+                  !menuOpen &&
+                  pendingAction === null &&
+                  event.pointerType !== "touch" &&
+                  event.button === 0
+                ) {
+                  props.onReorderPointerDown(props.reorderKey, event);
+                  return;
+                }
                 if (
                   !onWorkbenchDragIntent ||
                   isArchived ||
@@ -1268,6 +1646,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
                   pointerId: event.pointerId,
                   clientX: event.clientX,
                   clientY: event.clientY,
+                  currentTarget: event.currentTarget,
                 });
               }}
               onDoubleClick={(event) => {
@@ -1280,25 +1659,23 @@ export const ProjectRow = memo(function ProjectRow(props: {
             >
               <ProjectFolderIcon
                 className={cn(
-                  "h-4 w-4 shrink-0 transition-colors",
+                  "size-4 shrink-0 transition-colors",
                   isMissing
                     ? "text-destructive"
                     : isArchived
                       ? "text-muted-foreground/40"
-                      : isActive
-                        ? "text-amber-500"
-                        : "text-foreground/65",
+                      : "text-foreground/65",
                 )}
               />
               <span
                 className={cn(
-                  "sidebar-project-name-fade min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[calc(14px*var(--zone-font-scale,1))] font-normal leading-5",
+                  "[mask-image:var(--mask-image-sidebar-project-name-fade)] min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm font-normal leading-5",
                   isMissing ? "text-destructive" : undefined,
                 )}
               >
                 {project.name}
               </span>
-            </button>
+            </SidebarMenuButton>
           }
         />
         <TooltipContent
@@ -1316,7 +1693,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
           "relative flex items-center justify-end overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
           isMissing
             ? "max-w-8 opacity-100"
-            : isRunning || (isPinned && !isArchived)
+            : isRunning
               ? "max-w-7 opacity-100 group-hover/project:max-w-16 group-focus-within/project:max-w-16"
               : "max-w-0 opacity-0 group-hover/project:max-w-16 group-hover/project:opacity-100 group-focus-within/project:max-w-16 group-focus-within/project:opacity-100",
           menuOpen && "max-w-16 opacity-100",
@@ -1328,29 +1705,19 @@ export const ProjectRow = memo(function ProjectRow(props: {
             aria-label={t("chat.statusRunningReply")}
             title={t("chat.statusRunningReply")}
             className={cn(
-              "pointer-events-none absolute right-1.5 flex h-4 w-4 items-center justify-center text-muted-foreground transition-opacity duration-200",
+              "pointer-events-none absolute right-1.5 flex size-4 items-center justify-center text-muted-foreground",
+              "transition-opacity duration-200",
               "opacity-100 group-hover/project:opacity-0 group-focus-within/project:opacity-0",
               menuOpen && "opacity-0",
             )}
           >
-            <Loader2 className="h-4 w-4 animate-spin" />
-          </span>
-        ) : !isMissing && !isArchived && isPinned ? (
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute right-1.5 flex h-4 w-4 items-center justify-center text-amber-500/80 transition-opacity duration-200",
-              "opacity-100 group-hover/project:opacity-0 group-focus-within/project:opacity-0",
-              menuOpen && "opacity-0",
-            )}
-          >
-            <Pin className="h-3 w-3" />
+            <Loader2 className="size-4 animate-spin [animation-duration:var(--ui-duration-1600ms)] motion-reduce:animate-none" />
           </span>
         ) : null}
         <div
           className={cn(
             "flex items-center gap-0.5 transition-opacity duration-200",
-            (isRunning || (isPinned && !isArchived)) && !isMissing
+            isRunning && !isMissing
               ? "opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100"
               : "opacity-100",
             menuOpen && "opacity-100",
@@ -1371,7 +1738,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
                 onClick={handleRequestRemove}
                 disabled={isInteractionDisabled}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="size-3.5" />
               </Button>
             ) : null
           ) : (
@@ -1391,18 +1758,16 @@ export const ProjectRow = memo(function ProjectRow(props: {
                 </Button>
               ) : null}
               {!isArchived ? (
-                <Button
+                <SidebarMenuAction
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={PROJECT_ICON_BUTTON_CLASS}
-                  title={isPinned ? t("chat.workspaceUnpin") : t("chat.workspacePin")}
-                  aria-label={isPinned ? t("chat.workspaceUnpin") : t("chat.workspacePin")}
-                  onClick={handleTogglePinned}
-                  disabled={isInteractionDisabled}
+                  className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
+                  title={t("chat.newConversation")}
+                  aria-label={t("chat.newConversation")}
+                  onClick={() => props.onNewConversation?.(project)}
+                  disabled={isInteractionDisabled || !props.onNewConversation}
                 >
-                  {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-                </Button>
+                  <SquarePen className="size-3.5" />
+                </SidebarMenuAction>
               ) : null}
               <DropdownMenu
                 open={!isInteractionDisabled && menuOpen}
@@ -1411,72 +1776,53 @@ export const ProjectRow = memo(function ProjectRow(props: {
               >
                 <DropdownMenuTrigger
                   render={
-                    <Button
+                    <SidebarMenuAction
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      className={PROJECT_ICON_BUTTON_CLASS}
+                      className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
                       title={t("chat.workspaceMore")}
                       aria-label={t("chat.workspaceMore")}
                       disabled={isInteractionDisabled}
                     />
                   }
                 >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <MoreHorizontal className="size-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
+                  variant="soft"
                   side="right"
                   align="start"
                   sideOffset={6}
-                  className="sidebar-context-menu"
+                  className={SIDEBAR_CONTEXT_MENU_CLASS}
                 >
+                  {!isArchived && (
+                    <DropdownMenuItem
+                      disabled={isInteractionDisabled}
+                      onSelect={handleTogglePinned}
+                      className="gap-2"
+                    >
+                      {isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                      {isPinned ? t("chat.workspaceUnpin") : t("chat.workspacePin")}
+                    </DropdownMenuItem>
+                  )}
+                  {/* 第一组：管理 —— 配置、分组归属、归档状态。 */}
                   <DropdownMenuItem
                     disabled={isInteractionDisabled}
                     onSelect={() => onConfigureProject(project)}
                     className="gap-2"
                   >
-                    <Settings className="h-3.5 w-3.5" />
+                    <Settings className="size-3.5 text-muted-foreground" />
                     {t("chat.workspaceConfigure")}
                   </DropdownMenuItem>
-                  {!isDefaultProject ? (
-                    <>
-                      <DropdownMenuItem
-                        disabled={isInteractionDisabled}
-                        onSelect={handleRequestRemove}
-                        className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        {t("chat.workspaceRemoveOnly")}
-                      </DropdownMenuItem>
-                      {project.worktree ? (
-                        <DropdownMenuItem
-                          disabled={isInteractionDisabled}
-                          onSelect={handleRequestDeleteWorktree}
-                          className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          {t("chat.workspaceDeleteWorktree")}
-                        </DropdownMenuItem>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {!isArchived && canArchive ? (
-                    <DropdownMenuItem
-                      disabled={isInteractionDisabled}
-                      onSelect={handleArchive}
-                      className="gap-2"
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                      {t("chat.workspaceArchive")}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {onMoveProjectToGroup ? (
+                  {/* 无任何分组时隐藏“移动到分组”，避免展开空的子菜单。 */}
+                  {onMoveProjectToGroup && workspaceProjectGroups.length > 0 ? (
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2">
-                        <Folder className="h-3.5 w-3.5" />
-                        <span>{t("chat.workspaceGroupMove")}</span>
+                      <DropdownMenuSubTrigger disabled={isInteractionDisabled} className="gap-2">
+                        <Folder className="size-3.5 text-muted-foreground" />
+                        <span className="min-w-0 flex-1">{t("chat.workspaceGroupMove")}</span>
+                        <ChevronRight className="size-3.5 text-muted-foreground" />
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent
+                        variant="soft"
                         side="right"
                         align="start"
                         sideOffset={6}
@@ -1487,27 +1833,40 @@ export const ProjectRow = memo(function ProjectRow(props: {
                             key={group.id}
                             disabled={group.id === currentGroupId}
                             onSelect={() => onMoveProjectToGroup(project.path, group.id)}
-                            className="gap-2 text-xs"
+                            className="gap-2"
                           >
                             {group.id === currentGroupId ? (
-                              <Check className="h-3.5 w-3.5" />
+                              <Check className="size-3.5" />
                             ) : (
-                              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Folder className="size-3.5 text-muted-foreground" />
                             )}
                             <span className="min-w-0 flex-1 truncate">{group.name}</span>
                           </DropdownMenuItem>
                         ))}
                         {currentGroupId ? (
-                          <DropdownMenuItem
-                            onSelect={() => onMoveProjectToGroup(project.path, null)}
-                            className="gap-2 text-xs"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            <span>{t("chat.workspaceGroupUngroup")}</span>
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => onMoveProjectToGroup(project.path, null)}
+                              className="gap-2"
+                            >
+                              <X className="size-3.5 text-muted-foreground" />
+                              <span>{t("chat.workspaceGroupUngroup")}</span>
+                            </DropdownMenuItem>
+                          </>
                         ) : null}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
+                  ) : null}
+                  {!isArchived && canArchive ? (
+                    <DropdownMenuItem
+                      disabled={isInteractionDisabled}
+                      onSelect={handleArchive}
+                      className="gap-2"
+                    >
+                      <Archive className="size-3.5 text-muted-foreground" />
+                      {t("chat.workspaceArchive")}
+                    </DropdownMenuItem>
                   ) : null}
                   {isArchived ? (
                     <DropdownMenuItem
@@ -1515,9 +1874,13 @@ export const ProjectRow = memo(function ProjectRow(props: {
                       onSelect={handleUnarchive}
                       className="gap-2"
                     >
-                      <ArchiveRestore className="h-3.5 w-3.5" />
+                      <ArchiveRestore className="size-3.5 text-muted-foreground" />
                       {t("chat.workspaceUnarchive")}
                     </DropdownMenuItem>
+                  ) : null}
+                  {/* 第二组：浏览定位 —— 在文件树 / 系统资源管理器中打开。 */}
+                  {onBrowseProjectInFileTree || onBrowseProjectInSystemFileManager ? (
+                    <DropdownMenuSeparator />
                   ) : null}
                   {onBrowseProjectInFileTree ? (
                     <DropdownMenuItem
@@ -1525,7 +1888,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
                       onSelect={handleBrowseInFileTree}
                       className="gap-2"
                     >
-                      <FolderTree className="h-3.5 w-3.5" />
+                      <FolderTree className="size-3.5 text-muted-foreground" />
                       {t("chat.workspaceBrowseInFileTree")}
                     </DropdownMenuItem>
                   ) : null}
@@ -1535,9 +1898,33 @@ export const ProjectRow = memo(function ProjectRow(props: {
                       onSelect={handleBrowseInSystemFileManager}
                       className="gap-2"
                     >
-                      <FolderOpen className="h-3.5 w-3.5" />
+                      <FolderOpen className="size-3.5 text-muted-foreground" />
                       {t("chat.workspaceBrowseInSystemFileManager")}
                     </DropdownMenuItem>
+                  ) : null}
+                  {/* 第三组：危险操作 —— 固定在菜单底部并以分隔线隔开。 */}
+                  {!isDefaultProject ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={isInteractionDisabled}
+                        onSelect={handleRequestRemove}
+                        className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        <X className="size-3.5" />
+                        {t("chat.workspaceRemoveOnly")}
+                      </DropdownMenuItem>
+                      {project.worktree ? (
+                        <DropdownMenuItem
+                          disabled={isInteractionDisabled}
+                          onSelect={handleRequestDeleteWorktree}
+                          className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          {t("chat.workspaceDeleteWorktree")}
+                        </DropdownMenuItem>
+                      ) : null}
+                    </>
                   ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>

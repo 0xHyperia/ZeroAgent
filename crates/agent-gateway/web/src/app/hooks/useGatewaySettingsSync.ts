@@ -6,9 +6,9 @@ import {
   initAutomation,
 } from "@liveagent/ui/lib/automation/index";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
+import { GatewaySettingsSaveLineage } from "@liveagent/ui/lib/settings/gatewaySettingsSaveLineage";
 import {
   applyGatewaySettingsSyncPayload,
-  buildGatewaySettingsSyncUpdatePayload,
   type GatewaySettingsSyncUpdatePayload,
   redactSettingsForWebStorage,
 } from "@liveagent/ui/lib/settings/sync";
@@ -30,6 +30,11 @@ import { asErrorMessage } from "../chatEventUtils";
 import { hasSettingsSyncChanged, resolveAppWorkspaceProjects } from "../historyUtils";
 
 export function getGatewaySettingsErrorMessage(error: unknown, fallback: string, locale: Locale) {
+  if (error instanceof GatewaySettingsUpdateError && error.code === "configuration_changed") {
+    return locale === "en-US"
+      ? "Settings changed elsewhere. Review the latest settings and submit your edit again."
+      : "配置已由其他窗口或后台更新，请核对最新内容后重新提交修改。";
+  }
   if (error instanceof GatewaySettingsUpdateError && error.code === "settings_changed") {
     return t("app.settingsSshSettingsChanged", locale);
   }
@@ -50,6 +55,7 @@ export function useGatewaySettingsSync(params: {
   });
   const settingsSaveSequenceRef = useRef(0);
   const settingsSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const saveLineage = useRef(new GatewaySettingsSaveLineage());
   // Mirrors `settings` so setSettings/applyGatewaySettings can read the latest value
   // synchronously without passing a (side-effecting) function into setSettingsState —
   // React 18 StrictMode double-invokes functional state updaters in development,
@@ -69,6 +75,7 @@ export function useGatewaySettingsSync(params: {
     });
   }, [settings.theme]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: system theme notifications intentionally invalidate the computed theme
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", resolveEffectiveTheme(settings.theme) === "dark");
@@ -107,32 +114,43 @@ export function useGatewaySettingsSync(params: {
       const saveSequence = ++settingsSaveSequenceRef.current;
       setSettingsSaveState({ status: "saving" });
       const redactedNext = redactSettingsForWebStorage(next);
-      const gatewayUpdate =
-        syncGateway && api
-          ? buildGatewaySettingsSyncUpdatePayload(prev, next, {
-              includeProviderApiKeyUpdates: true,
-            })
-          : null;
-
       settingsSaveChainRef.current = settingsSaveChainRef.current
         .catch(() => undefined)
         .then(() => {
           persistWebSettings(redactedNext);
         })
         .then(async () => {
+          const target = JSON.stringify([activeAgentId, token]);
+          const gatewayUpdate =
+            syncGateway && api ? saveLineage.current.prepare(prev, next, target) : null;
           if (gatewayUpdate && Object.keys(gatewayUpdate).length > 0) {
-            await api?.updateSettings(gatewayUpdate);
+            const receipt = await api?.updateSettings(gatewayUpdate);
+            saveLineage.current.accept(prev, next, target, receipt);
+            if (receipt?.snapshot && settingsSaveSequenceRef.current === saveSequence) {
+              const committed = redactSettingsForWebStorage(
+                resolveAppWorkspaceProjects(
+                  applyGatewaySettingsSyncPayload(settingsRef.current, receipt.snapshot),
+                ),
+              );
+              settingsRef.current = committed;
+              setSettingsState(committed);
+              persistWebSettings(committed);
+            }
+            return receipt?.warning;
           }
         })
-        .then(() => {
+        .then((warning) => {
           if (settingsSaveSequenceRef.current === saveSequence) {
-            setSettingsSaveState({ status: "saved" });
+            setSettingsSaveState(
+              warning ? { status: "error", message: warning } : { status: "saved" },
+            );
           }
         })
-        .catch((error) => {
+        .catch(async (error) => {
+          saveLineage.current.clear();
           console.error("Failed to persist gateway settings", error);
           if (syncGateway && api) {
-            void api
+            await api
               .getSettings()
               .then((payload) => {
                 const current = settingsRef.current;
@@ -153,7 +171,7 @@ export function useGatewaySettingsSync(params: {
           }
         });
     },
-    [api],
+    [api, activeAgentId, token],
   );
 
   const applyGatewaySettings = useCallback((payload: GatewaySettingsSyncUpdatePayload) => {
@@ -173,7 +191,12 @@ export function useGatewaySettingsSync(params: {
     const prev = settingsRef.current;
     const rawNext = resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(prev, payload));
     const next = redactSettingsForWebStorage(rawNext);
-    if (!hasSettingsSyncChanged(prev, next)) {
+    if (
+      !hasSettingsSyncChanged(prev, next) &&
+      prev.configurationRevision === next.configurationRevision &&
+      prev.uiPreferencesRevision === next.uiPreferencesRevision &&
+      prev.settingsSyncProtocol === next.settingsSyncProtocol
+    ) {
       return;
     }
     settingsRef.current = next;
@@ -205,6 +228,7 @@ export function useGatewaySettingsSync(params: {
     [queueSettingsSave],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: switching the active agent intentionally starts a fresh settings synchronization
   useEffect(() => {
     if (!api) {
       setSettingsSyncReady(token.trim() === "");

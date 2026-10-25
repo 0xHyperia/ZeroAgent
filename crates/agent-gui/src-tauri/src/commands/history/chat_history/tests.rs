@@ -1510,6 +1510,62 @@ mod tests {
     }
 
     #[test]
+    fn chat_history_search_spans_all_workdirs_and_chat_mode() {
+        let conn = open_test_db().expect("open test db");
+        for (index, (id, cwd)) in [
+            ("project-a", Some("/tmp/project-a")),
+            ("project-b", Some("/tmp/project-b")),
+            ("chat-mode", None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut conversation = sample_conversation();
+            conversation.id = id.to_string();
+            conversation.title = format!("Global search {id}");
+            conversation.cwd = cwd.map(str::to_string);
+            conversation.updated_at += index as i64;
+            upsert_chat_history_header(&conn, &conversation).expect("upsert global search header");
+            upsert_single_segment(
+                &conn,
+                id,
+                &ChatHistorySegmentInput {
+                    segment_index: 0,
+                    segment_id: format!("segment-{id}"),
+                    summary_json: None,
+                    messages_json: format!(
+                        r#"[{{"id":"message-{id}","role":"user","content":"global-session-marker","timestamp":1700000000001}}]"#
+                    ),
+                    message_count: 1,
+                    start_message_id: Some(format!("message-{id}")),
+                    end_message_id: Some(format!("message-{id}")),
+                    created_at: 1_700_000_000_000,
+                    updated_at: 1_700_000_000_001 + index as i64,
+                },
+            )
+            .expect("upsert global search segment");
+        }
+
+        let matches = search_chat_history_fts_with_refresh(
+            &conn,
+            "global-session-marker",
+            MAX_HISTORY_SEARCH_LIMIT,
+            &default_history_search_filter(),
+        )
+        .expect("search global history");
+        let conversation_ids = matches
+            .iter()
+            .map(|item| item.conversation_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(
+            conversation_ids,
+            std::collections::HashSet::from(["project-a", "project-b", "chat-mode"]),
+            "global search must not inherit the active workdir filter"
+        );
+    }
+
+    #[test]
     fn resolve_share_allows_empty_persisted_history() {
         let conn = open_test_db().expect("open test db");
         let conversation = sample_conversation();
@@ -1731,6 +1787,61 @@ mod tests {
                 ],
             ),
         ]
+    }
+
+    // 与前端 getHistoryMessageContentHash 的跨语言对齐校验：fixture 与期望
+    // 哈希和 crates/agent-gui/test/chat/edit-resend-message-ref.test.mjs 中的
+    // "content hash stays byte-aligned with the Rust implementation" 用例
+    // 逐字面值一致。任何一侧改动哈希算法都必须同步更新两处。
+    #[test]
+    fn history_message_content_hash_matches_frontend_fixture() {
+        let plain = json!({
+            "role": "user",
+            "id": "user-plain",
+            "content": "hello there",
+            "timestamp": 1000,
+        });
+        let empty_refs = json!({
+            "role": "user",
+            "id": "user-plain",
+            "content": "hello there",
+            "timestamp": 1000,
+            "liveAgentReferencedConversations": [],
+        });
+        let with_refs = json!({
+            "role": "user",
+            "id": "user-refs",
+            "content": "hello there\n\nThe user attached the files below to this message.",
+            "timestamp": 1000,
+            "liveAgentDisplayContent": "hello there",
+            "liveAgentAttachments": [
+                {
+                    "relativePath": "notes/spec.md",
+                    "fileName": "spec.md",
+                    "kind": "text",
+                    "sizeBytes": 2048,
+                },
+            ],
+            "liveAgentReferencedConversations": [
+                {
+                    "id": " conv-alpha ",
+                    "title": "  Fix   login\tflow ",
+                    "cwd": " /tmp/work ",
+                    "updatedAt": 1_735_689_600_123_i64,
+                },
+                { "id": "conv-beta", "title": "训练 β 运行" },
+                { "id": "conv-alpha", "title": "duplicate entry" },
+                { "id": "conv-gamma", "title": "third reference" },
+                { "id": "conv-delta", "title": "over the cap" },
+            ],
+        });
+
+        assert_eq!(history_message_content_hash(&plain), "fnv1a32:73027b85");
+        // 空引用数组不追加哈希段：旧消息与旧客户端产出的 ref 向后兼容。
+        assert_eq!(history_message_content_hash(&empty_refs), "fnv1a32:73027b85");
+        // 引用参与哈希前经过与前端一致的归一化：id 修剪、标题折叠空白并
+        // 截断、按 id 去重、最多 3 条。
+        assert_eq!(history_message_content_hash(&with_refs), "fnv1a32:87daff4d");
     }
 
     #[test]
@@ -2739,5 +2850,31 @@ mod tests {
             kept[1].summary_json.as_deref(),
             Some(r#"{"role":"summary","id":"summary-1","content":"older"}"#)
         );
+    }
+
+    #[test]
+    fn history_window_borrows_unselected_payloads_and_preserves_selected_content() {
+        let mut segments = window_fixture_segments();
+        let segment = &mut segments[0];
+        let payload = "工具输出 \"quoted\"\n".repeat(100_000);
+        segment.messages_json = serde_json::json!([
+            {"role": "user", "id": "first", "content": payload},
+            {"role": "assistant", "content": [{"type":"text", "text":"保留\n换行"}]},
+            {"role": "user", "id": "last", "content": "selected"}
+        ]).to_string();
+        segment.message_count = 3;
+        let raw = parse_history_window_segment_messages(segment).expect("borrow messages");
+        let start = segment.messages_json.as_ptr() as usize;
+        let end = start + segment.messages_json.len();
+        for message in &raw {
+            let address = message.get().as_ptr() as usize;
+            assert!(address >= start && address + message.get().len() <= end);
+        }
+        let window = build_history_message_window(&segments[..1], 2, None, false)
+            .expect("read selected messages");
+        assert_eq!(window.returned_message_count, 2);
+        assert_eq!(window.oldest_offset, 1);
+        assert_eq!(window.segments[0].messages[0]["content"][0]["text"], "保留\n换行");
+        assert_eq!(window.segments[0].messages[1]["content"], "selected");
     }
 }

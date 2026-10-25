@@ -1,6 +1,9 @@
-import { prepareProxyRequest } from "@liveagent/ui/lib/providers/proxy";
+import { invoke } from "@tauri-apps/api/core";
+import { isTauriHost } from "../host";
 import type { AppSettings } from "../settings";
+import { prepareAccountRequest } from "./accountProxy";
 import { getValidRelayAccessToken } from "./client";
+import { nativeSessionHandle, requireNativeSession } from "./nativeSession";
 
 type DesktopRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -27,6 +30,29 @@ export async function desktopRequest<T>(
   init?: DesktopRequestInit,
   searchParams?: URLSearchParams,
 ) {
+  if (isTauriHost()) {
+    if (init?.signal?.aborted) throw init.signal.reason;
+    const session = await requireNativeSession();
+    const response = await invoke<{ status: number; body: T & { error?: string } }>(
+      "account_gateway_http",
+      {
+        request: {
+          sessionHandle: session.sessionHandle,
+          origin: new URL(gatewayBaseURL(settings)).origin,
+          path: requestPath(pathname, searchParams),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+        },
+      },
+    );
+    if (init?.signal?.aborted) throw init.signal.reason;
+    if (nativeSessionHandle() !== session.sessionHandle)
+      throw new Error("USA-Zero account session changed");
+    if (response.status === 204) return undefined as T;
+    if (response.status < 200 || response.status >= 300)
+      throw new Error(response.body?.error || `Gateway 请求失败 (HTTP ${response.status})`);
+    return response.body;
+  }
   const request = async (forceRefresh: boolean) => {
     const token = await getValidRelayAccessToken(forceRefresh);
     const headers: Record<string, string> = {
@@ -35,7 +61,7 @@ export async function desktopRequest<T>(
       Authorization: `Bearer ${token}`,
       ...init?.headers,
     };
-    const proxyRequest = await prepareProxyRequest("codex", gatewayBaseURL(settings), headers);
+    const proxyRequest = await prepareAccountRequest(gatewayBaseURL(settings), headers);
     const response = await fetch(`${proxyRequest.baseUrl}${requestPath(pathname, searchParams)}`, {
       ...init,
       headers: proxyRequest.headers,

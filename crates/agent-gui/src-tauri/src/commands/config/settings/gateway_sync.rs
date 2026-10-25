@@ -1,21 +1,9 @@
-pub(crate) fn load_gateway_settings_sync_snapshot(conn: &Connection) -> Result<Value, String> {
+fn load_gateway_native_preferences(conn: &Connection) -> Result<Value, String> {
     let default_workdir = default_project_workdir()?;
     let mut snapshot = Map::new();
     snapshot.insert(
         "system".to_string(),
         redact_system_settings(load_system_with_defaults(conn, &default_workdir)?)?,
-    );
-    snapshot.insert(
-        "customProviders".to_string(),
-        redact_provider_credentials(load_providers(conn)?.unwrap_or(Value::Array(Vec::new())))?,
-    );
-    snapshot.insert(
-        "mcp".to_string(),
-        load_mcp(conn)?.unwrap_or(Value::Object(Map::new())),
-    );
-    snapshot.insert(
-        "agents".to_string(),
-        load_agents(conn)?.unwrap_or(Value::Array(Vec::new())),
     );
     snapshot.insert(
         "ssh".to_string(),
@@ -54,13 +42,17 @@ pub(crate) fn load_gateway_settings_sync_snapshot(conn: &Connection) -> Result<V
             "enableWebTunnels": remote.enable_web_tunnels,
         }),
     );
-    // UI-only fields (theme, locale, selectedModel, skills, chatRuntimeControls,
-    // customSettings) live in the webview's localStorage, not in this DB. They are
-    // deliberately omitted here: merge_settings_sync_snapshot overlays the cached
-    // values published by the webview, and receivers treat a missing field as
-    // "keep current". Fabricating defaults here (e.g. theme "light") would clobber
-    // the user's real theme on every publish that happens before the webview syncs.
     Ok(Value::Object(snapshot))
+}
+
+// Legacy redaction fixtures exercise archived SQLite payloads only. Production
+// device snapshots use the canonical Go documents and durable UI preferences.
+#[cfg(test)]
+fn load_gateway_settings_sync_snapshot(conn: &Connection) -> Result<Value, String> {
+    let mut snapshot = load_gateway_native_preferences(conn)?;
+    snapshot["customProviders"] =
+        redact_provider_credentials(load_providers(conn)?.unwrap_or_else(|| json!([])))?;
+    Ok(snapshot)
 }
 
 /// Automation snapshots leave the desktop with HTTP header values masked;
@@ -224,10 +216,11 @@ fn redact_system_proxy_secret(proxy: Value) -> Result<Value, String> {
     let password_configured = match payload.remove("password") {
         Some(Value::String(value)) => !value.trim().is_empty(),
         Some(Value::Null) | None => false,
-        Some(_) => {
-            return Err("system settings systemProxy.password must be a string".to_string())
-        }
-    } || matches!(payload.get("passwordConfigured"), Some(Value::Bool(true)));
+        Some(_) => return Err("system settings systemProxy.password must be a string".to_string()),
+    } || matches!(
+        payload.get("passwordConfigured"),
+        Some(Value::Bool(true))
+    );
     payload.insert(
         "passwordConfigured".to_string(),
         Value::Bool(password_configured),

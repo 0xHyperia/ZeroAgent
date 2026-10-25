@@ -2,36 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { transpileTypeScriptModule } from "../../../../scripts/typescript-source-tools.mjs";
 
 const DEFAULT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".css"];
 
-// pi-ai ships an import-only exports map, so the loader's CJS require() path
-// cannot reach it. Import the real model catalog by file URL (bypassing the
-// exports map) so settings code sees the exact runtime data.
-const piAiModels = await import(
-  new URL(
-    "../../web/node_modules/@earendil-works/pi-ai/dist/models.js",
-    import.meta.url,
-  ).href
-);
-const piAiProvidersAll = await import(
-  new URL(
-    "../../web/node_modules/@earendil-works/pi-ai/dist/providers/all.js",
-    import.meta.url,
-  ).href
-);
-
 function createDefaultMocks() {
   return {
-    "@earendil-works/pi-ai": {
-      getSupportedThinkingLevels: piAiModels.getSupportedThinkingLevels,
-      clampThinkingLevel: piAiModels.clampThinkingLevel,
-    },
-    "@earendil-works/pi-ai/providers/all": {
-      getBuiltinModels: piAiProvidersAll.getBuiltinModels,
-      getBuiltinModel: piAiProvidersAll.getBuiltinModel,
-    },
     "@sinclair/typebox": {
       Type: {
         Object(properties = {}) {
@@ -134,7 +111,6 @@ export function createWebModuleLoader(options = {}) {
   const hostSourceDir = path.join(rootDir, "src");
   const sharedSourceDir = fileURLToPath(new URL("../../../agent-ui/src", import.meta.url));
   const requireFromRoot = createRequire(path.join(rootDir, "package.json"));
-  const ts = requireFromRoot("typescript");
   const cache = new Map();
   const mocks = new Map([
     ...Object.entries(createDefaultMocks()),
@@ -202,7 +178,7 @@ export function createWebModuleLoader(options = {}) {
       specifier.startsWith("@liveagent/adapters/");
 
     if (!isRootRelative && !specifier.startsWith(".") && !path.isAbsolute(specifier)) {
-      return requireFromRoot(specifier);
+      return createRequire(path.join(parentDir, "__liveagent_test_loader__.js"))(specifier);
     }
 
     const filePath = resolveLocal(specifier, isRootRelative ? rootDir : parentDir);
@@ -221,31 +197,7 @@ export function createWebModuleLoader(options = {}) {
     }
 
     const source = fs.readFileSync(filePath, "utf8");
-    const transpiled = ts.transpileModule(source, {
-      fileName: filePath,
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX,
-        esModuleInterop: true,
-        allowSyntheticDefaultImports: true,
-        moduleResolution: ts.ModuleResolutionKind.Node10 ?? ts.ModuleResolutionKind.NodeJs,
-        resolveJsonModule: true,
-        ignoreDeprecations: "6.0",
-      },
-      reportDiagnostics: true,
-    });
-
-    const diagnostics = transpiled.diagnostics ?? [];
-    const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
-    if (fatalDiagnostics.length > 0) {
-      const message = ts.formatDiagnosticsWithColorAndContext(fatalDiagnostics, {
-        getCanonicalFileName: (name) => name,
-        getCurrentDirectory: () => rootDir,
-        getNewLine: () => "\n",
-      });
-      throw new Error(message);
-    }
+    const outputText = transpileTypeScriptModule(source, filePath);
 
     const module = { exports: {} };
     cache.set(filePath, module);
@@ -260,12 +212,8 @@ export function createWebModuleLoader(options = {}) {
       nextSpecifier.startsWith("@liveagent/app/") ||
       nextSpecifier.startsWith("@liveagent/adapters/")
         ? resolveLocal(nextSpecifier, dirname)
-        : requireFromRoot.resolve(nextSpecifier);
+        : createRequire(path.join(dirname, "__liveagent_test_loader__.js")).resolve(nextSpecifier);
 
-    const outputText = transpiled.outputText.replaceAll(
-      "import.meta.url",
-      JSON.stringify(pathToFileURL(filePath).href),
-    );
     const wrapped = `(function (exports, require, module, __filename, __dirname) {\n${outputText}\n})`;
     const script = new vm.Script(wrapped, { filename: filePath });
     const compiled = script.runInThisContext();

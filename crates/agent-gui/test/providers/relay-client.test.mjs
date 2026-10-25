@@ -51,11 +51,11 @@ test("OAuth refresh and app resources use the desktop local proxy", async () => 
   try {
     const loader = createTsModuleLoader({
       mocks: {
-        "@liveagent/ui/lib/providers/proxy": {
-          async prepareProxyRequest(providerId, upstreamBaseUrl, headers) {
-            proxyCalls.push({ providerId, upstreamBaseUrl, headers });
+        "./accountProxy": {
+          async prepareAccountRequest(upstreamBaseUrl, headers) {
+            proxyCalls.push({ upstreamBaseUrl, headers });
             return {
-              baseUrl: "http://127.0.0.1:4567/proxy/codex/api/v1",
+              baseUrl: "http://127.0.0.1:4567/proxy/hub/api/v1",
               headers: { ...headers, "x-liveagent-proxy-token": "proxy-token" },
             };
           },
@@ -73,9 +73,9 @@ test("OAuth refresh and app resources use the desktop local proxy", async () => 
     assert.deepEqual(
       requests.map((request) => request.url),
       [
-        "http://127.0.0.1:4567/proxy/codex/api/v1/app-auth/token",
-        "http://127.0.0.1:4567/proxy/codex/api/v1/app/me",
-        "http://127.0.0.1:4567/proxy/codex/api/v1/app-auth/revoke",
+        "http://127.0.0.1:4567/proxy/hub/api/v1/app-auth/token",
+        "http://127.0.0.1:4567/proxy/hub/api/v1/app/me",
+        "http://127.0.0.1:4567/proxy/hub/api/v1/app-auth/revoke",
       ],
     );
     assert.equal(requests.some((request) => request.url.startsWith("https://usa0.top")), false);
@@ -116,9 +116,9 @@ test("expired access tokens refresh once across concurrent consumers", async () 
   try {
     const loader = createTsModuleLoader({
       mocks: {
-        "@liveagent/ui/lib/providers/proxy": {
-          async prepareProxyRequest(_providerId, _baseUrl, headers) {
-            return { baseUrl: "http://127.0.0.1:4567/proxy/codex/api/v1", headers };
+        "./accountProxy": {
+          async prepareAccountRequest(_baseUrl, headers) {
+            return { baseUrl: "http://127.0.0.1:4567/proxy/hub/api/v1", headers };
           },
         },
         "./installation": { getInstallationID: () => "installation-1" },
@@ -171,9 +171,9 @@ test("transient refresh failures preserve the stored session", async () => {
   try {
     const loader = createTsModuleLoader({
       mocks: {
-        "@liveagent/ui/lib/providers/proxy": {
-          async prepareProxyRequest(_providerId, _baseUrl, headers) {
-            return { baseUrl: "http://127.0.0.1:4567/proxy/codex/api/v1", headers };
+        "./accountProxy": {
+          async prepareAccountRequest(_baseUrl, headers) {
+            return { baseUrl: "http://127.0.0.1:4567/proxy/hub/api/v1", headers };
           },
         },
         "./installation": { getInstallationID: () => "installation-1" },

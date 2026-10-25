@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Check, ChevronDown, Cloud, MonitorSmartphone } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
-import {
-  type ExecutionEnvironment,
-  type ExecutionSelection,
-  type ExecutionWorkspace,
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type {
+  ExecutionEnvironment,
+  ExecutionSelection,
+  ExecutionWorkspace,
 } from "@/lib/executionTargets";
 
 type Props = {

@@ -5,8 +5,11 @@ import {
   DeepseekIcon,
   GeminiIcon,
   GrokIcon,
+  Info,
   OpenaiChatgptIcon,
 } from "@liveagent/ui/components/IconSet";
+import { SwitchRoot, SwitchThumb } from "@liveagent/ui/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@liveagent/ui/components/ui/tooltip";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
   isReservedCustomHeaderKey,
@@ -14,6 +17,7 @@ import {
   isValidCustomHeaderValue,
 } from "@liveagent/ui/lib/providers/customHeaders";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import type { ReactNode } from "react";
 
 // 脚本编写说明里的示例代码(纯代码,locale 无关);语义须与 Rust 沙箱执行
 // 契约一致:声明式单请求 + extractor 接收响应 JSON。
@@ -115,12 +119,97 @@ export function getProviderLabel(type: ProviderId) {
   return PROVIDER_LABELS[type];
 }
 
+// TODO: converge with components/ProviderBrandIcon.tsx — this variant keeps the
+// settings-page sizing contract (height="1em" scales with surrounding text).
 export function ProviderBrandIcon({ type }: { type: ProviderId }) {
   if (type === "claude_code") return <ClaudeIcon height="1em" />;
   if (type === "gemini") return <GeminiIcon height="1em" />;
   if (type === "xai") return <GrokIcon height="1em" />;
   if (type === "deepseek") return <DeepseekIcon height="1em" />;
   return <OpenaiChatgptIcon height="1em" className="fill-current dark:text-white" />;
+}
+
+/**
+ * 悬停/聚焦即显的说明气泡：替代抽屉里成段的描述性文字，仅在需要时展开。
+ */
+export function HintTip(props: { text: string; label?: string }) {
+  const { text, label } = props;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        delay={0}
+        render={
+          <button
+            type="button"
+            aria-label={label ?? text}
+            className={cn(
+              "inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/55",
+              "transition-colors hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+          />
+        }
+      >
+        <Info className="size-3" />
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        className="max-w-60 px-2.5 py-2 text-xs font-normal leading-relaxed text-popover-foreground/90"
+      >
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** 抽屉字段标签：小号标签 + 可选的说明气泡。 */
+export function DrawerFieldLabel(props: { label: string; hint?: string }) {
+  const { label, hint } = props;
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-xs font-medium text-foreground/75">{label}</span>
+      {hint ? <HintTip text={hint} label={label} /> : null}
+    </div>
+  );
+}
+
+/**
+ * 抽屉分组标题：微型弱化标题 + 向右延伸的发丝线。
+ * 与字段标签（DrawerFieldLabel）拉开层级：分组标题更小、更淡、带字距，
+ * 视觉上作为"类别分隔"存在，避免与紧随其后的字段标签混为一谈。
+ */
+export function DrawerGroupLabel(props: { label: string; hint?: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium text-foreground">{props.label}</div>
+      {props.hint && <p className="text-xs leading-5 text-muted-foreground">{props.hint}</p>}
+    </div>
+  );
+}
+
+export function DrawerSectionHeader(props: {
+  icon: ReactNode;
+  title: string;
+  hint?: string;
+  badge?: ReactNode;
+  action?: ReactNode;
+}) {
+  const { icon, title, hint, badge, action } = props;
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {badge}
+        </div>
+        {hint && <p className="text-xs leading-5 text-muted-foreground">{hint}</p>}
+      </div>
+      {action}
+    </div>
+  );
 }
 
 export function DialogSwitch(props: {
@@ -130,28 +219,34 @@ export function DialogSwitch(props: {
 }) {
   const { checked, onCheckedChange, ariaLabel } = props;
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <SwitchRoot
+      nativeButton
+      render={<button type="button" />}
+      checked={checked}
       aria-label={ariaLabel}
-      className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        "relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg outline-none",
+        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      )}
+      onCheckedChange={onCheckedChange}
     >
       <span
         className={cn(
-          "relative block h-5 w-9 rounded-full bg-muted-foreground/35 transition-colors",
+          "relative block h-4 w-7 rounded-full bg-muted-foreground/35 transition-colors",
           checked && "bg-primary",
         )}
       >
-        <span
+        {/* The thumb is placed with left-0.5 and then translated, so the travel
+            is trackWidth - thumbWidth - both insets (28 - 12 - 2 - 2), not the
+            single-inset figure the transform-only Switch primitive uses. */}
+        <SwitchThumb
           className={cn(
-            "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background shadow-sm transition-transform",
-            checked && "translate-x-4",
+            "absolute left-0.5 top-0.5 size-3 rounded-full bg-background shadow-sm transition-transform",
+            checked && "translate-x-3",
           )}
         />
       </span>
-    </button>
+    </SwitchRoot>
   );
 }
 

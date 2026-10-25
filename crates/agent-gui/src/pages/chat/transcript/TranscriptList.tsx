@@ -1,10 +1,10 @@
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { useCommitDetailsLoader } from "@liveagent/ui/lib/chat/useCommitDetailsLoader";
 import type { GitClient } from "@liveagent/ui/lib/git/types";
-import { createEntranceRegistry } from "@liveagent/ui/lib/transcript-virtual/entranceOnce";
 import { createLiveRowScrollAdjustPolicy } from "@liveagent/ui/lib/transcript-virtual/liveScrollAdjustPolicy";
 import {
   buildTranscriptLayoutKey,
@@ -19,6 +19,7 @@ import {
   type MutableRefObject,
   memo,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -33,23 +34,44 @@ import type {
   RenderTimelineItem,
 } from "../../../lib/chat/conversation/conversationState";
 import type { LiveTranscriptStore } from "../../../lib/chat/conversation/liveTranscriptStore";
+import {
+  getPendingToolApprovalsSnapshot,
+  subscribeToolApprovalsForConversation,
+} from "../../../lib/tools/toolApproval";
 import { AssistantActivityRow } from "./AssistantActivityRow";
 import { AssistantRenderUnit } from "./AssistantRenderUnit";
+import {
+  initialTranscriptLayout,
+  readTranscriptScrollPosition,
+  saveTranscriptScrollPosition,
+} from "./initialTranscriptLayout";
 import { extractRenderUnitRange } from "./renderUnitRangeExtractor";
+import { createReplyHoverStore } from "./replyHoverStore";
+import { ReplyHoverProvider } from "./rowInteraction";
 import { createTranscriptRowModel } from "./rowModel";
 import { UserMessageRow } from "./UserMessageRow";
 
-const TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION = "assistant-activity-v2";
+const TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION = "assistant-activity-v3";
 
 function buildVersionedTranscriptLayoutKey(viewportWidth: number, contentWidth: number) {
   const layoutKey = buildTranscriptLayoutKey(viewportWidth, contentWidth);
   return layoutKey ? `${layoutKey}:${TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION}` : "";
 }
 
+function assistantReplyKeyFromEventTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return null;
+  return (
+    target.closest<HTMLElement>("[data-assistant-reply-key]")?.dataset.assistantReplyKey ?? null
+  );
+}
+
 // Measured row heights survive conversation switches: saved on unmount,
 // restored (width-gated) on the next open so the switch lays out with exact
-// heights instead of estimates.
-const transcriptMeasurementsLru = createTranscriptMeasurementsLru();
+// heights instead of estimates. Persisted so revisited conversations skip
+// the estimate→measure correction churn across app restarts too.
+const transcriptMeasurementsLru = createTranscriptMeasurementsLru({
+  persistNamespace: "gui-transcript",
+});
 
 const SummaryCard = memo(function SummaryCard(props: { item: RenderSummaryCard }) {
   const { item } = props;
@@ -68,9 +90,16 @@ const SummaryCard = memo(function SummaryCard(props: { item: RenderSummaryCard }
 
 export type TranscriptNavHandle = TranscriptNavigationHandle;
 
+// Distance from the top of the loaded history (in settled scroll
+// coordinates) under which the next earlier page is requested.
+const LOAD_EARLIER_THRESHOLD_PX = 1600;
+
 export type TranscriptListProps = {
   conversationId: string;
   historyItems: RenderTimelineItem[];
+  hasMoreHistory: boolean;
+  onLoadEarlierHistory: () => Promise<void>;
+  isHistorySwitching: boolean;
   liveTranscriptStore: LiveTranscriptStore;
   scrollViewport: HTMLDivElement | null;
   layoutWidth: number;
@@ -78,8 +107,8 @@ export type TranscriptListProps = {
   // virtualizer's resize-compensation carve-out for live-row growth.
   isViewportFollowing?: () => boolean;
   viewportFollowing: boolean;
+  onRestoreFollowing?: (following: boolean) => void;
   isSending: boolean;
-  isAgentMode: boolean;
   isCompactionRunning: boolean;
   showUsage: boolean;
   usageContextWindow?: number;
@@ -89,11 +118,13 @@ export type TranscriptListProps = {
   // 楼层导航：跳转句柄挂载点（与 followRef 同一模式），以及「视口顶部
   // 当前处于哪条用户消息行」变化时的上报回调。
   navRef?: MutableRefObject<TranscriptNavHandle | null>;
+  saveReadingPositionRef?: MutableRefObject<(() => void) | null>;
   onAnchorUserRowChange?: (rowKey: string | null) => void;
   onResendFromEdit: (
     messageRef: HistoryMessageRef,
     text: string,
     attachments: PendingUploadedFile[],
+    referencedConversations: ConversationMentionReference[],
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   // Fires once per mount, when the first layout has settled (scroll offset
@@ -110,13 +141,16 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   const {
     conversationId,
     historyItems,
+    hasMoreHistory,
+    onLoadEarlierHistory,
+    isHistorySwitching,
     liveTranscriptStore,
     scrollViewport,
     layoutWidth,
     isViewportFollowing,
     viewportFollowing,
+    onRestoreFollowing,
     isSending,
-    isAgentMode,
     isCompactionRunning,
     showUsage,
     usageContextWindow,
@@ -124,6 +158,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     gitClient,
     onOpenFileLink,
     navRef,
+    saveReadingPositionRef,
     onAnchorUserRowChange,
     onResendFromEdit,
     onBranchConversation,
@@ -136,14 +171,22 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     liveTranscriptStore.getSnapshot,
   );
 
+  // 审批门在工具执行「之前」挂起，转录里看不出运行中的工具；活跃回合据此把
+  // 进度指示冻结成静态（同一份 pending 表也驱动输入框上方的审批栏）。
+  const subscribeApprovals = useCallback(
+    (listener: () => void) => subscribeToolApprovalsForConversation(conversationId, listener),
+    [conversationId],
+  );
+  const getApprovalsSnapshot = useCallback(
+    () => getPendingToolApprovalsSnapshot(conversationId),
+    [conversationId],
+  );
+  const hasPendingToolApproval =
+    useSyncExternalStore(subscribeApprovals, getApprovalsSnapshot, getApprovalsSnapshot).length > 0;
+
   // The component remounts per conversation (keyed by ChatTranscript), so
   // per-conversation state initializes once per mount — no reset effects.
-  const [entranceRegistry] = useState(() => createEntranceRegistry());
-  const [rowModel] = useState(() =>
-    createTranscriptRowModel({
-      onRowsBorn: (keys, isInitialBuild) => entranceRegistry.observeBirths(keys, isInitialBuild),
-    }),
-  );
+  const [rowModel] = useState(() => createTranscriptRowModel());
 
   // 手动压缩空闲态只置 isCompactionRunning、不置 isSending，仍要显示「正在
   // 压缩」live tail：把它并入可见性 gate（只影响 live tail 是否显示，不改动
@@ -171,6 +214,17 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   );
 
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  const [replyHoverStore] = useState(createReplyHoverStore);
+
+  const handleTranscriptPointerOver = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      replyHoverStore.setHoveredReply(assistantReplyKeyFromEventTarget(event.target));
+    },
+    [replyHoverStore],
+  );
+  const handleTranscriptPointerLeave = useCallback(() => {
+    replyHoverStore.setHoveredReply(null);
+  }, [replyHoverStore]);
 
   useEffect(() => {
     if (!editingMessageKey) {
@@ -207,6 +261,17 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
         : null) ?? [],
   );
 
+  const [savedScrollPosition] = useState(() => readTranscriptScrollPosition(conversationId));
+  const initialLayout = useMemo(
+    () =>
+      initialTranscriptLayout(
+        rows,
+        initialMeasurementsCache,
+        scrollViewport?.clientHeight ?? 0,
+        savedScrollPosition,
+      ),
+    [rows, initialMeasurementsCache, scrollViewport, savedScrollPosition],
+  );
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement,
@@ -216,6 +281,16 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     overscan: 0,
     enabled: scrollViewport !== null,
     initialMeasurementsCache,
+    initialOffset: initialLayout.offset,
+    initialRect: {
+      width: scrollViewport?.clientWidth ?? 0,
+      height: scrollViewport?.clientHeight ?? 0,
+    },
+    // Defer measurement-driven DOM writes out of WebKit's resize delivery.
+    useAnimationFrameWithResizeObserver: true,
+    // Pixel overscan covers the next paint; avoid synchronously rendering
+    // Markdown inside every native scroll event.
+    useFlushSync: false,
     directDomUpdates: true,
     directDomUpdatesMode: "transform",
     // End anchoring is enabled only for a detached reader so keyed prepends
@@ -223,6 +298,20 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     // virtualizer's bottom correction and leaves live growth to useScrollFollow.
     anchorTo: viewportFollowing ? "start" : "end",
     scrollEndThreshold: 8,
+    // Above-viewport estimate corrections are absorbed into the layout
+    // origin instead of written to scrollTop: on WKWebView the compositor
+    // owns the viewport during a wheel gesture and can silently swallow
+    // programmatic scrolls, leaving the virtualizer rendering a window the
+    // viewport never reached (a blank band until the next scroll). The debt
+    // settles with one verified write when scrolling is idle.
+    scrollAnchoring: "origin",
+    // Keep half a viewport behind and two ahead of native compositor scrolls.
+    // Bound the pixel budget so tall windows do not mount unbounded Markdown.
+    overscanPx: Math.min(800, Math.max(320, (scrollViewport?.clientHeight ?? 800) * 0.5)),
+    directionalOverscanPx: Math.min(
+      2400,
+      Math.max(960, (scrollViewport?.clientHeight ?? 800) * 1.5),
+    ),
     rangeExtractor: extractVirtualRange,
   });
 
@@ -234,6 +323,100 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     getLiveStartIndex: () => liveStartIndexRef.current,
     isFollowing: () => isViewportFollowing?.() ?? false,
   });
+
+  // Prefetch near the loaded boundary once per approach. A prepend and its
+  // measurement corrections are not another reading gesture.
+  const loadingEarlierRef = useRef(false);
+  const earlierArmedRef = useRef(true);
+  const hardTopLatchedRef = useRef(false);
+  const firstHistoryKey = historyItems[0]?.key;
+  const lastRequestedBoundaryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollViewport || !hasMoreHistory || isHistorySwitching) return;
+    let frame = 0;
+    const loadAtTop = () => {
+      const atHardTop = scrollViewport.scrollTop <= 1;
+      if (!atHardTop) hardTopLatchedRef.current = false;
+      const nearTop =
+        (atHardTop && !hardTopLatchedRef.current) ||
+        virtualizer.getSettledScrollOffset() <=
+          Math.max(LOAD_EARLIER_THRESHOLD_PX, scrollViewport.clientHeight * 2);
+      if (loadingEarlierRef.current) return;
+      if (!nearTop) {
+        earlierArmedRef.current = true;
+        return;
+      }
+      if (!earlierArmedRef.current) return;
+      if (!firstHistoryKey || lastRequestedBoundaryRef.current === firstHistoryKey) return;
+      earlierArmedRef.current = false;
+      if (atHardTop) hardTopLatchedRef.current = true;
+      lastRequestedBoundaryRef.current = firstHistoryKey;
+      loadingEarlierRef.current = true;
+      void onLoadEarlierHistory()
+        .catch(() => {
+          lastRequestedBoundaryRef.current = null;
+          hardTopLatchedRef.current = false;
+        })
+        .finally(() => {
+          loadingEarlierRef.current = false;
+        });
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(loadAtTop);
+    };
+    const requestFromGesture = () => {
+      if (loadingEarlierRef.current) return;
+      earlierArmedRef.current = true;
+      schedule();
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) requestFromGesture();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea, [role=textbox]"))
+      )
+        return;
+      if (
+        ["ArrowUp", "PageUp", "Home"].includes(event.key) ||
+        (event.key === " " && event.shiftKey)
+      ) {
+        requestFromGesture();
+      }
+    };
+    let touchY: number | null = null;
+    const onTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY ?? null;
+      if (touchY !== null && nextY !== null && nextY > touchY) requestFromGesture();
+      touchY = nextY;
+    };
+    scrollViewport.addEventListener("scroll", schedule, { passive: true });
+    scrollViewport.addEventListener("wheel", onWheel, { passive: true });
+    scrollViewport.addEventListener("keydown", onKeyDown);
+    scrollViewport.addEventListener("touchstart", onTouchStart, { passive: true });
+    scrollViewport.addEventListener("touchmove", onTouchMove, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      scrollViewport.removeEventListener("scroll", schedule);
+      scrollViewport.removeEventListener("wheel", onWheel);
+      scrollViewport.removeEventListener("keydown", onKeyDown);
+      scrollViewport.removeEventListener("touchstart", onTouchStart);
+      scrollViewport.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [
+    firstHistoryKey,
+    hasMoreHistory,
+    isHistorySwitching,
+    onLoadEarlierHistory,
+    scrollViewport,
+    virtualizer,
+  ]);
 
   // Every mounted row is already tracked by the virtualizer's ResizeObserver,
   // which updates its measured height as the centered transcript reflows.
@@ -260,18 +443,73 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     onAnchorChange: onAnchorUserRowChange,
   });
 
-  // First paint of a conversation lands at the bottom before the user sees
-  // anything: scrollToEnd re-targets as dynamic measurements land, replacing
-  // the old estimated-pin → measure → re-pin dance. The component remounts
-  // per conversation (keyed by the parent), so this runs once per open.
-  const scrollToEndOnceRef = useRef(false);
+  // Restore once before paint. Detached readers return to their message
+  // anchor; new conversations and followers land at the latest message.
+  const restoredScrollRef = useRef(false);
   useLayoutEffect(() => {
-    if (scrollToEndOnceRef.current || scrollViewport === null || rows.length === 0) {
+    if (restoredScrollRef.current || scrollViewport === null || rows.length === 0) {
       return;
     }
-    scrollToEndOnceRef.current = true;
-    virtualizer.scrollToEnd();
-  }, [scrollViewport, rows.length, virtualizer]);
+    restoredScrollRef.current = true;
+    const follow = savedScrollPosition?.following ?? true;
+    onRestoreFollowing?.(follow);
+    if (follow) virtualizer.scrollToEnd();
+    else virtualizer.scrollToOffset(initialLayout.offset);
+  }, [
+    scrollViewport,
+    rows.length,
+    virtualizer,
+    savedScrollPosition,
+    initialLayout.offset,
+    onRestoreFollowing,
+  ]);
+
+  // Reconcile against the actual message element, not just estimated sizes:
+  // Markdown/table measurements can change after the initial range mounts.
+  useLayoutEffect(() => {
+    if (
+      !scrollViewport ||
+      savedScrollPosition?.following !== false ||
+      savedScrollPosition.anchorKey === undefined ||
+      savedScrollPosition.anchorViewportTop === undefined
+    )
+      return;
+    const { anchorKey, anchorViewportTop } = savedScrollPosition;
+    let frame = 0;
+    let cancelled = false;
+    let stableFrames = 0;
+    const started = performance.now();
+    const cancel = () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+    const reconcile = () => {
+      if (cancelled) return;
+      const element = virtualizer.elementsCache.get(anchorKey);
+      if (element) {
+        const delta =
+          element.getBoundingClientRect().top -
+          scrollViewport.getBoundingClientRect().top -
+          anchorViewportTop;
+        if (Math.abs(delta) > 1) {
+          virtualizer.scrollToOffset(scrollViewport.scrollTop + delta);
+          stableFrames = 0;
+        } else stableFrames++;
+      }
+      if (stableFrames < 2 && performance.now() - started < 240)
+        frame = requestAnimationFrame(reconcile);
+    };
+    scrollViewport.addEventListener("wheel", cancel, { passive: true });
+    scrollViewport.addEventListener("pointerdown", cancel);
+    window.addEventListener("keydown", cancel);
+    reconcile();
+    return () => {
+      cancel();
+      scrollViewport.removeEventListener("wheel", cancel);
+      scrollViewport.removeEventListener("pointerdown", cancel);
+      window.removeEventListener("keydown", cancel);
+    };
+  }, [scrollViewport, savedScrollPosition, virtualizer]);
 
   // First-layout settle watch: the transcript stays hidden (parent-gated)
   // until the initial scroll-to-end and its estimate→measure corrections
@@ -290,7 +528,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
       settledRef.current = true;
       onFirstLayoutSettledRef.current?.();
     };
-    if (!hasRows || isSending) {
+    if (!hasRows || isSending || initialLayout.measuredViewport) {
       settle();
       return;
     }
@@ -313,97 +551,161 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
       frame = requestAnimationFrame(check);
     });
     return () => cancelAnimationFrame(frame);
-  }, [hasRows, isSending, onFirstLayoutSettled, scrollViewport, virtualizer]);
+  }, [
+    hasRows,
+    isSending,
+    initialLayout.measuredViewport,
+    onFirstLayoutSettled,
+    scrollViewport,
+    virtualizer,
+  ]);
+
+  // Capture while the virtualizer is alive: its own unmount cleanup clears
+  // origin compensation before our cleanup runs, making a late read wrong.
+  const readingPositionRef = useRef<ReturnType<typeof readTranscriptScrollPosition>>(undefined);
+  const captureReadingPositionRef = useRef(() => {});
+  const savedBeforeLeaveRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!scrollViewport) return;
+    const capture = () => {
+      if (savedBeforeLeaveRef.current) return;
+      const offset = virtualizer.getSettledScrollOffset();
+      // Measurement starts include the origin shift; use DOM coordinates
+      // for the anchor delta, and settled coordinates only for the fallback.
+      const rawOffset = scrollViewport.scrollTop;
+      const anchor = virtualizer.getVirtualItemForOffset(rawOffset);
+      const anchorElement = anchor ? virtualizer.elementsCache.get(anchor.key) : undefined;
+      readingPositionRef.current = {
+        offset,
+        following: isViewportFollowing?.() ?? viewportFollowing,
+        anchorKey: anchor?.key,
+        anchorOffset: anchor ? rawOffset - anchor.start : 0,
+        anchorViewportTop: anchorElement
+          ? anchorElement.getBoundingClientRect().top - scrollViewport.getBoundingClientRect().top
+          : undefined,
+      };
+    };
+    captureReadingPositionRef.current = capture;
+    capture();
+    scrollViewport.addEventListener("scroll", capture, { passive: true });
+    return () => scrollViewport.removeEventListener("scroll", capture);
+  }, [scrollViewport, virtualizer, isViewportFollowing, viewportFollowing]);
 
   // Snapshot measured heights for the next open of this conversation.
   const saveMeasurementsRef = useRef(() => {});
   saveMeasurementsRef.current = () => {
     if (!scrollViewport) return;
+    if (readingPositionRef.current && !savedBeforeLeaveRef.current) {
+      saveTranscriptScrollPosition(conversationId, readingPositionRef.current);
+    }
     transcriptMeasurementsLru.save(
       conversationId,
       buildVersionedTranscriptLayoutKey(scrollViewport.clientWidth, layoutWidth),
       virtualizer.takeSnapshot(),
     );
   };
-  useEffect(() => () => saveMeasurementsRef.current(), []);
+  useLayoutEffect(() => {
+    if (!saveReadingPositionRef) return;
+    saveReadingPositionRef.current = () => {
+      savedBeforeLeaveRef.current = false;
+      captureReadingPositionRef.current();
+      saveMeasurementsRef.current();
+      savedBeforeLeaveRef.current = true;
+    };
+    return () => {
+      saveReadingPositionRef.current = null;
+    };
+  }, [saveReadingPositionRef]);
+  // Save before the next conversation's layout effects move the shared viewport.
+  useLayoutEffect(() => () => saveMeasurementsRef.current(), []);
 
   return (
-    <div ref={virtualizer.containerRef} className="relative">
-      {virtualizer.getVirtualItems().map((virtualRow) => {
-        const row = rows[virtualRow.index];
-        if (!row) return null;
+    <ReplyHoverProvider value={replyHoverStore}>
+      <div
+        ref={virtualizer.containerRef}
+        className="relative"
+        onPointerOver={handleTranscriptPointerOver}
+        onPointerLeave={handleTranscriptPointerLeave}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const row = rows[virtualRow.index];
+          if (!row) return null;
+          const assistantReplyKey =
+            row.kind === "assistant-unit" || row.kind === "assistant-activity"
+              ? row.replyKey
+              : null;
 
-        let body: ReactNode;
-        if (row.kind === "summary") {
-          body = <SummaryCard item={row.item} />;
-        } else if (row.kind === "user") {
-          body = (
-            <div className="flex justify-end">
-              <UserMessageRow
-                row={row}
-                isEditing={editingMessageKey === row.key}
-                animateEntrance={entranceRegistry.shouldAnimate(row.key)}
-                workspaceRoot={workspaceRoot}
-                loadCommitDetails={loadCommitDetails}
-                onStartEdit={handleStartEdit}
-                onCancelEdit={handleCancelEdit}
-                onResendFromEdit={onResendFromEdit}
-              />
-            </div>
-          );
-        } else if (row.kind === "assistant-activity") {
-          body = (
-            <div className="flex justify-start">
-              <AssistantActivityRow
-                row={row}
-                showUsage={showUsage}
-                usageContextWindow={usageContextWindow}
-                isAgentMode={isAgentMode}
-                isCompactionRunning={isCompactionRunning}
-                toolStatus={displayedToolStatus}
-                retryAttempts={liveState.retryAttempts}
-                workdir={workspaceRoot}
-                onOpenFileLink={onOpenFileLink}
-                onResendFromEdit={onResendFromEdit}
-                onBranchConversation={onBranchConversation}
-              />
-            </div>
-          );
-        } else {
-          body = (
-            <div className="flex justify-start">
-              <AssistantRenderUnit
-                row={row}
-                showUsage={showUsage}
-                usageContextWindow={usageContextWindow}
-                isAgentMode={isAgentMode}
-                isCompactionRunning={row.mutable ? isCompactionRunning : false}
-                toolStatus={row.mutable ? displayedToolStatus : null}
-                retryAttempts={row.mutable ? liveState.retryAttempts : undefined}
-                workdir={workspaceRoot}
-                onOpenFileLink={onOpenFileLink}
-                onResendFromEdit={onResendFromEdit}
-                onBranchConversation={onBranchConversation}
-              />
-            </div>
-          );
-        }
+          let body: ReactNode;
+          if (row.kind === "summary") {
+            body = <SummaryCard item={row.item} />;
+          } else if (row.kind === "user") {
+            body = (
+              <div className="flex justify-end">
+                <UserMessageRow
+                  row={row}
+                  isEditing={editingMessageKey === row.key}
+                  workspaceRoot={workspaceRoot}
+                  loadCommitDetails={loadCommitDetails}
+                  onStartEdit={handleStartEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onResendFromEdit={onResendFromEdit}
+                />
+              </div>
+            );
+          } else if (row.kind === "assistant-activity") {
+            body = (
+              <div className="flex justify-start">
+                <AssistantActivityRow
+                  row={row}
+                  showUsage={showUsage}
+                  usageContextWindow={usageContextWindow}
+                  isCompactionRunning={isCompactionRunning}
+                  hasPendingToolApproval={hasPendingToolApproval}
+                  toolStatus={displayedToolStatus}
+                  retryAttempts={liveState.retryAttempts}
+                  workdir={workspaceRoot}
+                  onOpenFileLink={onOpenFileLink}
+                  onResendFromEdit={onResendFromEdit}
+                  onBranchConversation={onBranchConversation}
+                />
+              </div>
+            );
+          } else {
+            body = (
+              <div className="flex justify-start">
+                <AssistantRenderUnit
+                  row={row}
+                  showUsage={showUsage}
+                  usageContextWindow={usageContextWindow}
+                  isCompactionRunning={row.mutable ? isCompactionRunning : false}
+                  toolStatus={row.mutable ? displayedToolStatus : null}
+                  retryAttempts={row.mutable ? liveState.retryAttempts : undefined}
+                  workdir={workspaceRoot}
+                  onOpenFileLink={onOpenFileLink}
+                  onResendFromEdit={onResendFromEdit}
+                  onBranchConversation={onBranchConversation}
+                />
+              </div>
+            );
+          }
 
-        return (
-          <div
-            key={virtualRow.key}
-            data-row-key={row.key}
-            data-index={virtualRow.index}
-            ref={virtualizer.measureElement}
-            className="absolute left-0 right-0 top-0"
-          >
-            {body}
-            {row.gapAfter > 0 && virtualRow.index < rows.length - 1 ? (
-              <div aria-hidden="true" style={{ height: row.gapAfter }} />
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
+          return (
+            <div
+              key={virtualRow.key}
+              data-row-key={row.key}
+              data-assistant-reply-key={assistantReplyKey ?? undefined}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              className="absolute inset-x-0 top-0"
+            >
+              {body}
+              {row.gapAfter > 0 && virtualRow.index < rows.length - 1 ? (
+                <div aria-hidden="true" style={{ height: row.gapAfter }} />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </ReplyHoverProvider>
   );
 });

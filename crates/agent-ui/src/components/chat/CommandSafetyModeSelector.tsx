@@ -1,13 +1,6 @@
 import { useSandboxCapability } from "@liveagent/adapters/sandboxCapability";
 import type { CommandSafetyMode } from "@liveagent/app/lib/settings";
-import {
-  Check,
-  ChevronDown,
-  Hand,
-  Shield,
-  ShieldOff,
-  Zap,
-} from "@liveagent/ui/components/IconSet";
+import { Check, Hand, Lightbulb, Shield, ShieldOff, Zap } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -16,17 +9,16 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import {
-  COMPOSER_CONTROL_CHEVRON_CLASS,
-  COMPOSER_CONTROL_LABEL_CLASS,
-  COMPOSER_CONTROL_TRIGGER_CLASS,
-} from "@liveagent/ui/lib/chat/composerControlStyles";
+import { COMPOSER_CONTROL_TRIGGER_CLASS } from "@liveagent/ui/lib/chat/composerControlStyles";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useState } from "react";
 
 const MODE_I18N_KEYS: Record<CommandSafetyMode, string> = {
   ask: "chat.safety.ask",
   auto: "chat.safety.auto",
+  autoEdit: "chat.safety.autoEdit",
+  always: "chat.safety.always",
+  autoReview: "chat.safety.autoReview",
   sandbox: "chat.safety.sandbox",
   sandboxOffline: "chat.safety.sandboxOffline",
 };
@@ -34,11 +26,14 @@ const MODE_I18N_KEYS: Record<CommandSafetyMode, string> = {
 const MODE_DESC_I18N_KEYS: Record<CommandSafetyMode, string> = {
   ask: "chat.safety.askDesc",
   auto: "chat.safety.autoDesc",
+  autoEdit: "chat.safety.autoEditDesc",
+  always: "chat.safety.alwaysDesc",
+  autoReview: "chat.safety.autoReviewDesc",
   sandbox: "chat.safety.sandboxDesc",
   sandboxOffline: "chat.safety.sandboxOfflineDesc",
 };
 
-const SAFETY_MODES = ["ask", "auto", "sandbox", "sandboxOffline"] as const;
+const SAFETY_MODES = ["ask", "autoEdit", "autoReview", "auto", "always"] as const;
 
 /**
  * 读掩蔽是平台/后端相关的能力,不能作为跨平台的肯定承诺(P2#7)。
@@ -53,7 +48,15 @@ const SAFETY_MODES = ["ask", "auto", "sandbox", "sandboxOffline"] as const;
 const MECHANISMS_WITHOUT_READ_MASKING: ReadonlySet<string> = new Set(["restricted-token"]);
 
 function isCommandSafetyMode(value: unknown): value is CommandSafetyMode {
-  return value === "ask" || value === "auto" || value === "sandbox" || value === "sandboxOffline";
+  return (
+    value === "ask" ||
+    value === "auto" ||
+    value === "autoEdit" ||
+    value === "always" ||
+    value === "autoReview" ||
+    value === "sandbox" ||
+    value === "sandboxOffline"
+  );
 }
 
 function modeIcon(mode: CommandSafetyMode, className: string) {
@@ -65,18 +68,20 @@ function modeIcon(mode: CommandSafetyMode, className: string) {
 
 function triggerIconClass(mode: CommandSafetyMode) {
   if (mode === "sandbox" || mode === "sandboxOffline") {
-    return "h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400";
+    return "size-4 shrink-0 text-emerald-600 dark:text-emerald-400";
   }
-  if (mode === "ask") return "h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400";
-  return "h-4 w-4 shrink-0 text-muted-foreground";
+  if (mode === "ask") return "size-4 shrink-0 text-sky-600 dark:text-sky-400";
+  return "size-4 shrink-0 text-muted-foreground";
 }
 
 export function CommandSafetyModeSelector(props: {
   value: CommandSafetyMode;
   disabled?: boolean;
   onChange: (mode: CommandSafetyMode) => void;
+  planModeEnabled?: boolean;
+  onPlanModeChange?: (enabled: boolean) => void;
 }) {
-  const { value, disabled, onChange } = props;
+  const { value, disabled, onChange, planModeEnabled, onPlanModeChange } = props;
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const capability = useSandboxCapability();
@@ -103,7 +108,13 @@ export function CommandSafetyModeSelector(props: {
   // 当前值本身不可用(如设置同步自 macOS,本机是 Windows)时仍显示,但标红提示
   // 由执行层报错兜底;这里不做静默改写,避免设置回写抖动。
   const selected = isCommandSafetyMode(value) ? value : "auto";
-  const selectedLabel = t(MODE_I18N_KEYS[selected]);
+  const selectedLabel = t(
+    planModeEnabled ? "chat.runtime.planModeTitle" : MODE_I18N_KEYS[selected],
+  );
+  const modes: readonly CommandSafetyMode[] =
+    selected === "sandbox" || selected === "sandboxOffline"
+      ? [...SAFETY_MODES, selected]
+      : SAFETY_MODES;
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -112,51 +123,75 @@ export function CommandSafetyModeSelector(props: {
           <Button
             variant="ghost"
             disabled={disabled}
-            className={cn(COMPOSER_CONTROL_TRIGGER_CLASS, "data-[popup-open]:bg-muted/60")}
+            className={cn(
+              COMPOSER_CONTROL_TRIGGER_CLASS,
+              "w-8 justify-center gap-0 px-0",
+              "data-popup-open:bg-muted/60 web:max-480:flex-none web:max-480:w-8 web:max-480:min-w-8 web:max-480:justify-center web:max-480:gap-0 web:max-480:px-0",
+            )}
           />
         }
         title={selectedLabel}
         aria-label={`${t("chat.safety.label")}: ${selectedLabel}`}
       >
-        {modeIcon(selected, triggerIconClass(selected))}
-        <span className={COMPOSER_CONTROL_LABEL_CLASS}>{selectedLabel}</span>
-        <ChevronDown className={cn(COMPOSER_CONTROL_CHEVRON_CLASS, menuOpen && "rotate-180")} />
+        {planModeEnabled ? (
+          <Lightbulb className="size-4 shrink-0 text-sky-600" />
+        ) : (
+          modeIcon(selected, triggerIconClass(selected))
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        className="composer-safety-dropdown flex w-72 flex-col overflow-hidden p-1"
+        variant="soft"
+        className="flex w-[324px] max-w-[calc(100vw-16px)] flex-col gap-0.5 overflow-hidden"
         side="top"
         align="start"
       >
-        {SAFETY_MODES.map((mode) => {
+        {onPlanModeChange ? (
+          <DropdownMenuItem
+            onSelect={() => onPlanModeChange(true)}
+            className="h-auto items-start gap-2.5 py-2 text-xs whitespace-normal"
+          >
+            <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium leading-4">{t("chat.runtime.planModeTitle")}</span>
+              <span className="text-tiny font-normal leading-4 text-muted-foreground">
+                {t("chat.runtime.planModeHint")}
+              </span>
+            </span>
+            {planModeEnabled ? <Check className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
+          </DropdownMenuItem>
+        ) : null}
+        {modes.map((mode) => {
           const entryDisabled =
             mode === "sandbox"
               ? sandboxUnavailable
               : mode === "sandboxOffline"
                 ? offlineUnavailable
                 : false;
-          const isSelected = mode === selected;
+          const isSelected = !planModeEnabled && mode === selected;
           return (
             <DropdownMenuItem
               key={mode}
               disabled={entryDisabled}
-              onSelect={() => onChange(mode)}
+              onSelect={() => {
+                onPlanModeChange?.(false);
+                onChange(mode);
+              }}
               className={cn(
-                "composer-safety-item items-start gap-2 whitespace-normal rounded-md py-1.5 text-xs",
-                isSelected &&
-                  "bg-foreground/[0.07] font-medium data-[highlighted]:bg-foreground/[0.09]",
+                "h-auto items-start gap-2.5 py-2 text-xs whitespace-normal",
+                isSelected && "bg-accent text-accent-foreground",
               )}
             >
-              {modeIcon(mode, "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground")}
+              {modeIcon(mode, "mt-0.5 size-3.5 shrink-0 text-muted-foreground")}
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium leading-5">{t(MODE_I18N_KEYS[mode])}</span>
-                <span className="text-[11px] font-normal leading-4 text-muted-foreground">
+                <span className="font-medium leading-4">{t(MODE_I18N_KEYS[mode])}</span>
+                <span className="text-tiny font-normal leading-4 text-muted-foreground">
                   {entryDisabled ? disabledHint : t(modeDescKey(mode))}
                 </span>
               </span>
               {isSelected ? (
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
               ) : (
-                <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               )}
             </DropdownMenuItem>
           );

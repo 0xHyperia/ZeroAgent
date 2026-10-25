@@ -84,6 +84,10 @@ jobs:
         working-directory: crates/agent-gateway
         run: go test ./...
 
+      - name: Test Gateway data races
+        working-directory: crates/agent-gateway
+        run: go test -race ./...
+
   gateway-docker:
     name: Gateway Docker Smoke
     runs-on: ubuntu-latest
@@ -102,25 +106,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test container
-        run: |
-          set -euo pipefail
-          docker rm -f liveagent-gateway-smoke >/dev/null 2>&1 || true
-          docker run -d \
-            --name liveagent-gateway-smoke \
-            -p 18080:8080 \
-            -e LIVEAGENT_GATEWAY_OPERATOR_TOKEN=ci-token \
-            liveagent-gateway:ci
-          trap 'docker rm -f liveagent-gateway-smoke >/dev/null 2>&1 || true' EXIT
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18080/healthz | grep -q '"ok":true'; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Gateway Docker smoke test failed; container logs:"
-          docker logs liveagent-gateway-smoke || true
-          exit 1
+      - name: Verify image health and dependency readiness
+        env:
+          GATEWAY_DOCKER_IMAGE: liveagent-gateway:ci
+        run: bash scripts/check-gateway-docker-smoke.sh
 
   webui:
     name: Gateway WebUI
@@ -176,6 +165,17 @@ jobs:
         working-directory: crates/agent-gui
         run: pnpm lint
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: crates/agent-gateway/go.mod
+          cache-dependency-path: crates/agent-gateway/go.sum
+
+      - name: Prepare reviewed K-brain fixture
+        run: |
+          pnpm build:kbrain:source --target x86_64-unknown-linux-gnu
+          pnpm prepare:kbrain:release --target x86_64-unknown-linux-gnu
+          echo "LIVEAGENT_KBRAIN_BINARY=$GITHUB_WORKSPACE/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+
       - name: Test frontend modules
         working-directory: crates/agent-gui
         run: pnpm test:frontend
@@ -191,15 +191,46 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: crates/agent-gateway/go.mod
+          cache-dependency-path: crates/agent-gateway/go.sum
+
+      - name: Prepare reviewed desktop sidecars
+        run: |
+          npm install -g pnpm@10.32.1
+          pnpm install --frozen-lockfile
+          pnpm build:kbrain:source --target x86_64-unknown-linux-gnu
+          pnpm prepare:kbrain:release --target x86_64-unknown-linux-gnu
+          node scripts/prepare-gateway.mjs --target x86_64-unknown-linux-gnu
+          node scripts/release/verify-kbrain-packaging.mjs --target x86_64-unknown-linux-gnu --binary-dir crates/agent-gui/src-tauri/binaries --patch-manifest patches/kbrain/manifest.json
+
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            protobuf-compiler \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
+
+      - name: Install repository-pinned Protoc
+        uses: jdx/mise-action@v4
+        with:
+          install_args: protoc
+          env: false
+          export_path: false
+
+      - name: Select repository-pinned Protoc for Native
+        run: |
+          protoc_binary="$(mise which protoc)"
+          "$protoc_binary" --version
+          sha256sum "$protoc_binary"
+          printf 'PROTOC=%s\n' "$protoc_binary" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -210,27 +241,34 @@ jobs:
       - name: Check Tauri backend tests
         env:
           CARGO_TERM_COLOR: always
-        run: cargo check --manifest-path crates/agent-gui/src-tauri/Cargo.toml --tests
+        run: cargo check --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --tests
 
-      - name: Test Tauri history migrations
+      - name: Test Tauri library
         env:
           CARGO_TERM_COLOR: always
-        run: cargo test --manifest-path crates/agent-gui/src-tauri/Cargo.toml chat_history --lib
+          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+        run: cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib
 
-      - name: Test SSH local forwarding
+      - name: Verify native export and locked-backend migration rollback fixture
         env:
           CARGO_TERM_COLOR: always
-        run: cargo test --manifest-path crates/agent-gui/src-tauri/Cargo.toml ssh_local_forward --lib
+          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+          KBRAIN_MIGRATION_ACCEPTANCE_DIR: ${{ github.workspace }}/.codex-artifacts/ci-migration
+        run: |
+          mkdir -p "$KBRAIN_MIGRATION_ACCEPTANCE_DIR"
+          cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib exports_checkpoint_acceptance_fixture
+          node scripts/check-zeroagent-migration.mjs "$KBRAIN_MIGRATION_ACCEPTANCE_DIR"
 
-      - name: Test Tauri shell-runner cancellation
+      - name: Verify fresh profile and current backup format
         env:
           CARGO_TERM_COLOR: always
-        run: cargo test --manifest-path crates/agent-gui/src-tauri/Cargo.toml shell_runner --lib
-
-      - name: Test Tauri MCP integration
-        env:
-          CARGO_TERM_COLOR: always
-        run: cargo test --manifest-path crates/agent-gui/src-tauri/Cargo.toml integration_commands::mcp --lib
+          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+          LIVEAGENT_KBRAIN_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu
+        run: |
+          cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib fresh_schema_does_not_create_or_read_old_provider_archives
+          cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib parse_backup_document_rejects_older_versions_without_importing_domains
+          cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib canonical_backup_roundtrip_keeps_account_models_and_survives_restart
+          node --test crates/agent-gui/test/settings/native-config-batch.test.mjs crates/agent-gui/test/settings/storage.test.mjs crates/agent-gui/test/settings/backup-restore.test.mjs
 
   ui-boundaries:
     name: Shared UI Boundaries
@@ -250,6 +288,12 @@ jobs:
 
       - name: Check shared UI dependency boundaries
         run: pnpm check:ui-boundaries
+
+      - name: Check shared UI and virtual list
+        run: |
+          pnpm typecheck:ui
+          pnpm typecheck:virtual-core
+          pnpm test:virtual-core
 
   whitespace:
     name: Diff Hygiene

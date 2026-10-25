@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Copy, Key, Loader2, Plus } from "@liveagent/ui/components/IconSet";
-import { GroupMultiSelect } from "../../components/relay/GroupMultiSelect";
-import { RelayKeyCopyDialog } from "../../components/relay/RelayKeyCopyDialog";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GroupMultiSelect } from "../../components/relay/GroupMultiSelect";
+import { RelayKeyCopyDialog } from "../../components/relay/RelayKeyCopyDialog";
 import {
   createRelayApiKeys,
   getRelayCurrentUser,
@@ -13,7 +13,7 @@ import {
   type RelayApiKey,
   type RelayGroup,
   type RelayUser,
-  verifyRelayPassword,
+  revealRelayApiKey,
 } from "../../lib/relay/client";
 import { bindRelayKeysToSettings, relayProviderTypeForPlatform } from "../../lib/relay/providers";
 import type { SettingsSectionProps } from "./types";
@@ -155,8 +155,8 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
 
   async function copyKeyAfterPassword(password: string) {
     if (!copyTarget || !user?.email) throw new Error("无法读取当前 USA-零 账户。");
-    await verifyRelayPassword(user.email, password);
-    await navigator.clipboard.writeText(copyTarget.key);
+    const value = await revealRelayApiKey(copyTarget.id, password);
+    await navigator.clipboard.writeText(value);
     setSuccess(`密钥“${copyTarget.name}”已复制到剪贴板。`);
   }
 

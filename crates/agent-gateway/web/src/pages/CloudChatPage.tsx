@@ -1,3 +1,23 @@
+import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
+import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
+import {
+  ChatHistorySidebar,
+  type ChatHistorySidebarMutationKind,
+} from "@liveagent/ui/components/chat/ChatHistorySidebar";
+import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
+import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
+import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
+import {
+  deleteSidebarConversations,
+  type SidebarBatchDeleteOptions,
+} from "@liveagent/ui/lib/sidebar/batchDelete";
+import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
+import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
+import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
+import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type ChangeEvent,
   type CSSProperties,
@@ -9,22 +29,12 @@ import {
 } from "react";
 import { buildTextFromComposerDraft } from "@/app/chatDraft";
 import { UserMenu } from "@/app/UserMenu";
-import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
-import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
-import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
-import {
-  ChatHistorySidebar,
-  type ChatHistorySidebarMutationKind,
-} from "@liveagent/ui/components/chat/ChatHistorySidebar";
-import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
-import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
-import { useLocale } from "@liveagent/ui/i18n/index";
+import { accountFetch } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
-import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import type {
   ExecutionEnvironment,
   ExecutionSelection,
@@ -53,16 +63,7 @@ import {
   getNextTheme,
   type ReasoningLevel,
 } from "@/lib/settings";
-import { createUuid } from "@liveagent/ui/lib/shared/id";
-import {
-  deleteSidebarConversations,
-  type SidebarBatchDeleteOptions,
-} from "@liveagent/ui/lib/sidebar/batchDelete";
-import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { WebSettingsSaveState } from "@/lib/webSettings";
-import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
-import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
-import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import type { SectionId } from "@/pages/settings/types";
 
 type Conversation = {
@@ -96,7 +97,7 @@ const EMPTY_PATHS = new Set<string>();
 const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
 
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await accountFetch(path, {
     ...init,
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
@@ -179,9 +180,9 @@ export function CloudChatPage({
   const [modelsLoading, setModelsLoading] = useState(true);
   const [webSettingsLoaded, setWebSettingsLoaded] = useState(false);
   const [error, setError] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 821px)").matches,
-  );
+  const sidebar = useSidebar();
+  const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
+  const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(() =>
     Boolean(requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)),
@@ -200,7 +201,6 @@ export function CloudChatPage({
   const settingsRef = useRef(settings);
   const setSettingsRef = useRef(setSettings);
   const restoredConversationIdRef = useRef(conversationId);
-  const { t } = useLocale();
   settingsRef.current = settings;
   setSettingsRef.current = setSettings;
 
@@ -464,7 +464,7 @@ export function CloudChatPage({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const response = await fetch("/api/web-chat/completions", {
+      const response = await accountFetch("/api/web-chat/completions", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -532,6 +532,7 @@ export function CloudChatPage({
             kind: "user",
             text,
             attachments: [],
+            referencedConversations: [],
           };
         }
         return {
@@ -643,6 +644,7 @@ export function CloudChatPage({
             onClick={() => setSidebarOpen(false)}
           />
           <ChatHistorySidebar
+            onOpenResourceHub={() => undefined}
             items={sidebarItems}
             currentConversationId={conversationId}
             busyConversationIds={EMPTY_MUTATIONS}
@@ -692,7 +694,6 @@ export function CloudChatPage({
             onDeleteConversation={(id) => void removeConversation(id)}
             onDeleteConversations={removeConversations}
             onLoadMore={() => undefined}
-            onCloseSidebar={() => setSidebarOpen(false)}
             onOpenSettings={() => setAccountSettingsOpen(true)}
             accountMenu={
               <UserMenu
@@ -740,8 +741,6 @@ export function CloudChatPage({
               settings={settings}
               setSettings={setSettings}
               isAgentMode={false}
-              sidebarOpen={sidebarOpen}
-              onOpenSidebar={() => setSidebarOpen(true)}
               className="contents"
               chat={{
                 containerProps: {
@@ -764,9 +763,7 @@ export function CloudChatPage({
                           <GatewayTranscript
                             conversationId={conversationId}
                             rows={transcriptRows}
-                            liveStartIndex={
-                              streaming ? Math.max(0, transcriptRows.length - 1) : -1
-                            }
+                            liveStartIndex={streaming ? Math.max(0, transcriptRows.length - 1) : -1}
                             activeTurnKey={streaming ? messages.at(-1)?.id : null}
                             error={error || null}
                             toolStatus={streaming ? "Vibing..." : null}
@@ -785,6 +782,9 @@ export function CloudChatPage({
                         </ScrollArea>
                       </div>
                       <ChatComposerBar
+                        onPickWorkspaceFolder={() => undefined}
+                        onRefreshModels={() => void refreshModels()}
+                        modelsRefreshing={modelsLoading}
                         surface="web"
                         conversationId={conversationId}
                         composerRef={composerRef}

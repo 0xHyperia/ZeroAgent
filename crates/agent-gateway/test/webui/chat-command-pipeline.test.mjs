@@ -57,18 +57,82 @@ function transcriptTexts(store) {
   return store.getSnapshot().rows.map((row) => rowText(row));
 }
 
+test("a draft follow-up waits for canonical conversation binding", async () => {
+  const { pipeline } = createHarness();
+  let acceptCommand;
+  const accepted = new Promise((resolve) => {
+    acceptCommand = resolve;
+  });
+  const submission = pipeline.submit({
+    conversationId: "__local_draft__:one",
+    clientRequestId: "client-one",
+    message: "first",
+    submit: () => accepted,
+  });
+
+  const binding = pipeline.waitForConversationBinding("__local_draft__:one");
+  pipeline.handleCommandUpdate({
+    runId: "run-one",
+    clientRequestId: "client-one",
+    conversationId: "conversation-one",
+    phase: "bound",
+    errorCode: null,
+    message: null,
+  });
+  assert.equal(await binding, "conversation-one");
+  assert.equal(pipeline.resolveConversationId("__local_draft__:one"), "conversation-one");
+
+  acceptCommand({ runId: "run-one", conversationId: "conversation-one", acceptedSeq: 1 });
+  assert.equal((await submission).kind, "accepted");
+});
+
+test("a failed draft command releases binding waiters", async () => {
+  const { pipeline } = createHarness();
+  let acceptCommand;
+  const accepted = new Promise((resolve) => {
+    acceptCommand = resolve;
+  });
+  const submission = pipeline.submit({
+    conversationId: "__local_draft__:two",
+    clientRequestId: "client-two",
+    message: "first",
+    submit: () => accepted,
+  });
+  const binding = pipeline.waitForConversationBinding("__local_draft__:two");
+  pipeline.handleCommandUpdate({
+    runId: "run-two",
+    clientRequestId: "client-two",
+    conversationId: "__local_draft__:two",
+    phase: "failed",
+    errorCode: "rejected",
+    message: "nope",
+  });
+  assert.equal(await binding, null);
+  assert.equal(pipeline.hasPending("__local_draft__:two"), false);
+  acceptCommand({ runId: "run-two", conversationId: "__local_draft__:two", acceptedSeq: 1 });
+  assert.equal((await submission).kind, "failed");
+});
+
 test("submit inserts the optimistic bubble and resolves the accepted run", async () => {
   const { pipeline, stores } = createHarness();
+  const referencedConversations = [
+    { id: "conversation-source", title: "Source conversation", cwd: "/workspace/source" },
+  ];
   const outcome = await pipeline.submit({
     conversationId: "conv-1",
     clientRequestId: "client-1",
     message: "hello",
+    referencedConversations,
     submit: async () => ({ runId: "run-1", conversationId: "conv-1", acceptedSeq: 2 }),
   });
 
   assert.equal(outcome.kind, "accepted");
   assert.equal(outcome.accepted.runId, "run-1");
   assert.deepEqual(tailTexts(stores.get("conv-1")), ["hello"]);
+  assert.deepEqual(
+    stores.get("conv-1").getSnapshot().rows[0].referencedConversations,
+    referencedConversations,
+  );
   assert.equal(pipeline.hasPending("conv-1"), true);
 
   // The stream's run signal settles the pending spinner.

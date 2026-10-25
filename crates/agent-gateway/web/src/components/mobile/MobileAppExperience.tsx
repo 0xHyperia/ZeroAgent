@@ -1,11 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@liveagent/ui/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@liveagent/ui/components/ui/dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   checkMobileAppUpdate,
   downloadMobileAppUpdate,

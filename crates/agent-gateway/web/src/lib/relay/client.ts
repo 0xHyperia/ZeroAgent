@@ -1,3 +1,10 @@
+import { createUuid } from "@liveagent/ui/lib/shared/id";
+import {
+  ACCOUNT_SESSION_STORAGE_KEY,
+  accountFetch,
+  accountOwnerHeaders,
+  invalidateAccountRequests,
+} from "../accountRequest";
 import {
   acknowledgeEmbeddedOAuthCallback,
   clearEmbeddedMobileGatewaySession,
@@ -5,7 +12,6 @@ import {
   isEmbeddedMobileRuntime,
   openEmbeddedOAuth,
 } from "../mobileRuntime";
-import { createUuid } from "@liveagent/ui/lib/shared/id";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
@@ -13,7 +19,21 @@ export const RELAY_SESSION_EXPIRED_EVENT = "zeroagent:relay-session-expired";
 
 const RELAY_PROXY_BASE = "/api/usa-zero";
 let relaySessionExpiryNotified = false;
+let sessionMutationTail: Promise<unknown> = Promise.resolve();
 const OAUTH_INSTALLATION_ID_KEY = "zeroagent.oauth.installation-id";
+
+function changeRelaySession<T>(change: () => Promise<T>): Promise<T> {
+  // Responses can set/clear the same HttpOnly cookie even when their UI result is stale.
+  // In particular, logout (including Android secure storage cleanup) must finish before login.
+  invalidateAccountRequests();
+  const lockedChange = () =>
+    typeof navigator !== "undefined" && navigator.locks
+      ? navigator.locks.request("zeroagent:account-cookie", change)
+      : change();
+  const pending = sessionMutationTail.then(lockedChange, lockedChange);
+  sessionMutationTail = pending.catch(() => undefined);
+  return pending;
+}
 
 function oauthInstallationID() {
   const current = localStorage.getItem(OAUTH_INSTALLATION_ID_KEY)?.trim();
@@ -152,6 +172,15 @@ function markRelaySessionAuthenticated() {
   relaySessionExpiryNotified = false;
 }
 
+function publishCookieSessionChange() {
+  try {
+    // A nonce wakes other same-origin tabs without putting account data or credentials in storage.
+    localStorage.setItem(ACCOUNT_SESSION_STORAGE_KEY, createUuid());
+  } catch {
+    // Account assertions still reject mismatched cookies when browser storage is unavailable.
+  }
+}
+
 type RelayRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -168,7 +197,7 @@ async function requestRelay<T>(path: string, options: RelayRequestOptions = {}):
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   let response: Response;
   try {
-    response = await fetch(`${RELAY_PROXY_BASE}${normalizedPath}`, {
+    response = await accountFetch(`${RELAY_PROXY_BASE}${normalizedPath}`, {
       method: options.method ?? "GET",
       headers,
       credentials: "include",
@@ -235,16 +264,19 @@ async function completeEmbeddedRelayOAuth(callbackURL: string): Promise<void> {
   const completion = (async () => {
     const callback = new URL(callbackURL);
     try {
-      await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
-        method: "POST",
-        body: {
-          code: callback.searchParams.get("code") ?? "",
-          state: callback.searchParams.get("state") ?? "",
-          error: callback.searchParams.get("error") ?? "",
-        },
+      await changeRelaySession(async () => {
+        await requestGatewayAccount<{ user: RelayUser }>("/api/auth/oauth/complete", {
+          method: "POST",
+          body: {
+            code: callback.searchParams.get("code") ?? "",
+            state: callback.searchParams.get("state") ?? "",
+            error: callback.searchParams.get("error") ?? "",
+          },
+        });
+        markRelaySessionAuthenticated();
+        publishCookieSessionChange();
+        await acknowledgeEmbeddedOAuthCallback(callbackURL);
       });
-      markRelaySessionAuthenticated();
-      await acknowledgeEmbeddedOAuthCallback(callbackURL);
     } catch (cause) {
       if (cause instanceof RelayApiError && cause.status >= 400 && cause.status < 500) {
         await acknowledgeEmbeddedOAuthCallback(callbackURL);
@@ -268,39 +300,49 @@ export async function resumeRelayOAuth(onPending?: () => void): Promise<boolean>
 }
 
 export async function loginRelay(email: string, password: string) {
-  const response = await requestGatewayAccount<
-    { user: RelayUser } | { requires_2fa: true; temp_token: string; user_email_masked?: string }
-  >("/api/auth/login", {
-    method: "POST",
-    body: { email: email.trim(), password },
+  return changeRelaySession(async () => {
+    const response = await requestGatewayAccount<
+      { user: RelayUser } | { requires_2fa: true; temp_token: string; user_email_masked?: string }
+    >("/api/auth/login", {
+      method: "POST",
+      body: { email: email.trim(), password },
+    });
+    if ("requires_2fa" in response) return response;
+    markRelaySessionAuthenticated();
+    publishCookieSessionChange();
+    return {
+      access_token: "cookie-session",
+      token_type: "Cookie",
+      user: response.user,
+    } satisfies RelayAuthResponse;
   });
-  if ("requires_2fa" in response) return response;
-  markRelaySessionAuthenticated();
-  return {
-    access_token: "cookie-session",
-    token_type: "Cookie",
-    user: response.user,
-  } satisfies RelayAuthResponse;
 }
 
 export async function verifyRelayPassword(email: string, password: string) {
-  const response = await loginRelay(email, password);
-  if (!("access_token" in response) && !response.requires_2fa) {
-    throw new RelayApiError("密码验证失败", 401);
+  const response = await requestGatewayAccount<{ verified: boolean }>("/api/auth/verify-password", {
+    method: "POST",
+    body: { email: email.trim(), password },
+    authenticated: true,
+  });
+  if (response.verified !== true) {
+    throw new RelayApiError("密码验证失败", 403);
   }
 }
 
 export async function loginRelay2FA(tempToken: string, totpCode: string) {
-  const response = await requestGatewayAccount<{ user: RelayUser }>("/api/auth/2fa", {
-    method: "POST",
-    body: { temp_token: tempToken, totp_code: totpCode.trim() },
+  return changeRelaySession(async () => {
+    const response = await requestGatewayAccount<{ user: RelayUser }>("/api/auth/2fa", {
+      method: "POST",
+      body: { temp_token: tempToken, totp_code: totpCode.trim() },
+    });
+    markRelaySessionAuthenticated();
+    publishCookieSessionChange();
+    return {
+      access_token: "cookie-session",
+      token_type: "Cookie",
+      user: response.user,
+    } satisfies RelayAuthResponse;
   });
-  markRelaySessionAuthenticated();
-  return {
-    access_token: "cookie-session",
-    token_type: "Cookie",
-    user: response.user,
-  } satisfies RelayAuthResponse;
 }
 
 export async function registerRelay(input: {
@@ -309,21 +351,24 @@ export async function registerRelay(input: {
   verifyCode?: string;
   invitationCode?: string;
 }) {
-  const response = await requestGatewayAccount<{ user: RelayUser }>("/api/auth/register", {
-    method: "POST",
-    body: {
-      email: input.email.trim(),
-      password: input.password,
-      verify_code: input.verifyCode?.trim() ?? "",
-      invitation_code: input.invitationCode?.trim() ?? "",
-    },
+  return changeRelaySession(async () => {
+    const response = await requestGatewayAccount<{ user: RelayUser }>("/api/auth/register", {
+      method: "POST",
+      body: {
+        email: input.email.trim(),
+        password: input.password,
+        verify_code: input.verifyCode?.trim() ?? "",
+        invitation_code: input.invitationCode?.trim() ?? "",
+      },
+    });
+    markRelaySessionAuthenticated();
+    publishCookieSessionChange();
+    return {
+      access_token: "cookie-session",
+      token_type: "Cookie",
+      user: response.user,
+    } satisfies RelayAuthResponse;
   });
-  markRelaySessionAuthenticated();
-  return {
-    access_token: "cookie-session",
-    token_type: "Cookie",
-    user: response.user,
-  } satisfies RelayAuthResponse;
 }
 
 export function sendRelayVerifyCode(email: string) {
@@ -432,14 +477,23 @@ export function getRelayProviderModels(keyId: number) {
 
 async function requestGatewayAccount<T>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown; authenticated?: boolean } = {},
+  options: {
+    method?: "GET" | "POST";
+    body?: unknown;
+    authenticated?: boolean;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await accountFetch(path, {
       method: options.method ?? "GET",
       credentials: "include",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: AbortSignal.timeout(30_000),
     });
@@ -468,14 +522,21 @@ async function requestGatewayAccount<T>(
 }
 
 export async function logoutRelay() {
-  try {
-    await requestGatewayAccount<void>("/api/auth/logout", { method: "POST" });
-  } catch {
-    // The UI session still clears when USA-Zero is temporarily unavailable.
-  }
-  if (isEmbeddedMobileRuntime()) {
-    await clearEmbeddedMobileGatewaySession();
-  }
-  clearRelaySession();
-  window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
+  const ownerHeaders = accountOwnerHeaders();
+  return changeRelaySession(async () => {
+    try {
+      await requestGatewayAccount<void>("/api/auth/logout", {
+        method: "POST",
+        headers: ownerHeaders,
+      });
+    } catch {
+      // The UI session still clears when USA-Zero is temporarily unavailable.
+    }
+    if (isEmbeddedMobileRuntime()) {
+      await clearEmbeddedMobileGatewaySession();
+    }
+    clearRelaySession();
+    publishCookieSessionChange();
+    window.dispatchEvent(new Event(RELAY_SESSION_CHANGED_EVENT));
+  });
 }
