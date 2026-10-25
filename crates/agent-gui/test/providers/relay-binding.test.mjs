@@ -94,7 +94,7 @@ test("binding relay keys removes third-party providers and selects an available 
   assert.equal(bound.selectedModel.model, "gpt-5.4");
 });
 
-test("runtime constraint rejects injected providers and disables unregistered managed keys", () => {
+test("runtime constraint rejects injected providers and clears unregistered connections without erasing model preferences", () => {
   const constrained = relay.enforceRelayProviderConstraint({
     customProviders: [
       {
@@ -116,8 +116,9 @@ test("runtime constraint rejects injected providers and disables unregistered ma
   assert.equal(constrained.customProviders.length, 1);
   assert.equal(constrained.customProviders[0].id, "relay-key-9");
   assert.equal(constrained.customProviders[0].baseUrl, "");
+  assert.equal(constrained.customProviders[0].apiKey, "");
   assert.equal(constrained.customProviders[0].apiKeyConfigured, false);
-  assert.deepEqual(constrained.customProviders[0].activeModels, []);
+  assert.deepEqual(constrained.customProviders[0].activeModels, ["claude-opus-4-8"]);
   assert.equal(constrained.selectedModel, undefined);
 });
 
