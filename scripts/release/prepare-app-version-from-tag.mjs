@@ -12,6 +12,7 @@ function usage() {
     "  --github-env <path>      Append LIVEAGENT_* variables for later workflow steps.",
     "  --github-output <path>   Append release metadata as GitHub Action step outputs.",
     "  --tauri-config <path>    Write a generated Tauri config overlay with the app version.",
+    "                          Includes LIVEAGENT_UPDATER_PUBLIC_KEY when configured.",
     "  --json                   Print metadata as JSON.",
   ].join("\n");
 }
@@ -84,7 +85,10 @@ function appendLines(path, lines) {
 
 function writeTauriConfig(path, appVersion) {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(tauriVersionConfig(appVersion), null, 2)}\n`);
+  const config = tauriVersionConfig(appVersion);
+  const publicKey = process.env.LIVEAGENT_UPDATER_PUBLIC_KEY?.trim();
+  if (publicKey) config.plugins = { updater: { pubkey: publicKey } };
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 try {

@@ -109,6 +109,8 @@ jobs:
 
       - name: Prepare release version config
         working-directory: crates/agent-gui
+        env:
+          LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
 
       - name: Install pnpm
@@ -133,11 +135,30 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --filter zeroagent... --filter @liveagent/gateway-webui...
 
+      - name: Verify updater signing configuration
+        working-directory: crates/agent-gui
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/zeroagent-updater-signature-probe.bin"
+          printf 'ZeroAgent updater signing preflight\n' > "$probe"
+          pnpm tauri signer sign "$probe"
+          unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          cargo run --locked --release --manifest-path ../../scripts/release/verify-updater-signatures/Cargo.toml -- --config "$LIVEAGENT_TAURI_VERSION_CONFIG" "$probe"
+
       - name: Build reviewed K-brain source
         run: pnpm build:kbrain:source
 
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
+
+      - name: Prepare macOS Native resources
+        run: |
+          pnpm --dir crates/agent-gui gateway:prepare
+          pnpm --filter zeroagent build
 
       - name: Validate macOS Native library
         env:
@@ -152,7 +173,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
-        run: pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target ${{ matrix.target }} 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
+            echo "Refusing updater artifacts with a mismatched embedded public key." >&2
+            exit 1
+          fi
 
       - name: Stage macOS artifact
         run: |
@@ -166,6 +193,18 @@ jobs:
           cp "$dmg_path" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.dmg"
           cp "$updater_path" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz"
           cp "$updater_path.sig" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz.sig"
+
+      - name: Verify updater asset signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=()
+          for signature in dist/*.sig; do
+            test -f "$signature"
+            assets+=("${signature%.sig}")
+          done
+          test "${#assets[@]}" -gt 0
+          cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$LIVEAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -194,6 +233,8 @@ jobs:
       - name: Prepare release version config
         shell: bash
         working-directory: crates/agent-gui
+        env:
+          LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
 
       - name: Install pnpm
@@ -218,6 +259,20 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --filter zeroagent... --filter @liveagent/gateway-webui...
 
+      - name: Verify updater signing configuration
+        working-directory: crates/agent-gui
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/zeroagent-updater-signature-probe.bin"
+          printf 'ZeroAgent updater signing preflight\n' > "$probe"
+          pnpm tauri signer sign "$probe"
+          unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          cargo run --locked --release --manifest-path ../../scripts/release/verify-updater-signatures/Cargo.toml -- --config "$LIVEAGENT_TAURI_VERSION_CONFIG" "$probe"
+
       - name: Build reviewed K-brain source
         run: pnpm build:kbrain:source
 
@@ -232,7 +287,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
-        run: pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-pc-windows-msvc
+        run: |
+          set -euo pipefail
+          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
+            echo "Refusing updater artifacts with a mismatched embedded public key." >&2
+            exit 1
+          fi
 
       - name: Stage Windows artifacts
         shell: bash
@@ -263,6 +324,18 @@ jobs:
           rm -rf dist/portable
           test "$(find dist -type f | wc -l)" -gt 0
 
+      - name: Verify updater asset signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=()
+          for signature in dist/*.sig; do
+            test -f "$signature"
+            assets+=("${signature%.sig}")
+          done
+          test "${#assets[@]}" -gt 0
+          cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$LIVEAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: liveagent-windows-x64
@@ -289,6 +362,8 @@ jobs:
 
       - name: Prepare release version config
         working-directory: crates/agent-gui
+        env:
+          LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: node ../../scripts/release/prepare-app-version-from-tag.mjs "$LIVEAGENT_RELEASE_TAG" --github-env "$GITHUB_ENV" --tauri-config src-tauri/tauri.version.generated.conf.json
 
       - name: Install pnpm
@@ -338,6 +413,20 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --filter zeroagent... --filter @liveagent/gateway-webui...
 
+      - name: Verify updater signing configuration
+        working-directory: crates/agent-gui
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/zeroagent-updater-signature-probe.bin"
+          printf 'ZeroAgent updater signing preflight\n' > "$probe"
+          pnpm tauri signer sign "$probe"
+          unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          cargo run --locked --release --manifest-path ../../scripts/release/verify-updater-signatures/Cargo.toml -- --config "$LIVEAGENT_TAURI_VERSION_CONFIG" "$probe"
+
       - name: Build reviewed K-brain source
         run: pnpm build:kbrain:source
 
@@ -351,7 +440,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           LIVEAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
-        run: pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm
+        run: |
+          set -euo pipefail
+          pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$LIVEAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
+            echo "Refusing updater artifacts with a mismatched embedded public key." >&2
+            exit 1
+          fi
 
       - name: Verify Linux GLIBC baseline
         run: bash scripts/release/verify-linux-glibc-baseline.sh target/x86_64-unknown-linux-gnu/release/zeroagent
@@ -389,6 +484,18 @@ jobs:
           cp "$deb_path.sig" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-Linux-x86_64.deb.sig"
           cp "$rpm_path" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-Linux-x86_64.rpm"
           cp "$rpm_path.sig" "dist/ZeroAgent-${LIVEAGENT_RELEASE_TAG}-Linux-x86_64.rpm.sig"
+
+      - name: Verify updater asset signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=()
+          for signature in dist/*.sig; do
+            test -f "$signature"
+            assets+=("${signature%.sig}")
+          done
+          test "${#assets[@]}" -gt 0
+          cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$LIVEAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
 
       - uses: actions/upload-artifact@v7
         with:

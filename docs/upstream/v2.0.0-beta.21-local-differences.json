@@ -1,14 +1,14 @@
 {
-  "at": "2026-10-26T07:38:43.348Z",
+  "at": "2026-10-26T08:41:13.639Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
-  "paths": 801,
+  "paths": 810,
   "byArea": {
     "Other": {
       "paths": 58,
-      "added": 3029,
-      "deleted": 1662
+      "added": 3146,
+      "deleted": 1659
     },
     "Gateway": {
       "paths": 93,
@@ -22,7 +22,7 @@
     },
     "Desktop": {
       "paths": 188,
-      "added": 10200,
+      "added": 10228,
       "deleted": 1267
     },
     "Native": {
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31938,
+      "added": 31947,
       "deleted": 32
     },
     "Backend patches": {
@@ -46,9 +46,9 @@
       "deleted": 0
     },
     "Scripts": {
-      "paths": 23,
-      "added": 1271,
-      "deleted": 309
+      "paths": 32,
+      "added": 2050,
+      "deleted": 310
     }
   },
   "rows": [
@@ -164,7 +164,7 @@
     },
     {
       "path": ".github/upstream-ownership.yaml",
-      "added": 659,
+      "added": 669,
       "deleted": 0
     },
     {
@@ -174,7 +174,7 @@
     },
     {
       "path": ".github/workflows/android-release.yml",
-      "added": 273,
+      "added": 276,
       "deleted": 0
     },
     {
@@ -184,8 +184,8 @@
     },
     {
       "path": ".github/workflows/desktop-release.yml",
-      "added": 197,
-      "deleted": 214
+      "added": 301,
+      "deleted": 211
     },
     {
       "path": ".github/workflows/gateway-docker.yml",
@@ -2859,7 +2859,7 @@
     },
     {
       "path": "crates/agent-gui/test/backend/release-version.test.mjs",
-      "added": 14,
+      "added": 42,
       "deleted": 0
     },
     {
@@ -3784,7 +3784,7 @@
     },
     {
       "path": "docs/product/features.yaml",
-      "added": 379,
+      "added": 383,
       "deleted": 0
     },
     {
@@ -3874,7 +3874,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 186,
+      "added": 191,
       "deleted": 0
     },
     {
@@ -3989,8 +3989,8 @@
     },
     {
       "path": "scripts/release/prepare-app-version-from-tag.mjs",
-      "added": 2,
-      "deleted": 5
+      "added": 7,
+      "deleted": 6
     },
     {
       "path": "scripts/release/prepare-kbrain.mjs",
@@ -4006,6 +4006,51 @@
       "path": "scripts/release/verify-kbrain-packaging.test.mjs",
       "added": 11,
       "deleted": 4
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/Cargo.lock",
+      "added": 203,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/Cargo.toml",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/README.md",
+      "added": 61,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/src/main.rs",
+      "added": 148,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/cli.rs",
+      "added": 297,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/NOTICE.md",
+      "added": 41,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/legacy.minisig",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/prehashed.minisig",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/public-key.minisign",
+      "added": 2,
+      "deleted": 0
     },
     {
       "path": "scripts/typescript-source-tools.mjs",

@@ -544,6 +544,16 @@
       ]
     },
     {
+      "glob": "scripts/release/verify-updater-signatures/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "与实际updater同版官方Minisign库及outer-base64协议一致，独立锁文件",
+        "真实资产字节验签、错误公钥/篡改/损坏签名拒绝，逐批检查退出状态",
+        "不访问私钥变量、不输出公钥值、不进入生产应用依赖或载荷"
+      ]
+    },
+    {
       "glob": "scripts/**",
       "ownership": "adapted",
       "risk": "high",

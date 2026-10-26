@@ -19,6 +19,7 @@ function runVersionScript(args, env = {}) {
     encoding: "utf8",
     env: {
       ...process.env,
+      LIVEAGENT_UPDATER_PUBLIC_KEY: "",
       ...env,
     },
   });
@@ -90,6 +91,33 @@ test("release version script rejects non-semver tags", () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /semver tag like v0\.1\.3/);
+});
+
+test("release overlay uses the configured updater key without changing the source config", () => {
+  const sourcePath = path.join(guiRoot, "src-tauri/tauri.conf.json");
+  const sourceBefore = readFileSync(sourcePath, "utf8");
+  const publicKey = JSON.parse(sourceBefore).plugins.updater.pubkey;
+  const dir = mkdtempSync(path.join(tmpdir(), "zeroagent-updater-overlay-"));
+  try {
+    const overlayPath = path.join(dir, "tauri.version.generated.conf.json");
+    const result = runVersionScript(
+      ["v0.4.0-beta.2", "--tauri-config", overlayPath, "--json"],
+      { LIVEAGENT_UPDATER_PUBLIC_KEY: `  ${publicKey}\n` },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(overlayPath, "utf8")), {
+      version: "0.4.0-beta.2",
+      bundle: { windows: { wix: { version: "0.4.0.2" } } },
+      plugins: { updater: { pubkey: publicKey } },
+    });
+    assert.equal(readFileSync(sourcePath, "utf8"), sourceBefore);
+    assert.equal(result.stdout.includes(publicKey), false);
+  } finally {
+    const resolved = path.resolve(dir);
+    assert.equal(path.dirname(resolved), path.resolve(tmpdir()));
+    assert.equal(path.basename(resolved).startsWith("zeroagent-updater-overlay-"), true);
+    rmSync(resolved, { force: true, recursive: true });
+  }
 });
 
 test("Gateway Docker releases pass normalized versions and reserve latest for stable tags", () => {
