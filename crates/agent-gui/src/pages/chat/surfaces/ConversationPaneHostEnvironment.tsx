@@ -39,7 +39,8 @@ export type ConversationComposerBindings = Omit<
   | "taskProgressBar"
   | "approvalBar"
   | "fileDropOverlay"
->;
+> &
+  Required<Pick<ChatComposerBarProps, "onRefreshModels" | "modelsRefreshing">>;
 
 export type ConversationPaneFileDropState = {
   active: boolean;

@@ -180,7 +180,6 @@ function FailoverSettingsCard(props: SettingsSectionProps & { providerType: Prov
       addableProviders.map((provider) => ({
         value: provider.id,
         label: provider.name,
-        description: provider.baseUrl,
         // Keep all queue entries under the current vendor group, matching the
         // grouping used by the title/commit model picker.
         providerId: providerType,
@@ -197,11 +196,6 @@ function FailoverSettingsCard(props: SettingsSectionProps & { providerType: Prov
   function queueEntryLabel(providerId: string) {
     const provider = providerById.get(providerId);
     return provider?.name ?? providerId;
-  }
-
-  function queueEntryDetail(providerId: string) {
-    const provider = providerById.get(providerId);
-    return provider?.baseUrl ?? "";
   }
 
   function addQueueEntry(providerId: string) {
@@ -287,11 +281,6 @@ function FailoverSettingsCard(props: SettingsSectionProps & { providerType: Prov
                         <span className="block truncate text-xs font-medium text-foreground/90">
                           {queueEntryLabel(entry)}
                         </span>
-                        {queueEntryDetail(entry) ? (
-                          <span className="block truncate text-tiny text-muted-foreground/70">
-                            {queueEntryDetail(entry)}
-                          </span>
-                        ) : null}
                       </span>
                       <button
                         type="button"
@@ -320,6 +309,7 @@ function FailoverSettingsCard(props: SettingsSectionProps & { providerType: Prov
                   onChange={addQueueEntry}
                   placeholder={t("settings.failoverQueueAdd")}
                   ariaLabel={t("settings.failoverQueueAdd")}
+                  selectionKind="provider"
                   collapsibleGroups={false}
                   searchPlaceholder={t("settings.failoverQueueSearch")}
                   emptyLabel={t("settings.failoverQueueNoMatch")}
@@ -421,7 +411,6 @@ function CustomSettingsModelField(props: {
         noneLabel={followCurrentLabel}
         ariaLabel={label}
         variant="plain"
-        collapsibleGroups={false}
       />
     </div>
   );

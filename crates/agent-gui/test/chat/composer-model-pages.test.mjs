@@ -14,6 +14,7 @@ test("composer model pages preserve selection, reasoning, search and return navi
   const { ComposerModelControls } = env.loadModule("@liveagent/ui/components/chat/ComposerModelControls.tsx");
   const { toModelValue } = env.loadModule("@liveagent/ui/lib/models/modelValue.ts");
   const values = [], patches = [];
+  let refreshes = 0;
   const root = env.createRoot(document.body.appendChild(document.createElement("div")));
   function Harness() {
     const [value, setValue] = env.React.useState(toModelValue("one", "Alpha"));
@@ -24,6 +25,7 @@ test("composer model pages preserve selection, reasoning, search and return navi
       chatRuntimeControls: runtime, reasoningOptions: ["low", "high"], thinkingAlwaysOn: false,
       onSelectModel: selection => { values.push(selection); setValue(toModelValue(selection.customProviderId, selection.model)); },
       onSelectExecutionMode: () => {}, onOpenSettings: () => {},
+      onRefreshModels: () => { refreshes++; },
       onChatRuntimeControlsChange: patch => { patches.push(patch); setRuntime(prev => ({ ...prev, ...patch })); },
     });
   }
@@ -38,9 +40,17 @@ test("composer model pages preserve selection, reasoning, search and return navi
     assert.equal(document.querySelector('input[placeholder="chat.searchModel"]'), null);
     await clickText("chat.selectModelAlpha");
     assert.ok(document.querySelector('input[placeholder="chat.searchModel"]'));
-    assert.ok([...document.querySelectorAll('button')].some(n => n.textContent === 'Beta'), "all provider groups are visible");
+    const refresh = document.querySelector('button[aria-label="chat.refreshModels"]');
+    assert.ok(refresh?.closest('[data-model-picker-toolbar]'), "refresh belongs to the model toolbar");
+    await env.act(async () => refresh.click());
+    assert.equal(refreshes, 1);
+    assert.ok(document.querySelector('input[placeholder="chat.searchModel"]'), "refresh keeps the model page open");
+    assert.ok([...document.querySelectorAll('[data-model-group]')].some(n => n.textContent.includes('Second')), "all provider group headers are visible");
     const secondGroup = [...document.querySelectorAll('[data-model-group]')].find(node => node.textContent.includes('Second'));
     assert.ok(secondGroup);
+    assert.equal(secondGroup.getAttribute('aria-expanded'), 'false', 'groups default to collapsed');
+    await env.act(async () => secondGroup.click());
+    assert.equal(secondGroup.getAttribute('aria-expanded'), 'true');
     await env.act(async () => secondGroup.click());
     assert.equal(secondGroup.getAttribute('aria-expanded'), 'false');
     assert.equal([...document.querySelectorAll('[data-model-option]')].some(n => n.textContent === 'Beta'), false, 'collapsed models leave the keyboard navigation order');

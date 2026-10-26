@@ -10,6 +10,8 @@ const pickerSources = [
     "utf8",
   ),
 ];
+const sharedPickerSource = readFileSync(new URL("../../../agent-ui/src/components/models/ModelPickerContent.tsx", import.meta.url), "utf8");
+const sharedOptionsSource = readFileSync(new URL("../../../agent-ui/src/lib/models/modelPickerOptions.ts", import.meta.url), "utf8");
 const headerSource = readFileSync(
   new URL("../../../agent-ui/src/components/chat/ChatHeader.tsx", import.meta.url),
   "utf8",
@@ -49,7 +51,7 @@ test("model pickers use popover semantics instead of menu semantics", () => {
     assert.match(source, /<Popover open=\{isModelPickerOpen\}/);
     assert.match(source, /<PopoverContent/);
     assert.match(source, /aria-label=\{t\("chat\.selectModel"\)\}/);
-    assert.match(source, /<DropdownMenuRadioGroup\s+value=\{providerFilter\}/);
+    assert.match(sharedPickerSource, /<DropdownMenuRadioGroup\s+value=\{providerFilter\}/);
   }
 });
 
@@ -72,7 +74,7 @@ test("model selection uses an in-place page and returns to the root panel", () =
     assert.match(source, /showView\("model"\)/);
     assert.match(source, /showView\("root"\)/);
     assert.doesNotMatch(source, /expandedGroupId|toggleGroup/);
-    assert.match(source, /aria-pressed=\{isSelected\}/);
+    assert.match(sharedPickerSource, /aria-pressed=\{isSelected\}/);
     assert.match(source, /onSelectModel\(parsed\);[\s\S]{0,240}?showView\("root"\);/);
   }
 });
@@ -82,17 +84,17 @@ test("model pickers search models and providers", () => {
     assert.match(source, /initialFocus=\{resolveModelPickerInitialFocus\}/);
     assert.match(source, /openType === "touch"/);
     assert.match(source, /searchInputRef\.current/);
-    assert.match(source, /placeholder=\{t\("chat\.searchModel"\)\}/);
-    assert.match(source, /\w+\.model\.toLowerCase\(\)\.includes\(normalizedSearch\)/);
-    assert.match(source, /\w+\.providerName\.toLowerCase\(\)\.includes\(normalizedSearch\)/);
-    assert.match(source, /t\("chat\.noModelFound"\)/);
+    assert.match(source, /<ModelPickerContent/);
+    assert.match(sharedPickerSource, /t\("chat\.searchModel"\)/);
+    assert.match(sharedOptionsSource, /model, option\.label, option\.providerName/);
+    assert.match(sharedPickerSource, /t\("chat\.noModelFound"\)/);
   }
 });
 
 test("provider groups keep a reachable edit affordance", () => {
   for (const source of pickerSources) {
-    assert.match(source, /t\("settings\.editProvider"\)/);
-    assert.match(source, /setIsModelPickerOpen\(false\);\s+onOpenSettings\("providers", group\.id\);/);
+    assert.match(sharedPickerSource, /t\("settings\.editProvider"\)/);
+    assert.match(source, /setIsModelPickerOpen\(false\);\s+onOpenSettings\("providers", providerId\);/);
   }
 });
 

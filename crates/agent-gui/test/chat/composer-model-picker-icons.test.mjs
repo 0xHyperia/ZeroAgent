@@ -51,6 +51,9 @@ test("model picker shows the provider brand icon on group headers and model rows
     );
     for (const header of headers) assert.match(brandIcon(header).className, /size-3\.5/);
 
+    assert.ok(headers.every(header => header.getAttribute("aria-expanded") === "false"), "every group starts collapsed, including the selected group");
+    assert.equal(document.querySelectorAll("[data-model-option]").length, 0);
+    for (const header of headers) await env.act(async () => header.click());
     const rows = [...document.querySelectorAll("[data-model-option]")];
     assert.deepEqual(
       rows.map(row => brandIcon(row)?.getAttribute("data-brand-icon")),

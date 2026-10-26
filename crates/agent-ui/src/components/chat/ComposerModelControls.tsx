@@ -9,30 +9,18 @@ import {
   type SelectedModel,
 } from "@liveagent/app/lib/settings";
 import {
-  ArrowDownAZ,
   Check,
   ChevronDown,
   ChevronRight,
-  Funnel,
   Layers,
   Lightbulb,
   LightbulbOff,
-  RefreshCw,
-  Search,
-  SquarePen,
 } from "@liveagent/ui/components/IconSet";
+import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
 import { Button } from "@liveagent/ui/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@liveagent/ui/components/ui/dropdown-menu";
 import { menuSurfaceClassName } from "@liveagent/ui/components/ui/menu-surface";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
-import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { Switch } from "@liveagent/ui/components/ui/switch";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
@@ -41,13 +29,6 @@ import {
   COMPOSER_CONTROL_TRIGGER_CLASS,
 } from "@liveagent/ui/lib/chat/composerControlStyles";
 import type { SharedModelOption } from "@liveagent/ui/lib/models/modelOptions";
-import {
-  groupModelOptionsByProvider,
-  type ProviderSortMode,
-  persistProviderSortMode,
-  readStoredProviderSortMode,
-  sortModelOptionGroups,
-} from "@liveagent/ui/lib/models/modelOptions";
 import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -165,34 +146,14 @@ export const ComposerModelControls = memo(function ComposerModelControls(
     if (open === undefined) setUncontrolledModelPickerOpen(next);
     onOpenChange?.(next);
   };
-  const [modelSearch, setModelSearch] = useState("");
-  const [providerFilter, setProviderFilter] = useState("");
-  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set());
   const [view, setView] = useState<"root" | "model" | "reasoning">("root");
-  const [providerSortMode, setProviderSortMode] = useState<ProviderSortMode>(() =>
-    readStoredProviderSortMode(),
-  );
-  // 图标与提示描述「当前模式」而非切换目标：此前显示目标模式，使 Layers
-  // 图标的含义变成「你现在处于字母序」，与直觉相反；且没有 aria-pressed，
-  // 唯一反馈只有图标替换。
-  const sortByName = providerSortMode === "alpha";
-  const sortToggleTitle = sortByName
-    ? t("chat.sortProvidersByName")
-    : t("chat.sortProvidersByType");
-  const toggleProviderSortMode = () => {
-    const next: ProviderSortMode = sortByName ? "type" : "alpha";
-    persistProviderSortMode(next);
-    setProviderSortMode(next);
-  };
   const searchInputRef = useRef<HTMLInputElement>(null);
   const popoverContentRef = useRef<HTMLDivElement>(null);
   const executionModeRadioName = useId();
 
   useEffect(() => {
     if (!isModelPickerOpen) return;
-    setModelSearch("");
     setView("root");
-    setProviderFilter("");
   }, [isModelPickerOpen]);
 
   // 恒开模型的 thinkingEnabled 纠偏。注意不得在此回写 reasoning:档位展示值
@@ -204,11 +165,6 @@ export const ComposerModelControls = memo(function ComposerModelControls(
     onChatRuntimeControlsChange({ thinkingEnabled: true });
   }, [chatRuntimeControls.thinkingEnabled, onChatRuntimeControlsChange, thinkingAlwaysOn]);
 
-  const normalizedSearch = modelSearch.trim().toLowerCase();
-  const groups = sortModelOptionGroups(groupModelOptionsByProvider(modelOptions), providerSortMode);
-  const activeProviderName = providerFilter
-    ? (groups.find((group) => group.id === providerFilter)?.name ?? null)
-    : null;
   const selectedOption = modelOptions.find((option) => option.value === selectedValue);
   const triggerLabel = selectedOption?.label ?? currentModelLabel;
   const isAgent = isAgentExecutionMode(executionMode);
@@ -229,7 +185,6 @@ export const ComposerModelControls = memo(function ComposerModelControls(
   const selectedEffort: ReasoningLevel = thinkingOn ? selectedReasoning : "off";
   const showView = (next: "root" | "model" | "reasoning") => {
     setView(next);
-    setModelSearch("");
   };
   useEffect(() => {
     if (!isModelPickerOpen) return;
@@ -310,7 +265,7 @@ export const ComposerModelControls = memo(function ComposerModelControls(
         }}
         aria-label={t("chat.selectModel")}
         className={cn(
-          "flex max-h-[min(380px,75dvh)] w-[324px] max-w-[calc(100vw-16px)] flex-col overflow-hidden",
+          "flex max-h-[min(380px,75dvh,var(--available-height,75dvh))] w-[324px] max-w-[calc(100vw-16px)] flex-col overflow-hidden",
           menuSurfaceClassName,
           "p-1.5 text-xs leading-5",
           "web:font-app web:text-xs web:leading-5",
@@ -414,7 +369,7 @@ export const ComposerModelControls = memo(function ComposerModelControls(
             </fieldset>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="mb-1.5 shrink-0 border-b border-border/60 pb-1.5">
               <button
                 type="button"
@@ -435,254 +390,25 @@ export const ComposerModelControls = memo(function ComposerModelControls(
                   <span className="ml-auto min-w-0 truncate">{triggerLabel}</span>
                 )}
               </button>
-              {onRefreshModels ? (
-                <button
-                  type="button"
-                  onClick={() => void onRefreshModels()}
-                  disabled={modelsRefreshing}
-                  title={t("chat.refreshModels")}
-                  aria-label={t("chat.refreshModels")}
-                  className="flex w-7 shrink-0 cursor-pointer items-center justify-center self-stretch rounded-md border border-border/50 bg-muted/40 text-muted-foreground/70 transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <RefreshCw className={cn("h-3.5 w-3.5", modelsRefreshing && "animate-spin")} />
-                </button>
-              ) : null}
             </div>
             {view === "model" ? (
-              <>
-                <div className="mb-1.5 flex shrink-0 items-center gap-1.5">
-                  <label className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-settings-tile-hover px-2">
-                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
-                    <input
-                      ref={searchInputRef}
-                      value={modelSearch}
-                      onChange={(event) => {
-                        setModelSearch(event.target.value);
-                        setCollapsedProviders(new Set());
-                      }}
-                      placeholder={t("chat.searchModel")}
-                      aria-label={t("chat.searchModel")}
-                      className="min-w-0 w-full bg-transparent outline-none"
-                    />
-                  </label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className={cn(
-                            "shrink-0 bg-settings-tile-hover",
-                            providerFilter && "text-foreground ring-1 ring-inset ring-border",
-                          )}
-                        />
-                      }
-                      title={activeProviderName ?? t("settings.modelAllProviders")}
-                      aria-label={`${t("settings.modelAllProviders")}: ${
-                        activeProviderName ?? t("settings.modelAllProviders")
-                      }`}
-                    >
-                      <Funnel className="size-3.5" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      variant="soft"
-                      align="start"
-                      className="max-h-64 min-w-40 w-48 overflow-y-auto text-xs leading-5"
-                    >
-                      <DropdownMenuRadioGroup
-                        value={providerFilter}
-                        onValueChange={setProviderFilter}
-                      >
-                        <DropdownMenuRadioItem value="" className="h-7 py-0 text-xs">
-                          {t("settings.modelAllProviders")}
-                        </DropdownMenuRadioItem>
-                        {groups.map((group) => (
-                          <DropdownMenuRadioItem
-                            key={group.id}
-                            value={group.id}
-                            className="h-7 gap-2 py-0 text-xs"
-                          >
-                            <span className="min-w-0 truncate">{group.name}</span>
-                            <span className="shrink-0 text-tiny text-muted-foreground">
-                              {group.opts.length}
-                            </span>
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="shrink-0 bg-settings-tile-hover"
-                    onClick={toggleProviderSortMode}
-                    title={sortToggleTitle}
-                    aria-label={sortToggleTitle}
-                    aria-pressed={sortByName}
-                  >
-                    {sortByName ? (
-                      <ArrowDownAZ className="size-3.5" />
-                    ) : (
-                      <Layers className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-                <ScrollArea
-                  className={cn(
-                    "h-70 max-h-[50dvh] min-h-0 min-w-0 w-full [&_[data-scroll-viewport]]:overscroll-contain [&_[data-scroll-viewport]]:pr-3 [&_[data-scroll-viewport]>div]:min-w-0!",
-                    "[&_[data-scroll-area-scrollbar]]:z-20 [&_[data-scroll-area-scrollbar]]:opacity-100 [&_[data-scroll-area-scrollbar]>div]:min-h-6 [&_[data-scroll-area-scrollbar]>div]:bg-muted-foreground/60",
-                  )}
-                >
-                  {(() => {
-                    const filteredGroups = groups
-                      .filter(
-                        (group) =>
-                          normalizedSearch || !providerFilter || group.id === providerFilter,
-                      )
-                      .map((group) => ({
-                        ...group,
-                        opts: group.opts.filter(
-                          (option) =>
-                            option.model.toLowerCase().includes(normalizedSearch) ||
-                            option.label.toLowerCase().includes(normalizedSearch) ||
-                            option.providerName.toLowerCase().includes(normalizedSearch),
-                        ),
-                      }))
-                      .filter((group) => group.opts.length > 0);
-                    if (!filteredGroups.length)
-                      return (
-                        <p className="px-3 py-6 text-center text-muted-foreground">
-                          {t("chat.noModelFound")}
-                        </p>
-                      );
-                    return filteredGroups.map((group) => (
-                      <div key={group.id} className="group/provider space-y-0.5 pb-1.5 last:pb-0">
-                        <div className="sticky top-0 z-10 flex h-6 items-center justify-between gap-2 bg-popover px-2.5 text-tiny font-medium uppercase tracking-wide text-muted-foreground">
-                          <button
-                            type="button"
-                            data-model-group=""
-                            aria-expanded={!collapsedProviders.has(group.id)}
-                            aria-controls={`${executionModeRadioName}-models-${group.id}`}
-                            className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => {
-                              setCollapsedProviders((previous) => {
-                                const next = new Set(previous);
-                                if (next.has(group.id)) next.delete(group.id);
-                                else next.add(group.id);
-                                return next;
-                              });
-                            }}
-                          >
-                            <ChevronRight
-                              aria-hidden="true"
-                              className={cn(
-                                "size-3 shrink-0",
-                                !collapsedProviders.has(group.id) && "rotate-90",
-                              )}
-                            />
-                            <ProviderBrandIcon
-                              type={group.providerType}
-                              className="size-3.5 opacity-90"
-                            />
-                            <span className="min-w-0 truncate">{group.name}</span>
-                            <span className="ml-auto tabular-nums">{group.opts.length}</span>
-                          </button>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="-mr-1 size-5 shrink-0 opacity-0 transition-opacity group-hover/provider:opacity-100 focus-visible:opacity-100"
-                            aria-label={`${t("settings.editProvider")}: ${group.name}`}
-                            onClick={() => {
-                              setIsModelPickerOpen(false);
-                              onOpenSettings("providers", group.id);
-                            }}
-                          >
-                            <SquarePen className="size-3" />
-                          </Button>
-                        </div>
-                        <div
-                          id={`${executionModeRadioName}-models-${group.id}`}
-                          data-model-group-list=""
-                          // 左边线落在标题展开箭头的中线（px-2.5 + 半个 size-3），子行整体右移，
-                          // 让模型与所属供应商形成上下级。
-                          className="ml-4 space-y-0.5 border-l border-border/60 pl-1.5"
-                        >
-                          {!collapsedProviders.has(group.id) &&
-                            group.opts.map((option) => {
-                              const isSelected = option.value === selectedValue;
-                              return (
-                                <button
-                                  type="button"
-                                  key={option.value}
-                                  data-model-option=""
-                                  aria-pressed={isSelected}
-                                  onClick={() => {
-                                    const parsed = parseModelValue(option.value);
-                                    if (!parsed) return;
-                                    onSelectModel(parsed);
-                                    // Return to the root panel instead of closing, so the user can
-                                    // keep adjusting reasoning effort and other run controls.
-                                    showView("root");
-                                  }}
-                                  className={cn(
-                                    "flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5",
-                                    "text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                                    isSelected
-                                      ? "bg-settings-active font-medium text-foreground hover:bg-settings-active"
-                                      : "text-foreground/90 hover:bg-settings-tile-hover hover:text-foreground",
-                                  )}
-                                >
-                                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                                    {/* 12px，比分组标题的 14px 小一档，避免子行图标压过父行。 */}
-                                    <ProviderBrandIcon
-                                      type={option.providerType}
-                                      model={option.model}
-                                      className={cn(
-                                        "size-3",
-                                        isSelected ? "opacity-80" : "opacity-45",
-                                      )}
-                                    />
-                                    <span className="min-w-0 flex-1 truncate" title={option.model}>
-                                      {option.label}
-                                    </span>
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "flex shrink-0 items-center gap-1 text-tiny font-normal text-muted-foreground",
-                                      isSelected && "dark:text-foreground/75",
-                                    )}
-                                  >
-                                    {option.reasoning && (
-                                      <span className="rounded bg-muted/60 px-1 py-px">
-                                        {t("settings.modelBadgeReasoning")}
-                                      </span>
-                                    )}
-                                    {option.vision && (
-                                      <span className="rounded bg-muted/60 px-1 py-px">
-                                        {t("settings.modelBadgeVision")}
-                                      </span>
-                                    )}
-                                    {option.contextWindow && (
-                                      <span>
-                                        {new Intl.NumberFormat("en", {
-                                          notation: "compact",
-                                          maximumFractionDigits: 1,
-                                        }).format(option.contextWindow)}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className="size-3.5 shrink-0">
-                                    {isSelected && <Check className="size-3.5" />}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </ScrollArea>
-              </>
+              <ModelPickerContent
+                options={modelOptions}
+                value={selectedValue}
+                searchInputRef={searchInputRef}
+                onRefresh={onRefreshModels}
+                refreshing={modelsRefreshing}
+                onSelect={(value) => {
+                  const parsed = parseModelValue(value);
+                  if (!parsed) return;
+                  onSelectModel(parsed);
+                  showView("root");
+                }}
+                onOpenProvider={(providerId) => {
+                  setIsModelPickerOpen(false);
+                  onOpenSettings("providers", providerId);
+                }}
+              />
             ) : (
               <div className="space-y-1 overflow-y-auto">
                 {showEffortBar ? (

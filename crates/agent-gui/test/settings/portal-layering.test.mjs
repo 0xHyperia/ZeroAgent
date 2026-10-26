@@ -54,14 +54,20 @@ test("the provider failover queue uses the shared model picker", () => {
   assert.match(providersSectionSource, /collapsibleGroups=\{false\}/);
 });
 
-test("the shared model picker can render options without a collapsible group", () => {
+test("the shared model picker delegates group and provider-only selection to shared content", () => {
+  const contentSource = readFileSync(new URL("../../../agent-ui/src/components/models/ModelPickerContent.tsx", import.meta.url), "utf8");
+  const optionsSource = readFileSync(new URL("../../../agent-ui/src/lib/models/modelPickerOptions.ts", import.meta.url), "utf8");
   assert.match(modelPickerSource, /collapsibleGroups = true/);
-  assert.match(modelPickerSource, /\{collapsibleGroups \? \(/);
-  assert.match(modelPickerSource, /!collapsibleGroups \|\| expanded/);
+  assert.match(modelPickerSource, /collapsibleGroups=\{collapsibleGroups\}/);
+  assert.match(contentSource, /props\.collapsibleGroups === false/);
   assert.match(modelPickerSource, /searchPlaceholder\?: string/);
   assert.match(modelPickerSource, /emptyLabel\?: string/);
-  assert.match(modelPickerSource, /option\.description/);
-  assert.match(providersSectionSource, /description: provider\.baseUrl/);
+  assert.match(optionsSource, /option\.description/);
+  assert.match(providersSectionSource, /selectionKind="provider"/);
+  const failoverSource = providersSectionSource.slice(providersSectionSource.indexOf("function FailoverSettingsCard"), providersSectionSource.indexOf("function CustomSettingsModelField"));
+  assert.doesNotMatch(failoverSource, /baseUrl|queueEntryDetail/);
+  const modelFieldSource = providersSectionSource.slice(providersSectionSource.indexOf("function CustomSettingsModelField"), providersSectionSource.indexOf("export function ProviderSettingsDialog"));
+  assert.doesNotMatch(modelFieldSource, /collapsibleGroups=\{false\}/);
 });
 
 test("all shared popup primitives use the semantic popover layer", () => {

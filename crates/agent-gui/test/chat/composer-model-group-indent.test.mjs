@@ -35,6 +35,9 @@ async function setup() {
   await env.act(async () => document.querySelector('[data-slot="popover-trigger"]').click());
   const toModel = [...document.querySelectorAll("button")].find(n => n.textContent.trim().startsWith("chat.selectModel"));
   await env.act(async () => toModel.click());
+  const headers = [...document.querySelectorAll('[data-model-group]')];
+  assert.ok(headers.every(header => header.getAttribute('aria-expanded') === 'false'));
+  for (const header of headers) await env.act(async () => header.click());
   return { env, root, modelOptions };
 }
 

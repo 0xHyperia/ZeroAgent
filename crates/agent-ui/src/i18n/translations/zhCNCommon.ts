@@ -1,4 +1,9 @@
 export const ZH_CN_COMMON_TRANSLATIONS = {
+  "chat.modelPickerView": "模型选择视图",
+  "chat.modelPickerByGroup": "按分组",
+  "chat.modelPickerByVendor": "按厂商",
+  "chat.modelPickerChooseGroup": "选择使用此模型的分组",
+  "chat.modelPickerOtherVendor": "其他厂商",
   "chat.runProgress.connecting": "正在连接后端",
   "chat.runProgress.reconnecting": "正在重新连接后端",
   "chat.runProgress.waiting_session": "正在等待上一个任务结束",

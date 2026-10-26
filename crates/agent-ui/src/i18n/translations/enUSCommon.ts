@@ -1,4 +1,9 @@
 export const EN_US_COMMON_TRANSLATIONS = {
+  "chat.modelPickerView": "Model picker view",
+  "chat.modelPickerByGroup": "By group",
+  "chat.modelPickerByVendor": "By vendor",
+  "chat.modelPickerChooseGroup": "Choose a group for this model",
+  "chat.modelPickerOtherVendor": "Other vendors",
   "chat.runProgress.connecting": "Connecting to backend",
   "chat.runProgress.reconnecting": "Reconnecting to backend",
   "chat.runProgress.waiting_session": "Waiting for the previous task to finish",
