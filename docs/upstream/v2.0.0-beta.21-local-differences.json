@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-26T03:55:52.240Z",
+  "at": "2026-10-26T05:30:06.389Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
