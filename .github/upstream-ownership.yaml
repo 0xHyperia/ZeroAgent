@@ -644,10 +644,12 @@
     },
     {
       "glob": ".gitattributes",
-      "ownership": "upstream_owned",
+      "ownership": "adapted",
       "risk": "medium",
       "checks": [
-        "上游构建、类型与边界检查"
+        "保留上游文本和行尾策略",
+        "unified diff补丁的上下文空白按数据处理，四补丁字节及manifest不变",
+        "普通源码仍使用默认diff whitespace检查"
       ]
     },
     {

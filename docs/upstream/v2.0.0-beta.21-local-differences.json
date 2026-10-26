@@ -1,19 +1,19 @@
 {
-  "at": "2026-10-26T10:30:05.636Z",
+  "at": "2026-10-26T11:30:54.284Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
-  "paths": 814,
+  "paths": 816,
   "byArea": {
     "Other": {
-      "paths": 60,
-      "added": 3219,
-      "deleted": 1661
+      "paths": 61,
+      "added": 3228,
+      "deleted": 1662
     },
     "Gateway": {
-      "paths": 93,
-      "added": 7933,
-      "deleted": 7237
+      "paths": 94,
+      "added": 7934,
+      "deleted": 7251
     },
     "WebUI": {
       "paths": 87,
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31974,
+      "added": 31983,
       "deleted": 32
     },
     "Backend patches": {
@@ -55,6 +55,11 @@
     {
       "path": ".dockerignore",
       "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": ".gitattributes",
+      "added": 4,
       "deleted": 0
     },
     {
@@ -174,7 +179,7 @@
     },
     {
       "path": ".github/upstream-ownership.yaml",
-      "added": 686,
+      "added": 688,
       "deleted": 0
     },
     {
@@ -189,8 +194,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "added": 92,
-      "deleted": 186
+      "added": 95,
+      "deleted": 187
     },
     {
       "path": ".github/workflows/desktop-release.yml",
@@ -376,6 +381,11 @@
       "path": "crates/agent-gateway/internal/auth/http_middleware.go",
       "added": 18,
       "deleted": 26
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/image_principal.go",
+      "added": 1,
+      "deleted": 14
     },
     {
       "path": "crates/agent-gateway/internal/config/config.go",
@@ -3884,7 +3894,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 211,
+      "added": 220,
       "deleted": 0
     },
     {
