@@ -77,11 +77,19 @@ impl ProfileBackupBackend {
                     .as_str()
                     .filter(|path| !path.trim().is_empty())
                     .ok_or("项目提示词缺少目录")?;
-                let entry = resources
-                    .entry(normalize_project_path_key(workdir))
-                    .or_insert_with(|| json!({}));
-                entry["projectPrompt"] = project["prompt"].clone();
-                entry["projectPromptStrategy"] = project["strategy"].clone();
+                // Refresh the canonical identity and the client's source alias
+                // (e.g. macOS /var), so neither entry retains a stale prompt.
+                for path in std::iter::once(workdir).chain(
+                    project["sourceWorkdir"]
+                        .as_str()
+                        .filter(|path| !path.trim().is_empty()),
+                ) {
+                    let entry = resources
+                        .entry(normalize_project_path_key(path))
+                        .or_insert_with(|| json!({}));
+                    entry["projectPrompt"] = project["prompt"].clone();
+                    entry["projectPromptStrategy"] = project["strategy"].clone();
+                }
             }
         }
         let ui = load_ui_preferences(&transaction)?;

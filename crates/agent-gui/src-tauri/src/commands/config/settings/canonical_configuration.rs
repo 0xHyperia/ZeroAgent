@@ -535,6 +535,7 @@ impl ProfileBackupBackend {
             )?;
         }
         for workdir in attempts.projects.iter().rev() {
+            let canonical_workdir = fs::canonicalize(workdir).ok();
             let saved = before
                 .documents
                 .prompts
@@ -542,16 +543,27 @@ impl ProfileBackupBackend {
                 .and_then(Value::as_object)
                 .and_then(|projects| {
                     projects.values().find(|project| {
-                        project
-                            .get("workdir")
-                            .and_then(Value::as_str)
-                            .is_some_and(|path| {
-                                normalize_project_path_key(path)
-                                    == normalize_project_path_key(workdir)
-                            })
+                        ["workdir", "sourceWorkdir"].iter().any(|field| {
+                            project
+                                .get(*field)
+                                .and_then(Value::as_str)
+                                .is_some_and(|path| {
+                                    normalize_project_path_key(path)
+                                        == normalize_project_path_key(workdir)
+                                        || canonical_workdir.as_ref().is_some_and(|canonical| {
+                                            fs::canonicalize(path).ok().as_ref() == Some(canonical)
+                                        })
+                                })
+                        })
                     })
                 });
-            self.request(reqwest::Method::PUT,"/v1/prompts/project",Some(&json!({"workdir":workdir,
+            // Restore the old client alias as well as its saved prompt.
+            let restore_workdir = saved
+                .and_then(|project| project["sourceWorkdir"].as_str())
+                .filter(|path| !path.trim().is_empty())
+                .or_else(|| saved.and_then(|project| project["workdir"].as_str()))
+                .unwrap_or(workdir);
+            self.request(reqwest::Method::PUT,"/v1/prompts/project",Some(&json!({"workdir":restore_workdir,
                 "prompt":saved.and_then(|p|p.get("prompt")).and_then(Value::as_str).unwrap_or(""),
                 "strategy":saved.and_then(|p|p.get("strategy")).and_then(Value::as_str).unwrap_or("append")})))?;
         }

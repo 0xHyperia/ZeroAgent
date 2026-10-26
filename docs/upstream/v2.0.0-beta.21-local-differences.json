@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-26T09:15:15.332Z",
+  "at": "2026-10-26T09:33:15.813Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
@@ -7,8 +7,8 @@
   "byArea": {
     "Other": {
       "paths": 60,
-      "added": 3300,
-      "deleted": 1658
+      "added": 3216,
+      "deleted": 1661
     },
     "Gateway": {
       "paths": 93,
@@ -27,7 +27,7 @@
     },
     "Native": {
       "paths": 235,
-      "added": 25125,
+      "added": 25228,
       "deleted": 1592
     },
     "Shared UI": {
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31952,
+      "added": 31961,
       "deleted": 32
     },
     "Backend patches": {
@@ -194,8 +194,8 @@
     },
     {
       "path": ".github/workflows/desktop-release.yml",
-      "added": 404,
-      "deleted": 210
+      "added": 320,
+      "deleted": 213
     },
     {
       "path": ".github/workflows/gateway-docker.yml",
@@ -1799,7 +1799,7 @@
     },
     {
       "path": "crates/agent-gui/src-tauri/src/commands/config/settings/canonical_configuration.rs",
-      "added": 828,
+      "added": 840,
       "deleted": 0
     },
     {
@@ -1829,12 +1829,12 @@
     },
     {
       "path": "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
-      "added": 632,
+      "added": 640,
       "deleted": 0
     },
     {
       "path": "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs",
-      "added": 206,
+      "added": 289,
       "deleted": 0
     },
     {
@@ -3804,7 +3804,7 @@
     },
     {
       "path": "docs/releases/v0.4.0-beta.2.md",
-      "added": 15,
+      "added": 17,
       "deleted": 0
     },
     {
@@ -3884,7 +3884,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 194,
+      "added": 201,
       "deleted": 0
     },
     {

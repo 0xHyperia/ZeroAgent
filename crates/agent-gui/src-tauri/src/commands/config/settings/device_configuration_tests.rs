@@ -3,6 +3,12 @@ fn device_configuration_persists_complete_batch_before_returning_a_public_receip
     let root = tempfile::tempdir().unwrap();
     let workdir = root.path().join("workspace");
     fs::create_dir_all(&workdir).unwrap();
+    #[cfg(unix)]
+    let workdir = {
+        let alias = root.path().join("workspace-alias");
+        std::os::unix::fs::symlink(&workdir, &alias).unwrap();
+        alias
+    };
     let path = workdir.to_string_lossy().to_string();
     let path_key = normalize_project_path_key(&path);
     let manager = start(&root.path().join("backend"));
@@ -169,10 +175,20 @@ fn device_configuration_persists_complete_batch_before_returning_a_public_receip
     assert_eq!(load_memory(&conn).unwrap().unwrap()["enabled"], true);
 
     let before_failure = backend.device_snapshot_locked(&mut conn).unwrap();
+    let mut failed_system = before_failure["system"].clone();
+    let failed_path = path.clone();
+    #[cfg(unix)]
+    let failed_path = {
+        let alias = root.path().join("another-workspace-alias");
+        std::os::unix::fs::symlink(&workdir, &alias).unwrap();
+        alias.to_string_lossy().to_string()
+    };
+    failed_system["workspaceResourceSettings"][normalize_project_path_key(&failed_path)] =
+        json!({"projectPrompt":"Project edit must roll back","projectPromptStrategy":"replace"});
     conn.execute_batch("CREATE TRIGGER fail_device_ui BEFORE INSERT ON native_ui_preferences BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
     assert!(backend.save_device_locked(&mut conn,json!({"settingsSyncProtocol":DEVICE_SETTINGS_PROTOCOL,
         "configurationRevision":before_failure["configurationRevision"],"uiPreferencesRevision":before_failure["uiPreferencesRevision"],
-        "memory":{"enabled":false},"theme":"dark","skills":{"enabled":true,"selected":[]},
+        "memory":{"enabled":false},"theme":"dark","system":failed_system,"skills":{"enabled":true,"selected":[]},
         "agents":[{"id":"failed","name":"Failed","prompt":"Must roll back","enabled":true}]})).is_err());
     assert_eq!(load_memory(&conn).unwrap().unwrap()["enabled"], true);
     assert_eq!(
@@ -182,6 +198,28 @@ fn device_configuration_persists_complete_batch_before_returning_a_public_receip
     let after_failure = backend.device_snapshot_locked(&mut conn).unwrap();
     assert_eq!(after_failure["agents"][0]["id"], "global");
     assert_eq!(after_failure["skills"]["enabled"], false);
+    assert_eq!(
+        after_failure["system"]["workspaceResourceSettings"][&path_key]["projectPrompt"],
+        "After project",
+        "a late Native failure must restore the existing prompt through its source alias"
+    );
+    let restored_prompts = backend.documents_locked().unwrap().prompts;
+    let restored_project = restored_prompts["projectPrompts"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap();
+    assert_eq!(
+        normalize_project_path_key(restored_project["sourceWorkdir"].as_str().unwrap()),
+        path_key
+    );
+    let canonical_key =
+        normalize_project_path_key(&fs::canonicalize(&workdir).unwrap().to_string_lossy());
+    assert_eq!(
+        after_failure["system"]["workspaceResourceSettings"][canonical_key]["projectPrompt"],
+        "After project"
+    );
     let outbound = backend
         .device_outbound_locked(&mut conn, after_failure.clone())
         .unwrap();
@@ -201,6 +239,51 @@ fn device_configuration_persists_complete_batch_before_returning_a_public_receip
             .device_outbound_locked(&mut other_scope, after_failure)
             .is_err(),
         "a stale snapshot must not receive another profile's private STT sidecar"
+    );
+    manager.shutdown();
+}
+
+#[test]
+fn device_configuration_projects_preserve_source_alias_and_canonical_fallback() {
+    let root = tempfile::tempdir().unwrap();
+    let manager = start(&root.path().join("backend"));
+    let backend = snapshot_backend(&manager, &root.path().join("settings"));
+    let _guard = backend.configuration.blocking_lock();
+    let mut conn = native_db();
+    let alias = "/client/workspace-alias";
+    save_system(
+        &mut conn,
+        json!({"workspaceProjects":[{"id":"canonical","name":"Canonical","path":"/canonical/workspace"}],
+            "workspaceResourceSettings":{"/canonical/workspace":{"projectPrompt":"Stale instructions","projectPromptStrategy":"replace"}}}),
+    )
+    .unwrap();
+    let mut documents = backend.documents_locked().unwrap();
+    // The actual Go response distinguishes its filesystem identity from the path
+    // retained for the client. Mapping it must not require that alias to exist now.
+    documents.prompts["projectPrompts"] = json!({
+        "aliased":{"workdir":"/canonical/workspace","sourceWorkdir":alias,"prompt":"Alias instructions","strategy":"append"},
+        "canonical":{"workdir":"/canonical/second","prompt":"Canonical instructions","strategy":"replace"}
+    });
+    let snapshot = backend
+        .device_snapshot_with_documents(&mut conn, &documents)
+        .unwrap();
+    let resources = &snapshot["system"]["workspaceResourceSettings"];
+    assert_eq!(resources[alias]["projectPrompt"], "Alias instructions");
+    assert_eq!(
+        resources["/canonical/workspace"]["projectPrompt"],
+        "Alias instructions"
+    );
+    assert_eq!(
+        resources["/canonical/workspace"]["projectPromptStrategy"],
+        "append"
+    );
+    assert_eq!(
+        resources["/canonical/second"]["projectPrompt"],
+        "Canonical instructions"
+    );
+    assert_eq!(
+        resources["/canonical/second"]["projectPromptStrategy"],
+        "replace"
     );
     manager.shutdown();
 }
