@@ -78,7 +78,7 @@ export function DesktopExecutionSwitcher({
           <ChevronDown className="h-3.5 w-3.5 max-[900px]:hidden" />
         </Button>
         {open && (
-          <div className="layer-popover absolute right-0 top-full mt-2 max-h-[60vh] w-[min(380px,90vw)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 shadow-xl">
+          <div className="layer-popover absolute left-0 top-full mt-2 max-h-[60vh] w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
             {environments.map((environment) => (
               <button
                 type="button"

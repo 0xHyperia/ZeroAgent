@@ -427,7 +427,7 @@ function CustomSettingsModelField(props: {
   );
 }
 
-function ProviderSettingsDialog(
+export function ProviderSettingsDialog(
   props: SettingsSectionProps & { providerType: ProviderId; onClose: () => void },
 ) {
   const { settings, setSettings, providerType, onClose } = props;

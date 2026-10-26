@@ -229,7 +229,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
   const visibleModelById = new Map(visibleModels.map((model) => [model.id, model]));
   const providerCacheControls =
     providerType !== "gemini" && providerType !== "xai" && providerType !== "deepseek" ? (
-      <div className={cn("mt-3 rounded-xl bg-settings-tile px-4 py-3 transition-colors")}>
+      <div className="shrink-0 rounded-xl border border-border/60 bg-settings-tile px-4 py-4">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">{t("settings.promptCaching")}</div>
@@ -332,18 +332,18 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {!connectionManaged && (
-              <div className="mr-auto flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={() => setActivePanel("request")}>
-                  <Settings className="size-4" />
-                  {t("settings.providerAdvancedSettings")}
-                </Button>
+            <div className="mr-auto flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setActivePanel("request")}>
+                <Settings className="size-4" />
+                {t("settings.providerAdvancedSettings")}
+              </Button>
+              {!connectionManaged && (
                 <Button variant="ghost" size="sm" onClick={() => setActivePanel("usage")}>
                   <Key className="size-4" />
                   {t("settings.providerUsageQuery")}
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             <DialogActions>
               <Button
                 variant="outline"
@@ -367,8 +367,11 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
 
         <div className="flex min-h-0 flex-1 max-[720px]:flex-col">
           <DialogBody className="flex min-w-0 flex-col overflow-hidden [overflow-anchor:none] max-[640px]:overflow-y-auto">
-            <section key="general" className="flex min-h-0 flex-1 flex-col max-[640px]:min-h-fit">
-              <div className="shrink-0 space-y-3 pb-3">
+            <section
+              key="general"
+              className="flex min-h-0 flex-1 flex-col gap-5 max-[640px]:min-h-fit"
+            >
+              <div className="shrink-0 space-y-3">
                 {connectionManaged ? (
                   <p className="text-sm font-medium">USA-Zero · {name}</p>
                 ) : null}
@@ -542,7 +545,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
               </div>
               {connectionManaged && providerCacheControls}
               <div className="grid min-h-0 flex-1 grid-cols-2 items-stretch gap-3 max-[640px]:min-h-96 max-[640px]:grid-cols-1">
-                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-settings-tile">
+                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background">
                   <div className="flex items-center gap-2 border-b bg-muted/30 p-2.5 max-[720px]:flex-wrap">
                     <div className="relative min-w-0 flex-1 max-[720px]:basis-full">
                       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -817,7 +820,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                   )}
                 </div>
                 <aside
-                  className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-xl bg-settings-tile p-4"
+                  className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-xl border border-border/60 bg-background p-5"
                   aria-label={t("settings.modelSettings")}
                 >
                   <div className={cn("mb-4 flex flex-col gap-1", !editingModel && "flex-1")}>
@@ -1060,7 +1063,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
             <DialogBody>
               {activePanel === "request" ? (
                 <section key="request">
-                  {providerType !== "gemini" ? (
+                  {!connectionManaged && providerType !== "gemini" ? (
                     <FormField className="mb-5">
                       <FormFieldLabel htmlFor="modal-models-url">
                         {t("settings.providerModelsUrl")}
@@ -1079,21 +1082,23 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                     </FormField>
                   ) : null}
                   <div className="text-sm font-semibold">{t("settings.providerDialogRequest")}</div>
-                  <div
-                    className={cn(
-                      "mt-3 flex items-center gap-3",
-                      "rounded-xl bg-settings-tile px-4 py-3 transition-colors",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1 text-sm font-medium">
-                      {t("settings.providerUseSystemProxy")}
+                  {!connectionManaged && (
+                    <div
+                      className={cn(
+                        "mt-3 flex items-center gap-3",
+                        "rounded-xl bg-settings-tile px-4 py-3 transition-colors",
+                      )}
+                    >
+                      <div className="min-w-0 flex-1 text-sm font-medium">
+                        {t("settings.providerUseSystemProxy")}
+                      </div>
+                      <Switch
+                        checked={useSystemProxy}
+                        onCheckedChange={setUseSystemProxy}
+                        aria-label={t("settings.providerUseSystemProxy")}
+                      />
                     </div>
-                    <Switch
-                      checked={useSystemProxy}
-                      onCheckedChange={setUseSystemProxy}
-                      aria-label={t("settings.providerUseSystemProxy")}
-                    />
-                  </div>
+                  )}
                   <div
                     className={cn("mt-3 rounded-xl bg-settings-tile px-4 py-3 transition-colors")}
                   >
@@ -1151,289 +1156,303 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                     ) : null}
                   </div>
                   {providerCacheControls}
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2 max-[720px]:w-full">
-                      <span className="text-sm font-semibold">{t("settings.customHeaders")}</span>
-                      {customHeaders.length > 0 ? (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-tiny font-medium tabular-nums text-muted-foreground">
-                          {customHeaders.length}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 gap-2 max-[720px]:w-full">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
+                  {!connectionManaged && (
+                    <>
+                      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2 max-[720px]:w-full">
+                          <span className="text-sm font-semibold">
+                            {t("settings.customHeaders")}
+                          </span>
+                          {customHeaders.length > 0 ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-tiny font-medium tabular-nums text-muted-foreground">
+                              {customHeaders.length}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 gap-2 max-[720px]:w-full">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1"
+                                />
+                              }
+                            >
+                              <Fingerprint className="size-3.5" />
+                              {t("settings.cliIdentityHeaders")}
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent variant="soft" align="end" className="w-64">
+                              <DropdownMenuLabel>
+                                {t("settings.cliIdentityHeadersHint")}
+                              </DropdownMenuLabel>
+                              {listCliIdentityProviderIds(providerType).map((identity) => (
+                                <DropdownMenuItem
+                                  key={identity}
+                                  className="gap-2"
+                                  onSelect={() => applyCliIdentityHeaders(identity)}
+                                >
+                                  <span className="shrink-0 whitespace-nowrap font-medium leading-5">
+                                    {t(`settings.cliIdentity.${identity}`)}
+                                  </span>
+                                  {isCliIdentityProviderId(providerType) &&
+                                  identity === providerType ? (
+                                    <span
+                                      className={cn(
+                                        "shrink-0 whitespace-nowrap rounded bg-primary/10 px-1 py-px",
+                                        "text-tiny font-medium text-primary",
+                                      )}
+                                    >
+                                      {t("settings.cliIdentityRecommended")}
+                                    </span>
+                                  ) : null}
+                                  <span className="ml-auto min-w-0 truncate font-mono text-tiny text-muted-foreground">
+                                    {CLI_IDENTITY_USER_AGENTS[identity].split(" ")[0]}
+                                  </span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1",
+                              headerImportOpen && "border-primary/50 bg-primary/10 text-primary",
+                            )}
+                            aria-expanded={headerImportOpen}
+                            onClick={() => {
+                              setHeaderImportOpen((open) => !open);
+                              setHeaderImportError(null);
+                              setHeaderImportSummary(null);
+                            }}
+                          >
+                            <ClipboardPaste className="size-3.5" />
+                            {t("settings.importCustomHeaders")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1"
+                            /* 导入视图占据了列表位置,此时新增行不可见,禁用避免静默无响应。 */
+                            disabled={headerImportOpen}
+                            onClick={() => addCustomHeader()}
+                          >
+                            <Plus className="size-3.5" />
+                            {t("settings.addCustomHeader")}
+                          </Button>
+                        </div>
+                      </div>
+                      {headerImportOpen ? (
+                        <div className="mt-3 min-w-0 rounded-xl bg-settings-tile p-3">
+                          <Label
+                            htmlFor="provider-custom-header-import"
+                            className="mb-2 block text-xs font-medium"
+                          >
+                            {t("settings.customHeaderImportLabel")}
+                          </Label>
+                          <Textarea
+                            variant="plain"
+                            id="provider-custom-header-import"
+                            value={headerImportText}
+                            className="min-h-120px w-full min-w-0 resize-y font-mono text-xs leading-relaxed"
+                            placeholder={t("settings.customHeaderImportPlaceholder")}
+                            aria-invalid={headerImportErrorMessage ? true : undefined}
+                            aria-describedby={
+                              headerImportErrorMessage
+                                ? "provider-custom-header-import-error"
+                                : undefined
+                            }
+                            spellCheck={false}
+                            autoFocus
+                            onChange={(event) => {
+                              setHeaderImportText(event.currentTarget.value);
+                              setHeaderImportError(null);
+                              setHeaderImportSummary(null);
+                            }}
+                          />
+                          {headerImportErrorMessage ? (
+                            <p
+                              id="provider-custom-header-import-error"
+                              className="mt-2 text-xs text-destructive"
+                              role="alert"
+                            >
+                              {headerImportErrorMessage}
+                            </p>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap justify-end gap-2 max-[720px]:w-full">
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1"
-                            />
-                          }
-                        >
-                          <Fingerprint className="size-3.5" />
-                          {t("settings.cliIdentityHeaders")}
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent variant="soft" align="end" className="w-64">
-                          <DropdownMenuLabel>
-                            {t("settings.cliIdentityHeadersHint")}
-                          </DropdownMenuLabel>
-                          {listCliIdentityProviderIds(providerType).map((identity) => (
-                            <DropdownMenuItem
-                              key={identity}
-                              className="gap-2"
-                              onSelect={() => applyCliIdentityHeaders(identity)}
+                              className="h-8 max-[720px]:h-11 max-[720px]:flex-1"
+                              onClick={cancelCustomHeaderImport}
                             >
-                              <span className="shrink-0 whitespace-nowrap font-medium leading-5">
-                                {t(`settings.cliIdentity.${identity}`)}
-                              </span>
-                              {isCliIdentityProviderId(providerType) &&
-                              identity === providerType ? (
-                                <span
-                                  className={cn(
-                                    "shrink-0 whitespace-nowrap rounded bg-primary/10 px-1 py-px",
-                                    "text-tiny font-medium text-primary",
-                                  )}
-                                >
-                                  {t("settings.cliIdentityRecommended")}
-                                </span>
-                              ) : null}
-                              <span className="ml-auto min-w-0 truncate font-mono text-tiny text-muted-foreground">
-                                {CLI_IDENTITY_USER_AGENTS[identity].split(" ")[0]}
-                              </span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={cn(
-                          "h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1",
-                          headerImportOpen && "border-primary/50 bg-primary/10 text-primary",
-                        )}
-                        aria-expanded={headerImportOpen}
-                        onClick={() => {
-                          setHeaderImportOpen((open) => !open);
-                          setHeaderImportError(null);
-                          setHeaderImportSummary(null);
-                        }}
-                      >
-                        <ClipboardPaste className="size-3.5" />
-                        {t("settings.importCustomHeaders")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0 gap-1.5 max-[720px]:h-11 max-[720px]:flex-1"
-                        /* 导入视图占据了列表位置,此时新增行不可见,禁用避免静默无响应。 */
-                        disabled={headerImportOpen}
-                        onClick={() => addCustomHeader()}
-                      >
-                        <Plus className="size-3.5" />
-                        {t("settings.addCustomHeader")}
-                      </Button>
-                    </div>
-                  </div>
-                  {headerImportOpen ? (
-                    <div className="mt-3 min-w-0 rounded-xl bg-settings-tile p-3">
-                      <Label
-                        htmlFor="provider-custom-header-import"
-                        className="mb-2 block text-xs font-medium"
-                      >
-                        {t("settings.customHeaderImportLabel")}
-                      </Label>
-                      <Textarea
-                        variant="plain"
-                        id="provider-custom-header-import"
-                        value={headerImportText}
-                        className="min-h-120px w-full min-w-0 resize-y font-mono text-xs leading-relaxed"
-                        placeholder={t("settings.customHeaderImportPlaceholder")}
-                        aria-invalid={headerImportErrorMessage ? true : undefined}
-                        aria-describedby={
-                          headerImportErrorMessage
-                            ? "provider-custom-header-import-error"
-                            : undefined
-                        }
-                        spellCheck={false}
-                        autoFocus
-                        onChange={(event) => {
-                          setHeaderImportText(event.currentTarget.value);
-                          setHeaderImportError(null);
-                          setHeaderImportSummary(null);
-                        }}
-                      />
-                      {headerImportErrorMessage ? (
+                              {t("settings.cancelCustomHeaderImport")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 max-[720px]:h-11 max-[720px]:flex-1"
+                              onClick={handleImportCustomHeaders}
+                            >
+                              {t("settings.parseAndImportCustomHeaders")}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {headerImportSummaryMessage ? (
                         <p
-                          id="provider-custom-header-import-error"
-                          className="mt-2 text-xs text-destructive"
-                          role="alert"
+                          className="mt-3 rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
+                          role="status"
+                          aria-live="polite"
                         >
-                          {headerImportErrorMessage}
+                          {headerImportSummaryMessage}
                         </p>
                       ) : null}
-                      <div className="mt-3 flex flex-wrap justify-end gap-2 max-[720px]:w-full">
-                        <Button
+                      {/* 导入视图与请求头列表互斥:解析成功后回到列表,直接看到增量导入的结果。 */}
+                      {headerImportOpen ? null : customHeaders.length === 0 ? (
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 max-[720px]:h-11 max-[720px]:flex-1"
-                          onClick={cancelCustomHeaderImport}
+                          className={cn(
+                            "mt-3 flex w-full flex-col items-center gap-1",
+                            "rounded-xl bg-settings-tile px-4 py-4 text-center transition-colors",
+                            "hover:bg-settings-tile-hover",
+                          )}
+                          onClick={() => addCustomHeader()}
                         >
-                          {t("settings.cancelCustomHeaderImport")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 max-[720px]:h-11 max-[720px]:flex-1"
-                          onClick={handleImportCustomHeaders}
-                        >
-                          {t("settings.parseAndImportCustomHeaders")}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {headerImportSummaryMessage ? (
-                    <p
-                      className="mt-3 rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {headerImportSummaryMessage}
-                    </p>
-                  ) : null}
-                  {/* 导入视图与请求头列表互斥:解析成功后回到列表,直接看到增量导入的结果。 */}
-                  {headerImportOpen ? null : customHeaders.length === 0 ? (
-                    <button
-                      type="button"
-                      className={cn(
-                        "mt-3 flex w-full flex-col items-center gap-1",
-                        "rounded-xl bg-settings-tile px-4 py-4 text-center transition-colors",
-                        "hover:bg-settings-tile-hover",
-                      )}
-                      onClick={() => addCustomHeader()}
-                    >
-                      <List className="size-5 text-muted-foreground/60" />
-                      <span className="mt-1 text-xs font-medium text-muted-foreground">
-                        {t("settings.noCustomHeaders")}
-                      </span>
-                      <span className="text-xs text-muted-foreground/75">
-                        {t("settings.noCustomHeadersHint")}
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="mt-4 space-y-2">
-                      <div className="-m-0.5 max-h-196px space-y-2 overflow-y-auto p-0.5 max-[720px]:max-h-360px">
-                        {customHeaders.map((header, index) => {
-                          const issue = getCustomHeaderIssue(header, headerValidationSubmitted);
-                          const issueTitle = issue ? customHeaderIssueMessage(issue, t) : undefined;
-                          const valueIssue = issue === "invalid-value";
-                          const keyIssue = issue !== null && !valueIssue;
+                          <List className="size-5 text-muted-foreground/60" />
+                          <span className="mt-1 text-xs font-medium text-muted-foreground">
+                            {t("settings.noCustomHeaders")}
+                          </span>
+                          <span className="text-xs text-muted-foreground/75">
+                            {t("settings.noCustomHeadersHint")}
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="mt-4 space-y-2">
+                          <div className="-m-0.5 max-h-196px space-y-2 overflow-y-auto p-0.5 max-[720px]:max-h-360px">
+                            {customHeaders.map((header, index) => {
+                              const issue = getCustomHeaderIssue(header, headerValidationSubmitted);
+                              const issueTitle = issue
+                                ? customHeaderIssueMessage(issue, t)
+                                : undefined;
+                              const valueIssue = issue === "invalid-value";
+                              const keyIssue = issue !== null && !valueIssue;
 
-                          return (
-                            <div
-                              // biome-ignore lint/suspicious/noArrayIndexKey: Header rows are an ordered, controlled editor whose mutation API is intentionally index-based; content-derived keys would remount inputs on every keystroke.
-                              key={index}
-                              className={cn(
-                                "group relative flex items-stretch overflow-hidden",
-                                "rounded-lg bg-settings-tile p-1 transition-colors",
-                                "focus-within:border-primary/45 focus-within:ring-2 focus-within:ring-primary/10 hover:border-muted-foreground/30 max-[720px]:flex-wrap",
-                                issue &&
-                                  "border-destructive/60 focus-within:border-destructive focus-within:ring-destructive/10",
-                              )}
-                            >
-                              <ProviderHeaderNameInput
-                                suggestions={headerKeyPresets.filter(
-                                  (preset) =>
-                                    !customHeaders.some(
-                                      (other, otherIndex) =>
-                                        otherIndex !== index &&
-                                        other.key.trim().toLowerCase() === preset.toLowerCase(),
-                                    ),
-                                )}
-                                onValueChange={(value) => updateCustomHeader(index, "key", value)}
-                                onComplete={() => focusCustomHeader(index, "value")}
-                                variant="plain"
-                                ref={(element) => {
-                                  headerKeyRefs.current[index] = element;
-                                }}
-                                value={header.key}
-                                className={cn(
-                                  "h-8 w-210px shrink-0",
-                                  "rounded-none border-0 border-r bg-muted/30 px-3",
-                                  "font-mono text-xs shadow-none",
-                                  "focus-visible:ring-0 max-[720px]:w-full max-[720px]:border-b max-[720px]:border-r-0 max-[720px]:bg-muted/40",
-                                  keyIssue && "text-destructive",
-                                )}
-                                placeholder={t("settings.customHeaderKeyPlaceholder")}
-                                aria-label={t("settings.customHeaderName")}
-                                aria-invalid={keyIssue ? true : undefined}
-                                title={issueTitle}
-                                autoComplete="off"
-                                spellCheck={false}
-                              />
-                              <div className="relative min-w-0 flex-1 max-[720px]:basis-full">
-                                <Input
-                                  variant="plain"
-                                  ref={(element) => {
-                                    headerValueRefs.current[index] = element;
-                                  }}
-                                  type="text"
-                                  value={header.value}
-                                  className={cn(
-                                    "h-8 w-full rounded-none border-0 bg-transparent pl-3 pr-11",
-                                    "font-mono text-xs shadow-none focus-visible:ring-0",
-                                    valueIssue && "text-destructive",
-                                  )}
-                                  placeholder={t("settings.customHeaderValue")}
-                                  aria-label={t("settings.customHeaderValue")}
-                                  aria-invalid={valueIssue ? true : undefined}
-                                  title={valueIssue ? issueTitle : undefined}
-                                  autoComplete="off"
-                                  spellCheck={false}
-                                  onChange={(event) =>
-                                    updateCustomHeader(index, "value", event.currentTarget.value)
-                                  }
-                                  onKeyDown={(event) => {
-                                    if (event.key !== "Enter") return;
-                                    event.preventDefault();
-                                    if (index === customHeaders.length - 1) addCustomHeader();
-                                    else focusCustomHeader(index + 1, "key");
-                                  }}
-                                />
+                              return (
                                 <div
+                                  // biome-ignore lint/suspicious/noArrayIndexKey: Header rows are an ordered, controlled editor whose mutation API is intentionally index-based; content-derived keys would remount inputs on every keystroke.
+                                  key={index}
                                   className={cn(
-                                    "settings-hover-actions absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5",
-                                    "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 max-[720px]:opacity-100",
+                                    "group relative flex items-stretch overflow-hidden",
+                                    "rounded-lg bg-settings-tile p-1 transition-colors",
+                                    "focus-within:border-primary/45 focus-within:ring-2 focus-within:ring-primary/10 hover:border-muted-foreground/30 max-[720px]:flex-wrap",
+                                    issue &&
+                                      "border-destructive/60 focus-within:border-destructive focus-within:ring-destructive/10",
                                   )}
                                 >
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                    onClick={() => removeCustomHeader(index)}
-                                    title={t("settings.removeCustomHeader")}
-                                    aria-label={t("settings.removeCustomHeader")}
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </Button>
+                                  <ProviderHeaderNameInput
+                                    suggestions={headerKeyPresets.filter(
+                                      (preset) =>
+                                        !customHeaders.some(
+                                          (other, otherIndex) =>
+                                            otherIndex !== index &&
+                                            other.key.trim().toLowerCase() === preset.toLowerCase(),
+                                        ),
+                                    )}
+                                    onValueChange={(value) =>
+                                      updateCustomHeader(index, "key", value)
+                                    }
+                                    onComplete={() => focusCustomHeader(index, "value")}
+                                    variant="plain"
+                                    ref={(element) => {
+                                      headerKeyRefs.current[index] = element;
+                                    }}
+                                    value={header.key}
+                                    className={cn(
+                                      "h-8 w-210px shrink-0",
+                                      "rounded-none border-0 border-r bg-muted/30 px-3",
+                                      "font-mono text-xs shadow-none",
+                                      "focus-visible:ring-0 max-[720px]:w-full max-[720px]:border-b max-[720px]:border-r-0 max-[720px]:bg-muted/40",
+                                      keyIssue && "text-destructive",
+                                    )}
+                                    placeholder={t("settings.customHeaderKeyPlaceholder")}
+                                    aria-label={t("settings.customHeaderName")}
+                                    aria-invalid={keyIssue ? true : undefined}
+                                    title={issueTitle}
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                  />
+                                  <div className="relative min-w-0 flex-1 max-[720px]:basis-full">
+                                    <Input
+                                      variant="plain"
+                                      ref={(element) => {
+                                        headerValueRefs.current[index] = element;
+                                      }}
+                                      type="text"
+                                      value={header.value}
+                                      className={cn(
+                                        "h-8 w-full rounded-none border-0 bg-transparent pl-3 pr-11",
+                                        "font-mono text-xs shadow-none focus-visible:ring-0",
+                                        valueIssue && "text-destructive",
+                                      )}
+                                      placeholder={t("settings.customHeaderValue")}
+                                      aria-label={t("settings.customHeaderValue")}
+                                      aria-invalid={valueIssue ? true : undefined}
+                                      title={valueIssue ? issueTitle : undefined}
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      onChange={(event) =>
+                                        updateCustomHeader(
+                                          index,
+                                          "value",
+                                          event.currentTarget.value,
+                                        )
+                                      }
+                                      onKeyDown={(event) => {
+                                        if (event.key !== "Enter") return;
+                                        event.preventDefault();
+                                        if (index === customHeaders.length - 1) addCustomHeader();
+                                        else focusCustomHeader(index + 1, "key");
+                                      }}
+                                    />
+                                    <div
+                                      className={cn(
+                                        "settings-hover-actions absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5",
+                                        "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 max-[720px]:opacity-100",
+                                      )}
+                                    >
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                        onClick={() => removeCustomHeader(index)}
+                                        title={t("settings.removeCustomHeader")}
+                                        aria-label={t("settings.removeCustomHeader")}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {headerIssueMessage && !headerImportOpen ? (
+                        <p className="mt-2 text-xs leading-relaxed text-destructive" role="alert">
+                          {headerIssueMessage}
+                        </p>
+                      ) : null}
+                    </>
                   )}
-                  {headerIssueMessage && !headerImportOpen ? (
-                    <p className="mt-2 text-xs leading-relaxed text-destructive" role="alert">
-                      {headerIssueMessage}
-                    </p>
-                  ) : null}
                 </section>
               ) : activePanel === "usage" ? (
                 <section key="usage">

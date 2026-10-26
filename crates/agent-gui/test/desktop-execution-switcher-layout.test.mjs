@@ -7,9 +7,9 @@ const switcherSource = readFileSync(
   "utf8",
 );
 
-test("desktop execution menu opens below the trigger and stays inside the right viewport edge", () => {
-  assert.match(switcherSource, /absolute right-0 top-full/);
-  assert.doesNotMatch(switcherSource, /absolute left-0/);
+test("desktop execution menu opens below the trigger with compact left alignment", () => {
+  assert.match(switcherSource, /absolute left-0 top-full/);
+  assert.doesNotMatch(switcherSource, /absolute right-0/);
   assert.match(switcherSource, /max-w-\[calc\(100vw-1rem\)\]/);
 });
 

@@ -248,6 +248,7 @@ export function applyRelayProviderModelSettings(
     | "promptCacheHintMode"
     | "promptCachingEnabled"
     | "promptCacheRetention"
+    | "retryPolicy"
   >,
 ): AppSettings {
   const provider = settings.customProviders.find((item) => item.id === providerId);
@@ -269,6 +270,7 @@ export function applyRelayProviderModelSettings(
             activeModels: draft.activeModels.filter((id) => ids.has(id)),
             modelOrder: draft.modelOrder?.filter((id) => ids.has(id)),
             requestFormat: item.type === "codex" ? draft.requestFormat : item.requestFormat,
+            retryPolicy: draft.retryPolicy,
             promptCachingEnabled: draft.promptCachingEnabled,
             promptCacheHintMode: item.type === "codex" ? draft.promptCacheHintMode : undefined,
             promptCacheRetention:

@@ -61,11 +61,13 @@ for (const surface of ["desktop", "web"]) {
     assert.equal(refreshed.isFullUrl, false); assert.equal(refreshed.modelsUrl, undefined); assert.equal(refreshed.customHeaders.length, 0); assert.equal(refreshed.useSystemProxy, false);
     assert.equal(refreshed.baseUrl, surface === "desktop" ? binding.baseUrl : "https://usa0.top");
     const settings = { ...settingsModule.getDefaultSettings(), customProviders: [refreshed], selectedModel: { customProviderId: refreshed.id, model: "manual-alias" } };
-    const edited = mod.applyRelayProviderModelSettings(settings, refreshed.id, { ...refreshed, promptCacheHintMode: "none", promptCachingEnabled: false, models: refreshed.models, activeModels: [], baseUrl: "https://attacker.invalid", apiKey: "attacker", customHeaders: [{key:"X-Injected",value:"1"}] });
+    const edited = mod.applyRelayProviderModelSettings(settings, refreshed.id, { ...refreshed, promptCacheHintMode: "none", promptCachingEnabled: false, retryPolicy: { mode: "custom", maxRetries: 4 }, models: refreshed.models, activeModels: [], baseUrl: "https://attacker.invalid", apiKey: "attacker", customHeaders: [{key:"X-Injected",value:"1"}] });
     assert.equal(edited.customProviders[0].promptCacheHintMode, "none"); assert.equal(edited.customProviders[0].promptCachingEnabled, false); assert.ok(edited.customProviders[0].models.every(model => model.promptCacheHintMode === undefined));
+    assert.deepEqual(edited.customProviders[0].retryPolicy, { mode: "custom", maxRetries: 4 });
     assert.equal(edited.selectedModel, undefined); assert.equal(edited.customProviders[0].baseUrl, refreshed.baseUrl); assert.equal(edited.customProviders[0].apiKey, refreshed.apiKey); assert.equal(edited.customProviders[0].customHeaders.length, 0);
     assert.throws(() => mod.applyRelayProviderModelSettings(settings, "external", refreshed));
     const [again] = await mod.buildRelayProviders(edited.customProviders, [key], [group], true);
+    assert.deepEqual(again.retryPolicy, { mode: "custom", maxRetries: 4 });
     assert.equal(again.activeModels.length, 0, "all-disabled stays disabled after catalog refresh");
   });
 }
