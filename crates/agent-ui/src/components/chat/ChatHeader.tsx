@@ -51,7 +51,8 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
         className={cn(
           "flex min-w-0 shrink-0 items-center gap-1.5 transition-[min-width] duration-200 ease-out motion-reduce:transition-none",
           sidebarOpen && !desktopTitleBarInset && "hidden",
-          sidebarOpen && desktopTitleBarInset &&
+          sidebarOpen &&
+            desktopTitleBarInset &&
             "desktop:min-[768px]:min-w-[calc(var(--sidebar-width)-1rem)]",
         )}
       >

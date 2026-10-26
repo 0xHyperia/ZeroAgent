@@ -40,7 +40,7 @@ test("desktop and CI jobs prepare the reviewed fixed-source adaptation", async (
   for (const job of ["macos", "windows", "linux"]) {
     const section = workflow.split(`\n  ${job}:`)[1]?.split(/\n  [\w-]+:/)[0];
     assert.ok(section, `${job} packaging job must exist`);
-    assert.match(section, /uses: actions\/checkout@v6\s+with:\s+ref: \$\{\{ needs\.release-metadata\.outputs\.release_tag \}\}/);
+    assert.match(section, /uses: actions\/checkout@v6\s+with:\s+ref: \$\{\{ needs\.release-metadata\.outputs\.source_sha \}\}/);
     assert.match(section, /prepare:kbrain:release/);
     assert.match(section, /run: pnpm build:kbrain:source/);
     assert.ok(section.indexOf("build:kbrain:source") < section.indexOf("prepare:kbrain:release"));

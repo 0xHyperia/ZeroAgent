@@ -120,6 +120,13 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.memoryTitle": "Memory",
   "settings.memoryBrowseDescription":
     "Manage information kept across conversations, project knowledge, and journals.",
+  "settings.memorySwitchTitle": "Enable memory",
+  "settings.memorySwitchOnDescription":
+    "Conversations read saved memories, and new memories are extracted in the background.",
+  "settings.memorySwitchOffDescription":
+    "Off: conversations neither read nor extract memories, and the agent cannot write them. Saved memories stay and can still be viewed and edited here.",
+  "settings.memorySwitchSaveFailed":
+    "Could not save the memory switch; restored the backend's current state.",
   "settings.memoryHealthy": "Healthy",
   "settings.memoryQuotaGlobal": "Global",
   "settings.memoryQuotaProject": "Project",
@@ -860,6 +867,13 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.estimatedLimitsBadge": "Estimated",
   "settings.contextWindow": "Context Window",
   "settings.maxOutputToken": "Max Output Token",
+  "settings.modelImage": "Image generation",
+  "settings.modelImageAuto": "Auto-detect (recommended)",
+  "settings.modelImageOn": "Yes",
+  "settings.modelImageOff": "No",
+  "settings.modelImageHint":
+    'Enabled models set to Yes appear in Image Studio. Auto-detect uses the model name: names containing "image" or on the known image model list count.',
+  "settings.modelImageBadge": "Image",
   "settings.modelInputModalities": "Input capabilities",
   "settings.modelInputModalitiesAuto": "Auto-detect (recommended)",
   "settings.modelInputModalitiesText": "Text only",

@@ -65,6 +65,9 @@ impl ProfileBackupBackend {
         snapshot["agents"] = documents.prompts["globalTemplates"].clone();
         snapshot["aiApproval"] = documents.settings["aiApproval"].clone();
         snapshot["computer"] = documents.settings["computer"].clone();
+        if let Some(enabled) = documents.settings["memory"]["enabled"].as_bool() {
+            snapshot["kbrainMemory"] = json!({ "enabled": enabled });
+        }
         if let Some(projects) = documents.prompts["projectPrompts"].as_object() {
             let system = snapshot["system"].as_object_mut().ok_or("系统设置无效")?;
             let resources = system
@@ -219,6 +222,7 @@ impl ProfileBackupBackend {
                 "locale",
                 "aiApproval",
                 "computer",
+                "kbrainMemory",
                 "remote",
                 "automationCron",
                 "automationHooks",
@@ -438,6 +442,12 @@ fn device_backend_settings(
     previous: &Value,
 ) -> Result<Option<Value>, String> {
     let mut settings = Map::new();
+    if let Some(memory) = input.get("kbrainMemory") {
+        let enabled = memory["enabled"]
+            .as_bool()
+            .ok_or("kbrainMemory must be an object with boolean enabled")?;
+        settings.insert("memory".into(), json!({ "enabled": enabled }));
+    }
     for field in ["aiApproval", "computer"] {
         if let Some(value) = input.get(field) {
             settings.insert(field.into(), value.clone());

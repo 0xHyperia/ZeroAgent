@@ -23,6 +23,9 @@ export type AIApprovalConfig = {
   model?: string;
 };
 
+/** K-brain memory master switch; absent on backends without `capabilities.memory_switch`. */
+export type KBrainMemoryConfig = { enabled: boolean };
+
 export type KBrainSettingsDocument = {
   configurationVersion?: string;
   settingsSyncProtocol?: "zeroagent.settings-sync.v1";
@@ -30,6 +33,7 @@ export type KBrainSettingsDocument = {
   uiPreferencesRevision?: string;
   aiApproval?: AIApprovalConfig;
   computer?: KBrainComputerConfig;
+  memory?: KBrainMemoryConfig;
   mode: "kbrain";
   defaultModel: string;
   defaultProvider: string;
@@ -73,6 +77,8 @@ export type KBrainSettingsAdapter = {
     baseline?: KBrainSettingsDocument,
   ) => Promise<KBrainSettingsDocument>;
   getComputerStatus?: () => Promise<KBrainComputerStatus>;
+  /** `/v1/health` capabilities; hosts that cannot reach it rely on the settings document. */
+  getCapabilities?: () => Promise<Record<string, unknown>>;
 };
 
 export type SettingsHostAdapter = {

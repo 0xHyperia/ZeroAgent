@@ -27,6 +27,26 @@ func TestComputerSettingsPassThroughBackend(t *testing.T) {
 	}
 }
 
+func TestMemorySwitchTravelsAsKBrainMemory(t *testing.T) {
+	projected, err := settingsProjectionForGateway(json.RawMessage(`{"providers":[],"models":[],"memory":{"enabled":false}}`))
+	if err != nil || !strings.Contains(string(projected), `"kbrainMemory":{"enabled":false}`) || strings.Contains(string(projected), `"memory"`) {
+		t.Fatalf("projection must expose the switch only as kbrainMemory: %s %v", projected, err)
+	}
+	legacy, err := settingsProjectionForGateway(json.RawMessage(`{"providers":[],"models":[]}`))
+	if err != nil || strings.Contains(string(legacy), "kbrainMemory") {
+		t.Fatalf("a backend without the switch must not project one: %s %v", legacy, err)
+	}
+	update, err := settingsUpdateForKBrain(json.RawMessage(`{"kbrainMemory":{"enabled":false}}`))
+	if err != nil || string(update) != `{"memory":{"enabled":false}}` {
+		t.Fatalf("update: %s %v", update, err)
+	}
+	for _, bad := range []string{`{"kbrainMemory":null}`, `{"kbrainMemory":{}}`, `{"kbrainMemory":{"enabled":"no"}}`, `{"memory":{"enabled":false}}`} {
+		if _, err := settingsUpdateForKBrain(json.RawMessage(bad)); err == nil {
+			t.Fatalf("accepted %s", bad)
+		}
+	}
+}
+
 func TestSettingsProjectionOnlyProjectsKBrainOwnedFields(t *testing.T) {
 	raw := json.RawMessage(`{"defaultProvider":"p","defaultModel":"m","providers":[{"id":"p","name":"Provider","api":"openai-completions","baseUrl":"https://example.test/v1","apiKeyConfigured":true,"models":[{"id":"m","contextWindow":4096,"maxOutputTokens":512,"inputModalities":["text","image"]}]}]}`)
 	projected, err := settingsProjectionForGateway(raw)
@@ -380,5 +400,69 @@ func TestAIApprovalSettingsPassThrough(t *testing.T) {
 	}
 	if _, err := settingsUpdateForKBrain(json.RawMessage(`{"aiApproval":null}`)); err == nil {
 		t.Fatal("accepted null")
+	}
+}
+
+func TestImageToggleTravelsBetweenWebUIAndKBrain(t *testing.T) {
+	raw := json.RawMessage(`{"providers":[{"id":"p","api":"openai-responses","baseUrl":"https://example.test/v1","models":[{"id":"on","imageAdapter":"enabled","imageModel":true},{"id":"auto","imageModel":false},{"id":"old"}]}]}`)
+	projected, err := settingsProjectionForGateway(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(projected, &got); err != nil {
+		t.Fatal(err)
+	}
+	models := got["customProviders"].([]any)[0].(map[string]any)["models"].([]any)
+	on, auto, old := models[0].(map[string]any), models[1].(map[string]any), models[2].(map[string]any)
+	if on["imageAdapter"] != "enabled" || on["imageModel"] != true || auto["imageModel"] != false {
+		t.Fatalf("projection lost image toggle: %v", models)
+	}
+	if _, ok := old["imageModel"]; ok {
+		t.Fatal("projection invented imageModel for an older K-brain")
+	}
+
+	input := json.RawMessage(`{"customProviders":[{"id":"p","name":"P","type":"codex","baseUrl":"https://example.test","apiKey":"","apiKeyConfigured":true,"models":[{"id":"on","imageAdapter":"disabled","imageModel":true},{"id":"auto","imageModel":true},{"id":"old"}]}]}`)
+	translated, err := settingsUpdateForKBrain(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(translated, &got); err != nil {
+		t.Fatal(err)
+	}
+	models = got["providers"].([]any)[0].(map[string]any)["models"].([]any)
+	on, auto, old = models[0].(map[string]any), models[1].(map[string]any), models[2].(map[string]any)
+	if on["imageAdapter"] != "disabled" {
+		t.Fatalf("explicit choice not forwarded: %v", on)
+	}
+	// "Auto" must reach K-brain as an explicit clear; omitting it keeps the old choice.
+	if value, ok := auto["imageAdapter"]; !ok || value != "" {
+		t.Fatalf("auto not cleared: %v", auto)
+	}
+	if _, ok := old["imageAdapter"]; ok {
+		t.Fatal("older K-brain received an image toggle it does not know")
+	}
+	for _, model := range models {
+		if _, ok := model.(map[string]any)["imageModel"]; ok {
+			t.Fatal("read-only imageModel forwarded to K-brain")
+		}
+	}
+}
+
+func TestImageToggleIgnoresNullImageModel(t *testing.T) {
+	// Only a K-brain that returns imageModel may receive the explicit clear; a
+	// null from a malformed client must not turn into imageAdapter:"".
+	input := json.RawMessage(`{"customProviders":[{"id":"p","name":"P","type":"codex","baseUrl":"https://example.test","apiKey":"","apiKeyConfigured":true,"models":[{"id":"m","imageModel":null}]}]}`)
+	translated, err := settingsUpdateForKBrain(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(translated, &got); err != nil {
+		t.Fatal(err)
+	}
+	model := got["providers"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+	if _, ok := model["imageAdapter"]; ok {
+		t.Fatalf("null imageModel produced an image toggle write: %v", model)
 	}
 }

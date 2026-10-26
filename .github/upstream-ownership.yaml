@@ -2,6 +2,15 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "使用实际展示文档的版本保存，旧读拒写",
+        "未知结果重读、跨实例状态和断连时保持已确认值"
+      ]
+    },
+    {
       "glob": "deploy/production/.env.example",
       "ownership": "zeroagent_owned",
       "risk": "high",

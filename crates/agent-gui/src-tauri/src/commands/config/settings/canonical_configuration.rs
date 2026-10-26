@@ -590,7 +590,8 @@ impl ProfileBackupBackend {
                 .collect::<Vec<_>>();
             self.request(reqwest::Method::PUT,"/v1/settings",Some(&json!({"providers":providers,"deleteProviders":deleted,
                 "defaultProvider":before.documents.settings["defaultProvider"],"defaultModel":before.documents.settings["defaultModel"],
-                "aiApproval":before.documents.settings.get("aiApproval"),"computer":before.documents.settings.get("computer")})))?;
+                "aiApproval":before.documents.settings.get("aiApproval"),"computer":before.documents.settings.get("computer"),
+                "memory":before.documents.settings.get("memory")})))?;
         }
         Ok(())
     }

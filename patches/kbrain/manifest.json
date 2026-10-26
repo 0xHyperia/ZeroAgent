@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "af5ebe7f28dbdbb7a753e25e968a3c19f2b6e497",
+  "sourceRevision": "60e614f07c600b7aa5c0acbb9631d708e33dbb8b",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1"

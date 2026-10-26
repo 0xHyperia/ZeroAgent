@@ -10,8 +10,11 @@ import (
 
 // Project backend-owned settings only; MCP is fetched from its resource route.
 type gatewaySettingsProjection struct {
-	AIApproval      json.RawMessage `json:"aiApproval,omitempty"`
-	Computer        json.RawMessage `json:"computer,omitempty"`
+	AIApproval json.RawMessage `json:"aiApproval,omitempty"`
+	Computer   json.RawMessage `json:"computer,omitempty"`
+	// KBrainMemory is K-brain's memory master switch; WebUI's `memory` key is
+	// LiveAgent's organizer settings, so the switch travels under its own name.
+	KBrainMemory    json.RawMessage `json:"kbrainMemory,omitempty"`
 	CustomProviders []any           `json:"customProviders"`
 	SelectedModel   map[string]any  `json:"selectedModel"`
 }
@@ -19,6 +22,7 @@ type gatewaySettingsProjection struct {
 type kbrainSettingsDocument struct {
 	AIApproval      json.RawMessage  `json:"aiApproval,omitempty"`
 	Computer        json.RawMessage  `json:"computer,omitempty"`
+	Memory          json.RawMessage  `json:"memory,omitempty"`
 	DefaultModel    string           `json:"defaultModel"`
 	DefaultProvider string           `json:"defaultProvider"`
 	Providers       []kbrainProvider `json:"providers"`
@@ -62,6 +66,9 @@ type kbrainModel struct {
 	MaxOutputToken  int      `json:"maxOutputToken,omitempty"`
 	InputModalities []string `json:"inputModalities,omitempty"`
 	Vision          bool     `json:"vision,omitempty"`
+	ImageAdapter    string   `json:"imageAdapter,omitempty"`
+	// ImageModel is K-brain's read-only effective image toggle; absent on older K-brain.
+	ImageModel *bool `json:"imageModel,omitempty"`
 }
 
 func providerType(provider kbrainProvider) string {
@@ -107,6 +114,12 @@ func providerModel(provider kbrainProvider, model kbrainModel) map[string]any {
 		out["inputModalities"] = model.InputModalities
 	} else if model.Vision {
 		out["inputModalities"] = []string{"text", "image"}
+	}
+	if model.ImageAdapter != "" {
+		out["imageAdapter"] = model.ImageAdapter
+	}
+	if model.ImageModel != nil {
+		out["imageModel"] = *model.ImageModel
 	}
 	return out
 }
@@ -193,7 +206,7 @@ func settingsProjectionForGateway(raw json.RawMessage) (json.RawMessage, error) 
 			"providerType":     providerTypeByID[document.DefaultProvider],
 		}
 	}
-	return json.Marshal(gatewaySettingsProjection{CustomProviders: providers, SelectedModel: selected, Computer: document.Computer, AIApproval: document.AIApproval})
+	return json.Marshal(gatewaySettingsProjection{CustomProviders: providers, SelectedModel: selected, Computer: document.Computer, AIApproval: document.AIApproval, KBrainMemory: document.Memory})
 }
 
 func decodeSettingsDocument(raw json.RawMessage) (kbrainSettingsDocument, error) {
@@ -219,7 +232,7 @@ func settingsUpdateForKBrain(raw json.RawMessage, previous ...json.RawMessage) (
 	}
 	for key := range input {
 		switch key {
-		case "selectedModel", "customProviders", "deleteProviders", "providerApiKeyUpdates", "providerUsageQuerySecretUpdates", "computer", "aiApproval", "mcp", "skills", "agents", "projectPrompts":
+		case "selectedModel", "customProviders", "deleteProviders", "providerApiKeyUpdates", "providerUsageQuerySecretUpdates", "computer", "aiApproval", "mcp", "skills", "agents", "projectPrompts", "kbrainMemory":
 		default:
 			return nil, fmt.Errorf("unsupported Gateway settings field %q: non-provider settings persistence is unavailable", key)
 		}
@@ -251,6 +264,15 @@ func settingsUpdateForKBrain(raw json.RawMessage, previous ...json.RawMessage) (
 			return nil, errors.New("computer must be an object")
 		}
 		update["computer"] = computer
+	}
+	if memory, ok := input["kbrainMemory"]; ok {
+		var object struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := json.Unmarshal(memory, &object); err != nil || object.Enabled == nil {
+			return nil, errors.New("kbrainMemory must be an object with boolean enabled")
+		}
+		update["memory"] = map[string]bool{"enabled": *object.Enabled}
 	}
 	if selectedRaw, ok := input["selectedModel"]; ok {
 		var selected map[string]json.RawMessage
@@ -530,6 +552,7 @@ func kbrainProviderUpdate(provider map[string]json.RawMessage) (map[string]any, 
 			"id": true, "name": true, "displayName": true, "ownedBy": true,
 			"limitsSource": true, "contextWindow": true, "maxOutputTokens": true,
 			"maxOutputToken": true, "inputModalities": true, "vision": true,
+			"imageAdapter": true,
 		}
 		for _, item := range models {
 			model, ok := item.(map[string]any)
@@ -545,6 +568,13 @@ func kbrainProviderUpdate(provider map[string]json.RawMessage) (map[string]any, 
 			for key, value := range model {
 				if modelFields[key] {
 					clean[key] = value
+				}
+			}
+			// "Auto" omits imageAdapter, but K-brain keeps an omitted field, so clear
+			// it explicitly. imageModel marks a K-brain that understands the toggle.
+			if _, known := model["imageModel"].(bool); known {
+				if _, set := clean["imageAdapter"]; !set {
+					clean["imageAdapter"] = ""
 				}
 			}
 			// WebUI edits the singular field; do not let an old alias override it.

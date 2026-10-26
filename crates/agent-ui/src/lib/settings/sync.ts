@@ -55,6 +55,8 @@ export type GatewaySettingsSyncPayload = {
   uiPreferencesRevision?: string;
   aiApproval?: import("@liveagent/ui/pages/settings/kbrainSettingsAdapter").AIApprovalConfig;
   computer?: import("@liveagent/ui/pages/settings/kbrainSettingsAdapter").KBrainComputerConfig;
+  /** K-brain memory master switch, distinct from ZeroAgent's `memory` organizer settings. */
+  kbrainMemory?: import("@liveagent/ui/pages/settings/kbrainSettingsAdapter").KBrainMemoryConfig;
   system: AppSettings["system"];
   customProviders: GatewaySettingsSyncProvider[];
   mcp: AppSettings["mcp"];

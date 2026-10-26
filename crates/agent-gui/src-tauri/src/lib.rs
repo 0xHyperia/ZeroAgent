@@ -91,6 +91,7 @@ macro_rules! app_invoke_handler {
             commands::chat_history::chat_history_share_set,
             commands::chat_history::chat_history_delete,
             commands::chat_history::legacy_history_migration_page,
+            commands::chat_history::legacy_history_migration_signature,
             commands::planning::planning_migrate_legacy,
             // Trajectory (events ride the owning history segment)
             commands::chat_history::trajectory_append_events,
@@ -1039,7 +1040,6 @@ pub(crate) fn start_native_profile_services(app: &tauri::AppHandle) -> Result<()
     let gateway_controller = Arc::new(services::gateway::GatewayController::new(
         app.clone(),
         Arc::clone(&automation_store),
-        Arc::clone(&memory_store),
         Arc::clone(
             app.state::<Arc<services::provider_usage::ProviderUsageService>>()
                 .inner(),

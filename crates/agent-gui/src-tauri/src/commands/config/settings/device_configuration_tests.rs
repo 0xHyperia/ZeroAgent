@@ -287,3 +287,51 @@ fn device_configuration_projects_preserve_source_alias_and_canonical_fallback() 
     );
     manager.shutdown();
 }
+#[test]
+fn device_memory_switch_uses_the_canonical_revision_and_preserves_native_memory() {
+    let root = tempfile::tempdir().unwrap();
+    let manager = start(&root.path().join("backend"));
+    let backend = snapshot_backend(&manager, &root.path().join("settings"));
+    let _guard = backend.configuration.blocking_lock();
+    let mut conn = native_db();
+    let native_memory = load_memory(&conn).unwrap();
+    let before = backend.device_snapshot_locked(&mut conn).unwrap();
+    assert_eq!(before["kbrainMemory"]["enabled"], true);
+    let update = |snapshot: &Value, enabled: Value| json!({
+        "settingsSyncProtocol": DEVICE_SETTINGS_PROTOCOL,
+        "configurationRevision": snapshot["configurationRevision"],
+        "uiPreferencesRevision": snapshot["uiPreferencesRevision"],
+        "kbrainMemory": {"enabled": enabled}
+    });
+    let saved = backend
+        .save_device_locked(&mut conn, update(&before, json!(false)))
+        .unwrap()
+        .snapshot
+        .unwrap();
+    assert_eq!(saved["kbrainMemory"]["enabled"], false);
+    assert_eq!(load_memory(&conn).unwrap(), native_memory);
+    assert!(backend
+        .save_device_locked(&mut conn, update(&before, json!(true)))
+        .err()
+        .unwrap()
+        .contains("ZEROAGENT_CONFIGURATION_CHANGED"));
+    assert!(backend
+        .save_device_locked(&mut conn, update(&saved, json!("yes")))
+        .is_err());
+    conn.execute_batch("CREATE TRIGGER fail_memory_ui BEFORE INSERT ON native_ui_preferences BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+    let mut failed_update = update(&saved, json!(true));
+    failed_update["theme"] = json!("dark");
+    assert!(backend.save_device_locked(&mut conn, failed_update).is_err());
+    assert_eq!(
+        backend.device_snapshot_locked(&mut conn).unwrap()["kbrainMemory"]["enabled"],
+        false
+    );
+    manager.shutdown();
+    let restarted = start(&root.path().join("backend"));
+    let restored = snapshot_backend(&restarted, &root.path().join("settings"));
+    assert_eq!(
+        restored.device_snapshot_locked(&mut conn).unwrap()["kbrainMemory"]["enabled"],
+        false
+    );
+    restarted.shutdown();
+}

@@ -146,7 +146,9 @@
         "crates/agent-gui/test/settings/managed-provider-connections.test.mjs",
         "crates/agent-gui/test/settings/model-picker.test.mjs",
         "crates/agent-gui/test/chat/composer-model-pages.test.mjs",
-        "crates/agent-gui/test/chat/composer-model-group-indent.test.mjs"
+        "crates/agent-gui/test/chat/composer-model-group-indent.test.mjs",
+        "crates/agent-gui/test/settings/image-model-toggle.test.mjs",
+        "crates/agent-gui/test/image-studio/image-target-toggle.test.mjs"
       ],
       "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。 ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。 运行时凭据未就绪不得清空模型启用/选择偏好。缓存仅开放固定后端可持久化的供应商级配置，模型请求投影不发送不受支持的单模型缓存字段；实际af5保存/停启回读已验证。",
       "upstream_relation": "adapt"
@@ -389,6 +391,32 @@
       ],
       "security": "生产环境只能部署审核通过且不可变的镜像 digest。",
       "upstream_relation": "replace"
+    },
+    {
+      "id": "kbrain-memory-control",
+      "name": "K-brain 记忆总开关与远程记忆",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "android",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
+        "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+        "crates/agent-gateway/internal/kbrain/settings.go"
+      ],
+      "tests": [
+        "crates/agent-gui/test/settings/review2-memory-switch-verified.test.mjs",
+        "crates/agent-gui/test/settings/review4-memory-switch-desktop-gateway.test.mjs",
+        "crates/agent-gateway/web/test/memory-master-switch-settings.test.mjs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs"
+      ],
+      "security": "后端记忆和Native整理配置独立；从同一规范文档读取，按展示版本CAS保存并补偿。远程记忆走profile facade，响应绑定原请求流，失效取消和脱敏保持。",
+      "upstream_relation": "adapt"
     }
   ]
 }

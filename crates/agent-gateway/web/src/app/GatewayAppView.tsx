@@ -1627,6 +1627,7 @@ export function GatewayAppView({
                       settings={settings}
                       setSettings={setSettings}
                       resourceHost={kbrainResourceHostCapabilities}
+                      kbrainSettings={settingsHostAdapter.kbrain}
                       isAgentMode={isAgentMode}
                       initialSkills={availableSkills}
                       initialSkillsRootDir={skillsRootDir}

@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "previous_tag": "v2.0.0-beta.21",
+  "previous_commit": "0f82fc04db46fa5ea2712a6c560471d79861a189",
+  "tag": "v2.0.0-beta.23",
+  "commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
+  "product_base": "0b2d0e24af9489012de5cc936aa54998a59cd195",
+  "merge_base": "0f82fc04db46fa5ea2712a6c560471d79861a189",
+  "files": [
+    {
+      "path": "crates/agent-gateway/internal/kbrain/review4_memory_switch_test.go",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings.go",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings_contract_test.go",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "decision": "adapt",
+      "reason": "记忆开关字段映射，保留实际读取版本与平台账号/供应商入口。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/memory-master-switch-settings.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/app.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/mod.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/window_placement.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
+      "decision": "adapt",
+      "reason": "采用签名和 checkpoint 指纹，保持固定旧 ZeroAgent 只读来源。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "decision": "adapt",
+      "reason": "注册签名命令及窗口定位；服务仍在已验证 profile 后初始化，不恢复重复启动链。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "decision": "adapt",
+      "reason": "保留规范配置提交和原流回复；记忆异步响应不迁入新账号流。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_memory.rs",
+      "decision": "partial",
+      "reason": "保留上游纯逻辑及测试辅助；生产更新不接其直接 HTTP 写入路径。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "decision": "adapt",
+      "reason": "继续从同一规范快照读取和版本化保存，记忆映射位于 device_configuration。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/tests.rs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "decision": "adapt",
+      "reason": "记忆采用 Go 资源，通过公开 profile facade，保留 Skills 版本及托管发现边界。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.conf.json",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.release.conf.json",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "decision": "adapt",
+      "reason": "增加能力读取，保留配置 ETag/If-Match。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "decision": "adapt",
+      "reason": "采用生图字段及自动重置，保留不受支持的单模型缓存字段投影。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/agnes-params.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/image-settings.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/image-target-adapter-switch.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/image-target-disabled-connection.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/image-target-toggle.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/target-verification.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-integrity.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-regressions.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-stale-cache.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/image-model-toggle.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/memory-master-switch.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review-memory-switch-stale.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review2-memory-switch-failures.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review2-memory-switch-verified.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review3-memory-switch-recovery.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review4-memory-switch-desktop-gateway.test.mjs",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/application/ApplicationView.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/types.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/resources/ResourceManagementPage.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ImageSettings.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ImageTargetVerification.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderModal.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderModalView.tsx",
+      "decision": "adapt",
+      "reason": "加入生图开关，保留托管连接约束及现有布局。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/imageSettingsAdapter.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemoryPanel.tsx",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
+      "decision": "adapt",
+      "reason": "采用上游跨实例/错误恢复，附带实际显示时读取的配置版本。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/providerUtils.ts",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "docs/architecture/protocols.md",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "docs/features/memory.md",
+      "decision": "adopt",
+      "reason": "采用该固定 Release 的增量及回归；既有产品约束由对应适配保持。"
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "decision": "adapt",
+      "reason": "精确采用上游 beta.22 源码和四平台摘要，四个既有补丁重基。"
+    }
+  ]
+}

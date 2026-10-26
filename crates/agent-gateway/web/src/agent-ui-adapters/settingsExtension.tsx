@@ -5,7 +5,10 @@ import {
   kbrainResourceHostCapabilities,
 } from "@liveagent/ui/lib/resourceHost";
 import type { GatewaySettingsSyncUpdatePayload } from "@liveagent/ui/lib/settings/sync";
-import type { KBrainSettingsAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
+import type {
+  KBrainMemoryConfig,
+  KBrainSettingsAdapter,
+} from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
 import type { ReactNode } from "react";
 import { getGatewayWebSocketClient } from "../lib/gatewaySocket";
 import { loadToken } from "../lib/storage";
@@ -94,11 +97,16 @@ const computerSettingsAdapter: KBrainSettingsAdapter = {
       ),
       aiApproval: document.aiApproval,
       computer: document.computer,
+      memory: document.kbrainMemory,
     };
   },
   async updateSettings(update, baseline) {
+    const { memory, ...rest } = update as GatewaySettingsSyncUpdatePayload & {
+      memory?: KBrainMemoryConfig;
+    };
     await getGatewayWebSocketClient(loadToken().trim()).updateSettings({
-      ...(update as GatewaySettingsSyncUpdatePayload),
+      ...rest,
+      ...(memory ? { kbrainMemory: memory } : {}),
       ...(baseline?.settingsSyncProtocol
         ? {
             settingsSyncProtocol: baseline.settingsSyncProtocol,
