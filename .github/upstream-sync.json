@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.0-beta.21",
-  "base_commit": "1081b9af8d1e2e96baafc8671688498462b46492",
-  "commit": "0f82fc04db46fa5ea2712a6c560471d79861a189",
-  "integration_commit": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
-  "previous_tag": "v2.0.0-beta.20",
-  "previous_upstream_commit": "47a0d1c3e1f6719975678ca42d4c212c2ba278ec",
+  "tag": "v2.0.0-beta.23",
+  "base_commit": "0b2d0e24af9489012de5cc936aa54998a59cd195",
+  "commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
+  "integration_commit": "1c2851556f87516e40d02271a9f61ee80b056df3",
+  "previous_tag": "v2.0.0-beta.21",
+  "previous_upstream_commit": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "prerelease": true,
-  "validation_status": "final source-pinned Desktop/Android candidate CI and local artifact verification passed; authenticated account/device/mobile secure-state and target-platform manual acceptance pending",
+  "validation_status": "local integration, frontend, Windows Native/debug, Linux backend normal/race and Docker checks passed as detailed in report; inherited upstream Windows Planning POSIX-mode assertion remains failing; target-platform GUI/Android/signed-release and authenticated acceptance pending",
   "channel": "preview",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.21",
-  "published_at": "2026-10-24T15:28:01Z"
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.23",
+  "published_at": "2026-10-26T16:27:41Z"
 }
