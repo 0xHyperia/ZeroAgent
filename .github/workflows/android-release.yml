@@ -14,9 +14,17 @@ on:
         description: Existing Release tag to upload to; leave empty for an Actions artifact only
         required: false
         default: ""
+      build_tag:
+        description: Version tag for an Actions-only build; does not publish a Release
+        required: false
+        default: ""
+      expected_source_sha:
+        description: Optional reviewed commit SHA that the checked-out source must match
+        required: false
+        default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NODE_VERSION: 22.19.0
@@ -27,10 +35,27 @@ jobs:
   android:
     name: Android arm64 APK
     runs-on: ubuntu-latest
+    outputs:
+      build_tag: ${{ steps.version.outputs.build_tag }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      apk_name: ${{ steps.package.outputs.apk_name }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
+
+      - name: Validate reviewed Android source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$EXPECTED_SOURCE_SHA" ]; then
+            [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "Expected source must be an exact reviewed commit SHA." >&2
+              exit 1
+            }
+            test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          fi
 
       - uses: actions/setup-node@v6
         with:
@@ -85,13 +110,18 @@ jobs:
         working-directory: crates/agent-gui
         env:
           REQUESTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          REQUESTED_BUILD_TAG: ${{ inputs.build_tag }}
         run: |
           set -euo pipefail
           release_tag="$REQUESTED_RELEASE_TAG"
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -z "${{ inputs.release_tag }}" ]; then
-            release_tag=""
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_tag="$RELEASE_TAG_INPUT"
           fi
           build_tag="$release_tag"
+          if [ -z "$build_tag" ]; then
+            build_tag="$REQUESTED_BUILD_TAG"
+          fi
           if [ -z "$build_tag" ]; then
             build_tag="v$(node -p "require('./package.json').version")"
           fi
@@ -193,6 +223,7 @@ jobs:
             "$aligned_apk"
           "$build_tools/apksigner" verify --verbose --print-certs "$output_apk"
           echo "apk=$output_apk" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$output_apk")" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -200,14 +231,26 @@ jobs:
           path: ${{ steps.package.outputs.apk }}
           if-no-files-found: error
 
+  publish:
+    name: Upload APK to GitHub Releases
+    needs: android
+    if: needs.android.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ZeroAgent-${{ needs.android.outputs.build_tag }}-Android-arm64
+          path: dist
+
       - name: Upload APK to GitHub Releases
-        if: steps.version.outputs.release_tag != ''
         env:
           SOURCE_RELEASE_TOKEN: ${{ github.token }}
           PUBLIC_RELEASE_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           SOURCE_REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
-          APK_PATH: ${{ steps.package.outputs.apk }}
+          RELEASE_TAG: ${{ needs.android.outputs.release_tag }}
+          APK_PATH: dist/${{ needs.android.outputs.apk_name }}
         run: |
           set -euo pipefail
           upload_apk() {

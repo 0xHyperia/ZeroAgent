@@ -9,9 +9,19 @@ on:
       tag:
         description: Release tag to publish, for example v0.1.0
         required: true
+      artifacts_only:
+        description: Build signed Actions artifacts without creating tags or publishing Releases
+        type: boolean
+        required: false
+        default: false
+      source_ref:
+        description: Exact reviewed commit SHA for an artifacts-only build
+        type: string
+        required: false
+        default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NODE_VERSION: 22.19.0
@@ -25,8 +35,28 @@ jobs:
       app_version: ${{ steps.version.outputs.app_version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
       release_tag: ${{ steps.version.outputs.release_tag }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.artifacts_only && inputs.source_ref || inputs.tag || github.ref }}
+
+      - name: Resolve reviewed build source
+        id: source
+        env:
+          ARTIFACTS_ONLY: ${{ inputs.artifacts_only }}
+          REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          if [ "$ARTIFACTS_ONLY" = true ]; then
+            [[ "$REQUESTED_SOURCE_REF" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "Artifacts-only builds require an exact reviewed commit SHA." >&2
+              exit 1
+            }
+            test "$source_sha" = "$REQUESTED_SOURCE_REF"
+          fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v6
         with:
@@ -39,6 +69,7 @@ jobs:
         run: node scripts/release/prepare-app-version-from-tag.mjs "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT" --json
 
       - name: Validate public release repository
+        if: github.event_name != 'workflow_dispatch' || !inputs.artifacts_only
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
         run: |
@@ -70,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-metadata.outputs.release_tag }}
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
 
       - uses: actions/setup-node@v6
         with:
@@ -107,6 +138,12 @@ jobs:
 
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
+
+      - name: Validate macOS Native library
+        env:
+          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-tests
+          LIVEAGENT_KBRAIN_TEST_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-${{ matrix.target }}
+        run: cargo test --locked -p zeroagent --lib --target ${{ matrix.target }}
 
       - name: Build macOS bundles
         working-directory: crates/agent-gui
@@ -148,7 +185,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-metadata.outputs.release_tag }}
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
 
       - uses: actions/setup-node@v6
         with:
@@ -244,7 +281,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-metadata.outputs.release_tag }}
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
 
       - uses: actions/setup-node@v6
         with:
@@ -361,7 +398,10 @@ jobs:
 
   publish:
     name: Publish GitHub Release
+    if: github.event_name != 'workflow_dispatch' || !inputs.artifacts_only
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs:
       - release-metadata
       - macos

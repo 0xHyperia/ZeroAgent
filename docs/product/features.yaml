@@ -350,7 +350,7 @@
         "crates/agent-gui/test/backend/release-notes.test.mjs",
         "crates/agent-gui/test/backend/release-branding.test.mjs"
       ],
-      "security": "公开产物不得包含源码归档、Secret、镜像细节和私有拓扑。",
+      "security": "公开产物不得包含源码归档、Secret、镜像细节和私有拓扑。候选构建可仅上传Actions产物而不建tag或发布Release：Desktop要求完整SHA并统一各平台checkout；Android支持校验期望SHA及独立候选版本，保留原分支构建方式。构建job只读，只有显式发布job取得仓库写权限和公开仓库令牌；更新签名不等同于操作系统代码签名。",
       "upstream_relation": "replace"
     },
     {

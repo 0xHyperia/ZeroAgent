@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-26T05:30:06.389Z",
+  "at": "2026-10-26T07:38:43.348Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
@@ -7,8 +7,8 @@
   "byArea": {
     "Other": {
       "paths": 58,
-      "added": 2941,
-      "deleted": 1659
+      "added": 3029,
+      "deleted": 1662
     },
     "Gateway": {
       "paths": 93,
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31928,
+      "added": 31938,
       "deleted": 32
     },
     "Backend patches": {
@@ -164,7 +164,7 @@
     },
     {
       "path": ".github/upstream-ownership.yaml",
-      "added": 657,
+      "added": 659,
       "deleted": 0
     },
     {
@@ -174,7 +174,7 @@
     },
     {
       "path": ".github/workflows/android-release.yml",
-      "added": 230,
+      "added": 273,
       "deleted": 0
     },
     {
@@ -184,8 +184,8 @@
     },
     {
       "path": ".github/workflows/desktop-release.yml",
-      "added": 154,
-      "deleted": 211
+      "added": 197,
+      "deleted": 214
     },
     {
       "path": ".github/workflows/gateway-docker.yml",
@@ -3874,7 +3874,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 176,
+      "added": 186,
       "deleted": 0
     },
     {
