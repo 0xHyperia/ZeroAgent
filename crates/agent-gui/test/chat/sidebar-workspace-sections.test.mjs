@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { parseTypeScriptSource, walkSyntaxTree } from "../../../../scripts/typescript-source-tools.mjs";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 import React from "react";
 
@@ -424,4 +426,41 @@ test("account entry stays in the sidebar footer and replaces only the duplicate 
     await act(async()=>root.render(React.createElement(ChatHistorySidebar,{...baseProps,accountMenu:undefined})));
     assert.ok(container.querySelector('[data-slot="sidebar-footer"] [data-testid="open-settings"]'));
   } finally {await act(async()=>root.unmount());container.remove();}
+});
+
+test("the desktop top New Conversation action leaves every hub and starts exactly one unscoped conversation", async () => {
+  const source = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  let callback;
+  walkSyntaxTree(parseTypeScriptSource(source, "ChatPage.tsx"), node => {
+    if (node.type === "VariableDeclarator" && node.id.name === "handleNewRecentConversation") callback = node.init;
+  });
+  assert.ok(callback, "use the actual desktop callback rather than a duplicate test implementation");
+  const createHandler = new Function("useCallback", "setActiveView", "openController", "prepareComposerForConversationChange", "startNewConversationActionRef", `return (${source.slice(callback.start, callback.end)});`);
+  const { useApplicationViewState } = env.loadModule("@liveagent/ui/application/useApplicationViewState.ts");
+  for (const initialView of ["image-studio-hub", "skills-hub", "mcp-hub", "cron-hub", "planning-hub", "memory-hub", "chat"]) {
+    const container = document.createElement("div"), root = createRoot(container);
+    const events = [];
+    let selectView;
+    const controller = { cancel: () => events.push("cancel-open") };
+    const prepare = () => events.push("prepare-composer");
+    const start = { current: options => { events.push(options); return "new-conversation"; } };
+    function Harness() {
+      const { activeView, setActiveView } = useApplicationViewState();
+      selectView = setActiveView;
+      const onNewRecentConversation = createHandler(React.useCallback, setActiveView, controller, prepare, start);
+      return React.createElement("div", { "data-current-view": activeView }, React.createElement(ChatHistorySidebar, {
+        ...baseProps, activeView, onNewRecentConversation,
+        onNewConversation: () => assert.fail("the desktop top entry uses its dedicated callback"),
+      }));
+    }
+    try {
+      await act(async () => root.render(React.createElement(Harness)));
+      await act(async () => selectView(initialView));
+      const entry = [...container.querySelectorAll("button")].find(button => button.textContent.trim() === "chat.newConversation");
+      assert.ok(entry);
+      await click(entry);
+      assert.equal(container.firstElementChild.dataset.currentView, "chat", initialView);
+      assert.deepEqual(events, ["cancel-open", "prepare-composer", { workdir: "" }], initialView);
+    } finally { await act(async () => root.unmount()); }
+  }
 });

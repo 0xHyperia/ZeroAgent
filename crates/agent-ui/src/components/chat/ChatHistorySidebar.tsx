@@ -1459,15 +1459,12 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
               <SidebarMenuItem>
                 <SidebarMenuButton
                   type="button"
-                  isActive={activeView === "chat"}
                   onClick={onNewRecentConversation ?? onNewConversation}
                   className={cn(
                     "sidebar-list-row w-full justify-start gap-2.5 rounded-md px-2.5",
                     "text-sm font-normal leading-5 shadow-none transition-colors",
                     "web:text-sm! web:leading-20px! web:font-normal",
-                    activeView === "chat"
-                      ? "bg-settings-active font-medium text-foreground hover:bg-settings-active"
-                      : "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground",
+                    "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground",
                   )}
                 >
                   <CirclePlus className="size-4 shrink-0 text-foreground/85" />

@@ -1890,10 +1890,11 @@ function ChatPageContent(props: ChatPageProps) {
   ]);
 
   const handleNewRecentConversation = useCallback(() => {
+    setActiveView("chat");
     openController.cancel();
     prepareComposerForConversationChange();
     startNewConversationActionRef.current({ workdir: "" });
-  }, [openController, prepareComposerForConversationChange]);
+  }, [openController, prepareComposerForConversationChange, setActiveView]);
 
   // 动作总线（Rust `app:action`）里 ChatPage 拥有的动作在下方统一监听
   // （handleSelectConversation 定义之后）；这里先备好 ref 镜像。
