@@ -353,6 +353,57 @@ async fn private_routes_encoded_aliases_and_raw_backend_tokens_cannot_bypass_the
 }
 
 #[tokio::test]
+async fn image_job_preflight_and_forwarding_preserve_the_standard_idempotency_key() {
+    let fixture = Fixture::new().await;
+    let public = fixture.public();
+    let preflight = fixture
+        .client
+        .request(
+            Method::OPTIONS,
+            format!("{}/v1/image/jobs", public.base_url),
+        )
+        .header("origin", "http://tauri.localhost")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "authorization,content-type,idempotency-key",
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert!(preflight.headers()["access-control-allow-headers"]
+        .to_str()
+        .unwrap()
+        .split(',')
+        .any(|name| name.trim().eq_ignore_ascii_case("idempotency-key")));
+    assert!(fixture.state.calls.lock().unwrap().is_empty());
+
+    let key = uuid::Uuid::new_v4().to_string();
+    let response = fixture
+        .client
+        .post(format!("{}/v1/image/jobs", public.base_url))
+        .bearer_auth(&public.token)
+        .header("origin", "http://tauri.localhost")
+        .header("cookie", "must-not-reach-backend")
+        .header("Idempotency-Key", &key)
+        .json(&serde_json::json!({"prompt":"synthetic fixture"}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let calls = fixture.state.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1["idempotency-key"], key);
+    assert_eq!(
+        calls[0].1["authorization"],
+        format!("Bearer {PRIVATE_TOKEN}")
+    );
+    assert!(!calls[0].1.contains_key("cookie"));
+    assert!(!calls[0].1.contains_key("origin"));
+}
+
+#[tokio::test]
 async fn raw_mcp_calls_are_blocked_without_blocking_session_execution_or_discovery() {
     let fixture = Fixture::new().await;
     let public = fixture.public();

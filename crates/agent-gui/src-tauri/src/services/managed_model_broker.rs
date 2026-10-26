@@ -343,7 +343,12 @@ fn allowed_route(method: &Method, path: &str) -> bool {
     }
     if matches!(
         path,
-        "/v1/chat/completions" | "/v1/responses" | "/v1/messages" | "/v1/messages/count_tokens"
+        "/v1/chat/completions"
+            | "/v1/responses"
+            | "/v1/messages"
+            | "/v1/messages/count_tokens"
+            | "/v1/images/generations"
+            | "/v1/images/edits"
     ) {
         return true;
     }
@@ -366,7 +371,13 @@ fn canonical_model_path(path: &str) -> String {
     // K-brain treats an explicitly configured OpenAI base URL as the API root and appends
     // /chat/completions (without /v1). USA-Zero's public API uses the /v1 prefix.
     match path {
-        "/chat/completions" | "/responses" | "/messages" | "/messages/count_tokens" | "/models" => {
+        "/chat/completions"
+        | "/responses"
+        | "/messages"
+        | "/messages/count_tokens"
+        | "/models"
+        | "/images/generations"
+        | "/images/edits" => {
             format!("/v1{path}")
         }
         _ => path.to_string(),
@@ -638,6 +649,85 @@ mod tests {
             assert!(configured_origin_for_build(input, configured, true).is_err());
         }
         assert!(configured_origin_for_build("https://usa0.top", "https://usa0.top", false).is_ok());
+    }
+
+    #[tokio::test]
+    async fn image_operations_stay_on_the_bound_platform_and_reject_other_routes() {
+        let seen = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+        let captured = seen.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let server = tokio::spawn(async move {
+            let app = Router::new().fallback(move |request: Request| {
+                let captured = captured.clone();
+                async move {
+                    captured.lock().unwrap().push((
+                        request.uri().path().to_owned(),
+                        request.headers()["authorization"]
+                            .to_str()
+                            .unwrap()
+                            .to_owned(),
+                    ));
+                    StatusCode::OK
+                }
+            });
+            axum::serve(listener, app).await.unwrap();
+        });
+        let broker = ManagedModelBroker::start(origin).unwrap();
+        let binding = broker
+            .replace(vec![ManagedCredential {
+                provider_id: "relay-key-77".into(),
+                api_key: "synthetic-image-key".into(),
+            }])
+            .unwrap()
+            .remove(0);
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for path in [
+            "/images/generations",
+            "/v1/images/generations",
+            "/images/edits",
+            "/v1/images/edits",
+        ] {
+            let response = client
+                .post(format!("{}{path}", binding.base_url))
+                .bearer_auth(&binding.api_key)
+                .body("{}")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+        }
+        for path in [
+            "/v1/images/jobs",
+            "/v1/images/variations",
+            "/v1/images/%65dits",
+            "/api/v1/keys",
+        ] {
+            let response = client
+                .post(format!("{}{path}", binding.base_url))
+                .bearer_auth(&binding.api_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+        assert_eq!(
+            client
+                .get(format!("{}/v1/images/generations", binding.base_url))
+                .bearer_auth(&binding.api_key)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        let calls = seen.lock().unwrap();
+        assert_eq!(calls.len(), 4);
+        assert!(calls.iter().all(|(path, key)| {
+            matches!(path.as_str(), "/v1/images/generations" | "/v1/images/edits")
+                && key == "Bearer synthetic-image-key"
+        }));
+        server.abort();
     }
 
     #[tokio::test]

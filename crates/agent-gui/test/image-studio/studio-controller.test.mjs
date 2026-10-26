@@ -401,7 +401,7 @@ test('refreshing an unchanged model while uploading keeps its input request acti
 
 test('deleteJob removes the entry and its selection; 404 counts as gone; 409 keeps it with guidance', async () => {
   const deleted = []; let failWith;
-  const jobs = [job('archive', 'keep', ['ia_keep']), job('archive', 'gone', ['ia_gone']), job('archive', 'busy')];
+  const jobs = [job('archive', 'keep', ['ia_keep']), job('archive', 'gone', ['ia_gone']), { ...job('archive', 'busy'), status: 'running' }, { ...job('archive', 'unknown'), status: 'result_unknown' }];
   const c = controller({
     listJobs: async id => ({ items: id === 'archive' ? jobs : [] }),
     deleteJob: async id => { deleted.push(id); if (failWith) throw Object.assign(Error('rejected'), { status: failWith }); },
@@ -415,10 +415,15 @@ test('deleteJob removes the entry and its selection; 404 counts as gone; 409 kee
     c.selectAsset('ia_keep'); assert.equal(c.view.state.selectedJobId, 'keep', 'picking an image also records its job');
     failWith = 409; await c.deleteJob('busy');
     assert.ok(c.view.state.jobs.busy); assert.match(c.view.notice, /仍在进行/);
+    await c.deleteJob('unknown');
+    assert.ok(c.view.state.jobs.unknown); assert.match(c.view.notice, /正在收尾/);
+    assert.doesNotMatch(c.view.notice, /取消/);
     failWith = 404; await c.deleteJob('busy');
     assert.equal(c.view.state.jobs.busy, undefined, 'already deleted elsewhere');
     assert.equal(c.view.state.selectedJobId, 'keep', 'unrelated selection survives');
-    assert.deepEqual(deleted, ['gone', 'busy', 'busy']);
+    failWith = undefined; await c.deleteJob('unknown');
+    assert.equal(c.view.state.jobs.unknown, undefined, 'unknown result can be removed after its worker exits');
+    assert.deepEqual(deleted, ['gone', 'busy', 'unknown', 'busy', 'unknown']);
   } finally { c.dispose(); }
 });
 

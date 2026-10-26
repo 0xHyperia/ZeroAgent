@@ -258,7 +258,7 @@ fn cors(response: &mut Response) {
         header::ACCESS_CONTROL_ALLOW_METHODS,
         HeaderValue::from_static("GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS"),
     );
-    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Authorization, Content-Type, Accept, Last-Event-ID, If-Match, If-None-Match, Range, If-Range, X-Idempotency-Key"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Authorization, Content-Type, Accept, Last-Event-ID, If-Match, If-None-Match, Range, If-Range, Idempotency-Key, X-Idempotency-Key"));
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
         HeaderValue::from_static(
@@ -498,6 +498,7 @@ async fn forward_inner(state: Arc<FacadeState>, mut request: Request) -> Respons
         "if-none-match",
         "range",
         "if-range",
+        "idempotency-key",
         "x-idempotency-key",
     ] {
         if let Some(value) = request.headers().get(name) {

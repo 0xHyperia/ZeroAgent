@@ -16,8 +16,13 @@ async function picker(props) {
   const host = document.body.appendChild(document.createElement("div"));
   const root = env.createRoot(host);
   const changes = [];
-  await env.act(async () => root.render(env.React.createElement(ImageSizePicker, { onFramingChange: () => {}, ...props, onChange: (v) => changes.push(v) })));
-  return { env, host, changes, describeImageSize, trigger: host.querySelector("button") };
+  let currentProps = props;
+  const render = async (next = {}) => {
+    currentProps = { ...currentProps, ...next };
+    await env.act(async () => root.render(env.React.createElement(ImageSizePicker, { onFramingChange: () => {}, ...currentProps, onChange: (v) => changes.push(v) })));
+  };
+  await render();
+  return { env, host, changes, render, describeImageSize, trigger: host.querySelector("button") };
 }
 
 test("footer summary follows the declared size contract", async () => {
@@ -64,26 +69,118 @@ test("WxH sizes become wide-to-tall ratios; picking writes the exact size and au
   assert.match(document.body.textContent, /更多参数/, "remaining parameters stay reachable");
 });
 
-test("auto and duplicate-ratio sizes stay in parameter mode with distinct choices", async () => {
+test("auto and duplicate-ratio sizes use separate ratio and supported resolution controls", async () => {
   const sized = target([enumSpec("size", ["auto", "256x256", "1024x1024", "1536x1024"])]);
-  const { env, trigger, changes, describeImageSize } = await picker({ target: sized, values: { size: "auto" } });
+  const { env, trigger, changes, render, describeImageSize } = await picker({ target: sized, values: { size: "auto" } });
   assert.match(trigger.textContent, /自动比例/);
   assert.equal(describeImageSize(sized, { size: "auto" }), "尺寸由模型自动决定");
   await env.act(async () => trigger.click());
   const group = document.querySelector('[role="radiogroup"][aria-label="画面比例"]');
   const labels = [...group.querySelectorAll("label")].map((l) => l.textContent.trim());
-  assert.deepEqual(labels, ["自动", "3:2", "1:1 256×256", "1:1 1024×1024"]);
+  assert.deepEqual(labels, ["自动", "3:2", "1:1"]);
   assert.doesNotMatch(document.body.textContent, /附加在提示词末尾/, "an auto size is still a size parameter");
   const pick = async (label) => {
     const input = [...group.querySelectorAll("label")].find((l) => l.textContent.trim() === label).querySelector("input");
     await env.act(async () => input.click());
   };
-  await pick("1:1 256×256");
+  await pick("1:1");
   assert.deepEqual(changes.at(-1), { size: "256x256" });
+  await render({ values: changes.at(-1) });
+  const tiers = document.querySelector('[role="radiogroup"][aria-label="分辨率"]');
+  assert.deepEqual([...tiers.querySelectorAll("label")].map(l => l.textContent.trim()), ["自动", "256 像素", "1K"]);
+  await env.act(async () => [...tiers.querySelectorAll("label")].find(l => l.textContent.trim() === "1K").querySelector("input").click());
+  assert.deepEqual(changes.at(-1), { size: "1024x1024" });
+  await render({ values: changes.at(-1) });
+  assert.match(document.body.textContent, /1024/);
   const sizedPicker = await picker({ target: sized, values: { size: "1024x1024" } });
   await sizedPicker.env.act(async () => sizedPicker.trigger.click());
   const autoInput = [...document.querySelectorAll('[role="radiogroup"][aria-label="画面比例"]')].at(-1)
     .querySelector("label input");
   await sizedPicker.env.act(async () => autoInput.click());
   assert.deepEqual(sizedPicker.changes.at(-1), { size: "auto" }, "a declared auto is sent, not dropped");
+});
+
+test("fixed-size models keep all three UI sections and never invent a ratio/resolution combination", async () => {
+  const { env, trigger, changes, render } = await picker({ target: openai, values: { size: "1024x1024", quality: "high" } });
+  await env.act(async () => trigger.click());
+  const radios = label => document.querySelector(`[role="radiogroup"][aria-label="${label}"]`);
+  const labels = group => [...group.querySelectorAll("label")].map(l => l.textContent.trim());
+  assert.deepEqual(labels(radios("分辨率")), ["自动", "1K"]);
+  assert.match(document.body.textContent, /尺寸/);
+  await env.act(async () => [...radios("画面比例").querySelectorAll("label")].find(l => l.textContent.trim() === "3:2").querySelector("input").click());
+  assert.deepEqual(changes.at(-1), { size: "1536x1024", quality: "high" });
+  await render({ values: changes.at(-1) });
+  assert.deepEqual(labels(radios("分辨率")), ["自动", "1.5K"]);
+  assert.match(document.body.textContent, /1536/);
+  assert.doesNotMatch(document.body.textContent, /估算|2K|4K/);
+  assert.equal(changes.at(-1).imageSize, undefined, "a size-only API never receives an invented resolution field");
+});
+
+test("aspect and resolution models expose only declared choices and mark derived dimensions as estimates", async () => {
+  const { env, trigger, changes } = await picker({ target: google, values: { aspectRatio: "16:9", imageSize: "2K" } });
+  await env.act(async () => trigger.click());
+  assert.match(document.body.textContent, /尺寸（估算）/);
+  assert.match(document.body.textContent, /2048/);
+  assert.match(document.body.textContent, /1152/);
+  const tiers = document.querySelector('[role="radiogroup"][aria-label="分辨率"]');
+  assert.deepEqual([...tiers.querySelectorAll("label")].map(l => l.textContent.trim()), ["自动", "1K", "2K"]);
+  await env.act(async () => [...tiers.querySelectorAll("label")].find(l => l.textContent.trim() === "1K").querySelector("input").click());
+  assert.deepEqual(changes.at(-1), { aspectRatio: "16:9", imageSize: "1K" });
+});
+
+test("more parameters use Chinese labels/options and retain their original wire values", async () => {
+  const model = target([
+    ...openai.parameters,
+    enumSpec("output_format", ["png", "jpeg", "webp"]),
+    enumSpec("background", ["auto", "opaque", "transparent"]),
+    { key: "output_compression", label: "Output compression", type: "integer", minimum: 0, maximum: 100 },
+  ]);
+  const { env, trigger, changes, render } = await picker({ target: model, values: { quality: "low" } });
+  await env.act(async () => trigger.click());
+  for (const label of ["图像质量", "图片格式", "背景", "输出压缩"]) assert.ok([...document.querySelectorAll("label")].some(l => l.textContent.trim() === label));
+  assert.doesNotMatch(document.body.textContent, /quality|output_format|background|Output compression/);
+  const quality = [...document.querySelectorAll("label")].find(l => l.textContent.trim() === "图像质量");
+  const input = document.getElementById(quality.htmlFor);
+  assert.deepEqual([...input.options].map(o => o.textContent), ["默认", "低", "高"]);
+  await env.act(async () => {
+    input.value = "1";
+    input.dispatchEvent(new env.dom.window.Event("change", { bubbles: true }));
+  });
+  assert.deepEqual(changes.at(-1), { quality: "high" });
+  await render({ values: changes.at(-1) });
+  const background = [...document.querySelectorAll("label")].find(l => l.textContent.trim() === "背景");
+  const backgroundInput = document.getElementById(background.htmlFor);
+  assert.deepEqual([...backgroundInput.options].map(o => o.textContent), ["默认", "自动", "不透明", "透明"]);
+  await env.act(async () => {
+    backgroundInput.value = "2";
+    backgroundInput.dispatchEvent(new env.dom.window.Event("change", { bubbles: true }));
+  });
+  assert.deepEqual(changes.at(-1), { quality: "high", background: "transparent" });
+});
+
+test("a model without an independent resolution enum still keeps the size section without invented choices", async () => {
+  const { env, trigger } = await picker({ target: target([enumSpec("aspectRatio", ["1:1", "16:9"])]), values: {} });
+  await env.act(async () => trigger.click());
+  assert.match(document.body.textContent, /分辨率/);
+  assert.match(document.body.textContent, /由模型决定/);
+  assert.match(document.body.textContent, /尺寸（估算）/);
+  assert.equal(document.querySelector('[role="radiogroup"][aria-label="分辨率"]'), null);
+});
+
+test("required native size contracts never offer an unset automatic value", async () => {
+  const required = target([{ ...openai.parameters[0], required: true }]);
+  const { env, trigger } = await picker({ target: required, values: { size: "1024x1024" } });
+  await env.act(async () => trigger.click());
+  for (const name of ["画面比例", "分辨率"]) {
+    const group = document.querySelector(`[role="radiogroup"][aria-label="${name}"]`);
+    assert.ok(group);
+    assert.ok(![...group.querySelectorAll("label")].some(l => l.textContent.trim() === "自动"));
+  }
+});
+
+test("automatic aspect ratios never invent dimensions for a selected resolution", async () => {
+  const autoAspect = target([enumSpec("aspectRatio", ["auto", "1:1"]), enumSpec("imageSize", ["1.5K", "2K"])]);
+  const { env, trigger } = await picker({ target: autoAspect, values: { aspectRatio: "auto", imageSize: "2K" } });
+  await env.act(async () => trigger.click());
+  assert.doesNotMatch(document.body.textContent, /NaN|undefined|2048/);
 });

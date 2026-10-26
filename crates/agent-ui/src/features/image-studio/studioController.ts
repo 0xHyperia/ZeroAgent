@@ -35,6 +35,7 @@ import {
   markSubmissionUnknown,
   type StudioState,
   submissionWasRejected,
+  terminalJob,
 } from "./studioModel";
 
 export interface PendingSubmission {
@@ -782,7 +783,13 @@ export class ImageStudioController {
       const status = (error as { status?: number }).status;
       // Already gone on the backend (another window, or a retried click).
       if (status === 404) forget();
-      else if (status === 409) this.patch({ notice: "任务仍在进行，请先取消或等待结束后再删除。" });
+      else if (status === 409)
+        this.patch({
+          notice:
+            this.view.state.jobs[id] && terminalJob(this.view.state.jobs[id])
+              ? "任务正在收尾，请稍后刷新状态再删除。"
+              : "任务仍在进行，请先取消或等待结束后再删除。",
+        });
       else this.patch({ notice: "删除失败，请检查连接后重试。" });
     }
   }

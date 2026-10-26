@@ -22,6 +22,10 @@
     {
       "file": "0004-owned-mcp-lifecycle.patch",
       "sha256": "844f16c315622be9193845a514f1881747f11bc736b4e75719a1303dc51371d8"
+    },
+    {
+      "file": "0005-image-unknown-history-deletion.patch",
+      "sha256": "128e659ed79053d410325259903e53d4d5cf82ed4e1947d1383d1f23f39ebfc0"
     }
   ],
   "status": "local-adaptation; Native credential security, standard SDK SSE and owned MCP lifecycle; no private runtime or endpoint inference; product/platform acceptance tracked in sync report"

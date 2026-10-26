@@ -48,7 +48,7 @@ export function sanitizeFraming(value: unknown): Framing | undefined {
 export function framingPixels(framing?: Framing) {
   if (!framing?.ratio || !framing.tier) return undefined;
   const [w, h] = framing.ratio.split(":").map(Number);
-  const long = Number.parseInt(framing.tier, 10) * 1024;
+  const long = Number.parseFloat(framing.tier) * 1024;
   const snap = (n: number) => Math.round(n / 16) * 16;
   return w >= h ? { w: long, h: snap((long * h) / w) } : { w: snap((long * w) / h), h: long };
 }

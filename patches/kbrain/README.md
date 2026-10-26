@@ -1,6 +1,6 @@
 # K-brain 最小适配集
 
-固定上游：`1f27ade557fe268c76853f83f4fb7aa32d078eac`。补丁顺序和 SHA-256 以
+固定上游：`60e614f07c600b7aa5c0acbb9631d708e33dbb8b`。补丁顺序和 SHA-256 以
 `manifest.json` 为准；不修改 `internal/agent/` 或 `internal/ai/`，不维护第二套 Agent。
 
 本轮范围采用上游公共实现，保留 usa0 安全边界。旧数据迁移、旧版本回退、服务商归档和
@@ -15,6 +15,7 @@
 | `0002-windows-selfhost-fixtures.patch` | 测试基础设施：Windows 上实际执行原有 stdio 自托管用例 | 原夹具文件名、共享构建和管道关闭不适合当前 Windows 测试环境；仅修改测试，不增加产品能力 | 固定上游夹具在 Windows 同样可运行且保留原业务断言后移除 |
 | `0003-mcp-credential-history-and-legacy-sse.patch` | usa0 安全 + 标准能力修复：跨请求凭据过滤；共享 UI 已展示的标准 SSE | 凭据可能在持续 GET、重连或配置重载后反射；原 factory 没有接入 SDK 的经典 SSE transport。安全部分局限于凭据历史和 MCP 输出；SSE 部分只接 SDK 与正确连接拥有期 | 分别在上游具备等价 Native 凭据保护、标准 SSE 接线及生命周期验证后移除对应改动；不因补丁文件共存而强制一起保留 |
 | `0004-owned-mcp-lifecycle.patch` | 生命周期通用修复；含极小的 ZeroAgent 客户端身份设置 | SDK CommandTransport 未回收已配置的子进程树，阻塞写入和优雅关闭可形成等待环；取消通知/DELETE 可能无界。沿用 SDK IOTransport/协议，补充进程与管道拥有期、调用取消和有界清理。客户端 Name/Title 单独设置并通过实际请求校验 | 上游/SDK 提供等价进程拥有期、阻塞 I/O 取消及清理保证，Windows/Linux/macOS 对应验证通过后移除；客户端身份在上游支持配置注入后改用该入口 |
+| `0005-image-unknown-history-deletion.patch` | 生图通用缺陷修复：允许删除已停止的结果未知记录 | 上游 `projectJobBusy` 遗漏 `result_unknown`，与调度器和 UI 的终态判断不一致。复用已有 `terminalJob`，保留后台执行 lease、软删除、请求幂等收据和账户范围 | 上游删除规则与终态一致，且未知结果、活跃 lease、删除后不重发任务的回归通过后移除 |
 
 `0003` 文件名的 legacy SSE 仅指 SDK 提供的经典 GET/POST SSE transport；本轮没有自建
 JSON-RPC 协商器、历史版本遍历或端点推断。前三项保持此前已核验的原补丁字节；新第四项
@@ -50,3 +51,7 @@ JSON-RPC 协商器、历史版本遍历或端点推断。前三项保持此前�
   使用新 profile 和仅本地的合成凭据，后端正常退出，临时连接文件已删除。
 
 上述证据不代表最终桌面包、真实账号或全部支持端已验收。完整发布矩阵由同步报告跟踪。
+
+2026-10-27 beta.23 后续验收新增第五项通用缺陷修复；前四项补丁字节未改。新增回归覆盖
+结果未知记录/项目在后台 lease 存在时拒删、lease 释放后可删、重复删除幂等，以及原请求
+收据仍阻止重复提交。它不改变任务结果或数据格式，不自动删除用户历史，也不重试收费请求。

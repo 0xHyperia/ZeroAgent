@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { Input } from "../../components/ui/input";
 import type { ImageTarget } from "../../lib/imaging/types";
+import { parameterLabel, parameterValueLabel } from "./parameterLabels";
 import { validateParameters } from "./parameterModel";
 
 export const selectClass =
@@ -10,11 +11,13 @@ export function TargetParameterForm({
   values,
   onChange,
   disabled,
+  layout = "grid",
 }: {
   target: ImageTarget;
   values: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
   disabled?: boolean;
+  layout?: "grid" | "stack";
 }) {
   const prefix = useId();
   const errors = validateParameters(target, values);
@@ -25,7 +28,7 @@ export function TargetParameterForm({
     onChange(next);
   };
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className={layout === "stack" ? "space-y-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3"}>
       {target.parameters.map((spec) => {
         const id = `${prefix}-${spec.key}`;
         const message = errors.find((error) => error.key === spec.key)?.message;
@@ -39,7 +42,7 @@ export function TargetParameterForm({
         return (
           <div key={spec.key} className="min-w-0 space-y-1">
             <label htmlFor={id} className="text-xs font-medium">
-              {spec.label}
+              {parameterLabel(spec)}
               {spec.required ? " *" : ""}
               {spec.unit ? <span className="ml-1 text-muted-foreground">({spec.unit})</span> : null}
             </label>
@@ -50,10 +53,10 @@ export function TargetParameterForm({
                 value={spec.enum.findIndex((value) => value === values[spec.key])}
                 onChange={(event) => set(spec.key, spec.enum?.[Number(event.target.value)])}
               >
-                <option value={-1}>请选择</option>
+                <option value={-1}>{spec.required ? "请选择" : "默认"}</option>
                 {spec.enum.map((value, index) => (
                   <option key={`${typeof value}:${value}`} value={index}>
-                    {typeof value === "boolean" ? (value ? "是" : "否") : String(value)}
+                    {parameterValueLabel(spec.key, value)}
                   </option>
                 ))}
               </select>
@@ -69,7 +72,7 @@ export function TargetParameterForm({
                   )
                 }
               >
-                <option value="">请选择</option>
+                <option value="">{spec.required ? "请选择" : "默认"}</option>
                 <option value="true">是</option>
                 <option value="false">否</option>
               </select>
@@ -80,6 +83,7 @@ export function TargetParameterForm({
                 min={spec.minimum}
                 max={spec.maximum}
                 step={spec.type === "integer" ? 1 : "any"}
+                placeholder={spec.required ? undefined : "默认"}
                 value={
                   typeof values[spec.key] === "string" || typeof values[spec.key] === "number"
                     ? String(values[spec.key])

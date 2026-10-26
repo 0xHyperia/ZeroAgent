@@ -27,6 +27,12 @@ interface Choice {
   label: string;
   shape?: [number, number];
 }
+interface PixelChoice {
+  value: string;
+  ratio: string;
+  edge: string;
+  pixels: { w: number; h: number };
+}
 interface Plan {
   mode: "params" | "prompt";
   ratios: Choice[];
@@ -35,6 +41,8 @@ interface Plan {
   tier?: string;
   /** Exact (parameter mode) or estimated (prompt mode) output size. */
   pixels?: { w: number; h: number };
+  pixelChoices?: PixelChoice[];
+  sizeSpec?: ParameterSpec;
   rest: ParameterSpec[];
 }
 
@@ -86,28 +94,72 @@ function planFor(target: ImageTarget | undefined, values: Values, framing?: Fram
       return { value, label: `${w / d}:${h / d}`, shape: [w, h] };
     })
     .sort(wideFirst);
-  // Sizes that reduce to the same ratio (256/512/1024 squares) need their pixels.
-  const counts = new Map<string, number>();
-  for (const choice of ratios) counts.set(choice.label, (counts.get(choice.label) ?? 0) + 1);
-  for (const choice of ratios)
-    if ((counts.get(choice.label) ?? 0) > 1)
-      choice.label = `${choice.label} ${choice.value?.replace("x", "×")}`;
+  // A size enum couples ratio and resolution. Offer only combinations actually
+  // declared by the target, while keeping the same two controls as ratio APIs.
+  if (!aspect && size) {
+    const pixelChoices = ratios.flatMap((choice): PixelChoice[] => {
+      const pixels = parsePixels(choice.value);
+      if (!choice.value || !pixels) return [];
+      return [
+        {
+          value: choice.value,
+          ratio: choice.label,
+          edge: String(Math.max(pixels.w, pixels.h)),
+          pixels,
+        },
+      ];
+    });
+    const current = pixelChoices.find((choice) => choice.value === values[size.key]);
+    const auto = size.enum?.some(isAutoValue) ? "auto" : undefined;
+    const matching = pixelChoices.filter((choice) => !current || choice.ratio === current.ratio);
+    const edges = [...new Set(matching.map((choice) => choice.edge))].sort(
+      (a, b) => Number(a) - Number(b),
+    );
+    return {
+      mode: "params",
+      ratios: withAuto(size, [
+        ...new Map(
+          ratios.map((choice) => [
+            choice.label,
+            {
+              ...choice,
+              value: choice.label,
+            },
+          ]),
+        ).values(),
+      ]),
+      ratio: current?.ratio ?? auto,
+      tiers: withAuto(
+        size,
+        edges.map((edge) => ({
+          value: edge,
+          label:
+            Number(edge) >= 1024 ? `${Number((Number(edge) / 1024).toFixed(2))}K` : `${edge} 像素`,
+        })),
+      ),
+      tier: current?.edge ?? auto,
+      pixels: current?.pixels,
+      pixelChoices,
+      sizeSpec: size,
+      rest: params.filter((p) => p.key !== size.key),
+    };
+  }
   const tiers = (resolution?.enum ?? [])
     .filter((raw) => !isAutoValue(raw))
     .map((raw) => ({ value: String(raw), label: String(raw) }));
   const ratio = values[ratioSpec.key] as string | undefined;
-  const pixels = ratioSpec === size ? parsePixels(ratio) : undefined;
+  const tier = resolution ? (values[resolution.key] as string | undefined) : undefined;
+  const pixels =
+    ratio && ratioShape(ratio) && tier && /^\d+(?:\.\d+)?K$/i.test(tier)
+      ? framingPixels({ ratio, tier })
+      : undefined;
   const handled = new Set([ratioSpec.key, resolution?.key]);
   return {
     mode: "params",
     ratios: withAuto(ratioSpec, ratios),
     ratio,
     tiers: resolution ? withAuto(resolution, tiers) : tiers,
-    tier: resolution
-      ? (values[resolution.key] as string | undefined)
-      : pixels
-        ? `${Math.round((Math.max(pixels.w, pixels.h) / 1024) * 2) / 2}K`
-        : undefined,
+    tier,
     pixels,
     rest: params.filter((p) => !handled.has(p.key)),
   };
@@ -120,12 +172,14 @@ export function describeImageSize(
   framing?: Framing,
 ) {
   const plan = planFor(target, values, framing);
-  if (plan.mode === "params" && plan.pixels) return `当前尺寸 ${plan.pixels.w}x${plan.pixels.h}`;
+  if (plan.pixelChoices && plan.pixels) return `当前尺寸 ${plan.pixels.w}x${plan.pixels.h}`;
   const parts = [
     plan.ratio && !isAutoValue(plan.ratio)
       ? `比例 ${plan.ratios.find((c) => c.value === plan.ratio)?.label ?? plan.ratio}`
       : "",
-    plan.tier && !isAutoValue(plan.tier) ? `分辨率 ${plan.tier}` : "",
+    plan.tier && !isAutoValue(plan.tier)
+      ? `分辨率 ${plan.tiers.find((c) => c.value === plan.tier)?.label ?? plan.tier}`
+      : "",
     plan.mode === "prompt" && plan.pixels ? `约 ${plan.pixels.w}x${plan.pixels.h}` : "",
   ].filter(Boolean);
   if (!parts.length) return "尺寸由模型自动决定";
@@ -228,18 +282,35 @@ export function ImageSizePicker({
   const ratioKey = params.some((p) => p.key === "aspectRatio" && p.enum?.length)
     ? "aspectRatio"
     : "size";
-  const pickRatio = (value?: string) =>
-    plan.mode === "prompt"
-      ? onFramingChange({ ...framing, ratio: value })
-      : setParam(ratioKey, value);
-  const pickTier = (value?: string) =>
-    plan.mode === "prompt"
-      ? onFramingChange({ ...framing, tier: value })
-      : setParam("imageSize", value);
+  const pickPixel = (axis: "ratio" | "edge", value?: string) => {
+    if (value === undefined || isAutoValue(value)) {
+      setParam("size", plan.sizeSpec?.enum?.some(isAutoValue) ? "auto" : undefined);
+      return;
+    }
+    const pixelChoices = plan.pixelChoices ?? [];
+    const choices = pixelChoices.filter((choice) => choice[axis] === value);
+    const current = pixelChoices.find((choice) => choice.value === values.size);
+    const other = axis === "ratio" ? "edge" : "ratio";
+    const chosen =
+      choices.find((choice) => choice[other] === current?.[other]) ??
+      choices.find((choice) => choice.value === plan.sizeSpec?.default) ??
+      choices[0];
+    if (chosen) setParam("size", chosen.value);
+  };
+  const pickRatio = (value?: string) => {
+    if (plan.pixelChoices) pickPixel("ratio", value);
+    else if (plan.mode === "prompt") onFramingChange({ ...framing, ratio: value });
+    else setParam(ratioKey, value);
+  };
+  const pickTier = (value?: string) => {
+    if (plan.pixelChoices) pickPixel("edge", value);
+    else if (plan.mode === "prompt") onFramingChange({ ...framing, tier: value });
+    else setParam("imageSize", value);
+  };
   const ratioLabel = plan.ratios.find(
     (c) => c.value && !isAutoValue(c.value) && c.value === plan.ratio,
   )?.label;
-  const showTiers = plan.mode === "prompt" || params.some((p) => p.key === "imageSize");
+  const tierLabel = plan.tiers.find((c) => c.value === plan.tier)?.label;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -259,7 +330,7 @@ export function ImageSizePicker({
         <span>{ratioLabel ?? "自动比例"}</span>
         <span className="h-4 w-px bg-border" aria-hidden="true" />
         <span className="tabular-nums">
-          {plan.tier && !isAutoValue(plan.tier) ? plan.tier : "自动"}
+          {plan.tier && !isAutoValue(plan.tier) ? (tierLabel ?? plan.tier) : "自动"}
         </span>
       </PopoverTrigger>
       <PopoverContent
@@ -278,7 +349,7 @@ export function ImageSizePicker({
           shapes
           onPick={pickRatio}
         />
-        {showTiers && plan.tiers.length > 0 && (
+        {plan.tiers.length > 0 ? (
           <ChoiceGrid
             label="分辨率"
             choices={plan.tiers}
@@ -286,27 +357,37 @@ export function ImageSizePicker({
             columns={Math.min(4, plan.tiers.length)}
             onPick={pickTier}
           />
-        )}
-        {(plan.mode === "prompt" || plan.pixels) && (
+        ) : (
           <section className="space-y-2">
-            <h3 className="text-xs text-muted-foreground">
-              尺寸{plan.mode === "prompt" ? "（估算）" : ""}
-            </h3>
-            <div className="flex items-center gap-2 text-sm">
-              {(["W", "H"] as const).map((axis, index) => (
-                <div key={axis} className="contents">
-                  {index === 1 && <Link2 className="size-4 shrink-0 text-muted-foreground" />}
-                  <div className="flex h-10 flex-1 items-center justify-between rounded-xl bg-muted/50 px-3">
-                    <span className="text-muted-foreground">{axis}</span>
-                    <span className="tabular-nums">
-                      {plan.pixels ? (axis === "W" ? plan.pixels.w : plan.pixels.h) : "自动"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-right text-xs text-muted-foreground">单位：像素</p>
+            <h3 className="text-xs text-muted-foreground">分辨率</h3>
+            <p className="rounded-xl bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              由模型决定
+            </p>
           </section>
+        )}
+        <section className="space-y-2">
+          <h3 className="text-xs text-muted-foreground">
+            尺寸{plan.pixelChoices ? "" : "（估算）"}
+          </h3>
+          <div className="flex items-center gap-2 text-sm">
+            {(["W", "H"] as const).map((axis, index) => (
+              <div key={axis} className="contents">
+                {index === 1 && <Link2 className="size-4 shrink-0 text-muted-foreground" />}
+                <div className="flex h-10 flex-1 items-center justify-between rounded-xl bg-muted/50 px-3">
+                  <span className="text-muted-foreground">{axis}</span>
+                  <span className="tabular-nums">
+                    {plan.pixels ? (axis === "W" ? plan.pixels.w : plan.pixels.h) : "自动"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-right text-xs text-muted-foreground">单位：像素</p>
+        </section>
+        {plan.pixelChoices && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            比例与分辨率按模型支持的尺寸联动。
+          </p>
         )}
         {plan.mode === "prompt" && (
           <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
@@ -320,6 +401,7 @@ export function ImageSizePicker({
               target={{ ...target, parameters: plan.rest }}
               values={values}
               onChange={onChange}
+              layout="stack"
             />
           </section>
         )}
