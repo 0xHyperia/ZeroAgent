@@ -6,6 +6,31 @@ mod canonical_backup_tests {
     include!("gateway_skills_tests.rs");
     include!("mcp_oauth_binding_tests.rs");
 
+    #[cfg(windows)]
+    #[test]
+    fn private_backup_supports_windows_long_paths_and_atomic_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let mut directory = root.path().to_path_buf();
+        for minimum_length in [210, 270] {
+            while directory.as_os_str().len() < minimum_length {
+                directory = directory.join("configuration-recovery");
+            }
+            fs::create_dir_all(&directory).unwrap();
+            let path = directory.join(format!("before-1234567890123-{}.json", Uuid::new_v4()));
+            assert!(path.as_os_str().len() > 260);
+
+            write_private_backup(&path, b"first snapshot").unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"first snapshot");
+            write_private_backup(&path, b"replacement snapshot").unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"replacement snapshot");
+            let files: Vec<_> = fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            assert_eq!(files, vec![path.file_name().unwrap().to_os_string()]);
+        }
+    }
+
     fn binary() -> PathBuf {
         if let Some(path) = std::env::var_os("LIVEAGENT_KBRAIN_BINARY") {
             return PathBuf::from(path);

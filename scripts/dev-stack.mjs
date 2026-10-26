@@ -10,6 +10,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
   unlinkSync,
   unwatchFile,
@@ -35,11 +36,14 @@ const gatewayDataDir = resolve(
   process.env.LIVEAGENT_GATEWAY_DATA_DIR ?? join(homedir(), ".liveagent/gateway"),
 );
 const ports = {
-  desktop: Number(process.env.LIVEAGENT_DEV_DESKTOP_PORT ?? 1420),
+  desktop: Number(
+    process.env.ZEROAGENT_DEV_DESKTOP_PORT ?? process.env.LIVEAGENT_DEV_DESKTOP_PORT ?? 2120,
+  ),
   gateway: Number(process.env.LIVEAGENT_DEV_GATEWAY_PORT ?? 50052),
   webui: Number(process.env.LIVEAGENT_DEV_WEBUI_PORT ?? 5173),
 };
 const mcpBridgePort = Number(process.env.LIVEAGENT_DEV_MCP_BRIDGE_PORT ?? 9223);
+const externalDesktopFrontend = process.env.LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND === "1";
 const gatewayToken =
   process.env.LIVEAGENT_GATEWAY_TOKEN ?? process.env.DEV_GATEWAY_TOKEN ?? "dev-token";
 const urls = Object.fromEntries(
@@ -56,8 +60,9 @@ Environment variables:
   LIVEAGENT_GATEWAY_DATA_DIR    Gateway data directory
   LIVEAGENT_DEV_GATEWAY_PORT    Gateway HTTP port (default: 50052)
   LIVEAGENT_DEV_WEBUI_PORT      WebUI Vite port (default: 5173)
-  LIVEAGENT_DEV_DESKTOP_PORT    Desktop Vite port (default: 1420)
+  LIVEAGENT_DEV_DESKTOP_PORT    Desktop Vite port (default: 2120)
   LIVEAGENT_DEV_MCP_BRIDGE_PORT MCP Bridge port (default: 9223)
+  LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND Set to 1 when an independently managed desktop Vite is ready
   LIVEAGENT_DEV_STATE_DIR       State and log directory (default: isolated per checkout)`);
 }
 
@@ -98,10 +103,13 @@ function readState(service) {
 
 function writeState(state) {
   mkdirSync(stateDir, { recursive: true });
+  const destination = statePath(state.service);
+  const temporary = `${destination}.${process.pid}.tmp`;
   writeFileSync(
-    statePath(state.service),
+    temporary,
     `${JSON.stringify({ ...state, repoRoot, port: ports[state.service] })}\n`,
   );
+  renameSync(temporary, destination);
 }
 
 function removeState(service, token) {
@@ -196,7 +204,8 @@ function serviceCommand(service) {
         ...process.env,
         GOCACHE: process.env.GOCACHE ?? join(stateDir, "go-cache"),
         LIVEAGENT_GATEWAY_DATA_DIR: gatewayDataDir,
-        LIVEAGENT_GATEWAY_HTTP_ADDR: `:${ports.gateway}`,
+        LIVEAGENT_GATEWAY_HTTP_ADDR:
+          process.env.LIVEAGENT_GATEWAY_HTTP_ADDR ?? `:${ports.gateway}`,
         LIVEAGENT_GATEWAY_TOKEN: gatewayToken,
       },
     };
@@ -217,9 +226,21 @@ function serviceCommand(service) {
     };
   }
   return {
-    args: ["--dir", "crates/agent-gui", "tauri", "dev"],
-    command: "pnpm",
-    cwd: repoRoot,
+    args: [
+      join(repoRoot, "crates/agent-gui/node_modules/@tauri-apps/cli/tauri.js"),
+      "dev",
+      "--config",
+      JSON.stringify({
+        build: {
+          devUrl: urls.desktop,
+          ...(externalDesktopFrontend
+            ? { beforeDevCommand: "pnpm prepare:kbrain && pnpm gateway:prepare" }
+            : {}),
+        },
+      }),
+    ],
+    command: process.execPath,
+    cwd: join(repoRoot, "crates/agent-gui"),
     env: {
       ...process.env,
       VITE_LIVEAGENT_SESSION_WORKBENCH: process.env.DEV_SESSION_WORKBENCH ?? "1",
@@ -319,6 +340,10 @@ async function waitUntilReady(service, timeoutSeconds) {
 }
 
 async function startService(service) {
+  if (service === "desktop" && externalDesktopFrontend && (await httpReady(service, true))) {
+    console.log(`desktop: already running from this checkout (${urls.desktop})`);
+    return true;
+  }
   // A fresh worktree can spend several minutes compiling the native app.
   const timeoutSeconds = service === "desktop" ? 600 : 60;
   const state = managedState(service);
@@ -336,7 +361,10 @@ async function startService(service) {
     console.log(`${service}: waiting for managed pid ${state.pid} to become ready`);
     return await waitUntilReady(service, timeoutSeconds);
   }
-  if (await portIsListening(ports[service])) {
+  if (
+    (await portIsListening(ports[service])) &&
+    !(service === "desktop" && externalDesktopFrontend)
+  ) {
     console.error(
       `${service}: port ${ports[service]} is occupied by an unmanaged process (${urls[service]}); stop that process before starting this checkout. An HTTP response does not identify it as LiveAgent.`,
     );

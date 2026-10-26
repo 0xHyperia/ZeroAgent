@@ -429,9 +429,14 @@ fn portable_provider_update(provider: &Value) -> Result<Value, String> {
 fn write_private_backup(path: &Path, document: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let parent = path.parent().ok_or("备份文件缺少父目录")?;
+    // tempfile's Windows rename needs extended-length paths for both names;
+    // account-scoped recovery directories can put the destination past MAX_PATH.
+    #[cfg(windows)]
+    let parent = fs::canonicalize(parent).map_err(|_| "无法定位备份目录")?;
+    let destination = parent.join(path.file_name().ok_or("备份文件缺少名称")?);
     let mut temporary = tempfile::Builder::new()
         .prefix("zeroagent-backup-")
-        .tempfile_in(parent)
+        .tempfile_in(&parent)
         .map_err(|_| "无法创建私有备份文件")?;
     temporary
         .write_all(document)
@@ -440,7 +445,9 @@ fn write_private_backup(path: &Path, document: &[u8]) -> Result<(), String> {
         .as_file()
         .sync_all()
         .map_err(|_| "保存备份文件失败")?;
-    temporary.persist(path).map_err(|_| "提交备份文件失败")?;
+    temporary
+        .persist(&destination)
+        .map_err(|_| "提交备份文件失败")?;
     Ok(())
 }
 

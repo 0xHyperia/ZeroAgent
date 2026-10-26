@@ -57,6 +57,34 @@
   height: calc(max(1rem, var(--text-sm) * 1.25) + 0.75rem);
 }
 
+/* The sidebar spans both rows; only the workspace owns the header row. */
+@utility app-workbench-layout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+
+  > [data-app-workbench-chrome] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  > [data-app-workbench-body] {
+    display: contents;
+
+    > [data-slot="sidebar"] {
+      grid-column: 1;
+      grid-row: 1 / -1;
+    }
+
+    > [data-slot="resizable-panel-group"] {
+      grid-column: 2;
+      grid-row: 2;
+      min-width: 0;
+      min-height: 0;
+    }
+  }
+}
+
 @utility layer-raised {
   z-index: var(--layer-raised);
 }

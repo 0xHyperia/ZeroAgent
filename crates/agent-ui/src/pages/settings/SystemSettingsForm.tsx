@@ -474,11 +474,13 @@ export function SystemSettingsForm(
           }
         />
 
-        <SettingsRow
-          title={t("settings.defaultTimeZone")}
-          description={t("settings.defaultTimeZoneDesc")}
-          control={<PlanningTimeZoneSetting />}
-        />
+        {showLocalRuntimeSettings ? (
+          <SettingsRow
+            title={t("settings.defaultTimeZone")}
+            description={t("settings.defaultTimeZoneDesc")}
+            control={<PlanningTimeZoneSetting />}
+          />
+        ) : null}
       </SettingsGroup>
 
       <SidebarShortcutsSection settings={settings} setSettings={setSettings} />

@@ -1395,7 +1395,7 @@ export function GatewayAppView({
           />
           {workbenchDragGhost}
 
-          <div className="gateway-editor-host relative flex min-w-0 min-h-0 flex-1 h-full flex-col overflow-hidden">
+          <div className="gateway-editor-host app-workbench-layout relative min-w-0 min-h-0 flex-1 h-full overflow-hidden">
             <AppWorkbenchChrome
               settings={settings}
               sidebarOpen={sidebarOpen}

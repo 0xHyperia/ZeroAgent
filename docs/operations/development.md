@@ -126,7 +126,7 @@ pnpm dev:stack:logs
 pnpm dev:stack:stop
 ```
 
-默认端口为 Gateway `50052`、WebUI `5173`、桌面前端 `1420`、MCP Bridge `9223`，默认本地
+默认端口为 Gateway `50052`、WebUI `5173`、桌面前端 `2120`、MCP Bridge `9223`，默认本地
 Gateway token 为 `dev-token`。脚本遇到已由外部进程占用且健康的端口时只复用，不会在 stop 时
 终止该外部进程。进程检测、HTTP 健康检查、日志和状态文件均由 Node 实现；Windows 停止托管进程
 时调用系统自带的 `taskkill`，macOS/Linux 使用进程组信号。
@@ -136,6 +136,16 @@ Gateway token 为 `dev-token`。脚本遇到已由外部进程占用且健康的
 如果通过环境变量修改了开发端口或令牌，填写相应值。浏览器访问 `http://localhost:5173` 使用独立
 Vite WebUI。桌面本机托管模式不会自动接管或复用 `dev-stack` 的 Gateway，已有桌面连接配置也不会
 被脚本替换。
+
+调试构建可以通过构建时的 `ZEROAGENT_USA_ZERO_ORIGIN` 指定 loopback 或数字私网 IP 的
+HTTP Sub2API 根地址；发布构建仍要求 HTTPS。`ZEROAGENT_GATEWAY_URL` 和
+`ZEROAGENT_GATEWAY_PORT` 应在桌面编译与运行时保持一致。Gateway 使用对应的
+`USA_ZERO_ORIGIN`、`USA_ZERO_AUTHORIZATION_ORIGIN`，以及匹配的 Web OAuth 客户端密钥。
+
+需要让桌面前端跨账号切换引发的原生进程重启持续可用时，应先独立启动桌面 Vite，设置
+`LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND=1`，再启动 `desktop`。此时 Tauri 只准备 sidecar，
+不再接管前端进程；调用者负责独立前端的生命周期。启动器通过 Native 应用标识、debug 标志、
+checkout 路径及窗口状态核对已运行实例，重复启动不会创建第二个桌面实例。
 
 ## 统一编译与检查
 

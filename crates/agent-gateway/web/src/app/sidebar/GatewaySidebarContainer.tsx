@@ -22,6 +22,7 @@ import { useSidebarContainerState } from "@liveagent/ui/lib/sidebar/useSidebarCo
 import { useSidebarSelector } from "@liveagent/ui/lib/sidebar/useSidebarSelector";
 import { sortWorkspaceProjectsByActivity } from "@liveagent/ui/lib/workspaceProjects";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GatewayBrand } from "@/components/GatewayBrand";
 import type { ChatHistorySummary } from "@/lib/chat/chatHistory";
 import { useStableCallback } from "../hooks/useStableCallback";
 
@@ -378,6 +379,7 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
         onDeleteConversations: handleDeleteConversations,
         onLoadMore: handleLoadMore,
       })}
+      brand={<GatewayBrand />}
       accountMenu={props.accountMenu}
       onNewRecentConversation={props.onNewRecentConversation}
     />

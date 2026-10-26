@@ -1412,7 +1412,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         >
           {headerTop}
           <SidebarHeader className="px-3 pb-2 pt-2">
-            <div className="flex items-center justify-between gap-2">
+            <div data-tauri-drag-region className="flex items-center justify-between gap-2">
               {brand ?? (
                 <div className="flex min-w-0 -translate-y-0.5 items-center gap-2">
                   <img
@@ -1428,7 +1428,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 </div>
               )}
 
-              <div className="flex shrink-0 items-center gap-0.5">
+              <div className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]">
                 <Button
                   type="button"
                   variant="ghost"
@@ -1447,7 +1447,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     variant="ghost"
                     size="icon-sm"
                     title={t("sidebar.closeSidebar")}
-                    className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground desktop:min-[768px]:hidden"
+                    className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
                   >
                     <PanelLeftClose className="size-4" />
                   </SidebarTrigger>

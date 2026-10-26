@@ -11,7 +11,7 @@ import type { MentionComposerDraft } from "@liveagent/ui/components/chat/Mention
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { PanelLeft, PanelLeftClose } from "@liveagent/ui/components/IconSet";
+import { PanelLeft } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
@@ -4322,12 +4322,15 @@ function ChatPageContent(props: ChatPageProps) {
   return (
     <div
       data-app-frame="three-column"
-      className="relative flex size-full min-h-0 flex-col overflow-hidden"
+      className={cn(
+        "relative size-full min-h-0 overflow-hidden",
+        isMacOsTauri() ? "flex flex-col" : "app-workbench-layout",
+      )}
     >
       {activeView === "image-studio-hub" ? (
         <AppHeaderFrame sidebarOpen={sidebarOpen}>
           <div className="relative flex h-full items-center gap-3 pl-4" data-tauri-drag-region>
-            {!isMacOsTauri() && (
+            {!isMacOsTauri() && !sidebarOpen && (
               <button
                 type="button"
                 onClick={handleToggleSidebar}
@@ -4335,11 +4338,7 @@ function ChatPageContent(props: ChatPageProps) {
                 aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
                 className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground [-webkit-app-region:no-drag]"
               >
-                {sidebarOpen ? (
-                  <PanelLeftClose className="size-4" />
-                ) : (
-                  <PanelLeft className="size-4" />
-                )}
+                <PanelLeft className="size-4" />
               </button>
             )}
             <MacOsTitleBarToggle

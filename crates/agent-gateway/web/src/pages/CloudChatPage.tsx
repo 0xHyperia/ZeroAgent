@@ -30,6 +30,7 @@ import {
 import { buildTextFromComposerDraft } from "@/app/chatDraft";
 import { UserMenu } from "@/app/UserMenu";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
+import { GatewayBrand } from "@/components/GatewayBrand";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { accountFetch } from "@/lib/accountRequest";
@@ -64,6 +65,14 @@ import {
   type ReasoningLevel,
 } from "@/lib/settings";
 import type { WebSettingsSaveState } from "@/lib/webSettings";
+import {
+  GATEWAY_CHAT_FRAME_CLASS,
+  GATEWAY_MAIN_BACKDROP_CLASS,
+  GATEWAY_MAIN_SHELL_CLASS,
+  GATEWAY_SETTINGS_OVERLAY_CLASS,
+  GATEWAY_SHELL_CLASS,
+  GATEWAY_TRANSCRIPT_SCROLL_CLASS,
+} from "@/lib/webStyleClasses";
 import type { SectionId } from "@/pages/settings/types";
 
 type Conversation = {
@@ -624,16 +633,16 @@ export function CloudChatPage({
 
   return (
     <AppErrorBoundary>
-      <div className="gateway-shell">
+      <div className={GATEWAY_SHELL_CLASS}>
         <input
           ref={fileRef}
           type="file"
           multiple
-          className="gateway-hidden-file-input"
+          className="gateway-hidden-file-input hidden"
           aria-label="选择附件"
           onChange={(event) => void attachFiles(event)}
         />
-        <div className="gateway-editor-host">
+        <div className="gateway-editor-host relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
           <button
             type="button"
             className="gateway-sidebar-backdrop"
@@ -644,6 +653,7 @@ export function CloudChatPage({
             onClick={() => setSidebarOpen(false)}
           />
           <ChatHistorySidebar
+            brand={<GatewayBrand />}
             onOpenResourceHub={() => undefined}
             items={sidebarItems}
             currentConversationId={conversationId}
@@ -724,8 +734,8 @@ export function CloudChatPage({
             }
           />
 
-          <main className="gateway-main-shell">
-            <div className="gateway-main-backdrop" />
+          <main className={GATEWAY_MAIN_SHELL_CLASS}>
+            <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
             <AppWorkbenchChrome
               settings={settings}
               sidebarOpen={sidebarOpen}
@@ -754,7 +764,7 @@ export function CloudChatPage({
               className="contents"
               chat={{
                 containerProps: {
-                  className: "gateway-chat-frame zone-font-scale",
+                  className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
                   style: {
                     "--zone-font-scale": settings.customSettings.fontScale.chat,
                   } as CSSProperties,
@@ -762,13 +772,15 @@ export function CloudChatPage({
                 content: (
                   <>
                     {error && transcriptRows.length === 0 ? (
-                      <div className="gateway-banner-error">{error}</div>
+                      <div className="gateway-banner-error mx-20px mt-12px rounded-14px border border-destructive/16 bg-destructive/8 px-12px py-10px text-sm text-destructive max-640:mx-10px max-640:mt-8px">
+                        {error}
+                      </div>
                     ) : null}
-                    <section className="gateway-transcript-stage">
-                      <div className="gateway-transcript-scroll-shell">
+                    <section className="gateway-transcript-stage relative min-h-0 flex-1 overflow-hidden @container">
+                      <div className="gateway-transcript-scroll-shell relative h-full min-h-0">
                         <ScrollArea
                           viewportRef={setTranscriptViewport}
-                          className="gateway-transcript-scroll"
+                          className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
                         >
                           <GatewayTranscript
                             conversationId={conversationId}
@@ -868,7 +880,7 @@ export function CloudChatPage({
         </div>
 
         {accountSettingsOpen ? (
-          <div className="gateway-settings-overlay gateway-settings-overlay-open">
+          <div className={`${GATEWAY_SETTINGS_OVERLAY_CLASS} opacity-100! transform-none!`}>
             <SettingsPage
               settings={settings}
               setSettings={setSettings}

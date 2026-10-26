@@ -92,17 +92,30 @@ pub(crate) struct PortableSecretGuard {
 
 pub fn configured_origin(input: &str) -> Result<Url, String> {
     let configured = option_env!("ZEROAGENT_USA_ZERO_ORIGIN").unwrap_or("https://usa0.top");
+    configured_origin_for_build(input, configured, cfg!(debug_assertions))
+}
+
+fn configured_origin_for_build(input: &str, configured: &str, debug: bool) -> Result<Url, String> {
     let expected = Url::parse(configured).map_err(|_| "Invalid USA-Zero build origin")?;
     let url = Url::parse(input).map_err(|_| "Invalid managed model origin")?;
+    // Development still pins the exact build origin; release never accepts HTTP.
+    let development_http = debug
+        && url.scheme() == "http"
+        && match url.host() {
+            Some(url::Host::Domain("localhost")) => true,
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback() || ip.is_unique_local(),
+            _ => false,
+        };
     if url != expected
-        || url.scheme() != "https"
+        || !(url.scheme() == "https" || development_http)
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
         || url.path() != "/"
     {
-        return Err("Managed models require the configured USA-Zero HTTPS origin".into());
+        return Err("Managed models require the configured USA-Zero origin and transport".into());
     }
     Ok(url)
 }
@@ -579,7 +592,8 @@ mod tests {
     }
     #[test]
     fn configured_origin_rejects_redirect_hosts_credentials_and_insecure_transport() {
-        assert!(configured_origin("https://usa0.top").is_ok());
+        let configured = option_env!("ZEROAGENT_USA_ZERO_ORIGIN").unwrap_or("https://usa0.top");
+        assert!(configured_origin(configured).is_ok());
         for value in [
             "http://usa0.top",
             "https://usa0.top.attacker.invalid",
@@ -589,6 +603,41 @@ mod tests {
         ] {
             assert!(configured_origin(value).is_err());
         }
+    }
+
+    #[test]
+    fn configured_origin_allows_only_exact_private_http_in_debug_builds() {
+        for origin in [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://172.16.0.121:5173",
+            "http://10.0.0.2:5173",
+            "http://192.168.1.2:5173",
+            "http://[::1]:5173",
+            "http://[fd00::1]:5173",
+        ] {
+            assert!(configured_origin_for_build(origin, origin, true).is_ok());
+            assert!(configured_origin_for_build(origin, origin, false).is_err());
+        }
+        for origin in [
+            "http://usa0.top",
+            "http://8.8.8.8:5173",
+            "http://dev.example:5173",
+        ] {
+            assert!(configured_origin_for_build(origin, origin, true).is_err());
+        }
+        let configured = "http://172.16.0.121:5173";
+        for input in [
+            "http://172.16.0.122:5173",
+            "http://172.16.0.121:8080",
+            "http://user@172.16.0.121:5173",
+            "http://172.16.0.121:5173/api",
+            "http://172.16.0.121:5173/?key=value",
+            "http://172.16.0.121:5173/#fragment",
+        ] {
+            assert!(configured_origin_for_build(input, configured, true).is_err());
+        }
+        assert!(configured_origin_for_build("https://usa0.top", "https://usa0.top", false).is_ok());
     }
 
     #[tokio::test]

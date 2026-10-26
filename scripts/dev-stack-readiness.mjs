@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { join } from "node:path";
 
 export function matchesDesktopBackend(data, repoRoot, requireVisible = false) {
-  if (data?.app?.identifier !== "com.xiaofei.liveagent" || !data?.environment?.debug) return false;
+  if (data?.app?.identifier !== "top.usa0.zeroagent" || !data?.environment?.debug) return false;
   try {
     if (realpathSync(data.cwd) !== realpathSync(join(repoRoot, "crates/agent-gui/src-tauri")))
       return false;
