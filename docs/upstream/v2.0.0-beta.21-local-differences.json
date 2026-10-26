@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-25T20:22:23.192Z",
+  "at": "2026-10-26T03:55:52.240Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31901,
+      "added": 31928,
       "deleted": 32
     },
     "Backend patches": {
@@ -3794,7 +3794,7 @@
     },
     {
       "path": "docs/releases/v0.4.0-beta.2.md",
-      "added": 13,
+      "added": 15,
       "deleted": 0
     },
     {
@@ -3874,7 +3874,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 151,
+      "added": 176,
       "deleted": 0
     },
     {
