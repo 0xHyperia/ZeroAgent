@@ -346,13 +346,15 @@
         ".github/workflows/desktop-release.yml",
         ".github/workflows/android-release.yml",
         "scripts/release/prepare-app-version-from-tag.mjs",
-        "scripts/release/verify-updater-signatures/src/main.rs"
+        "scripts/release/verify-updater-signatures/src/main.rs",
+        "scripts/release/test-windows-installers.ps1"
       ],
       "tests": [
         "crates/agent-gui/test/backend/release-notes.test.mjs",
         "crates/agent-gui/test/backend/release-branding.test.mjs",
         "crates/agent-gui/test/backend/release-version.test.mjs",
-        "scripts/release/verify-updater-signatures/tests/cli.rs"
+        "scripts/release/verify-updater-signatures/tests/cli.rs",
+        "scripts/release/tests/test-windows-installers-contract.ps1"
       ],
       "security": "公开产物不得包含源码归档、Secret、镜像细节和私有拓扑。候选构建可仅上传Actions产物而不建tag或发布Release：Desktop要求完整SHA并统一各平台checkout；Android支持校验期望SHA及独立候选版本，保留原分支构建方式。构建job只读，只有显式发布job取得仓库写权限和公开仓库令牌；更新签名不等同于操作系统代码签名。现有发布公钥同时进入生成的Tauri配置，与Native既有覆盖保持一致，不旋转密钥。构建前签名探针及打包后真实资产均复用客户端同版官方Minisign库验签，拒绝篡改/错误公钥/损坏签名，不能只以.sig存在计通过；验证工具不读取私钥变量，不进入应用依赖或分发载荷。",
       "upstream_relation": "replace"

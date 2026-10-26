@@ -19,6 +19,16 @@ on:
         type: string
         required: false
         default: ""
+      installer_artifact_run_id:
+        description: Optional completed Windows artifact run to test without rebuilding (artifacts-only)
+        type: string
+        required: false
+        default: ""
+      installer_artifact_source_sha:
+        description: Exact source SHA of the Windows artifact run
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -46,6 +56,8 @@ jobs:
         env:
           ARTIFACTS_ONLY: ${{ inputs.artifacts_only }}
           REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+          INSTALLER_ARTIFACT_RUN_ID: ${{ inputs.installer_artifact_run_id }}
+          INSTALLER_ARTIFACT_SOURCE_SHA: ${{ inputs.installer_artifact_source_sha }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
@@ -55,6 +67,13 @@ jobs:
               exit 1
             }
             test "$source_sha" = "$REQUESTED_SOURCE_REF"
+          fi
+          if [ -n "${INSTALLER_ARTIFACT_RUN_ID:-}" ]; then
+            test "$ARTIFACTS_ONLY" = true
+            [[ "$INSTALLER_ARTIFACT_RUN_ID" =~ ^[0-9]+$ ]]
+            [[ "$INSTALLER_ARTIFACT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          else
+            test -z "${INSTALLER_ARTIFACT_SOURCE_SHA:-}"
           fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
@@ -81,6 +100,7 @@ jobs:
     name: macOS ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: release-metadata
+    if: inputs.installer_artifact_run_id == ''
     env:
       TAURI_ENV_TARGET_TRIPLE: ${{ matrix.target }}
       LIVEAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -161,6 +181,7 @@ jobs:
           pnpm --filter zeroagent build
 
       - name: Validate macOS Native library
+        timeout-minutes: 20
         env:
           LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-tests
           LIVEAGENT_KBRAIN_TEST_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-${{ matrix.target }}
@@ -216,6 +237,7 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     needs: release-metadata
+    if: inputs.installer_artifact_run_id == ''
     env:
       TAURI_ENV_TARGET_TRIPLE: x86_64-pc-windows-msvc
       LIVEAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -336,6 +358,18 @@ jobs:
           test "${#assets[@]}" -gt 0
           cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$LIVEAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
 
+      - name: Test Windows installers on disposable runner
+        timeout-minutes: 10
+        shell: pwsh
+        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:LIVEAGENT_APP_VERSION"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qa-windows-installers
+          path: ${{ runner.temp }}/zeroagent-installer-acceptance/*
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v7
         with:
           name: liveagent-windows-x64
@@ -346,6 +380,7 @@ jobs:
     name: Linux x64
     runs-on: ubuntu-22.04
     needs: release-metadata
+    if: inputs.installer_artifact_run_id == ''
     env:
       TAURI_ENV_TARGET_TRIPLE: x86_64-unknown-linux-gnu
       LIVEAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -503,6 +538,74 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  windows-installer-acceptance:
+    name: Windows installer acceptance
+    if: inputs.artifacts_only && inputs.installer_artifact_run_id != ''
+    needs: release-metadata
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
+
+      - name: Validate existing Windows artifact provenance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_ID: ${{ inputs.installer_artifact_run_id }}
+          ARTIFACT_SOURCE_SHA: ${{ inputs.installer_artifact_source_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:ARTIFACT_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source artifact run' }
+          if ($run.head_sha -cne $env:ARTIFACT_SOURCE_SHA -or $run.path -cne '.github/workflows/desktop-release.yml') { throw 'Unexpected Windows artifact source or workflow' }
+          $jobs = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:ARTIFACT_RUN_ID/jobs?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source artifact jobs' }
+          $windows = @($jobs.jobs | Where-Object { $_.name -ceq 'Windows x64' })
+          if ($windows.Count -ne 1 -or $windows[0].conclusion -cne 'success') { throw 'Source Windows build must have succeeded' }
+          $verified = @($windows[0].steps | Where-Object { $_.name -ceq 'Verify updater asset signatures' -and $_.conclusion -ceq 'success' })
+          if ($verified.Count -ne 1) { throw 'Source artifact lacks successful cryptographic asset verification' }
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/zeroagent-artifact-provenance.json", ($run | Select-Object id,head_sha,path,html_url | ConvertTo-Json))
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: liveagent-windows-x64
+          path: installer-artifacts
+          run-id: ${{ inputs.installer_artifact_run_id }}
+          github-token: ${{ github.token }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify downloaded updater asset signatures
+        shell: pwsh
+        env:
+          LIVEAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          $assets = @(Get-ChildItem -LiteralPath installer-artifacts -Filter '*.sig' -File | ForEach-Object { $_.FullName.Substring(0, $_.FullName.Length - 4) })
+          if ($assets.Count -ne 2) { throw 'Expected the MSI and NSIS updater signatures' }
+          cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --public-key-env LIVEAGENT_UPDATER_PUBLIC_KEY @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded installer signatures failed verification' }
+
+      - name: Test Windows installers on disposable runner
+        timeout-minutes: 10
+        shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ needs.release-metadata.outputs.app_version }}
+        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/installer-artifacts" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:EXPECTED_VERSION"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qa-windows-installers
+          path: |
+            ${{ runner.temp }}/zeroagent-installer-acceptance/*
+            ${{ runner.temp }}/zeroagent-artifact-provenance.json
+          if-no-files-found: ignore
+
   publish:
     name: Publish GitHub Release
     if: github.event_name != 'workflow_dispatch' || !inputs.artifacts_only
@@ -525,6 +628,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
+          pattern: liveagent-*
           path: release-artifacts
           merge-multiple: true
 

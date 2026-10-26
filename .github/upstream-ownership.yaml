@@ -544,6 +544,23 @@
       ]
     },
     {
+      "glob": "scripts/release/test-windows-installers.ps1",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "仅临时GitHub hosted Windows runner执行安装，不触碰本机已有安装与用户数据",
+        "MSI/NSIS安装卸载、完整载荷、版本、精确注册归属及Tauri包类型标记验证"
+      ]
+    },
+    {
+      "glob": "scripts/release/tests/test-windows-installers-contract.ps1",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "本地仅计划与拒绝测试，所有安装进程启动均被拒绝"
+      ]
+    },
+    {
       "glob": "scripts/release/verify-updater-signatures/**",
       "ownership": "zeroagent_owned",
       "risk": "critical",

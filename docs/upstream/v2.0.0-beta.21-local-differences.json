@@ -1,14 +1,14 @@
 {
-  "at": "2026-10-26T08:41:13.639Z",
+  "at": "2026-10-26T09:15:15.332Z",
   "target": "0f82fc04db46fa5ea2712a6c560471d79861a189",
   "productIntegration": "856cc8178dfa21eeba6ae5d19e4d7d39838323bc",
   "scope": "Excludes the snapshot file itself. Current tracked worktree relative to exact upstream beta21, including product data/platform/release adaptations and docs; upstream source ancestry retained.",
-  "paths": 810,
+  "paths": 814,
   "byArea": {
     "Other": {
-      "paths": 58,
-      "added": 3146,
-      "deleted": 1659
+      "paths": 60,
+      "added": 3300,
+      "deleted": 1658
     },
     "Gateway": {
       "paths": 93,
@@ -37,7 +37,7 @@
     },
     "Documentation": {
       "paths": 62,
-      "added": 31947,
+      "added": 31952,
       "deleted": 32
     },
     "Backend patches": {
@@ -46,8 +46,8 @@
       "deleted": 0
     },
     "Scripts": {
-      "paths": 32,
-      "added": 2050,
+      "paths": 34,
+      "added": 2736,
       "deleted": 310
     }
   },
@@ -118,6 +118,11 @@
       "deleted": 0
     },
     {
+      "path": ".github/release-notes-public/v0.4.0-beta.2.md",
+      "added": 25,
+      "deleted": 0
+    },
+    {
       "path": ".github/release-notes/v0.3.15.md",
       "added": 20,
       "deleted": 0
@@ -163,8 +168,13 @@
       "deleted": 0
     },
     {
+      "path": ".github/release-notes/v0.4.0-beta.2.md",
+      "added": 9,
+      "deleted": 0
+    },
+    {
       "path": ".github/upstream-ownership.yaml",
-      "added": 669,
+      "added": 686,
       "deleted": 0
     },
     {
@@ -184,8 +194,8 @@
     },
     {
       "path": ".github/workflows/desktop-release.yml",
-      "added": 301,
-      "deleted": 211
+      "added": 404,
+      "deleted": 210
     },
     {
       "path": ".github/workflows/gateway-docker.yml",
@@ -3784,7 +3794,7 @@
     },
     {
       "path": "docs/product/features.yaml",
-      "added": 383,
+      "added": 385,
       "deleted": 0
     },
     {
@@ -3874,7 +3884,7 @@
     },
     {
       "path": "docs/upstream/v2.0.0-beta.21.md",
-      "added": 191,
+      "added": 194,
       "deleted": 0
     },
     {
@@ -3996,6 +4006,16 @@
       "path": "scripts/release/prepare-kbrain.mjs",
       "added": 18,
       "deleted": 4
+    },
+    {
+      "path": "scripts/release/test-windows-installers.ps1",
+      "added": 537,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/tests/test-windows-installers-contract.ps1",
+      "added": 149,
+      "deleted": 0
     },
     {
       "path": "scripts/release/verify-kbrain-packaging.mjs",
