@@ -90,7 +90,7 @@ import {
   type SettingsSaveState,
 } from "./lib/settings/storage";
 import { desktopSttSettingsService } from "./lib/stt/desktopSttSettingsService";
-import { RemoteDeviceChatPage } from "./pages/RemoteDeviceChatPage";
+import { RemoteDeviceWorkbench } from "./pages/RemoteDeviceWorkbench";
 import type { SectionId } from "./pages/settings/types";
 
 const guiResourceHostCapabilities: ResourceHostCapabilities = {
@@ -1118,10 +1118,21 @@ export default function App() {
                 onRunningConversationCountChange={handleRunningConversationCountChange}
               />
             ) : selectedExecutionEnvironment ? (
-              <RemoteDeviceChatPage
+              <RemoteDeviceWorkbench
                 key={selectedExecutionEnvironment.device_id}
                 settings={settings}
                 environment={selectedExecutionEnvironment}
+                environments={desktopEnvironments}
+                expiresAt={
+                  remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)?.expiresAt ?? 0
+                }
+                onSelectionInvalid={() =>
+                  setRemoteSelectionLeases((current) => {
+                    const next = new Map(current);
+                    next.delete(selectedExecutionEnvironment.device_id);
+                    return next;
+                  })
+                }
                 selectionLease={
                   isRemoteLeaseValid(
                     remoteSelectionLeases.get(selectedExecutionEnvironment.device_id),

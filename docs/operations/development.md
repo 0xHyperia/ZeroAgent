@@ -139,7 +139,9 @@ Vite WebUI。桌面本机托管模式不会自动接管或复用 `dev-stack` 的
 
 调试构建可以通过构建时的 `ZEROAGENT_USA_ZERO_ORIGIN` 指定 loopback 或数字私网 IP 的
 HTTP Sub2API 根地址；发布构建仍要求 HTTPS。`ZEROAGENT_GATEWAY_URL` 和
-`ZEROAGENT_GATEWAY_PORT` 应在桌面编译与运行时保持一致。Gateway 使用对应的
+`ZEROAGENT_GATEWAY_PORT` 在桌面构建时固化为默认值，安装后不必再设置运行时变量；
+显式运行时 Gateway 覆盖仍有更高优先级，使用时应与构建时的账号 Gateway 来源保持一致。
+Gateway 使用对应的
 `USA_ZERO_ORIGIN`、`USA_ZERO_AUTHORIZATION_ORIGIN`，以及匹配的 Web OAuth 客户端密钥。
 
 需要让桌面前端跨账号切换引发的原生进程重启持续可用时，应先独立启动桌面 Vite，设置

@@ -1,3 +1,4 @@
+import { gatewayOrigin } from "../lib/desktopRemoteHost";
 import { getGatewayWebSocketClient } from "../lib/gatewaySocket";
 import { loadToken } from "../lib/storage";
 import { promptPathInBrowser } from "./browserPathPrompt";
@@ -20,7 +21,7 @@ async function readGatewayStatus(): Promise<GatewayRuntimeStatus> {
       online: false,
       enabled: false,
       configured: false,
-      gatewayUrl: typeof window !== "undefined" ? window.location.origin : "",
+      gatewayUrl: gatewayOrigin(),
       lastError: "尚未选择可用的执行环境",
     };
   }
@@ -37,7 +38,7 @@ async function readGatewayStatus(): Promise<GatewayRuntimeStatus> {
       online: Boolean(payload.online),
       enabled: true,
       configured: true,
-      gatewayUrl: window.location.origin,
+      gatewayUrl: gatewayOrigin(),
       sessionId: payload.session_id ?? null,
       connectedSince: payload.connected_since ?? null,
       lastHeartbeat: payload.last_heartbeat ?? null,
@@ -48,7 +49,7 @@ async function readGatewayStatus(): Promise<GatewayRuntimeStatus> {
       online: false,
       enabled: true,
       configured: true,
-      gatewayUrl: window.location.origin,
+      gatewayUrl: gatewayOrigin(),
       lastError: error instanceof Error ? error.message : String(error),
     };
   }
@@ -294,7 +295,7 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
       )) as T;
     case "proxy_get_server_info":
       return {
-        baseUrl: window.location.origin,
+        baseUrl: gatewayOrigin(),
         token: loadToken().trim() || "gateway-webui",
       } as T;
     case "gateway_status":

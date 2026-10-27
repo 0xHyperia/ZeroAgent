@@ -154,6 +154,64 @@ mod tests {
     }
 
     #[test]
+    fn remote_settings_use_build_gateway_without_runtime_environment() {
+        const CHILD_MODE: &str = "ZEROAGENT_TEST_BUILD_GATEWAY_CHILD";
+        if let Some(mode) = std::env::var_os(CHILD_MODE) {
+            let settings = normalize_remote_settings_payload(RemoteSettingsPayload::default());
+            let (expected_url, expected_port) = if mode == "runtime" {
+                ("http://127.0.0.1", 55123)
+            } else {
+                (
+                    option_env!("ZEROAGENT_GATEWAY_URL").unwrap_or(OFFICIAL_GATEWAY_URL),
+                    option_env!("ZEROAGENT_GATEWAY_PORT")
+                        .and_then(|port| port.parse::<u16>().ok())
+                        .filter(|port| *port > 0)
+                        .unwrap_or_else(default_remote_gateway_port),
+                )
+            };
+            assert_eq!(settings.gateway_url, normalize_base_url_text(expected_url));
+            assert_eq!(settings.gateway_port, expected_port);
+            assert!(!settings.enabled, "remote access remains opt-in");
+            assert!(settings.token.is_empty());
+            assert_eq!(
+                settings.effective_gateway_settings().gateway_url,
+                settings.gateway_url
+            );
+            return;
+        }
+
+        let test_name = format!(
+            "{}::remote_settings_use_build_gateway_without_runtime_environment",
+            module_path!().split_once("::").unwrap().1
+        );
+        for mode in ["build", "runtime", "empty"] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args(["--exact", test_name.as_str(), "--nocapture"])
+                .env(CHILD_MODE, mode)
+                .env_remove(GATEWAY_URL_ENV)
+                .env_remove(GATEWAY_PORT_ENV);
+            if mode == "runtime" {
+                child
+                    .env(GATEWAY_URL_ENV, "http://127.0.0.1")
+                    .env(GATEWAY_PORT_ENV, "55123");
+            } else if mode == "empty" {
+                child
+                    .env(GATEWAY_URL_ENV, " ")
+                    .env(GATEWAY_PORT_ENV, " ");
+            }
+            let output = child.output().expect("run isolated Gateway defaults check");
+            assert!(
+                output.status.success(),
+                "{mode}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        }
+    }
+
+    #[test]
     fn new_profile_keeps_account_gateway_and_rejects_settings_supplied_credentials() {
         let mut conn = open_memory_db();
         ensure_remote_agent_id(&mut conn).unwrap();

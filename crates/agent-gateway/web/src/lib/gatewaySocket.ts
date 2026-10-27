@@ -36,6 +36,7 @@ import type {
   ChatCommandAccepted,
   ConversationStreamHandlers,
 } from "@/lib/chat/stream/streamTypes";
+import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "./desktopRemoteHost";
 import { GatewayWebSocketRpcClient } from "./gatewaySocketRpc";
 import type {
   ChatActivityListener,
@@ -468,6 +469,8 @@ export function onGatewayWebSocketClientReplaced(listener: () => void): () => vo
 }
 
 export function getGatewayWebSocketClient(token: string): GatewayWebSocketClient {
+  const host = getDesktopRemoteHost();
+  if (host) requireCurrentDesktopRemoteHost();
   const normalizedToken = token.trim();
   if (activeClient && activeToken === normalizedToken) {
     return activeClient;
@@ -475,7 +478,17 @@ export function getGatewayWebSocketClient(token: string): GatewayWebSocketClient
   const replaced = everHadClient;
   activeClient?.dispose();
   activeToken = normalizedToken;
-  activeClient = new GatewayWebSocketClient(normalizedToken);
+  activeClient = new GatewayWebSocketClient(
+    normalizedToken,
+    host
+      ? {
+          origin: host.gatewayOrigin,
+          desktopAccessToken: host.sessionHandle,
+          clientName: "desktop-controller",
+        }
+      : undefined,
+  );
+  if (host?.environment.device_id) activeClient.setActiveAgent(host.environment.device_id);
   everHadClient = true;
   if (replaced) {
     // The new instance is already installed, so re-entrant

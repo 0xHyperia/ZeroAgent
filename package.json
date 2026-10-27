@@ -16,7 +16,7 @@
     "check:fast": "node scripts/check.mjs fast",
     "check:all": "node scripts/check.mjs all",
     "check:strict": "node scripts/check.mjs strict",
-    "check:script-tests": "node --test scripts/kbrain-startup-budget.test.mjs scripts/typescript-source-tools.test.mjs scripts/ui-boundary-declarations.test.mjs scripts/run-node-tests.test.mjs scripts/check-biome-changed.test.mjs scripts/check-diff-hygiene.test.mjs scripts/release/release-version.test.mjs scripts/release/create-ai-release-notes.test.mjs scripts/release/build-kbrain-source.test.mjs scripts/release/prepare-kbrain.test.mjs scripts/release/kbrain-patches.test.mjs scripts/release/verify-kbrain-packaging.test.mjs",
+    "check:script-tests": "node --test scripts/kbrain-startup-budget.test.mjs scripts/typescript-source-tools.test.mjs scripts/ui-boundary-declarations.test.mjs scripts/run-node-tests.test.mjs scripts/prepare-desktop-remote.test.mjs scripts/check-biome-changed.test.mjs scripts/check-diff-hygiene.test.mjs scripts/release/release-version.test.mjs scripts/release/create-ai-release-notes.test.mjs scripts/release/build-kbrain-source.test.mjs scripts/release/prepare-kbrain.test.mjs scripts/release/kbrain-patches.test.mjs scripts/release/verify-kbrain-packaging.test.mjs",
     "prepare:kbrain": "node scripts/release/prepare-kbrain.mjs --patch-manifest patches/kbrain/manifest.json --artifact-dir .zeroagent/backend-artifact",
     "build:kbrain:source": "node scripts/release/build-kbrain-source.mjs --patch-manifest patches/kbrain/manifest.json",
     "prepare:kbrain:release": "node scripts/release/prepare-kbrain.mjs --release --patch-manifest patches/kbrain/manifest.json --artifact-dir .zeroagent/backend-artifact",

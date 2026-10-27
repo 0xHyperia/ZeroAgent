@@ -543,6 +543,11 @@ pub async fn handle_provider_models(
     })
     .await
     .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))??;
+    #[cfg(desktop)]
+    backend
+        .inner()
+        .ensure_managed_provider_bindings(&[request.provider_id.trim().to_string()])
+        .await?;
     let body = managed_provider_models_body(backend.inner(), request)?;
     let models = kbrain_provider_models(&connection, body).await?;
     Ok(proto::ProviderModelsResponse {

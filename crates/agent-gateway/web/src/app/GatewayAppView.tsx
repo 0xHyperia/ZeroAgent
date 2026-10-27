@@ -90,10 +90,12 @@ import {
   useWebImageStudioHost,
 } from "@/agent-ui-adapters/imageStudio";
 import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
+import { DesktopHostSlot } from "@/components/DesktopHostSlot";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { executeClarifyPromptTurn } from "@/lib/chat/clarifyPromptTurn";
+import { gatewayOrigin, getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import { useSingleUserImageIdentity } from "@/lib/imageIdentity";
 import { bindRelayKeysToSettings } from "@/lib/relay/providers";
 import {
@@ -150,6 +152,7 @@ export function GatewayAppView({
   viewModel: GatewayAppViewModel;
   imageStudioIdentity?: TrustedGatewayImageIdentity;
 }) {
+  const desktopHost = getDesktopRemoteHost();
   const verifiedImageIdentity = useSingleUserImageIdentity(
     viewModel.imageStudioToken,
     imageStudioIdentity,
@@ -1053,7 +1056,7 @@ export function GatewayAppView({
         gitDisabledMessage,
         tunnelEnabled,
         tunnelDisabledMessage,
-        tunnelPublicBaseUrl: window.location.origin,
+        tunnelPublicBaseUrl: gatewayOrigin(),
       },
       workspaceProjectRootClient,
       workspaceRootRevision,
@@ -1408,13 +1411,17 @@ export function GatewayAppView({
               }
               onOpenSidebar={() => setSidebarOpen((open) => !open)}
               leadingActions={
-                activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes ? (
-                  <ConversationViewTabs
-                    active={renderedConversationView}
-                    onChange={setActiveConversationView}
-                  />
-                ) : null
+                <>
+                  {desktopHost && <DesktopHostSlot kind="header" />}
+                  {activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes ? (
+                    <ConversationViewTabs
+                      active={renderedConversationView}
+                      onChange={setActiveConversationView}
+                    />
+                  ) : null}
+                </>
               }
+              windowControls={desktopHost ? <DesktopHostSlot kind="window" /> : undefined}
               trailingActions={
                 <>
                   <ProjectToolsPanelToggle
@@ -1424,11 +1431,13 @@ export function GatewayAppView({
                     className="mr-6px max-520:mr-8px"
                     onToggle={() => setRightDockOpen((open) => !open)}
                   />
-                  <ExecutionEnvironmentSwitcher
-                    environments={environments}
-                    selection={selection}
-                    onSwitch={switchExecutionTarget}
-                  />
+                  {!desktopHost && (
+                    <ExecutionEnvironmentSwitcher
+                      environments={environments}
+                      selection={selection}
+                      onSwitch={switchExecutionTarget}
+                    />
+                  )}
                 </>
               }
             />
@@ -1438,22 +1447,26 @@ export function GatewayAppView({
             >
               <GatewaySidebarContainer
                 accountMenu={
-                  <UserMenu
-                    open={userMenuOpen}
-                    onOpenChange={setUserMenuOpen}
-                    userMenuLabel={userMenuLabel}
-                    userAvatarLabel={userAvatarLabel}
-                    email={relayUser?.email ?? ""}
-                    balance={relayUser?.balance}
-                    todayTokens={relayStats?.today_tokens}
-                    avatarUrl={relayUser?.avatar_url}
-                    online={Boolean(status?.online)}
-                    onRefreshAccount={refreshRelayAccount}
-                    onDismissNavigation={() => setSidebarOpen(false)}
-                    onOpenAccount={() => openSettings("account")}
-                    onOpenSettings={() => openSettings("system")}
-                    onLogout={handleLogout}
-                  />
+                  desktopHost?.onAccountTarget ? (
+                    <DesktopHostSlot kind="account" />
+                  ) : (
+                    <UserMenu
+                      open={userMenuOpen}
+                      onOpenChange={setUserMenuOpen}
+                      userMenuLabel={userMenuLabel}
+                      userAvatarLabel={userAvatarLabel}
+                      email={relayUser?.email ?? ""}
+                      balance={relayUser?.balance}
+                      todayTokens={relayStats?.today_tokens}
+                      avatarUrl={relayUser?.avatar_url}
+                      online={Boolean(status?.online)}
+                      onRefreshAccount={refreshRelayAccount}
+                      onDismissNavigation={() => setSidebarOpen(false)}
+                      onOpenAccount={() => openSettings("account")}
+                      onOpenSettings={() => openSettings("system")}
+                      onLogout={handleLogout}
+                    />
+                  )
                 }
                 pinnedOrder={settings.system.sidebarPinnedOrder}
                 onReorderPinned={(sidebarPinnedOrder) =>
@@ -2149,7 +2162,7 @@ export function GatewayAppView({
                       tunnelClient={isAgentMode ? api : null}
                       tunnelEnabled={tunnelEnabled}
                       tunnelDisabledMessage={tunnelDisabledMessage}
-                      tunnelPublicBaseUrl={window.location.origin}
+                      tunnelPublicBaseUrl={gatewayOrigin()}
                       workspaceActivityClient={workspaceActivityClient}
                       onProjectStateChange={handleRightDockProjectStateChange}
                       onFileTreeStateChange={handleRightDockFileTreeStateChange}

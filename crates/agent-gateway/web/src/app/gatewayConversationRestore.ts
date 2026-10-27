@@ -1,3 +1,5 @@
+import { desktopStorageKey } from "@/lib/desktopRemoteHost";
+
 const SELECTED_CONVERSATION_STORAGE_KEY = "liveagent.gateway.selectedConversation.v2";
 
 type StoredConversationSelections = Record<string, string>;
@@ -8,7 +10,7 @@ function normalizeAgentId(agentId: string): string {
 
 function readSelections(): StoredConversationSelections {
   try {
-    const raw = window.sessionStorage.getItem(SELECTED_CONVERSATION_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(desktopStorageKey(SELECTED_CONVERSATION_STORAGE_KEY));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -26,7 +28,10 @@ function readSelections(): StoredConversationSelections {
 
 function writeSelections(selections: StoredConversationSelections): void {
   try {
-    window.sessionStorage.setItem(SELECTED_CONVERSATION_STORAGE_KEY, JSON.stringify(selections));
+    window.sessionStorage.setItem(
+      desktopStorageKey(SELECTED_CONVERSATION_STORAGE_KEY),
+      JSON.stringify(selections),
+    );
   } catch {
     // Session storage is an optional enhancement; private browsing may disable writes.
   }

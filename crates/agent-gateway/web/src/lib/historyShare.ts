@@ -1,3 +1,4 @@
+import { desktopRemoteFetch, gatewayOrigin } from "./desktopRemoteHost";
 import type { SharedHistoryDetail } from "./gatewayTypes";
 
 const SHARE_PATH_PREFIX = "/share/";
@@ -44,7 +45,7 @@ function getWindowLocationOrigin() {
   if (typeof window === "undefined") {
     return "";
   }
-  return window.location.origin;
+  return gatewayOrigin();
 }
 
 export function parseHistoryShareToken(pathname = getWindowLocationPathname()) {
@@ -80,7 +81,7 @@ export async function fetchSharedHistory(token: string): Promise<SharedHistoryDe
     throw new Error("分享链接无效");
   }
 
-  const response = await fetch(
+  const response = await desktopRemoteFetch(
     `/api/public/history-shares/${encodeURIComponent(normalizedToken)}`,
     {
       credentials: "omit",

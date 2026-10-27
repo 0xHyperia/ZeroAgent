@@ -302,6 +302,27 @@ impl AccountSessionState {
         Ok(result)
     }
 
+    pub(crate) async fn all_active_managed_credentials(
+        &self,
+        handle: &str,
+    ) -> Result<Vec<ManagedCredential>, String> {
+        let credentials = self
+            .raw_keys(handle)
+            .await?
+            .into_iter()
+            .filter(|key| {
+                key.row.get("status").and_then(Value::as_str) == Some("active")
+                    && key.row.get("group_id").and_then(Value::as_u64).is_some()
+            })
+            .map(|key| ManagedCredential {
+                provider_id: format!("relay-key-{}", key.id),
+                api_key: key.value,
+            })
+            .collect::<Vec<_>>();
+        self.require_current(handle).await?;
+        Ok(credentials)
+    }
+
     pub async fn http(&self, request: AccountHttpRequest) -> Result<AccountHttpResponse, String> {
         let url = relative_url(&self.origin, &request.path)?;
         let method = request.method.to_ascii_uppercase();

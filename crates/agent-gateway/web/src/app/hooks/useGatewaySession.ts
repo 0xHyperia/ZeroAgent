@@ -2,6 +2,11 @@ import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bindAccountRequests } from "@/lib/accountRequest";
 import {
+  type DesktopRemoteHost,
+  getDesktopRemoteHost,
+  requireCurrentDesktopRemoteHost,
+} from "@/lib/desktopRemoteHost";
+import {
   canReuseDeviceSelection,
   type ExecutionEnvironment,
   type ExecutionPresence,
@@ -53,12 +58,12 @@ function persistHistorySelection(selection: ExecutionSelection | null) {
   window.history.replaceState(state, "", window.location.href);
 }
 
-export function useGatewaySession(historyShareToken: string | null) {
+function useBrowserGatewaySession(historyShareToken: string | null, enabled: boolean) {
   const [accountUser, setAccountUser] = useState<RelayUser | null>(null);
   const [environments, setEnvironments] = useState<ExecutionEnvironment[]>([]);
   const [selection, setSelection] = useState<ExecutionSelection | null>(null);
   const [token, setToken] = useState("");
-  const [authInitializing, setAuthInitializing] = useState(!historyShareToken);
+  const [authInitializing, setAuthInitializing] = useState(enabled && !historyShareToken);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [twoFactorToken, setTwoFactorToken] = useState("");
@@ -170,6 +175,7 @@ export function useGatewaySession(historyShareToken: string | null) {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     if (historyShareToken) {
       setAuthInitializing(false);
       return;
@@ -192,10 +198,10 @@ export function useGatewaySession(historyShareToken: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [historyShareToken, loadEnvironments]);
+  }, [enabled, historyShareToken, loadEnvironments]);
 
   useEffect(() => {
-    if (!accountUser || historyShareToken) return;
+    if (!enabled || !accountUser || historyShareToken) return;
     const timer = window.setInterval(() => {
       void loadEnvironments().catch(() => undefined);
     }, EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS);
@@ -211,9 +217,10 @@ export function useGatewaySession(historyShareToken: string | null) {
       window.removeEventListener("online", refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
     };
-  }, [accountUser, historyShareToken, loadEnvironments]);
+  }, [enabled, accountUser, historyShareToken, loadEnvironments]);
 
   useEffect(() => {
+    if (!enabled) return;
     const handleInvalidSelection = () => {
       const epoch = ++sessionEpochRef.current;
       resetGatewayWebSocketClient();
@@ -228,7 +235,7 @@ export function useGatewaySession(historyShareToken: string | null) {
     window.addEventListener(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection);
     return () =>
       window.removeEventListener(GATEWAY_SELECTION_INVALID_EVENT, handleInvalidSelection);
-  }, [applyToken, loadEnvironments]);
+  }, [enabled, applyToken, loadEnvironments]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -373,4 +380,112 @@ export function useGatewaySession(historyShareToken: string | null) {
     applyExecutionPresence,
     clearSession,
   };
+}
+
+function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
+  const [valid, setValid] = useState(Boolean(host));
+  const [authError, setAuthError] = useState<string | null>(null);
+  const invalidated = useRef(false);
+  const invalidate = useCallback(
+    (reason: string) => {
+      if (!host || invalidated.current) return;
+      invalidated.current = true;
+      setValid(false);
+      setAuthError(reason);
+      resetGatewayWebSocketClient();
+      setEphemeralCredential(null);
+      host.onSelectionInvalid(reason);
+    },
+    [host],
+  );
+  const token = host && valid ? encodeSelectionCredential(host.selection) : "";
+
+  useEffect(() => {
+    if (!host) return;
+    bindAccountRequests(host.accountUser.id);
+    setEphemeralCredential(token);
+    const expiresAt = Date.parse(host.selection.expires_at);
+    const expiry = window.setTimeout(
+      () => invalidate("控制权限已过期，请重新选择并授权设备。"),
+      Math.max(0, expiresAt - Date.now()),
+    );
+    const invalidSelection = () => invalidate("设备连接或控制权限已失效，请重新选择设备。");
+    window.addEventListener(GATEWAY_SELECTION_INVALID_EVENT, invalidSelection);
+    return () => {
+      window.clearTimeout(expiry);
+      window.removeEventListener(GATEWAY_SELECTION_INVALID_EVENT, invalidSelection);
+      resetGatewayWebSocketClient();
+      setEphemeralCredential(null);
+    };
+  }, [host, invalidate, token]);
+
+  const applyExecutionPresence = useCallback(
+    (presence: readonly ExecutionPresence[]) => {
+      if (!host) return;
+      if (presence.some((item) => item.agent_id === host.environment.device_id && !item.online)) {
+        invalidate("所选设备已离线，请重新连接此设备。");
+      }
+    },
+    [host, invalidate],
+  );
+  const unavailableLogin = useCallback(async () => {
+    throw new Error("请使用桌面账号入口登录。");
+  }, []);
+  const switchExecutionTarget = useCallback(
+    async (
+      environment: ExecutionEnvironment,
+      _workspace: ExecutionWorkspace,
+    ): Promise<ExecutionSelection> => {
+      requireCurrentDesktopRemoteHost();
+      if (!host || environment.device_id !== host.environment.device_id) {
+        throw new Error("请使用桌面的设备切换入口选择设备。");
+      }
+      return host.selection;
+    },
+    [host],
+  );
+  const reloadEnvironments = useCallback(async () => {
+    requireCurrentDesktopRemoteHost();
+    return host?.environments ?? [];
+  }, [host]);
+  const clearSession = useCallback(
+    async (revokeRemotely = true) => {
+      if (!host) return;
+      if (revokeRemotely) {
+        requireCurrentDesktopRemoteHost();
+        if (!host.logout) throw new Error("桌面退出登录暂不可用。");
+        // Native may need to retry a vault failure. Keep this workbench and its
+        // target intact until logout has actually succeeded.
+        await host.logout();
+      }
+      invalidate("账号会话已结束，请通过桌面账号入口重新连接。");
+    },
+    [host, invalidate],
+  );
+  return {
+    token,
+    accountUser: host?.accountUser ?? null,
+    environments: host?.environments ?? [],
+    // An invalid remote mount retains its target; it never becomes Cloud Chat/local.
+    selection: host?.selection ?? null,
+    authInitializing: false,
+    authSubmitting: false,
+    authError,
+    twoFactorRequired: false,
+    setAuthError,
+    login: unavailableLogin,
+    register: unavailableLogin,
+    verifyTwoFactor: unavailableLogin,
+    switchExecutionTarget,
+    reloadEnvironments,
+    applyExecutionPresence,
+    clearSession,
+  };
+}
+
+export function useGatewaySession(historyShareToken: string | null) {
+  const host = getDesktopRemoteHost();
+  const browser = useBrowserGatewaySession(historyShareToken, !host);
+  const desktop = useDesktopGatewaySession(host);
+  return host ? desktop : browser;
 }

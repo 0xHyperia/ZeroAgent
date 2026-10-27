@@ -114,7 +114,7 @@ export async function buildRelayProviders(
         let models: ProviderModelConfig[] = existing?.models ?? [];
         if (forceModelRefresh || models.length === 0) {
           try {
-            const response = await getRelayProviderModels(key.id);
+            const response = await getRelayProviderModels(key.id, type);
             const payload = response as { data?: unknown; models?: unknown } | null;
             const items = Array.isArray(response)
               ? response

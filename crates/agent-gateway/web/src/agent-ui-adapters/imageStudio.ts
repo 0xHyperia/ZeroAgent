@@ -4,6 +4,7 @@ import type { DraftStorage } from "@liveagent/ui/features/image-studio/drafts";
 import { createBrowserImageDownload } from "@liveagent/ui/lib/imaging/browserDownload";
 import { ImageClientError } from "@liveagent/ui/lib/imaging/errors";
 import { useEffect, useState } from "react";
+import { desktopRemoteFetch, gatewayOrigin } from "../lib/desktopRemoteHost";
 import { createGatewayImageClient, type GatewayImageConnection } from "../lib/imageStudio";
 
 /** Supplied only by an authenticated server identity response, never browser preferences. */
@@ -110,7 +111,12 @@ export function useWebImageStudioHost(
         /* Storage can be disabled. */
       }
       session = createWebImageStudioHost(
-        { baseUrl: window.location.origin, token, backendId: identity.backendId },
+        {
+          baseUrl: gatewayOrigin(),
+          token,
+          backendId: identity.backendId,
+          fetch: desktopRemoteFetch,
+        },
         identity,
         workspace,
         storage,

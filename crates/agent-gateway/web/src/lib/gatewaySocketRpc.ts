@@ -292,7 +292,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     decisionJson: string,
   ): Promise<ChatQueueResponse> {
     return normalizeChatQueueResponse(
-      await this.requestWithRecovery<RawChatQueueResponse>("chat_queue.tool_approval", {
+      await this.request<RawChatQueueResponse>("chat_queue.tool_approval", {
         conversation_id: conversationId,
         item_id: toolCallId,
         request_json: decisionJson,

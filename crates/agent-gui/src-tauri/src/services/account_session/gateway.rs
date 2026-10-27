@@ -37,7 +37,7 @@ pub(crate) fn configured_gateway_origin() -> Result<Url, String> {
     Ok(url)
 }
 
-fn gateway_url(origin: &Url, path: &str) -> Result<Url, String> {
+pub(super) fn gateway_url(origin: &Url, path: &str) -> Result<Url, String> {
     if !path.starts_with('/')
         || path.starts_with("//")
         || path.contains('\\')
@@ -89,7 +89,7 @@ fn valid_device_id(value: &str) -> bool {
 }
 
 impl AccountSessionState {
-    async fn gateway_raw(
+    pub(super) async fn gateway_raw(
         &self,
         handle: &str,
         origin: &Url,

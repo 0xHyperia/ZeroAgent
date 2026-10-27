@@ -11,6 +11,7 @@ import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { getDesktopRemoteHost } from "../../lib/desktopRemoteHost";
 import {
   bindRelayEmail,
   changeRelayPassword,
@@ -23,6 +24,7 @@ import {
   sendRelayEmailBindingCode,
   updateRelayProfile,
 } from "../../lib/relay/client";
+import { openUrl } from "../../shims/tauriOpener";
 import { DevicesSection } from "./DevicesSection";
 
 type AccountSectionProps = {
@@ -66,6 +68,7 @@ function readAvatar(file: File) {
 }
 
 export function AccountSection({ user, stats, onUserChange, onStatsChange }: AccountSectionProps) {
+  const desktopHost = getDesktopRemoteHost();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState(user.username ?? "");
   const [email, setEmail] = useState(user.email);
@@ -303,10 +306,13 @@ export function AccountSection({ user, stats, onUserChange, onStatsChange }: Acc
             type="button"
             variant="outline"
             onClick={() =>
-              window.open("https://usa0.top/profile/security", "_blank", "noopener,noreferrer")
+              void openUrl(
+                desktopHost?.accountSecurityUrl ?? "https://usa0.top/profile/security",
+              ).catch(() => setNotice({ kind: "error", text: "打开账户安全页面失败。" }))
             }
           >
-            <ExternalLink className="h-4 w-4" />在 usa0.top 管理邮箱和密码
+            <ExternalLink className="h-4 w-4" />在 {desktopHost ? "USA-Zero" : "usa0.top"}{" "}
+            管理邮箱和密码
           </Button>
         </section>
       )}

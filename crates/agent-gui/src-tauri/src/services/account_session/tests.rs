@@ -45,6 +45,7 @@ struct HttpState {
     calls: StdMutex<Vec<(String, String, String)>>,
     refresh_count: AtomicUsize,
     key_status: AtomicU16,
+    extra_active_key: AtomicBool,
     password_mode: AtomicU16,
     password_gate: StdMutex<Option<oneshot::Receiver<()>>>,
     password_started: Notify,
@@ -113,7 +114,14 @@ async fn serve(State(state): State<Arc<HttpState>>, request: Request) -> Respons
         let id = if owner == "b" { 21 } else { 11 };
         let row = json!({"id":id,"key":format!("sk-managed-{owner}"),"name":format!("access-{owner} sk-managed-{owner}"),"status":"active","group_id":3,"group":{"name":format!("sk-inactive-{owner}")}});
         let data = if body.is_empty() {
-            json!({"total":2,"items":[row,{"id":id+1,"key":format!("sk-inactive-{owner}"),"name":"Archived","status":"disabled","group_id":3}]})
+            let mut items = vec![
+                row,
+                json!({"id":id+1,"key":format!("sk-inactive-{owner}"),"name":"Archived","status":"disabled","group_id":3}),
+            ];
+            if state.extra_active_key.load(Ordering::SeqCst) {
+                items.push(json!({"id":id+2,"key":format!("sk-extra-{owner}"),"name":"New key","status":"active","group_id":3}));
+            }
+            json!({"total":items.len(),"items":items})
         } else {
             json!({"id":id+2,"key":format!("sk-created-{owner}"),"name":"Created","status":"active","group_id":3,"group":{"name":format!("sk-created-{owner}")},"raw_alias":format!("sk-created-{owner}")})
         };
@@ -212,6 +220,10 @@ pub(crate) struct Fixture {
     server: tokio::task::JoinHandle<()>,
 }
 impl Fixture {
+    pub(crate) fn enable_extra_active_key(&self) {
+        self.http.extra_active_key.store(true, Ordering::SeqCst);
+    }
+
     pub(crate) async fn new() -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();

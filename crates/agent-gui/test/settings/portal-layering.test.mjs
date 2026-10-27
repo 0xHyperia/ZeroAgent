@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { readStyleSource } from "../../../agent-ui/test-support/style-values.mjs";
+import { parseTypeScriptSource, walkSyntaxTree } from "../../../../scripts/typescript-source-tools.mjs";
 
 function readShared(path) {
   return readFileSync(new URL(`../../../agent-ui/src/${path}`, import.meta.url), "utf8");
@@ -96,7 +97,7 @@ test("modal and nested popup portals share a DOM-ordered interaction plane", () 
   assert.ok(criticalLayer > toastLayer);
 });
 
-test("custom React portals opt into a semantic overlay layer", () => {
+test("custom React portals declare an overlay layer or an explicit layout-only desktop chrome slot", () => {
   const sourceRoots = [
     new URL("../../../agent-ui/src/", import.meta.url),
     new URL("../../src/", import.meta.url),
@@ -109,8 +110,25 @@ test("custom React portals opt into a semantic overlay layer", () => {
 
   assert.ok(portalFiles.length > 0);
   for (const [path, source] of portalFiles) {
-    const portalCalls = source.split("createPortal(").slice(1);
-    for (const [index, portalCall] of portalCalls.entries()) {
+    const portalCalls = [];
+    walkSyntaxTree(parseTypeScriptSource(source, path), (node) => {
+      if (node.type === "CallExpression" && node.callee?.type === "Identifier" && node.callee.name === "createPortal") portalCalls.push(node);
+    });
+    for (const [index, call] of portalCalls.entries()) {
+      const content = call.arguments[0];
+      const attributes = content?.type === "JSXElement" ? content.openingElement.attributes : [];
+      const attribute = (name) => attributes.find((entry) => entry.type === "JSXAttribute" && entry.name?.name === name);
+      const chrome = attribute("data-desktop-remote-chrome-slot");
+      if (chrome) {
+        assert.ok(["device", "window"].includes(chrome.value?.value), `${path} chrome slot must declare device/window ownership`);
+        assert.equal(attribute("className")?.value?.value, "contents", `${path} chrome slots participate in layout without creating an overlay plane`);
+        const contentSource = source.slice(content.start, content.end);
+        assert.doesNotMatch(contentSource, /\brole\s*=\s*["'](?:dialog|alertdialog)["']|aria-modal|\blayer-(?:popover|modal|toast|critical)\b|\b(?:fixed|absolute)\b/, `${path} chrome layout portals cannot also become dialog/overlay surfaces`);
+        continue;
+      }
+      // Preserve the existing semantic-layer requirement for every ordinary
+      // portal; classification depends on the actual JSX contract, not a path.
+      const portalCall = source.slice(call.start + "createPortal(".length);
       assert.match(
         portalCall,
         /layer-(?:popover|modal|toast|critical)/,

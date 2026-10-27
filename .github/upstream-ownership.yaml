@@ -2,6 +2,33 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote*",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "Native私有Cookie bridge固定账号、Gateway、设备和既有lease，原始凭据不返回renderer",
+        "路径/体积/请求头边界、上传、切号取消及退出清理的真实HTTP测试"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "完整WebUI独立工厂、设备/账号命名空间、旧宿主拒绝迟到请求且不回本机",
+        "Native退出失败保留当前状态、模型和审批真实协议与完整bundle DOM运行时"
+      ]
+    },
+    {
+      "glob": "scripts/prepare-desktop-remote*",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "保持WebUI aliases，单文件ESM工厂无eval/iframe/按设备永久模块缓存",
+        "独立可回收模块状态、Worker URL、唯一mount导出、完整Windows嵌入构建"
+      ]
+    },
+    {
       "glob": "patches/kbrain/0009-prompt-cache-hint-inheritance.patch",
       "ownership": "adapted",
       "risk": "high",

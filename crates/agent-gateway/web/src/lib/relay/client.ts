@@ -1,10 +1,12 @@
 import { createUuid } from "@liveagent/ui/lib/shared/id";
+import type { ProviderId } from "@/lib/settings";
 import {
   ACCOUNT_SESSION_STORAGE_KEY,
   accountFetch,
   accountOwnerHeaders,
   invalidateAccountRequests,
 } from "../accountRequest";
+import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "../desktopRemoteHost";
 import {
   acknowledgeEmbeddedOAuthCallback,
   clearEmbeddedMobileGatewaySession,
@@ -12,6 +14,7 @@ import {
   isEmbeddedMobileRuntime,
   openEmbeddedOAuth,
 } from "../mobileRuntime";
+import { loadToken } from "../storage";
 
 export const RELAY_ORIGIN = "https://usa0.top";
 export const RELAY_SESSION_CHANGED_EVENT = "zeroagent:relay-session-changed";
@@ -468,7 +471,19 @@ export async function createRelayApiKeys(name: string, groupIds: number[], group
   return created;
 }
 
-export function getRelayProviderModels(keyId: number) {
+export async function getRelayProviderModels(keyId: number, providerType?: ProviderId) {
+  if (getDesktopRemoteHost()) {
+    if (!providerType) return Promise.reject(new Error("无法识别托管模型协议。"));
+    const { getGatewayWebSocketClient } = await import("../gatewaySocket");
+    return getGatewayWebSocketClient(loadToken().trim()).getProviderModels(
+      providerType,
+      "",
+      "",
+      false,
+      undefined,
+      `relay-key-${keyId}`,
+    );
+  }
   return requestGatewayAccount<{ models: unknown }>(
     `/api/web-chat/provider-keys/${encodeURIComponent(String(keyId))}/models`,
     { authenticated: true },
@@ -522,6 +537,13 @@ async function requestGatewayAccount<T>(
 }
 
 export async function logoutRelay() {
+  const host = getDesktopRemoteHost();
+  if (host) {
+    requireCurrentDesktopRemoteHost();
+    if (!host.logout) throw new Error("桌面退出登录暂不可用。");
+    await host.logout();
+    return;
+  }
   const ownerHeaders = accountOwnerHeaders();
   return changeRelaySession(async () => {
     try {

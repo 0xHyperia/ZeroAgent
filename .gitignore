@@ -57,6 +57,7 @@ workspace.zip
 
 # Desktop Gateway sidecars are built from this checkout before Tauri dev/build.
 /crates/agent-gui/src-tauri/binaries/
+/crates/agent-gui/public/remote-device/
 
 # Local workflow artifacts
 /.trellis

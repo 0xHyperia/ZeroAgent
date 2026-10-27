@@ -73,6 +73,9 @@ macro_rules! app_invoke_handler {
             services::account_session::gateway::account_gateway_socket_connect,
             services::account_session::gateway::account_gateway_socket_send,
             services::account_session::gateway::account_gateway_socket_close,
+            services::account_session::desktop_remote::account_remote_open,
+            services::account_session::desktop_remote::account_remote_http,
+            services::account_session::desktop_remote::account_remote_close,
             commands::chat_history::chat_history_list,
             commands::chat_history::chat_history_workdirs,
             commands::chat_history::chat_history_shared_list,
@@ -408,6 +411,7 @@ macro_rules! app_invoke_handler {
             let bootstrap = command.starts_with("account_session_")
                 || command.starts_with("account_gateway_")
                 || command.starts_with("account_device_")
+                || command.starts_with("account_remote_")
                 || command.starts_with("plugin:")
                 || matches!(
                     command,
@@ -445,6 +449,10 @@ fn start_account_session_lifecycle(app: &tauri::AppHandle) {
         .state::<Arc<services::account_session::gateway::AccountSocketState>>()
         .inner()
         .clone();
+    let remote = app
+        .state::<Arc<services::account_session::desktop_remote::RemoteGatewayState>>()
+        .inner()
+        .clone();
     let mut ended = account.subscribe_ended();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -454,6 +462,7 @@ fn start_account_session_lifecycle(app: &tauri::AppHandle) {
                 event=ended.recv()=>{
                     let Ok(event)=event else{continue;};
                     sockets.close_session(&event.handle).await;
+                    remote.close_session(&account, &event.handle).await;
                     let matched=app.state::<Arc<services::kbrain_backend::KBrainBackendState>>().close_account_session(&event.handle);
                     if matched {
                         if let Some(gateway)=app.try_state::<Arc<services::gateway::GatewayController>>(){let _=gateway.disconnect_runtime();gateway.shutdown_local_gateway();}
@@ -1146,6 +1155,9 @@ pub fn run() {
     let builder = builder
         .manage(Arc::clone(&account_sessions))
         .manage(Arc::clone(&account_sockets))
+        .manage(Arc::new(
+            services::account_session::desktop_remote::RemoteGatewayState::default(),
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build());

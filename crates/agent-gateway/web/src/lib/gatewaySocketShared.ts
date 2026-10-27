@@ -34,6 +34,7 @@ import type {
 } from "@liveagent/ui/lib/workspace-activity/types";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import type { ChatCommandUpdate, ConversationActivityEvent } from "@/lib/chat/stream/streamTypes";
+import { desktopStorageKey, getDesktopRemoteHost } from "./desktopRemoteHost";
 import type {
   AgentStatus,
   ChatQueueResponse,
@@ -706,6 +707,8 @@ export function getRuntimeHost(): RuntimeHost {
 }
 
 export function getRuntimeOrigin() {
+  const desktopHost = getDesktopRemoteHost();
+  if (desktopHost) return desktopHost.gatewayOrigin;
   const host = getRuntimeHost();
   const origin = host.location?.origin;
   if (typeof origin === "string" && origin.trim()) {
@@ -967,7 +970,11 @@ export function requestRequiresAgentId(type: string): boolean {
 
 export function loadPersistedActiveAgent(): string {
   try {
-    return (globalThis.localStorage?.getItem(ACTIVE_AGENT_STORAGE_KEY) ?? "").trim();
+    const desktopHost = getDesktopRemoteHost();
+    if (desktopHost) return desktopHost.environment.device_id ?? "";
+    return (
+      globalThis.localStorage?.getItem(desktopStorageKey(ACTIVE_AGENT_STORAGE_KEY)) ?? ""
+    ).trim();
   } catch {
     return "";
   }
@@ -976,9 +983,9 @@ export function loadPersistedActiveAgent(): string {
 export function persistActiveAgent(agentId: string) {
   try {
     if (agentId) {
-      globalThis.localStorage?.setItem(ACTIVE_AGENT_STORAGE_KEY, agentId);
+      globalThis.localStorage?.setItem(desktopStorageKey(ACTIVE_AGENT_STORAGE_KEY), agentId);
     } else {
-      globalThis.localStorage?.removeItem(ACTIVE_AGENT_STORAGE_KEY);
+      globalThis.localStorage?.removeItem(desktopStorageKey(ACTIVE_AGENT_STORAGE_KEY));
     }
   } catch {
     // 隐私模式等场景不可写：选择只在本页生命周期内生效。

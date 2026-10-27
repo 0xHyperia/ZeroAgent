@@ -1,5 +1,6 @@
 import { redactSettingsForWebStorage } from "@liveagent/ui/lib/settings/sync";
 import { type AppSettings, getDefaultSettings, normalizeSettings } from "@/lib/settings";
+import { desktopStorageKey, gatewayOrigin } from "./desktopRemoteHost";
 
 const WEB_SETTINGS_STORAGE_KEY = "liveagent.gateway.webui.settings.v1";
 
@@ -21,7 +22,7 @@ export function getWebDefaultSettings(token: string): AppSettings {
     remote: {
       ...defaults.remote,
       enabled: token.trim() !== "",
-      gatewayUrl: typeof window !== "undefined" ? window.location.origin : "",
+      gatewayUrl: gatewayOrigin(),
     },
   });
 }
@@ -29,7 +30,7 @@ export function getWebDefaultSettings(token: string): AppSettings {
 export function loadWebSettings(token: string): AppSettings {
   const fallback = getWebDefaultSettings(token);
   try {
-    const raw = window.localStorage.getItem(WEB_SETTINGS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(desktopStorageKey(WEB_SETTINGS_STORAGE_KEY));
     if (!raw) {
       return fallback;
     }
@@ -57,7 +58,7 @@ export function loadWebSettings(token: string): AppSettings {
 export function persistWebSettings(settings: AppSettings): void {
   const redacted = redactSettingsForWebStorage(settings);
   window.localStorage.setItem(
-    WEB_SETTINGS_STORAGE_KEY,
+    desktopStorageKey(WEB_SETTINGS_STORAGE_KEY),
     JSON.stringify({
       ...redacted,
       // Keep the active login token in memory; it is supplied by the current

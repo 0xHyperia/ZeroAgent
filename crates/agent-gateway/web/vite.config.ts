@@ -20,6 +20,8 @@ function resolveProxyTarget() {
 }
 
 export default defineConfig(({ mode }) => ({
+  base: mode === "embedded-desktop" ? "/remote-device/" : "/",
+  publicDir: mode === "embedded-desktop" ? false : "public",
   plugins: [react(), Icons({ compiler: "jsx", jsx: "react" })],
   resolve: {
     dedupe: ["react", "react-dom"],
@@ -49,8 +51,21 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     // Gateway embeds the web build; an Android build must not replace it with mobile bridges.
-    outDir: mode === "embedded-mobile" ? "dist-mobile" : "dist",
+    outDir:
+      mode === "embedded-desktop"
+        ? "../../agent-gui/public/remote-device"
+        : mode === "embedded-mobile" ? "dist-mobile" : "dist",
     emptyOutDir: true,
+    ...(mode === "embedded-desktop" ? {
+      lib: {
+        entry: path.resolve(__dirname, "src/desktopRemoteEntry.tsx"),
+        formats: ["es" as const],
+        fileName: () => "runtime.module.js",
+        cssFileName: "style",
+      },
+      cssCodeSplit: false,
+      rolldownOptions: { output: { codeSplitting: false } },
+    } : {}),
     // Monaco language workers are emitted as indivisible lazy assets (largest
     // is the TypeScript worker at ~6.6 MB). Bump the warning limit so those
     // known-large chunks don't drown out real regressions in the console.

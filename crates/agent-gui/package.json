@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "pnpm typecheck && vite build",
+    "dev": "pnpm remote:prepare && vite",
+    "build": "pnpm remote:prepare && pnpm typecheck && vite build",
+    "remote:prepare": "node ../../scripts/prepare-desktop-remote.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "prepare:kbrain": "node ../../scripts/release/prepare-kbrain.mjs --patch-manifest ../../patches/kbrain/manifest.json --artifact-dir ../../.zeroagent/backend-artifact",

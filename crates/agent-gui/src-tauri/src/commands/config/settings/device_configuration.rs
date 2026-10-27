@@ -622,6 +622,29 @@ pub(crate) async fn save_device_configuration(
 ) -> Result<DeviceSettingsCommit, String> {
     use tauri::Manager;
     let context = DeviceConfigurationContext::capture(&app)?;
+    #[cfg(desktop)]
+    {
+        let mut ids = input
+            .get("customProviders")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|provider| provider.get("id").and_then(Value::as_str))
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if let Some(id) = input
+            .get("selectedModel")
+            .and_then(|model| model.get("customProviderId"))
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        {
+            if !ids.iter().any(|provider| provider == id) {
+                ids.push(id.to_string());
+            }
+        }
+        context.state.ensure_managed_provider_bindings(&ids).await?;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let client = context.client()?;
         let _guard = client.configuration.blocking_lock();

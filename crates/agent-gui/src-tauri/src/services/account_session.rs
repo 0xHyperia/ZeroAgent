@@ -149,6 +149,11 @@ pub struct AccountSessionState {
 }
 
 impl AccountSessionState {
+    /// Fixed by the Native constructor, never supplied by the renderer.
+    pub(crate) fn trusted_origin(&self) -> &Url {
+        &self.origin
+    }
+
     pub fn new() -> Result<Self, String> {
         let origin = configured_origin(
             option_env!("ZEROAGENT_USA_ZERO_ORIGIN").unwrap_or("https://usa0.top"),
@@ -1143,4 +1148,5 @@ async fn response_json(mut response: reqwest::Response) -> Result<Value, String>
 pub(crate) mod tests;
 
 pub mod api;
+pub mod desktop_remote;
 pub mod gateway;

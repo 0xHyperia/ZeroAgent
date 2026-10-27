@@ -1,0 +1,188 @@
+// Explicit post-build probe: mounts the shipped complete WebUI bundle in a real
+// JSDOM/React DOM with loopback binary Gateway traffic. No desktop UI automation,
+// user account or paid model is used. This file is intentionally not *.test.mjs.
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+import { createWebModuleLoader } from "../../../../agent-gateway/test/helpers/load-web-module.mjs";
+import { createGatewayV2Codec } from "../../../../agent-gateway/test/helpers/gateway-v2.mjs";
+import { createDesktopRemoteGatewayFixture } from "./desktop-remote-gateway-fixture.mjs";
+
+const guiRequire = createRequire(new URL("../../../package.json", import.meta.url));
+const NativeWebSocket = globalThis.WebSocket;
+
+async function waitFor(predicate, label, timeout = 8000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const value = predicate();
+    if (value) return value;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  assert.fail(`timed out waiting for ${label}`);
+}
+
+function installDom(t) {
+  const { JSDOM } = guiRequire("jsdom");
+  const dom = new JSDOM("<!doctype html><html><body><div id='remote-root'></div></body></html>", {
+    url: "http://desktop-shell.invalid/", pretendToBeVisual: true,
+  });
+  const { window } = dom;
+  window.scrollTo = () => {};
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return true; } });
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.HTMLElement.prototype.scrollTo = () => {};
+  window.HTMLElement.prototype.scrollBy = () => {};
+  const elementRect = window.HTMLElement.prototype.getBoundingClientRect;
+  window.HTMLElement.prototype.getBoundingClientRect = function rectangle() {
+    // JSDOM has no layout; give the real canvas one explicit viewport so its
+    // normal geometry reducer mounts conversation panes instead of hiding them.
+    return this.hasAttribute("data-workbench-canvas") ? new window.DOMRect(0, 48, 1000, 750) : elementRect.call(this);
+  };
+  window.HTMLElement.prototype.setPointerCapture = () => {};
+  window.HTMLElement.prototype.releasePointerCapture = () => {};
+  window.HTMLElement.prototype.getAnimations = () => [];
+  window.HTMLCanvasElement.prototype.getContext = () => null;
+  window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
+  window.WebSocket = NativeWebSocket;
+  // Node's real WebSocket dispatches Node Event instances. Keep its global
+  // Event constructor intact and adapt only events entering the DOM realm.
+  const dispatchDomEvent = window.EventTarget.prototype.dispatchEvent;
+  window.EventTarget.prototype.dispatchEvent = function dispatch(event) {
+    return dispatchDomEvent.call(this, event instanceof window.Event ? event : new window.Event(event.type, { bubbles: event.bubbles, cancelable: event.cancelable }));
+  };
+  Object.defineProperty(window.document, "fonts", { value: { ready: Promise.resolve(), addEventListener() {}, removeEventListener() {} } });
+  const installed = { window, self: window, document: window.document, navigator: window.navigator, localStorage: window.localStorage, sessionStorage: window.sessionStorage, location: window.location, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window), ResizeObserver: window.ResizeObserver, IntersectionObserver: window.IntersectionObserver, WebSocket: NativeWebSocket, IS_REACT_ACT_ENVIRONMENT: false };
+  for (const key of ["HTMLElement", "HTMLInputElement", "HTMLTextAreaElement", "HTMLButtonElement", "HTMLFormElement", "Element", "Node", "CustomEvent", "MouseEvent", "PointerEvent", "KeyboardEvent", "SVGElement", "DocumentFragment", "MutationObserver", "FileReader", "Image", "DOMParser", "DOMRect", "DOMRectReadOnly", "Range", "Document", "ShadowRoot"]) installed[key] = window[key] ?? window.MouseEvent;
+  const previous = new Map();
+  for (const [key, value] of Object.entries(installed)) {
+    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  }
+  t.after(() => {
+    for (const [key, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+    window.close();
+  });
+  return dom;
+}
+
+test("the actual desktop remote bundle mounts the complete shared WebUI and disposes one device before mounting another", { timeout: 45_000 }, async (t) => {
+  const dom = installDom(t);
+  dom.window.document.documentElement.setAttribute("class", "native-shell-theme");
+  dom.window.document.documentElement.setAttribute("style", "--native-shell-test: 1;");
+  dom.window.document.documentElement.setAttribute("lang", "zh-CN");
+  dom.window.document.title = "Native ZeroAgent";
+  const nativeAttributes = ["class", "style", "lang"].map((name) => [name, dom.window.document.documentElement.getAttribute(name)]);
+  const loader = createWebModuleLoader();
+  const codec = createGatewayV2Codec(loader);
+  const unsupported = [];
+  const server = await createDesktopRemoteGatewayFixture(codec, { onRequest(decoded, reply) {
+    const body = decoded.json;
+    if (decoded.case === "chatActivities") { reply({ chat_activities: { running_conversations: [] } }); return true; }
+    if (["workspaceSubscribe", "workspaceUnsubscribe"].includes(decoded.case)) { reply({ ack: { ok: true } }); return true; }
+    const env = body.agent_request;
+    if (!env) return false;
+    if (env.history_list) { reply({ agent_response: { history_list_resp: { conversations: [], total_count: 0 } } }); return true; }
+    if (env.history_workdirs) { reply({ agent_response: { history_workdirs_resp: { workdirs: [] } } }); return true; }
+    if (env.provider_list) { reply({ agent_response: { provider_list_resp: { providers_json: "[]" } } }); return true; }
+    if (env.slash_command_list) { reply({ agent_response: { slash_command_list_resp: { commands: [] } } }); return true; }
+    if (env.prompt_template_list) { reply({ agent_response: { prompt_template_list_resp: { templates: [] } } }); return true; }
+    if (env.skill_files_list) { reply({ agent_response: { skill_files_list_resp: { root_dir: "synthetic-skills", paths: [] } } }); return true; }
+    if (env.cron_manage) { reply({ agent_response: { cron_manage_resp: { action: env.cron_manage.action, result_json: "[]" } } }); return true; }
+    if (env.git_request) { reply({ agent_response: { git_response: { action: env.git_request.action, result_json: JSON.stringify({ isGitRepo: false, branch: "", branches: [], files: [] }) } } }); return true; }
+    if (env.skill_manage) { reply({ agent_response: { skill_manage_resp: { result_json: JSON.stringify({ rootDir: "synthetic-skills", skills: [], settings: { enabled: true, selected: [] }, configurationVersion: "skills-synthetic" }) } } }); return true; }
+    if (env.managed_process_request) { reply({ agent_response: { managed_process_response: { action: env.managed_process_request.action, snapshot: { revision: 1, processes: [] } } } }); return true; }
+    if (env.memory_manage) { reply({ agent_response: { memory_manage_resp: { result_json: JSON.stringify({ enabled: false, items: [], memories: [], settings: { enabled: false } }) } } }); return true; }
+    if (env.chat_queue) { reply({ agent_response: { chat_queue_resp: { accepted: true, revision: 1, snapshot_json: JSON.stringify({ conversationId: env.chat_queue.conversation_id, revision: 1, items: [] }) } } }); return true; }
+    if (env.checkpoint) { reply({ agent_response: { checkpoint_resp: { action: env.checkpoint.action, result_json: "[]" } } }); return true; }
+    if (env.trajectory_fetch) { reply({ agent_response: { trajectory_fetch_resp: { conversation_id: env.trajectory_fetch.conversation_id, events_json: "[]", sections: [], subagent_runs_json: "[]" } } }); return true; }
+    if (env.settings_get || env.settings_update || env.chat_queue) return false;
+    unsupported.push(Object.keys(env));
+    reply({ local_error: { message: "This synthetic fixture does not provide the requested optional capability." } });
+    return true;
+  } });
+  t.after(() => server.close());
+  const bundle = process.env.ZEROAGENT_DESKTOP_REMOTE_BUNDLE
+    ? resolve(process.env.ZEROAGENT_DESKTOP_REMOTE_BUNDLE)
+    : fileURLToPath(new URL("../../../public/remote-device/runtime.js", import.meta.url));
+  const { createDesktopRemoteRuntime } = await import(pathToFileURL(bundle).href);
+  assert.equal(typeof createDesktopRemoteRuntime, "function");
+  const root = document.getElementById("remote-root");
+  const slots = { header: null, account: null, window: null };
+  const requests = [];
+  const invalid = [];
+  const publicUser = { id: 7, email: "synthetic@example.invalid", username: "Synthetic", status: "active" };
+  const mountHost = (agent) => {
+    const environment = { runtime_kind: "device_agent", device_id: agent, agent_id: agent, name: agent, online: true, workspaces: [], capabilities: ["agent", "files", "terminal", "git", "mcp", "hooks", "cron"] };
+    const selection = { runtime_kind: "device_agent", device_id: agent, agent_id: agent, selection_lease: `lease-${agent}`, workspace_id: "", scope: "device", expires_at: new Date(Date.now() + 60_000).toISOString() };
+    const host = {
+      sessionHandle: "opaque-native-session", accountScope: "verified-account-a", gatewayOrigin: server.origin, accountUser: publicUser,
+      environment, environments: [environment], selection, isCurrent: () => true,
+      async request(path) {
+        requests.push(path);
+        if (path.startsWith("/api/auth/me")) return Response.json({ user: publicUser });
+        if (path.startsWith("/api/usa-zero/user/profile")) return Response.json({ code: 0, data: publicUser });
+        if (path.includes("/dashboard/stats")) return Response.json({ code: 0, data: { today_tokens: 0 } });
+        if (path.includes("/groups/available")) return Response.json({ code: 0, data: [] });
+        if (path.startsWith("/api/usa-zero/keys")) return Response.json({ code: 0, data: { items: [], total: 0, pages: 0, page: 1 } });
+        return Response.json({ code: 0, data: {} });
+      },
+      onHeaderTarget: (element) => { slots.header = element; },
+      onAccountTarget: (element) => { slots.account = element; },
+      onWindowControlsTarget: (element) => { slots.window = element; },
+      onSelectionInvalid: (reason) => invalid.push(reason),
+    };
+    const runtime = createDesktopRemoteRuntime();
+    return runtime.mount(root, host);
+  };
+  let first;
+  let second;
+  try {
+    first = mountHost("device-a");
+    await waitFor(() => root.querySelector("[data-app-workbench-chrome]"), "the real shared AppWorkbenchChrome");
+    const newConversation = await waitFor(() => Array.from(root.querySelectorAll("button")).find((button) => /^(New Conversation|新对话)$/.test(button.textContent.trim())), "the shared new-conversation action");
+    newConversation.click();
+    await waitFor(() => root.querySelector("[contenteditable='true'],textarea"), "the complete shared composer");
+    assert.ok(/New Conversation|新对话/.test(root.textContent), "shared navigation is present");
+    assert.ok(root.textContent.includes("Skills"), "the full resource sidebar is present");
+    assert.ok(root.textContent.includes("MCP"), "the full resource sidebar is present");
+    assert.ok(slots.header?.isConnected, "desktop device switcher has a live header portal target");
+    assert.ok(slots.account?.isConnected, "desktop account menu has a live portal target");
+    assert.ok(slots.window?.isConnected, "desktop window controls have a live portal target");
+    assert.ok(server.frames.some((frame) => frame.json.agent_id === "device-a" && frame.json.agent_request?.settings_get));
+    first.dispose();
+    first = null;
+    assert.equal(root.childElementCount, 0);
+    assert.deepEqual(slots, { header: null, account: null, window: null });
+    for (const [name, value] of nativeAttributes) assert.equal(dom.window.document.documentElement.getAttribute(name), value, `${name} restored to native shell`);
+    assert.equal(dom.window.document.title, "Native ZeroAgent");
+    await waitFor(() => server.peerCount === 0, "the previous device's actual WebSocket to close");
+    const boundary = server.frames.length;
+    second = mountHost("device-b");
+    await waitFor(() => root.querySelector("[data-app-workbench-chrome]"), "the second device's complete shared UI");
+    await waitFor(() => server.frames.slice(boundary).some((frame) => frame.json.agent_id === "device-b" && frame.json.agent_request?.settings_get), "device-b's independent settings read");
+    assert.equal(server.frames.slice(boundary).filter((frame) => frame.json.agent_id === "device-a").length, 0, "new UI cannot issue requests to the previous device");
+    assert.deepEqual(invalid, []);
+    server.assertHealthy();
+    assert.deepEqual(unsupported, [], "all requested bootstrap capabilities have explicit protocol fixture responses");
+    console.log(`Shipped remote bundle mounted both full device UIs; ${server.frames.length} real binary frames and ${requests.length} Native-owned HTTP calls.`);
+  } catch (error) {
+    try { server.assertHealthy(); } catch (serverError) { console.log("Remote UI probe wire error:", serverError.message); }
+    console.log("Remote UI probe unsupported frames:", JSON.stringify(unsupported));
+    console.log("Remote UI probe frames:", server.frames.map((frame) => `${frame.case}:${Object.keys(frame.json.agent_request ?? {}).join(",")}`).join(" "));
+    console.log("Remote UI probe DOM:", root.textContent.slice(0, 2500));
+    throw error;
+  } finally {
+    first?.dispose();
+    second?.dispose();
+    await new Promise((resolveCleanup) => setTimeout(resolveCleanup, 30));
+  }
+  assert.equal(dom.window.document.documentElement.dataset.liveagentWebui, undefined);
+  for (const [name, value] of nativeAttributes) assert.equal(dom.window.document.documentElement.getAttribute(name), value);
+  assert.equal(dom.window.document.title, "Native ZeroAgent");
+});

@@ -143,18 +143,16 @@ test("an old account's pending explicit remote selection cannot restore its rout
   assert.equal(harness.leases().size, 0);
 });
 
-test("offline and expired-lease remote sends use the existing blocked-send branch", async () => {
-  const file = new URL("../../src/pages/RemoteDeviceChatPage.tsx", import.meta.url);
-  const source = readFileSync(file, "utf8");
-  const ast = parseTypeScriptSource(source, file.pathname);
-  let send;
-  walkSyntaxTree(ast, node => { if (node.type === "FunctionDeclaration" && node.id?.name === "send") send = source.slice(node.start, node.end); });
-  assert.ok(send);
-  for (const fixture of [{ api: null, connected: true }, { api: { chatCommand() { assert.fail("offline command"); } }, connected: false }]) {
-    const context = vm.createContext({ ...fixture, draft: "new message" });
-    vm.runInContext(transpileTypeScriptModule(send, "remote-send-fixture.ts"), context);
-    await vm.runInContext("send()", context);
-  }
-  assert.match(appSource, /selectionLease=\{[\s\S]*isRemoteLeaseValid[\s\S]*: ""/);
+test("offline and expired-lease remote targets are blocked before mounting the complete workbench", () => {
+  const host = loader.loadModule("src/lib/relay/desktopRemoteHost.ts");
+  const now = 1000;
+  assert.equal(host.isDesktopRemoteTargetAuthorized(remote, "lease", now + 1, now), true);
+  for (const [environment, lease, expiresAt] of [
+    [{ ...remote, online: false }, "lease", now + 1],
+    [remote, "lease", now], [remote, "lease", now - 1],
+    [remote, "", now + 1], [remote, "lease", NaN],
+  ]) assert.equal(host.isDesktopRemoteTargetAuthorized(environment, lease, expiresAt, now), false);
   assert.doesNotMatch(appSource, /\?\?\s*desktopEnvironments\.find/);
+  assert.doesNotMatch(appSource, /RemoteDeviceChatPage/);
+  assert.match(appSource, /RemoteDeviceWorkbench/);
 });

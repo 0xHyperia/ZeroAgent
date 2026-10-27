@@ -1,3 +1,4 @@
+import { desktopRemoteFetch, gatewayOrigin } from "./desktopRemoteHost";
 import { type DroppedDirectoryFile, MAX_DIRECTORY_UPLOAD_BYTES } from "./directoryDrop";
 import { readFetchError } from "./uploadReadableFiles";
 
@@ -52,10 +53,10 @@ export async function importDirectory(
     formData.append("paths", entry.relativePath);
   }
 
-  const url = new URL(`${window.location.origin}/api/files/import-directory`);
+  const url = new URL(`${gatewayOrigin()}/api/files/import-directory`);
   url.searchParams.set("agent_id", normalizedAgentId);
 
-  const response = await fetch(url.toString(), {
+  const response = await desktopRemoteFetch(url.toString(), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${normalizedToken}`,

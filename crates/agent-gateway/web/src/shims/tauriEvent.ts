@@ -1,3 +1,4 @@
+import { gatewayOrigin } from "../lib/desktopRemoteHost";
 import { getGatewayWebSocketClient } from "../lib/gatewaySocket";
 import { loadToken } from "../lib/storage";
 
@@ -21,7 +22,7 @@ export async function listen<T>(
           online: false,
           enabled: true,
           configured: true,
-          gatewayUrl: window.location.origin,
+          gatewayUrl: gatewayOrigin(),
           lastError: error,
         }) as T,
       });

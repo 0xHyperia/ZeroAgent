@@ -15,6 +15,7 @@ import {
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Locale, t } from "@/i18n/config";
+import { gatewayOrigin } from "@/lib/desktopRemoteHost";
 import type { GatewayWebSocketClientLike } from "@/lib/gatewaySocket";
 import { GatewaySettingsUpdateError } from "@/lib/gatewaySocketRpc";
 import {
@@ -152,7 +153,7 @@ export function useGatewaySettingsSync(params: {
           ...prev,
           remote: {
             ...prev.remote,
-            gatewayUrl: window.location.origin,
+            gatewayUrl: gatewayOrigin(),
             token: token.trim(),
             enabled: token.trim() !== "" || prev.remote.enabled,
           },

@@ -63,6 +63,7 @@ import type { ChatCommandUpdate } from "@/lib/chat/stream/streamTypes";
 import { createTranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { registerToolApprovalDecisionHandler } from "@/lib/chat/toolApprovalBridge";
 import { transcriptRowsToJumpCandidates } from "@/lib/chat/transcript/searchJumpCandidates";
+import { getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import type {
   AgentStatus,
   ChatEvent,
@@ -155,7 +156,10 @@ import { useGatewayWorkbench } from "./workbench/useGatewayWorkbench";
 const SEARCH_JUMP_MAX_PAGES = 20;
 
 function useGatewayAppController() {
-  const historyShareToken = useMemo(() => parseHistoryShareToken(), []);
+  const historyShareToken = useMemo(
+    () => (getDesktopRemoteHost() ? null : parseHistoryShareToken()),
+    [],
+  );
   const {
     token,
     accountUser,
@@ -1723,13 +1727,18 @@ function useGatewayAppController() {
   const handleComposerBusyChange = useCallback((_isBusy: boolean) => {}, []);
 
   const handleLogout = useCallback(
-    (revokeRemotely = true) => {
+    async (revokeRemotely = true) => {
+      try {
+        await clearSession(revokeRemotely);
+      } catch {
+        addNotify("error", "退出登录失败，请重试。");
+        return;
+      }
       invalidateHistoryLoad();
       markVisibleConversationRevision();
       // Dropping the api swaps in a fresh (empty) sidebar store; the start/stop
       // effect stops the old one.
       openController.cancel();
-      clearSession(revokeRemotely);
       chatCommandPipeline.reset();
       clearCommandRecoveries();
       transcriptStoreRegistry.clear();
@@ -1765,6 +1774,7 @@ function useGatewayAppController() {
     },
     [
       activityStore,
+      addNotify,
       chatCommandPipeline,
       clearPendingUploads,
       clearSession,

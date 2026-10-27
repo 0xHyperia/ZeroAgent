@@ -1,12 +1,13 @@
 import { ImageClientError } from "@liveagent/ui/lib/imaging/errors";
 import { useEffect, useState } from "react";
 import type { TrustedGatewayImageIdentity } from "../agent-ui-adapters/imageStudio";
+import { desktopRemoteFetch, gatewayOrigin } from "./desktopRemoteHost";
 
 export async function fetchSingleUserImageIdentity(
   origin: string,
   token: string,
   signal?: AbortSignal,
-  fetcher: typeof fetch = globalThis.fetch,
+  fetcher: typeof fetch = desktopRemoteFetch,
 ): Promise<TrustedGatewayImageIdentity> {
   if (!token.trim()) throw new ImageClientError("IMAGE_AUTH_REQUIRED");
   const response = await fetcher(`${origin}/api/image/identity`, {
@@ -39,7 +40,7 @@ export function useSingleUserImageIdentity(token: string, supplied?: TrustedGate
   useEffect(() => {
     if (supplied || !token.trim()) return;
     const controller = new AbortController();
-    void fetchSingleUserImageIdentity(window.location.origin, token, controller.signal)
+    void fetchSingleUserImageIdentity(gatewayOrigin(), token, controller.signal)
       .then((identity) => {
         if (!controller.signal.aborted) setActive({ token, identity });
       })

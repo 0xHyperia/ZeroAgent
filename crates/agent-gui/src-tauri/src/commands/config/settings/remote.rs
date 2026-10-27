@@ -72,12 +72,20 @@ impl RemoteSettingsPayload {
 pub(crate) fn normalize_remote_settings_payload(
     payload: RemoteSettingsPayload,
 ) -> RemoteSettingsPayload {
-    let gateway_url_override = std::env::var(GATEWAY_URL_ENV).ok();
-    let gateway_port_override = std::env::var(GATEWAY_PORT_ENV).ok();
+    let gateway_url_override = std::env::var(GATEWAY_URL_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let gateway_port_override = std::env::var(GATEWAY_PORT_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
     normalize_remote_settings_payload_with_overrides(
         payload,
-        gateway_url_override.as_deref(),
-        gateway_port_override.as_deref(),
+        gateway_url_override
+            .as_deref()
+            .or(option_env!("ZEROAGENT_GATEWAY_URL")),
+        gateway_port_override
+            .as_deref()
+            .or(option_env!("ZEROAGENT_GATEWAY_PORT")),
     )
 }
 

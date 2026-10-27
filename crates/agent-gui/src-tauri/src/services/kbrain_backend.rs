@@ -200,6 +200,7 @@ pub struct KBrainBackendState {
     #[cfg(desktop)]
     account_sessions: Option<Arc<AccountSessionState>>,
     model_broker: Mutex<Option<ManagedModelBroker>>,
+    managed_binding_refresh: tokio::sync::Mutex<()>,
     transport_credentials: Mutex<Vec<String>>,
     manager: Mutex<Option<Arc<KBrainBackendManager>>>,
     start_lock: Mutex<()>,
@@ -224,6 +225,7 @@ impl Default for KBrainBackendState {
             #[cfg(desktop)]
             account_sessions: None,
             model_broker: Mutex::new(None),
+            managed_binding_refresh: tokio::sync::Mutex::new(()),
             transport_credentials: Mutex::new(Vec::new()),
             manager: Mutex::new(None),
             start_lock: Mutex::new(()),
@@ -616,6 +618,99 @@ impl KBrainBackendState {
         Ok(serde_json::Value::Object(update))
     }
 
+    /// A remote settings/catalog request can arrive before this device's own
+    /// renderer has refreshed a newly created platform key. Fill the broker
+    /// from the same Native owner without importing renderer credentials.
+    #[cfg(desktop)]
+    pub(crate) async fn ensure_managed_provider_bindings(
+        self: &Arc<Self>,
+        provider_ids: &[String],
+    ) -> Result<(), String> {
+        if provider_ids.is_empty() {
+            return Ok(());
+        }
+        for provider in provider_ids {
+            let key_id = provider
+                .strip_prefix("relay-key-")
+                .and_then(|id| id.parse::<u64>().ok())
+                .filter(|id| *id > 0)
+                .ok_or("只能配置当前账户已授权的托管模型")?;
+            if provider != &format!("relay-key-{key_id}") {
+                return Err("托管模型 ID 无效".into());
+            }
+        }
+        if !self.allows_profile_commands() {
+            return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
+        }
+        let _refresh = self.managed_binding_refresh.lock().await;
+        let ready = {
+            let broker = self
+                .model_broker
+                .lock()
+                .map_err(|_| "托管模型凭据暂不可用")?;
+            if let Some(broker) = broker.as_ref() {
+                provider_ids.iter().try_fold(true, |ready, id| {
+                    Ok::<_, String>(ready && broker.binding(id)?.is_some())
+                })?
+            } else {
+                false
+            }
+        };
+        if ready {
+            return Ok(());
+        }
+        let account = self
+            .account_sessions
+            .as_ref()
+            .ok_or("Native 账号尚未就绪")?;
+        let handle = self
+            .bound_session
+            .lock()
+            .map_err(|_| "账号绑定不可用")?
+            .clone()
+            .ok_or("USA_ZERO_PROFILE_AUTH_REQUIRED")?;
+        let public = account.verified_current(&handle).await?;
+        let live = account.profile_liveness(Some(&handle)).await?;
+        let credentials = account.all_active_managed_credentials(&handle).await?;
+        if provider_ids.iter().any(|id| {
+            !credentials
+                .iter()
+                .any(|credential| &credential.provider_id == id)
+        }) {
+            return Err("只能配置当前账户已启用的托管模型".into());
+        }
+        // Replace the complete authenticated set, so registering a new key
+        // cannot revoke the remaining providers or rotate their capabilities.
+        let origin = account.trusted_origin().clone();
+        let state = Arc::clone(self);
+        let current_handle = handle.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if !live.load(Ordering::SeqCst)
+                || state
+                    .bound_session
+                    .lock()
+                    .map_err(|_| "账号绑定不可用")?
+                    .as_deref()
+                    != Some(&current_handle)
+            {
+                return Err("USA-Zero account session changed".into());
+            }
+            state.register_managed_credentials_with_origin(
+                &public.account_scope,
+                origin,
+                credentials,
+            )?;
+            if !live.load(Ordering::SeqCst) {
+                return Err("USA-Zero account session changed".into());
+            }
+            Ok::<_, String>(())
+        })
+        .await
+        .map_err(|_| "托管模型凭据准备任务失败")??;
+        account.require_current(&handle).await?;
+        Ok(())
+    }
+
     pub(crate) fn prepare_provider_models(
         &self,
         provider_id: &str,
@@ -721,6 +816,19 @@ impl KBrainBackendState {
         origin: &str,
         credentials: Vec<ManagedCredential>,
     ) -> Result<Vec<ManagedBinding>, String> {
+        self.register_managed_credentials_with_origin(
+            account_scope,
+            configured_origin(origin)?,
+            credentials,
+        )
+    }
+
+    fn register_managed_credentials_with_origin(
+        &self,
+        account_scope: &str,
+        origin: url::Url,
+        credentials: Vec<ManagedCredential>,
+    ) -> Result<Vec<ManagedBinding>, String> {
         if !self.allows_profile_commands() {
             return Err("USA-Zero account session ended".into());
         }
@@ -737,7 +845,6 @@ impl KBrainBackendState {
                 "Managed credentials require the active authenticated backend profile".into(),
             );
         }
-        let origin = configured_origin(origin)?;
         if !account_scope.starts_with(&format!("{}|user:", origin.origin().ascii_serialization())) {
             return Err("Managed credential account origin mismatch".into());
         }
@@ -1334,6 +1441,7 @@ pub async fn kbrain_managed_credentials_replace(
     session_handle: String,
     provider_ids: Vec<String>,
 ) -> Result<Vec<ManagedBinding>, String> {
+    let _refresh = state.managed_binding_refresh.lock().await;
     let public = account.verified_current(&session_handle).await?;
     let credentials = account
         .managed_credentials(&session_handle, provider_ids)
@@ -1642,6 +1750,8 @@ mod tests {
     include!("kbrain_backend/mcp_oauth_tests.rs");
     include!("kbrain_backend/managed_model_discovery_tests.rs");
     include!("kbrain_backend/prompt_cache_tests.rs");
+    #[cfg(desktop)]
+    include!("kbrain_backend/remote_managed_bindings_tests.rs");
 
     #[test]
     fn native_configuration_rebinds_managed_transport_and_rejects_external_providers() {

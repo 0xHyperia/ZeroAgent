@@ -4,6 +4,7 @@ import { ProviderModal } from "@liveagent/ui/pages/settings/ProviderModal";
 import { ProviderSettingsDialog } from "@liveagent/ui/pages/settings/ProvidersSection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
+import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import {
   createRelayApiKeys,
   getRelayCurrentUser,
@@ -136,8 +137,17 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
 
   async function copyKeyAfterPassword(password: string) {
     if (!copyTarget || !user?.email) throw new Error("无法读取当前 USA-零 账户。");
-    await verifyRelayPassword(user.email, password);
-    await navigator.clipboard.writeText(copyTarget.key);
+    const host = getDesktopRemoteHost();
+    if (host) {
+      requireCurrentDesktopRemoteHost();
+      if (!host.revealKey) throw new Error("桌面密钥复制暂不可用。");
+      const key = await host.revealKey(copyTarget.id, password);
+      requireCurrentDesktopRemoteHost();
+      await navigator.clipboard.writeText(key);
+    } else {
+      await verifyRelayPassword(user.email, password);
+      await navigator.clipboard.writeText(copyTarget.key);
+    }
     setSuccess(`密钥“${copyTarget.name}”已复制到剪贴板。`);
   }
 

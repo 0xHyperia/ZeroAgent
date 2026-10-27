@@ -194,6 +194,12 @@
         "crates/agent-gateway/web/src/lib/executionTargets.ts",
         "crates/agent-gui/src/App.tsx",
         "crates/agent-gui/src/lib/relay/remoteDeviceState.ts",
+        "crates/agent-gui/src/pages/RemoteDeviceWorkbench.tsx",
+        "crates/agent-gui/src/lib/relay/desktopRemoteHost.ts",
+        "crates/agent-gateway/web/src/desktopRemoteEntry.tsx",
+        "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
+        "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
+        "scripts/prepare-desktop-remote.mjs",
         "crates/agent-gateway/internal/protocol/pbws/controller_selection.go"
       ],
       "tests": [
@@ -202,6 +208,13 @@
         "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
         "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",
         "crates/agent-gui/test/settings/remote-device-state.test.mjs",
+        "crates/agent-gui/test/providers/desktop-remote-host.test.mjs",
+        "crates/agent-gui/test/providers/desktop-remote-native-host.test.mjs",
+        "crates/agent-gui/test/providers/desktop-remote-session.test.mjs",
+        "crates/agent-gui/test/providers/desktop-remote-gateway-runtime.test.mjs",
+        "crates/agent-gui/test/providers/fixtures/desktop-remote-workbench-dom-probe.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote/tests.rs",
+        "scripts/prepare-desktop-remote.test.mjs",
         "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go",
         "crates/agent-gateway/internal/account/desktop_bound_selection_test.go"
       ],
