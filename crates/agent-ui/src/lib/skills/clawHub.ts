@@ -60,7 +60,7 @@ function asStringArray(value: unknown): string[] {
 
 function buildClawHubWebUrl(ownerHandle: string | null, slug: string) {
   if (!ownerHandle) return null;
-  return `${CLAWHUB_API_BASE}/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`;
+  return `${CLAWHUB_API_BASE}/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(slug)}`;
 }
 
 export function buildClawHubSkillKey(skill: Pick<ClawHubSkillCard, "slug" | "ownerHandle">) {
@@ -287,10 +287,15 @@ export async function getClawHubSkillDetail(
   return detail;
 }
 
-export function buildClawHubDownloadUrl(slug: string, ownerHandle?: string | null) {
+export function buildClawHubDownloadUrl(
+  slug: string,
+  ownerHandle?: string | null,
+  version?: string | null,
+) {
   const url = new URL("/api/v1/download", CLAWHUB_API_BASE);
   url.searchParams.set("slug", slug);
-  url.searchParams.set("tag", "latest");
+  if (version && version !== "latest") url.searchParams.set("version", version);
+  else url.searchParams.set("tag", "latest");
   if (ownerHandle) {
     url.searchParams.set("ownerHandle", ownerHandle);
   }

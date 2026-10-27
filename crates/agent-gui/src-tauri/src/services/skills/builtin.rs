@@ -143,6 +143,54 @@ pub fn ensure_builtin_agent_skills_sync() -> Result<Vec<SystemBuiltinSkillSeedRe
     ensure_builtin_agent_skills_in_root(&root)
 }
 
+/// Install app-owned workflows in the same profile root the Go manager reads.
+/// The backend continues to own its skills-creator/skills-installer definitions.
+pub(crate) fn ensure_backend_builtin_agent_skills(
+    backend_root: &Path,
+) -> Result<Vec<SystemBuiltinSkillSeedResponse>, String> {
+    let root = backend_root.join("skills");
+    let builtin = builtin_agent_skill("zeroagent-code-review")
+        .ok_or("Missing ZeroAgent code review workflow")?;
+    let target = root.join(builtin.name);
+    for (path, directory) in [
+        (backend_root.to_path_buf(), true),
+        (root.clone(), true),
+        (target.clone(), true),
+        (target.join("SKILL.md"), false),
+        (target.join(CODE_REVIEW_OWNERSHIP_MARKER_PATH), false),
+    ] {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                #[cfg(windows)]
+                let reparse = {
+                    use std::os::windows::fs::MetadataExt;
+                    metadata.file_attributes() & 0x400 != 0
+                };
+                #[cfg(not(windows))]
+                let reparse = false;
+                if metadata.file_type().is_symlink()
+                    || reparse
+                    || (directory && !metadata.is_dir())
+                    || (!directory
+                        && (!metadata.is_file() || metadata.len() > MAX_SKILL_FILE_BYTES))
+                {
+                    return Err(
+                        "ZeroAgent built-in Skill paths must be real directories and regular files"
+                            .into(),
+                    );
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Unable to inspect ZeroAgent built-in Skill: {error}"
+                ))
+            }
+        }
+    }
+    seed_builtin_agent_skills(&root, std::iter::once(builtin))
+}
+
 pub(crate) fn builtin_skill_files_match(
     target: &Path,
     builtin: &BuiltinSkill,
@@ -197,12 +245,19 @@ pub(crate) fn builtin_skill_files_match(
 pub(crate) fn ensure_builtin_agent_skills_in_root(
     root: &Path,
 ) -> Result<Vec<SystemBuiltinSkillSeedResponse>, String> {
+    seed_builtin_agent_skills(root, BUILTIN_AGENT_SKILLS.iter())
+}
+
+fn seed_builtin_agent_skills(
+    root: &Path,
+    builtins: impl IntoIterator<Item = &'static BuiltinSkill>,
+) -> Result<Vec<SystemBuiltinSkillSeedResponse>, String> {
     // Seeding backs up and rewrites live skill directories in place, so it
     // must be serialized with every other skills-root writer.
     let _guard = skills_write_guard();
     fs::create_dir_all(root).map_err(|e| format!("Failed to create Skills root directory: {e}"))?;
     let mut results = Vec::new();
-    for builtin in BUILTIN_AGENT_SKILLS {
+    for builtin in builtins {
         let name = sanitize_skill_name(builtin.name)?;
         let target = root.join(&name);
         let mut backup = None;

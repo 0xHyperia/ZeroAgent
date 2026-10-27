@@ -421,6 +421,60 @@
       ],
       "security": "后端记忆和Native整理配置独立；从同一规范文档读取，按展示版本CAS保存并补偿。远程记忆走profile facade，响应绑定原请求流，失效取消和脱敏保持。",
       "upstream_relation": "adapt"
+    },
+    {
+      "id": "builtin-code-review",
+      "name": "ZeroAgent 内置代码审查技能",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src-tauri/src/services/skills/builtin.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+        "crates/agent-gui/src-tauri/prompt/skills/zeroagent-code-review/SKILL.md",
+        "crates/agent-ui/src/lib/chat/useComposerActions.ts",
+        "patches/kbrain/0006-host-owned-code-review-skill.patch",
+        "patches/kbrain/0007-concurrent-trajectory-section-publication.patch"
+      ],
+      "tests": [
+        "crates/agent-gui/src-tauri/src/services/skills/tests.rs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs",
+        "crates/agent-gui/test/skills/fixtures/code-review-runtime-probe.mjs",
+        "crates/agent-gui/test/skills/builtin-code-review.test.mjs"
+      ],
+      "security": "仅在当前profile后端目录种入带应用所有权标记的代码审查技能；同名用户目录保留，Go管理器识别内置并拒绝覆盖/删除。选择和总开关不强制重置，远程设备复用同一资源。使用当前subagent工具和独立上下文，审查者/验证者每次提示只审查提供快照且不调用工具；该只读约束是技能指令而非新增后端权限模式。不得写远端或向Cloud Chat开放本地工具。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "clawhub-skill-store",
+      "name": "ClawHub 技能商店",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway"
+      ],
+      "entrypoints": [
+        "crates/agent-ui/src/lib/skills/clawHub.ts",
+        "crates/agent-ui/src/pages/skills-hub/SkillsHubPage.tsx",
+        "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts",
+        "crates/agent-gateway/web/src/agent-ui-adapters/kbrainSkills.ts",
+        "patches/kbrain/0008-clawhub-store-integration.patch"
+      ],
+      "tests": [
+        "crates/agent-gui/test/skills/clawhub-contract.test.mjs",
+        "crates/agent-gui/test/skills/clawhub-web-adapter.test.mjs",
+        "crates/agent-gui/test/skills/resource-http-adapters.test.mjs",
+        "crates/agent-gui/test/skills/fixtures/clawhub-runtime-probe.mjs",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs"
+      ],
+      "security": "复用当前profile资源和同一安装器，目录/搜索均保留公开安全过滤；审核与限流失败不绕过。固定发布者、slug和版本下载，GitHub handoff仅接受固定提交及指定子目录，沿用归档边界和内置保护；失败/取消回收本次临时下载。不迁移或清除用户技能，不执行测试下载的第三方技能。详见ADR0044。",
+      "upstream_relation": "adapt"
     }
   ]
 }

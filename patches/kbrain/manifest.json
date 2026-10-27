@@ -4,7 +4,8 @@
   "sourceRevision": "60e614f07c600b7aa5c0acbb9631d708e33dbb8b",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
-    "zeroagent.mcp-credentials.v1"
+    "zeroagent.mcp-credentials.v1",
+    "zeroagent.builtin-skills.v1"
   ],
   "patches": [
     {
@@ -26,7 +27,19 @@
     {
       "file": "0005-image-unknown-history-deletion.patch",
       "sha256": "128e659ed79053d410325259903e53d4d5cf82ed4e1947d1383d1f23f39ebfc0"
+    },
+    {
+      "file": "0006-host-owned-code-review-skill.patch",
+      "sha256": "7daaf6cbfe5e0ba872f9cf1b0723b91a54837ae328186a2a358954c059a70d88"
+    },
+    {
+      "file": "0007-concurrent-trajectory-section-publication.patch",
+      "sha256": "2932bda33401ffbc1e7168ba3504b7689d14e05487f4bf26e2d1dedd9a3024f1"
+    },
+    {
+      "file": "0008-clawhub-store-integration.patch",
+      "sha256": "7707e5da07b5edc8d3e14826440f0d8c5285015bd24b2f0c618f3886f04580d5"
     }
   ],
-  "status": "local-adaptation; Native credential security, standard SDK SSE and owned MCP lifecycle; no private runtime or endpoint inference; product/platform acceptance tracked in sync report"
+  "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, trajectory publication and complete ClawHub store integration; acceptance tracked in sync report"
 }

@@ -123,6 +123,12 @@ test("original Skills APIs use authenticated HTTP for create/list/read/import/st
   const browse = await store.loadSkillStoreCatalog({ query: "", sort: "stars", limit: 24 });
   assert.equal(browse.cursor, "page-two");
   assert.equal((await store.loadMoreSkillStoreCatalog({ sort: "stars", cursor: browse.cursor, limit: 24 })).cursor, null);
+  const storeRequests = f.requests.filter((r) => r.path === "/v1/skills/store/search");
+  assert.deepEqual(storeRequests.map((r) => Object.fromEntries(r.query)), [
+    { q: "fixture", limit: "24" },
+    { limit: "24", sort: "stars" },
+    { cursor: "page-two", limit: "24", sort: "stars" },
+  ]);
   const installed = await adapter.storeInstall({ slug: "store-fixture", ownerHandle: "fixture" });
   assert.equal(installed.installed[0].name, "store-fixture");
   const job = await skills.startSkillInstallJob({ source: "https://clawhub.ai/api/v1/download?slug=fixture", ownerHandle: "fixture" });

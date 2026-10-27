@@ -23,7 +23,9 @@ test("built-in code review skill is registered under a collision-resistant name"
 test("built-in code review skill covers PR and local review without remote writes", () => {
   assert.match(skillSource, /Anthropic's public Claude Code Code Review plugin/);
   assert.match(skillSource, /four roles/);
-  assert.match(skillSource, /mode=readonly/);
+  assert.match(skillSource, /`subagent`/);
+  assert.match(skillSource, /worktree=false/);
+  assert.match(skillSource, /Do not call tools/);
   assert.match(skillSource, /confidence >= 80/);
   assert.match(skillSource, /current local branch/);
   assert.match(skillSource, /staged, unstaged, and untracked/);

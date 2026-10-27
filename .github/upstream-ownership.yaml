@@ -2,6 +2,42 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/index.html",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": [
+        "React加载前首屏中英文标题及读屏名称统一ZeroAgent",
+        "原主题/语言存储键、首屏唤醒与内部性能标记保持"
+      ]
+    },
+    {
+      "glob": "crates/agent-ui/src/lib/skills/clawHub.ts",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "公开ClawHub契约与发布者身份、固定版本下载参数",
+        "Desktop/设备WebUI同源规范适配、公开商店实际下载安装"
+      ]
+    },
+    {
+      "glob": "crates/agent-ui/src/pages/skills-hub/SkillsHubPage.tsx",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "沿用原安装任务和状态反馈，绑定所选公开版本",
+        "工作区/账号切换与安装冲突、原用户技能保持"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/src/services/skills/builtin.rs",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "当前账号后端启动前种入应用内置技能，不覆盖同名用户内容或跟随链接",
+        "Go标记识别/管理保护、真实Hub列表与调用、重启和账号选择隔离"
+      ]
+    },
+    {
       "glob": "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
       "ownership": "zeroagent_owned",
       "risk": "critical",

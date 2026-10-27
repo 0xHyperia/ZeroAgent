@@ -1,4 +1,97 @@
 #[test]
+#[ignore = "requires the prepared backend, Node and public ClawHub network; installs only into disposable profiles and never invokes third-party skills"]
+fn canonical_clawhub_store_runtime_through_facade_and_adapters() {
+    let root = tempfile::tempdir().unwrap();
+    for (account, phase) in [("store-a", "first"), ("store-a", "reopened"), ("store-b", "isolated")] {
+        let profile = crate::services::backend_profile::BackendProfile::from_account_scope(Some(account)).unwrap();
+        let data = profile.backend_dir(root.path());
+        let settings = root.path().join(format!("native-{account}"));
+        fs::create_dir_all(&settings).unwrap();
+        let manager = start(&data);
+        let service = Arc::new(ProfileConfigurationHttp {
+            backend: None,
+            connection: manager.connection(),
+            backend_root: manager.configuration_root(),
+            settings_root: settings,
+        });
+        let facade = crate::services::backend_facade::BackendFacade::start_with_configuration(
+            manager.connection(),
+            Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            service,
+        ).unwrap();
+        let public = facade.connection();
+        let output = std::process::Command::new("node")
+            .args(["--test", "test/skills/fixtures/clawhub-runtime-probe.mjs"])
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
+            .env("ZEROAGENT_SKILL_PROBE_URL", &public.base_url)
+            .env("ZEROAGENT_SKILL_PROBE_TOKEN", &public.token)
+            .env("ZEROAGENT_CLAWHUB_PROBE_PHASE", phase)
+            .output().unwrap();
+        drop(facade);
+        manager.shutdown();
+        assert!(output.status.success(), "ClawHub probe {phase}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+    }
+}
+
+#[test]
+#[ignore = "requires the prepared backend, Node and installed frontend test dependencies; uses only a local synthetic model"]
+fn canonical_code_review_skill_runtime_through_hub_and_agent() {
+    let root = tempfile::tempdir().unwrap();
+    for (account, reopened) in [("review-a", false), ("review-a", true), ("review-b", false)] {
+        let profile =
+            crate::services::backend_profile::BackendProfile::from_account_scope(Some(account))
+                .unwrap();
+        let data = profile.backend_dir(root.path());
+        let settings = root.path().join(format!("native-{account}"));
+        fs::create_dir_all(&settings).unwrap();
+        let workdir = root.path().join(format!("workspace-{account}"));
+        fs::create_dir_all(&workdir).unwrap();
+        let manager = start(&data);
+        let service = Arc::new(ProfileConfigurationHttp {
+            backend: None,
+            connection: manager.connection(),
+            backend_root: manager.configuration_root(),
+            settings_root: settings,
+        });
+        let facade = crate::services::backend_facade::BackendFacade::start_with_configuration(
+            manager.connection(),
+            Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            service,
+        )
+        .unwrap();
+        let public = facade.connection();
+        let private = manager.connection();
+        let output = std::process::Command::new("node")
+            .args([
+                "--test",
+                "test/skills/fixtures/code-review-runtime-probe.mjs",
+            ])
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
+            .env("ZEROAGENT_SKILL_PROBE_URL", &public.base_url)
+            .env("ZEROAGENT_SKILL_PROBE_TOKEN", &public.token)
+            .env("ZEROAGENT_SKILL_PROBE_PRIVATE_URL", &private.base_url)
+            .env("ZEROAGENT_SKILL_PROBE_PRIVATE_TOKEN", &private.token)
+            .env("ZEROAGENT_SKILL_PROBE_WORKDIR", workdir)
+            .env(
+                "ZEROAGENT_SKILL_PROBE_REOPENED",
+                if reopened { "1" } else { "0" },
+            )
+            .output()
+            .unwrap();
+        drop(facade);
+        manager.shutdown();
+        assert!(
+            output.status.success(),
+            "runtime probe failed for {account} reopened={reopened}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn canonical_http_skills_versions_bind_actual_global_and_workspace_documents() {
     let root = tempfile::tempdir().unwrap();
     let settings = root.path().join("settings");

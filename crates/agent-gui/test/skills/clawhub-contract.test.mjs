@@ -72,3 +72,14 @@ test("uses publisher and slug as the store identity", () => {
     "clawhub:steipete/github",
   );
 });
+
+test("links to the canonical publisher page and pins selected release downloads", () => {
+  const card = clawHub.normalizeClawHubSkillCard({ slug: "github", ownerHandle: "publisher" });
+  assert.equal(card.webUrl, "https://clawhub.ai/publisher/skills/github");
+  const pinned = new URL(clawHub.buildClawHubDownloadUrl("github", "publisher", "2.3.4"));
+  assert.equal(pinned.searchParams.get("version"), "2.3.4");
+  assert.equal(pinned.searchParams.has("tag"), false);
+  assert.equal(pinned.searchParams.get("ownerHandle"), "publisher");
+  const latest = new URL(clawHub.buildClawHubDownloadUrl("github", "publisher"));
+  assert.equal(latest.searchParams.get("tag"), "latest");
+});

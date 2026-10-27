@@ -126,11 +126,11 @@
 
   <body>
     <div id="root">
-      <div class="app-boot-screen" data-static-boot-shell="" aria-label="正在加载 LiveAgent" aria-busy="true">
+      <div class="app-boot-screen" data-static-boot-shell="" aria-label="正在加载 ZeroAgent" aria-busy="true">
         <div class="app-boot-content">
           <img class="app-boot-icon" src="/zeroagent-logo.png" alt="" />
           <div class="app-boot-progress" aria-hidden="true"><span></span></div>
-          <h1 class="app-boot-title" data-boot-title="" aria-live="polite">正在启动 LiveAgent</h1>
+          <h1 class="app-boot-title" data-boot-title="" aria-live="polite">正在启动 ZeroAgent</h1>
           <p class="app-boot-detail" data-boot-detail="">正在准备启动环境…</p>
           <div class="app-boot-statistics">
             <p class="app-boot-counts" data-boot-counts=""></p>
@@ -149,9 +149,9 @@
           const locale = JSON.parse(localStorage.getItem("liveagent.ui-settings.v1") || "null")?.locale;
           if (locale === "en" || locale === "en-US") {
             document.documentElement.lang = "en";
-            document.querySelector("[data-boot-title]").textContent = "Starting LiveAgent";
+            document.querySelector("[data-boot-title]").textContent = "Starting ZeroAgent";
             document.querySelector("[data-boot-detail]").textContent = "Preparing your startup environment…";
-            document.querySelector("[data-static-boot-shell]").setAttribute("aria-label", "LiveAgent startup progress");
+            document.querySelector("[data-static-boot-shell]").setAttribute("aria-label", "ZeroAgent startup progress");
           }
         } catch {}
         performance.mark?.("liveagent:static-shell-ready");

@@ -1,0 +1,140 @@
+diff --git a/internal/backend/server.go b/internal/backend/server.go
+index 3464a2e..5b86c89 100644
+--- a/internal/backend/server.go
++++ b/internal/backend/server.go
+@@ -111,30 +111,31 @@ type permissionWaiter struct {
+ }
+ 
+ type runtimeSession struct {
+-	leases           atomic.Int32
+-	lastUsed         time.Time
+-	settingsRevision uint64
+-	id               string
+-	deleted          bool
+-	closing          bool
+-	runWorkers       sync.WaitGroup
+-	mu               sync.Mutex
+-	agent            *agent.Agent
+-	recorder         *recording.Recorder
+-	cancel           context.CancelFunc
+-	checkpoint       *checkpointCapture
+-	runID            string
+-	runDone          bool
+-	nextSeq          int64
+-	events           []protocol.Event
+-	eventBytes       int
+-	eventsTruncated  bool
+-	changed          chan struct{}
+-	runs             map[string]runRecord
+-	terminalManager  *tools.TerminalManager
+-	processManager   *tools.ManagedProcessManager
+-	terminalContexts map[string]context.Context
+-	permissions      map[string]*permissionWaiter
++	trajectorySectionsMu sync.Mutex
++	leases               atomic.Int32
++	lastUsed             time.Time
++	settingsRevision     uint64
++	id                   string
++	deleted              bool
++	closing              bool
++	runWorkers           sync.WaitGroup
++	mu                   sync.Mutex
++	agent                *agent.Agent
++	recorder             *recording.Recorder
++	cancel               context.CancelFunc
++	checkpoint           *checkpointCapture
++	runID                string
++	runDone              bool
++	nextSeq              int64
++	events               []protocol.Event
++	eventBytes           int
++	eventsTruncated      bool
++	changed              chan struct{}
++	runs                 map[string]runRecord
++	terminalManager      *tools.TerminalManager
++	processManager       *tools.ManagedProcessManager
++	terminalContexts     map[string]context.Context
++	permissions          map[string]*permissionWaiter
+ 	// computerAllowAll is set once the user approves a computer_exec call: routine
+ 	// Cua tools then run without asking for as long as the runtime stays loaded.
+ 	computerAllowAll bool
+diff --git a/internal/backend/trajectory_concurrent_sections_test.go b/internal/backend/trajectory_concurrent_sections_test.go
+new file mode 100644
+index 0000000..620dace
+--- /dev/null
++++ b/internal/backend/trajectory_concurrent_sections_test.go
+@@ -0,0 +1,58 @@
++package backend
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++func TestTrajectorySectionConcurrentDeduplication(t *testing.T) {
++	root := t.TempDir()
++	rt := &runtimeSession{id: "parallel-review", eventDir: root}
++	server := &Server{eventDir: root}
++	for round := 0; round < 12; round++ {
++		content := strings.Repeat(string(rune('a'+round)), 32*1024)
++		id := sectionDigest(content)
++		gate := make(chan struct{})
++		errors := make(chan error, 48)
++		var workers sync.WaitGroup
++		for i := 0; i < 48; i++ {
++			workers.Add(1)
++			go func() {
++				defer workers.Done()
++				<-gate
++				got, err := rt.storeTrajectorySection("base", content)
++				if err != nil {
++					errors <- err
++					return
++				}
++				if got != id {
++					t.Errorf("section identity changed: %s", got)
++					return
++				}
++				// A UI/observer can read the published immutable section while
++				// another reviewer is still attempting to publish the same bytes.
++				file, err := os.Open(filepath.Join(root, "sections", rt.id, id+".json"))
++				if err != nil {
++					errors <- err
++					return
++				}
++				time.Sleep(time.Millisecond)
++				file.Close()
++			}()
++		}
++		close(gate)
++		workers.Wait()
++		close(errors)
++		for err := range errors {
++			t.Error(err)
++		}
++		section, err := server.readTrajectorySection(rt.id, id)
++		if err != nil || section.Content != content {
++			t.Fatalf("stored section changed: %v", err)
++		}
++	}
++}
+diff --git a/internal/backend/trajectory_recording.go b/internal/backend/trajectory_recording.go
+index d257856..1365edb 100644
+--- a/internal/backend/trajectory_recording.go
++++ b/internal/backend/trajectory_recording.go
+@@ -44,6 +44,11 @@ func sectionDigest(content string) string {
+ 	return "s_" + hex.EncodeToString(sum[:8])
+ }
+ func (rt *runtimeSession) storeTrajectorySection(slot, content string) (string, error) {
++	// Concurrent reviewers share content-addressed sections. Serialize the
++	// exists/publish pair so no writer replaces an already published section
++	// while another observer has it open (not permitted on Windows).
++	rt.trajectorySectionsMu.Lock()
++	defer rt.trajectorySectionsMu.Unlock()
+ 	id := sectionDigest(content)
+ 	dir := filepath.Join(rt.eventDir, "sections", rt.id)
+ 	if err := os.MkdirAll(dir, 0700); err != nil {

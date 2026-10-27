@@ -906,7 +906,11 @@ export function SkillsHubPage(props: SkillsHubPageProps) {
         return;
       }
       const job = await startSkillInstallJob({
-        source: buildClawHubDownloadUrl(resolvedSkill.slug, resolvedSkill.ownerHandle),
+        source: buildClawHubDownloadUrl(
+          resolvedSkill.slug,
+          resolvedSkill.ownerHandle,
+          resolvedSkill.latestVersion,
+        ),
         label: resolvedSkill.displayName,
         slug: resolvedSkill.slug,
         ownerHandle: resolvedSkill.ownerHandle,

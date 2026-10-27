@@ -1,0 +1,193 @@
+diff --git a/internal/skills/managed.go b/internal/skills/managed.go
+index 752bbf3..228a6c0 100644
+--- a/internal/skills/managed.go
++++ b/internal/skills/managed.go
+@@ -250,7 +250,28 @@ func (m *Manager) ensureBuiltins() error {
+ 	}
+ 	return nil
+ }
+-func isBuiltin(n string) bool { return n == "skills-creator" || n == "skills-installer" }
++
++// The desktop host seeds its own workflow before this manager starts. An exact
++// ownership marker distinguishes it from an existing user skill with the same name.
++func (m *Manager) isBuiltin(n string) bool {
++	if n == "skills-creator" || n == "skills-installer" {
++		return true
++	}
++	if n != "zeroagent-code-review" {
++		return false
++	}
++	path, err := safePath(m.root, n+"/_zeroagent_builtin.json")
++	if err != nil {
++		return false
++	}
++	file, err := os.Open(path)
++	if err != nil {
++		return false
++	}
++	defer file.Close()
++	body, err := io.ReadAll(io.LimitReader(file, 512))
++	return err == nil && string(body) == "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n"
++}
+ 
+ func (m *Manager) List() ([]SkillSummary, []InvalidSkill, error) {
+ 	if err := m.ensureBuiltins(); err != nil {
+@@ -285,7 +306,7 @@ func (m *Manager) List() ([]SkillSummary, []InvalidSkill, error) {
+ 			bad = append(bad, InvalidSkill{Path: p, Error: w})
+ 			continue
+ 		}
+-		sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(p), SkillFile: e.Name() + "/SKILL.md", BaseDir: e.Name(), BuiltIn: isBuiltin(e.Name())}
++		sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(p), SkillFile: e.Name() + "/SKILL.md", BaseDir: e.Name(), BuiltIn: m.isBuiltin(e.Name())}
+ 		if st, e2 := os.Stat(p); e2 == nil {
+ 			sum.InstalledAt = st.ModTime().UnixMilli()
+ 		}
+@@ -480,7 +501,7 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
+ 	if err = cleanName(name); err != nil {
+ 		return InstallResult{}, err
+ 	}
+-	if isBuiltin(name) {
++	if m.isBuiltin(name) {
+ 		return InstallResult{}, errors.New("built-in skills cannot be overwritten")
+ 	}
+ 	if name != original {
+@@ -513,6 +534,9 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
+ 	if err = ctx.Err(); err != nil {
+ 		return InstallResult{}, err
+ 	}
++	if m.isBuiltin(name) {
++		return InstallResult{}, errors.New("built-in skills cannot be overwritten")
++	}
+ 	target := filepath.Join(m.root, name)
+ 	backup := ""
+ 	rollback := ""
+@@ -701,7 +725,7 @@ func (m *Manager) Create(name, description, body, conflict string, files []map[s
+ 	if err := cleanName(name); err != nil {
+ 		return InstallResult{}, err
+ 	}
+-	if isBuiltin(name) {
++	if m.isBuiltin(name) {
+ 		return InstallResult{}, errors.New("built-in skills cannot be created")
+ 	}
+ 	tmp, err := os.MkdirTemp(m.root, ".staging-create-")
+@@ -742,12 +766,12 @@ func (m *Manager) Delete(name string) (DeleteResult, error) {
+ 	if err := cleanName(name); err != nil {
+ 		return DeleteResult{}, err
+ 	}
+-	if isBuiltin(name) {
+-		return DeleteResult{}, errors.New("built-in skills cannot be deleted")
+-	}
+ 	p := filepath.Join(m.root, name)
+ 	managedWriteMu.Lock()
+ 	defer managedWriteMu.Unlock()
++	if m.isBuiltin(name) {
++		return DeleteResult{}, errors.New("built-in skills cannot be deleted")
++	}
+ 	if _, err := os.Lstat(p); err != nil {
+ 		return DeleteResult{}, err
+ 	}
+diff --git a/internal/skills/zeroagent_builtin_test.go b/internal/skills/zeroagent_builtin_test.go
+new file mode 100644
+index 0000000..f09867c
+--- /dev/null
++++ b/internal/skills/zeroagent_builtin_test.go
+@@ -0,0 +1,100 @@
++package skills
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestZeroAgentCodeReviewOwnershipAndProtection(t *testing.T) {
++	t.Setenv("LIVEAGENT_HOME", t.TempDir())
++	m, err := NewManager()
++	if err != nil {
++		t.Fatal(err)
++	}
++	target := fixtureSkill(t, m.Root(), "zeroagent-code-review")
++	list, _, err := m.List()
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, s := range list {
++		if s.Name == "zeroagent-code-review" && s.BuiltIn {
++			t.Fatal("unmanaged name collision must not be a trusted builtin")
++		}
++	}
++	marker := filepath.Join(target, "_zeroagent_builtin.json")
++	if err := os.WriteFile(marker, []byte("{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	list, _, err = m.List()
++	if err != nil {
++		t.Fatal(err)
++	}
++	found := false
++	for _, s := range list {
++		if s.Name == "zeroagent-code-review" {
++			found = s.BuiltIn
++		}
++	}
++	if !found {
++		t.Fatal("host-owned code review must be exposed as builtIn")
++	}
++	if _, err := m.Delete("zeroagent-code-review"); err == nil {
++		t.Fatal("builtin delete accepted")
++	}
++	if _, err := m.Create("zeroagent-code-review", "changed", "changed", "overwrite", nil); err == nil {
++		t.Fatal("builtin create overwrite accepted")
++	}
++	source := fixtureSkill(t, t.TempDir(), "replacement")
++	if _, err := m.Install(context.Background(), source, "zeroagent-code-review", "overwrite", nil, nil); err == nil {
++		t.Fatal("builtin install overwrite accepted")
++	}
++	if _, err := m.SaveSettings("", SkillSettings{Enabled: true, Selected: []string{"zeroagent-code-review"}}); err != nil {
++		t.Fatal(err)
++	}
++	selected, _, err := m.Effective(t.TempDir())
++	if err != nil {
++		t.Fatal(err)
++	}
++	found = false
++	for _, s := range selected {
++		if s.Name == "zeroagent-code-review" {
++			found = true
++		}
++	}
++	if !found {
++		t.Fatal("selected builtin missing from effective model skills")
++	}
++	if err := os.WriteFile(marker, []byte("{\"owner\":\"someone-else\"}"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := m.Delete("zeroagent-code-review"); err != nil {
++		t.Fatal("unmanaged collision must retain user ownership", err)
++	}
++}
++
++func TestZeroAgentBuiltinMarkerDoesNotFollowLinks(t *testing.T) {
++	t.Setenv("LIVEAGENT_HOME", t.TempDir())
++	m, err := NewManager()
++	if err != nil {
++		t.Fatal(err)
++	}
++	target := fixtureSkill(t, m.Root(), "zeroagent-code-review")
++	outside := filepath.Join(t.TempDir(), "marker.json")
++	if err := os.WriteFile(outside, []byte("{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Symlink(outside, filepath.Join(target, "_zeroagent_builtin.json")); err != nil {
++		t.Skip("symlink unavailable", err)
++	}
++	list, _, err := m.List()
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, s := range list {
++		if s.Name == "zeroagent-code-review" && s.BuiltIn {
++			t.Fatal("linked marker cannot assert builtin ownership")
++		}
++	}
++}

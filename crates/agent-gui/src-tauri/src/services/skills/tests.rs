@@ -261,7 +261,8 @@ fn builtin_seed_installs_zeroagent_code_review_workflow() {
     let content = fs::read_to_string(skill_dir.join("SKILL.md")).expect("read code review skill");
     assert!(content.contains("Anthropic's public Claude Code Code Review plugin"));
     assert!(content.contains("confidence >= 80"));
-    assert!(content.contains("mode=readonly"));
+    assert!(content.contains("worktree=false"));
+    assert!(content.contains("Do not call tools"));
     assert!(content.contains("current local branch"));
     assert!(content.contains("Never write to GitHub"));
     assert!(skill_dir.join("_zeroagent_builtin.json").is_file());
@@ -274,6 +275,41 @@ fn builtin_seed_installs_zeroagent_code_review_workflow() {
         .iter()
         .find(|skill| skill.name == "zeroagent-code-review")
         .is_some_and(|skill| skill.built_in));
+}
+
+#[test]
+fn backend_builtin_seed_uses_active_root_and_preserves_user_collisions() {
+    let tmp = TempDir::new("zeroagent-backend-skill-seed").unwrap();
+    let account_a = tmp.path().join("account-a/engine");
+    let account_b = tmp.path().join("account-b/engine");
+    let seeded = ensure_backend_builtin_agent_skills(&account_a).unwrap();
+    assert_eq!(seeded.len(), 1);
+    assert_eq!(seeded[0].name, "zeroagent-code-review");
+    assert!(account_a
+        .join("skills/zeroagent-code-review/SKILL.md")
+        .is_file());
+    assert!(!account_a.join("skills/skills-creator").exists());
+    assert!(!account_b.exists());
+    assert_eq!(
+        ensure_backend_builtin_agent_skills(&account_a).unwrap()[0].action,
+        "kept"
+    );
+    let user_skill = write_skill(
+        &account_b.join("skills"),
+        "zeroagent-code-review",
+        "User-owned review workflow",
+    );
+    let before = fs::read(user_skill.join("SKILL.md")).unwrap();
+    assert_eq!(
+        ensure_backend_builtin_agent_skills(&account_b).unwrap()[0].action,
+        "conflict_preserved"
+    );
+    assert_eq!(fs::read(user_skill.join("SKILL.md")).unwrap(), before);
+    assert!(!user_skill.join("_zeroagent_builtin.json").exists());
+    let invalid_root = tmp.path().join("not-a-directory");
+    fs::write(&invalid_root, "keep me").unwrap();
+    assert!(ensure_backend_builtin_agent_skills(&invalid_root).is_err());
+    assert_eq!(fs::read(&invalid_root).unwrap(), b"keep me");
 }
 
 #[test]

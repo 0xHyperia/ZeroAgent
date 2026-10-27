@@ -260,6 +260,8 @@ requireMatch("crates/agent-ui/src/pages/settings/providerUtils.ts", /ZeroAgent\/
 requireMatch("crates/agent-gui/src-tauri/src/services/provider_usage.rs", /ZeroAgent\/1\.0/, "Rust Provider 预设仍暴露上游 User-Agent");
 requireMatch("crates/agent-gui/src-tauri/src/commands/integration/mcp.rs", /"name": "ZeroAgent"/, "MCP 客户端身份不是 ZeroAgent");
 requireMatch("crates/agent-gui/src-tauri/src/services/skills/builtin.rs", /name: "zeroagent-code-review"/, "内置 Code Review Skill 未使用 ZeroAgent 身份");
+requireMatch("crates/agent-gui/src-tauri/src/services/kbrain_backend.rs", /skills::ensure_backend_builtin_agent_skills\(&backend_dir\)/, "内置 Code Review Skill 未接入当前后端目录");
+requireMatch("crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs", /canonical_code_review_skill_runtime_through_hub_and_agent/, "Code Review Skill 缺少实际 Hub/后端调用回归");
 for (const path of [
   "crates/agent-gui/src/agent-ui-adapters/assistantAvatar.ts",
   "crates/agent-gateway/web/src/agent-ui-adapters/assistantAvatar.ts",

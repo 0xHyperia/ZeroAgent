@@ -269,6 +269,7 @@ impl KBrainBackendManager {
         crate::services::backend_profile::prepare_backend_directory(&backend_dir)?;
         std::fs::create_dir_all(&backend_dir)
             .map_err(|_| "Unable to create ZeroAgent data root".to_string())?;
+        crate::services::skills::ensure_backend_builtin_agent_skills(&backend_dir)?;
         let storage_id = backend_storage_id(&backend_dir)?;
         let configuration =
             crate::services::configuration_coordinator::ConfigurationCoordinator::for_profile(
