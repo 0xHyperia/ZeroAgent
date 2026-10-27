@@ -108,7 +108,7 @@ Android 配置以空数组清除桌面外部程序和资源，APK 中不包含�
 
 ## 一键启动三端
 
-跨平台脚本 `scripts/dev-stack.mjs` 统一管理 Gateway、Gateway WebUI 和桌面 LiveAgent：
+跨平台脚本 `scripts/dev-stack.mjs` 统一管理 Gateway、Gateway WebUI 和桌面 ZeroAgent：
 
 ```bash
 make dev-stack
@@ -143,7 +143,7 @@ HTTP Sub2API 根地址；发布构建仍要求 HTTPS。`ZEROAGENT_GATEWAY_URL` �
 `USA_ZERO_ORIGIN`、`USA_ZERO_AUTHORIZATION_ORIGIN`，以及匹配的 Web OAuth 客户端密钥。
 
 需要让桌面前端跨账号切换引发的原生进程重启持续可用时，应先独立启动桌面 Vite，设置
-`LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND=1`，再启动 `desktop`。此时 Tauri 只准备 sidecar，
+`ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND=1`，再启动 `desktop`。此时 Tauri 只准备 sidecar，
 不再接管前端进程；调用者负责独立前端的生命周期。启动器通过 Native 应用标识、debug 标志、
 checkout 路径及窗口状态核对已运行实例，重复启动不会创建第二个桌面实例。
 
@@ -167,21 +167,21 @@ pnpm check:strict
 
 所有级别都会执行检查脚本单测、Shared UI 边界和独立 TypeScript typecheck；Biome 使用
 `--max-diagnostics=none`，不会隐藏超出默认上限的诊断。`strict` 仍输出三端全量诊断，但只把
-相对 `LIVEAGENT_CHECK_BASE_REF`（默认依次选择 `origin/main`、`main`）新增或修改源码中的 warning
+相对 `ZEROAGENT_CHECK_BASE_REF`（默认依次选择 `origin/main`、`main`）新增或修改源码中的 warning
 升级为失败，避免通过关闭规则掩盖历史诊断。GUI 与 WebUI 测试文件由
 `scripts/run-node-tests.mjs` 递归发现，避免手写目录列表或依赖 shell glob。
 
 完整文本日志和结构化 JSON 报告默认写入操作系统临时目录下的
-`liveagent-check-<user>/<timestamp>-<profile>-<pid>/check.log` 与 `report.json`。JSON 包含运行元数据、
+`zeroagent-check-<user>/<timestamp>-<profile>-<pid>/check.log` 与 `report.json`。JSON 包含运行元数据、
 汇总计数及每一步的命令、工作目录、状态、退出码和耗时。需要失败后继续执行其他检查时设置
-`LIVEAGENT_CHECK_KEEP_GOING=1`；需要固定报告位置时设置 `LIVEAGENT_CHECK_REPORT_PATH`。当前已在
+`ZEROAGENT_CHECK_KEEP_GOING=1`；需要固定报告位置时设置 `ZEROAGENT_CHECK_REPORT_PATH`。当前已在
 macOS ARM64 实跑验证；Windows/Linux 仍应在对应机器或 CI 上完成平台验证。
 
 ## 运行时路径
 
 | 路径 | 说明 |
 |---|---|
-| `<app_data>/runtime-v2/profiles/<profile>/kbrain/` | K-brain 的规范设置、会话、记忆等数据；app_data 由 ZeroAgent 应用身份确定。 |
+| `<app_data>/runtime-v2/profiles/<profile>/engine/` | K-brain 的规范设置、会话、记忆等数据；app_data 由 ZeroAgent 应用身份确定。 |
 | `~/.zeroagent/runtime-v2/profiles/<profile>/settings/config.sqlite` | 原生辅助设置数据库，按 profile 隔离。 |
 | `~/.zeroagent/runtime-v2/profiles/<profile>/settings/memory/` | 原生辅助 MemoryStore；规范记忆接口走 K-brain。 |
 | `~/.zeroagent/runtime-v2/profiles/<profile>/settings/skills/` | 原生 Skills runtime root。 |
@@ -189,7 +189,7 @@ macOS ARM64 实跑验证；Windows/Linux 仍应在对应机器或 CI 上完成�
 | `~/.zeroagent/config.sqlite`、`~/.zeroagent/chat-history.sqlite3` | 旧版导入来源，保持原始内容。 |
 
 `<profile>` 是 `local` 或由已验证的 USA-零来源与账户 ID 派生的 `account-<sha256>`，端口和
-token 不参与命名。开发验收用 `LIVEAGENT_DEV_HOME` 隔离原生 home；Tauri app_data 另由应用
+token 不参与命名。开发验收用 `ZEROAGENT_DEV_HOME` 隔离原生 home；Tauri app_data 另由应用
 身份决定，不能仅凭该环境变量便使用正式应用 ID 启动 UI 测试。
 
 ## Gateway 开发关注点
@@ -229,3 +229,32 @@ token 不参与命名。开发验收用 `LIVEAGENT_DEV_HOME` 隔离原生 home�
 ## 文档任务边界
 
 本文档树只描述当前架构，不要求启动 dev server 或跑 build。若后续文档改动伴随代码改动，应按触达模块补充对应 build/test。
+
+
+## ZeroAgent 对外命名
+
+应用变量使用 `ZEROAGENT_*`，前端开发直连覆盖使用 `VITE_ZEROAGENT_BACKEND_URL` /
+`VITE_ZEROAGENT_BACKEND_TOKEN`。旧 `LIVEAGENT_*`、`VITE_KBRAIN_*` 不再作为公开配置读取；
+更新已有启动脚本时应同步变量名。平台拥有的 `USA_ZERO_ORIGIN` / `VITE_USA_ZERO_ORIGIN` 和
+第三方工具的 `DATABASE_URL`、`REDIS_URL`、`TAURI_*`、`ANDROID_*` 保持各自契约。
+
+| 常用变量 | 用途 |
+|---|---|
+| `ZEROAGENT_USA_ZERO_ORIGIN` | 桌面构建绑定的 USA-零 / Sub2API 根地址。 |
+| `ZEROAGENT_GATEWAY_URL` / `ZEROAGENT_GATEWAY_PORT` | 桌面连接的 Gateway。 |
+| `ZEROAGENT_GATEWAY_HTTP_ADDR` | Gateway 的 HTTP 监听地址。 |
+| `ZEROAGENT_GATEWAY_DATA_DIR` | Gateway 自有文件根；现有显式目录继续使用。 |
+| `ZEROAGENT_DEV_HOME` / `ZEROAGENT_CONFIG_DIR` | 本地调试的隔离 home / 原生配置目录。 |
+| `ZEROAGENT_BACKEND_BINARY` / `ZEROAGENT_BACKEND_ARTIFACT_DIR` | 开发后端覆盖 / 经过来源校验的构建产物目录。 |
+| `ZEROAGENT_APP_VERSION` | 本地与 CI 构建的应用版本。 |
+
+构建缓存改用 `.zeroagent/backend-artifact` 和 `.zeroagent/backend-cache`。当前账号后端目录
+改为 `<app_data>/runtime-v2/profiles/<profile>/engine/`；首次打开仅在旧 `kbrain/` 存在且新目录
+不存在时原子改名，两边都有内容则拒绝启动，不合并覆盖。账号摘要、存储身份、凭据库和
+浏览器持久键保持，已有会话、草稿与图片继续属于原账号。新建子代理工作树使用
+`.zeroagent-subagents`，已有工作树仍按原绝对路径管理，不搬动已有 Git checkout。
+
+容器的新数据根为 `/var/lib/zeroagent`。现有命名卷或宿主目录应保持相同来源，只把容器挂载
+目标与 `ZEROAGENT_GATEWAY_DATA_DIR` 对齐；不要创建空卷替代原数据。此命名调整不自动部署
+容器或搬动现有 PG/Redis 卷。内部 `@liveagent/*` 包、sidecar 文件名、WebSocket/MCP 协议、
+后端私有启动变量和历史导入来源继续遵循上游；详见 ADR 0042。

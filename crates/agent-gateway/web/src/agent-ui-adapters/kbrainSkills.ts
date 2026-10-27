@@ -30,7 +30,7 @@ export const gatewaySkillsAdapter: SkillsResourceAdapter = {
     });
     const items = (result.clawhubResults ?? []).map((raw) => {
       const item = normalizeClawHubSkillCard(raw);
-      if (!item) throw new Error("Invalid K-brain skills store item");
+      if (!item) throw new Error("Invalid ZeroAgent engine skills store item");
       return item;
     });
     return { items, nextCursor: result.clawhubNextCursor ?? null };

@@ -583,7 +583,7 @@ impl GatewayController {
             | "ssh_local_forward_list"
             | "ssh_local_forward_stop"
             | "ssh_local_forward_check_port" => {
-                Err("canonical K-brain terminal does not support SSH actions".to_string())
+                Err("canonical ZeroAgent engine terminal does not support SSH actions".to_string())
             }
             "list" | "close_project" => {
                 if config.enable_web_terminal || config.enable_web_ssh_terminal {

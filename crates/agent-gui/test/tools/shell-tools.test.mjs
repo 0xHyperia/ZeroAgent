@@ -494,7 +494,7 @@ test("Bash tool hints about missing Git Bash when Windows falls back to PowerShe
 
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /Git Bash was not found/);
-  assert.match(result.content[0].text, /LIVEAGENT_GIT_BASH_PATH/);
+  assert.match(result.content[0].text, /ZEROAGENT_GIT_BASH_PATH/);
 });
 
 test("Bash tool does not hint about Git Bash when a Windows failure ran under Git Bash", async () => {
@@ -1148,7 +1148,7 @@ test("Bash tool blocks fixed Skills root access even when Skills are disabled", 
   });
 
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Bash cannot read or search ~\/\.liveagent\/skills/);
+  assert.match(result.content[0].text, /Bash cannot read or search the fixed Skills root/);
   assert.deepEqual(calls, []);
 });
 

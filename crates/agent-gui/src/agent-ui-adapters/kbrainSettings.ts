@@ -7,7 +7,7 @@ import { getKBrainRuntimeConnection } from "../lib/kbrain/runtimeConnection";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const connection = getKBrainRuntimeConnection();
-  if (!connection) throw new Error("K-brain backend connection is not ready");
+  if (!connection) throw new Error("ZeroAgent engine connection is not ready");
   const response = await fetch(`${connection.baseUrl}${path}`, {
     ...init,
     headers: {
@@ -18,7 +18,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok)
-    throw new Error((await response.text()) || `K-brain request failed (${response.status})`);
+    throw new Error(
+      (await response.text()) || `ZeroAgent engine request failed (${response.status})`,
+    );
   const document = await response.json();
   if (
     path === "/v1/settings" &&

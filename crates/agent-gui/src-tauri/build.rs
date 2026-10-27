@@ -1,6 +1,6 @@
 fn main() {
     println!(
-        "cargo:rustc-env=LIVEAGENT_TARGET_TRIPLE={}",
+        "cargo:rustc-env=ZEROAGENT_TARGET_TRIPLE={}",
         std::env::var("TARGET").expect("TARGET")
     );
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
@@ -8,9 +8,9 @@ fn main() {
         .join("..")
         .join("package.json");
     println!("cargo:rerun-if-changed={}", package_json.display());
-    println!("cargo:rerun-if-env-changed=LIVEAGENT_APP_VERSION");
+    println!("cargo:rerun-if-env-changed=ZEROAGENT_APP_VERSION");
 
-    let app_version = std::env::var("LIVEAGENT_APP_VERSION")
+    let app_version = std::env::var("ZEROAGENT_APP_VERSION")
         .ok()
         .map(|version| version.trim().to_owned())
         .filter(|version| !version.is_empty())
@@ -27,7 +27,7 @@ fn main() {
                 .trim()
                 .to_owned()
         });
-    println!("cargo:rustc-env=LIVEAGENT_APP_VERSION={app_version}");
+    println!("cargo:rustc-env=ZEROAGENT_APP_VERSION={app_version}");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
         // NDK r27 and earlier need explicit ELF alignment for 16 KB page devices.
         // https://developer.android.com/guide/practices/page-sizes

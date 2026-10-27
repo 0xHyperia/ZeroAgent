@@ -12,13 +12,13 @@ cargo run --locked --manifest-path scripts/release/verify-updater-signatures/Car
   --config generated-tauri-config.json path/to/installer.exe path/to/application.tar.gz
 
 cargo run --locked --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- \
-  --public-key-env LIVEAGENT_UPDATER_PUBLIC_KEY path/to/probe
+  --public-key-env ZEROAGENT_UPDATER_PUBLIC_KEY path/to/probe
 ```
 
 Choose exactly one public-key source. `--config` reads
 `plugins.updater.pubkey` from the generated JSON configuration; it does not merge
 overlays itself. The environment option accepts only
-`LIVEAGENT_UPDATER_PUBLIC_KEY`. The program never reads private-key variables,
+`ZEROAGENT_UPDATER_PUBLIC_KEY`. The program never reads private-key variables,
 generates keys, signs assets, installs packages, or contacts a network service.
 Cargo may download locked dependencies when building for the first time.
 

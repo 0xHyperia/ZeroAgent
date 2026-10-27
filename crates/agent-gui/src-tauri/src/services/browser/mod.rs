@@ -1,6 +1,6 @@
 //! 浏览器自动化服务（原生 Browser 工具，见 docs/design/browser-automation.md）。
 //! BrowserManager 持有至多一个浏览器会话，两种接入模式：
-//! - extension：LiveAgent 浏览器扩展（browser-extension/）已连上桥接服务时，
+//! - extension：ZeroAgent 浏览器扩展（browser-extension/）已连上桥接服务时，
 //!   直接驱动用户日常浏览器里新开的自动化标签页——复用用户登录态，不另起
 //!   浏览器进程（Claude Code in Chrome 的方式）；
 //! - launcher：扩展未连接时回退——按需以独立 profile 拉起新浏览器进程。
@@ -303,7 +303,7 @@ impl RequestedMode {
 
 /// userProfile 模式扩展未连接时的报错。TS 侧原样透传给模型/用户，须自含
 /// 安装路径引导；设置页另有可视化引导（browser_extension_install_info）。
-const EXTENSION_NOT_CONNECTED_ERROR: &str = "浏览器扩展未连接：当前设置要求在你的日常浏览器中操作（复用登录态），但 LiveAgent Browser Bridge 扩展尚未安装或未连上。请到「设置 → 系统工具 → 浏览器自动化」按引导安装扩展（chrome://extensions → 开发者模式 → 加载已解压的扩展程序），或将浏览器模式改为「自动」/「独立浏览器」。";
+const EXTENSION_NOT_CONNECTED_ERROR: &str = "浏览器扩展未连接：当前设置要求在你的日常浏览器中操作（复用登录态），但 ZeroAgent Browser Bridge 扩展尚未安装或未连上。请到「设置 → 系统工具 → 浏览器自动化」按引导安装扩展（chrome://extensions → 开发者模式 → 加载已解压的扩展程序），或将浏览器模式改为「自动」/「独立浏览器」。";
 
 async fn start_browser(
     bridge: &ExtensionBridge,
@@ -334,7 +334,7 @@ async fn start_browser(
         }
     }
     let executable = discover_browser_executable().ok_or_else(|| {
-        "未检测到 Chrome/Edge/Chromium。浏览器自动化需要已安装的 Chromium 系浏览器，或安装 LiveAgent 浏览器扩展以复用现有浏览器。".to_string()
+        "未检测到 Chrome/Edge/Chromium。浏览器自动化需要已安装的 Chromium 系浏览器，或安装 ZeroAgent 浏览器扩展以复用现有浏览器。".to_string()
     })?;
     let launched = tauri::async_runtime::spawn_blocking({
         let executable = executable.clone();
@@ -389,7 +389,7 @@ mod e2e_tests {
     /// 验收闭环手动 e2e：导航文档站 → a11y snapshot → 截图落盘。
     /// 需要本机已装 Chrome/Edge，不进 CI：
     /// `cargo test -p liveagent browser_e2e -- --ignored --nocapture`
-    /// 截图输出路径可用 LIVEAGENT_BROWSER_E2E_SHOT 覆盖。
+    /// 截图输出路径可用 ZEROAGENT_BROWSER_E2E_SHOT 覆盖。
     #[test]
     #[ignore = "requires an installed Chromium-family browser; manual acceptance evidence"]
     fn browser_e2e_manual() {
@@ -429,7 +429,7 @@ mod e2e_tests {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(&data)
                 .expect("screenshot base64 decodes");
-            let out = std::env::var("LIVEAGENT_BROWSER_E2E_SHOT")
+            let out = std::env::var("ZEROAGENT_BROWSER_E2E_SHOT")
                 .unwrap_or_else(|_| "browser-e2e-screenshot.jpg".to_string());
             std::fs::write(&out, &bytes).expect("screenshot file writes");
             println!("== screenshot == {} bytes -> {out}", bytes.len());

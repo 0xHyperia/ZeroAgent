@@ -25,7 +25,9 @@
         "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs",
         "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
         "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences.rs",
-        "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts"
+        "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts",
+        "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
+        "crates/agent-gui/src-tauri/src/runtime/data_home.rs"
       ],
       "tests": [
         "crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain_tests.rs",
@@ -43,9 +45,11 @@
         "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences_tests.rs",
         "crates/agent-gui/test/settings/configuration-http.test.mjs",
         "crates/agent-gui/test/skills/skills-configuration-version.test.mjs",
-        "crates/agent-gui/test/settings/device-settings-version.test.mjs"
+        "crates/agent-gui/test/settings/device-settings-version.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
+        "crates/agent-gui/test/settings/zeroagent-public-branding.test.mjs"
       ],
-      "security": "仅导出和恢复当前新格式的 MCP、模板与原生可移植偏好；拒绝旧格式、Provider 与默认模型注入，不改变当前账号托管模型注册。备份绑定当前 profile 与预览内容，排除托管密钥、后端运行授权及已知账号凭据别名；状态竞争时拒绝操作。正常保存、备份恢复和失败补偿共享 profile 写入边界，保留读取快照版本、私有字段合并及设备落盘 ACK。旧版数据、服务商归档及迁移回退不在本轮范围，不自动读取或清除原数据。最终真实账号、设备及平台验收仍待完成。",
+      "security": "仅导出和恢复当前新格式的 MCP、模板与原生可移植偏好；拒绝旧格式、Provider 与默认模型注入，不改变当前账号托管模型注册。备份绑定当前 profile 与预览内容，排除托管密钥、后端运行授权及已知账号凭据别名；状态竞争时拒绝操作。正常保存、备份恢复和失败补偿共享 profile 写入边界，保留读取快照版本、私有字段合并及设备落盘 ACK。旧版数据、服务商归档及迁移回退不在本轮范围，不自动读取或清除原数据。最终真实账号、设备及平台验收仍待完成。 ADR0042允许当前v2账号目录受限原子改名，保持原始存储身份、草稿和凭据绑定；冲突、链接和失败拒绝覆盖，不扫描旧产品来源。",
       "upstream_relation": "adapt"
     },
     {

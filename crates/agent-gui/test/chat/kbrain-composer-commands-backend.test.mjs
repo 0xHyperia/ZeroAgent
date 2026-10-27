@@ -154,7 +154,7 @@ async function settled(client, sessionId) {
   }, "goal to settle");
 }
 
-test("LiveAgent composer commands run against the K-brain backend it depends on", { timeout: kbrainFixtureTimeoutMs(180_000) }, async (t) => {
+test("LiveAgent composer commands run against the ZeroAgent engine it depends on", { timeout: kbrainFixtureTimeoutMs(180_000) }, async (t) => {
   const backend = await startBackend(t);
   const { client, model, workdir } = backend;
 
@@ -163,7 +163,7 @@ test("LiveAgent composer commands run against the K-brain backend it depends on"
     commands = await client.listCommands(workdir);
   } catch (error) {
     if (error?.status === 404) {
-      t.skip("pinned K-brain predates the composer command API; build K-brain with session goals and set LIVEAGENT_KBRAIN_BINARY");
+      t.skip("pinned K-brain predates the composer command API; build K-brain with session goals and set ZEROAGENT_BACKEND_BINARY");
       return;
     }
     throw error;

@@ -40,7 +40,7 @@ test("CommonJS test metadata preserves literals, identity, URL and absent Vite f
     export const text = "literal import.meta.url and import.meta.env";
     export const location = import.meta["url"];
     export const same = import.meta === import.meta;
-    export const env = import.meta.env?.VITE_KBRAIN_URL;
+    export const env = import.meta.env?.VITE_ZEROAGENT_BACKEND_URL;
     export const hot = import.meta.hot;
   `,file));
   assert.equal(result.text,"literal import.meta.url and import.meta.env");

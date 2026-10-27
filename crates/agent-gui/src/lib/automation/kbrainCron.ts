@@ -16,7 +16,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const parsed = JSON.parse(body) as { error?: string };
       message = parsed.error || message;
     } catch {}
-    throw new Error(`K-brain cron request failed (${response.status}): ${message}`);
+    throw new Error(`ZeroAgent engine cron request failed (${response.status}): ${message}`);
   }
   return response.json() as Promise<T>;
 }

@@ -61,7 +61,7 @@ async function sendPlanning<T>(action: string, input: unknown): Promise<T> {
   );
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `K-brain Planning request failed (${response.status})`);
+    throw new Error(body.error || `ZeroAgent engine Planning request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
 }

@@ -210,7 +210,7 @@ test("K-brain client rejects malformed event sequences and incomplete SSE record
   });
   await assert.rejects(
     () => client.subscribe("s", 0, { onEvent() {} }),
-    /Malformed K-brain event sequence/,
+    /Malformed ZeroAgent engine event sequence/,
   );
 
   const incomplete = new ReadableStream({
@@ -356,7 +356,7 @@ test("K-brain client rejects an incompatible protocol version", async () => {
   });
   await assert.rejects(
     () => client.subscribe("s", 0, { onEvent() {} }),
-    /Unsupported K-brain protocol/,
+    /Unsupported ZeroAgent engine protocol/,
   );
 });
 
@@ -417,7 +417,7 @@ test("history import validates checkpoint statuses, identities, and partial reas
   }
   for (const invalid of [null, {}, { ...valid, checkpoint: "complete" }, { ...valid, source_id: "" }, { ...valid, fingerprint: "" }, { ...valid, checkpoint_reason: 3 }]) {
     const client = createKBrainClient({ fetch: async () => jsonResponse(invalid) });
-    await assert.rejects(() => client.importLegacyHistory({ source_id: "legacy" }), /Malformed K-brain history import response/);
+    await assert.rejects(() => client.importLegacyHistory({ source_id: "legacy" }), /Malformed ZeroAgent engine history import response/);
   }
 });
 

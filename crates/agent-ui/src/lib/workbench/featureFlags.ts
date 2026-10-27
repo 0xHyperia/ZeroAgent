@@ -11,7 +11,7 @@ export function readInternalFeatureFlag(value: unknown, defaultValue = false): b
   return ["1", "on", "true", "yes"].includes(normalized);
 }
 
-// GA 默认开启;VITE_LIVEAGENT_SESSION_WORKBENCH=0 是回退旧单 Pane 路径的逃生开关。
+// GA 默认开启;VITE_ZEROAGENT_SESSION_WORKBENCH=0 是回退旧单 Pane 路径的逃生开关。
 export function createSessionWorkbenchFeature(value: unknown): SessionWorkbenchFeature {
   return Object.freeze({ enabled: readInternalFeatureFlag(value, true) });
 }

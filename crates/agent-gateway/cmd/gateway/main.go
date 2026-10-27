@@ -38,7 +38,7 @@ func validateManagedDesktop(cfg *config.Config) error {
 func main() {
 	observability.SetupLogging()
 	cfg := config.Load()
-	managedDesktop := os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1"
+	managedDesktop := os.Getenv("ZEROAGENT_GATEWAY_DESKTOP_PARENT") == "1"
 	if managedDesktop {
 		if err := validateManagedDesktop(cfg); err != nil {
 			fatal("invalid local Gateway configuration", "err", err)
@@ -111,7 +111,7 @@ func main() {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 	var parentClosed <-chan struct{}
-	if os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
+	if os.Getenv("ZEROAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
 		// The desktop retains the pipe's write handle for its whole lifetime and
 		// writes only control lines (Image Studio backend rebinds). EOF also covers
 		// force termination and development rebuilds, where no desktop exit

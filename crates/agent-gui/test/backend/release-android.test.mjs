@@ -216,7 +216,7 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(gatewayViteConfig, /mode === "embedded-mobile" \? 2120/);
   assert.match(gatewayViteConfig, /host: process\.env\.TAURI_DEV_HOST \|\| "localhost"/);
   assert.match(gatewayViteConfig, /clientPort: 2120/);
-  assert.match(gatewayViteConfig, /LIVEAGENT_APP_VERSION/);
+  assert.match(gatewayViteConfig, /ZEROAGENT_APP_VERSION/);
   assert.equal(existsSync(path.join(guiRoot, "mobile.html")), false);
   assert.equal(existsSync(path.join(guiRoot, "src/mobile.ts")), false);
   for (const filename of ["README.md", "README.zh-CN.md"]) {

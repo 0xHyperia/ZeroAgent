@@ -9,7 +9,7 @@ const DEFAULT_PROXY_API = "http://127.0.0.1:50052";
 const packageJson = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ) as { version?: string };
-const appVersion = process.env.LIVEAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
+const appVersion = process.env.ZEROAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
 
 function resolveProxyTarget() {
   const cliArg = process.argv.find((arg) => arg.startsWith("--proxy-api="));

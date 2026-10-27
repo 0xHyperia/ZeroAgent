@@ -366,7 +366,7 @@ test("unexpected client tool requests are rejected once without frontend executi
   assert.deepEqual(JSON.parse(post.init.body), {
     conversation_id: "backend-session-1",
     run_id: "run-1",
-    text: "Browser must execute in K-brain; ZeroAgent does not execute client tools.",
+    text: "Browser must execute in ZeroAgent engine; ZeroAgent does not execute client tools.",
     is_error: true,
   });
 });
@@ -376,7 +376,7 @@ test("frontend tool registration fails before making a backend request", async (
     ...baseParams,
     fetch: () => assert.fail("client tool registration reached backend"),
     options: { client_tools: [{ name: "Browser", description: "client tool", parameters: { type: "object" } }] },
-  }), /must execute in K-brain/);
+  }), /must execute in ZeroAgent engine/);
 });
 
 test("AI review warnings stay outside assistant content", async () => {

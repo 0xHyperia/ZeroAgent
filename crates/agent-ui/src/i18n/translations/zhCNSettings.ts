@@ -2,7 +2,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.navAccount": "账号",
   "settings.aiApproval.title": "AI 智能审批",
   "settings.aiApproval.description":
-    "由 K-brain 独立小模型审查沙箱操作、敏感信息、模型行为和工具内容注入风险。",
+    "由 ZeroAgent 后端独立小模型审查沙箱操作、敏感信息、模型行为和工具内容注入风险。",
   "settings.aiApproval.mode": "审批模式",
   "settings.aiApproval.off": "关闭",
   "settings.aiApproval.risk_only": "仅风险提示",
@@ -22,7 +22,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.aiApproval.privacy":
     "审查会增加模型请求与费用。操作、用户请求和工具文本会在常见敏感信息脱敏后发送给所选供应商；脱敏无法识别所有秘密。自动模式会暂扣无法确认安全的工具输出。",
   "settings.aiApproval.webNotice":
-    "当前 WebUI 传输不支持人工审批按钮；需要确认的操作会被拒绝，请在 ZeroAgent 桌面端或 K-brain TUI 中继续。",
+    "当前 WebUI 传输不支持人工审批按钮；需要确认的操作会被拒绝，请在 ZeroAgent 桌面端或 ZeroAgent 后端TUI 中继续。",
   "settings.aiApproval.save": "保存审批设置",
   "settings.aiApproval.reload": "重新加载",
   "settings.aiApproval.discard": "放弃未保存的审批设置并重新加载？",
@@ -30,13 +30,13 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.aiApproval.saving": "正在保存…",
   "settings.aiApproval.saved": "已保存",
   "settings.aiApproval.unsaved": "有未保存的修改",
-  "settings.aiApproval.upgrade": "当前 K-brain 尚不支持 AI 智能审批，请升级后重试。",
+  "settings.aiApproval.upgrade": "当前 ZeroAgent 后端尚不支持 AI 智能审批，请升级后重试。",
   "settings.aiApproval.connectionChanged": "后端连接已改变，请重新加载审批设置。",
 
   "settings.cuaBackend.description":
-    "ZeroAgent 只展示请求与结果。工具、权限判定、Cua 执行和会话清理由 K-brain 负责，修改从下一次运行生效。",
+    "ZeroAgent 只展示请求与结果。工具、权限判定、Cua 执行和会话清理由 ZeroAgent 后端负责，修改从下一次运行生效。",
   "settings.cuaBackend.upgrade":
-    "当前 K-brain 版本尚未提供计算机操作设置，请升级后端；不会回退到前端执行。",
+    "当前 ZeroAgent 后端版本尚未提供计算机操作设置，请升级后端；不会回退到前端执行。",
   "settings.cuaBackend.permissions":
     "检测到安装不代表桌面已就绪。请在后端所在机器授予系统权限，本页面不会操作桌面。",
   "settings.cuaBackend.enabled": "启用后端计算机操作",
@@ -75,8 +75,8 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.kbrainAddProvider": "添加供应商",
   "settings.navKBrain": "供应商设置",
   "settings.kbrainTitle": "供应商设置",
-  "settings.kbrainDescription": "凭据保留在 K-brain 后端；此页面不会直接请求供应商。",
-  "settings.kbrainLoading": "正在加载 K-brain 设置…",
+  "settings.kbrainDescription": "凭据保留在 ZeroAgent 后端；此页面不会直接请求供应商。",
+  "settings.kbrainLoading": "正在加载 ZeroAgent 后端设置…",
   "settings.kbrainProviderId": "供应商 ID",
   "settings.kbrainProviderName": "供应商名称",
   "settings.kbrainApi": "API",
@@ -87,8 +87,8 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.kbrainModels": "模型",
   "settings.kbrainModelPlaceholder": "模型 ID",
   "settings.kbrainAddModel": "添加模型",
-  "settings.kbrainSaved": "K-brain 设置已保存",
-  "settings.kbrainNoProviders": "尚未配置 K-brain 供应商",
+  "settings.kbrainSaved": "ZeroAgent 后端设置已保存",
+  "settings.kbrainNoProviders": "尚未配置 ZeroAgent 后端供应商",
   "settings.navHooks": "Hooks",
   "settings.navAgents": "提示词模板",
   "settings.navSsh": "SSH",
@@ -155,14 +155,14 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.memorySummaryModelFollow": "跟随对话模型",
   "settings.memoryModelNone": "无选择",
   "settings.memoryModelEmpty": "当前 Provider 未配置模型。",
-  "settings.memoryBackendOwned": "记忆执行由 K-brain 负责。",
+  "settings.memoryBackendOwned": "记忆执行由 ZeroAgent 后端负责。",
   "settings.memoryOrganizerBackendDescription":
-    "由 K-brain 扫描并生成整理建议。请先检查下方操作，再应用整份建议；此界面不会执行模型或后台整理。",
+    "由 ZeroAgent 后端扫描并生成整理建议。请先检查下方操作，再应用整份建议；此界面不会执行模型或后台整理。",
   "settings.memoryOrganizerApplyProposal": "应用此整理建议",
-  "settings.memoryBackendManaged": "记忆由 K-brain 后端管理；本地记忆操作暂不可用。",
-  "settings.skillsBackendManaged": "Skills 由 K-brain 后端管理；本地扫描和编辑暂不可用。",
+  "settings.memoryBackendManaged": "记忆由 ZeroAgent 后端管理；本地记忆操作暂不可用。",
+  "settings.skillsBackendManaged": "Skills 由 ZeroAgent 后端管理；本地扫描和编辑暂不可用。",
   "settings.memoryOrganizerUnsupported":
-    "此界面尚不支持 K-brain 的记忆整理或抽取设置。请在 K-brain 中配置记忆；此处不会运行本地模型或后台整理器。",
+    "此界面尚不支持 ZeroAgent 后端的记忆整理或抽取设置。请在 ZeroAgent 后端中配置记忆；此处不会运行本地模型或后台整理器。",
   "settings.memoryOrganizerTitle": "记忆整理",
   "settings.memoryOrganizerToggle": "开启记忆整理",
   "settings.memoryOrganizerSchedule": "执行时间",
@@ -419,7 +419,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.agentModeDesc": "允许调用工具，执行文件与命令行操作",
   "settings.agentDevMode": "Agent dev 模式",
   "settings.agentDevModeDesc":
-    "与 Agent 模式一致，但会把当前对话的流式请求与返回逐行写入 ~/.liveagent/debug/<对话ID>.jsonl",
+    "与 Agent 模式一致，但会把当前对话的流式请求与返回逐行写入 ~/.zeroagent/debug/<对话ID>.jsonl",
   "settings.workdir": "项目文件夹",
   "settings.workdirRequired": "必填",
   "settings.workdirPlaceholder": "选择或输入项目文件夹路径...",
@@ -579,14 +579,14 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.toolBadgeBuiltin": "内置",
   "settings.toolBadgeCustom": "自定义",
   "settings.toolConditionalNote": "按条件注册",
-  "settings.legacyProviderImportFailed": "{count} 个旧供应商未能导入 K-brain",
+  "settings.legacyProviderImportFailed": "{count} 个旧供应商未能导入 ZeroAgent 后端",
   "settings.legacyProviderImportFailedHint":
-    "这些供应商与已有供应商共用同名模型，但模型参数不一致，K-brain 拒绝了它们。它们的模型在当前版本中不可用；修改供应商配置后会自动重试。",
+    "这些供应商与已有供应商共用同名模型，但模型参数不一致，ZeroAgent 后端拒绝了它们。它们的模型在当前版本中不可用；修改供应商配置后会自动重试。",
   "settings.legacyProviderImportRetry": "重试导入",
   "settings.legacyProviderImportDismiss": "关闭提示",
   "settings.legacyProviderImportDismissTitle": "关闭这条提示？",
   "settings.legacyProviderImportDismissDescription":
-    "关闭后会忽略这些供应商的导入失败，以后不再提示。此操作不可撤销。这些供应商仍然不会导入 K-brain；如果之后修改了它们的配置，系统会重新尝试导入。",
+    "关闭后会忽略这些供应商的导入失败，以后不再提示。此操作不可撤销。这些供应商仍然不会导入 ZeroAgent 后端；如果之后修改了它们的配置，系统会重新尝试导入。",
   "settings.legacyProviderImportDismissConfirm": "关闭并不再提示",
   "settings.addProvider": "新增供应商",
   "settings.addProviderShort": "新增",

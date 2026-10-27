@@ -2,7 +2,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.navAccount": "Account",
   "settings.aiApproval.title": "AI approval",
   "settings.aiApproval.description":
-    "An isolated K-brain reviewer checks sandbox operations, sensitive data, model behavior and tool-content injection.",
+    "An isolated ZeroAgent engine reviewer checks sandbox operations, sensitive data, model behavior and tool-content injection.",
   "settings.aiApproval.mode": "Approval mode",
   "settings.aiApproval.off": "Off",
   "settings.aiApproval.risk_only": "Risk warnings only",
@@ -28,7 +28,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.aiApproval.privacy":
     "Review adds model requests and cost. Actions, user requests and tool text are sent to the selected provider after common sensitive values are redacted; not all secrets can be detected. Automatic mode withholds tool output that cannot be verified.",
   "settings.aiApproval.webNotice":
-    "This WebUI transport has no manual approval controls. Actions requiring confirmation are rejected; continue in ZeroAgent desktop or K-brain TUI.",
+    "This WebUI transport has no manual approval controls. Actions requiring confirmation are rejected; continue in ZeroAgent desktop or ZeroAgent engine TUI.",
   "settings.aiApproval.save": "Save approval settings",
   "settings.aiApproval.reload": "Reload",
   "settings.aiApproval.discard": "Discard unsaved approval settings and reload?",
@@ -36,14 +36,14 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.aiApproval.saving": "Saving…",
   "settings.aiApproval.saved": "Saved",
   "settings.aiApproval.unsaved": "Unsaved changes",
-  "settings.aiApproval.upgrade": "Upgrade K-brain to use AI approval.",
+  "settings.aiApproval.upgrade": "Upgrade ZeroAgent engine to use AI approval.",
   "settings.aiApproval.connectionChanged":
     "The backend connection changed. Reload approval settings.",
 
   "settings.cuaBackend.description":
-    "ZeroAgent displays requests and results. K-brain owns tools, permissions, Cua execution and session cleanup. Changes apply to the next run.",
+    "ZeroAgent displays requests and results. ZeroAgent engine owns tools, permissions, Cua execution and session cleanup. Changes apply to the next run.",
   "settings.cuaBackend.upgrade":
-    "This K-brain version does not expose computer settings. Upgrade the backend; no local execution fallback will be used.",
+    "This ZeroAgent engine version does not expose computer settings. Upgrade the backend; no local execution fallback will be used.",
   "settings.cuaBackend.permissions":
     "Installation does not prove desktop readiness. Grant OS permissions on the backend machine; this page never drives your desktop.",
   "settings.cuaBackend.enabled": "Enable backend computer use",
@@ -83,8 +83,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.navKBrain": "Provider settings",
   "settings.kbrainTitle": "Provider settings",
   "settings.kbrainDescription":
-    "Credentials stay in K-brain. This page never calls a provider directly.",
-  "settings.kbrainLoading": "Loading K-brain settings…",
+    "Credentials stay in ZeroAgent engine. This page never calls a provider directly.",
+  "settings.kbrainLoading": "Loading ZeroAgent engine settings…",
   "settings.kbrainProviderId": "Provider ID",
   "settings.kbrainProviderName": "Provider name",
   "settings.kbrainApi": "API",
@@ -95,8 +95,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.kbrainModels": "Models",
   "settings.kbrainModelPlaceholder": "Model ID",
   "settings.kbrainAddModel": "Add model",
-  "settings.kbrainSaved": "K-brain settings saved",
-  "settings.kbrainNoProviders": "No K-brain providers configured",
+  "settings.kbrainSaved": "ZeroAgent engine settings saved",
+  "settings.kbrainNoProviders": "No ZeroAgent engine providers configured",
   "settings.navHooks": "Hooks",
   "settings.navAgents": "Prompt Templates",
   "settings.navSsh": "SSH",
@@ -171,16 +171,16 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.memorySummaryModelFollow": "Follow conversation model",
   "settings.memoryModelNone": "No selection",
   "settings.memoryModelEmpty": "No models are configured for the current provider.",
-  "settings.memoryBackendOwned": "Memory execution is owned by K-brain.",
+  "settings.memoryBackendOwned": "Memory execution is owned by ZeroAgent engine.",
   "settings.memoryOrganizerBackendDescription":
-    "K-brain scans memories and proposes changes. Review the operations below before applying the whole proposal. This UI runs no model or background organizer.",
+    "ZeroAgent engine scans memories and proposes changes. Review the operations below before applying the whole proposal. This UI runs no model or background organizer.",
   "settings.memoryOrganizerApplyProposal": "Apply this proposal",
   "settings.memoryBackendManaged":
-    "Memory is managed by the K-brain backend; local memory actions are unavailable.",
+    "Memory is managed by the ZeroAgent engine; local memory actions are unavailable.",
   "settings.skillsBackendManaged":
-    "Skills are managed by the K-brain backend; local scanning and editing are unavailable.",
+    "Skills are managed by the ZeroAgent engine; local scanning and editing are unavailable.",
   "settings.memoryOrganizerUnsupported":
-    "This UI does not support K-brain memory organization or extraction settings. Configure memory in K-brain; no local model or background organizer runs here.",
+    "This UI does not support ZeroAgent engine memory organization or extraction settings. Configure memory in ZeroAgent engine; no local model or background organizer runs here.",
   "settings.memoryOrganizerTitle": "Memory organization",
   "settings.memoryOrganizerToggle": "Enable memory organization",
   "settings.memoryOrganizerSchedule": "Schedule",
@@ -450,7 +450,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.agentModeDesc": "Allows tool calls, file and command-line operations",
   "settings.agentDevMode": "Agent Dev Mode",
   "settings.agentDevModeDesc":
-    "Same as Agent mode, but also writes each streaming request and response line-by-line to ~/.liveagent/debug/<conversationId>.jsonl",
+    "Same as Agent mode, but also writes each streaming request and response line-by-line to ~/.zeroagent/debug/<conversationId>.jsonl",
   "settings.workdir": "Project Folder",
   "settings.workdirRequired": "Required",
   "settings.workdirPlaceholder": "Select or enter a project folder path...",
@@ -616,14 +616,14 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.toolBadgeCustom": "Custom",
   "settings.toolConditionalNote": "Conditional",
   "settings.legacyProviderImportFailed":
-    "{count} legacy provider(s) could not be imported into K-brain",
+    "{count} legacy provider(s) could not be imported into ZeroAgent engine",
   "settings.legacyProviderImportFailedHint":
-    "These providers share model ids with providers already imported, but the model metadata differs, so K-brain rejected them. Their models are unavailable in this version; editing a provider retries the import automatically.",
+    "These providers share model ids with providers already imported, but the model metadata differs, so ZeroAgent engine rejected them. Their models are unavailable in this version; editing a provider retries the import automatically.",
   "settings.legacyProviderImportRetry": "Retry import",
   "settings.legacyProviderImportDismiss": "Dismiss",
   "settings.legacyProviderImportDismissTitle": "Dismiss this notice?",
   "settings.legacyProviderImportDismissDescription":
-    "These import failures will be ignored and never shown again. This cannot be undone. The providers still won't be imported into K-brain; editing one of them later triggers a new import attempt.",
+    "These import failures will be ignored and never shown again. This cannot be undone. The providers still won't be imported into ZeroAgent engine; editing one of them later triggers a new import attempt.",
   "settings.legacyProviderImportDismissConfirm": "Dismiss permanently",
   "settings.addProvider": "Add Provider",
   "settings.addProviderShort": "Add",

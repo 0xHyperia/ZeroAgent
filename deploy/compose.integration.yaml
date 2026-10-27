@@ -37,8 +37,8 @@ services:
       USA_ZERO_ORIGIN: http://sub2api:8080
       DATABASE_URL: postgresql://zeroagent:${ZEROAGENT_POSTGRES_PASSWORD:?required}@zeroagent-postgres:5432/zeroagent?sslmode=disable
       REDIS_URL: redis://:${ZEROAGENT_REDIS_PASSWORD:?required}@zeroagent-redis:6379/0
-      LIVEAGENT_GATEWAY_COOKIE_SECURE: "false"
-      LIVEAGENT_GATEWAY_PUBLIC_ORIGIN: http://127.0.0.1:${ZEROAGENT_PORT:-50052}
+      ZEROAGENT_GATEWAY_COOKIE_SECURE: "false"
+      ZEROAGENT_GATEWAY_PUBLIC_ORIGIN: http://127.0.0.1:${ZEROAGENT_PORT:-50052}
       ZEROAGENT_WEB_OAUTH_CLIENT_SECRET: ${ZEROAGENT_WEB_OAUTH_CLIENT_SECRET:?required}
     depends_on:
       zeroagent-postgres: {condition: service_healthy}

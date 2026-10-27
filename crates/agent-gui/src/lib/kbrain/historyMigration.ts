@@ -499,7 +499,7 @@ export async function migrateLegacyHistoryPage(
   complete: boolean;
 }> {
   const connection = options.connection ?? getConfiguredKBrainConnection();
-  if (!connection) throw new Error("K-brain backend connection is not ready");
+  if (!connection) throw new Error("ZeroAgent engine connection is not ready");
   assertMigrationConnection(connection, options.signal);
   const client = createKBrainClient({
     baseUrl: connection.baseUrl,

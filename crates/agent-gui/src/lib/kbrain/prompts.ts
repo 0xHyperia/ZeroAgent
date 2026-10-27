@@ -86,7 +86,7 @@ export function createKBrainPromptClient(
         // Preserve non-JSON backend errors.
       }
       throw Object.assign(
-        new Error(message || `K-brain prompt request failed (${response.status})`),
+        new Error(message || `ZeroAgent engine prompt request failed (${response.status})`),
         {
           status: response.status,
         },

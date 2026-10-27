@@ -309,7 +309,7 @@ function summaryForSession(session: KBrainSession, conversationId: string): Chat
   const createdAt = epoch(session.created_at);
   return {
     id: conversationId,
-    title: session.title?.trim() || "K-brain session",
+    title: session.title?.trim() || "ZeroAgent engine session",
     providerId: session.model.provider,
     model: session.model.model,
     sessionId: session.id,
@@ -333,12 +333,13 @@ const projections = new Map<string, ProjectionSnapshot>();
 
 function backendIdFor(id: string): string {
   const backendId = getKBrainSessionId(id.trim(), baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${id}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${id}`);
   return backendId;
 }
 
 function revisionFor(session: KBrainSession): string {
-  if (!session.revision) throw new Error("K-brain session has no history revision");
+  if (!session.revision) throw new Error("ZeroAgent engine session has no history revision");
   return session.revision;
 }
 
@@ -372,9 +373,9 @@ function historyWindow(
   pendingEditId?: string,
 ): ChatHistoryWindowRecord {
   const session = result.session;
-  if (!result.revision) throw new Error("K-brain history has no revision");
+  if (!result.revision) throw new Error("ZeroAgent engine history has no revision");
   if (includeActive && !result.active_messages) {
-    throw new Error("K-brain history has no full active context");
+    throw new Error("ZeroAgent engine history has no full active context");
   }
   const createdAt = epoch(session.created_at);
   const updatedAt = epoch(session.updated_at, createdAt);
@@ -388,7 +389,7 @@ function historyWindow(
         !Number.isSafeInteger(offset) || offset < 0 || (index > 0 && offset <= offsets[index - 1]),
     )
   ) {
-    throw new Error("K-brain history message_offsets are invalid");
+    throw new Error("ZeroAgent engine history message_offsets are invalid");
   }
   const toolArguments = new Map<string, unknown>();
   for (const message of source) {
@@ -524,7 +525,8 @@ export async function getKBrainHistoryWindow(
 ): Promise<ChatHistoryWindowRecord> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   const read = () =>
     client().getHistory(backendId!, {
       maxMessages: params.maxMessages ?? 360,
@@ -535,7 +537,7 @@ export async function getKBrainHistoryWindow(
   const result = await read();
   setKBrainSessionId(localId, result.session.id, baseUrl());
   if (params.expectedRevision !== undefined && result.revision !== params.expectedRevision) {
-    throw new Error("K-brain history revision conflict");
+    throw new Error("ZeroAgent engine history revision conflict");
   }
   return historyWindow(
     localId,
@@ -563,7 +565,7 @@ async function validateRef(id: string, ref: HistoryMessageRef, expectedRevision?
   const revision = revisionFor(current);
   const expected = expectedRevision ?? snapshot?.revision;
   if (!expected || revision !== expected)
-    throw new Error("K-brain history revision conflict; reload the conversation");
+    throw new Error("ZeroAgent engine history revision conflict; reload the conversation");
   const messages = convertMessages(current.messages ?? [], 0, current.cwd);
   const index = messages.findIndex((message) => (message as { id?: string }).id === ref.messageId);
   const message = messages[index];
@@ -580,7 +582,7 @@ async function validateRef(id: string, ref: HistoryMessageRef, expectedRevision?
     getHistoryMessageContentHash(message) !== ref.contentHash
   ) {
     throw new Error(
-      "K-brain history message reference is stale or does not match the current projection",
+      "ZeroAgent engine history message reference is stale or does not match the current projection",
     );
   }
   return { session: current, revision };
@@ -592,12 +594,13 @@ export async function setKBrainHistoryModel(
 ): Promise<ChatHistorySummary> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   let parsed: { customProviderId?: unknown; model?: unknown };
   try {
     parsed = JSON.parse(selectedModelJson) as { customProviderId?: unknown; model?: unknown };
   } catch {
-    throw new Error("K-brain model selection is invalid");
+    throw new Error("ZeroAgent engine model selection is invalid");
   }
   if (
     !parsed ||
@@ -606,7 +609,7 @@ export async function setKBrainHistoryModel(
     typeof parsed.model !== "string" ||
     !parsed.model.trim()
   )
-    throw new Error("K-brain model selection is invalid");
+    throw new Error("ZeroAgent engine model selection is invalid");
   const session = await client().updateSession(backendId, {
     model: { provider: parsed.customProviderId, model: parsed.model },
   });
@@ -617,7 +620,8 @@ export async function setKBrainHistoryModel(
 export async function renameKBrainHistory(id: string, title: string): Promise<ChatHistorySummary> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   const session = await client().updateSession(backendId, { title: title.trim() });
   return summaryForSession(session, localId);
 }
@@ -628,23 +632,26 @@ export async function setKBrainHistoryPinned(
 ): Promise<ChatHistorySummary> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   return summaryForSession(await client().updateSession(backendId, { pinned }), localId);
 }
 
 export async function setKBrainHistoryCwd(id: string, cwd: string): Promise<ChatHistorySummary> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   return summaryForSession(await client().updateSession(backendId, { cwd }), localId);
 }
 
 export async function deleteKBrainHistory(id: string): Promise<void> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   const result = await client().deleteSession(backendId);
-  if (result.ok !== true) throw new Error("K-brain session deletion was not confirmed");
+  if (result.ok !== true) throw new Error("ZeroAgent engine session deletion was not confirmed");
   clearKBrainSessionId(localId, baseUrl());
   projections.delete(`${baseUrl() ?? ""}:${localId}`);
 }
@@ -656,7 +663,8 @@ export async function branchKBrainHistory(
 ): Promise<ChatHistorySummary> {
   const localId = id.trim();
   const backendId = getKBrainSessionId(localId, baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${localId}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${localId}`);
   const current = await validateRef(localId, ref);
   const session = await client().branchSession(backendId, {
     message_ref: refPayload(ref),
@@ -676,14 +684,14 @@ export async function editKBrainHistory(
   maxMessages: number,
 ): Promise<ChatHistoryWindowRecord> {
   if (!Number.isSafeInteger(maxMessages) || maxMessages < 1 || maxMessages > 10000)
-    throw new Error("K-brain maxMessages must be between 1 and 10000");
+    throw new Error("ZeroAgent engine maxMessages must be between 1 and 10000");
   if (replacementMessage.role !== "user")
-    throw new Error("K-brain replacement must be a user message");
+    throw new Error("ZeroAgent engine replacement must be a user message");
   const localId = id.trim();
   const backendId = backendIdFor(localId);
   await validateRef(localId, ref, expectedRevision);
   const replacement = contextToKBrainMessages({ messages: [replacementMessage] })[0];
-  if (!replacement) throw new Error("K-brain replacement is empty");
+  if (!replacement) throw new Error("ZeroAgent engine replacement is empty");
   const session = await client().editSession(backendId, {
     message_ref: refPayload(ref),
     replacement,
@@ -692,19 +700,21 @@ export async function editKBrainHistory(
   const messages = session.messages ?? [];
   const pending = messages.at(-1);
   if (pending?.role !== "user" || !pending.id)
-    throw new Error("K-brain edit response has no pending user message");
+    throw new Error("ZeroAgent engine edit response has no pending user message");
   const result = await client().getHistory(backendId, {
     maxMessages,
     expectedRevision: revisionFor(session),
     includeActive: true,
   });
-  if (result.revision !== session.revision) throw new Error("K-brain history revision conflict");
+  if (result.revision !== session.revision)
+    throw new Error("ZeroAgent engine history revision conflict");
   return historyWindow(localId, result, true, true, pending.id);
 }
 
 export async function getKBrainHistoryShare(id: string): Promise<ChatHistoryShareStatus> {
   const backendId = getKBrainSessionId(id.trim(), baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${id}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${id}`);
   const share = await client().getShare(backendId);
   return {
     conversationId: id.trim(),
@@ -722,7 +732,8 @@ export async function setKBrainHistoryShare(
   options?: { redactToolContent?: boolean },
 ): Promise<ChatHistoryShareStatus> {
   const backendId = getKBrainSessionId(id.trim(), baseUrl());
-  if (!backendId) throw new Error(`K-brain session mapping not found for conversation ${id}`);
+  if (!backendId)
+    throw new Error(`ZeroAgent engine session mapping not found for conversation ${id}`);
   const share = await client().setShare(backendId, {
     enabled,
     ...(options?.redactToolContent === undefined

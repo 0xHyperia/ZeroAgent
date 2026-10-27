@@ -505,10 +505,10 @@ export const EN_US_COMMON_TRANSLATIONS = {
     "Automatically approve file writes and edits; confirm commands and other actions",
   "chat.safety.always": "Always allow",
   "chat.safety.alwaysDesc":
-    "Use K-brain always mode without interactive or AI review; explicit denials and workspace boundaries still apply",
+    "Use ZeroAgent engine always mode without interactive or AI review; explicit denials and workspace boundaries still apply",
   "chat.safety.autoReview": "Auto review",
   "chat.safety.autoReviewDesc":
-    "K-brain reviews actions; low-risk actions proceed, unknown or elevated risk requires confirmation",
+    "ZeroAgent engine reviews actions; low-risk actions proceed, unknown or elevated risk requires confirmation",
   "chat.safety.autoDesc":
     "Runs according to the tool permission policies, without per-step approval",
   "chat.safety.sandbox": "Sandbox",
@@ -636,7 +636,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.commands.loopInterval": "Interval",
   "chat.commands.loopPrompt": "Prompt",
   "chat.commands.loopHint":
-    "Runs immediately in an independent context, then repeats (minimum 1 min). Expires after 7 days; up to 50 active loops. Include all necessary context in the prompt. Results return when this conversation is idle. K-brain must remain running. Stop:",
+    "Runs immediately in an independent context, then repeats (minimum 1 min). Expires after 7 days; up to 50 active loops. Include all necessary context in the prompt. Results return when this conversation is idle. ZeroAgent engine must remain running. Stop:",
   "chat.commands.loopEveryMinutes": "Every {count} min",
   "chat.commands.loopEveryHours": "Every {count} h",
   "chat.commands.loopEveryDays": "Every {count} days",
@@ -1401,11 +1401,11 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "git.branchSelector.worktreeDirectoryName": "Directory name",
   "git.branchSelector.worktreeDirectoryPlaceholder": "feature-my-branch",
   "git.branchSelector.worktreeParentDirectory": "Location",
-  "git.branchSelector.worktreeDefaultLocation": "Default location (~/.liveagent/worktree)",
+  "git.branchSelector.worktreeDefaultLocation": "Default location (~/.zeroagent/worktree)",
   "git.branchSelector.worktreeUseDefaultLocation": "Use default location",
   "git.branchSelector.worktreeChooseParent": "Choose…",
   "git.branchSelector.worktreeLocationHint":
-    "Saved under ~/.liveagent/worktree in a separate directory and opened in the sidebar automatically.",
+    "Saved under ~/.zeroagent/worktree in a separate directory and opened in the sidebar automatically.",
   "git.branchSelector.worktreeCustomLocationHint":
     "The worktree folder is created inside the chosen directory and opened in the sidebar automatically.",
   "git.branchSelector.worktreeFailed": "Failed to create worktree",

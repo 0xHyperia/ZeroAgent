@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(import.meta.dirname, "..");
 const supportedExtensions = new Set([".css", ".js", ".json", ".jsonc", ".jsx", ".ts", ".tsx"]);
 const workspaces = {
-  gui: { filter: "liveagent", root: "crates/agent-gui" },
+  gui: { filter: "zeroagent", root: "crates/agent-gui" },
   ui: { filter: "@liveagent/ui", root: "crates/agent-ui" },
   webui: { filter: "@liveagent/gateway-webui", root: "crates/agent-gateway/web" },
 };
@@ -41,10 +41,10 @@ function splitNul(output) {
 }
 
 function resolveBaseCommit() {
-  const explicitRef = process.env.LIVEAGENT_CHECK_BASE_REF?.trim();
+  const explicitRef = process.env.ZEROAGENT_CHECK_BASE_REF?.trim();
   if (explicitRef) {
     const commit = verifiedCommit(explicitRef);
-    if (!commit) throw new Error(`LIVEAGENT_CHECK_BASE_REF is not a commit: ${explicitRef}`);
+    if (!commit) throw new Error(`ZEROAGENT_CHECK_BASE_REF is not a commit: ${explicitRef}`);
     return git(["merge-base", "HEAD", commit]).trim();
   }
 

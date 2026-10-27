@@ -144,7 +144,7 @@ test("SSE consumer errors cancel the underlying stream", async(t)=>{
     start(controller){controller.enqueue(new TextEncoder().encode('data: {"version":"wrong"}\n\n'));},
     cancel(){cancelled=true},
   })));
-  await assert.rejects(app.client.subscribe("1234abcd",0,{onEvent(){}}),/Unsupported K-brain protocol/);
+  await assert.rejects(app.client.subscribe("1234abcd",0,{onEvent(){}}),/Unsupported ZeroAgent engine protocol/);
   assert.equal(cancelled,true);
 });
 

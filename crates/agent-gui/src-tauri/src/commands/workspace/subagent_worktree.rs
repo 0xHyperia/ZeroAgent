@@ -463,14 +463,14 @@ fn collect_worktree_paths(cwd: &Path) -> Result<Vec<PathBuf>, String> {
 
 fn is_liveagent_subagent_worktree(path: &Path) -> bool {
     path.components().any(|component| match component {
-        Component::Normal(name) => name == ".liveagent-subagents",
+        Component::Normal(name) => name == ".zeroagent-subagents" || name == ".liveagent-subagents",
         _ => false,
     })
 }
 
 fn normalize_liveagent_subagent_branch(branch_name: Option<&str>) -> Option<String> {
     let branch = branch_name?.trim();
-    if branch.starts_with("liveagent/subagent/") {
+    if branch.starts_with("zeroagent/subagent/") || branch.starts_with("liveagent/subagent/") {
         Some(branch.to_string())
     } else {
         None
@@ -1114,7 +1114,7 @@ pub async fn subagent_worktree_create(
         let target_parent = repo_root
             .parent()
             .unwrap_or(repo_root.as_path())
-            .join(".liveagent-subagents")
+            .join(".zeroagent-subagents")
             .join(&repo_name);
         fs::create_dir_all(&target_parent)
             .map_err(|err| format!("failed to create worktree parent: {err}"))?;
@@ -1125,7 +1125,7 @@ pub async fn subagent_worktree_create(
             for _ in 0..CREATE_WORKTREE_MAX_ATTEMPTS {
                 let suffix = unique_worktree_suffix();
                 let target = target_parent.join(format!("{label}-{suffix}"));
-                let branch_name = format!("liveagent/subagent/{label}-{suffix}");
+                let branch_name = format!("zeroagent/subagent/{label}-{suffix}");
                 match run_git_owned(
                     &repo_root,
                     vec![
@@ -1483,10 +1483,10 @@ mod tests {
         let root = temp_root("cleanup-worktree-no-force");
         let repo = root.join("repo");
         let worktree = root
-            .join(".liveagent-subagents")
+            .join(".zeroagent-subagents")
             .join("repo")
             .join("agent-dirty");
-        let branch = "liveagent/subagent/test-cleanup-no-force";
+        let branch = "zeroagent/subagent/test-cleanup-no-force";
         init_repo(&repo)?;
         add_worktree_with_branch(&repo, &worktree, branch)?;
         fs::write(worktree.join("README.md"), "dirty\n")

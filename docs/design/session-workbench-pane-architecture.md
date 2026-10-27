@@ -9,7 +9,7 @@
 
 研究依据：[OTTY 多会话、分块、焦点与文件 Pane 架构拆解](../reverse-engineering/otty/1.3.1/pane-architecture.md) · [OTTY 当前实现](../reverse-engineering/otty/1.3.1/current-state.md)
 
-> **当前实现说明**：Workbench 默认开启，`VITE_LIVEAGENT_SESSION_WORKBENCH=0` 仅用于回退。Desktop 将布局拓扑保存在本机，恢复出的终端先进入 dormant 占位，用户确认后才创建 PTY/SSH；WebUI 每次打开固定从当前会话的单 Root Pane 开始，不恢复浏览器中的旧布局。两端附件 drop/paste 都在事件落点同步携带 `conversationId`。
+> **当前实现说明**：Workbench 默认开启，`VITE_ZEROAGENT_SESSION_WORKBENCH=0` 仅用于回退。Desktop 将布局拓扑保存在本机，恢复出的终端先进入 dormant 占位，用户确认后才创建 PTY/SSH；WebUI 每次打开固定从当前会话的单 Root Pane 开始，不恢复浏览器中的旧布局。两端附件 drop/paste 都在事件落点同步携带 `conversationId`。
 
 ## 1. 本轮需求结论
 
@@ -1015,7 +1015,7 @@ Surface Registry 统一 Renderer、尺寸、关闭、唯一性和 Context，避�
 
 ### 30.1 发布基线
 
-- Session Workbench 正式版默认启用；`VITE_LIVEAGENT_SESSION_WORKBENCH=0` 仅回退旧单 Pane 路径。
+- Session Workbench 正式版默认启用；`VITE_ZEROAGENT_SESSION_WORKBENCH=0` 仅回退旧单 Pane 路径。
 - WebUI 冷启动从当前会话创建单 Root Pane，不持久化或恢复历史多 Pane 布局；Desktop 恢复本机布局拓扑。
 - Desktop 恢复的终端 Surface 默认为 dormant，用户显式恢复后才创建 PTY/SSH 会话。
 - T-1 cwd 范围校验已完成：Rust 双边 canonicalize + containment，前端 drop/restore/invariant 三道护栏。

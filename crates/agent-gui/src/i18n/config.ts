@@ -40,11 +40,12 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "historyImport.failures": "查看失败详情（可再次点击导入重试）",
     "historyImport.failedList": "{count} 条旧对话没能迁移",
     "historyImport.reason.too_large":
-      "对话超过当前 K-brain 的单次导入大小限制。升级后端后，可点「导入旧版对话」重试。",
-    "historyImport.reason.conflict": "K-brain 里已有同一条对话，但内容不一样，K-brain 拒绝覆盖。",
-    "historyImport.reason.rejected": "K-brain 认为这条对话的数据无效，拒绝导入。",
+      "对话超过当前 ZeroAgent 后端 的单次导入大小限制。升级后端后，可点「导入旧版对话」重试。",
+    "historyImport.reason.conflict":
+      "ZeroAgent 后端 里已有同一条对话，但内容不一样，ZeroAgent 后端 拒绝覆盖。",
+    "historyImport.reason.rejected": "ZeroAgent 后端 认为这条对话的数据无效，拒绝导入。",
     "historyImport.reason.transient": "连接中断或后端出错，下次启动会自动重试。",
-    "historyImport.notice.title": "{count} 条旧对话没能迁移到 K-brain",
+    "historyImport.notice.title": "{count} 条旧对话没能迁移到 ZeroAgent 后端",
     "historyImport.notice.description":
       "这些对话在当前版本里看不到。旧数据没有删除，启动时也不会再反复上传。",
     "historyImport.notice.view": "查看详情",
@@ -230,7 +231,7 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "settings.backupSyncRemoteDir": "远端目录",
     "settings.backupSyncProfile": "配置档名",
     "settings.backupSyncProfileHint":
-      "同一账号下可用不同配置档名隔离多套配置，留空则使用 liveagent / default。",
+      "同一账号下可用不同配置档名隔离多套配置，留空则使用 zeroagent / default。",
     "settings.backupSyncAuto": "自动同步",
     "settings.backupSyncAutoHint": "配置变更后自动上传，不会覆盖本机",
     "settings.backupSyncAutoDone": "已自动同步到远端",
@@ -378,13 +379,15 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "historyImport.failures": "View failures (click Import again to retry)",
     "historyImport.failedList": "{count} old conversation(s) could not be migrated",
     "historyImport.reason.too_large":
-      "The conversation exceeds the current K-brain import size limit. After upgrading the backend, retry with Import old conversations.",
+      "The conversation exceeds the current ZeroAgent engine import size limit. After upgrading the backend, retry with Import old conversations.",
     "historyImport.reason.conflict":
-      "K-brain already holds this conversation with different content and refused to overwrite it.",
-    "historyImport.reason.rejected": "K-brain rejected this conversation's data as invalid.",
+      "ZeroAgent engine already holds this conversation with different content and refused to overwrite it.",
+    "historyImport.reason.rejected":
+      "ZeroAgent engine rejected this conversation's data as invalid.",
     "historyImport.reason.transient":
       "The connection dropped or the backend failed; it is retried on the next launch.",
-    "historyImport.notice.title": "{count} old conversation(s) were not migrated into K-brain",
+    "historyImport.notice.title":
+      "{count} old conversation(s) were not migrated into ZeroAgent engine",
     "historyImport.notice.description":
       "They are not visible in this version. The old data is kept and is no longer re-uploaded on every launch.",
     "historyImport.notice.view": "View details",
@@ -585,7 +588,7 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "settings.backupSyncRemoteDir": "Remote Directory",
     "settings.backupSyncProfile": "Profile",
     "settings.backupSyncProfileHint":
-      "Use different profiles to keep separate configuration sets under one account. Defaults to liveagent / default when left blank.",
+      "Use different profiles to keep separate configuration sets under one account. Defaults to zeroagent / default when left blank.",
     "settings.backupSyncAuto": "Auto Sync",
     "settings.backupSyncAutoHint": "Upload after changes; never overwrites this machine",
     "settings.backupSyncAutoDone": "Auto-synced to remote",

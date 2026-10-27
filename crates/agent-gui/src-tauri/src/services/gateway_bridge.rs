@@ -499,7 +499,7 @@ pub async fn handle_history_delete(
 pub(crate) async fn kbrain_gateway_settings(app: AppHandle) -> Result<Value, String> {
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or_else(|| "K-brain backend state is unavailable".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine state is unavailable".to_string())?;
     let coordinator = backend.configuration_coordinator()?;
     let _guard = coordinator.lock().await;
     kbrain_gateway_settings_locked(app).await
@@ -508,14 +508,14 @@ pub(crate) async fn kbrain_gateway_settings(app: AppHandle) -> Result<Value, Str
 pub(crate) async fn kbrain_gateway_settings_locked(app: AppHandle) -> Result<Value, String> {
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or_else(|| "K-brain backend state is unavailable".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine state is unavailable".to_string())?;
     let connection = tauri::async_runtime::spawn_blocking({
         let backend = Arc::clone(backend.inner());
         let app = app.clone();
         move || backend.ensure_started(&app)
     })
     .await
-    .map_err(|error| format!("K-brain backend startup task failed: {error}"))??;
+    .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))??;
     kbrain_prompt_request(&connection, reqwest::Method::GET, "/v1/settings", None).await
 }
 
@@ -535,19 +535,20 @@ pub async fn handle_provider_models(
 ) -> Result<proto::ProviderModelsResponse, String> {
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or_else(|| "K-brain backend state is unavailable".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine state is unavailable".to_string())?;
     let connection = tauri::async_runtime::spawn_blocking({
         let backend = Arc::clone(backend.inner());
         let app = app.clone();
         move || backend.ensure_started(&app)
     })
     .await
-    .map_err(|error| format!("K-brain backend startup task failed: {error}"))??;
+    .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))??;
     let body = managed_provider_models_body(backend.inner(), request)?;
     let models = kbrain_provider_models(&connection, body).await?;
     Ok(proto::ProviderModelsResponse {
-        models_json: serde_json::to_string(&models)
-            .map_err(|error| format!("serialize K-brain model response failed: {error}"))?,
+        models_json: serde_json::to_string(&models).map_err(|error| {
+            format!("serialize ZeroAgent engine model response failed: {error}")
+        })?,
     })
 }
 
@@ -669,14 +670,14 @@ pub async fn handle_kbrain_terminal_request(
 ) -> Result<proto::TerminalResponse, String> {
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or_else(|| "K-brain backend state is unavailable".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine state is unavailable".to_string())?;
     let connection = tauri::async_runtime::spawn_blocking({
         let backend = Arc::clone(backend.inner());
         let app = app.clone();
         move || backend.ensure_started(&app)
     })
     .await
-    .map_err(|error| format!("K-brain backend startup task failed: {error}"))??;
+    .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))??;
     kbrain_terminal_request(&connection, &request).await
 }
 
@@ -687,7 +688,7 @@ async fn kbrain_terminal_request(
     let client = reqwest::Client::builder()
         .no_proxy()
         .build()
-        .map_err(|error| format!("create K-brain HTTP client failed: {error}"))?;
+        .map_err(|error| format!("create ZeroAgent engine HTTP client failed: {error}"))?;
     let action = request.action.trim().to_ascii_lowercase();
     if request.conversation_id.trim().is_empty() || request.run_id.trim().is_empty() {
         return Err("canonical terminal request requires conversation_id and run_id".to_string());
@@ -717,20 +718,22 @@ async fn kbrain_terminal_request(
         .json(&body)
         .send()
         .await
-        .map_err(|error| format!("K-brain terminal request failed: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine terminal request failed: {error}"))?;
     let status = response.status();
     let payload = response
         .json::<Value>()
         .await
-        .map_err(|error| format!("K-brain terminal response was invalid JSON: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine terminal response was invalid JSON: {error}"))?;
     if !status.is_success() {
-        return Err(format!("K-brain terminal request failed (HTTP {status})"));
+        return Err(format!(
+            "ZeroAgent engine terminal request failed (HTTP {status})"
+        ));
     }
     if payload.get("conversation_id").and_then(Value::as_str)
         != Some(request.conversation_id.trim())
         || payload.get("run_id").and_then(Value::as_str) != Some(request.run_id.trim())
     {
-        return Err("K-brain terminal response identity mismatch".to_string());
+        return Err("ZeroAgent engine terminal response identity mismatch".to_string());
     }
     decode_kbrain_terminal_response(payload)
 }
@@ -853,7 +856,7 @@ pub(crate) async fn kbrain_provider_models(
     let client = reqwest::Client::builder()
         .no_proxy()
         .build()
-        .map_err(|error| format!("create K-brain HTTP client failed: {error}"))?;
+        .map_err(|error| format!("create ZeroAgent engine HTTP client failed: {error}"))?;
     let provider_id = body
         .get("providerId")
         .and_then(Value::as_str)
@@ -870,17 +873,17 @@ pub(crate) async fn kbrain_provider_models(
         .json(&body)
         .send()
         .await
-        .map_err(|error| format!("K-brain provider discovery request failed: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine provider discovery request failed: {error}"))?;
     let status = response.status();
     let payload = response.json::<Value>().await.map_err(|error| {
-        format!("K-brain provider discovery response was invalid JSON: {error}")
+        format!("ZeroAgent engine provider discovery response was invalid JSON: {error}")
     })?;
     if !status.is_success() {
         let message = payload
             .get("error")
             .and_then(Value::as_str)
             .or_else(|| payload.get("message").and_then(Value::as_str))
-            .unwrap_or("K-brain provider discovery failed");
+            .unwrap_or("ZeroAgent engine provider discovery failed");
         return Err(format!("{message} (HTTP {status})"));
     }
     Ok(payload
@@ -892,14 +895,14 @@ pub(crate) async fn kbrain_provider_models(
 async fn ensure_kbrain_connection(app: &AppHandle) -> Result<KBrainBackendConnection, String> {
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or_else(|| "K-brain backend state is unavailable".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine state is unavailable".to_string())?;
     tauri::async_runtime::spawn_blocking({
         let backend = Arc::clone(backend.inner());
         let app = app.clone();
         move || backend.ensure_started(&app)
     })
     .await
-    .map_err(|error| format!("K-brain backend startup task failed: {error}"))?
+    .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))?
 }
 
 fn prompt_workdir_query(workdir: &str) -> String {
@@ -946,7 +949,7 @@ async fn kbrain_json_request(
         .no_proxy()
         .timeout(timeout)
         .build()
-        .map_err(|error| format!("create K-brain HTTP client failed: {error}"))?;
+        .map_err(|error| format!("create ZeroAgent engine HTTP client failed: {error}"))?;
     let mut request = client
         .request(
             method,
@@ -965,18 +968,18 @@ async fn kbrain_json_request(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("K-brain prompt request failed: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine prompt request failed: {error}"))?;
     let status = response.status();
     let payload = response
         .json::<Value>()
         .await
-        .map_err(|error| format!("K-brain prompt response was invalid JSON: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine prompt response was invalid JSON: {error}"))?;
     if !status.is_success() {
         let message = payload
             .get("error")
             .and_then(Value::as_str)
             .or_else(|| payload.get("message").and_then(Value::as_str))
-            .unwrap_or("K-brain prompt request failed");
+            .unwrap_or("ZeroAgent engine prompt request failed");
         return Err(format!("{message} (HTTP {status})"));
     }
     Ok(payload)
@@ -1780,7 +1783,7 @@ pub async fn handle_skill_manage(
 
     let backend = app
         .try_state::<Arc<KBrainBackendState>>()
-        .ok_or("K-brain backend state is unavailable")?;
+        .ok_or("ZeroAgent engine state is unavailable")?;
     // Use the same profile-owned facade as the Desktop renderer: Skills settings
     // retain its owner checks, configuration gate, read-bound CAS and recovery.
     let connection =
@@ -1848,7 +1851,7 @@ pub(crate) async fn kbrain_skill_manage(
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|error| format!("create K-brain skills HTTP client failed: {error}"))?;
+        .map_err(|error| format!("create ZeroAgent engine skills HTTP client failed: {error}"))?;
     let mut request = client
         .request(
             method,
@@ -1865,7 +1868,7 @@ pub(crate) async fn kbrain_skill_manage(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("K-brain skills request failed: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine skills request failed: {error}"))?;
     let status = response.status();
     let configuration = response
         .headers()
@@ -1880,7 +1883,7 @@ pub(crate) async fn kbrain_skill_manage(
     let text = response
         .text()
         .await
-        .map_err(|error| format!("K-brain skills response failed: {error}"))?;
+        .map_err(|error| format!("ZeroAgent engine skills response failed: {error}"))?;
     let parsed = serde_json::from_str::<Value>(&text);
     if !status.is_success() {
         let message = parsed
@@ -1888,14 +1891,15 @@ pub(crate) async fn kbrain_skill_manage(
             .ok()
             .and_then(|body| body.get("error").or_else(|| body.get("message")))
             .and_then(Value::as_str)
-            .unwrap_or("K-brain skills request rejected");
+            .unwrap_or("ZeroAgent engine skills request rejected");
         return Err(format!("{message} (HTTP {status})"));
     }
-    let mut result = parsed.map_err(|error| format!("invalid K-brain skills JSON: {error}"))?;
+    let mut result =
+        parsed.map_err(|error| format!("invalid ZeroAgent engine skills JSON: {error}"))?;
     if configuration {
         let object = result
             .as_object_mut()
-            .ok_or("invalid K-brain skills configuration document")?;
+            .ok_or("invalid ZeroAgent engine skills configuration document")?;
         object.remove("configurationVersion");
         if let Some(version) = version {
             object.insert("configurationVersion".into(), Value::String(version));
@@ -2448,7 +2452,7 @@ mod tests {
             json!({"entries":[{"slug":"fresh","scope":"global","unreviewed":true}],"truncated":false})
         );
 
-        // 空参数按空对象发送；K-brain 的 null 结果（今天没有日记）原样回给 WebUI。
+        // 空参数按空对象发送；ZeroAgent engine 的 null 结果（今天没有日记）原样回给 WebUI。
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind local K-brain fixture");
@@ -2506,7 +2510,7 @@ mod tests {
         }
     }
 
-    /// 单次请求的本地 K-brain 替身：返回请求头与 JSON 正文，并回写给定响应。
+    /// 单次请求的本地 ZeroAgent engine 替身：返回请求头与 JSON 正文，并回写给定响应。
     async fn serve_one_prompt_request(
         listener: tokio::net::TcpListener,
         status: &'static str,
@@ -3308,7 +3312,7 @@ mod tests {
         let arm = &rest[..end];
         assert!(
             arm.contains("async_runtime::spawn("),
-            "MemoryManage arm awaits K-brain inline on the dispatch loop:\n{arm}"
+            "MemoryManage arm awaits ZeroAgent engine inline on the dispatch loop:\n{arm}"
         );
         // 对照：同样等 K-brain 的 SlashCommandList 已经 spawn。
         let slash = source

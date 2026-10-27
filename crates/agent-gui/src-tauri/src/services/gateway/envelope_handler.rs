@@ -45,7 +45,7 @@ impl GatewayController {
                         .handle_kbrain_history_request(request_id, &payload)
                         .await
                     {
-                        eprintln!("gateway K-brain history request failed: {error}");
+                        eprintln!("gateway ZeroAgent engine history request failed: {error}");
                     }
                 }
             });

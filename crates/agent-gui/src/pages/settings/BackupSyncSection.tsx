@@ -769,7 +769,7 @@ export function BackupSyncSection(props: SettingsSectionProps) {
                               variant="plain"
                               value={form.remoteDir}
                               disabled={syncLocked}
-                              placeholder="liveagent"
+                              placeholder="zeroagent"
                               onChange={(event) => patchForm({ remoteDir: event.target.value })}
                             />
                           </div>

@@ -73,7 +73,9 @@ export const backend = {
   cronApply(input: AutomationApplyInput): Promise<CronApplyResponse> {
     if (isKBrainBackendEnabled()) return applyKBrainCron(input);
     if (isKBrainBrowserHost()) {
-      return Promise.reject(new Error("K-brain browser mode does not support desktop automation"));
+      return Promise.reject(
+        new Error("ZeroAgent engine browser mode does not support desktop automation"),
+      );
     }
     return invoke<CronApplyResponse>("automation_cron_apply", { input });
   },
@@ -106,7 +108,9 @@ export const backend = {
   runNow(taskId: string): Promise<CronRunNowResponse> {
     if (isKBrainBackendEnabled()) return runKBrainCronNow(taskId);
     if (isKBrainBrowserHost())
-      return Promise.reject(new Error("K-brain browser mode does not support desktop automation"));
+      return Promise.reject(
+        new Error("ZeroAgent engine browser mode does not support desktop automation"),
+      );
     return invoke<CronRunNowResponse>("automation_run_cron_now", {
       task_id: taskId,
     });
@@ -144,7 +148,7 @@ export const backend = {
   async validateCronExpression(expression: string): Promise<void> {
     if (isKBrainBackendEnabled()) return validateKBrainCron(expression);
     if (isKBrainBrowserHost())
-      throw new Error("K-brain browser mode does not support desktop automation");
+      throw new Error("ZeroAgent engine browser mode does not support desktop automation");
     await invoke("cron_validate_expression", { expression });
   },
 

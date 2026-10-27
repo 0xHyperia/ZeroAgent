@@ -30,22 +30,20 @@ const userKey =
     ? String(process.getuid())
     : (process.env.USERNAME ?? "user");
 const stateDir = resolve(
-  process.env.LIVEAGENT_DEV_STATE_DIR ?? defaultDevStateDir(repoRoot, userKey),
+  process.env.ZEROAGENT_DEV_STATE_DIR ?? defaultDevStateDir(repoRoot, userKey),
 );
 const gatewayDataDir = resolve(
-  process.env.LIVEAGENT_GATEWAY_DATA_DIR ?? join(homedir(), ".liveagent/gateway"),
+  process.env.ZEROAGENT_GATEWAY_DATA_DIR ?? join(homedir(), ".zeroagent/gateway"),
 );
 const ports = {
-  desktop: Number(
-    process.env.ZEROAGENT_DEV_DESKTOP_PORT ?? process.env.LIVEAGENT_DEV_DESKTOP_PORT ?? 2120,
-  ),
-  gateway: Number(process.env.LIVEAGENT_DEV_GATEWAY_PORT ?? 50052),
-  webui: Number(process.env.LIVEAGENT_DEV_WEBUI_PORT ?? 5173),
+  desktop: Number(process.env.ZEROAGENT_DEV_DESKTOP_PORT ?? 2120),
+  gateway: Number(process.env.ZEROAGENT_DEV_GATEWAY_PORT ?? 50052),
+  webui: Number(process.env.ZEROAGENT_DEV_WEBUI_PORT ?? 5173),
 };
-const mcpBridgePort = Number(process.env.LIVEAGENT_DEV_MCP_BRIDGE_PORT ?? 9223);
-const externalDesktopFrontend = process.env.LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND === "1";
+const mcpBridgePort = Number(process.env.ZEROAGENT_DEV_MCP_BRIDGE_PORT ?? 9223);
+const externalDesktopFrontend = process.env.ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND === "1";
 const gatewayToken =
-  process.env.LIVEAGENT_GATEWAY_TOKEN ?? process.env.DEV_GATEWAY_TOKEN ?? "dev-token";
+  process.env.ZEROAGENT_GATEWAY_TOKEN ?? process.env.DEV_GATEWAY_TOKEN ?? "dev-token";
 const urls = Object.fromEntries(
   Object.entries(ports).map(([service, port]) => [service, `http://localhost:${port}`]),
 );
@@ -56,14 +54,14 @@ function usage() {
   console.log(`Usage: node scripts/dev-stack.mjs <start|stop|restart|status|logs> [desktop|gateway|webui|all]
 
 Environment variables:
-  LIVEAGENT_GATEWAY_TOKEN       Gateway token (default: dev-token)
-  LIVEAGENT_GATEWAY_DATA_DIR    Gateway data directory
-  LIVEAGENT_DEV_GATEWAY_PORT    Gateway HTTP port (default: 50052)
-  LIVEAGENT_DEV_WEBUI_PORT      WebUI Vite port (default: 5173)
-  LIVEAGENT_DEV_DESKTOP_PORT    Desktop Vite port (default: 2120)
-  LIVEAGENT_DEV_MCP_BRIDGE_PORT MCP Bridge port (default: 9223)
-  LIVEAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND Set to 1 when an independently managed desktop Vite is ready
-  LIVEAGENT_DEV_STATE_DIR       State and log directory (default: isolated per checkout)`);
+  ZEROAGENT_GATEWAY_TOKEN       Gateway token (default: dev-token)
+  ZEROAGENT_GATEWAY_DATA_DIR    Gateway data directory
+  ZEROAGENT_DEV_GATEWAY_PORT    Gateway HTTP port (default: 50052)
+  ZEROAGENT_DEV_WEBUI_PORT      WebUI Vite port (default: 5173)
+  ZEROAGENT_DEV_DESKTOP_PORT    Desktop Vite port (default: 2120)
+  ZEROAGENT_DEV_MCP_BRIDGE_PORT MCP Bridge port (default: 9223)
+  ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND Set to 1 when an independently managed desktop Vite is ready
+  ZEROAGENT_DEV_STATE_DIR       State and log directory (default: isolated per checkout)`);
 }
 
 function fail(message) {
@@ -139,7 +137,7 @@ function managedState(service) {
   if (!state) return undefined;
   if (state.repoRoot !== repoRoot || state.port !== ports[service]) {
     fail(
-      `${service} state belongs to another checkout or port; use its original checkout/configuration to stop it, or choose a separate LIVEAGENT_DEV_STATE_DIR`,
+      `${service} state belongs to another checkout or port; use its original checkout/configuration to stop it, or choose a separate ZEROAGENT_DEV_STATE_DIR`,
     );
   }
   if (!processIsAlive(state.pid)) {
@@ -188,7 +186,7 @@ function ensureWebUiEmbedStub() {
   mkdirSync(distDir, { recursive: true });
   writeFileSync(
     indexPath,
-    '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>LiveAgent Gateway</title></head><body><p>WebUI embed stub. Start the WebUI dev server for the real SPA.</p></body></html>\n',
+    '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>ZeroAgent Gateway</title></head><body><p>WebUI embed stub. Start the WebUI dev server for the real SPA.</p></body></html>\n',
   );
 }
 
@@ -203,10 +201,10 @@ function serviceCommand(service) {
       env: {
         ...process.env,
         GOCACHE: process.env.GOCACHE ?? join(stateDir, "go-cache"),
-        LIVEAGENT_GATEWAY_DATA_DIR: gatewayDataDir,
-        LIVEAGENT_GATEWAY_HTTP_ADDR:
-          process.env.LIVEAGENT_GATEWAY_HTTP_ADDR ?? `:${ports.gateway}`,
-        LIVEAGENT_GATEWAY_TOKEN: gatewayToken,
+        ZEROAGENT_GATEWAY_DATA_DIR: gatewayDataDir,
+        ZEROAGENT_GATEWAY_HTTP_ADDR:
+          process.env.ZEROAGENT_GATEWAY_HTTP_ADDR ?? `:${ports.gateway}`,
+        ZEROAGENT_GATEWAY_TOKEN: gatewayToken,
       },
     };
   }
@@ -243,13 +241,13 @@ function serviceCommand(service) {
     cwd: join(repoRoot, "crates/agent-gui"),
     env: {
       ...process.env,
-      VITE_LIVEAGENT_SESSION_WORKBENCH: process.env.DEV_SESSION_WORKBENCH ?? "1",
+      VITE_ZEROAGENT_SESSION_WORKBENCH: process.env.DEV_SESSION_WORKBENCH ?? "1",
     },
   };
 }
 
 async function runService(service, token) {
-  process.title = `liveagent-dev-stack-${service}`;
+  process.title = `zeroagent-dev-stack-${service}`;
   const command = serviceCommand(service);
   mkdirSync(join(stateDir, "go-cache"), { recursive: true });
   const child = spawn(command.command, command.args, {
@@ -366,7 +364,7 @@ async function startService(service) {
     !(service === "desktop" && externalDesktopFrontend)
   ) {
     console.error(
-      `${service}: port ${ports[service]} is occupied by an unmanaged process (${urls[service]}); stop that process before starting this checkout. An HTTP response does not identify it as LiveAgent.`,
+      `${service}: port ${ports[service]} is occupied by an unmanaged process (${urls[service]}); stop that process before starting this checkout. An HTTP response does not identify it as ZeroAgent.`,
     );
     return false;
   }

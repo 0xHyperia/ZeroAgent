@@ -8,7 +8,9 @@ let reconnect: ReturnType<typeof connectKBrainBackend> | undefined;
 export class KBrainTransportError extends Error {
   readonly code = "KBRAIN_TRANSPORT_UNAVAILABLE";
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : "K-brain connection unavailable", { cause });
+    super(cause instanceof Error ? cause.message : "ZeroAgent engine connection unavailable", {
+      cause,
+    });
     this.name = "KBrainTransportError";
   }
 }
@@ -40,7 +42,7 @@ export async function fetchKBrain(
   const managed = input.baseUrl === undefined && input.token === undefined && !input.fetch;
   const options = resolveKBrainClientOptions(input);
   const baseUrl = options.baseUrl?.trim().replace(/\/+$/, "");
-  if (!baseUrl) throw new Error("K-brain backend connection is not ready");
+  if (!baseUrl) throw new Error("ZeroAgent engine connection is not ready");
   const send = (url: string, token?: string) => {
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");

@@ -87,7 +87,7 @@ export async function executeCronPromptRun(
     throw new Error("Scheduled Auto Prompt was cancelled.");
   }
   if (assistant.stopReason !== "stop") {
-    throw new Error(assistant.errorMessage || "K-brain scheduled run failed.");
+    throw new Error(assistant.errorMessage || "ZeroAgent engine scheduled run failed.");
   }
   const conclusion = assistantMessageToText(assistant).trim();
   if (!conclusion) throw new Error("Auto Prompt request returned an empty conclusion.");

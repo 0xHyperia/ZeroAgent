@@ -18,12 +18,12 @@ fn select_home(
 }
 
 pub(crate) fn isolation_requested() -> bool {
-    cfg!(debug_assertions) && std::env::var_os("LIVEAGENT_DEV_HOME").is_some()
+    cfg!(debug_assertions) && std::env::var_os("ZEROAGENT_DEV_HOME").is_some()
 }
 
 pub(crate) fn home_dir() -> Option<PathBuf> {
     #[cfg(debug_assertions)]
-    let explicit = std::env::var_os("LIVEAGENT_DEV_HOME");
+    let explicit = std::env::var_os("ZEROAGENT_DEV_HOME");
     #[cfg(not(debug_assertions))]
     let explicit = None;
     select_home(explicit, dirs::home_dir)

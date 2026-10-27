@@ -165,7 +165,7 @@ export const PLANNING_TRANSLATIONS = {
     "planner.error.data_version_newer": "计划数据版本高于当前应用",
     "planner.error.cron_range": "查询范围无效或超过 93 天",
     "planner.error.desktop_required":
-      "日程数据目前由 ZeroAgent 桌面端保存。请在桌面端打开日程，或通过网关连接桌面端。仅连接 K-brain 的浏览器暂不支持日程。",
+      "日程数据目前由 ZeroAgent 桌面端保存。请在桌面端打开日程，或通过网关连接桌面端。仅连接 ZeroAgent 后端 的浏览器暂不支持日程。",
     "planner.error.date_format": "日期必须为 YYYY-MM-DD",
     "planner.error.date_invalid": "日期无效",
     "planner.error.default_calendar_required": "必须保留一个默认可写日历",
@@ -766,7 +766,7 @@ export const PLANNING_TRANSLATIONS = {
     "planner.error.data_version_newer": "The calendar data is from a newer version of the app",
     "planner.error.cron_range": "The query range is invalid or longer than 93 days",
     "planner.error.desktop_required":
-      "Planning data is currently stored by ZeroAgent desktop. Open Planning on desktop or connect to it through the gateway. A browser connected only to K-brain does not yet support Planning.",
+      "Planning data is currently stored by ZeroAgent desktop. Open Planning on desktop or connect to it through the gateway. A browser connected only to ZeroAgent engine does not yet support Planning.",
     "planner.error.date_format": "Dates must be YYYY-MM-DD",
     "planner.error.date_invalid": "Invalid date",
     "planner.error.default_calendar_required": "Keep one default writable calendar",

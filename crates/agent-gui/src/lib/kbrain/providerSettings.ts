@@ -57,7 +57,7 @@ export function customProviderFromKBrain(provider: KBrainSettingsProvider): Cust
 
 export function appProvidersFromKBrain(document: KBrainSettingsDocument): CustomProvider[] {
   if (!document || !Array.isArray(document.providers)) {
-    throw new Error("Malformed K-brain provider settings response");
+    throw new Error("Malformed ZeroAgent engine provider settings response");
   }
   return document.providers.map(customProviderFromKBrain);
 }
@@ -188,7 +188,7 @@ export function kBrainSettingsUpdateFromMissingLegacyProviders(
 
 export function getKBrainSettingsClient() {
   const connection = getKBrainRuntimeConnection();
-  if (!connection) throw new Error("K-brain backend connection is not ready");
+  if (!connection) throw new Error("ZeroAgent engine connection is not ready");
   return createKBrainClient({ baseUrl: connection.baseUrl, token: connection.token });
 }
 

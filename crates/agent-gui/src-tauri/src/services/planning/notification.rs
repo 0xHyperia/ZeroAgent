@@ -1,5 +1,5 @@
 pub fn disabled() -> bool {
-    std::env::var("LIVEAGENT_DISABLE_NOTIFICATIONS").as_deref() == Ok("1")
+    std::env::var("ZEROAGENT_DISABLE_NOTIFICATIONS").as_deref() == Ok("1")
 }
 
 pub async fn deliver(
@@ -78,7 +78,7 @@ mod mac {
     ) -> Result<(), String> {
         // UNUserNotificationCenter requires an actual app bundle, including in development.
         if NSBundle::mainBundle().bundleIdentifier().is_none() {
-            return Err("Run LiveAgent from its .app bundle to enable macOS notifications".into());
+            return Err("Run ZeroAgent from its .app bundle to enable macOS notifications".into());
         }
         let center = UNUserNotificationCenter::currentNotificationCenter();
         static DELEGATE: Once = Once::new();
@@ -96,7 +96,7 @@ mod mac {
                     let result = if !error.is_null() {
                         Err(unsafe { &*error }.localizedDescription().to_string())
                     } else if !granted.as_bool() {
-                        Err("Enable LiveAgent notifications in macOS System Settings".into())
+                        Err("Enable ZeroAgent notifications in macOS System Settings".into())
                     } else {
                         Ok(())
                     };
@@ -117,7 +117,7 @@ mod mac {
         });
         center.getNotificationSettingsWithCompletionHandler(&callback);
         if !wait(rx)? {
-            return Err("Enable LiveAgent notification alerts in macOS System Settings".into());
+            return Err("Enable ZeroAgent notification alerts in macOS System Settings".into());
         }
         let content = UNMutableNotificationContent::new();
         content.setTitle(&NSString::from_str(title));

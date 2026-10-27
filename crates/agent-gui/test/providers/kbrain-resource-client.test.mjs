@@ -151,7 +151,7 @@ test("K-brain resource client rejects malformed resource replies", async () => {
   });
   await assert.rejects(
     () => malformedCheckpointClient.listCheckpoints("session"),
-    /Malformed K-brain checkpoint list response/,
+    /Malformed ZeroAgent engine checkpoint list response/,
   );
 
   const malformedImportClient = createKBrainClient({
@@ -160,7 +160,7 @@ test("K-brain resource client rejects malformed resource replies", async () => {
   });
   await assert.rejects(
     () => malformedImportClient.importLegacyHistory({ source_id: "legacy-1" }),
-    /Malformed K-brain history import response/,
+    /Malformed ZeroAgent engine history import response/,
   );
 });
 
@@ -195,6 +195,6 @@ test("K-brain resource client preserves HTTP failures and rejects malformed comp
         client_request_id: "request-1",
         expected_revision: "rev-1",
       }),
-    /Malformed K-brain compaction acceptance/,
+    /Malformed ZeroAgent engine compaction acceptance/,
   );
 });

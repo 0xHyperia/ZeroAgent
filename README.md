@@ -103,7 +103,7 @@ Production requirements:
 - PostgreSQL for accounts, devices, workspace metadata, and conversation history
 - Redis for Web sessions, presence, and short-lived authentication state
 - `USA_ZERO_ORIGIN=https://usa0.top`
-- `LIVEAGENT_GATEWAY_COOKIE_SECURE=true` when HTTPS terminates before the container
+- `ZEROAGENT_GATEWAY_COOKIE_SECURE=true` when HTTPS terminates before the container
 
 After deployment, verify `/healthz` for process liveness and `/readyz` for PostgreSQL/Redis readiness, then open the domain to use the WebUI. Keep the deployed image digest recorded for rollback. See [Deployment Operations](docs/operations/deployment.md) for Railway, reverse proxy, and release details.
 

@@ -202,9 +202,9 @@ export function responseText(payload) {
 }
 
 async function main() {
-  const token = process.env.KBRAIN_TOKEN?.trim() || process.env.K_BRAIN_TOKEN?.trim();
-  if (!token) { writeFallback("missing KBRAIN_TOKEN/K_BRAIN_TOKEN"); return; }
-  const baseUrl = (process.env.KBRAIN_URL?.trim() || process.env.K_BRAIN_URL?.trim() || "http://127.0.0.1:47321").replace(/\/+$/, "");
+  const token = process.env.ZEROAGENT_BACKEND_TOKEN?.trim();
+  if (!token) { writeFallback("missing ZEROAGENT_BACKEND_TOKEN"); return; }
+  const baseUrl = (process.env.ZEROAGENT_BACKEND_URL?.trim() || "http://127.0.0.1:47321").replace(/\/+$/, "");
   const provider = process.env.AI_RELEASE_NOTES_PROVIDER?.trim() || "usa-zero";
   const model = process.env.AI_RELEASE_NOTES_MODEL?.trim() || DEFAULT_MODEL;
   const timeoutMs = Number.parseInt(process.env.AI_RELEASE_NOTES_TIMEOUT_MS ?? "60000", 10);

@@ -37,7 +37,7 @@ export async function invokeKBrainMemory<T>(
   args: Record<string, unknown> = {},
 ): Promise<T> {
   if (!isKBrainMemoryCommand(command)) {
-    throw new Error(`Unsupported K-brain memory command: ${command}`);
+    throw new Error(`Unsupported ZeroAgent engine memory command: ${command}`);
   }
   return createKBrainClient().requestMemory<T>(command, args);
 }

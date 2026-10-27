@@ -37,7 +37,7 @@ impl BackendProfile {
             .join("runtime-v2")
             .join("profiles")
             .join(profile)
-            .join("kbrain")
+            .join("engine")
     }
 
     pub fn settings_dir(&self, data_root: &Path) -> PathBuf {
@@ -45,9 +45,154 @@ impl BackendProfile {
     }
 }
 
+/// Adopt only the current ZeroAgent v2 profile layout, before opening its stores.
+/// Never scan legacy product homes, merge directories, or overwrite a destination.
+fn is_current_engine_directory(destination: &Path) -> bool {
+    let Some(profile) = destination.parent() else {
+        return false;
+    };
+    let Some(profiles) = profile.parent() else {
+        return false;
+    };
+    let Some(runtime) = profiles.parent() else {
+        return false;
+    };
+    let name = profile
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let account = name
+        .strip_prefix("account-")
+        .is_some_and(|id| id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()));
+    destination.file_name().is_some_and(|name| name == "engine")
+        && profiles.file_name().is_some_and(|name| name == "profiles")
+        && runtime.file_name().is_some_and(|name| name == "runtime-v2")
+        && (name == "local" || account)
+}
+
+// Keep the established opaque identity when a v2 profile directory is renamed.
+// Browser drafts, history mappings and credential bindings must not get a new scope.
+pub(crate) fn storage_identity_path(canonical: &Path) -> PathBuf {
+    if is_current_engine_directory(canonical) {
+        canonical.with_file_name("kbrain")
+    } else {
+        canonical.to_path_buf()
+    }
+}
+
+pub(crate) fn prepare_backend_directory(destination: &Path) -> Result<(), String> {
+    if !is_current_engine_directory(destination) {
+        return Ok(());
+    }
+    let profile = destination
+        .parent()
+        .ok_or("Missing ZeroAgent profile directory")?;
+    let profiles = profile
+        .parent()
+        .ok_or("Missing ZeroAgent profiles directory")?;
+    let runtime = profiles
+        .parent()
+        .ok_or("Missing ZeroAgent runtime directory")?;
+    let source = profile.join("kbrain");
+    let inspect = |path: &Path| -> Result<bool, String> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                #[cfg(windows)]
+                let reparse = {
+                    use std::os::windows::fs::MetadataExt;
+                    metadata.file_attributes() & 0x400 != 0
+                };
+                #[cfg(not(windows))]
+                let reparse = false;
+                if metadata.file_type().is_symlink() || reparse || !metadata.is_dir() {
+                    return Err("ZeroAgent data directory must be a real directory".into());
+                }
+                Ok(true)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(format!(
+                "Unable to inspect ZeroAgent data directory: {error}"
+            )),
+        }
+    };
+    for ancestor in [runtime, profiles, profile] {
+        inspect(ancestor)?;
+    }
+    let old_exists = inspect(&source)?;
+    let new_exists = inspect(destination)?;
+    if old_exists && new_exists {
+        return Err("ZeroAgent data directory conflict: both engine and previous profile data exist; no data was changed".into());
+    }
+    if old_exists {
+        std::fs::rename(&source, destination).map_err(|error| {
+            format!("Unable to rename ZeroAgent profile data; previous data was retained: {error}")
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn current_profile_rename_preserves_data_and_is_idempotent() {
+        let temp = tempfile::tempdir().unwrap();
+        let profile =
+            BackendProfile::from_account_scope(Some("https://usa0.top|user:rename")).unwrap();
+        let destination = profile.backend_dir(temp.path());
+        let source = destination.with_file_name("kbrain");
+        std::fs::create_dir_all(source.join("imaging")).unwrap();
+        std::fs::write(
+            source.join("imaging/transactions.wal"),
+            b"existing image receipt",
+        )
+        .unwrap();
+        std::fs::write(source.join("config.json"), b"existing configuration").unwrap();
+        let identity_before = source.canonicalize().unwrap();
+        prepare_backend_directory(&destination).unwrap();
+        prepare_backend_directory(&destination).unwrap();
+        assert!(!source.exists());
+        assert_eq!(
+            storage_identity_path(&destination.canonicalize().unwrap()),
+            identity_before
+        );
+        assert_eq!(
+            std::fs::read(destination.join("imaging/transactions.wal")).unwrap(),
+            b"existing image receipt"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("config.json")).unwrap(),
+            b"existing configuration"
+        );
+        assert!(!BackendProfile::Local.backend_dir(temp.path()).exists());
+    }
+
+    #[test]
+    fn conflicting_profile_directories_are_never_merged_or_overwritten() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = BackendProfile::Local.backend_dir(temp.path());
+        let source = destination.with_file_name("kbrain");
+        for dir in [&source, &destination] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(source.join("keep"), b"old").unwrap();
+        std::fs::write(destination.join("keep"), b"new").unwrap();
+        assert!(prepare_backend_directory(&destination)
+            .unwrap_err()
+            .contains("conflict"));
+        assert_eq!(std::fs::read(source.join("keep")).unwrap(), b"old");
+        assert_eq!(std::fs::read(destination.join("keep")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn unrelated_engine_directories_are_not_adopted() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("kbrain");
+        std::fs::create_dir_all(&source).unwrap();
+        prepare_backend_directory(&temp.path().join("engine")).unwrap();
+        assert!(source.exists());
+    }
 
     #[test]
     fn profiles_are_stable_and_separate_accounts_origins_and_offline_data() {

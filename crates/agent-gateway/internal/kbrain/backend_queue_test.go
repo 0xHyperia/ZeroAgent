@@ -19,9 +19,9 @@ import (
 )
 
 func TestBackendQueueRelayAgainstRealKBrain(t *testing.T) {
-	binary := os.Getenv("LIVEAGENT_KBRAIN_BINARY")
+	binary := os.Getenv("ZEROAGENT_BACKEND_BINARY")
 	if binary == "" {
-		t.Skip("set LIVEAGENT_KBRAIN_BINARY to exercise the real backend")
+		t.Skip("set ZEROAGENT_BACKEND_BINARY to exercise the real backend")
 	}
 	firstStarted := make(chan struct{})
 	release := make(chan struct{})

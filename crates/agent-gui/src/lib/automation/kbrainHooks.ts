@@ -15,7 +15,9 @@ async function request<T>(method: string, input?: AutomationApplyInput): Promise
     ...(input ? { body: JSON.stringify(input) } : {}),
   });
   if (!response.ok)
-    throw new Error(`K-brain hooks request failed (${response.status}): ${await response.text()}`);
+    throw new Error(
+      `ZeroAgent engine hooks request failed (${response.status}): ${await response.text()}`,
+    );
   return response.json() as Promise<T>;
 }
 

@@ -9,13 +9,13 @@ const packageJson = JSON.parse(
 ) as { version?: string };
 
 const env = process.env as Record<string, string | undefined>;
-const appVersion = env.LIVEAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
+const appVersion = env.ZEROAGENT_APP_VERSION?.trim() || packageJson.version || "0.0.0";
 const usaZeroOrigin =
   env.ZEROAGENT_USA_ZERO_ORIGIN?.trim() || env.VITE_USA_ZERO_ORIGIN?.trim() || "https://usa0.top";
 const host = env.TAURI_DEV_HOST;
-const desktopDevPort = Number(env.ZEROAGENT_DEV_DESKTOP_PORT || env.LIVEAGENT_DEV_DESKTOP_PORT || 2120);
+const desktopDevPort = Number(env.ZEROAGENT_DEV_DESKTOP_PORT || 2120);
 if (!Number.isInteger(desktopDevPort) || desktopDevPort < 1 || desktopDevPort > 65534) {
-  throw new Error("LIVEAGENT_DEV_DESKTOP_PORT must be an integer between 1 and 65534");
+  throw new Error("ZEROAGENT_DEV_DESKTOP_PORT must be an integer between 1 and 65534");
 }
 
 // https://vite.dev/config/

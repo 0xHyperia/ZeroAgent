@@ -356,7 +356,7 @@ async fn handle_proxy(
     if !is_allowed_proxy_provider(&provider) {
         return error_response(
             StatusCode::NOT_FOUND,
-            "Provider model proxying is owned by K-brain",
+            "Provider model proxying is owned by ZeroAgent engine",
             &headers,
         );
     }

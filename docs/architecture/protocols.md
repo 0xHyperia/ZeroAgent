@@ -75,7 +75,7 @@ ping/pong 承担，客户端以 3×心跳周期无入站为断链判据。
 ### Agent 鉴权（每 Agent 独立凭证）
 
 网关默认自动创建内嵌 SQLite 数据库（可用 `-agent-db` 或
-`LIVEAGENT_GATEWAY_AGENT_DB` 指定路径）并启用每 Agent 凭证存储：
+`ZEROAGENT_GATEWAY_AGENT_DB` 指定路径）并启用每 Agent 凭证存储：
 
 - Agent 链路接受网关 Token 或按 `agent_id` 签发的独立凭证（`agt_` 前缀）；
 - Agent 独立凭证只授权绑定的 Agent 链路，不能冒充浏览器或调用 REST；网关 Token

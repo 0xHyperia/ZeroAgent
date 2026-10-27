@@ -25,7 +25,7 @@ const client: CheckpointRewindClient = {
   },
   preview: async ({ conversationId, turnSeq, authorizedRoots }) => {
     const connection = getConfiguredKBrainConnection();
-    if (!connection) throw new Error("K-brain backend connection is not ready");
+    if (!connection) throw new Error("ZeroAgent engine connection is not ready");
     const row = await createKBrainClient(connection).checkpointPreview(
       conversationId,
       turnSeq,
@@ -50,7 +50,7 @@ const client: CheckpointRewindClient = {
   },
   rewind: async ({ conversationId, turnSeq, authorizedRoots, expected }) => {
     const connection = getConfiguredKBrainConnection();
-    if (!connection) throw new Error("K-brain backend connection is not ready");
+    if (!connection) throw new Error("ZeroAgent engine connection is not ready");
     const row = await createKBrainClient(connection).checkpointRewind(
       conversationId,
       turnSeq,

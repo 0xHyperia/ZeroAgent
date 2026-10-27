@@ -46,7 +46,7 @@ fn client() -> Result<Client, String> {
         .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|error| format!("failed to create K-brain client: {error}"))
+        .map_err(|error| format!("failed to create ZeroAgent engine client: {error}"))
 }
 
 pub(crate) fn write_switch(
@@ -60,7 +60,12 @@ pub(crate) fn write_switch(
         .send()
         .and_then(|response| response.error_for_status())
         .map(|_| ())
-        .map_err(|error| format!("save K-brain memory switch failed: {}", error.without_url()))
+        .map_err(|error| {
+            format!(
+                "save ZeroAgent engine memory switch failed: {}",
+                error.without_url()
+            )
+        })
 }
 
 #[cfg(test)]

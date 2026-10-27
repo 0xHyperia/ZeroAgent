@@ -2,6 +2,16 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "只处理已验证当前v2 profile，原子改名且冲突/链接拒绝",
+        "存储身份、账号隔离、草稿与凭据绑定保持",
+        "真实后端重开后的图片、配置与会话读取"
+      ]
+    },
+    {
       "glob": "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
       "ownership": "adapted",
       "risk": "high",

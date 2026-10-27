@@ -32,7 +32,7 @@ mod canonical_backup_tests {
     }
 
     fn binary() -> PathBuf {
-        if let Some(path) = std::env::var_os("LIVEAGENT_KBRAIN_BINARY") {
+        if let Some(path) = std::env::var_os("ZEROAGENT_BACKEND_BINARY") {
             return PathBuf::from(path);
         }
         let triple = if cfg!(target_os = "windows") {

@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{env, ffi::OsString, fs, path::PathBuf, process::ExitCode};
 
-const PUBLIC_KEY_ENV: &str = "LIVEAGENT_UPDATER_PUBLIC_KEY";
-const USAGE: &str = "Usage: verify-updater-signatures (--config <generated-tauri-config.json> | --public-key-env LIVEAGENT_UPDATER_PUBLIC_KEY) [--] <asset>...\nEach asset must have an adjacent <asset>.sig containing Tauri's base64-wrapped Minisign signature.";
+const PUBLIC_KEY_ENV: &str = "ZEROAGENT_UPDATER_PUBLIC_KEY";
+const USAGE: &str = "Usage: verify-updater-signatures (--config <generated-tauri-config.json> | --public-key-env ZEROAGENT_UPDATER_PUBLIC_KEY) [--] <asset>...\nEach asset must have an adjacent <asset>.sig containing Tauri's base64-wrapped Minisign signature.";
 
 enum KeySource {
     Config(PathBuf),

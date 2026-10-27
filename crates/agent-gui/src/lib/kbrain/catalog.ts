@@ -162,7 +162,7 @@ export function useKBrainCatalogSettings(settings: AppSettings, options: Catalog
             baseUrl,
             token,
             providers: [],
-            error: `K-brain 模型目录加载失败：${error instanceof Error ? error.message : String(error)}`,
+            error: `ZeroAgent 后端 模型目录加载失败：${error instanceof Error ? error.message : String(error)}`,
           });
         }
       });

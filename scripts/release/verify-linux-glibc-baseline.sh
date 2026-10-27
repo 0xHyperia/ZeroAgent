@@ -10,11 +10,11 @@
 #
 # Usage: verify-linux-glibc-baseline.sh [binary ...]
 # Without arguments it inspects the release binary produced by `tauri build`.
-# Override the baseline with LIVEAGENT_GLIBC_BASELINE (default 2.35).
+# Override the baseline with ZEROAGENT_GLIBC_BASELINE (default 2.35).
 set -euo pipefail
 
 readonly DEFAULT_BASELINE="2.35"
-baseline="${LIVEAGENT_GLIBC_BASELINE:-$DEFAULT_BASELINE}"
+baseline="${ZEROAGENT_GLIBC_BASELINE:-$DEFAULT_BASELINE}"
 
 fail() {
   echo "verify-linux-glibc-baseline: $*" >&2

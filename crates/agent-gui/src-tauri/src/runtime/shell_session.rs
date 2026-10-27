@@ -676,7 +676,7 @@ fn spawn_stream_reader<R: Read + Send + 'static>(
                     if let Some(session) = session.upgrade() {
                         session.append_output(
                             ShellOutputStream::Stderr,
-                            format!("LiveAgent failed to read shell output: {error}\n"),
+                            format!("ZeroAgent failed to read shell output: {error}\n"),
                         );
                     }
                     break;
@@ -754,7 +754,7 @@ fn spawn_process_monitor(
                     let _ = terminate_child_process_tree(&mut child, config.termination_grace);
                     session.append_output(
                         ShellOutputStream::Stderr,
-                        format!("LiveAgent failed to inspect shell process: {error}\n"),
+                        format!("ZeroAgent failed to inspect shell process: {error}\n"),
                     );
                     break (ShellSessionStatus::Failed, Some(-1));
                 }

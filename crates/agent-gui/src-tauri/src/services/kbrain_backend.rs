@@ -32,9 +32,9 @@ const TOKEN_ENV: &str = "K_BRAIN_BACKEND_TOKEN";
 /// 应用代理取值（见 `system_proxy::kbrain_proxy_value`）；必须总是设置，
 /// 否则 K-brain 会回退到继承的 HTTP(S)_PROXY。
 const PROXY_ENV: &str = "LIVEAGENT_KBRAIN_PROXY";
-const DEBUG_BINARY_ENV: &str = "LIVEAGENT_KBRAIN_BINARY";
+const DEBUG_BINARY_ENV: &str = "ZEROAGENT_BACKEND_BINARY";
 #[cfg(test)]
-const TEST_BINARY_ENV: &str = "LIVEAGENT_KBRAIN_TEST_BINARY";
+const TEST_BINARY_ENV: &str = "ZEROAGENT_BACKEND_TEST_BINARY";
 const PROTOCOL_VERSION: &str = "kbrain.agent.v1";
 const READY_PREFIX: &str = "k-brain backend listening on ";
 // The pinned backend can need more than 30s before emitting READY on Windows cold starts.
@@ -238,8 +238,9 @@ impl Default for KBrainBackendState {
 fn backend_storage_id(root: &Path) -> Result<String, String> {
     let canonical = root
         .canonicalize()
-        .map_err(|_| "Unable to identify K-brain data root".to_string())?;
-    let digest = Sha256::digest(canonical.as_os_str().as_encoded_bytes());
+        .map_err(|_| "Unable to identify ZeroAgent data root".to_string())?;
+    let identity = crate::services::backend_profile::storage_identity_path(&canonical);
+    let digest = Sha256::digest(identity.as_os_str().as_encoded_bytes());
     let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
     Ok(format!("local-{hex}"))
 }
@@ -263,10 +264,11 @@ impl KBrainBackendManager {
         mcp_owner: Option<McpCredentialOwner>,
     ) -> Result<Arc<Self>, String> {
         if cancelled() {
-            return Err("K-brain backend startup cancelled".into());
+            return Err("ZeroAgent engine startup cancelled".into());
         }
+        crate::services::backend_profile::prepare_backend_directory(&backend_dir)?;
         std::fs::create_dir_all(&backend_dir)
-            .map_err(|_| "Unable to create K-brain data root".to_string())?;
+            .map_err(|_| "Unable to create ZeroAgent data root".to_string())?;
         let storage_id = backend_storage_id(&backend_dir)?;
         let configuration =
             crate::services::configuration_coordinator::ConfigurationCoordinator::for_profile(
@@ -313,13 +315,13 @@ impl KBrainBackendManager {
 
         let mut child = command
             .spawn()
-            .map_err(|error| format!("failed to start K-brain backend: {error}"))?;
+            .map_err(|error| format!("failed to start ZeroAgent engine: {error}"))?;
         let stdin = child.stdin.take();
         let mut process = BackendProcess { child, stdin };
         let stdout = match process.child.stdout.take() {
             Some(stdout) => stdout,
             None => {
-                return Err("K-brain backend stdout was not piped".to_string());
+                return Err("ZeroAgent engine stdout was not piped".to_string());
             }
         };
         if let Some(stderr) = process.child.stderr.take() {
@@ -361,12 +363,12 @@ impl KBrainBackendManager {
                     }
                 }
             })
-            .map_err(|error| format!("failed to start K-brain stdout reader: {error}"))?;
+            .map_err(|error| format!("failed to start ZeroAgent engine stdout reader: {error}"))?;
 
         let deadline = Instant::now() + startup_timeout;
         let base_url = loop {
             if cancelled() {
-                return Err("K-brain backend startup cancelled".into());
+                return Err("ZeroAgent engine startup cancelled".into());
             }
             let wait = deadline
                 .saturating_duration_since(Instant::now())
@@ -377,35 +379,35 @@ impl KBrainBackendManager {
                     let status = child_status_after_eof(&mut process.child)?;
                     return Err(match status {
                         Some(status) => format!(
-                            "K-brain backend exited before becoming ready (code {})",
+                            "ZeroAgent engine exited before becoming ready (code {})",
                             status.code().unwrap_or(-1)
                         ),
-                        None => "K-brain backend stdout closed before becoming ready".to_string(),
+                        None => "ZeroAgent engine stdout closed before becoming ready".to_string(),
                     });
                 }
                 Ok(StartupEvent::Error(error)) => {
                     return Err(format!(
-                        "failed to read K-brain backend startup output: {error}"
+                        "failed to read ZeroAgent engine startup output: {error}"
                     ));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err("K-brain backend startup output reader disconnected".to_string());
+                    return Err("ZeroAgent engine startup output reader disconnected".to_string());
                 }
             }
             if let Some(status) = process
                 .child
                 .try_wait()
-                .map_err(|error| format!("failed to inspect K-brain backend: {error}"))?
+                .map_err(|error| format!("failed to inspect ZeroAgent engine: {error}"))?
             {
                 return Err(format!(
-                    "K-brain backend exited before becoming ready (code {})",
+                    "ZeroAgent engine exited before becoming ready (code {})",
                     status.code().unwrap_or(-1)
                 ));
             }
             if Instant::now() >= deadline {
                 return Err(
-                    "K-brain backend did not become ready before the startup timeout".into(),
+                    "ZeroAgent engine did not become ready before the startup timeout".into(),
                 );
             }
         };
@@ -775,7 +777,7 @@ impl KBrainBackendState {
             .lock()
             .map_err(|_| "Backend profile request lock is poisoned")?;
         if self.exiting.load(Ordering::SeqCst) {
-            return Err("K-brain backend profile activation cancelled".into());
+            return Err("ZeroAgent engine profile activation cancelled".into());
         }
         Ok(self
             .profile_verification_epoch
@@ -787,7 +789,7 @@ impl KBrainBackendState {
         if self.exiting.load(Ordering::SeqCst)
             || self.profile_verification_epoch.load(Ordering::SeqCst) != ticket
         {
-            return Err("K-brain backend profile verification superseded".into());
+            return Err("ZeroAgent engine profile verification superseded".into());
         }
         Ok(())
     }
@@ -807,7 +809,7 @@ impl KBrainBackendState {
             .lock()
             .map_err(|_| "Backend profile request lock is poisoned".to_string())?;
         if self.exiting.load(Ordering::SeqCst) {
-            return Err("K-brain backend profile activation cancelled".into());
+            return Err("ZeroAgent engine profile activation cancelled".into());
         }
         // Checked under the same lock as begin_profile_verification: an older HTTP response
         // cannot publish after a newer activation request, including a failed newer proof.
@@ -835,7 +837,7 @@ impl KBrainBackendState {
             || requested.0 != *profile
             || ticket.is_some_and(|ticket| ticket != requested.1)
         {
-            return Err("K-brain backend profile activation cancelled".into());
+            return Err("ZeroAgent engine profile activation cancelled".into());
         }
         // Capture while holding the request lock. A later request must invalidate this
         // epoch even when it arrives before ensure_started_with_paths obtains start_lock.
@@ -985,16 +987,16 @@ impl KBrainBackendState {
         let _start_guard = self
             .start_lock
             .lock()
-            .map_err(|_| "K-brain backend start lock is poisoned".to_string())?;
+            .map_err(|_| "ZeroAgent engine start lock is poisoned".to_string())?;
 
         if cancelled() {
-            return Err("K-brain backend startup cancelled".into());
+            return Err("ZeroAgent engine startup cancelled".into());
         }
         let existing = {
             let guard = self
                 .manager
                 .lock()
-                .map_err(|_| "K-brain backend state is poisoned".to_string())?;
+                .map_err(|_| "ZeroAgent engine state is poisoned".to_string())?;
             guard.as_ref().cloned()
         };
         if let Some(manager) = existing {
@@ -1012,7 +1014,7 @@ impl KBrainBackendState {
             let stale = self
                 .manager
                 .lock()
-                .map_err(|_| "K-brain backend state is poisoned".to_string())?
+                .map_err(|_| "ZeroAgent engine state is poisoned".to_string())?
                 .take();
             if let Some(stale) = stale {
                 stale.shutdown();
@@ -1049,9 +1051,9 @@ impl KBrainBackendState {
                 mcp_owner,
             )
         }))
-        .map_err(|_| "K-brain backend startup panicked".to_string())??;
+        .map_err(|_| "ZeroAgent engine startup panicked".to_string())??;
         if cancelled() {
-            return Err("K-brain backend startup cancelled".into());
+            return Err("ZeroAgent engine startup cancelled".into());
         }
         let connection = manager.connection();
         if let Some(capability) = manager.mcp_credential_capability() {
@@ -1068,12 +1070,12 @@ impl KBrainBackendState {
             self.facade_configuration(&manager)?,
         )?;
         if cancelled() {
-            return Err("K-brain backend startup cancelled".into());
+            return Err("ZeroAgent engine startup cancelled".into());
         }
         self.remember_transport_credentials(&connection, &public)?;
         self.manager
             .lock()
-            .map_err(|_| "K-brain backend state is poisoned".to_string())?
+            .map_err(|_| "ZeroAgent engine state is poisoned".to_string())?
             .replace(manager);
         self.publish_public_connection(public);
         Ok(connection)
@@ -1287,7 +1289,7 @@ impl KBrainBackendState {
         };
         let proxy = system_proxy::kbrain_proxy_value();
         if let Err(error) = put_proxy_setting(&manager.connection(), &proxy) {
-            eprintln!("failed to push proxy setting to K-brain backend: {error}");
+            eprintln!("failed to push proxy setting to ZeroAgent engine: {error}");
         }
     }
 }
@@ -1297,7 +1299,7 @@ fn put_proxy_setting(connection: &KBrainBackendConnection, proxy: &str) -> Resul
         .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|error| format!("failed to create K-brain client: {error}"))?;
+        .map_err(|error| format!("failed to create ZeroAgent engine client: {error}"))?;
     // 错误信息只带状态码，不带代理 URL/凭据。
     client
         .put(format!("{}/v1/network/proxy", connection.base_url))
@@ -1414,7 +1416,7 @@ pub async fn kbrain_backend_connection(
         state.viewer_connection(&private)
     })
     .await
-    .map_err(|error| format!("K-brain backend startup task failed: {error}"))??;
+    .map_err(|error| format!("ZeroAgent engine startup task failed: {error}"))??;
     Ok(connection)
 }
 
@@ -1444,7 +1446,7 @@ fn child_status_after_eof(child: &mut Child) -> Result<Option<std::process::Exit
     let deadline = Instant::now() + Duration::from_millis(100);
     loop {
         if let Some(status) = child.try_wait().map_err(|error| {
-            format!("failed to inspect K-brain backend after stdout EOF: {error}")
+            format!("failed to inspect ZeroAgent engine after stdout EOF: {error}")
         })? {
             return Ok(Some(status));
         }
@@ -1461,23 +1463,23 @@ fn check_startup_process(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     if cancelled() {
-        return Err("K-brain backend startup cancelled".into());
+        return Err("ZeroAgent engine startup cancelled".into());
     }
     if let Some(status) = child
         .try_wait()
-        .map_err(|error| format!("failed to inspect K-brain backend: {error}"))?
+        .map_err(|error| format!("failed to inspect ZeroAgent engine: {error}"))?
     {
         return Err(format!(
-            "K-brain backend exited during health check ({status})"
+            "ZeroAgent engine exited during health check ({status})"
         ));
     }
     match events.try_recv() {
-        Ok(StartupEvent::Eof) => Err("K-brain backend stdout closed during health check".into()),
+        Ok(StartupEvent::Eof) => Err("ZeroAgent engine stdout closed during health check".into()),
         Ok(StartupEvent::Error(error)) => {
-            Err(format!("failed to read K-brain backend output: {error}"))
+            Err(format!("failed to read ZeroAgent engine output: {error}"))
         }
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-            Err("K-brain backend output reader disconnected during health check".into())
+            Err("ZeroAgent engine output reader disconnected during health check".into())
         }
         Ok(StartupEvent::Ready(_)) | Err(std::sync::mpsc::TryRecvError::Empty) => Ok(()),
     }
@@ -1494,13 +1496,13 @@ fn wait_for_health(
         .no_proxy()
         .timeout(Duration::from_millis(500))
         .build()
-        .map_err(|error| format!("failed to create K-brain health client: {error}"))?;
+        .map_err(|error| format!("failed to create ZeroAgent engine health client: {error}"))?;
     let url = format!("{}/v1/health", connection.base_url);
     loop {
         check_startup_process(child, events, cancelled)?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err("K-brain backend health check timed out".into());
+            return Err("ZeroAgent engine health check timed out".into());
         }
         let result = client
             .get(&url)
@@ -1511,14 +1513,14 @@ fn wait_for_health(
             .and_then(|response| response.json::<HealthResponse>());
         check_startup_process(child, events, cancelled)?;
         if Instant::now() >= deadline {
-            return Err("K-brain backend health check timed out".into());
+            return Err("ZeroAgent engine health check timed out".into());
         }
         if let Ok(health) = result {
             if health.status == "ok" && health.version == PROTOCOL_VERSION {
                 return Ok(());
             }
             return Err(format!(
-                "K-brain backend protocol mismatch (reported version {})",
+                "ZeroAgent engine protocol mismatch (reported version {})",
                 health.version
             ));
         }
@@ -1579,7 +1581,7 @@ fn spawn_stderr_drain(stderr: impl Read + Send + 'static, token: String) -> Resu
             }
             let _diagnostic = String::from_utf8_lossy(&retained).replace(&token, "<redacted>");
         })
-        .map_err(|error| format!("failed to start K-brain stderr reader: {error}"))?;
+        .map_err(|error| format!("failed to start ZeroAgent engine stderr reader: {error}"))?;
     Ok(())
 }
 
@@ -1600,7 +1602,7 @@ fn read_bounded_line<R: BufRead>(reader: &mut R, max_bytes: usize) -> io::Result
         if consume > remaining {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "K-brain stdout line exceeds limit",
+                "ZeroAgent engine stdout line exceeds limit",
             ));
         }
         line.extend_from_slice(&buffer[..consume]);
@@ -1738,7 +1740,7 @@ mod tests {
     static CHILD_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_dir() -> TempDir {
-        let root = std::env::var_os("LIVEAGENT_KBRAIN_TEST_SCRATCH")
+        let root = std::env::var_os("ZEROAGENT_BACKEND_TEST_SCRATCH")
             .map(PathBuf::from)
             .unwrap_or_else(std::env::temp_dir);
         tempfile::Builder::new()
@@ -1923,7 +1925,7 @@ mod tests {
             )
             .err()
             .unwrap();
-        assert_eq!(error, "K-brain backend startup cancelled");
+        assert_eq!(error, "ZeroAgent engine startup cancelled");
         assert!(!data.exists());
     }
 
@@ -2523,7 +2525,7 @@ while True:
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let binary = std::env::var(TEST_BINARY_ENV)
-            .expect("set LIVEAGENT_KBRAIN_TEST_BINARY to the built real Go binary");
+            .expect("set ZEROAGENT_BACKEND_TEST_BINARY to the built real Go binary");
         let binary = PathBuf::from(binary);
         assert!(binary.is_absolute(), "test binary path must be absolute");
         assert!(

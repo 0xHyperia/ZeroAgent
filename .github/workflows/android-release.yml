@@ -137,7 +137,7 @@ jobs:
 
       - name: Initialize Android project
         working-directory: crates/agent-gui
-        run: pnpm tauri android init --ci --skip-targets-install --config "$LIVEAGENT_TAURI_VERSION_CONFIG"
+        run: pnpm tauri android init --ci --skip-targets-install --config "$ZEROAGENT_TAURI_VERSION_CONFIG"
 
       - name: Install ZeroAgent Android launcher icons
         shell: bash
@@ -184,7 +184,7 @@ jobs:
 
       - name: Build Android release APK
         working-directory: crates/agent-gui
-        run: pnpm tauri android build --apk --target aarch64 --ci --config "$LIVEAGENT_TAURI_VERSION_CONFIG"
+        run: pnpm tauri android build --apk --target aarch64 --ci --config "$ZEROAGENT_TAURI_VERSION_CONFIG"
 
       - name: Sign and verify Android APK
         id: package

@@ -12,6 +12,7 @@ lerna-debug.log*
 .claude
 .codex-artifacts
 .liveagent
+.zeroagent
 workspace
 !crates/agent-gui/src-tauri/src/commands/workspace/
 !crates/agent-gui/src-tauri/src/commands/workspace/**
@@ -32,8 +33,8 @@ target
 bin
 # Generated Tauri external binary and local locked-artifact cache
 crates/agent-gui/src-tauri/binaries/
-.liveagent/kbrain-artifact/
-.liveagent/kbrain-cache/
+.zeroagent/backend-artifact/
+.zeroagent/backend-cache/
 .serena
 chatroom
 

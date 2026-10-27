@@ -183,7 +183,7 @@ async function readError(response: Response) {
   } catch {
     // Keep the original response body for non-JSON server errors.
   }
-  const error = new Error(message || `K-brain request failed (${response.status})`);
+  const error = new Error(message || `ZeroAgent engine request failed (${response.status})`);
   Object.assign(error, { status: response.status });
   return error;
 }
@@ -241,7 +241,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       typeof result.fingerprint !== "string" ||
       !result.fingerprint.trim()
     ) {
-      throw new Error("Malformed K-brain history import response");
+      throw new Error("Malformed ZeroAgent engine history import response");
     }
     return result;
   }
@@ -400,7 +400,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       signal,
     });
     if (!Array.isArray(result?.existing) || result.existing.some((id) => typeof id !== "string")) {
-      throw new Error("Malformed K-brain session existence response");
+      throw new Error("Malformed ZeroAgent engine session existence response");
     }
     return new Set(result.existing as string[]);
   }
@@ -456,7 +456,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       `/v1/sessions/${encodeURIComponent(conversationId)}/checkpoints`,
     );
     if (!Array.isArray(result) || !result.every(isCheckpointTurn)) {
-      throw new Error("Malformed K-brain checkpoint list response");
+      throw new Error("Malformed ZeroAgent engine checkpoint list response");
     }
     return result;
   }
@@ -473,7 +473,8 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
         body: JSON.stringify({ authorized_roots: authorizedRoots }),
       },
     );
-    if (!isCheckpointDiff(result)) throw new Error("Malformed K-brain checkpoint preview response");
+    if (!isCheckpointDiff(result))
+      throw new Error("Malformed ZeroAgent engine checkpoint preview response");
     return result;
   }
 
@@ -497,7 +498,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       },
     );
     if (!isCheckpointResult(result))
-      throw new Error("Malformed K-brain checkpoint rewind response");
+      throw new Error("Malformed ZeroAgent engine checkpoint rewind response");
     return result;
   }
 
@@ -545,13 +546,13 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       signal,
     });
     if (result.version !== KBRAIN_PROTOCOL_VERSION || typeof result.text !== "string") {
-      throw new Error("Malformed K-brain text-generation response");
+      throw new Error("Malformed ZeroAgent engine text-generation response");
     }
     if (
       result.model?.provider !== input.model.provider ||
       result.model?.model !== input.model.model
     ) {
-      throw new Error("K-brain text-generation model identity mismatch");
+      throw new Error("ZeroAgent engine text-generation model identity mismatch");
     }
     return result;
   }
@@ -581,7 +582,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       !result.run_id ||
       !Number.isSafeInteger(result.accepted_seq)
     ) {
-      throw new Error("Malformed K-brain compaction acceptance");
+      throw new Error("Malformed ZeroAgent engine compaction acceptance");
     }
     return result;
   }
@@ -599,7 +600,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       );
       if (!health.capabilities?.permission_modes?.includes(mode)) {
         throw new Error(
-          `K-brain does not support permission mode ${mode}; update the backend before using this mode.`,
+          `ZeroAgent engine does not support permission mode ${mode}; update the backend before using this mode.`,
         );
       }
     }
@@ -631,7 +632,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       }
     }
     if (accepted.version !== KBRAIN_PROTOCOL_VERSION) {
-      throw new Error(`Unsupported K-brain protocol ${String(accepted.version)}`);
+      throw new Error(`Unsupported ZeroAgent engine protocol ${String(accepted.version)}`);
     }
     if (
       accepted.conversation_id !== input.conversation_id ||
@@ -639,7 +640,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       !Number.isSafeInteger(accepted.accepted_seq) ||
       accepted.accepted_seq < 1
     ) {
-      throw new Error("Malformed K-brain run acceptance");
+      throw new Error("Malformed ZeroAgent engine run acceptance");
     }
     return accepted;
   }
@@ -681,7 +682,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       { method: "POST", body: JSON.stringify(body), signal },
     );
     if (state.version !== KBRAIN_PROTOCOL_VERSION || state.conversation_id !== conversationId) {
-      throw new Error("Malformed K-brain goal response");
+      throw new Error("Malformed ZeroAgent engine goal response");
     }
     return state;
   }
@@ -822,7 +823,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       inputOptions,
     );
     if (!response.ok) throw await readError(response);
-    if (!response.body) throw new Error("K-brain event stream has no body");
+    if (!response.body) throw new Error("ZeroAgent engine event stream has no body");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -840,14 +841,14 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       try {
         const event = JSON.parse(data) as KBrainEvent;
         if (event.version !== KBRAIN_PROTOCOL_VERSION) {
-          throw new Error(`Unsupported K-brain protocol ${String(event.version)}`);
+          throw new Error(`Unsupported ZeroAgent engine protocol ${String(event.version)}`);
         }
         if (event.conversation_id !== conversationId) {
-          throw new Error("K-brain event belongs to a different conversation");
+          throw new Error("ZeroAgent engine event belongs to a different conversation");
         }
         if (!Number.isSafeInteger(event.seq) || event.seq !== lastSeq + 1) {
           throw new Error(
-            `Malformed K-brain event sequence: expected ${lastSeq + 1}, got ${String(event.seq)}`,
+            `Malformed ZeroAgent engine event sequence: expected ${lastSeq + 1}, got ${String(event.seq)}`,
           );
         }
         lastSeq = event.seq;
@@ -868,7 +869,8 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
         for (const record of records) consume(record);
       }
       buffer += decoder.decode();
-      if (buffer.trim()) throw new Error("K-brain event stream ended with an incomplete event");
+      if (buffer.trim())
+        throw new Error("ZeroAgent engine event stream ended with an incomplete event");
     } finally {
       signal?.removeEventListener("abort", abortReader);
       await reader.cancel().catch(() => undefined);

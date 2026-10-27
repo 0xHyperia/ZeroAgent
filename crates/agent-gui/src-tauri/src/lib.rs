@@ -49,7 +49,7 @@ struct TerminalExitRequestedEvent {
 }
 
 pub fn app_version() -> &'static str {
-    env!("LIVEAGENT_APP_VERSION")
+    env!("ZEROAGENT_APP_VERSION")
 }
 
 #[cfg(desktop)]
@@ -1081,7 +1081,7 @@ pub(crate) fn start_native_profile_services(app: &tauri::AppHandle) -> Result<()
         eprintln!("failed to seed builtin skills: {error}");
     }
     if !runtime::data_home::isolation_requested()
-        && std::env::var_os("LIVEAGENT_CONFIG_DIR").is_none()
+        && std::env::var_os("ZEROAGENT_CONFIG_DIR").is_none()
     {
         app.state::<Arc<services::browser::BrowserManager>>()
             .start_extension_bridge();
@@ -1154,7 +1154,7 @@ pub fn run() {
     let builder = builder.plugin(
         tauri_plugin_mcp_bridge::Builder::new()
             .base_port(
-                std::env::var("LIVEAGENT_DEV_MCP_BRIDGE_PORT")
+                std::env::var("ZEROAGENT_DEV_MCP_BRIDGE_PORT")
                     .ok()
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(9223),

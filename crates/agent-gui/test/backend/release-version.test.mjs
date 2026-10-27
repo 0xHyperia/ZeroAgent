@@ -19,7 +19,7 @@ function runVersionScript(args, env = {}) {
     encoding: "utf8",
     env: {
       ...process.env,
-      LIVEAGENT_UPDATER_PUBLIC_KEY: "",
+      ZEROAGENT_UPDATER_PUBLIC_KEY: "",
       ...env,
     },
   });
@@ -71,10 +71,10 @@ test("release version script writes GitHub env, outputs, and Tauri config", () =
       `version script failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
     );
 
-    assert.match(readFileSync(envPath, "utf8"), /^LIVEAGENT_APP_VERSION=1\.2\.3$/m);
+    assert.match(readFileSync(envPath, "utf8"), /^ZEROAGENT_APP_VERSION=1\.2\.3$/m);
     assert.match(
       readFileSync(envPath, "utf8"),
-      new RegExp(`^LIVEAGENT_TAURI_VERSION_CONFIG=${escapeRegExp(tauriConfigPath)}$`, "m"),
+      new RegExp(`^ZEROAGENT_TAURI_VERSION_CONFIG=${escapeRegExp(tauriConfigPath)}$`, "m"),
     );
     assert.match(readFileSync(outputPath, "utf8"), /^release_tag=v1\.2\.3$/m);
     assert.match(readFileSync(outputPath, "utf8"), /^is_prerelease=false$/m);
@@ -102,7 +102,7 @@ test("release overlay uses the configured updater key without changing the sourc
     const overlayPath = path.join(dir, "tauri.version.generated.conf.json");
     const result = runVersionScript(
       ["v0.4.0-beta.2", "--tauri-config", overlayPath, "--json"],
-      { LIVEAGENT_UPDATER_PUBLIC_KEY: `  ${publicKey}\n` },
+      { ZEROAGENT_UPDATER_PUBLIC_KEY: `  ${publicKey}\n` },
     );
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(readFileSync(overlayPath, "utf8")), {
@@ -128,8 +128,8 @@ test("Gateway Docker releases pass normalized versions and reserve latest for st
   assert.match(workflow, /--github-env "\$GITHUB_ENV" --github-output "\$GITHUB_OUTPUT"/);
   assert.match(workflow, /app_version: \$\{\{ steps\.version\.outputs\.app_version \}\}/);
   assert.match(workflow, /is_prerelease: \$\{\{ steps\.version\.outputs\.is_prerelease \}\}/);
-  assert.match(workflow, /LIVEAGENT_APP_VERSION=\$\{\{ needs\.quality-gate\.outputs\.app_version \}\}/);
+  assert.match(workflow, /ZEROAGENT_APP_VERSION=\$\{\{ needs\.quality-gate\.outputs\.app_version \}\}/);
   assert.match(workflow, /value=latest,enable=\$\{\{ needs\.quality-gate\.outputs\.is_prerelease == 'false' \}\}/);
-  assert.match(dockerfile, /^ARG LIVEAGENT_APP_VERSION\r?$/m);
-  assert.match(dockerfile, /^RUN LIVEAGENT_APP_VERSION="\$LIVEAGENT_APP_VERSION" pnpm --filter @liveagent\/gateway-webui build\r?$/m);
+  assert.match(dockerfile, /^ARG ZEROAGENT_APP_VERSION\r?$/m);
+  assert.match(dockerfile, /^RUN ZEROAGENT_APP_VERSION="\$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent\/gateway-webui build\r?$/m);
 });

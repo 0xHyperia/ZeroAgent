@@ -938,7 +938,7 @@ mod tests {
             .join("binaries/k-brain-x86_64-pc-windows-msvc.exe");
         assert!(
             binary.is_file(),
-            "prepare the locked Windows K-brain artifact before running this acceptance test"
+            "prepare the locked Windows ZeroAgent engine artifact before running this acceptance test"
         );
         let data_copy = data.clone();
         let manager = tokio::task::spawn_blocking(move || {

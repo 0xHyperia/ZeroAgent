@@ -8,7 +8,7 @@ import { readPatchSet, checkPatchReceipt } from "./kbrain-patches.mjs";
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const defaultLock = join(root, "scripts/release/kbrain.lock.json");
 export const defaultOutput = join(root, "crates/agent-gui/src-tauri/binaries");
-export const defaultArtifact = join(root, ".liveagent/kbrain-artifact");
+export const defaultArtifact = join(root, ".zeroagent/backend-artifact");
 const digest = (data) => createHash("sha256").update(data).digest("hex");
 
 export async function readLock(path = defaultLock) {
@@ -91,7 +91,7 @@ async function prepareOne({ source, destination, expectedHash, url, cacheKey, la
     data = await readFile(source);
     if (!data.length) throw new Error(`Local K-brain ${label} binary is empty`);
   } else if (expectedHash && cacheKey) {
-    const cache = join(root, ".liveagent/kbrain-cache", expectedHash, cacheKey);
+    const cache = join(root, ".zeroagent/backend-cache", expectedHash, cacheKey);
     try {
       data = await readFile(cache);
       checkHash(data, expectedHash, cache);
@@ -117,10 +117,10 @@ export async function prepare(options = {}) {
   const output = resolve(options.output || defaultOutput);
   const backend = join(output, `k-brain-${target}${platform.goos === "windows" ? ".exe" : ""}`);
   const computer = join(output, `k-brain-computer-${target}${platform.goos === "windows" ? ".exe" : ""}`);
-  const localBackend = options.localBinary || process.env.LIVEAGENT_KBRAIN_BINARY;
-  const localComputer = options.localComputerBinary || process.env.LIVEAGENT_KBRAIN_COMPUTER_BINARY ||
+  const localBackend = options.localBinary || process.env.ZEROAGENT_BACKEND_BINARY;
+  const localComputer = options.localComputerBinary || process.env.ZEROAGENT_COMPUTER_BINARY ||
     (localBackend ? join(dirname(localBackend), platform.assets.computer) : undefined);
-  const release = options.release || process.env.LIVEAGENT_KBRAIN_RELEASE === "1";
+  const release = options.release || process.env.ZEROAGENT_BACKEND_RELEASE === "1";
   if (localBackend || localComputer) {
     if (release || process.env.CI === "true") throw new Error("Local K-brain binary overrides are forbidden in release/CI builds");
     if (!localBackend || !localComputer || !isAbsolute(localBackend) || !isAbsolute(localComputer)) {
@@ -129,7 +129,7 @@ export async function prepare(options = {}) {
   }
   try {
     const patchSet = options.patchManifest ? await readPatchSet(options.patchManifest, lock) : null;
-    const explicitArtifact = options.artifactDir || process.env.LIVEAGENT_KBRAIN_ARTIFACT_DIR;
+    const explicitArtifact = options.artifactDir || process.env.ZEROAGENT_BACKEND_ARTIFACT_DIR;
     if (patchSet && localBackend) throw new Error("Adapted K-brain artifacts require verified source-artifact preparation, not development overrides");
     if (patchSet && !explicitArtifact) throw new Error("Adapted K-brain preparation requires an explicit source-artifact directory");
     // An explicitly reviewed patch set opts into its matching source artifact.
@@ -167,7 +167,7 @@ export async function prepare(options = {}) {
       origin = patchReceipt ? "zeroagent-patched-source" : "source-artifact";
     } else {
       if (patchSet) throw new Error("Adapted K-brain source artifact is missing; upstream download cannot provide the patch");
-      if (artifactDirectory && (options.artifactDir || process.env.LIVEAGENT_KBRAIN_ARTIFACT_DIR)) throw new Error(`K-brain artifact record missing: ${artifactDirectory}`);
+      if (artifactDirectory && (options.artifactDir || process.env.ZEROAGENT_BACKEND_ARTIFACT_DIR)) throw new Error(`K-brain artifact record missing: ${artifactDirectory}`);
       const entry = lock.downloads?.[target];
       assets = entry?.assets;
       checksums = entry?.sha256;

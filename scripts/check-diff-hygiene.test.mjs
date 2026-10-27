@@ -29,7 +29,7 @@ function runScript(cwd) {
     cwd,
     encoding: "utf8",
     shell: false,
-    env: { ...process.env, LIVEAGENT_CHECK_BASE_REF: "main" },
+    env: { ...process.env, ZEROAGENT_CHECK_BASE_REF: "main" },
   });
 }
 

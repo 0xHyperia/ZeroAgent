@@ -50,7 +50,7 @@ pub async fn send(
     if !status.is_success() {
         return Err(body["error"]
             .as_str()
-            .unwrap_or("K-brain Planning request failed")
+            .unwrap_or("ZeroAgent engine Planning request failed")
             .to_string());
     }
     Ok(body)

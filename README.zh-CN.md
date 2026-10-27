@@ -103,7 +103,7 @@ docker run -d \
 - PostgreSQL，用于账户、设备、工作区元数据和对话历史
 - Redis，用于 Web 会话、设备在线状态和短时认证状态
 - `USA_ZERO_ORIGIN=https://usa0.top`
-- HTTPS 在容器外终止时设置 `LIVEAGENT_GATEWAY_COOKIE_SECURE=true`
+- HTTPS 在容器外终止时设置 `ZEROAGENT_GATEWAY_COOKIE_SECURE=true`
 
 部署完成后用 `/healthz` 检查进程存活，用 `/readyz` 检查 PostgreSQL、Redis 是否就绪，再打开域名使用 WebUI。保留实际部署的镜像摘要以便回退。Railway、反向代理和发布说明见 [部署文档](docs/operations/deployment.md)。
 

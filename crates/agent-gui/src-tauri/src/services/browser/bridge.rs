@@ -21,14 +21,14 @@ use tokio_tungstenite::tungstenite::handshake::server::{
 
 use super::cdp::CdpConnection;
 
-/// 缺省监听端口；可用 LIVEAGENT_BROWSER_BRIDGE_PORT 覆盖（扩展侧需同步改）。
+/// 缺省监听端口；可用 ZEROAGENT_BROWSER_BRIDGE_PORT 覆盖（扩展侧需同步改）。
 const DEFAULT_BRIDGE_PORT: u16 = 19_222;
 
 /// 握手超时：TCP 连上后不发升级请求的连接在此时限后被丢弃。
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn bridge_port() -> u16 {
-    std::env::var("LIVEAGENT_BROWSER_BRIDGE_PORT")
+    std::env::var("ZEROAGENT_BROWSER_BRIDGE_PORT")
         .ok()
         .and_then(|raw| raw.trim().parse::<u16>().ok())
         .filter(|port| *port > 0)

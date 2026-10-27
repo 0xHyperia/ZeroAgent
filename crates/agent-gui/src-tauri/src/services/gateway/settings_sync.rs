@@ -41,7 +41,7 @@ pub(crate) fn apply_kbrain_mcp_settings(
     let settings = backend
         .get("settings")
         .filter(|settings| settings.get("servers").is_some_and(Value::is_array))
-        .ok_or_else(|| "K-brain MCP response is missing servers".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine MCP response is missing servers".to_string())?;
     snapshot["mcp"] = settings.clone();
     // Empty selections are omitted by the backend; never retain stale SQLite ids.
     if !snapshot["mcp"].get("selected").is_some_and(Value::is_array) {
@@ -58,7 +58,7 @@ pub(crate) fn apply_kbrain_model_settings(
     let providers = backend
         .get("providers")
         .and_then(Value::as_array)
-        .ok_or_else(|| "K-brain settings response is missing providers".to_string())?;
+        .ok_or_else(|| "ZeroAgent engine settings response is missing providers".to_string())?;
     snapshot["customProviders"] = Value::Array(providers.clone());
     snapshot["selectedModel"] = match (
         backend

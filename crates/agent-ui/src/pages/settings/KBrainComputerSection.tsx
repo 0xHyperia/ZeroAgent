@@ -79,7 +79,7 @@ export function KBrainComputerSection({ kbrain }: { kbrain: KBrainSettingsAdapte
       {status && (
         <div className="rounded-lg border p-3 text-sm break-words">
           <p>
-            K-brain · {status.platform} ·{" "}
+            ZeroAgent · {status.platform} ·{" "}
             {status.driverVersion ??
               (status.installed
                 ? t("settings.cuaDriver.detected")
@@ -107,7 +107,7 @@ export function KBrainComputerSection({ kbrain }: { kbrain: KBrainSettingsAdapte
               onChange={(event) => setConfig({ ...config, backend: event.target.value })}
             >
               <option value="cua">Cua Driver</option>
-              <option value="legacy">K-brain legacy</option>
+              <option value="legacy">兼容模式</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">

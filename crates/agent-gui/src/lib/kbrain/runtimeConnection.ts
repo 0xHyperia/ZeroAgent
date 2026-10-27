@@ -33,7 +33,7 @@ export function getKBrainRuntimeConnection(): KBrainRuntimeConnection | null {
 
 export function setKBrainRuntimeConnection(connection: KBrainRuntimeConnection): void {
   if (connection.protocolVersion !== "kbrain.agent.v1" || !trim(connection.baseUrl)) {
-    throw new Error("Malformed K-brain backend connection");
+    throw new Error("Malformed ZeroAgent engine connection");
   }
   runtimeConnection = {
     baseUrl: connection.baseUrl.trim().replace(/\/+$/, ""),
@@ -57,10 +57,10 @@ export function clearKBrainRuntimeConnection(): void {
 
 export function getConfiguredKBrainConnection(): KBrainRuntimeConnection | null {
   if (runtimeConnection) return runtimeConnection;
-  const baseUrl = trim(import.meta.env?.VITE_KBRAIN_URL) ?? "http://127.0.0.1:47321";
+  const baseUrl = trim(import.meta.env?.VITE_ZEROAGENT_BACKEND_URL) ?? "http://127.0.0.1:47321";
   return {
     baseUrl,
-    token: import.meta.env?.VITE_KBRAIN_TOKEN?.trim() ?? "",
+    token: import.meta.env?.VITE_ZEROAGENT_BACKEND_TOKEN?.trim() ?? "",
     protocolVersion: "kbrain.agent.v1",
   };
 }

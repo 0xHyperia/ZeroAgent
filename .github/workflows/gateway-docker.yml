@@ -90,7 +90,7 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
           build-args: |
-            LIVEAGENT_APP_VERSION=${{ needs.quality-gate.outputs.app_version }}
+            ZEROAGENT_APP_VERSION=${{ needs.quality-gate.outputs.app_version }}
 
       # Guard against mislabeled variants: v0.1.0 through v1.1.8 advertised
       # arm64 while shipping an x86-64 binary (TARGETARCH defaults in the

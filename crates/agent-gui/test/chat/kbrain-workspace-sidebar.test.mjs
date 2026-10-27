@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the workspace sidebar tree is shown in agent mode on the K-brain backend too", async () => {
+test("the workspace sidebar tree is shown in agent mode on the ZeroAgent engine too", async () => {
   const chatPage = await read("../../src/pages/ChatPage.tsx");
   assert.match(chatPage, /showProjects=\{isAgentMode\}/);
   assert.doesNotMatch(chatPage, /showProjects=\{[^}]*kBrainBackendEnabled/);

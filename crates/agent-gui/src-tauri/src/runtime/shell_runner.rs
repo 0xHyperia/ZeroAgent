@@ -472,7 +472,7 @@ fn find_git_bash_on_path(path_var: &std::ffi::OsStr) -> Option<PathBuf> {
 /// Git Bash 解析（对标 Claude Code）：env 覆盖 → PATH → Git for Windows 默认安装路径。
 #[cfg(windows)]
 fn find_git_bash() -> Option<PathBuf> {
-    for var in ["LIVEAGENT_GIT_BASH_PATH", "CLAUDE_CODE_GIT_BASH_PATH"] {
+    for var in ["ZEROAGENT_GIT_BASH_PATH", "CLAUDE_CODE_GIT_BASH_PATH"] {
         if let Ok(raw) = std::env::var(var) {
             let trimmed = raw.trim().trim_matches('"');
             if !trimmed.is_empty() {
@@ -984,7 +984,7 @@ where
             stdio_factory().map_err(|err| format!("Failed to prepare shell stdio: {err}"))?;
         let mut c = Command::new(&spawn_program);
         c.args(&spawn_args);
-        // 系统代理 env 先注入，调用方 envs（如 LIVEAGENT_HOOK_*）后写保持更高优先级。
+        // 系统代理 env 先注入，调用方 envs（如 ZEROAGENT_HOOK_*）后写保持更高优先级。
         for (key, value) in &system_proxy_envs {
             c.env(key, value);
         }
@@ -1363,22 +1363,22 @@ mod tests {
         fs::write(&claude_bash, b"MZclaude-git-bash").unwrap();
         fs::write(&app_execution_alias, b"").unwrap();
 
-        std::env::set_var("LIVEAGENT_GIT_BASH_PATH", &liveagent_bash);
+        std::env::set_var("ZEROAGENT_GIT_BASH_PATH", &liveagent_bash);
         std::env::set_var("CLAUDE_CODE_GIT_BASH_PATH", &claude_bash);
         assert_eq!(super::find_git_bash(), Some(liveagent_bash.clone()));
 
         // LIVEAGENT 指向 App-Execution-Alias 时也必须回退 CLAUDE_CODE。
-        std::env::set_var("LIVEAGENT_GIT_BASH_PATH", &app_execution_alias);
+        std::env::set_var("ZEROAGENT_GIT_BASH_PATH", &app_execution_alias);
         assert_eq!(super::find_git_bash(), Some(claude_bash.clone()));
 
         // LIVEAGENT 指向不存在的文件时回退 CLAUDE_CODE。
         std::env::set_var(
-            "LIVEAGENT_GIT_BASH_PATH",
+            "ZEROAGENT_GIT_BASH_PATH",
             dir.path().join("missing-bash.exe"),
         );
         assert_eq!(super::find_git_bash(), Some(claude_bash.clone()));
 
-        std::env::remove_var("LIVEAGENT_GIT_BASH_PATH");
+        std::env::remove_var("ZEROAGENT_GIT_BASH_PATH");
         std::env::remove_var("CLAUDE_CODE_GIT_BASH_PATH");
     }
 

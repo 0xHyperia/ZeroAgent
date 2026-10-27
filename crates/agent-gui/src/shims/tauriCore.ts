@@ -42,13 +42,13 @@ export function invoke<T>(command: string, args?: Record<string, unknown>): Prom
   if (isKBrainBackendEnabled() && !nativeGatewayCommand && kBrainOwnedDesktopCommand(command)) {
     return Promise.reject(
       new Error(
-        `Desktop runtime command ${command} is unavailable in K-brain mode; use the K-brain backend capability.`,
+        `Desktop runtime command ${command} is unavailable in ZeroAgent engine mode; use the ZeroAgent engine capability.`,
       ),
     );
   }
   if (isKBrainBrowserHost()) {
     return Promise.reject(
-      new Error(`Tauri command ${command} is unavailable in K-brain browser mode`),
+      new Error(`Tauri command ${command} is unavailable in ZeroAgent engine browser mode`),
     );
   }
   return tauriInvoke<T>(command, args);

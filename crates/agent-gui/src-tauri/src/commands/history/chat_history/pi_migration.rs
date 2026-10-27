@@ -506,7 +506,7 @@ fn read_pi_record(candidate: &PiCandidate) -> Option<PiMigrationRecord> {
     } else {
         (
             "not_found",
-            "Pi JSONL session does not contain native LiveAgent checkpoint artifacts".to_string(),
+            "Pi JSONL session does not contain native ZeroAgent checkpoint artifacts".to_string(),
         )
     };
     Some(PiMigrationRecord {

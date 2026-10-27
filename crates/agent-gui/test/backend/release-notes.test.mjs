@@ -76,8 +76,7 @@ test("AI release notes script falls back when no K-brain token is configured", (
     const fallbackPath = path.join(dir, "fallback.md");
     writeFileSync(fallbackPath, "## What's Changed\n\n- Fallback notes.\n");
     const result = runNotesScript(["v0.1.6", outputPath, fallbackPath], {
-      KBRAIN_TOKEN: "",
-      K_BRAIN_TOKEN: "",
+      ZEROAGENT_BACKEND_TOKEN: "",
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(readFileSync(outputPath, "utf8"), "## What's Changed\n\n- Fallback notes.\n");
@@ -109,8 +108,8 @@ test("AI release notes script sends exactly one canonical K-brain text request",
     initTaggedRepo(dir, "v0.1.6");
     const outputPath = path.join(dir, "notes.md");
     const result = await runNotesScriptAsync(["v0.1.6", outputPath], {
-      KBRAIN_TOKEN: "kbrain-test-token",
-      KBRAIN_URL: `http://${address.address}:${address.port}`,
+      ZEROAGENT_BACKEND_TOKEN: "kbrain-test-token",
+      ZEROAGENT_BACKEND_URL: `http://${address.address}:${address.port}`,
       AI_RELEASE_NOTES_PROVIDER: "fixture",
       AI_RELEASE_NOTES_MODEL: "fixture-model",
     }, { cwd: dir });

@@ -10,7 +10,7 @@ use std::{
 const PUBLIC_KEY: &str = include_str!("fixtures/public-key.minisign");
 const PREHASHED: &str = include_str!("fixtures/prehashed.minisig");
 const LEGACY: &str = include_str!("fixtures/legacy.minisig");
-const PUBLIC_KEY_ENV: &str = "LIVEAGENT_UPDATER_PUBLIC_KEY";
+const PUBLIC_KEY_ENV: &str = "ZEROAGENT_UPDATER_PUBLIC_KEY";
 static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
 
 struct Fixture {

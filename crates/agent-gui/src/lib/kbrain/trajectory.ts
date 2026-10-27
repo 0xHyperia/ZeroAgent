@@ -51,9 +51,9 @@ export function createKBrainTrajectoryHost(
   async function request<T>(conversationId: string, suffix: string): Promise<T | undefined> {
     const options = resolveKBrainClientOptions(input);
     const baseUrl = options.baseUrl?.trim().replace(/\/+$/, "");
-    if (!baseUrl) throw new Error("K-brain backend connection is not ready");
+    if (!baseUrl) throw new Error("ZeroAgent engine connection is not ready");
     const candidate = conversationId.trim();
-    if (!candidate) throw new Error("K-brain trajectory requires a conversation ID");
+    if (!candidate) throw new Error("ZeroAgent engine trajectory requires a conversation ID");
     const mappedId = getKBrainSessionId(candidate, baseUrl);
     const id = mappedId ?? (isBackendSessionId(candidate) ? candidate : undefined);
     // Unsent local conversations have no backend journal yet; recheck on every refresh.
@@ -114,10 +114,10 @@ export function createKBrainTrajectoryHost(
         typeof result.hasMoreBefore !== "boolean" ||
         typeof result.truncated !== "boolean"
       ) {
-        throw new Error("Malformed K-brain trajectory window");
+        throw new Error("Malformed ZeroAgent engine trajectory window");
       }
       if (!Array.isArray(JSON.parse(result.eventsJson))) {
-        throw new Error("Malformed K-brain trajectory events");
+        throw new Error("Malformed ZeroAgent engine trajectory events");
       }
       return result;
     },

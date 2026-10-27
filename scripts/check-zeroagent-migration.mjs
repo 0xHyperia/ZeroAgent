@@ -9,7 +9,7 @@ import { prepare } from "./release/prepare-kbrain.mjs";
 import { createTsModuleLoader } from "../crates/agent-gui/test/helpers/load-ts-module.mjs";
 
 // First run the native exports_checkpoint_acceptance_fixture test with
-// KBRAIN_MIGRATION_ACCEPTANCE_DIR pointing to a new .codex-artifacts directory.
+// ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR pointing to a new .codex-artifacts directory.
 // This runner only operates on that copied fixture; it never opens an installed app's data.
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const fixture = await realpath(process.argv[2] ?? "missing-native-fixture");

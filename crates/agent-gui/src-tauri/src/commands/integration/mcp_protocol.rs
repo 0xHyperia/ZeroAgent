@@ -118,7 +118,7 @@ pub(super) fn ensure_complete_result(method: &str, result: &Value) -> Result<(),
     match result.get("resultType").and_then(|v| v.as_str()) {
         None | Some("complete") => Ok(()),
         Some("input_required") => Err(format!(
-            "MCP server requested additional client input (resultType=input_required) for {method}; LiveAgent does not support multi round-trip requests yet"
+            "MCP server requested additional client input (resultType=input_required) for {method}; ZeroAgent does not support multi round-trip requests yet"
         )),
         Some(other) => Err(format!(
             "MCP server returned an unknown resultType for {method}: {other}"

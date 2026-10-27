@@ -73,11 +73,11 @@ type Config struct {
 
 func Load() *Config {
 	cfg := &Config{}
-	cfg.InstanceNonce = os.Getenv("LIVEAGENT_GATEWAY_INSTANCE_NONCE")
+	cfg.InstanceNonce = os.Getenv("ZEROAGENT_GATEWAY_INSTANCE_NONCE")
 	// Only the desktop-owned numeric-loopback process uses the local image backend. The public
 	// Gateway keeps account authorization; inherited backend URLs cannot install a global target.
-	if os.Getenv("LIVEAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
-		cfg.ImageKBrainURL = getenv("LIVEAGENT_GATEWAY_IMAGE_KBRAIN_URL", "")
+	if os.Getenv("ZEROAGENT_GATEWAY_DESKTOP_PARENT") == "1" {
+		cfg.ImageKBrainURL = getenv("ZEROAGENT_GATEWAY_IMAGE_BACKEND_URL", "")
 		cfg.KBrainAgentID = "kbrain"
 	}
 
@@ -85,40 +85,40 @@ func Load() *Config {
 	flag.StringVar(&cfg.USAZeroAuthorizationOrigin, "usa-zero-authorization-origin", getenv("USA_ZERO_AUTHORIZATION_ORIGIN", ""), "public USA-Zero authorization page origin")
 	flag.StringVar(&cfg.DatabaseURL, "database-url", getenv("DATABASE_URL", ""), "PostgreSQL connection URL for account and device data")
 	flag.StringVar(&cfg.RedisURL, "redis-url", getenv("REDIS_URL", ""), "Redis URL for web sessions, presence and selection leases")
-	flag.DurationVar(&cfg.WebSessionTTL, "web-session-ttl", getenvDuration("LIVEAGENT_GATEWAY_WEB_SESSION_TTL", 30*24*time.Hour), "web account session lifetime")
-	flag.DurationVar(&cfg.SelectionLeaseTTL, "selection-lease-ttl", getenvDuration("LIVEAGENT_GATEWAY_SELECTION_LEASE_TTL", 8*time.Hour), "execution target selection lease lifetime")
-	flag.BoolVar(&cfg.CookieSecure, "cookie-secure", getenvBool("LIVEAGENT_GATEWAY_COOKIE_SECURE", defaultCookieSecure()), "set Secure on account session cookies")
-	flag.StringVar(&cfg.PublicOrigin, "public-origin", getenv("LIVEAGENT_GATEWAY_PUBLIC_ORIGIN", ""), "public Gateway origin used for OAuth callbacks")
+	flag.DurationVar(&cfg.WebSessionTTL, "web-session-ttl", getenvDuration("ZEROAGENT_GATEWAY_WEB_SESSION_TTL", 30*24*time.Hour), "web account session lifetime")
+	flag.DurationVar(&cfg.SelectionLeaseTTL, "selection-lease-ttl", getenvDuration("ZEROAGENT_GATEWAY_SELECTION_LEASE_TTL", 8*time.Hour), "execution target selection lease lifetime")
+	flag.BoolVar(&cfg.CookieSecure, "cookie-secure", getenvBool("ZEROAGENT_GATEWAY_COOKIE_SECURE", defaultCookieSecure()), "set Secure on account session cookies")
+	flag.StringVar(&cfg.PublicOrigin, "public-origin", getenv("ZEROAGENT_GATEWAY_PUBLIC_ORIGIN", ""), "public Gateway origin used for OAuth callbacks")
 	flag.StringVar(&cfg.OAuthWebClientSecret, "oauth-web-client-secret", getenv("ZEROAGENT_WEB_OAUTH_CLIENT_SECRET", ""), "ZeroAgent Web OAuth client secret")
-	flag.StringVar(&cfg.GRPCAddr, "grpc-addr", getenv("LIVEAGENT_GATEWAY_GRPC_ADDR", ""), "deprecated, no-op (v1 gRPC removed; kept for startup-script compatibility)")
-	flag.StringVar(&cfg.HTTPAddr, "http-addr", getenv("LIVEAGENT_GATEWAY_HTTP_ADDR", defaultHTTPAddr()), "HTTP listen address")
-	flag.StringVar(&cfg.TLSCert, "tls-cert", getenv("LIVEAGENT_GATEWAY_TLS_CERT", ""), "TLS certificate path")
-	flag.StringVar(&cfg.TLSKey, "tls-key", getenv("LIVEAGENT_GATEWAY_TLS_KEY", ""), "TLS private key path")
-	flag.DurationVar(&cfg.RequestTimeout, "request-timeout", getenvDuration("LIVEAGENT_GATEWAY_REQUEST_TIMEOUT", 2*time.Minute), "request timeout for non-streaming API calls")
-	flag.DurationVar(&cfg.ChatPrepareTimeout, "chat-prepare-timeout", getenvDuration("LIVEAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT", 2*time.Second), "timeout for the pre-submit desktop agent liveness probe")
-	flag.DurationVar(&cfg.ChatDeliveryTimeout, "chat-delivery-timeout", getenvDuration("LIVEAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT", 5*time.Second), "timeout delivering an accepted chat command to the desktop agent stream")
-	flag.DurationVar(&cfg.ChatStartTimeout, "chat-start-timeout", getenvDuration("LIVEAGENT_GATEWAY_CHAT_START_TIMEOUT", 5*time.Second), "initial timeout waiting for a delivered remote chat request to start")
-	flag.DurationVar(&cfg.ChatRenderStartTimeout, "chat-render-start-timeout", getenvDuration("LIVEAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT", 10*time.Second), "additional timeout waiting for the desktop app to start a delivered remote chat request")
-	flag.DurationVar(&cfg.HeartbeatPeriod, "heartbeat-period", getenvDuration("LIVEAGENT_GATEWAY_HEARTBEAT_PERIOD", 30*time.Second), "ping interval for agent connection")
-	flag.DurationVar(&cfg.WebSocketHeartbeatPeriod, "websocket-heartbeat-period", getenvDuration("LIVEAGENT_GATEWAY_WS_HEARTBEAT_PERIOD", 15*time.Second), "ping interval for browser WebSocket connections")
-	flag.DurationVar(&cfg.WebSocketHeartbeatGrace, "websocket-heartbeat-grace", getenvDuration("LIVEAGENT_GATEWAY_WS_HEARTBEAT_GRACE", 5*time.Second), "extra slack added to the browser WebSocket idle timeout (idle = 3x period + grace)")
-	flag.DurationVar(&cfg.WebSocketWriteTimeout, "websocket-write-timeout", getenvDuration("LIVEAGENT_GATEWAY_WS_WRITE_TIMEOUT", 10*time.Second), "write timeout for browser WebSocket connections")
-	flag.IntVar(&cfg.WebSocketWriteQueueSize, "websocket-write-queue-size", getenvInt("LIVEAGENT_GATEWAY_WS_WRITE_QUEUE_SIZE", 512), "write queue buffer size for browser WebSocket connections")
-	flag.IntVar(&cfg.GRPCMaxMessageBytes, "grpc-max-message-bytes", getenvInt("LIVEAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultGRPCMaxMessageBytes), "maximum gRPC message size in bytes")
-	flag.IntVar(&cfg.MaxMessageBytes, "max-message-bytes", getenvInt("LIVEAGENT_GATEWAY_MAX_MESSAGE_BYTES", getenvInt("LIVEAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultMaxMessageBytes)), "maximum WebSocket protobuf message size in bytes")
-	flag.IntVar(&cfg.MaxAgentConnections, "max-agent-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_AGENT_CONNECTIONS", DefaultMaxAgentConnections), "maximum concurrent agent connections")
-	flag.IntVar(&cfg.MaxBrowserConnections, "max-browser-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_BROWSER_CONNECTIONS", DefaultMaxBrowserConnections), "maximum concurrent browser connections")
-	flag.IntVar(&cfg.MaxTerminalConnections, "max-terminal-connections", getenvInt("LIVEAGENT_GATEWAY_MAX_TERMINAL_CONNECTIONS", DefaultMaxTerminalConnections), "maximum concurrent terminal connections")
-	flag.IntVar(&cfg.RelayBufferSeconds, "relay-buffer-seconds", getenvInt("LIVEAGENT_GATEWAY_RELAY_BUFFER_SECONDS", 30), "seconds of chat events to buffer for brief reconnections")
-	flag.DurationVar(&cfg.CommandQueueTimeout, "command-queue-timeout", getenvDuration("LIVEAGENT_GATEWAY_COMMAND_QUEUE_TIMEOUT", 30*time.Second), "deprecated, no-op (kept for startup-script compatibility)")
+	flag.StringVar(&cfg.GRPCAddr, "grpc-addr", getenv("ZEROAGENT_GATEWAY_GRPC_ADDR", ""), "deprecated, no-op (v1 gRPC removed; kept for startup-script compatibility)")
+	flag.StringVar(&cfg.HTTPAddr, "http-addr", getenv("ZEROAGENT_GATEWAY_HTTP_ADDR", defaultHTTPAddr()), "HTTP listen address")
+	flag.StringVar(&cfg.TLSCert, "tls-cert", getenv("ZEROAGENT_GATEWAY_TLS_CERT", ""), "TLS certificate path")
+	flag.StringVar(&cfg.TLSKey, "tls-key", getenv("ZEROAGENT_GATEWAY_TLS_KEY", ""), "TLS private key path")
+	flag.DurationVar(&cfg.RequestTimeout, "request-timeout", getenvDuration("ZEROAGENT_GATEWAY_REQUEST_TIMEOUT", 2*time.Minute), "request timeout for non-streaming API calls")
+	flag.DurationVar(&cfg.ChatPrepareTimeout, "chat-prepare-timeout", getenvDuration("ZEROAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT", 2*time.Second), "timeout for the pre-submit desktop agent liveness probe")
+	flag.DurationVar(&cfg.ChatDeliveryTimeout, "chat-delivery-timeout", getenvDuration("ZEROAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT", 5*time.Second), "timeout delivering an accepted chat command to the desktop agent stream")
+	flag.DurationVar(&cfg.ChatStartTimeout, "chat-start-timeout", getenvDuration("ZEROAGENT_GATEWAY_CHAT_START_TIMEOUT", 5*time.Second), "initial timeout waiting for a delivered remote chat request to start")
+	flag.DurationVar(&cfg.ChatRenderStartTimeout, "chat-render-start-timeout", getenvDuration("ZEROAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT", 10*time.Second), "additional timeout waiting for the desktop app to start a delivered remote chat request")
+	flag.DurationVar(&cfg.HeartbeatPeriod, "heartbeat-period", getenvDuration("ZEROAGENT_GATEWAY_HEARTBEAT_PERIOD", 30*time.Second), "ping interval for agent connection")
+	flag.DurationVar(&cfg.WebSocketHeartbeatPeriod, "websocket-heartbeat-period", getenvDuration("ZEROAGENT_GATEWAY_WS_HEARTBEAT_PERIOD", 15*time.Second), "ping interval for browser WebSocket connections")
+	flag.DurationVar(&cfg.WebSocketHeartbeatGrace, "websocket-heartbeat-grace", getenvDuration("ZEROAGENT_GATEWAY_WS_HEARTBEAT_GRACE", 5*time.Second), "extra slack added to the browser WebSocket idle timeout (idle = 3x period + grace)")
+	flag.DurationVar(&cfg.WebSocketWriteTimeout, "websocket-write-timeout", getenvDuration("ZEROAGENT_GATEWAY_WS_WRITE_TIMEOUT", 10*time.Second), "write timeout for browser WebSocket connections")
+	flag.IntVar(&cfg.WebSocketWriteQueueSize, "websocket-write-queue-size", getenvInt("ZEROAGENT_GATEWAY_WS_WRITE_QUEUE_SIZE", 512), "write queue buffer size for browser WebSocket connections")
+	flag.IntVar(&cfg.GRPCMaxMessageBytes, "grpc-max-message-bytes", getenvInt("ZEROAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultGRPCMaxMessageBytes), "maximum gRPC message size in bytes")
+	flag.IntVar(&cfg.MaxMessageBytes, "max-message-bytes", getenvInt("ZEROAGENT_GATEWAY_MAX_MESSAGE_BYTES", getenvInt("ZEROAGENT_GATEWAY_GRPC_MAX_MESSAGE_BYTES", DefaultMaxMessageBytes)), "maximum WebSocket protobuf message size in bytes")
+	flag.IntVar(&cfg.MaxAgentConnections, "max-agent-connections", getenvInt("ZEROAGENT_GATEWAY_MAX_AGENT_CONNECTIONS", DefaultMaxAgentConnections), "maximum concurrent agent connections")
+	flag.IntVar(&cfg.MaxBrowserConnections, "max-browser-connections", getenvInt("ZEROAGENT_GATEWAY_MAX_BROWSER_CONNECTIONS", DefaultMaxBrowserConnections), "maximum concurrent browser connections")
+	flag.IntVar(&cfg.MaxTerminalConnections, "max-terminal-connections", getenvInt("ZEROAGENT_GATEWAY_MAX_TERMINAL_CONNECTIONS", DefaultMaxTerminalConnections), "maximum concurrent terminal connections")
+	flag.IntVar(&cfg.RelayBufferSeconds, "relay-buffer-seconds", getenvInt("ZEROAGENT_GATEWAY_RELAY_BUFFER_SECONDS", 30), "seconds of chat events to buffer for brief reconnections")
+	flag.DurationVar(&cfg.CommandQueueTimeout, "command-queue-timeout", getenvDuration("ZEROAGENT_GATEWAY_COMMAND_QUEUE_TIMEOUT", 30*time.Second), "deprecated, no-op (kept for startup-script compatibility)")
 	flag.Parse()
 	for _, secret := range []struct {
 		value *string
 		env   string
 	}{
-		{&cfg.Token, "LIVEAGENT_GATEWAY_TOKEN"},
-		{&cfg.KBrainToken, "LIVEAGENT_GATEWAY_KBRAIN_TOKEN"},
-		{&cfg.ImageKBrainToken, "LIVEAGENT_GATEWAY_IMAGE_KBRAIN_TOKEN"},
+		{&cfg.Token, "ZEROAGENT_GATEWAY_TOKEN"},
+		{&cfg.KBrainToken, "ZEROAGENT_GATEWAY_BACKEND_TOKEN"},
+		{&cfg.ImageKBrainToken, "ZEROAGENT_GATEWAY_IMAGE_BACKEND_TOKEN"},
 	} {
 		if *secret.value == "" {
 			*secret.value = getenv(secret.env, "")
@@ -224,8 +224,8 @@ func defaultCookieSecure() bool {
 	if strings.TrimSpace(os.Getenv("PORT")) != "" {
 		return true
 	}
-	return strings.TrimSpace(os.Getenv("LIVEAGENT_GATEWAY_TLS_CERT")) != "" &&
-		strings.TrimSpace(os.Getenv("LIVEAGENT_GATEWAY_TLS_KEY")) != ""
+	return strings.TrimSpace(os.Getenv("ZEROAGENT_GATEWAY_TLS_CERT")) != "" &&
+		strings.TrimSpace(os.Getenv("ZEROAGENT_GATEWAY_TLS_KEY")) != ""
 }
 
 func getenvDuration(key string, fallback time.Duration) time.Duration {

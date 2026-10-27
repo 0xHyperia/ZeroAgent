@@ -370,23 +370,43 @@ mod tests {
     fn identity_deadline_also_covers_a_stalled_response_body() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let client = identity_client(Duration::from_millis(500)).unwrap();
+        let (release, held_body) = std::sync::mpsc::channel();
         let server = thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "identity request never connected"
+                        );
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("identity fixture accept failed: {error}"),
+                }
+            };
+            socket
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
             let mut bytes = [0; 2048];
-            socket.read(&mut bytes).unwrap();
+            assert!(socket.read(&mut bytes).unwrap() > 0);
             socket
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n{\"success\":")
                 .unwrap();
-            thread::sleep(Duration::from_millis(150));
+            // Hold a partial response until verification's own deadline returns.
+            held_body.recv_timeout(Duration::from_secs(2)).unwrap();
         });
-        let error = verify_at_origin(
-            &identity_client(Duration::from_millis(50)).unwrap(),
-            &origin,
-            credential(AuthKind::Oauth),
-        )
-        .err()
-        .unwrap();
+        let error = verify_at_origin(&client, &origin, credential(AuthKind::Oauth))
+            .err()
+            .unwrap();
         assert_eq!(error, IDENTITY_ERROR);
+        release.send(()).unwrap();
         server.join().unwrap();
     }
 

@@ -28,7 +28,7 @@ async function requestProviderUsage<T>(path: string, body: unknown): Promise<T> 
     } catch {
       // Keep non-JSON backend errors readable.
     }
-    throw new Error(message || `K-brain provider usage failed (${response.status})`);
+    throw new Error(message || `ZeroAgent engine provider usage failed (${response.status})`);
   }
   return (await response.json()) as T;
 }

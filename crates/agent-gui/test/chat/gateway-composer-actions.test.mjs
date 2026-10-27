@@ -107,11 +107,11 @@ test("composer actions fail clearly without K-brain, a session mapping or a vali
   const calls = [];
   await assert.rejects(
     runGatewayComposerAction(actionEvent({}), { getKBrainSessionId: () => "s" }),
-    /K-brain backend is not enabled/,
+    /ZeroAgent engine is not enabled/,
   );
   await assert.rejects(
     runGatewayComposerAction(actionEvent({ conversationId: "draft" }), createDeps(calls)),
-    /no K-brain session/,
+    /no ZeroAgent engine session/,
   );
   await assert.rejects(
     runGatewayComposerAction(actionEvent({ kind: "goal", action: "set" }), createDeps(calls)),

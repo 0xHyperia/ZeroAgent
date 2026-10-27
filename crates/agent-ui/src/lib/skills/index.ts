@@ -535,7 +535,7 @@ async function loadSkillsDiscovery(): Promise<SkillDiscovery> {
   if (!adapter) await ensureBuiltinSkills();
   const response = adapter ? await adapter.list() : await manageSkill({ action: "list" });
   if (adapter && (!Array.isArray(response.skills) || typeof response.rootDir !== "string")) {
-    throw new Error("Invalid K-brain skills list response");
+    throw new Error("Invalid ZeroAgent engine skills list response");
   }
   const discovery = await managedSkillListToDiscovery(response);
   return discovery;

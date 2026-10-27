@@ -93,7 +93,7 @@ export function isTauri(): boolean {
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (command.startsWith("cua_driver_") || command.startsWith("browser_")) {
     throw new Error(
-      `Desktop tool command ${command} is owned by K-brain; frontend execution is unavailable`,
+      `Desktop tool command ${command} is owned by ZeroAgent engine; frontend execution is unavailable`,
     );
   }
   if (command.startsWith("memory_")) {

@@ -52,7 +52,7 @@ pub fn app_frontend_ready(
     if super::window_placement::claim_startup_placement() && !window.is_maximized().unwrap_or(false)
     {
         if let Err(error) = super::window_placement::center_in_work_area(&window) {
-            eprintln!("failed to center LiveAgent window on startup: {error}");
+            eprintln!("failed to center ZeroAgent window on startup: {error}");
         }
     }
     window

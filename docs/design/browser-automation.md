@@ -28,7 +28,7 @@
 
 工作方式：
 
-- Rust 侧 `bridge.rs` 在 `127.0.0.1:19222`（`LIVEAGENT_BROWSER_BRIDGE_PORT` 可覆盖）起 WebSocket 服务，扩展 service worker 反向连接（握手校验 `Origin: chrome-extension://`），断线由扩展的 alarm 定期重连。
+- Rust 侧 `bridge.rs` 在 `127.0.0.1:19222`（`ZEROAGENT_BROWSER_BRIDGE_PORT` 可覆盖）起 WebSocket 服务，扩展 service worker 反向连接（握手校验 `Origin: chrome-extension://`），断线由扩展的 alarm 定期重连。
 - 扩展用 `chrome.debugger` 中继 CDP：browser-level 的 `Target.getTargets / createTarget / attachToTarget / closeTarget` 由扩展模拟（**只登记并暴露它自己创建的标签页**，用户其它标签页对桌面端不可见）；session-level 命令按 sessionId→tabId 映射转发 `chrome.debugger.sendCommand`，`chrome.debugger.onEvent` 反向转发为事件帧。线型与原生 CDP 一致，`CdpConnection`/`PageSession` 零改动复用。
 - `BrowserManager` 起会话时先查桥接是否有存活扩展连接：有则 `Target.createTarget` 新开标签页附着（extension 模式）；否则回退 launcher。`browser_close` 在 extension 模式下关自动化标签页（`Target.closeTarget`），launcher 模式 kill 进程树。
 - extension 模式的边界：Chrome 会在被调试标签页顶端显示"正在被调试"横幅，用户点"取消"即剥离（`onDetach`），桌面端经 target 存活探测感知并按需重建；本机恶意进程可伪造 Origin 头连上桥接，但能拿到的能力仅限"在用户浏览器里开一个新标签页并驱动它"，与用户手动开 tab 等价的攻击面之外主要增量是读取该 tab 内容——后续可加 token 握手收紧。

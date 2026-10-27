@@ -57,7 +57,7 @@ async function mount(values, run, { online = false } = {}) {
     configurable: true, value: { async writeText(text) { calls.copied.push(text); } },
   });
   runtimeConnection.setKBrainRuntimeConnection({
-    baseUrl: values.VITE_KBRAIN_URL ?? "http://127.0.0.1:47321",
+    baseUrl: values.VITE_ZEROAGENT_BACKEND_URL ?? "http://127.0.0.1:47321",
     token: "sharing-token", protocolVersion: "kbrain.agent.v1",
   });
   const rows = new Map([[conversation.id, { ...conversation }]]);
@@ -119,7 +119,7 @@ for (const [name, baseUrl, expected] of [
   ["configured backend URL", "http://kbrain.test:48123/proxy/", "http://kbrain.test:48123/proxy/share/public-token"],
 ]) {
   test(`K-brain sharing uses ${name}, enables/disables and copies in both shipped dialogs without gateway calls`, async () => {
-    await mount({ VITE_KBRAIN_URL: baseUrl }, async ({ host, click, rows, snapshot }) => {
+    await mount({ VITE_ZEROAGENT_BACKEND_URL: baseUrl }, async ({ host, click, rows, snapshot }) => {
       assert.equal(snapshot().canShareHistory, true, "disabled legacy Remote must not gate K-brain sharing");
       await click('[data-action="share"]');
       assert.deepEqual(calls.get, [conversation.id]);

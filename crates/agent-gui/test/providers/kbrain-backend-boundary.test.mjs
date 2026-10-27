@@ -84,5 +84,5 @@ test("text runtime imports the actual K-brain client through the public LLM entr
 test("supplier settings retain the requested visible name", () => {
   const source = readFileSync(join(root, "crates/agent-ui/src/i18n/translations/zhCNSettings.ts"), "utf8");
   assert.match(source, /"settings\.navProviders":\s*"供应商设置"/);
-  assert.doesNotMatch(source, /"K-brain 模型设置"/);
+  assert.doesNotMatch(source, /"ZeroAgent engine 模型设置"/);
 });

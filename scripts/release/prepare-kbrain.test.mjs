@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -67,7 +67,7 @@ test("maps the supported Tauri targets and rejects unsupported targets", () => {
 });
 
 test("downloads a pinned HTTP fixture, verifies it, and reuses its checksum cache", async () => {
-  const backendBody = Buffer.from("fixture k-brain backend and computer\n");
+  const backendBody = Buffer.from(`fixture k-brain backend and computer ${randomUUID()}\n`);
   const computerBody = backendBody;
   const backendUrl = await startServer(backendBody);
   const backendHash = sha256(backendBody);
@@ -90,7 +90,7 @@ test("downloads a pinned HTTP fixture, verifies it, and reuses its checksum cach
   assert.equal(await readFile(first.computerBinary, "utf8"), computerBody.toString());
   assert.equal(await readFile(second.computerBinary, "utf8"), computerBody.toString());
   assert.equal(first.sha256.computer, computerHash);
-  cacheFiles.push(join(root, ".liveagent", "kbrain-cache", backendHash, "k-brain-linux-x64"), join(root, ".liveagent", "kbrain-cache", backendHash, "k-brain-computer-linux-x64"));
+  cacheFiles.push(join(root, ".zeroagent", "backend-cache", backendHash, "k-brain-linux-x64"), join(root, ".zeroagent", "backend-cache", backendHash, "k-brain-computer-linux-x64"));
 });
 
 test("uses an explicit absolute local development binary and refuses it for release", async () => {

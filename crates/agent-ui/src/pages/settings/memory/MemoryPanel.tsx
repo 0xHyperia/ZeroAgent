@@ -855,7 +855,7 @@ export function MemoryPanel(props: {
 
       {settingsDrawerOpen ? (
         <MemorySettingsDrawer
-          storagePath={pathsInfo?.root ?? "~/.liveagent/memory"}
+          storagePath={pathsInfo?.root ?? "~/.zeroagent/memory"}
           workdir={workdir}
           saving={saving}
           t={t}

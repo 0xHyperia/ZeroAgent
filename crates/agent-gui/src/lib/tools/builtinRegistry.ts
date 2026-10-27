@@ -214,7 +214,7 @@ async function buildBaseBuiltinToolBundles(
 ): Promise<BaseBuiltinToolBundles> {
   if (isKBrainBackendEnabled()) {
     throw new Error(
-      "Frontend tools are unavailable in K-brain mode; tools are owned by the backend.",
+      "Frontend tools are unavailable in ZeroAgent engine mode; tools are owned by the backend.",
     );
   }
   const baseBundles: BuiltinToolBundle[] = [

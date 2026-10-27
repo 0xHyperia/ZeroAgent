@@ -71,16 +71,20 @@ export function createKBrainQueueClient(options: KBrainClientOptions) {
       body = await response.json();
     } catch (error) {
       if (!response.ok)
-        throw Object.assign(new Error(`K-brain queue request failed (${response.status})`), {
-          status: response.status,
-        });
-      if (error instanceof SyntaxError) throw new Error("Malformed K-brain queue response");
+        throw Object.assign(
+          new Error(`ZeroAgent engine queue request failed (${response.status})`),
+          {
+            status: response.status,
+          },
+        );
+      if (error instanceof SyntaxError)
+        throw new Error("Malformed ZeroAgent engine queue response");
       throw new KBrainTransportError(error);
     }
     const snapshot = body?.snapshot;
     if (!response.ok && typeof body?.errorCode !== "string") {
       throw Object.assign(
-        new Error(body?.error || `K-brain queue request failed (${response.status})`),
+        new Error(body?.error || `ZeroAgent engine queue request failed (${response.status})`),
         { status: response.status },
       );
     }
@@ -93,7 +97,7 @@ export function createKBrainQueueClient(options: KBrainClientOptions) {
       typeof snapshot.paused !== "boolean" ||
       !Array.isArray(snapshot.items)
     ) {
-      throw new Error("Malformed K-brain queue response");
+      throw new Error("Malformed ZeroAgent engine queue response");
     }
     if (
       body.receipt &&
@@ -102,7 +106,7 @@ export function createKBrainQueueClient(options: KBrainClientOptions) {
         typeof body.receipt.state !== "string" ||
         !body.receipt.state)
     ) {
-      throw new Error("Malformed K-brain queue receipt");
+      throw new Error("Malformed ZeroAgent engine queue receipt");
     }
     if (
       snapshot.items.some(
@@ -110,7 +114,7 @@ export function createKBrainQueueClient(options: KBrainClientOptions) {
           !item || typeof item.id !== "string" || !item.id || typeof item.previewText !== "string",
       )
     ) {
-      throw new Error("Malformed K-brain queue item");
+      throw new Error("Malformed ZeroAgent engine queue item");
     }
     if (body.receipt?.run) {
       const run = body.receipt.run;
@@ -122,7 +126,7 @@ export function createKBrainQueueClient(options: KBrainClientOptions) {
         !Number.isSafeInteger(run.accepted_seq) ||
         run.accepted_seq < 1
       ) {
-        throw new Error("Malformed K-brain queue run identity");
+        throw new Error("Malformed ZeroAgent engine queue run identity");
       }
     }
     return body as KBrainQueueResponse;

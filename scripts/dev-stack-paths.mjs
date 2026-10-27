@@ -7,7 +7,7 @@ export function defaultDevStateDir(repoRoot, userKey) {
   // /tmp and /private/tmp can name the same macOS checkout.
   const checkout = realpathSync(repoRoot);
   const key = createHash("sha256").update(checkout).digest("hex").slice(0, 12);
-  return join(tmpdir(), `liveagent-dev-stack-${userKey}-${key}`);
+  return join(tmpdir(), `zeroagent-dev-stack-${userKey}-${key}`);
 }
 
 export function missingDevDependency(repoRoot, service) {

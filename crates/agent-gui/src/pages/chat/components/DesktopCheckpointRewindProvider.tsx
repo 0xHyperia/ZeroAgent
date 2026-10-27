@@ -79,8 +79,8 @@ export function DesktopCheckpointRewindProvider(props: {
         capabilities.checkpoints
           ? undefined
           : locale === "zh-CN"
-            ? "K-brain 模式尚不支持文件检查点回退；文件修改由后端工具执行。"
-            : "File checkpoint rewind is not supported in K-brain mode; file changes are executed by backend tools."
+            ? "ZeroAgent 执行模式尚不支持文件检查点回退；文件修改由后端工具执行。"
+            : "File checkpoint rewind is not supported in ZeroAgent engine mode; file changes are executed by backend tools."
       }
       resolveAuthorizedRoots={resolveAuthorizedRoots}
       onRewound={onRewound}

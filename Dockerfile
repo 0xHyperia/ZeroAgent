@@ -17,8 +17,8 @@ RUN pnpm install --frozen-lockfile --filter @liveagent/gateway-webui...
 COPY crates/virtual-core crates/virtual-core
 COPY crates/agent-ui crates/agent-ui
 COPY crates/agent-gateway/web crates/agent-gateway/web
-ARG LIVEAGENT_APP_VERSION
-RUN LIVEAGENT_APP_VERSION="$LIVEAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
+ARG ZEROAGENT_APP_VERSION
+RUN ZEROAGENT_APP_VERSION="$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
 
 FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS gateway-builder
 
@@ -43,17 +43,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /usr/sbin/nologin liveagent \
-    && install -d -o liveagent -g liveagent -m 0700 /var/lib/liveagent
+RUN useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /usr/sbin/nologin zeroagent \
+    && install -d -o zeroagent -g zeroagent -m 0700 /var/lib/zeroagent
 
 COPY --from=gateway-builder /out/liveagent-gateway /usr/local/bin/liveagent-gateway
 
-USER liveagent
+USER zeroagent
 
 ENV PORT=8080 \
-    LIVEAGENT_GATEWAY_DATA_DIR=/var/lib/liveagent
+    ZEROAGENT_GATEWAY_DATA_DIR=/var/lib/zeroagent
 
-VOLUME ["/var/lib/liveagent"]
+VOLUME ["/var/lib/zeroagent"]
 
 EXPOSE 8080
 

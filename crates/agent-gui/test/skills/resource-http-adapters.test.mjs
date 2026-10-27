@@ -139,7 +139,7 @@ test("original Skills APIs use authenticated HTTP for create/list/read/import/st
   await assert.rejects(skills.discoverSkills({ force: true }), /skills unavailable/);
   assert.ok(previous.skills.length > 0);
   f.malformedSkills();
-  await assert.rejects(skills.discoverSkills({ force: true }), /Invalid K-brain skills list response/);
+  await assert.rejects(skills.discoverSkills({ force: true }), /Invalid ZeroAgent engine skills list response/);
   assert.ok(f.requests.every((r) => r.authorization === "Bearer fixture-token"));
   assert.equal(f.requests.some((r) => r.body.action === "ensure_builtin"), false);
 });
@@ -195,12 +195,12 @@ test("Memory page hook exits loading after HTTP failure and retains existing ent
   assert.equal(render().backendManaged, false);
 });
 
-const liveConnectionFile = process.env.KBRAIN_RESOURCE_CONNECTION_FILE;
-test("real K-brain backend round-trip for uniquely named memory and Skills records", async (t) => {
-  // Opt-in integration test: needs a running K-brain backend, so it skips
+const liveConnectionFile = process.env.ZEROAGENT_RESOURCE_CONNECTION_FILE;
+test("real ZeroAgent engine round-trip for uniquely named memory and Skills records", async (t) => {
+  // Opt-in integration test: needs a running ZeroAgent engine, so it skips
   // instead of failing when no connection file is provided.
   if (!liveConnectionFile) {
-    t.skip("KBRAIN_RESOURCE_CONNECTION_FILE is not set");
+    t.skip("ZEROAGENT_RESOURCE_CONNECTION_FILE is not set");
     return;
   }
   const connection = JSON.parse(readFileSync(liveConnectionFile, "utf8"));

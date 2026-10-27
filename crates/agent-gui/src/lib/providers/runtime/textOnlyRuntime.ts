@@ -31,7 +31,7 @@ function canonicalTextMessages(context: Context): KBrainMessage[] {
 
 function kbrainTextModel(runtime: ProviderRuntimeConfig, model: string): KBrainModelRef {
   const provider = runtime.backendModelProvider?.trim();
-  if (!provider) throw new Error("K-brain model provider is not configured");
+  if (!provider) throw new Error("ZeroAgent engine model provider is not configured");
   const modelId = model.trim();
   if (!modelId) throw new Error("No model selected");
   return { provider, model: modelId };
@@ -45,7 +45,7 @@ async function generateKBrainText(params: {
   output?: "text" | "json";
 }) {
   if (params.runtime.backend !== "kbrain" && getProviderRuntimeBackend() !== "kbrain") {
-    throw new Error("K-brain backend is required for text generation");
+    throw new Error("ZeroAgent engine is required for text generation");
   }
   const client = createKBrainClient();
   const response = await client.generateText(
@@ -57,7 +57,7 @@ async function generateKBrainText(params: {
     params.signal,
   );
   if (response.version !== "kbrain.agent.v1" || typeof response.text !== "string") {
-    throw new Error("Malformed K-brain text-generation response");
+    throw new Error("Malformed ZeroAgent engine text-generation response");
   }
   return response;
 }

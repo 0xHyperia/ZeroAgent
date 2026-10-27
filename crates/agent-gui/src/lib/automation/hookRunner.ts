@@ -56,10 +56,10 @@ async function runHook(
       timeout_ms: hook.timeoutMs ?? null,
       scope_id: scopeId,
       context: {
-        LIVEAGENT_HOOK_EVENT: event,
-        LIVEAGENT_HOOK_NAME: hook.name,
-        LIVEAGENT_CONVERSATION_ID: conversationId,
-        LIVEAGENT_WORKDIR: workdir?.trim() ?? "",
+        ZEROAGENT_HOOK_EVENT: event,
+        ZEROAGENT_HOOK_NAME: hook.name,
+        ZEROAGENT_CONVERSATION_ID: conversationId,
+        ZEROAGENT_WORKDIR: workdir?.trim() ?? "",
       },
     });
     return;

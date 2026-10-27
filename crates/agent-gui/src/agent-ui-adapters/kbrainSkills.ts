@@ -13,7 +13,7 @@ export function createKbrainSkillsAdapter(fetchImpl?: typeof fetch): SkillsResou
     const response = await fetchKBrain(path, init, fetchImpl ? { fetch: fetchImpl } : {});
     if (!response.ok) {
       const error = new Error(
-        (await response.text()) || `K-brain skills request failed (${response.status})`,
+        (await response.text()) || `ZeroAgent engine skills request failed (${response.status})`,
       );
       Object.assign(error, { status: response.status });
       throw error;
@@ -32,7 +32,7 @@ export function createKbrainSkillsAdapter(fetchImpl?: typeof fetch): SkillsResou
         typeof result.settings?.enabled !== "boolean" ||
         !Array.isArray(result.settings.selected)
       )
-        throw new Error("Invalid K-brain skills list response");
+        throw new Error("Invalid ZeroAgent engine skills list response");
       return result;
     },
     manage: async (body) => {
@@ -79,11 +79,11 @@ export function createKbrainSkillsAdapter(fetchImpl?: typeof fetch): SkillsResou
         `/v1/skills/store/search?${query}`,
       );
       if (result.results !== null && !Array.isArray(result.results)) {
-        throw new Error("Invalid K-brain skills store response");
+        throw new Error("Invalid ZeroAgent engine skills store response");
       }
       const items = (result.results ?? []).map((raw) => {
         const card = normalizeClawHubSkillCard(raw);
-        if (!card) throw new Error("Invalid K-brain skills store item");
+        if (!card) throw new Error("Invalid ZeroAgent engine skills store item");
         return card;
       });
       return { items, nextCursor: result.nextCursor || null };

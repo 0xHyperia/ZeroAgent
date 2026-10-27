@@ -106,7 +106,7 @@ async function buildRegistryFor(loader, overrides = {}) {
 test("McpManager registry is fail-closed in K-brain production and real on native host", async () => {
   await assert.rejects(
     () => buildRegistryFor(createTsModuleLoader()),
-    /Frontend tools are unavailable in K-brain mode/,
+    /Frontend tools are unavailable in ZeroAgent engine mode/,
   );
 
   const registry = await buildRegistryFor(
@@ -119,7 +119,7 @@ test("McpManager registry is fail-closed in K-brain production and real on nativ
 test("native builtin registry resolves MCP tool names with casing drift while K-brain stays fail-closed", async () => {
   await assert.rejects(
     () => buildRegistryFor(createTsModuleLoader()),
-    /Frontend tools are unavailable in K-brain mode/,
+    /Frontend tools are unavailable in ZeroAgent engine mode/,
   );
 
   const registry = await buildRegistryFor(
@@ -142,7 +142,7 @@ test("native builtin registry resolves MCP tool names with casing drift while K-
 test("native registry keeps ManagedProcess chat-only while K-brain production fails closed", async () => {
   await assert.rejects(
     () => buildRegistryFor(createTsModuleLoader()),
-    /Frontend tools are unavailable in K-brain mode/,
+    /Frontend tools are unavailable in ZeroAgent engine mode/,
   );
 
   const nativeLoader = createTsModuleLoader({ mocks: { "@tauri-apps/api/core": {} } });

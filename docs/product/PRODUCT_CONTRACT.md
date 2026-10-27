@@ -10,6 +10,8 @@
   显示为 SUB2API、ZeroBox 或 LiveAgent。
 - 面向用户的服务地址为 `https://agent.usa0.top`。
 - 工程记录可以说明上游来源，但 ZeroAgent 界面和公开发布说明必须描述 ZeroAgent 产品。
+- 对外配置环境变量使用 `ZEROAGENT_*`，应用拥有的存储名称使用 ZeroAgent；上游私有启动
+  变量、包名和协议保持原契约，由启动边界对接。按 ADR 0042 保留当前 v2 数据及内部身份。
 
 ## 运行模式
 

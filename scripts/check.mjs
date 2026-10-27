@@ -8,16 +8,16 @@ import { delimiter, dirname, join, relative, resolve } from "node:path";
 const repoRoot = resolve(import.meta.dirname, "..");
 const gatewayDir = join(repoRoot, "crates/agent-gateway");
 const profile = process.argv[2] ?? "fast";
-const keepGoing = process.env.LIVEAGENT_CHECK_KEEP_GOING === "1";
+const keepGoing = process.env.ZEROAGENT_CHECK_KEEP_GOING === "1";
 const userKey =
   typeof process.getuid === "function" ? String(process.getuid()) : (process.env.USERNAME ?? "user");
 const logRoot = resolve(
-  process.env.LIVEAGENT_CHECK_LOG_DIR ?? join(tmpdir(), `liveagent-check-${userKey}`),
+  process.env.ZEROAGENT_CHECK_LOG_DIR ?? join(tmpdir(), `zeroagent-check-${userKey}`),
 );
 const runId = `${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "")}-${profile}-${process.pid}`;
 const runDir = join(logRoot, runId);
 const logPath = join(runDir, "check.log");
-const reportPath = resolve(process.env.LIVEAGENT_CHECK_REPORT_PATH ?? join(runDir, "report.json"));
+const reportPath = resolve(process.env.ZEROAGENT_CHECK_REPORT_PATH ?? join(runDir, "report.json"));
 const cargoCheckTargetDir = join(repoRoot, "target", "check");
 
 // golangci-lint runs the `go` it finds on PATH. On Windows a system Go (e.g. C:\Program Files\Go)
@@ -54,10 +54,10 @@ Profiles:
   strict  Run all plus rustfmt, Clippy and warnings-as-errors lint checks.
 
 Environment variables:
-  LIVEAGENT_CHECK_KEEP_GOING=1  Continue after failures and report every failed step.
-  LIVEAGENT_CHECK_LOG_DIR=PATH  Parent directory for the run log.
-  LIVEAGENT_CHECK_REPORT_PATH=PATH  JSON report path (default: beside check.log).
-  LIVEAGENT_CHECK_BASE_REF=REF  Base ref for strict changed-file Biome gates.`);
+  ZEROAGENT_CHECK_KEEP_GOING=1  Continue after failures and report every failed step.
+  ZEROAGENT_CHECK_LOG_DIR=PATH  Parent directory for the run log.
+  ZEROAGENT_CHECK_REPORT_PATH=PATH  JSON report path (default: beside check.log).
+  ZEROAGENT_CHECK_BASE_REF=REF  Base ref for strict changed-file Biome gates.`);
 }
 
 function commandStep(name, command, args, cwd = repoRoot) {
@@ -254,8 +254,8 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  if (![undefined, "0", "1"].includes(process.env.LIVEAGENT_CHECK_KEEP_GOING)) {
-    throw new Error("LIVEAGENT_CHECK_KEEP_GOING must be 0 or 1");
+  if (![undefined, "0", "1"].includes(process.env.ZEROAGENT_CHECK_KEEP_GOING)) {
+    throw new Error("ZEROAGENT_CHECK_KEEP_GOING must be 0 or 1");
   }
 
   const startedAt = new Date();
@@ -264,7 +264,7 @@ async function main() {
   mkdirSync(commandEnvironment.GOLANGCI_LINT_CACHE, { recursive: true });
   mkdirSync(dirname(reportPath), { recursive: true });
   const log = createWriteStream(logPath, { flags: "w" });
-  const header = `LiveAgent check profile: ${profile}\nPlatform: ${process.platform} ${process.arch}\nLog: ${logPath}\nReport: ${reportPath}\nKeep going after failures: ${keepGoing ? "1" : "0"}\n`;
+  const header = `ZeroAgent check profile: ${profile}\nPlatform: ${process.platform} ${process.arch}\nLog: ${logPath}\nReport: ${reportPath}\nKeep going after failures: ${keepGoing ? "1" : "0"}\n`;
   process.stdout.write(header);
   log.write(header);
 
@@ -299,7 +299,7 @@ async function main() {
 
   const summary = [
     "",
-    `LiveAgent check profile: ${profile}`,
+    `ZeroAgent check profile: ${profile}`,
     `Platform: ${process.platform} ${process.arch}`,
     ...results.map(
       (result) =>

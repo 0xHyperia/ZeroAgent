@@ -128,7 +128,7 @@ mod migration_tests {
     }
     #[test]
     fn exports_checkpoint_acceptance_fixture() {
-        let scratch = std::env::var_os("KBRAIN_MIGRATION_ACCEPTANCE_DIR")
+        let scratch = std::env::var_os("ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(std::env::temp_dir);
         let temp = tempfile::Builder::new()
@@ -174,7 +174,7 @@ mod migration_tests {
             std::fs::read(dir.join("blobs/0123456789abcdef@v1")).unwrap(),
             preimage
         );
-        if std::env::var_os("KBRAIN_MIGRATION_ACCEPTANCE_DIR").is_some() {
+        if std::env::var_os("ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR").is_some() {
             std::fs::write(scratch.join("native-page.json"), exported).unwrap();
             std::fs::write(scratch.join("native-home.txt"), home.to_str().unwrap()).unwrap();
             let _ = temp.keep();

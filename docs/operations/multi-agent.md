@@ -18,11 +18,11 @@
      -agent-db /var/lib/liveagent/agents.db
    ```
 
-   等价环境变量：`LIVEAGENT_GATEWAY_AGENT_DB`。**容器部署必须在
+   等价环境变量：`ZEROAGENT_GATEWAY_AGENT_DB`。**容器部署必须在
    `/var/lib/liveagent` 挂载持久卷**，否则重启丢凭证。
 
    不指定 `-agent-db` 时，数据库默认创建在
-   `LIVEAGENT_GATEWAY_DATA_DIR/gateway.db`，或用户配置目录下的
+   `ZEROAGENT_GATEWAY_DATA_DIR/gateway.db`，或用户配置目录下的
    `liveagent/gateway.db`。Agent 链路同时接受网关 Token 和按 `agent_id` 签发的
    独立凭证；无论使用哪种凭证，Agent 都必须携带稳定的 `agent_id`。
 
@@ -38,9 +38,9 @@
 
 | flag | 环境变量 | 默认 |
 |---|---|---|
-| `-max-agent-connections` | `LIVEAGENT_GATEWAY_MAX_AGENT_CONNECTIONS` | 256 |
-| `-max-browser-connections` | `LIVEAGENT_GATEWAY_MAX_BROWSER_CONNECTIONS` | 128 |
-| `-max-terminal-connections` | `LIVEAGENT_GATEWAY_MAX_TERMINAL_CONNECTIONS` | 512 |
+| `-max-agent-connections` | `ZEROAGENT_GATEWAY_MAX_AGENT_CONNECTIONS` | 256 |
+| `-max-browser-connections` | `ZEROAGENT_GATEWAY_MAX_BROWSER_CONNECTIONS` | 128 |
+| `-max-terminal-connections` | `ZEROAGENT_GATEWAY_MAX_TERMINAL_CONNECTIONS` | 512 |
 
 ## 凭证运维
 

@@ -21,10 +21,10 @@ pub(crate) fn set_active_config_profile(
 
 pub(crate) fn config_dir() -> Result<PathBuf, String> {
     #[cfg(debug_assertions)]
-    if let Some(path) = std::env::var_os("LIVEAGENT_CONFIG_DIR") {
+    if let Some(path) = std::env::var_os("ZEROAGENT_CONFIG_DIR") {
         let root = PathBuf::from(path);
         if !root.is_absolute() {
-            return Err("LIVEAGENT_CONFIG_DIR 必须是绝对路径".into());
+            return Err("ZEROAGENT_CONFIG_DIR 必须是绝对路径".into());
         }
         let profile = ACTIVE_CONFIG_PROFILE
             .lock()

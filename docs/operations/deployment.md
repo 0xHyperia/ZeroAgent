@@ -42,16 +42,16 @@
 | `USA_ZERO_ORIGIN` | 是 | USA-零账户与模型服务地址，默认 `https://usa0.top`。 |
 | `USA_ZERO_AUTHORIZATION_ORIGIN` | 否 | USA-零浏览器授权页地址；默认与 `USA_ZERO_ORIGIN` 相同。 |
 | `ZEROAGENT_WEB_OAUTH_CLIENT_SECRET` | 是 | 与 USA-零配置一致的 ZeroAgent Web OAuth 客户端密钥。 |
-| `LIVEAGENT_GATEWAY_PUBLIC_ORIGIN` | 是 | Gateway 的公开 HTTPS Origin，例如 `https://agent.usa0.top`，用于生成精确 OAuth 回调。 |
+| `ZEROAGENT_GATEWAY_PUBLIC_ORIGIN` | 是 | Gateway 的公开 HTTPS Origin，例如 `https://agent.usa0.top`，用于生成精确 OAuth 回调。 |
 | `DATABASE_URL` | 是（生产） | PostgreSQL 连接地址，保存设备、工作区快照、对话路由与网页对话历史。 |
 | `REDIS_URL` | 是（生产） | Redis 连接地址，保存 Web 会话、step-up proof 消费状态与设备在线 TTL。 |
-| `LIVEAGENT_GATEWAY_COOKIE_SECURE` | 否 | 账号会话 Cookie 的 `Secure` 标志；生产默认 `true`。仅本机 HTTP 开发时设为 `false`。 |
+| `ZEROAGENT_GATEWAY_COOKIE_SECURE` | 否 | 账号会话 Cookie 的 `Secure` 标志；生产默认 `true`。仅本机 HTTP 开发时设为 `false`。 |
 | `PORT` | Railway 自动提供 | HTTP/WebUI/桌面端 WebSocket 监听端口，未提供时 Dockerfile 默认 `8080`。 |
-| `LIVEAGENT_GATEWAY_GRPC_ADDR` | 否 | **已弃用 no-op**：v1 gRPC 监听已移除，设置后启动时打印警告；保留仅为兼容旧启动脚本。 |
-| `LIVEAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT` | 否 | `chat.prepare` 与 command accepted 前关联原生 Ping/Pong 的最大等待时间，默认 `2s`。 |
-| `LIVEAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT` | 否 | accepted 后把 `ChatCommandRequest` 投递到当前桌面 Agent stream 的最大等待时间，默认 `5s`。 |
-| `LIVEAGENT_GATEWAY_CHAT_START_TIMEOUT` | 否 | Chat command 进入桌面运行态的第一段 watchdog，默认 `5s`。 |
-| `LIVEAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT` | 否 | 第一段 watchdog 后继续等待桌面 run settled 的附加窗口，默认 `10s`。 |
+| `ZEROAGENT_GATEWAY_GRPC_ADDR` | 否 | **已弃用 no-op**：v1 gRPC 监听已移除，设置后启动时打印警告；保留仅为兼容旧启动脚本。 |
+| `ZEROAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT` | 否 | `chat.prepare` 与 command accepted 前关联原生 Ping/Pong 的最大等待时间，默认 `2s`。 |
+| `ZEROAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT` | 否 | accepted 后把 `ChatCommandRequest` 投递到当前桌面 Agent stream 的最大等待时间，默认 `5s`。 |
+| `ZEROAGENT_GATEWAY_CHAT_START_TIMEOUT` | 否 | Chat command 进入桌面运行态的第一段 watchdog，默认 `5s`。 |
+| `ZEROAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT` | 否 | 第一段 watchdog 后继续等待桌面 run settled 的附加窗口，默认 `10s`。 |
 
 本地 smoke run 示例：
 
@@ -91,11 +91,11 @@ Gateway 运行时变量由用户在自己的平台配置：
 | `USA_ZERO_AUTHORIZATION_ORIGIN` | USA-零浏览器授权页地址；同域部署时与 `USA_ZERO_ORIGIN` 相同。 |
 | `DATABASE_URL` | PostgreSQL 连接地址。 |
 | `REDIS_URL` | Redis 连接地址。 |
-| `LIVEAGENT_GATEWAY_COOKIE_SECURE` | 生产保持 `true`；仅本机 HTTP 调试设为 `false`。 |
-| `LIVEAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT` | 默认 `2s`；通常无需调大，超时应暴露半开连接并让客户端快速恢复。 |
-| `LIVEAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT` | 默认 `5s`；控制 accepted 后投递桌面 stream 的上限。 |
-| `LIVEAGENT_GATEWAY_CHAT_START_TIMEOUT` | 默认 `5s`；控制远程 command 启动 watchdog 的第一阶段。 |
-| `LIVEAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT` | 默认 `10s`；控制启动 watchdog 的附加阶段。 |
+| `ZEROAGENT_GATEWAY_COOKIE_SECURE` | 生产保持 `true`；仅本机 HTTP 调试设为 `false`。 |
+| `ZEROAGENT_GATEWAY_CHAT_PREPARE_TIMEOUT` | 默认 `2s`；通常无需调大，超时应暴露半开连接并让客户端快速恢复。 |
+| `ZEROAGENT_GATEWAY_CHAT_DELIVERY_TIMEOUT` | 默认 `5s`；控制 accepted 后投递桌面 stream 的上限。 |
+| `ZEROAGENT_GATEWAY_CHAT_START_TIMEOUT` | 默认 `5s`；控制远程 command 启动 watchdog 的第一阶段。 |
+| `ZEROAGENT_GATEWAY_CHAT_RENDER_START_TIMEOUT` | 默认 `10s`；控制启动 watchdog 的附加阶段。 |
 
 Gateway 一期按单实例部署，实时 conversation stream replay 与 `client_request_id` 去重仍是进程内有界状态。账号、设备、工作区、网页历史和设备对话路由写入 PostgreSQL；Web 会话、一次性 proof 状态和在线 TTL 写入 Redis。事件窗口默认保留最近 10 分钟、最多 4096 条或约 8 MiB；实时窗口在 Gateway 重启后不会保留。
 
@@ -182,10 +182,10 @@ node scripts/release/prepare-app-version-from-tag.mjs vX.Y.Z
 
 | 输出 | 示例 | 用途 |
 |---|---|---|
-| `LIVEAGENT_RELEASE_TAG` | `v0.1.3` | GitHub Release、产物命名和下载 URL。 |
-| `LIVEAGENT_APP_VERSION` | `0.1.3` | 前端 About 页和 Rust 运行时代码。 |
-| `LIVEAGENT_IS_PRERELEASE` | `false` | 决定 GitHub Release 是否标记为 prerelease。 |
-| `LIVEAGENT_TAURI_VERSION_CONFIG` | `src-tauri/tauri.version.generated.conf.json` | Tauri 构建时追加的临时 config overlay。 |
+| `ZEROAGENT_RELEASE_TAG` | `v0.1.3` | GitHub Release、产物命名和下载 URL。 |
+| `ZEROAGENT_APP_VERSION` | `0.1.3` | 前端 About 页和 Rust 运行时代码。 |
+| `ZEROAGENT_IS_PRERELEASE` | `false` | 决定 GitHub Release 是否标记为 prerelease。 |
+| `ZEROAGENT_TAURI_VERSION_CONFIG` | `src-tauri/tauri.version.generated.conf.json` | Tauri 构建时追加的临时 config overlay。 |
 
 各平台构建 job 会复用同一份 metadata，并生成一个未提交到仓库的 Tauri overlay：
 
@@ -195,7 +195,7 @@ node scripts/release/prepare-app-version-from-tag.mjs vX.Y.Z
 }
 ```
 
-Tauri 构建命令通过额外的 `--config "$LIVEAGENT_TAURI_VERSION_CONFIG"` 注入这个版本；Vite 和 Rust build script 通过 `LIVEAGENT_APP_VERSION` 注入同一个版本。这样发布版本以 tag 为事实来源，updater manifest、应用内显示版本和安装包版本会保持一致；忘记改 `package.json` 不会导致发布包仍显示旧版本。
+Tauri 构建命令通过额外的 `--config "$ZEROAGENT_TAURI_VERSION_CONFIG"` 注入这个版本；Vite 和 Rust build script 通过 `ZEROAGENT_APP_VERSION` 注入同一个版本。这样发布版本以 tag 为事实来源，updater manifest、应用内显示版本和安装包版本会保持一致；忘记改 `package.json` 不会导致发布包仍显示旧版本。
 
 Windows 当前没有代码签名 secret，release workflow 会先自动发布 unsigned 包。接入 Windows `.p12/.pfx` 或 Trusted Signing 后再补签名步骤。
 

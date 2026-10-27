@@ -34,10 +34,10 @@ function verifiedCommit(ref) {
 }
 
 function resolveBaseCommit() {
-  const explicitRef = process.env.LIVEAGENT_CHECK_BASE_REF?.trim();
+  const explicitRef = process.env.ZEROAGENT_CHECK_BASE_REF?.trim();
   if (explicitRef) {
     const commit = verifiedCommit(explicitRef);
-    if (!commit) throw new Error(`LIVEAGENT_CHECK_BASE_REF is not a commit: ${explicitRef}`);
+    if (!commit) throw new Error(`ZEROAGENT_CHECK_BASE_REF is not a commit: ${explicitRef}`);
     return git(["merge-base", "HEAD", commit]).trim();
   }
 

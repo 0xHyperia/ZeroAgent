@@ -72,7 +72,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
   });
   const health = await fetch(`${baseUrl}/v1/health`, { headers: { Authorization: "Bearer modes-token" } }).then(res => res.json());
   if (!health.capabilities?.permission_modes?.includes("auto_review")) {
-    t.skip("requires K-brain permission modes; set LIVEAGENT_KBRAIN_BINARY to the matching build");
+    t.skip("requires K-brain permission modes; set ZEROAGENT_BACKEND_BINARY to the matching build");
     return;
   }
   const loader = createTsModuleLoader();

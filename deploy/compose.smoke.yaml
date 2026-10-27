@@ -25,7 +25,7 @@ services:
   gateway:
     image: ${GATEWAY_DOCKER_IMAGE:-liveagent-gateway:local}
     environment:
-      LIVEAGENT_GATEWAY_HTTP_ADDR: 0.0.0.0:8080
+      ZEROAGENT_GATEWAY_HTTP_ADDR: 0.0.0.0:8080
       DATABASE_URL: postgres://zeroagent_smoke:isolated-smoke-fixture@postgres:5432/zeroagent_smoke?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       USA_ZERO_ORIGIN: https://usa0.top

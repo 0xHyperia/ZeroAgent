@@ -101,7 +101,7 @@ export function setKBrainSessionId(
   const localId = conversationId.trim();
   const remoteId = backendId.trim();
   if (!localId || !remoteId)
-    throw new Error("K-brain session mapping requires both local and backend IDs");
+    throw new Error("ZeroAgent engine session mapping requires both local and backend IDs");
   const scope = normalizeBaseUrl(baseUrl);
   const state = readState();
   const localKey = scopedKey(scope, localId);

@@ -86,7 +86,7 @@ export const backend: ManagedProcessBackend = {
 
   async stop(id: string): Promise<ManagedProcessState | null> {
     if (isKBrainBrowserHost()) {
-      throw new Error("K-brain browser mode does not support managed processes");
+      throw new Error("ZeroAgent engine browser mode does not support managed processes");
     }
     // The stop response carries a single record; the refreshed snapshot
     // arrives through the change event the stop triggers.
@@ -105,7 +105,7 @@ export const backend: ManagedProcessBackend = {
 
   async readLog(id: string, maxBytes?: number) {
     if (isKBrainBrowserHost()) {
-      throw new Error("K-brain browser mode does not support managed process logs");
+      throw new Error("ZeroAgent engine browser mode does not support managed process logs");
     }
     const response = await invoke<RawManagedProcessLogResponse>("managed_process_read_log", {
       process_id: id,

@@ -373,7 +373,7 @@ async function backfillKBrainInputModalities(
     const saved = await saveKBrainProviderSettings(update);
     return { document: saved, providers: appProvidersFromKBrain(saved) };
   } catch (error) {
-    console.warn("K-brain input modality backfill failed", error);
+    console.warn("ZeroAgent engine input modality backfill failed", error);
     return { document, providers };
   }
 }
@@ -408,7 +408,7 @@ async function loadNativeConfiguration(): Promise<PersistedSettingsResponse> {
       update: { expectedRevision: snapshot.configurationRevision, settings: update },
     });
   } catch (error) {
-    console.warn("K-brain input modality backfill failed", error);
+    console.warn("ZeroAgent engine input modality backfill failed", error);
   }
   // A backfill, conflict or failed write can advance the version. Read data and version together.
   return load();
@@ -469,7 +469,7 @@ export async function loadPersistedSettingsWithDefaults(): Promise<PersistedSett
           try {
             await client.updateConfiguration({ settings: backfill }, snapshot.configurationVersion);
           } catch (error) {
-            console.warn("K-brain input modality backfill failed", error);
+            console.warn("ZeroAgent engine input modality backfill failed", error);
           }
           snapshot = await client.getConfiguration();
           if (!snapshot.configurationVersion)

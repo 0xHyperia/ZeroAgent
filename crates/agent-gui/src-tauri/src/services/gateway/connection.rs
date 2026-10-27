@@ -932,14 +932,14 @@ fn local_gateway_binary() -> Result<std::path::PathBuf, String> {
             .join("binaries")
             .join(format!(
                 "liveagent-gateway-{}{suffix}",
-                env!("LIVEAGENT_TARGET_TRIPLE")
+                env!("ZEROAGENT_TARGET_TRIPLE")
             ));
         if dev.is_file() {
             return Ok(dev);
         }
     }
     Err(
-        "Local Gateway program is missing; reinstall LiveAgent or prepare the development sidecar"
+        "Local Gateway program is missing; reinstall ZeroAgent or prepare the development sidecar"
             .to_string(),
     )
 }

@@ -321,7 +321,7 @@ function eventPayload<T>(event: KBrainEvent): T | undefined {
 }
 
 function abortError(): Error {
-  return new Error("K-brain turn aborted");
+  return new Error("ZeroAgent engine turn aborted");
 }
 
 function isSessionBusyError(error: unknown) {
@@ -466,7 +466,7 @@ export async function runKBrainTurn(params: KBrainTurnParams): Promise<Assistant
 
 async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMessage> {
   if (params.options?.client_tools?.length) {
-    throw new Error("ZeroAgent tools must execute in K-brain, not in the frontend");
+    throw new Error("ZeroAgent tools must execute in ZeroAgent engine, not in the frontend");
   }
   const started = performance.now();
   let progress: RunProgress = { stage: "connecting" };
@@ -526,7 +526,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     for (let attempt = 1; ; attempt += 1) {
       const found = await client.lookupRun(kbrainSessionId, requestId, params.signal);
       if (found) return found;
-      if (Date.now() > deadline) throw new Error("K-brain did not start the next goal round");
+      if (Date.now() > deadline)
+        throw new Error("ZeroAgent engine did not start the next goal round");
       // 后端启动续跑失败会把目标改成暂停；会话不存在时 getGoal 直接报错。定期核对
       // 目标状态，这两种情况立即结束，不必空等到超时。
       if (attempt % goalAttachCheckEvery === 0) {
@@ -537,7 +538,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
           const late = await client.lookupRun(kbrainSessionId, requestId, params.signal);
           if (late) return late;
           throw new Error(
-            `K-brain did not start the next goal round (goal ${goal.status}${goal.reason ? `: ${goal.reason}` : ""})`,
+            `ZeroAgent engine did not start the next goal round (goal ${goal.status}${goal.reason ? `: ${goal.reason}` : ""})`,
           );
         }
       }
@@ -567,7 +568,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         params.signal,
       );
       params.onGoalUpdate?.(state);
-      if (!state.run) throw new Error("K-brain goal response has no run");
+      if (!state.run) throw new Error("ZeroAgent engine goal response has no run");
       return state.run;
     }
     return client.startRun({ conversation_id: kbrainSessionId, ...run }, params.signal);
@@ -609,7 +610,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     throw abortError();
   }
   if (accepted.conversation_id !== kbrainSessionId || !accepted.run_id) {
-    throw new Error("K-brain returned an invalid run identity");
+    throw new Error("ZeroAgent engine returned an invalid run identity");
   }
   reportProgress({ stage: "preparing" });
 
@@ -641,11 +642,13 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
 
   const onEvent = (event: KBrainEvent) => {
     if (event.conversation_id !== kbrainSessionId) {
-      throw new Error("K-brain event identity mismatch");
+      throw new Error("ZeroAgent engine event identity mismatch");
     }
     if (!Number.isInteger(event.seq) || event.seq <= afterSeq) return;
     if (event.seq !== afterSeq + 1)
-      throw new Error(`K-brain event sequence gap: expected ${afterSeq + 1}, got ${event.seq}`);
+      throw new Error(
+        `ZeroAgent engine event sequence gap: expected ${afterSeq + 1}, got ${event.seq}`,
+      );
     afterSeq = event.seq;
     // Session streams can include background tasks started by an earlier run.
     if (event.run_id !== accepted.run_id && !event.type.startsWith("subagent.")) return;
@@ -775,7 +778,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         const onQuestionRequest = params.onQuestionRequest;
         if (!request || !onQuestionRequest) {
           permissionFailure = new Error(
-            "K-brain requested a question but no question callback is configured",
+            "ZeroAgent engine requested a question but no question callback is configured",
           );
           streamAbortController.abort();
           return;
@@ -857,7 +860,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         void Promise.resolve()
           .then(
             (): KBrainClientToolResult => ({
-              text: `${request.tool} must execute in K-brain; ZeroAgent does not execute client tools.`,
+              text: `${request.tool} must execute in ZeroAgent engine; ZeroAgent does not execute client tools.`,
               is_error: true,
             }),
           )
@@ -890,7 +893,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         const request = eventPayload<KBrainPermissionRequest>(event);
         if (!request || !params.onPermissionRequest) {
           permissionFailure = new Error(
-            "K-brain requested permission but no permission callback is configured",
+            "ZeroAgent engine requested permission but no permission callback is configured",
           );
           streamAbortController.abort();
           return;
@@ -940,7 +943,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       }
       case "run.failed":
         terminal = "error";
-        errorMessage = eventPayload<{ error?: string }>(event)?.error ?? "K-brain run failed";
+        errorMessage =
+          eventPayload<{ error?: string }>(event)?.error ?? "ZeroAgent engine run failed";
         sawTerminal = true;
         streamAbortController.abort();
         cancelPendingPermissions();
@@ -978,7 +982,9 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         );
         if (!sawTerminal) {
           if (reconnects >= maxReconnects)
-            throw new Error("K-brain event stream ended before the run reached a terminal event");
+            throw new Error(
+              "ZeroAgent engine event stream ended before the run reached a terminal event",
+            );
           reconnects += 1;
         }
       } catch (error) {
@@ -1005,24 +1011,27 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
 
   if (!sawTerminal && terminal === "stop") {
     terminal = "error";
-    errorMessage ??= "K-brain run ended without a terminal event";
+    errorMessage ??= "ZeroAgent engine run ended without a terminal event";
   }
   if (terminal === "stop" && !finalMessage && !text && !thinking && calls.size === 0) {
     terminal = "error";
-    errorMessage ??= "K-brain run completed without an assistant message";
+    errorMessage ??= "ZeroAgent engine run completed without an assistant message";
   }
 
   let content = finalContent(finalMessage, text, thinking, calls);
   if (terminal === "stop" && content.length === 0) {
     terminal = "error";
-    errorMessage ??= "K-brain run completed without an assistant result";
+    errorMessage ??= "ZeroAgent engine run completed without an assistant result";
   }
   if (content.length === 0 && (terminal === "error" || terminal === "aborted")) {
     content = [
       {
         type: "text",
         text:
-          errorMessage ?? (terminal === "aborted" ? "K-brain turn aborted" : "K-brain run failed"),
+          errorMessage ??
+          (terminal === "aborted"
+            ? "ZeroAgent engine turn aborted"
+            : "ZeroAgent engine run failed"),
       },
     ];
   }

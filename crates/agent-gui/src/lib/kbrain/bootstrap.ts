@@ -38,7 +38,9 @@ function asError(error: unknown): Error {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
-    throw signal.reason instanceof Error ? signal.reason : new Error("K-brain bootstrap cancelled");
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error("ZeroAgent engine bootstrap cancelled");
   }
 }
 
@@ -64,7 +66,9 @@ function withTimeout<T>(
     const abort = () => {
       settle(
         reject,
-        signal?.reason instanceof Error ? signal.reason : new Error("K-brain bootstrap cancelled"),
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new Error("ZeroAgent engine bootstrap cancelled"),
       );
     };
 
@@ -79,7 +83,7 @@ function withTimeout<T>(
 
     timer = setTimeout(
       () => {
-        const error = new Error("K-brain backend health check timed out");
+        const error = new Error("ZeroAgent engine health check timed out");
         settle(reject, error);
         onTimeout?.(error);
       },
@@ -100,7 +104,7 @@ async function verifyBrowserHealth(
     requestController.abort(
       options.signal?.reason instanceof Error
         ? options.signal.reason
-        : new Error("K-brain bootstrap cancelled"),
+        : new Error("ZeroAgent engine bootstrap cancelled"),
     );
   };
   options.signal?.addEventListener("abort", abortRequest, { once: true });
@@ -112,7 +116,7 @@ async function verifyBrowserHealth(
       },
       signal: requestController.signal,
     });
-    if (!response.ok) throw new Error(`K-brain backend health check failed (${response.status})`);
+    if (!response.ok) throw new Error(`ZeroAgent engine health check failed (${response.status})`);
     return (await response.json()) as { status?: unknown; version?: unknown };
   })();
   try {
@@ -124,7 +128,7 @@ async function verifyBrowserHealth(
     );
     if (health.status !== "ok" || health.version !== "kbrain.agent.v1") {
       throw new Error(
-        `K-brain backend protocol mismatch (reported version ${String(health.version)})`,
+        `ZeroAgent engine protocol mismatch (reported version ${String(health.version)})`,
       );
     }
   } finally {
@@ -157,11 +161,10 @@ export async function connectKBrainBackend(
   throwIfAborted(options.signal);
   if (!isTauriHost()) {
     const connection: KBrainRuntimeConnection = getConfiguredKBrainConnection() ?? {
-      baseUrl: (import.meta.env?.VITE_KBRAIN_URL?.trim() || "http://127.0.0.1:47321").replace(
-        /\/+$/,
-        "",
-      ),
-      token: import.meta.env?.VITE_KBRAIN_TOKEN?.trim() ?? "",
+      baseUrl: (
+        import.meta.env?.VITE_ZEROAGENT_BACKEND_URL?.trim() || "http://127.0.0.1:47321"
+      ).replace(/\/+$/, ""),
+      token: import.meta.env?.VITE_ZEROAGENT_BACKEND_TOKEN?.trim() ?? "",
       protocolVersion: "kbrain.agent.v1",
     };
     await verifyBrowserHealth(connection, options);

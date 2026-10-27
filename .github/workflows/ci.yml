@@ -174,7 +174,7 @@ jobs:
         run: |
           pnpm build:kbrain:source --target x86_64-unknown-linux-gnu
           pnpm prepare:kbrain:release --target x86_64-unknown-linux-gnu
-          echo "LIVEAGENT_KBRAIN_BINARY=$GITHUB_WORKSPACE/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+          echo "ZEROAGENT_BACKEND_BINARY=$GITHUB_WORKSPACE/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
 
       - name: Test frontend modules
         working-directory: crates/agent-gui
@@ -247,24 +247,24 @@ jobs:
       - name: Test Tauri library
         env:
           CARGO_TERM_COLOR: always
-          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+          ZEROAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
         run: cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib
 
       - name: Verify native export and locked-backend migration rollback fixture
         env:
           CARGO_TERM_COLOR: always
-          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
-          KBRAIN_MIGRATION_ACCEPTANCE_DIR: ${{ github.workspace }}/.codex-artifacts/ci-migration
+          ZEROAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+          ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR: ${{ github.workspace }}/.codex-artifacts/ci-migration
         run: |
-          mkdir -p "$KBRAIN_MIGRATION_ACCEPTANCE_DIR"
+          mkdir -p "$ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR"
           cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib exports_checkpoint_acceptance_fixture
-          node scripts/check-zeroagent-migration.mjs "$KBRAIN_MIGRATION_ACCEPTANCE_DIR"
+          node scripts/check-zeroagent-migration.mjs "$ZEROAGENT_HISTORY_IMPORT_ACCEPTANCE_DIR"
 
       - name: Verify fresh profile and current backup format
         env:
           CARGO_TERM_COLOR: always
-          LIVEAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
-          LIVEAGENT_KBRAIN_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu
+          ZEROAGENT_DEV_HOME: ${{ runner.temp }}/zeroagent-native-home
+          ZEROAGENT_BACKEND_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu
         run: |
           cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib fresh_schema_does_not_create_or_read_old_provider_archives
           cargo test --locked --manifest-path crates/agent-gui/src-tauri/Cargo.toml --lib parse_backup_document_rejects_older_versions_without_importing_domains

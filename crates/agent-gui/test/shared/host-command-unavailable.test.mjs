@@ -16,7 +16,7 @@ test("recognises both hosts that lack a desktop command", () => {
     true,
   );
   assert.equal(
-    isHostCommandUnavailable(new Error("Desktop runtime command checkpoint_list is unavailable in K-brain mode; use the K-brain backend capability.")),
+    isHostCommandUnavailable(new Error("Desktop runtime command checkpoint_list is unavailable in K-brain mode; use the ZeroAgent engine capability.")),
     true,
   );
   assert.equal(

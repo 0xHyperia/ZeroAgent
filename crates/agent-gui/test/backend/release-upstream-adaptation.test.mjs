@@ -36,8 +36,8 @@ test("release builds cannot register the desktop development MCP bridge", () => 
     desktopRun,
     /#\[cfg\(debug_assertions\)\]\s*let builder = builder\.plugin\(\s*tauri_plugin_mcp_bridge::Builder::new\(\)[\s\S]*?\.build\(\),\s*\);/,
   );
-  assert.equal(lib.match(/LIVEAGENT_DEV_MCP_BRIDGE_PORT/g)?.length, 1);
-  assert.match(desktopRun, /std::env::var\("LIVEAGENT_DEV_MCP_BRIDGE_PORT"\)/);
+  assert.equal(lib.match(/ZEROAGENT_DEV_MCP_BRIDGE_PORT/g)?.length, 1);
+  assert.match(desktopRun, /std::env::var\("ZEROAGENT_DEV_MCP_BRIDGE_PORT"\)/);
   assert.match(desktopRun, /\.unwrap_or\(9223\)/);
 });
 

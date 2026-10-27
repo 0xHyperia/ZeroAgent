@@ -29,11 +29,12 @@ export async function runGatewayComposerAction(
   deps: GatewayComposerActionDeps,
 ): Promise<unknown> {
   const { client } = deps;
-  if (!client) throw new Error("K-brain backend is not enabled on the desktop");
+  if (!client) throw new Error("ZeroAgent engine is not enabled on the desktop");
   const conversationId = event.conversationId.trim();
   if (!conversationId) throw new Error("conversation is unavailable");
   const sessionId = deps.getKBrainSessionId(conversationId)?.trim();
-  if (!sessionId) throw new Error("conversation has no K-brain session yet; send a message first");
+  if (!sessionId)
+    throw new Error("conversation has no ZeroAgent engine session yet; send a message first");
   const action = event.action.trim();
 
   if (event.kind === "goal") {

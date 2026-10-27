@@ -52,7 +52,7 @@ test("desktop and CI jobs prepare the reviewed fixed-source adaptation", async (
   assert.doesNotMatch(gui, /go build|KBRAIN_REPO_ROOT|\.kbrain-src/);
   const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.match(packageJson.scripts["build:kbrain:source"], /--patch-manifest patches\/kbrain\/manifest.json/);
-  assert.match(packageJson.scripts["prepare:kbrain:release"], /--release --patch-manifest patches\/kbrain\/manifest.json --artifact-dir \.liveagent\/kbrain-artifact/);
+  assert.match(packageJson.scripts["prepare:kbrain:release"], /--release --patch-manifest patches\/kbrain\/manifest.json --artifact-dir \.zeroagent\/backend-artifact/);
   assert.match(workflow, /verify-kbrain-packaging\.mjs[^\n]*--patch-manifest patches\/kbrain\/manifest.json/);
 });
 

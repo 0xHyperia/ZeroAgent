@@ -90,14 +90,14 @@ impl std::fmt::Debug for LocalGatewayOptions {
     }
 }
 
-const IMAGE_ENV_URL: &str = "LIVEAGENT_GATEWAY_IMAGE_KBRAIN_URL";
-const IMAGE_ENV_TOKEN: &str = "LIVEAGENT_GATEWAY_IMAGE_KBRAIN_TOKEN";
+const IMAGE_ENV_URL: &str = "ZEROAGENT_GATEWAY_IMAGE_BACKEND_URL";
+const IMAGE_ENV_TOKEN: &str = "ZEROAGENT_GATEWAY_IMAGE_BACKEND_TOKEN";
 /// Inherited shell settings must not turn on the legacy chat-backend image path
 /// or the direct K-Brain chat relay in a desktop-owned Gateway.
 const INHERITED_IMAGE_ENV: [&str; 3] = [
-    "LIVEAGENT_GATEWAY_IMAGE_SINGLE_USER",
-    "LIVEAGENT_GATEWAY_KBRAIN_URL",
-    "LIVEAGENT_GATEWAY_KBRAIN_TOKEN",
+    "ZEROAGENT_GATEWAY_IMAGE_SINGLE_USER",
+    "ZEROAGENT_GATEWAY_BACKEND_URL",
+    "ZEROAGENT_GATEWAY_BACKEND_TOKEN",
 ];
 
 /// Sets the Image Studio pair (or clears it) and strips inherited chat-backend settings.
@@ -336,17 +336,17 @@ impl LocalGatewayManager {
             // Desktop ownership uses its dedicated data directory and plain
             // loopback HTTP. Shell/developer settings for an external Gateway
             // must not redirect its database or enable unexpected TLS.
-            .env_remove("LIVEAGENT_GATEWAY_AGENT_DB")
-            .env_remove("LIVEAGENT_GATEWAY_TLS_CERT")
-            .env_remove("LIVEAGENT_GATEWAY_TLS_KEY")
+            .env_remove("ZEROAGENT_GATEWAY_AGENT_DB")
+            .env_remove("ZEROAGENT_GATEWAY_TLS_CERT")
+            .env_remove("ZEROAGENT_GATEWAY_TLS_KEY")
             .env(
-                "LIVEAGENT_GATEWAY_HTTP_ADDR",
+                "ZEROAGENT_GATEWAY_HTTP_ADDR",
                 format!("127.0.0.1:{}", options.port),
             )
-            .env("LIVEAGENT_GATEWAY_DATA_DIR", &options.data_dir)
-            .env("LIVEAGENT_GATEWAY_TOKEN", &options.token)
-            .env("LIVEAGENT_GATEWAY_INSTANCE_NONCE", &nonce)
-            .env("LIVEAGENT_GATEWAY_DESKTOP_PARENT", "1")
+            .env("ZEROAGENT_GATEWAY_DATA_DIR", &options.data_dir)
+            .env("ZEROAGENT_GATEWAY_TOKEN", &options.token)
+            .env("ZEROAGENT_GATEWAY_INSTANCE_NONCE", &nonce)
+            .env("ZEROAGENT_GATEWAY_DESKTOP_PARENT", "1")
             // Keep Child.stdin's writer owned for the complete desktop process
             // lifetime. OS handle closure on abrupt desktop termination gives
             // Go EOF too, including Tauri dev watcher restarts which skip Drop.
@@ -558,7 +558,7 @@ mod image_backend_tests {
     #[test]
     fn spawned_command_gets_the_image_pair_and_never_the_chat_backend() {
         let mut command = Command::new("gateway");
-        command.env("LIVEAGENT_GATEWAY_KBRAIN_URL", "http://127.0.0.1:9");
+        command.env("ZEROAGENT_GATEWAY_BACKEND_URL", "http://127.0.0.1:9");
         apply_image_backend_env(
             &mut command,
             Some(&backend("http://127.0.0.1:47321", "kb-fixture")),

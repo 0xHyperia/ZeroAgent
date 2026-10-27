@@ -495,9 +495,9 @@ mod tests {
     ///
     /// 凭据只从环境变量读，永不落进仓库：
     /// ```text
-    /// LIVEAGENT_WEBDAV_URL=https://dav.jianguoyun.com/dav/ \
-    /// LIVEAGENT_WEBDAV_USER=... \
-    /// LIVEAGENT_WEBDAV_PASS=... \
+    /// ZEROAGENT_WEBDAV_URL=https://dav.jianguoyun.com/dav/ \
+    /// ZEROAGENT_WEBDAV_USER=... \
+    /// ZEROAGENT_WEBDAV_PASS=... \
     /// cargo test --lib services::webdav::tests::live -- --ignored --nocapture
     /// ```
     /// 三个变量缺任一即跳过，避免在 CI 上变成失败。
@@ -505,14 +505,14 @@ mod tests {
     /// 四段合成一个用例而不是四个：它们共用同一个远端目录，并行跑会互相踩踏
     /// （建目录/写文件/删文件的顺序不确定）。
     #[tokio::test]
-    #[ignore = "需要真实 WebDAV 账号，通过 LIVEAGENT_WEBDAV_* 环境变量提供"]
+    #[ignore = "需要真实 WebDAV 账号，通过 ZEROAGENT_WEBDAV_* 环境变量提供"]
     async fn live_webdav_end_to_end() {
         let (Ok(base_url), Ok(username), Ok(password)) = (
-            std::env::var("LIVEAGENT_WEBDAV_URL"),
-            std::env::var("LIVEAGENT_WEBDAV_USER"),
-            std::env::var("LIVEAGENT_WEBDAV_PASS"),
+            std::env::var("ZEROAGENT_WEBDAV_URL"),
+            std::env::var("ZEROAGENT_WEBDAV_USER"),
+            std::env::var("ZEROAGENT_WEBDAV_PASS"),
         ) else {
-            eprintln!("跳过：未设置 LIVEAGENT_WEBDAV_URL / _USER / _PASS");
+            eprintln!("跳过：未设置 ZEROAGENT_WEBDAV_URL / _USER / _PASS");
             return;
         };
 

@@ -4,6 +4,7 @@
 .claude
 .codex-artifacts
 .liveagent
+.zeroagent
 
 **/node_modules
 **/dist

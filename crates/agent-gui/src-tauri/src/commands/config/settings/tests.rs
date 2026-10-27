@@ -3541,7 +3541,7 @@ mod tests {
     /// 真实服务器上的「两台设备」往返。**默认不跑**（`#[ignore]`）。
     ///
     /// ```text
-    /// LIVEAGENT_WEBDAV_URL=... LIVEAGENT_WEBDAV_USER=... LIVEAGENT_WEBDAV_PASS=... \
+    /// ZEROAGENT_WEBDAV_URL=... ZEROAGENT_WEBDAV_USER=... ZEROAGENT_WEBDAV_PASS=... \
     /// cargo test --lib settings::tests::live -- --ignored --nocapture
     /// ```
     ///
@@ -3551,14 +3551,14 @@ mod tests {
     /// manifest 构造与校验函数，网络部分则完全走真实 `services::webdav`。
     /// 因此覆盖的是 AC7（跨设备一致）与 AC9（校验和把关），而非命令壳。
     #[tokio::test]
-    #[ignore = "需要真实 WebDAV 账号，通过 LIVEAGENT_WEBDAV_* 环境变量提供"]
+    #[ignore = "需要真实 WebDAV 账号，通过 ZEROAGENT_WEBDAV_* 环境变量提供"]
     async fn live_cross_device_snapshot_round_trip() {
         let (Ok(url), Ok(username), Ok(password)) = (
-            std::env::var("LIVEAGENT_WEBDAV_URL"),
-            std::env::var("LIVEAGENT_WEBDAV_USER"),
-            std::env::var("LIVEAGENT_WEBDAV_PASS"),
+            std::env::var("ZEROAGENT_WEBDAV_URL"),
+            std::env::var("ZEROAGENT_WEBDAV_USER"),
+            std::env::var("ZEROAGENT_WEBDAV_PASS"),
         ) else {
-            eprintln!("跳过：未设置 LIVEAGENT_WEBDAV_URL / _USER / _PASS");
+            eprintln!("跳过：未设置 ZEROAGENT_WEBDAV_URL / _USER / _PASS");
             return;
         };
 

@@ -281,7 +281,7 @@ test("native K-brain host routes backend-owned memory over HTTP and rejects desk
     "subagent_upsert",
     "trajectory_append",
   ]) {
-    await assert.rejects(invoke(command), /unavailable in K-brain mode/);
+    await assert.rejects(invoke(command), /unavailable in ZeroAgent engine mode/);
   }
   assert.deepEqual(native, [], "forbidden backend-owned commands must not invoke Tauri");
   assert.equal(await invoke("gateway_chat_mark_local_started"), "native-result");
@@ -316,7 +316,7 @@ test("checkpoint provider exposes unsupported reason and disables backend reads"
     disabled: false,
   });
   assert.equal(element.props.disabled, true);
-  assert.match(element.props.disabledReason, /K-brain.*不支持.*检查点/);
+  assert.match(element.props.disabledReason, /ZeroAgent 执行模式.*不支持.*检查点/);
 });
 
 test("K-brain hooks never execute the desktop runner", async () => {

@@ -14,7 +14,7 @@ export async function importLegacyMcpSettings(
   if (!connection?.managedLocal || legacy.servers.length === 0) return document;
   const settings = (document as { settings?: { servers?: unknown[]; selected?: string[] } })
     ?.settings;
-  if (!Array.isArray(settings?.servers)) throw new Error("Malformed K-brain MCP settings");
+  if (!Array.isArray(settings?.servers)) throw new Error("Malformed ZeroAgent engine MCP settings");
   const key = `${IMPORTED_KEY}:${connection.storageId ?? "managed-local"}`;
   let imported: string[] = [];
   try {

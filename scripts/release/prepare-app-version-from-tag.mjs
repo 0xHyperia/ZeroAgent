@@ -9,10 +9,10 @@ function usage() {
     "Usage: prepare-app-version-from-tag.mjs <release-tag> [options]",
     "",
     "Options:",
-    "  --github-env <path>      Append LIVEAGENT_* variables for later workflow steps.",
+    "  --github-env <path>      Append ZEROAGENT_* variables for later workflow steps.",
     "  --github-output <path>   Append release metadata as GitHub Action step outputs.",
     "  --tauri-config <path>    Write a generated Tauri config overlay with the app version.",
-    "                          Includes LIVEAGENT_UPDATER_PUBLIC_KEY when configured.",
+    "                          Includes ZEROAGENT_UPDATER_PUBLIC_KEY when configured.",
     "  --json                   Print metadata as JSON.",
   ].join("\n");
 }
@@ -86,7 +86,7 @@ function appendLines(path, lines) {
 function writeTauriConfig(path, appVersion) {
   mkdirSync(dirname(path), { recursive: true });
   const config = tauriVersionConfig(appVersion);
-  const publicKey = process.env.LIVEAGENT_UPDATER_PUBLIC_KEY?.trim();
+  const publicKey = process.env.ZEROAGENT_UPDATER_PUBLIC_KEY?.trim();
   if (publicKey) config.plugins = { updater: { pubkey: publicKey } };
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
 }
@@ -94,7 +94,7 @@ function writeTauriConfig(path, appVersion) {
 try {
   const options = parseArgs(process.argv.slice(2));
   const metadata = parseReleaseVersion(
-    options.releaseTag || process.env.LIVEAGENT_RELEASE_TAG || process.env.RELEASE_TAG,
+    options.releaseTag || process.env.ZEROAGENT_RELEASE_TAG || process.env.RELEASE_TAG,
   );
 
   if (options.tauriConfigPath) {
@@ -103,12 +103,12 @@ try {
 
   if (options.githubEnvPath) {
     const envLines = [
-      `LIVEAGENT_RELEASE_TAG=${metadata.releaseTag}`,
-      `LIVEAGENT_APP_VERSION=${metadata.appVersion}`,
-      `LIVEAGENT_IS_PRERELEASE=${metadata.isPrerelease}`,
+      `ZEROAGENT_RELEASE_TAG=${metadata.releaseTag}`,
+      `ZEROAGENT_APP_VERSION=${metadata.appVersion}`,
+      `ZEROAGENT_IS_PRERELEASE=${metadata.isPrerelease}`,
     ];
     if (options.tauriConfigPath) {
-      envLines.push(`LIVEAGENT_TAURI_VERSION_CONFIG=${options.tauriConfigPath}`);
+      envLines.push(`ZEROAGENT_TAURI_VERSION_CONFIG=${options.tauriConfigPath}`);
     }
     appendLines(options.githubEnvPath, envLines);
   }

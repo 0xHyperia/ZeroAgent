@@ -468,9 +468,10 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.safety.autoEditDesc": "自动批准文件写入和编辑，命令与其他操作仍需确认",
   "chat.safety.always": "始终允许",
   "chat.safety.alwaysDesc":
-    "使用 K-brain always 模式，跳过交互审批和 AI 审查，仍遵守显式禁止及目录边界",
+    "使用 ZeroAgent 后端 always 模式，跳过交互审批和 AI 审查，仍遵守显式禁止及目录边界",
   "chat.safety.autoReview": "自动审查",
-  "chat.safety.autoReviewDesc": "由 K-brain AI 审查；低风险自动批准，未知或高风险交由用户确认",
+  "chat.safety.autoReviewDesc":
+    "由 ZeroAgent 后端 AI 审查；低风险自动批准，未知或高风险交由用户确认",
   "chat.safety.sandbox": "沙箱",
   "chat.safety.sandboxDesc": "在沙箱内运行，写入受限、敏感目录不可读",
   // Windows 联网后端（受限令牌 WRITE_RESTRICTED）只围栏“写”，读广泛放行 ⇒ 该平台不得
@@ -588,7 +589,7 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.commands.loopInterval": "间隔",
   "chat.commands.loopPrompt": "提示词",
   "chat.commands.loopHint":
-    "在独立上下文中立即首跑，随后按间隔执行（最短 1 分钟）。7 天后过期，最多 50 个活跃任务。提示词需包含完整上下文，结果在当前对话空闲时返回。K-brain 需保持运行。停止：",
+    "在独立上下文中立即首跑，随后按间隔执行（最短 1 分钟）。7 天后过期，最多 50 个活跃任务。提示词需包含完整上下文，结果在当前对话空闲时返回。ZeroAgent 后端 需保持运行。停止：",
   "chat.commands.loopEveryMinutes": "每 {count} 分钟",
   "chat.commands.loopEveryHours": "每 {count} 小时",
   "chat.commands.loopEveryDays": "每 {count} 天",
@@ -1328,11 +1329,11 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "git.branchSelector.worktreeDirectoryName": "目录名",
   "git.branchSelector.worktreeDirectoryPlaceholder": "feature-my-branch",
   "git.branchSelector.worktreeParentDirectory": "保存位置",
-  "git.branchSelector.worktreeDefaultLocation": "默认位置（~/.liveagent/worktree）",
+  "git.branchSelector.worktreeDefaultLocation": "默认位置（~/.zeroagent/worktree）",
   "git.branchSelector.worktreeUseDefaultLocation": "恢复默认位置",
   "git.branchSelector.worktreeChooseParent": "选择…",
   "git.branchSelector.worktreeLocationHint":
-    "将保存到 ~/.liveagent/worktree 下的独立目录，创建后自动在侧边栏打开。",
+    "将保存到 ~/.zeroagent/worktree 下的独立目录，创建后自动在侧边栏打开。",
   "git.branchSelector.worktreeCustomLocationHint":
     "将在所选目录下创建 Worktree 文件夹，创建后自动在侧边栏打开。",
   "git.branchSelector.worktreeFailed": "创建 Worktree 失败",

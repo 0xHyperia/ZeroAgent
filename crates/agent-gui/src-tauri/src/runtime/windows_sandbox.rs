@@ -40,7 +40,7 @@
 //!(对齐 Linux bwrap 省略 `--die-with-parent`);启动失败退出码(0xC0000142/0135/0022
 //! 以及 CLR `0xE0434352` / HRESULT `0x80070005`)转可读中英诊断经既有管道上传。
 //! 盖章跳过等诊断默认不写子进程 stderr(会污染 ManagedProcess 日志);设置
-//! `LIVEAGENT_SANDBOX_LOG=1` 才回落到 stderr。
+//! `ZEROAGENT_SANDBOX_LOG=1` 才回落到 stderr。
 
 /// 非 Windows:自我再执行启动器不存在,空操作。
 #[cfg(not(windows))]
@@ -78,13 +78,13 @@ pub fn run_sandbox_launcher_if_requested() {
                 Err(err) => {
                     // fail-closed:已进入沙箱启动器分支,任何建令牌/派生失败都必须让命令
                     // 整体不执行,绝不回退到无沙箱运行。
-                    eprintln!("liveagent sandbox launcher failed: {err}");
+                    eprintln!("ZeroAgent sandbox launcher failed: {err}");
                     127
                 }
             }
         }
         Err(err) => {
-            eprintln!("liveagent sandbox launcher: invalid arguments: {err}");
+            eprintln!("ZeroAgent sandbox launcher: invalid arguments: {err}");
             127
         }
     };
@@ -135,7 +135,7 @@ mod win {
     };
 
     fn sandbox_diag(msg: impl std::fmt::Display) {
-        if std::env::var_os("LIVEAGENT_SANDBOX_LOG").is_some() {
+        if std::env::var_os("ZEROAGENT_SANDBOX_LOG").is_some() {
             eprintln!("{msg}");
         }
     }
@@ -437,7 +437,7 @@ mod win {
         for entry in walkdir::WalkDir::new(path).into_iter().flatten() {
             let name = entry.path().to_string_lossy();
             if let Err(err) = ensure_low_integrity_label(SE_FILE_OBJECT, &name, launcher_user_sid) {
-                sandbox_diag(format!("liveagent sandbox: low IL skipped ({name}): {err}"));
+                sandbox_diag(format!("ZeroAgent sandbox: low IL skipped ({name}): {err}"));
             }
         }
     }
@@ -461,7 +461,7 @@ mod win {
             };
             if rc != 0 {
                 sandbox_diag(format!(
-                    "liveagent sandbox: std handle low IL skipped ({label}): error={rc}"
+                    "ZeroAgent sandbox: std handle low IL skipped ({label}): error={rc}"
                 ));
             }
             Ok(())
@@ -484,7 +484,7 @@ mod win {
             ensure_low_integrity_label(SE_FILE_OBJECT, &temp.to_string_lossy(), launcher_user_sid)
         {
             sandbox_diag(format!(
-                "liveagent sandbox: TEMP low IL skipped ({temp:?}): {err}"
+                "ZeroAgent sandbox: TEMP low IL skipped ({temp:?}): {err}"
             ));
         }
         if !looks_like_powershell(program) {
@@ -502,7 +502,7 @@ mod win {
             if let Err(err) = ensure_low_integrity_label(SE_REGISTRY_KEY, &name, launcher_user_sid)
             {
                 sandbox_diag(format!(
-                    "liveagent sandbox: registry low IL skipped ({name}): {err}"
+                    "ZeroAgent sandbox: registry low IL skipped ({name}): {err}"
                 ));
             }
         }
@@ -519,7 +519,7 @@ mod win {
                 launcher_user_sid,
             ) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: runtime dir low IL skipped ({dir:?}): {err}"
+                    "ZeroAgent sandbox: runtime dir low IL skipped ({dir:?}): {err}"
                 ));
             }
         }
@@ -865,8 +865,8 @@ mod win {
     fn appcontainer_profile_sid(dir_key: &str) -> Result<AcSid, String> {
         let name = appcontainer_profile_name(dir_key);
         let name_w = to_wide(&name);
-        let display_w = to_wide("LiveAgent Sandbox (offline)");
-        let desc_w = to_wide("LiveAgent per-workspace offline sandbox");
+        let display_w = to_wide("ZeroAgent Sandbox (offline)");
+        let desc_w = to_wide("ZeroAgent per-workspace offline sandbox");
         let mut sid: PSID = null_mut();
         let created = unsafe {
             CreateAppContainerProfile(
@@ -1479,14 +1479,14 @@ mod win {
         for subkey in CNG_USER_REGISTRY_SUBKEYS {
             if let Err(err) = create_hkcu_key(subkey) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CNG registry create skipped ({subkey}): {err}"
+                    "ZeroAgent sandbox: CNG registry create skipped ({subkey}): {err}"
                 ));
                 continue;
             }
             let name = cng_named_registry_object(subkey);
             if let Err(err) = ensure_named_write_ace(SE_REGISTRY_KEY, &name, sid, KEY_ALL_ACCESS) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CNG registry ACE skipped ({name}): {err}"
+                    "ZeroAgent sandbox: CNG registry ACE skipped ({name}): {err}"
                 ));
             }
         }
@@ -1497,7 +1497,7 @@ mod win {
             if let Err(err) = ensure_plain_directory(&dir).and_then(|_| ensure_write_ace(&dir, sid))
             {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CNG dir ACE skipped ({dir:?}): {err}"
+                    "ZeroAgent sandbox: CNG dir ACE skipped ({dir:?}): {err}"
                 ));
             }
         }
@@ -1517,14 +1517,14 @@ mod win {
         for subkey in CLR_USER_REGISTRY_SUBKEYS {
             if let Err(err) = create_hkcu_key(subkey) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CLR registry create skipped ({subkey}): {err}"
+                    "ZeroAgent sandbox: CLR registry create skipped ({subkey}): {err}"
                 ));
                 continue;
             }
             let name = cng_named_registry_object(subkey);
             if let Err(err) = ensure_named_write_ace(SE_REGISTRY_KEY, &name, sid, KEY_ALL_ACCESS) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CLR registry ACE skipped ({name}): {err}"
+                    "ZeroAgent sandbox: CLR registry ACE skipped ({name}): {err}"
                 ));
             }
         }
@@ -1539,7 +1539,7 @@ mod win {
             };
             if let Err(err) = stamp {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CLR dir ACE skipped ({dir:?}): {err}"
+                    "ZeroAgent sandbox: CLR dir ACE skipped ({dir:?}): {err}"
                 ));
             }
         }
@@ -1563,7 +1563,7 @@ mod win {
             let name = cng_named_registry_object(subkey);
             if let Err(err) = remove_named_ace(SE_REGISTRY_KEY, &name, sid) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: legacy AppContainer registry ACE cleanup skipped \
+                    "ZeroAgent sandbox: legacy AppContainer registry ACE cleanup skipped \
                      ({name}): {err}"
                 ));
             }
@@ -1580,7 +1580,7 @@ mod win {
             }
             if let Err(err) = remove_write_ace(&dir, sid) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: legacy AppContainer runtime ACE cleanup skipped \
+                    "ZeroAgent sandbox: legacy AppContainer runtime ACE cleanup skipped \
                      ({dir:?}): {err}"
                 ));
             }
@@ -1602,7 +1602,7 @@ mod win {
             }
             if let Err(err) = ensure_write_ace(entry.path(), sid) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: CLR child ACE skipped ({:?}): {err}",
+                    "ZeroAgent sandbox: CLR child ACE skipped ({:?}): {err}",
                     entry.path()
                 ));
             }
@@ -1741,7 +1741,7 @@ mod win {
         for &sid in sids {
             match sid_string(sid) {
                 Ok(s) => sddl.push_str(&format!("(A;OICI;GA;;;{s})")),
-                Err(err) => sandbox_diag(format!("liveagent sandbox: SID to SDDL skipped: {err}")),
+                Err(err) => sandbox_diag(format!("ZeroAgent sandbox: SID to SDDL skipped: {err}")),
             }
         }
         let wide = to_wide(&sddl);
@@ -1836,7 +1836,7 @@ mod win {
         };
         let key = format!("{:016x}", hash_path_name(&nt));
         sandbox_diag(format!(
-            "liveagent sandbox: msys install key {key} from {nt}"
+            "ZeroAgent sandbox: msys install key {key} from {nt}"
         ));
         let prefix = if dll
             .file_name()
@@ -2022,7 +2022,7 @@ mod win {
         for (i, &sid) in sids.iter().enumerate() {
             if let Err(err) = ensure_kernel_handle_write_ace(handle, sid, access, label) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: kernel ACE skipped ({label}#{i}): {err}"
+                    "ZeroAgent sandbox: kernel ACE skipped ({label}#{i}): {err}"
                 ));
             }
         }
@@ -2030,7 +2030,7 @@ mod win {
 
     fn nt_set_dacl(handle: HANDLE, sd: *mut c_void, label: &str) {
         let Some(proc) = ntdll_proc(b"NtSetSecurityObject\0") else {
-            sandbox_diag("liveagent sandbox: NtSetSecurityObject unavailable");
+            sandbox_diag("ZeroAgent sandbox: NtSetSecurityObject unavailable");
             return;
         };
         type NtSetSecurityObjectFn = unsafe extern "system" fn(HANDLE, u32, *mut c_void) -> i32;
@@ -2038,7 +2038,7 @@ mod win {
         let status = unsafe { set(handle, DACL_SECURITY_INFORMATION, sd) };
         if status < 0 {
             sandbox_diag(format!(
-                "liveagent sandbox: NtSetSecurityObject({label}) ntstatus={status:#010X}"
+                "ZeroAgent sandbox: NtSetSecurityObject({label}) ntstatus={status:#010X}"
             ));
         }
     }
@@ -2054,7 +2054,7 @@ mod win {
                 DIRECTORY_ALL_ACCESS | GENERIC_ALL | WRITE_DAC,
                 nt_path,
             ),
-            Err(err) => sandbox_diag(format!("liveagent sandbox: open {nt_path} skipped: {err}")),
+            Err(err) => sandbox_diag(format!("ZeroAgent sandbox: open {nt_path} skipped: {err}")),
         }
     }
 
@@ -2063,7 +2063,7 @@ mod win {
             Ok(sd) => sd,
             Err(err) => {
                 sandbox_diag(format!(
-                    "liveagent sandbox: namespace SD skipped ({nt_path}): {err}"
+                    "ZeroAgent sandbox: namespace SD skipped ({nt_path}): {err}"
                 ));
                 stamp_directory_object(nt_path, sids);
                 stamp_directory_children(nt_path, sids, false);
@@ -2079,7 +2079,7 @@ mod win {
             Ok(dir) => Some(dir),
             Err(err) => {
                 sandbox_diag(format!(
-                    "liveagent sandbox: create {nt_path} skipped: {err}"
+                    "ZeroAgent sandbox: create {nt_path} skipped: {err}"
                 ));
                 open_directory_object(nt_path, access).ok()
             }
@@ -2148,7 +2148,7 @@ mod win {
                 DIRECTORY_ALL_ACCESS | GENERIC_ALL | WRITE_DAC,
                 nt_path,
             ),
-            Err(err) => sandbox_diag(format!("liveagent sandbox: stamp {nt_path} skipped: {err}")),
+            Err(err) => sandbox_diag(format!("ZeroAgent sandbox: stamp {nt_path} skipped: {err}")),
         }
     }
 
@@ -2305,7 +2305,7 @@ mod win {
         dir_key: &str,
         extra_sids: &[PSID],
     ) -> Result<PathBuf, String> {
-        let base = std::env::temp_dir().join(format!("liveagent-sandbox-{dir_key}"));
+        let base = std::env::temp_dir().join(format!("zeroagent-sandbox-{dir_key}"));
         // 路径确定性且可预测 ⇒ 另一同用户进程可能抢先把它建成 junction/symlink 指向敏感
         // 目录,使授权写 ACE 盖到目标、TEMP 重定向落进目标。拒绝 reparse point 以堵此路
         //(残留 TOCTOU:盖章/使用之间的替换需另一恶意同用户进程,严重度低)。
@@ -2315,7 +2315,7 @@ mod win {
         for (i, &extra) in extra_sids.iter().enumerate() {
             if let Err(err) = ensure_write_ace(&base, extra) {
                 sandbox_diag(format!(
-                    "liveagent sandbox: TEMP extra ACE skipped (#{i}): {err}"
+                    "ZeroAgent sandbox: TEMP extra ACE skipped (#{i}): {err}"
                 ));
             }
         }
@@ -2695,7 +2695,7 @@ mod win {
                 );
                 if !ok(AssignProcessToJobObject(job, pi.hProcess)) {
                     sandbox_diag(format!(
-                        "liveagent sandbox: {}",
+                        "ZeroAgent sandbox: {}",
                         last_error(
                             "AssignProcessToJobObject (continuing; taskkill /T still cascades)"
                         )
@@ -2720,7 +2720,7 @@ mod win {
             // loader 早期死亡(0xC0000142 等)只体现为裸退出码;补一条可读诊断,经
             // stderr 走既有管道上传(shell_runner 的候选探测回退也依赖这个退出码)。
             if let Some(hint) = loader_failure_hint(exit_code) {
-                eprintln!("liveagent sandbox: process exited with {exit_code:#010X}: {hint}");
+                eprintln!("ZeroAgent sandbox: process exited with {exit_code:#010X}: {hint}");
             }
             exit_code as i32
         };

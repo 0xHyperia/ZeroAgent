@@ -159,9 +159,9 @@ for (const generate of [completeAssistantMessage, streamAssistantMessage]) {
 
   const failures = [
     { name: "HTTP 503", reply: jsonReply({ error: "backend unavailable" }, 503), error: { message: "backend unavailable", status: 503 } },
-    { name: "wrong protocol version", reply: jsonReply({ ...answer, version: "v0" }), error: /Malformed K-brain text-generation response/ },
-    { name: "missing text", reply: jsonReply({ version: answer.version, model }), error: /Malformed K-brain text-generation response/ },
-    { name: "non-string text", reply: jsonReply({ ...answer, text: 42 }), error: /Malformed K-brain text-generation response/ },
+    { name: "wrong protocol version", reply: jsonReply({ ...answer, version: "v0" }), error: /Malformed ZeroAgent engine text-generation response/ },
+    { name: "missing text", reply: jsonReply({ version: answer.version, model }), error: /Malformed ZeroAgent engine text-generation response/ },
+    { name: "non-string text", reply: jsonReply({ ...answer, text: 42 }), error: /Malformed ZeroAgent engine text-generation response/ },
     { name: "missing model", reply: jsonReply({ version: answer.version, text: "answer" }), error: /model identity mismatch/ },
     { name: "wrong provider", reply: jsonReply({ ...answer, model: { ...model, provider: "other-provider" } }), error: /model identity mismatch/ },
     { name: "wrong model", reply: jsonReply({ ...answer, model: { ...model, model: "other-model" } }), error: /model identity mismatch/ },

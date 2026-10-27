@@ -229,7 +229,7 @@ fn exercise_native_mcp_adapted_sidecar_modes(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     assert_eq!(
-        artifact["platforms"][env!("LIVEAGENT_TARGET_TRIPLE")]["sha256"]["backend"],
+        artifact["platforms"][env!("ZEROAGENT_TARGET_TRIPLE")]["sha256"]["backend"],
         hash
     );
     let manifest = std::fs::read(concat!(

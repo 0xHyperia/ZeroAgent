@@ -10,11 +10,11 @@ function createStream(request: LlmStreamRequest): AssistantMessageEventStream {
 
   async function generate() {
     if (getProviderRuntimeBackend() !== "kbrain") {
-      throw new Error("K-brain backend is required for model generation");
+      throw new Error("ZeroAgent engine is required for model generation");
     }
     const provider = request.model.provider.trim();
     const model = request.model.id.trim();
-    if (!provider || !model) throw new Error("K-brain model identity is incomplete");
+    if (!provider || !model) throw new Error("ZeroAgent engine model identity is incomplete");
     const response = await createKBrainClient().generateText(
       {
         model: { provider, model },

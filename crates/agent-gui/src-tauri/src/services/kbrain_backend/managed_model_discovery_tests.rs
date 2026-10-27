@@ -19,68 +19,56 @@ impl ManagedCatalogFixture {
         let uncertain_image = Arc::new(AtomicBool::new(false));
         let fail_image = uncertain_image.clone();
         let worker = thread::spawn(move || {
-            use std::io::Write;
-            while !stop.load(Ordering::SeqCst) {
-                let (mut stream, _) = match listener.accept() {
-                    Ok(pair) => pair,
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(2));
-                        continue;
-                    }
-                    Err(error) => panic!("catalog accept failed: {error}"),
-                };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut reader = BufReader::new(&mut stream);
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    continue;
-                }
-                let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
-                let mut owned_key = false;
-                loop {
-                    line.clear();
-                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
-                        break;
-                    }
-                    if let Some((name, value)) = line.split_once(':') {
-                        if name.eq_ignore_ascii_case("authorization") {
-                            owned_key = value.trim() == "Bearer synthetic-owned-key";
-                        }
-                    }
-                }
-                drop(reader);
-                captured.lock().unwrap().push((path.clone(), owned_key));
-                let uncertain =
-                    path == "/v1/images/generations" && fail_image.load(Ordering::SeqCst);
-                let status = if uncertain {
-                    "500 Internal Server Error"
-                } else {
-                    "200 OK"
-                };
-                let body = if uncertain {
-                    r#"{"error":{"code":"synthetic_uncertain_result"}}"#.to_owned()
-                } else if path == "/v1/images/generations" {
-                    use base64::Engine as _;
-                    let image = base64::engine::general_purpose::STANDARD.encode(include_bytes!(
-                        concat!(env!("CARGO_MANIFEST_DIR"), "/icons/128x128.png")
-                    ));
-                    serde_json::json!({"data":[{"b64_json":image}]}).to_string()
-                } else {
-                    r#"{"data":[{"id":"native-managed-model"}]}"#.to_owned()
-                };
-                write!(
-                    stream,
-                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
                 .unwrap();
-            }
+            runtime.block_on(async move {
+                let app = axum::Router::new().fallback(move |request: axum::extract::Request| {
+                    let captured = captured.clone();
+                    let fail_image = fail_image.clone();
+                    async move {
+                        let path = request.uri().path().to_owned();
+                        let owned_key = request
+                            .headers()
+                            .get("authorization")
+                            .is_some_and(|value| value == "Bearer synthetic-owned-key");
+                        // Consume framed/chunked bodies using the same HTTP stack as production.
+                        axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                            .await
+                            .unwrap();
+                        captured.lock().unwrap().push((path.clone(), owned_key));
+                        let uncertain =
+                            path == "/v1/images/generations" && fail_image.load(Ordering::SeqCst);
+                        let status = if uncertain {
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                        } else {
+                            axum::http::StatusCode::OK
+                        };
+                        let body = if uncertain {
+                            serde_json::json!({"error":{"code":"synthetic_uncertain_result"}})
+                        } else if path == "/v1/images/generations" {
+                            use base64::Engine as _;
+                            let image =
+                                base64::engine::general_purpose::STANDARD.encode(include_bytes!(
+                                    concat!(env!("CARGO_MANIFEST_DIR"), "/icons/128x128.png")
+                                ));
+                            serde_json::json!({"data":[{"b64_json":image}]})
+                        } else {
+                            serde_json::json!({"data":[{"id":"native-managed-model"}]})
+                        };
+                        (status, axum::Json(body))
+                    }
+                });
+                axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), app)
+                    .with_graceful_shutdown(async move {
+                        while !stop.load(Ordering::SeqCst) {
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .unwrap();
+            });
         });
         Self {
             origin,
@@ -110,8 +98,10 @@ fn native_managed_image_job_crosses_facade_and_broker_without_replaying_provider
     state.profile_initialized.store(true, Ordering::SeqCst);
     *state.model_broker.lock().unwrap() = Some(broker);
     let temp = test_dir();
+    let renamed_root = BackendProfile::Local.backend_dir(temp.path());
+    let previous_root = renamed_root.with_file_name("kbrain");
     let private = state
-        .ensure_started_with_binary(binary, temp.path().join("backend"))
+        .ensure_started_with_binary(binary.clone(), previous_root.clone())
         .unwrap();
     let facade = BackendFacade::start(private.clone(), Arc::new(AtomicBool::new(true))).unwrap();
     let public = facade.connection();
@@ -229,7 +219,7 @@ fn native_managed_image_job_crosses_facade_and_broker_without_replaying_provider
     let unknown_id = unknown["job"]["id"].as_str().unwrap();
     let unknown_url = format!("{}/v1/image/jobs/{unknown_id}", public.base_url);
     let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    let unknown_snapshot = loop {
         let snapshot: serde_json::Value = client
             .get(&unknown_url)
             .bearer_auth(&public.token)
@@ -239,14 +229,14 @@ fn native_managed_image_job_crosses_facade_and_broker_without_replaying_provider
             .unwrap();
         if snapshot["job"]["status"] == "result_unknown" {
             assert_eq!(snapshot["job"]["assetIds"].as_array().unwrap().len(), 0);
-            break;
+            break snapshot;
         }
         assert!(
             Instant::now() < deadline,
             "unknown result timed out: {snapshot}"
         );
         thread::sleep(Duration::from_millis(25));
-    }
+    };
     loop {
         let deleted = client
             .delete(&unknown_url)
@@ -295,12 +285,46 @@ fn native_managed_image_job_crosses_facade_and_broker_without_replaying_provider
         seen.iter()
             .filter(|(path, _)| path == "/v1/images/generations")
             .count(),
-        2
+        2,
+        "provider requests: {seen:?}; unknown job: {unknown_snapshot}"
     );
     assert!(seen.iter().all(|(_, owned)| *owned));
     drop(seen);
     drop(facade);
     state.shutdown();
+
+    // Reopen the same real backend data after the v2 directory name changes.
+    let restarted = Arc::new(KBrainBackendState::default());
+    restarted.profile_initialized.store(true, Ordering::SeqCst);
+    let relocated = restarted
+        .ensure_started_with_binary(binary, renamed_root.clone())
+        .unwrap();
+    assert!(!previous_root.exists());
+    assert!(renamed_root.exists());
+    assert_eq!(
+        relocated.storage_id, private.storage_id,
+        "existing browser and credential scope stays stable"
+    );
+    let persisted: serde_json::Value = client
+        .get(format!("{}/v1/image/jobs/{id}", relocated.base_url))
+        .bearer_auth(&relocated.token)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(persisted["job"]["status"], "succeeded");
+    let persisted_image = client
+        .get(format!(
+            "{}/v1/image/assets/{asset}/content?variant=original",
+            relocated.base_url
+        ))
+        .bearer_auth(&relocated.token)
+        .send()
+        .unwrap()
+        .bytes()
+        .unwrap();
+    assert_eq!(persisted_image.as_ref(), image.as_ref());
+    restarted.shutdown();
 }
 impl Drop for ManagedCatalogFixture {
     fn drop(&mut self) {
