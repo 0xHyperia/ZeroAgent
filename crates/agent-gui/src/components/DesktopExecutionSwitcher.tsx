@@ -1,5 +1,11 @@
-import { ChevronDown, Loader2, MonitorSmartphone, X } from "@liveagent/ui/components/IconSet";
+import { ChevronDown, Loader2, MonitorSmartphone } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@liveagent/ui/components/ui/dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
 
@@ -123,31 +129,39 @@ export function DesktopExecutionSwitcher({
         )}
       </div>
       {pending && (
-        <div className="layer-modal fixed inset-0 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-[380px] rounded-md border bg-background p-5 shadow-2xl">
+        <Dialog open onOpenChange={(value) => !value && !busy && setPending(null)}>
+          <DialogContent
+            className="max-w-[380px] p-5"
+            closeDisabled={busy}
+            closeLabel="关闭"
+            showCloseButton
+          >
             <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold">确认切换设备</h2>
+              <div className="min-w-0 flex-1 pr-8">
+                <DialogTitle className="text-sm font-semibold">确认切换设备</DialogTitle>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {pending.device_id === localDeviceId ? "此电脑" : pending.name}
                 </p>
               </div>
-              <button type="button" title="关闭" onClick={() => setPending(null)}>
-                <X className="h-4 w-4" />
-              </button>
             </div>
-            <p className="mt-5 text-xs text-muted-foreground">将在所选设备中继续操作。</p>
-            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+            <DialogDescription className="mt-5 text-xs text-muted-foreground">
+              将在所选设备中继续操作。
+            </DialogDescription>
+            {error && (
+              <p role="alert" className="mt-3 text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setPending(null)}>
+              <Button variant="outline" disabled={busy} onClick={() => setPending(null)}>
                 取消
               </Button>
               <Button disabled={busy} onClick={() => void confirm()}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}确认切换
               </Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   );

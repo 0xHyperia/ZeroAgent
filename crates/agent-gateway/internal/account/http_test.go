@@ -404,6 +404,49 @@ func TestDeviceOwnershipSelectionAndDesktopHandoffAreIsolated(t *testing.T) {
 	}
 }
 
+func TestDesktopHandoffHTTPAcceptsSameAccountRefreshedToken(t *testing.T) {
+	service, store, handler := newAccountTestRuntime(t)
+	ctx := context.Background()
+	principal, err := service.DesktopSession(ctx, "access-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := &SelectionLease{
+		ID: "source-device-lease", UserID: principal.UserID, ControllerID: principal.ID,
+		RuntimeKind: RuntimeKindDeviceAgent, DeviceID: "owned-device", AgentID: "owned-device",
+		Scope: SelectionScopeDevice, ConversationID: "selected-conversation", ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := store.PutSelectionLease(ctx, lease); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"access-2", "refreshed-access-1"} {
+		request := httptest.NewRequest(http.MethodPost, "/api/desktop/handoff", strings.NewReader(`{"selection_lease":"source-device-lease"}`))
+		request.Header.Set("Authorization", "Bearer "+token)
+		result := httptest.NewRecorder()
+		handler.ServeHTTP(result, request)
+		if token == "access-2" {
+			if result.Code != http.StatusUnauthorized {
+				t.Fatalf("foreign handoff status=%d", result.Code)
+			}
+			continue
+		}
+		if result.Code != http.StatusOK {
+			t.Fatalf("refreshed handoff status=%d body=%s", result.Code, result.Body.String())
+		}
+		var response struct {
+			Code string `json:"handoff_code"`
+		}
+		if err := json.Unmarshal(result.Body.Bytes(), &response); err != nil || response.Code == "" {
+			t.Fatalf("missing one-use handoff code: err=%v", err)
+		}
+		consume := httptest.NewRecorder()
+		handler.ServeHTTP(consume, httptest.NewRequest(http.MethodGet, "/api/auth/handoff?code="+url.QueryEscape(response.Code), nil))
+		if consume.Code != http.StatusSeeOther || !strings.Contains(consume.Header().Get("Location"), "device_id=owned-device") || consume.Header().Get("Set-Cookie") == "" {
+			t.Fatalf("handoff did not establish the selected device session: status=%d", consume.Code)
+		}
+	}
+}
+
 func TestSelectionLeasePersistenceKeepsControllerButPublicResponseOmitsIt(t *testing.T) {
 	lease := &SelectionLease{
 		ID: "lease-1", UserID: 7, ControllerID: "controller-secret",

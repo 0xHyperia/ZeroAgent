@@ -210,15 +210,17 @@
         "crates/agent-gui/test/settings/remote-device-state.test.mjs",
         "crates/agent-gui/test/providers/desktop-remote-host.test.mjs",
         "crates/agent-gui/test/providers/desktop-remote-native-host.test.mjs",
+        "crates/agent-gui/test/providers/desktop-remote-workbench.test.mjs",
         "crates/agent-gui/test/providers/desktop-remote-session.test.mjs",
         "crates/agent-gui/test/providers/desktop-remote-gateway-runtime.test.mjs",
         "crates/agent-gui/test/providers/fixtures/desktop-remote-workbench-dom-probe.mjs",
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote/tests.rs",
         "scripts/prepare-desktop-remote.test.mjs",
+        "crates/agent-gui/test/settings/desktop-execution-switcher-dialog.test.mjs",
         "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go",
         "crates/agent-gateway/internal/account/desktop_bound_selection_test.go"
       ],
-      "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约；失联或列表移除不得静默切换本机。控制请求及新输出均复核当前会话、租约和所有权；Desktop连接复用已认证主体的固定有效期，不能逐次延长或每次按键重复外部认证。",
+      "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约；失联或列表移除不得静默切换本机。控制请求及新输出均复核当前会话、租约和所有权；Desktop连接与handoff复用已认证主体的固定有效期，同账号token刷新不误废弃未到期租约，不能逐次延长或每次按键重复外部认证。初始化失败保留真实原因，服务端明确拒绝授权时保存原因并禁用租约复用，重新连接显式获取新租约；设备切换确认使用共享顶层Dialog。",
       "upstream_relation": "adapt"
     },
     {
@@ -237,9 +239,10 @@
       ],
       "tests": [
         "crates/agent-gateway/internal/account/device_presence_test.go",
+        "crates/agent-gateway/internal/account/device_name_test.go",
         "crates/agent-gateway/web/test/execution-targets.test.mjs"
       ],
-      "security": "设备注册、在线状态、会话过期、租约所有权和撤销均按账户隔离。",
+      "security": "设备注册、在线状态、会话过期、租约所有权和撤销均按账户隔离。默认名称仅在首次注册时设置，已有名称仅允许所属账户显式重命名；重启注册和并发工作空间同步不能覆盖手动名称。",
       "upstream_relation": "replace"
     },
     {

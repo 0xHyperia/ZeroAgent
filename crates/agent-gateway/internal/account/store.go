@@ -16,7 +16,10 @@ type Store interface {
 	PutSession(ctx context.Context, session *Session) error
 	GetSession(ctx context.Context, id string) (*Session, error)
 	DeleteSession(ctx context.Context, id string) error
+	// UpsertDevice sets the initial name, but preserves an existing device's name.
+	// Only SetDeviceName may change it after registration.
 	UpsertDevice(ctx context.Context, device *Device) error
+	SetDeviceName(ctx context.Context, userID int64, deviceID, name string) error
 	GetDevice(ctx context.Context, userID int64, deviceID string) (*Device, error)
 	GetDeviceByID(ctx context.Context, deviceID string) (*Device, error)
 	GetDeviceByInstallation(ctx context.Context, userID int64, installationID string) (*Device, error)
@@ -130,7 +133,24 @@ func (s *MemoryStore) UpsertDevice(_ context.Context, device *Device) error {
 	defer s.mu.Unlock()
 	device.ID = canonicalAgentID(device.ID)
 	device.AgentID = device.ID
-	s.devices[device.ID] = cloneDevice(*device)
+	updated := cloneDevice(*device)
+	if existing, ok := s.devices[device.ID]; ok {
+		updated.Name = existing.Name
+	}
+	s.devices[device.ID] = updated
+	return nil
+}
+
+func (s *MemoryStore) SetDeviceName(_ context.Context, userID int64, deviceID, name string) error {
+	deviceID = canonicalAgentID(deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	device, ok := s.devices[deviceID]
+	if !ok || device.UserID != userID || device.RevokedAt != nil {
+		return ErrNotFound
+	}
+	device.Name = name
+	s.devices[deviceID] = device
 	return nil
 }
 

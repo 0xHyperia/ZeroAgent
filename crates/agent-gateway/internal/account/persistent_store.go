@@ -254,13 +254,28 @@ INSERT INTO agents
    workspaces, created_at, token_issued_at, last_seen_at, revoked_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 ON CONFLICT (agent_id) DO UPDATE SET
-  display_name=EXCLUDED.display_name, platform=EXCLUDED.platform, app_version=EXCLUDED.app_version,
+  platform=EXCLUDED.platform, app_version=EXCLUDED.app_version,
   token_sha256=EXCLUDED.token_sha256, token_issued_at=EXCLUDED.token_issued_at, workspaces=EXCLUDED.workspaces,
   last_seen_at=EXCLUDED.last_seen_at, revoked_at=EXCLUDED.revoked_at`,
 		device.ID, device.UserID, device.InstallationID, device.Name, device.Platform, device.Version,
 		device.CredentialHash, workspaces, device.CreatedAt, tokenIssuedAt, device.LastSeenAt, device.RevokedAt,
 	)
 	return err
+}
+
+func (s *PersistentStore) SetDeviceName(ctx context.Context, userID int64, deviceID, name string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE agents SET display_name=$3 WHERE agent_id=$1 AND owner_user_id=$2 AND revoked_at IS NULL`, canonicalAgentID(deviceID), userID, name)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PersistentStore) GetDevice(ctx context.Context, userID int64, deviceID string) (*Device, error) {

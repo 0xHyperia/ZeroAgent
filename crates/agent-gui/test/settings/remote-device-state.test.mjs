@@ -94,7 +94,7 @@ function appHarness(request) {
     setRemoteSelectionLeases(next) { leases = typeof next === "function" ? next(leases) : next; },
     setRelayReady() {}, setRelayUser() {}, setRelayStats() {}, closeSettingsOverlay() {},
   });
-  const code = `${extract("buildLocalOnlyEnvironment")}\n${extract("isRemoteLeaseValid")}\nconst refresh=${extract("refresh", node => appSource.slice(node.init.start, node.init.end).includes("getDesktopEnvironments(settings)"))};\nconst handleSessionChanged=${extract("handleSessionChanged")};\n${extract("handleExecutionSwitch")}`;
+  const code = `${extract("buildLocalOnlyEnvironment")}\n${extract("isRemoteLeaseValid")}\nconst refresh=${extract("refresh", node => appSource.slice(node.init.start, node.init.end).includes("getDesktopEnvironments(settings)"))};\nconst handleSessionChanged=${extract("handleSessionChanged")};\n${extract("handleExecutionSwitch")}\n${extract("handleRemoteSelectionInvalid")}`;
   vm.runInContext(transpileTypeScriptModule(code, "desktop-route-fixture.ts"), context);
   return { context, current: () => current, leases: () => leases, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
 }
@@ -155,4 +155,52 @@ test("offline and expired-lease remote targets are blocked before mounting the c
   assert.doesNotMatch(appSource, /\?\?\s*desktopEnvironments\.find/);
   assert.doesNotMatch(appSource, /RemoteDeviceChatPage/);
   assert.match(appSource, /RemoteDeviceWorkbench/);
+});
+
+test("actual App invalidation preserves the reason and cannot revoke a replacement lease", () => {
+  const harness = appHarness(async () => null);
+  vm.runInContext("handleRemoteSelectionInvalid('remote', 'fixture-lease', '设备已撤销')", harness.context);
+  assert.equal(harness.leases().get("remote").lease, "fixture-lease");
+  assert.equal(harness.leases().get("remote").invalidReason, "设备已撤销");
+  harness.context.checkedLease = harness.leases().get("remote");
+  assert.equal(vm.runInContext("isRemoteLeaseValid(checkedLease)", harness.context), false);
+  harness.leases().set("remote", { lease: "replacement", expiresAt: Date.now() + 60000 });
+  vm.runInContext("handleRemoteSelectionInvalid('remote', 'fixture-lease', 'late old failure')", harness.context);
+  assert.equal(harness.leases().get("remote").lease, "replacement");
+  assert.equal(harness.leases().get("remote").invalidReason, undefined);
+});
+
+test("explicit reconnect renews the selected device even when the cached lease has not expired", async () => {
+  let requests = 0;
+  const harness = appHarness(async () => {
+    requests++;
+    return { selection_lease: "renewed", expires_at: new Date(Date.now() + 60000).toISOString() };
+  });
+  await vm.runInContext("handleExecutionSwitch(remote, true)", harness.context);
+  assert.equal(requests, 1);
+  assert.equal(harness.leases().get("remote").lease, "renewed");
+  assert.equal(harness.current().selectedDeviceId, "remote");
+});
+
+test("another device's expiry cannot discard a current lease with less than ten seconds remaining", () => {
+  const harness = appHarness(async () => null);
+  let now = 1000;
+  let expire;
+  harness.leases().clear();
+  harness.leases().set("other", { lease: "other-lease", expiresAt: 2000 });
+  harness.leases().set("remote", { lease: "current-lease", expiresAt: 6000 });
+  harness.context.Date = { now: () => now };
+  harness.context.window = { setTimeout(callback) { expire = callback; return 1; }, clearTimeout() {} };
+  const effects = [];
+  walkSyntaxTree(appAst, (node) => {
+    if (node.type === "CallExpression" && node.callee?.name === "useEffect" &&
+        appSource.slice(node.arguments[0]?.start, node.arguments[0]?.end).includes("[...remoteSelectionLeases.values()]"))
+      effects.push(node.arguments[0]);
+  });
+  assert.equal(effects.length, 1);
+  vm.runInContext(`(${appSource.slice(effects[0].start, effects[0].end)})()`, harness.context);
+  now = 2000;
+  expire();
+  assert.equal(harness.leases().has("other"), false);
+  assert.equal(harness.leases().get("remote").lease, "current-lease");
 });

@@ -141,10 +141,11 @@ const GATEWAY_SETTINGS_SYNC_EVENT = "gateway:settings-sync";
 type RemoteSelectionLease = {
   lease: string;
   expiresAt: number;
+  invalidReason?: string;
 };
 
 function isRemoteLeaseValid(lease: RemoteSelectionLease | undefined) {
-  return Boolean(lease?.lease && lease.expiresAt > Date.now() + 10_000);
+  return Boolean(lease?.lease && !lease.invalidReason && lease.expiresAt > Date.now() + 10_000);
 }
 
 function buildLocalOnlyEnvironment(settings: AppSettings): DesktopEnvironment[] {
@@ -292,7 +293,7 @@ export default function App() {
     const timer = window.setTimeout(() => {
       setRemoteSelectionLeases((current) => {
         const next = new Map(
-          [...current.entries()].filter(([, lease]) => isRemoteLeaseValid(lease)),
+          [...current.entries()].filter(([, lease]) => lease.expiresAt > Date.now()),
         );
         return next.size === current.size ? current : next;
       });
@@ -1032,12 +1033,12 @@ export default function App() {
   const visible = settingsOpen;
   const active = overlay === "open";
 
-  async function handleExecutionSwitch(environment: DesktopEnvironment) {
+  async function handleExecutionSwitch(environment: DesktopEnvironment, renew = false) {
     const sessionEpoch = executionSessionEpochRef.current;
     const isLocal = environment.device_id === localDeviceId;
     const existingLease = remoteSelectionLeases.get(environment.device_id);
     if (!isLocal && environment.online) await getValidRelayAccessToken();
-    if (!isLocal && environment.online && !isRemoteLeaseValid(existingLease)) {
+    if (!isLocal && environment.online && (renew || !isRemoteLeaseValid(existingLease))) {
       const selection = await switchDesktopDevice(settings, environment);
       if (sessionEpoch !== executionSessionEpochRef.current)
         throw new Error("账号已变更，请重新选择设备。");
@@ -1055,11 +1056,25 @@ export default function App() {
     setExecutionState((current) => selectDesktopExecutionState(current, environment));
   }
 
+  function handleRemoteSelectionInvalid(deviceId: string, selectionLease: string, reason: string) {
+    setRemoteSelectionLeases((current) => {
+      const lease = current.get(deviceId);
+      if (!lease || lease.lease !== selectionLease || lease.invalidReason === reason)
+        return current;
+      const next = new Map(current);
+      next.set(deviceId, { ...lease, invalidReason: reason });
+      return next;
+    });
+  }
+
   const selectedExecutionEnvironment =
     desktopEnvironments.find(
       (environment) => environment.device_id === selectedExecutionDeviceId,
     ) ?? null;
   const localExecutionSelected = selectedExecutionEnvironment?.device_id === localDeviceId;
+  const selectedRemoteLease = selectedExecutionEnvironment
+    ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)
+    : undefined;
   const executionSwitcher =
     desktopEnvironments.length > 0 && !settingsOpen ? (
       <DesktopExecutionSwitcher
@@ -1123,23 +1138,17 @@ export default function App() {
                 settings={settings}
                 environment={selectedExecutionEnvironment}
                 environments={desktopEnvironments}
-                expiresAt={
-                  remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)?.expiresAt ?? 0
-                }
-                onSelectionInvalid={() =>
-                  setRemoteSelectionLeases((current) => {
-                    const next = new Map(current);
-                    next.delete(selectedExecutionEnvironment.device_id);
-                    return next;
-                  })
-                }
-                selectionLease={
-                  isRemoteLeaseValid(
-                    remoteSelectionLeases.get(selectedExecutionEnvironment.device_id),
+                expiresAt={selectedRemoteLease?.expiresAt ?? 0}
+                selectionError={selectedRemoteLease?.invalidReason}
+                onSelectionInvalid={(reason) =>
+                  handleRemoteSelectionInvalid(
+                    selectedExecutionEnvironment.device_id,
+                    selectedRemoteLease?.lease ?? "",
+                    reason,
                   )
-                    ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)!.lease
-                    : ""
                 }
+                onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
+                selectionLease={selectedRemoteLease?.lease ?? ""}
                 headerLeadingActions={executionSwitcher}
               />
             ) : (

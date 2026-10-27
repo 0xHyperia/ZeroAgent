@@ -208,11 +208,16 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, input Regist
 		if canonicalAgentID(providedID) != existing.ID || !VerifyDeviceCredential(existing, providedToken) {
 			return nil, "", &APIError{Status: http.StatusUnauthorized, Message: "existing device credential is required"}
 		}
-		existing.Name = normalizeDeviceName(input.Name, existing.Name)
+		// Startup metadata must not undo a name changed on another client.
+		// The registration name is only used when creating a new device.
 		existing.Platform = strings.TrimSpace(input.Platform)
 		existing.Version = strings.TrimSpace(input.Version)
 		existing.LastSeenAt = now
-		return existing, "", s.store.UpsertDevice(ctx, existing)
+		if err := s.store.UpsertDevice(ctx, existing); err != nil {
+			return nil, "", err
+		}
+		current, err := s.store.GetDevice(ctx, userID, existing.ID)
+		return current, "", err
 	}
 	if !errors.Is(lookupErr, ErrNotFound) {
 		return nil, "", lookupErr
@@ -250,8 +255,14 @@ func (s *Service) RenameDevice(ctx context.Context, userID int64, deviceID, name
 	if name == "" || len(name) > 100 {
 		return nil, &APIError{Status: http.StatusBadRequest, Message: "device name must be 1-100 characters"}
 	}
+	if err := s.store.SetDeviceName(ctx, userID, device.ID, name); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, &APIError{Status: http.StatusNotFound, Message: "device not found"}
+		}
+		return nil, err
+	}
 	device.Name = name
-	return device, s.store.UpsertDevice(ctx, device)
+	return device, nil
 }
 
 func (s *Service) RevokeDevice(ctx context.Context, userID int64, deviceID string) error {
@@ -468,9 +479,11 @@ func (s *Service) ValidateBoundDesktopSelection(ctx context.Context, session *Se
 }
 
 func (s *Service) CreateDesktopHandoff(ctx context.Context, desktop *Session, selectionLeaseID string) (string, error) {
-	lease, err := s.store.GetSelectionLease(ctx, strings.TrimSpace(selectionLeaseID))
-	if err != nil || lease.UserID != desktop.UserID || lease.ControllerID != desktop.ID {
-		return "", &APIError{Status: http.StatusUnauthorized, Message: "desktop selection lease is invalid or expired"}
+	// Access-token refresh changes the desktop controller ID. Match the same
+	// verified account and fixed deadlines, as the WebSocket selection does.
+	_, lease, err := s.ValidateBoundDesktopSelection(ctx, desktop, selectionLeaseID)
+	if err != nil {
+		return "", err
 	}
 	code, err := randomToken(32)
 	if err != nil {
