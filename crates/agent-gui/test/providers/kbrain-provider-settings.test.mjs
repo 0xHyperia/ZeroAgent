@@ -7,6 +7,30 @@ function jsonResponse(value, status = 200) {
   return JSON.stringify(value);
 }
 
+test("model cache overrides survive settings transport and inherit explicitly clears them", async () => {
+  const fixture = await startFixture();
+  const loader = createTsModuleLoader({ mocks: {
+    [new URL("../../src/lib/host.ts", import.meta.url).pathname]: { isKBrainBrowserHost: () => true, isKBrainBackendEnabled: () => true },
+    "@tauri-apps/api/core": { invoke: async () => assert.fail("native storage must not be used") },
+  } });
+  const runtime = loader.loadModule("src/lib/kbrain/runtimeConnection.ts");
+  runtime.setKBrainRuntimeConnection({ baseUrl: fixture.baseUrl, token: "fixture-token", protocolVersion: "kbrain.agent.v1" });
+  try {
+    const adapter = loader.loadModule("src/lib/kbrain/providerSettings.ts");
+    const settings = loader.loadModule("src/lib/settings/index.ts");
+    const current = settings.normalizeSettings({ ...settings.getDefaultSettings(), customProviders: [{ id: "p", type: "codex", name: "p", baseUrl: fixture.baseUrl, models: [{ id: "m", promptCacheHintMode: "openrouter-session" }], activeModels: ["m"], promptCacheHintMode: "auto", apiKey: "" }] });
+    const retained = adapter.kBrainSettingsUpdateFromAppSettings(current, current);
+    assert.equal(retained.providers[0].models[0].promptCacheHintMode, "openrouter-session");
+    const next = { ...current, customProviders: current.customProviders.map(provider => ({ ...provider, models: provider.models.map(model => ({ ...model, promptCacheHintMode: undefined })) })) };
+    const cleared = adapter.kBrainSettingsUpdateFromAppSettings(current, next);
+    assert.equal(cleared.providers[0].models[0].promptCacheHintMode, "");
+    await fetch(fixture.baseUrl + "/v1/settings", { method: "PUT", body: JSON.stringify(cleared) });
+    const projected = adapter.appProvidersFromKBrain(fixture.document());
+    assert.equal(projected[0].promptCacheHintMode, "auto");
+    assert.equal(projected[0].models[0].promptCacheHintMode, undefined);
+  } finally { runtime.clearKBrainRuntimeConnection(); await fixture.close(); }
+});
+
 function fixtureDocument(providers = []) {
   return {
     version: "kbrain.agent.v1",
@@ -222,7 +246,7 @@ test("provider settings expose real HTTP failures", async () => {
   }
 });
 
-test("canonical model serialization excludes TS-only model cache hints and preserves supported provider hints", () => {
+test("canonical model serialization preserves model overrides independently of provider hints", () => {
   const loader = createTsModuleLoader();
   const { getDefaultSettings, normalizeCustomProvider } = loader.loadModule("src/lib/settings/index.ts");
   const { kBrainSettingsUpdateFromAppSettings } = loader.loadModule("src/lib/kbrain/providerSettings.ts");
@@ -231,6 +255,6 @@ test("canonical model serialization excludes TS-only model cache hints and prese
   const update = kBrainSettingsUpdateFromAppSettings(previous,{...previous,customProviders:[provider],selectedModel:{customProviderId:provider.id,model:"Kimi-K2.5"}});
   const wire = JSON.parse(JSON.stringify(update));
   assert.equal(wire.providers[0].promptCacheHintMode,"none");assert.equal(wire.providers[0].promptCachingEnabled,false);
-  assert.equal(Object.hasOwn(wire.providers[0].models[0],"promptCacheHintMode"),false);
+  assert.equal(wire.providers[0].models[0].promptCacheHintMode,"openai-key");
   assert.equal(wire.providers[0].models[0].displayName,"My Kimi");assert.equal(wire.providers[0].models[0].contextWindow,300000);assert.deepEqual(wire.providers[0].models[0].inputModalities,["text","image"]);
 });

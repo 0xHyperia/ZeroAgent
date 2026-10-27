@@ -1641,6 +1641,7 @@ mod tests {
     include!("kbrain_backend/mcp_oauth_sse_fixture.rs");
     include!("kbrain_backend/mcp_oauth_tests.rs");
     include!("kbrain_backend/managed_model_discovery_tests.rs");
+    include!("kbrain_backend/prompt_cache_tests.rs");
 
     #[test]
     fn native_configuration_rebinds_managed_transport_and_rejects_external_providers() {

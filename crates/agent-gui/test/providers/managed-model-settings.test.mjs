@@ -21,6 +21,24 @@ function makeLoader(surface, discover = async () => fetched, calls = []) {
   } });
 }
 for (const surface of ["desktop", "web"]) {
+  test(surface + " managed cache defaults match upstream and refresh preserves explicit choices", async () => {
+    const loader = makeLoader(surface);
+    const mod = loader.loadModule(surface === "desktop" ? "src/lib/relay/providers.ts" : web("lib/relay/providers.ts"));
+    const [fresh] = await mod.buildRelayProviders([], [key], [group], true);
+    assert.equal(fresh.promptCacheHintMode, "auto");
+    assert.equal(fresh.promptCachingEnabled, true);
+    assert.ok(fresh.models.every(model => model.promptCacheHintMode === undefined));
+    for (const mode of ["auto", "openai-key", "openrouter-session", "none"]) {
+      const existing = { ...fresh, promptCacheHintMode: mode, promptCachingEnabled: mode !== "none", models: fresh.models.map((model, index) => index === 0 ? { ...model, promptCacheHintMode: "none" } : model) };
+      const [refreshed] = await mod.buildRelayProviders([existing], [key], [group], true);
+      assert.equal(refreshed.promptCacheHintMode, mode);
+      assert.equal(refreshed.promptCachingEnabled, mode !== "none");
+      assert.equal(refreshed.models[0].promptCacheHintMode, "none");
+      assert.equal(refreshed.models[1].promptCacheHintMode, undefined);
+    }
+    const [legacy] = await mod.buildRelayProviders([{ ...fresh, promptCacheHintMode: undefined, promptCachingEnabled: false }], [key], [group], true);
+    assert.equal(legacy.promptCacheHintMode, "none", "old saved false must not be guessed away as an old default");
+  });
   test(surface + " first successful catalog enables models after a fresh, empty, or failed initial discovery", async () => {
     let mode = "success"; const calls = [];
     const loader = makeLoader(surface, async () => {
@@ -62,7 +80,7 @@ for (const surface of ["desktop", "web"]) {
     assert.equal(refreshed.baseUrl, surface === "desktop" ? binding.baseUrl : "https://usa0.top");
     const settings = { ...settingsModule.getDefaultSettings(), customProviders: [refreshed], selectedModel: { customProviderId: refreshed.id, model: "manual-alias" } };
     const edited = mod.applyRelayProviderModelSettings(settings, refreshed.id, { ...refreshed, promptCacheHintMode: "none", promptCachingEnabled: false, retryPolicy: { mode: "custom", maxRetries: 4 }, models: refreshed.models, activeModels: [], baseUrl: "https://attacker.invalid", apiKey: "attacker", customHeaders: [{key:"X-Injected",value:"1"}] });
-    assert.equal(edited.customProviders[0].promptCacheHintMode, "none"); assert.equal(edited.customProviders[0].promptCachingEnabled, false); assert.ok(edited.customProviders[0].models.every(model => model.promptCacheHintMode === undefined));
+    assert.equal(edited.customProviders[0].promptCacheHintMode, "none"); assert.equal(edited.customProviders[0].promptCachingEnabled, false); assert.equal(edited.customProviders[0].models.find(model => model.id === "Kimi-K2.5").promptCacheHintMode, "openai-key");
     assert.deepEqual(edited.customProviders[0].retryPolicy, { mode: "custom", maxRetries: 4 });
     assert.equal(edited.selectedModel, undefined); assert.equal(edited.customProviders[0].baseUrl, refreshed.baseUrl); assert.equal(edited.customProviders[0].apiKey, refreshed.apiKey); assert.equal(edited.customProviders[0].customHeaders.length, 0);
     assert.throws(() => mod.applyRelayProviderModelSettings(settings, "external", refreshed));

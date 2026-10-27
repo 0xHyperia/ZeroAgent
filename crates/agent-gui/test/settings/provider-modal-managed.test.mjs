@@ -36,11 +36,11 @@ test("managed modal edits upstream model fields, retains disabled state on refre
     assert.equal(saved.length,1); const result=saved[0];
     assert.equal(result.baseUrl,initial.baseUrl);assert.equal(result.apiKey,initial.apiKey);assert.equal(result.isFullUrl,false);assert.equal(result.modelsUrl,undefined);assert.equal(result.useSystemProxy,false);assert.equal(result.customHeaders.length,0);
     assert.equal(result.requestFormat,"openai-completions"); assert.deepEqual([...result.activeModels],["manual-alias"]);
-    const model=result.models.find(model=>model.id==="manual-alias");assert.equal(model.displayName,"Manual Kimi");assert.equal(model.contextWindow,65536);assert.equal(model.maxOutputToken,4096);assert.equal(model.limitsSource,"user");assert.equal(model.promptCacheHintMode,undefined,"unsupported per-model cache state is not sent");assert.equal(result.promptCacheHintMode,"none");assert.equal(result.promptCachingEnabled,false);assert.deepEqual([...model.inputModalities],["text","image"]);
+    const model=result.models.find(model=>model.id==="manual-alias");assert.equal(model.displayName,"Manual Kimi");assert.equal(model.contextWindow,65536);assert.equal(model.maxOutputToken,4096);assert.equal(model.limitsSource,"user");assert.equal(model.promptCacheHintMode,"none","model override reaches the canonical backend");assert.equal(result.promptCacheHintMode,"none");assert.equal(result.promptCachingEnabled,false);assert.deepEqual([...model.inputModalities],["text","image"]);
   } finally {await env.act(async()=>root.unmount());env.cleanup();}
 });
 
-test("managed model form exposes provider cache settings and omits unsupported model overrides", async () => {
+test("managed model form exposes upstream inherited and explicit model cache settings", async () => {
   const icon=()=>null;
   const env=await createDomTestEnv({mocks:{
     "@liveagent/ui/components/IconSet":new Proxy({}, {get:(_target,name)=>name==="__esModule"?true:icon}),
@@ -60,13 +60,20 @@ test("managed model form exposes provider cache settings and omits unsupported m
     assert.ok(document.querySelector('[aria-label="settings.promptCacheHintMode"]'),"the existing provider cache select is reachable");
     await env.act(async()=>document.querySelector('button[title="Kimi-K2.5"]').click());
     assert.ok(document.querySelector("#model-context-window"),"real model editor is open");
-    assert.equal(document.body.textContent.includes("settings.promptCacheHintModelOverride"),false,"managed models cannot select a field rejected by canonical Go");
+    const modelCache = document.querySelector('[aria-label="settings.promptCacheHintModelOverride"]');
+    assert.ok(modelCache,"managed models expose the upstream override control");
+    assert.ok(modelCache.textContent.includes("settings.promptCacheHintMode.inherit"),"models default to provider inheritance");
+    await env.act(async()=>modelCache.click());
+    const router=[...document.querySelectorAll('[role="option"]')].find(node=>node.textContent.includes("settings.promptCacheHintMode.openrouterSession"));
+    assert.ok(router);await env.act(async()=>router.click());
+    const apply=[...document.querySelectorAll("button")].find(node=>node.textContent.trim()==="settings.providerModelApply");
+    assert.ok(apply);await env.act(async()=>apply.click());
     await env.act(async()=>document.querySelector('[aria-label="settings.promptCacheHintMode"]').click());
-    const none=[...document.querySelectorAll('[role="option"]')].find(node=>node.getAttribute("data-value")==="none" || node.textContent.includes("settings.promptCacheHintMode.none"));
+    const none=[...document.querySelectorAll('[role="option"]')].filter(node=>node.getAttribute("data-value")==="none" || node.textContent.includes("settings.promptCacheHintMode.none")).at(-1);
     assert.ok(none,"provider-level none option exists");
     await env.act(async()=>none.click());
     const save=[...document.querySelectorAll("button")].find(node=>node.textContent.trim()==="settings.save");
     assert.ok(save);await env.act(async()=>save.click());
-    assert.equal(saved.length,1);assert.equal(saved[0].promptCacheHintMode,"none");assert.equal(saved[0].promptCachingEnabled,false);assert.equal(saved[0].models[0].promptCacheHintMode,undefined);
+    assert.equal(saved.length,1);assert.equal(saved[0].promptCacheHintMode,"none");assert.equal(saved[0].promptCachingEnabled,false);assert.equal(saved[0].models[0].promptCacheHintMode,"openrouter-session");
   }finally{await env.act(async()=>root.unmount());env.cleanup();}
 });

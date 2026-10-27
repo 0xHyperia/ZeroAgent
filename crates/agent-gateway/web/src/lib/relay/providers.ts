@@ -156,7 +156,16 @@ export async function buildRelayProviders(
                 ? (existing?.requestFormat ?? "openai-responses")
                 : undefined,
           reasoning: existing?.reasoning ?? "high",
-          promptCachingEnabled: existing?.promptCachingEnabled ?? type === "claude_code",
+          promptCacheHintMode:
+            type === "codex"
+              ? (existing?.promptCacheHintMode ??
+                (existing?.promptCachingEnabled === false ? "none" : "auto"))
+              : undefined,
+          promptCachingEnabled:
+            type === "codex"
+              ? (existing?.promptCacheHintMode ??
+                  (existing?.promptCachingEnabled === false ? "none" : "auto")) !== "none"
+              : (existing?.promptCachingEnabled ?? type === "claude_code"),
           nativeWebSearchEnabled: existing?.nativeWebSearchEnabled ?? true,
           useSystemProxy: false,
         };
@@ -216,9 +225,7 @@ export function applyRelayProviderModelSettings(
   if (!provider || !isRelayProvider(provider)) {
     throw new Error("只能配置当前账户的托管模型");
   }
-  const models = normalizeProviderModelConfigs(draft.models, provider.type).map(
-    ({ promptCacheHintMode: _unsupportedModelHint, ...model }) => model,
-  );
+  const models = normalizeProviderModelConfigs(draft.models, provider.type);
   const ids = new Set(models.map((model) => model.id));
   return enforceRelayProviderConstraint({
     ...settings,

@@ -115,10 +115,12 @@ function settingsUpdateFromProviders(
       ...metadata,
       ...(provider.models
         ? {
-            models: provider.models.map(
-              ({ promptCacheHintMode: _unsupportedModelHint, ...model }) =>
-                withImageAdapter(withInputModalities(model)),
-            ),
+            models: provider.models.map((model) => ({
+              ...withImageAdapter(withInputModalities(model)),
+              ...(provider.type === "codex"
+                ? { promptCacheHintMode: model.promptCacheHintMode ?? ("" as const) }
+                : {}),
+            })),
           }
         : {}),
       api: resolveProviderApi(provider.type, provider.requestFormat),

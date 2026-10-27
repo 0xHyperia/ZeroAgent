@@ -46,7 +46,11 @@ export type KBrainSettingsDocument = {
   models?: KBrainSettingsModel[];
 };
 
-export type KBrainProviderUpdate = Omit<CustomProvider, "apiKey"> & {
+export type KBrainProviderUpdate = Omit<CustomProvider, "apiKey" | "models"> & {
+  models: (Omit<CustomProvider["models"][number], "promptCacheHintMode"> & {
+    /** Empty clears a saved override so the model inherits its provider again. */
+    promptCacheHintMode?: CustomProvider["promptCacheHintMode"] | "";
+  })[];
   apiKey?: string;
   clearApiKey?: boolean;
 };

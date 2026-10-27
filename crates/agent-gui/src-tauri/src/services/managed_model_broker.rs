@@ -451,6 +451,7 @@ async fn forward(State(state): State<Arc<BrokerState>>, request: Request) -> Res
         "anthropic-version",
         "anthropic-beta",
         "openai-beta",
+        "x-session-id",
     ] {
         if let Some(value) = request.headers().get(name) {
             upstream = upstream.header(name, value);

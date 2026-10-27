@@ -1009,7 +1009,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                             </FormFieldDescription>
                           </FormField>
                         ) : null}
-                        {providerType === "codex" && !connectionManaged ? (
+                        {providerType === "codex" ? (
                           <FormField>
                             <FormFieldLabel>
                               {t("settings.promptCacheHintModelOverride")}
@@ -1033,7 +1033,11 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                                 )
                               }
                             >
-                              <SelectTrigger variant="plain" className="h-8 shadow-none">
+                              <SelectTrigger
+                                variant="plain"
+                                className="h-8 shadow-none"
+                                aria-label={t("settings.promptCacheHintModelOverride")}
+                              >
                                 {/* value≠label：闭合态必须显式渲染本地化标签。 */}
                                 <SelectValue>
                                   {t(

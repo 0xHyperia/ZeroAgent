@@ -39,7 +39,11 @@
     {
       "file": "0008-clawhub-store-integration.patch",
       "sha256": "7707e5da07b5edc8d3e14826440f0d8c5285015bd24b2f0c618f3886f04580d5"
+    },
+    {
+      "file": "0009-prompt-cache-hint-inheritance.patch",
+      "sha256": "e8d5f6ea24622b83579870892838393927848b4d94017b2502c90269d814d106"
     }
   ],
-  "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, trajectory publication and complete ClawHub store integration; acceptance tracked in sync report"
+  "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, ClawHub and upstream prompt-cache provider/model settings wired through requests"
 }

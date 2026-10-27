@@ -1,0 +1,708 @@
+diff --git a/internal/ai/cache_policy.go b/internal/ai/cache_policy.go
+index 3e955c3..e1fafc7 100644
+--- a/internal/ai/cache_policy.go
++++ b/internal/ai/cache_policy.go
+@@ -41,7 +41,7 @@ func (c *OpenAI) cacheContext(ctx context.Context, req Request) context.Context
+ 	if key == "" {
+ 		key = c.CacheKey
+ 	}
+-	return context.WithValue(ctx, cacheRequestKey{}, clampCacheKey(key))
++	return context.WithValue(ctx, cacheRequestKey{}, strings.TrimSpace(key))
+ }
+ 
+ func cacheControl(retention string) map[string]any {
+diff --git a/internal/ai/openai.go b/internal/ai/openai.go
+index bae1321..9bde793 100644
+--- a/internal/ai/openai.go
++++ b/internal/ai/openai.go
+@@ -542,7 +542,7 @@ func (c *OpenAI) applyCache(req *Request) {
+ 		req.PromptCacheKey = ""
+ 	}
+ 	req.PromptCacheRetention = ""
+-	if retention == "long" && c.SupportsLongCacheRetention {
++	if retention == "long" && c.SupportsLongCacheRetention && !(c.CacheSessionAffinityFormat == "openrouter" && c.SupportsPromptCacheKey != nil && !*c.SupportsPromptCacheKey) {
+ 		req.PromptCacheRetention = "24h"
+ 	}
+ }
+@@ -553,7 +553,7 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+ 	}
+ 	key, ok := req.Context().Value(cacheRequestKey{}).(string)
+ 	if !ok {
+-		key = clampCacheKey(c.CacheKey)
++		key = strings.TrimSpace(c.CacheKey)
+ 	}
+ 	if key == "" {
+ 		return
+@@ -567,6 +567,13 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+ 			format = "openrouter"
+ 		}
+ 	}
++	if format == "openrouter" {
++		if len(key) > 256 {
++			key = key[:256]
++		}
++	} else {
++		key = clampCacheKey(key)
++	}
+ 	set := func(name string) {
+ 		if !hasHeader(req.Header, name) {
+ 			req.Header.Set(name, key)
+diff --git a/internal/backend/prompt_cache_settings_test.go b/internal/backend/prompt_cache_settings_test.go
+new file mode 100644
+index 0000000..1689b09
+--- /dev/null
++++ b/internal/backend/prompt_cache_settings_test.go
+@@ -0,0 +1,87 @@
++package backend
++
++import (
++	"encoding/json"
++	"github.com/Stack-Cairn/K-brain/internal/config"
++	"net/http"
++	"net/http/httptest"
++	"path/filepath"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++func TestInheritedModelDefaultsHaveStableReadVersions(t *testing.T) {
++	cfg := &config.Config{Providers: map[string]config.Provider{"p": {Type: "codex"}}, Models: map[string]config.Model{
++		"z": {ID: "z", Providers: []string{"p"}}, "a": {ID: "a", Providers: []string{"p"}}, "m": {ID: "m", Providers: []string{"p"}},
++	}}
++	for range 64 {
++		if got := projectSettings(cfg).Providers[0].ActiveModels; !reflect.DeepEqual(got, []string{"a", "m", "z"}) {
++			t.Fatalf("unstable implicit enabled list: %v", got)
++		}
++	}
++	provider := cfg.Providers["p"]
++	provider.ActiveModels = []string{"z", "a"}
++	cfg.Providers["p"] = provider
++	if got := projectSettings(cfg).Providers[0].ActiveModels; !reflect.DeepEqual(got, []string{"z", "a"}) {
++		t.Fatalf("explicit enabled order changed: %v", got)
++	}
++}
++
++func TestPromptCacheInheritancePersistsAndClearsWithoutCrossProviderLeaks(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "config.json")
++	store := NewSettingsStore(&config.Config{Providers: map[string]config.Provider{}, Models: map[string]config.Model{}}, func(c *config.Config) error { return c.SaveFile(path) })
++	server := &Server{settings: store}
++	put := func(body string, want int) {
++		t.Helper()
++		out := httptest.NewRecorder()
++		server.handleSettings(out, httptest.NewRequest(http.MethodPut, "/v1/settings", strings.NewReader(body)))
++		if out.Code != want {
++			t.Fatalf("status=%d body=%s", out.Code, out.Body.String())
++		}
++	}
++	put(`{"providers":[{"id":"a","type":"codex","promptCacheHintMode":"auto","models":[{"id":"shared","promptCacheHintMode":"none"}]},{"id":"b","type":"codex","promptCacheHintMode":"openrouter-session","models":[{"id":"shared"}]}]}`, 200)
++	put(`{"providers":[{"id":"a","name":"rename","models":[{"id":"shared"}]},{"id":"b","name":"rename b"}]}`, 200)
++	loaded, err := config.LoadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if loaded.Models["shared"].ForProvider("a").PromptCacheHintMode != "none" || loaded.Models["shared"].ForProvider("b").PromptCacheHintMode != "" {
++		t.Fatal("per-provider model override was lost or leaked")
++	}
++	if loaded.Providers["a"].PromptCacheHintMode != "auto" || loaded.Providers["b"].PromptCacheHintMode != "openrouter-session" {
++		t.Fatal("provider choices lost")
++	}
++	server.settings = NewSettingsStore(loaded, func(c *config.Config) error { return c.SaveFile(path) })
++	out := httptest.NewRecorder()
++	server.handleSettings(out, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
++	var projection settingsProjection
++	if err = json.Unmarshal(out.Body.Bytes(), &projection); err != nil {
++		t.Fatal(err)
++	}
++	if providerModel(t, projection, "a", "shared").PromptCacheHintMode != "none" || providerModel(t, projection, "b", "shared").PromptCacheHintMode != "" {
++		t.Fatal("read projection lost inheritance")
++	}
++	revision := server.settings.Revision()
++	put(`{"providers":[{"id":"a","promptCacheHintMode":"invented"}]}`, 400)
++	put(`{"providers":[{"id":"a","models":[{"id":"shared","promptCacheHintMode":"inherit"}]}]}`, 400)
++	if server.settings.Revision() != revision {
++		t.Fatal("invalid cache choice changed configuration")
++	}
++	put(`{"providers":[{"id":"a","models":[{"id":"shared","promptCacheHintMode":""}]}]}`, 200)
++	loaded, err = config.LoadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if loaded.Models["shared"].ForProvider("a").PromptCacheHintMode != "" {
++		t.Fatal("inherit did not clear persisted override")
++	}
++	put(`{"providers":[{"id":"old","type":"codex","promptCachingEnabled":false,"models":[]}]}`, 200)
++	loaded, err = config.LoadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if loaded.Providers["old"].PromptCachingEnabled == nil || *loaded.Providers["old"].PromptCachingEnabled {
++		t.Fatal("legacy explicit disable reset")
++	}
++}
+diff --git a/internal/backend/settings.go b/internal/backend/settings.go
+index 3ac1cfa..5baefee 100644
+--- a/internal/backend/settings.go
++++ b/internal/backend/settings.go
+@@ -71,17 +71,18 @@ type settingsProvider struct {
+ 	Models                 []settingsModel       `json:"models"`
+ }
+ type settingsModel struct {
+-	Provider         string   `json:"provider"`
+-	ID               string   `json:"id"`
+-	Name             string   `json:"name,omitempty"`
+-	DisplayName      string   `json:"displayName,omitempty"`
+-	OwnedBy          string   `json:"ownedBy,omitempty"`
+-	LimitsSource     string   `json:"limitsSource,omitempty"`
+-	ContextWindow    int      `json:"contextWindow,omitempty"`
+-	MaxOutputTokens  int      `json:"maxOutputTokens,omitempty"`
+-	MaxOutputToken   int      `json:"maxOutputToken,omitempty"`
+-	OutputModalities []string `json:"outputModalities,omitempty"`
+-	ImageAdapter     string   `json:"imageAdapter,omitempty"`
++	PromptCacheHintMode string   `json:"promptCacheHintMode,omitempty"`
++	Provider            string   `json:"provider"`
++	ID                  string   `json:"id"`
++	Name                string   `json:"name,omitempty"`
++	DisplayName         string   `json:"displayName,omitempty"`
++	OwnedBy             string   `json:"ownedBy,omitempty"`
++	LimitsSource        string   `json:"limitsSource,omitempty"`
++	ContextWindow       int      `json:"contextWindow,omitempty"`
++	MaxOutputTokens     int      `json:"maxOutputTokens,omitempty"`
++	MaxOutputToken      int      `json:"maxOutputToken,omitempty"`
++	OutputModalities    []string `json:"outputModalities,omitempty"`
++	ImageAdapter        string   `json:"imageAdapter,omitempty"`
+ 	// ImageModel is the effective, read-only image toggle (explicit choice or default guess).
+ 	ImageModel      bool     `json:"imageModel"`
+ 	InputModalities []string `json:"inputModalities,omitempty"`
+@@ -107,17 +108,18 @@ type settingsMemoryUpdate struct {
+ 	Enabled *bool `json:"enabled"`
+ }
+ type settingsModelUpdate struct {
+-	Provider         string    `json:"provider,omitempty"`
+-	ID               string    `json:"id"`
+-	Name             *string   `json:"name,omitempty"`
+-	DisplayName      *string   `json:"displayName,omitempty"`
+-	OwnedBy          *string   `json:"ownedBy,omitempty"`
+-	LimitsSource     *string   `json:"limitsSource,omitempty"`
+-	ContextWindow    *int      `json:"contextWindow,omitempty"`
+-	MaxOutputTokens  *int      `json:"maxOutputTokens,omitempty"`
+-	MaxOutputToken   *int      `json:"maxOutputToken,omitempty"`
+-	OutputModalities *[]string `json:"outputModalities,omitempty"`
+-	ImageAdapter     *string   `json:"imageAdapter,omitempty"`
++	PromptCacheHintMode *string   `json:"promptCacheHintMode,omitempty"`
++	Provider            string    `json:"provider,omitempty"`
++	ID                  string    `json:"id"`
++	Name                *string   `json:"name,omitempty"`
++	DisplayName         *string   `json:"displayName,omitempty"`
++	OwnedBy             *string   `json:"ownedBy,omitempty"`
++	LimitsSource        *string   `json:"limitsSource,omitempty"`
++	ContextWindow       *int      `json:"contextWindow,omitempty"`
++	MaxOutputTokens     *int      `json:"maxOutputTokens,omitempty"`
++	MaxOutputToken      *int      `json:"maxOutputToken,omitempty"`
++	OutputModalities    *[]string `json:"outputModalities,omitempty"`
++	ImageAdapter        *string   `json:"imageAdapter,omitempty"`
+ 	// ImageModel is read-only; accepted so a GET payload can be PUT back unchanged.
+ 	ImageModel      *bool     `json:"imageModel,omitempty"`
+ 	InputModalities *[]string `json:"inputModalities,omitempty"`
+@@ -193,6 +195,7 @@ func projectSettings(cfg *config.Config) settingsProjection {
+ 			}
+ 			m := shared.ForProvider(id)
+ 			mv := settingsModel{Provider: id, ID: modelID, Name: m.Name, DisplayName: m.DisplayName, OwnedBy: m.OwnedBy, LimitsSource: m.LimitsSource, ContextWindow: m.Context, MaxOutputTokens: m.MaxOut, MaxOutputToken: m.MaxOut, InputModalities: slices.Clone(m.InputModalities), OutputModalities: slices.Clone(m.OutputModalities), ImageAdapter: m.ImageAdapter, Vision: m.Vision}
++			mv.PromptCacheHintMode = m.PromptCacheHintMode
+ 			_, mv.ImageModel = imageModelAdapter(p, modelID, m)
+ 			// Provider settings must expose disabled models so editing and saving a
+ 			// provider cannot delete them. The top-level catalog remains active-only.
+@@ -201,12 +204,12 @@ func projectSettings(cfg *config.Config) settingsProjection {
+ 				out.Models = append(out.Models, mv)
+ 			}
+ 		}
++		sort.Slice(pv.Models, func(i, j int) bool { return pv.Models[i].ID < pv.Models[j].ID })
+ 		if pv.ActiveModels == nil {
+ 			for _, m := range pv.Models {
+ 				pv.ActiveModels = append(pv.ActiveModels, m.ID)
+ 			}
+ 		}
+-		sort.Slice(pv.Models, func(i, j int) bool { return pv.Models[i].ID < pv.Models[j].ID })
+ 		out.Providers = append(out.Providers, pv)
+ 	}
+ 	sort.Slice(out.Models, func(i, j int) bool {
+@@ -348,6 +351,16 @@ func applySettings(cfg *config.Config, update settingsUpdate) error {
+ 				// Start from this provider's current view of the model (or the shared
+ 				// metadata when the provider is new to it) and overlay the update.
+ 				m := old[mid].ForProvider(id)
++				// New providers inherit their own policy, not a shared ID's override.
++				if !slices.Contains(old[mid].Providers, id) {
++					m.PromptCacheHintMode = ""
++				}
++				if item.PromptCacheHintMode != nil {
++					if err := config.ValidatePromptCacheHintMode(*item.PromptCacheHintMode); err != nil {
++						return err
++					}
++					m.PromptCacheHintMode = *item.PromptCacheHintMode
++				}
+ 				if item.Name != nil {
+ 					m.Name = *item.Name
+ 				}
+diff --git a/internal/backend/settings_provider.go b/internal/backend/settings_provider.go
+index 8387a6e..5344c32 100644
+--- a/internal/backend/settings_provider.go
++++ b/internal/backend/settings_provider.go
+@@ -247,7 +247,12 @@ func updateProvider(p config.Provider, in settingsProviderUpdate) (config.Provid
+ 		p.PromptCachingEnabled = in.PromptCachingEnabled
+ 	}
+ 	if in.PromptCacheHintMode != "" {
++		if err := config.ValidatePromptCacheHintMode(in.PromptCacheHintMode); err != nil {
++			return p, err
++		}
+ 		p.PromptCacheHintMode = in.PromptCacheHintMode
++		enabled := in.PromptCacheHintMode != "none"
++		p.PromptCachingEnabled = &enabled
+ 	}
+ 	if in.PromptCacheRetention != "" {
+ 		p.PromptCacheRetention = in.PromptCacheRetention
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 4013fc9..b8553b3 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -51,12 +51,13 @@ type CustomHeader struct {
+ }
+ 
+ type PiModel struct {
+-	ID               string   `json:"id"`
+-	Name             string   `json:"name,omitempty"`
+-	DisplayName      string   `json:"displayName,omitempty"`
+-	OwnedBy          string   `json:"ownedBy,omitempty"`
+-	LimitsSource     string   `json:"limitsSource,omitempty"`
+-	OutputModalities []string `json:"outputModalities,omitempty"`
++	PromptCacheHintMode string   `json:"promptCacheHintMode,omitempty"`
++	ID                  string   `json:"id"`
++	Name                string   `json:"name,omitempty"`
++	DisplayName         string   `json:"displayName,omitempty"`
++	OwnedBy             string   `json:"ownedBy,omitempty"`
++	LimitsSource        string   `json:"limitsSource,omitempty"`
++	OutputModalities    []string `json:"outputModalities,omitempty"`
+ 	// ImageAdapter explicitly selects an image protocol; "disabled" opts out of discovery.
+ 	ImageAdapter    string          `json:"imageAdapter,omitempty"`
+ 	InputModalities []string        `json:"inputModalities,omitempty"`
+@@ -93,11 +94,12 @@ func (p Provider) ResolveKeyContext(ctx context.Context) (string, error) {
+ }
+ 
+ type Model struct {
+-	Name             string   `json:"name,omitempty"`
+-	DisplayName      string   `json:"displayName,omitempty"`
+-	OwnedBy          string   `json:"ownedBy,omitempty"`
+-	LimitsSource     string   `json:"limitsSource,omitempty"`
+-	OutputModalities []string `json:"outputModalities,omitempty"`
++	PromptCacheHintMode string   `json:"promptCacheHintMode,omitempty"`
++	Name                string   `json:"name,omitempty"`
++	DisplayName         string   `json:"displayName,omitempty"`
++	OwnedBy             string   `json:"ownedBy,omitempty"`
++	LimitsSource        string   `json:"limitsSource,omitempty"`
++	OutputModalities    []string `json:"outputModalities,omitempty"`
+ 	// ImageAdapter explicitly selects an image protocol; "disabled" opts out of discovery.
+ 	ImageAdapter    string   `json:"imageAdapter,omitempty"`
+ 	InputModalities []string `json:"inputModalities,omitempty"`
+@@ -391,6 +393,9 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+ 	cfg.ProviderOrder = nil
+ 	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
+ 		provider := cfg.Providers[name]
++		if err := ValidatePromptCacheHintMode(provider.PromptCacheHintMode); err != nil {
++			return fmt.Errorf("provider %q: %w", name, err)
++		}
+ 		if err := provider.CacheCapabilities.Validate(); err != nil {
+ 			return fmt.Errorf("provider %q: %w", name, err)
+ 		}
+@@ -437,12 +442,18 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+ 			}
+ 
+ 			shared := metadataFromPiModel(pm)
++			if err := ValidatePromptCacheHintMode(shared.PromptCacheHintMode); err != nil {
++				return fmt.Errorf("model %q: %w", pm.ID, err)
++			}
+ 			meta := shared
+ 			if override, ok := overrides[pm.ID]; ok {
+ 				if override.ContextWindow < 0 || override.MaxTokens < 0 {
+ 					return fmt.Errorf("model %q: contextWindow and maxTokens must be non-negative", pm.ID)
+ 				}
+ 				meta = metadataFromPiModel(override)
++				if err := ValidatePromptCacheHintMode(meta.PromptCacheHintMode); err != nil {
++					return fmt.Errorf("model %q: %w", pm.ID, err)
++				}
+ 			}
+ 			m, exists := cfg.Models[pm.ID]
+ 			if !exists {
+diff --git a/internal/config/model_overrides.go b/internal/config/model_overrides.go
+index 1ee2265..15cec24 100644
+--- a/internal/config/model_overrides.go
++++ b/internal/config/model_overrides.go
+@@ -18,7 +18,8 @@ const modelOverridesMetadataKey = "kbrainModelMetadataOverrides"
+ 
+ func piModelFor(id string, model Model) PiModel {
+ 	pm := PiModel{
+-		ID: id, Name: model.Name, DisplayName: model.DisplayName, OwnedBy: model.OwnedBy,
++		PromptCacheHintMode: model.PromptCacheHintMode,
++		ID:                  id, Name: model.Name, DisplayName: model.DisplayName, OwnedBy: model.OwnedBy,
+ 		LimitsSource: model.LimitsSource, InputModalities: model.InputModalities, OutputModalities: model.OutputModalities, ImageAdapter: model.ImageAdapter,
+ 		ContextWindow: model.ContextWindow(), MaxTokens: model.MaxOut, SamplingParams: model.SamplingParams,
+ 	}
+@@ -30,7 +31,8 @@ func piModelFor(id string, model Model) PiModel {
+ 
+ func metadataFromPiModel(pm PiModel) Model {
+ 	return Model{
+-		Name: pm.Name, DisplayName: pm.DisplayName, OwnedBy: pm.OwnedBy, LimitsSource: pm.LimitsSource,
++		PromptCacheHintMode: pm.PromptCacheHintMode,
++		Name:                pm.Name, DisplayName: pm.DisplayName, OwnedBy: pm.OwnedBy, LimitsSource: pm.LimitsSource,
+ 		InputModalities: pm.InputModalities, OutputModalities: pm.OutputModalities, ImageAdapter: pm.ImageAdapter, Context: pm.ContextWindow, MaxOut: pm.MaxTokens,
+ 		Vision:         slices.Contains(pm.Input, "image") || slices.Contains(pm.InputModalities, "image"),
+ 		SamplingParams: pm.SamplingParams,
+diff --git a/internal/config/prompt_cache_hint.go b/internal/config/prompt_cache_hint.go
+new file mode 100644
+index 0000000..dcb9163
+--- /dev/null
++++ b/internal/config/prompt_cache_hint.go
+@@ -0,0 +1,13 @@
++package config
++
++import "fmt"
++
++// Empty is the model's inherited policy (or the provider's legacy/default policy).
++func ValidatePromptCacheHintMode(mode string) error {
++	switch mode {
++	case "", "auto", "openai-key", "openrouter-session", "none":
++		return nil
++	default:
++		return fmt.Errorf("unsupported promptCacheHintMode %q", mode)
++	}
++}
+diff --git a/internal/routing/client.go b/internal/routing/client.go
+index b45a9f0..829753c 100644
+--- a/internal/routing/client.go
++++ b/internal/routing/client.go
+@@ -20,6 +20,9 @@ func ClientForProviderContext(ctx context.Context, prov config.Provider, name st
+ 	if err := prov.CacheCapabilities.Validate(); err != nil {
+ 		return nil, err
+ 	}
++	if err := config.ValidatePromptCacheHintMode(prov.PromptCacheHintMode); err != nil {
++		return nil, err
++	}
+ 	if !ai.SupportedAPI(prov.API) {
+ 		return nil, fmt.Errorf("unsupported API %q for provider %q", prov.API, name)
+ 	}
+@@ -105,5 +108,33 @@ func configureCache(client ai.Client, prov config.Provider) {
+ 	if prov.CacheCapabilities.SupportsPromptCacheKey != nil {
+ 		key = *prov.CacheCapabilities.SupportsPromptCacheKey
+ 	}
+-	o.SetCacheOptions(ai.CacheOptions{Retention: retention, SessionAffinity: affinity, ControlFormat: prov.CacheControlFormat, SupportsLong: long, SupportsKey: &key, AffinityFormat: prov.CacheCapabilities.SessionAffinityFormat, ResponsesCacheOptions: prov.CacheCapabilities.ResponsesCacheOptions})
++	format := prov.CacheCapabilities.SessionAffinityFormat
++	responsesOptions := prov.CacheCapabilities.ResponsesCacheOptions
++	if prov.Type == "codex" || (prov.Type == "" && (prov.API == ai.APIResponses || prov.API == ai.APIChatCompletions)) {
++		// Explicit modes and model overrides outrank the old boolean without
++		// changing the persisted provider. Endpoint capability false still wins.
++		retention = prov.PromptCacheRetention
++		if retention == "" || retention == "none" {
++			retention = "short"
++		}
++		mode := resolvePromptCacheHint(prov)
++		key = mode == "openai-key"
++		if prov.CacheCapabilities.SupportsPromptCacheKey != nil && !*prov.CacheCapabilities.SupportsPromptCacheKey {
++			key = false
++		}
++		affinity, format = false, "none"
++		if mode == "openrouter-session" {
++			affinity, format = true, "openrouter"
++		}
++		if mode != "openai-key" {
++			responsesOptions = false
++		}
++		if mode == "none" {
++			retention = "none"
++			// Upstream preserves explicit no-cache only on a declared capable
++			// official Responses endpoint, never on a strict unknown relay.
++			responsesOptions = prov.CacheCapabilities.ResponsesCacheOptions && officialCacheHost(host, "api.openai.com")
++		}
++	}
++	o.SetCacheOptions(ai.CacheOptions{Retention: retention, SessionAffinity: affinity, ControlFormat: prov.CacheControlFormat, SupportsLong: long, SupportsKey: &key, AffinityFormat: format, ResponsesCacheOptions: responsesOptions})
+ }
+diff --git a/internal/routing/failover_route.go b/internal/routing/failover_route.go
+index d72404d..663f321 100644
+--- a/internal/routing/failover_route.go
++++ b/internal/routing/failover_route.go
+@@ -76,10 +76,11 @@ func ResolveFailoverRouteContext(ctx context.Context, cfg *config.Config, modelN
+ 			continue
+ 		}
+ 		var client ai.Client
++		cacheProvider := providerWithModelCacheHint(provider, candidateModel)
+ 		if optional {
+-			client, err = ClientForProviderOptionalContext(ctx, provider, name, 0)
++			client, err = ClientForProviderOptionalContext(ctx, cacheProvider, name, 0)
+ 		} else {
+-			client, err = ClientForProviderContext(ctx, provider, name, 0)
++			client, err = ClientForProviderContext(ctx, cacheProvider, name, 0)
+ 		}
+ 		if err != nil {
+ 			lastErr = err
+diff --git a/internal/routing/prompt_cache_hint.go b/internal/routing/prompt_cache_hint.go
+new file mode 100644
+index 0000000..4df7832
+--- /dev/null
++++ b/internal/routing/prompt_cache_hint.go
+@@ -0,0 +1,44 @@
++package routing
++
++import (
++	"github.com/Stack-Cairn/K-brain/internal/ai"
++	"github.com/Stack-Cairn/K-brain/internal/config"
++	"strings"
++)
++
++func providerWithModelCacheHint(provider config.Provider, model config.Model) config.Provider {
++	if model.PromptCacheHintMode != "" {
++		provider.PromptCacheHintMode = model.PromptCacheHintMode
++	}
++	return provider
++}
++
++func officialCacheHost(host, domain string) bool {
++	return host == domain || strings.HasSuffix(host, "."+domain)
++}
++
++// LiveAgent's last pre-Go resolver: Responses carries a session key even behind
++// a relay; unknown Chat Completions endpoints receive no extra hints.
++func resolvePromptCacheHint(provider config.Provider) string {
++	if mode := provider.PromptCacheHintMode; mode != "" && mode != "auto" {
++		return mode
++	}
++	if provider.PromptCacheHintMode == "" && provider.PromptCachingEnabled != nil && !*provider.PromptCachingEnabled {
++		return "none"
++	}
++	api := provider.API
++	if api == "" {
++		api = provider.RequestFormat
++	}
++	if api == ai.APIResponses || (api == "" && provider.Type == "codex") {
++		return "openai-key"
++	}
++	host := ai.CacheEndpointHost(provider.BaseURL)
++	if officialCacheHost(host, "api.openai.com") {
++		return "openai-key"
++	}
++	if officialCacheHost(host, "openrouter.ai") {
++		return "openrouter-session"
++	}
++	return "none"
++}
+diff --git a/internal/routing/prompt_cache_hint_test.go b/internal/routing/prompt_cache_hint_test.go
+new file mode 100644
+index 0000000..6e4126b
+--- /dev/null
++++ b/internal/routing/prompt_cache_hint_test.go
+@@ -0,0 +1,191 @@
++package routing
++
++import (
++	"context"
++	"encoding/json"
++	"github.com/Stack-Cairn/K-brain/internal/ai"
++	"github.com/Stack-Cairn/K-brain/internal/config"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++func TestUpstreamPromptCacheAutoResolution(t *testing.T) {
++	for _, tc := range []struct{ url, api, want string }{
++		{"https://relay.test/v1", ai.APIResponses, "openai-key"},
++		{"https://openrouter.ai/api/v1", ai.APIResponses, "openai-key"},
++		{"https://api.openai.com/v1", ai.APIChatCompletions, "openai-key"},
++		{"https://team.api.openai.com/v1", ai.APIChatCompletions, "openai-key"},
++		{"https://openrouter.ai/api/v1", ai.APIChatCompletions, "openrouter-session"},
++		{"https://team.openrouter.ai/api/v1", ai.APIChatCompletions, "openrouter-session"},
++		{"https://api.openai.com.attacker.test/v1", ai.APIChatCompletions, "none"},
++		{"https://relay.test/api.openai.com", ai.APIChatCompletions, "none"},
++		{"https://relay.test/openrouter.ai", ai.APIChatCompletions, "none"},
++		{"http://127.0.0.1:1234", ai.APIChatCompletions, "none"},
++	} {
++		t.Run(tc.url+tc.api, func(t *testing.T) {
++			got := resolvePromptCacheHint(config.Provider{Type: "codex", BaseURL: tc.url, API: tc.api, PromptCacheHintMode: "auto"})
++			if got != tc.want {
++				t.Fatalf("got %s, want %s", got, tc.want)
++			}
++		})
++	}
++}
++
++func TestPromptCacheSettingsReachActualModelRequest(t *testing.T) {
++	for _, failover := range []bool{false, true} {
++		for _, tc := range []struct {
++			name, api, providerMode, modelMode string
++			legacyOff, key, header             bool
++		}{
++			{name: "responses auto", api: ai.APIResponses, providerMode: "auto", key: true},
++			{name: "responses missing defaults", api: ai.APIResponses, key: true},
++			{name: "responses off", api: ai.APIResponses, providerMode: "none"},
++			{name: "legacy false", api: ai.APIResponses, legacyOff: true},
++			{name: "openrouter only header", api: ai.APIResponses, providerMode: "openrouter-session", header: true},
++			{name: "unknown chat auto", api: ai.APIChatCompletions, providerMode: "auto"},
++			{name: "chat explicit key", api: ai.APIChatCompletions, providerMode: "openai-key", key: true},
++			{name: "chat explicit router", api: ai.APIChatCompletions, providerMode: "openrouter-session", header: true},
++			{name: "model off overrides auto", api: ai.APIResponses, providerMode: "auto", modelMode: "none"},
++			{name: "model auto overrides off", api: ai.APIResponses, providerMode: "none", modelMode: "auto", legacyOff: true, key: true},
++			{name: "model key overrides legacy off", api: ai.APIResponses, modelMode: "openai-key", legacyOff: true, key: true},
++			{name: "model router overrides key", api: ai.APIResponses, providerMode: "openai-key", modelMode: "openrouter-session", header: true},
++		} {
++			t.Run(tc.name+map[bool]string{true: " failover", false: " direct"}[failover], func(t *testing.T) {
++				var body map[string]any
++				var headers http.Header
++				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					headers = r.Header.Clone()
++					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
++						t.Error(err)
++					}
++					w.Header().Set("Content-Type", "application/json")
++					if tc.api == ai.APIResponses {
++						_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
++					} else {
++						_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
++					}
++				}))
++				defer server.Close()
++				provider := config.Provider{Type: "codex", API: tc.api, BaseURL: server.URL, APIKey: "fixture", PromptCacheHintMode: tc.providerMode}
++				if tc.legacyOff {
++					off := false
++					provider.PromptCachingEnabled = &off
++				}
++				cfg := &config.Config{Providers: map[string]config.Provider{"p": provider}, Models: map[string]config.Model{"m": {ID: "m", Providers: []string{"p"}, Context: 32000, MaxOut: 256, PromptCacheHintMode: tc.modelMode}}}
++				var route Route
++				var err error
++				if failover {
++					route, err = ResolveFailoverRouteContext(t.Context(), cfg, "m", "p", false)
++				} else {
++					route, err = ResolveRoute(cfg, "m", "p", false)
++				}
++				if err != nil {
++					t.Fatal(err)
++				}
++				route.Client.SetCacheKey("stable-session")
++				if _, _, err = route.Client.Complete(context.Background(), ai.Request{Model: "m", Messages: []ai.Message{{Role: "user", Content: "hello"}}}); err != nil {
++					t.Fatal(err)
++				}
++				if (body["prompt_cache_key"] == "stable-session") != tc.key {
++					t.Fatalf("cache key=%v", body["prompt_cache_key"])
++				}
++				if (headers.Get("x-session-id") == "stable-session") != tc.header {
++					t.Fatalf("affinity=%q", headers.Get("x-session-id"))
++				}
++				if body["prompt_cache_options"] != nil || body["prompt_cache_retention"] != nil {
++					t.Fatal("strict relay received unsupported cache fields")
++				}
++				if cfg.Providers["p"].PromptCacheHintMode != tc.providerMode {
++					t.Fatal("model policy modified provider settings")
++				}
++			})
++		}
++	}
++}
++
++func TestOpenRouterCacheSessionKeepsUpstreamHeaderLength(t *testing.T) {
++	var session string
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		session = r.Header.Get("x-session-id")
++		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
++	}))
++	defer server.Close()
++	client, err := ClientForProvider(config.Provider{Type: "codex", API: ai.APIChatCompletions, BaseURL: server.URL, APIKey: "fixture", PromptCacheHintMode: "openrouter-session"}, "p", 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	client.SetCacheKey(strings.Repeat("x", 300))
++	if _, _, err = client.Complete(t.Context(), ai.Request{Model: "m", Messages: []ai.Message{{Role: "user", Content: "hi"}}}); err != nil {
++		t.Fatal(err)
++	}
++	if session != strings.Repeat("x", 256) {
++		t.Fatalf("session length=%d", len(session))
++	}
++}
++
++func TestCacheModelOverrideFollowsActualFailoverDestination(t *testing.T) {
++	ResetFailoverBreakers()
++	var firstKey, secondKey any
++	var firstSession, secondSession string
++	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		var body map[string]any
++		_ = json.NewDecoder(r.Body).Decode(&body)
++		firstKey, firstSession = body["prompt_cache_key"], r.Header.Get("x-session-id")
++		w.WriteHeader(http.StatusServiceUnavailable)
++	}))
++	defer first.Close()
++	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		var body map[string]any
++		_ = json.NewDecoder(r.Body).Decode(&body)
++		secondKey, secondSession = body["prompt_cache_key"], r.Header.Get("x-session-id")
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
++	}))
++	defer second.Close()
++	policy := map[string]any{"mode": "off", "failover": map[string]any{"maxSwitches": 1}}
++	model := config.Model{ID: "m", Providers: []string{"a", "b"}, Context: 32768, MaxOut: 256, PromptCacheHintMode: "none"}
++	model.SetProviderMetadata("b", config.Model{Context: 32768, MaxOut: 256, PromptCacheHintMode: "openrouter-session"})
++	cfg := &config.Config{Models: map[string]config.Model{"m": model}, Providers: map[string]config.Provider{
++		"a": {Type: "codex", API: ai.APIChatCompletions, BaseURL: first.URL, APIKey: "fixture", PromptCacheHintMode: "openai-key", RetryPolicy: policy},
++		"b": {Type: "codex", API: ai.APIChatCompletions, BaseURL: second.URL, APIKey: "fixture", PromptCacheHintMode: "none", RetryPolicy: policy},
++	}}
++	route, err := ResolveFailoverRouteContext(t.Context(), cfg, "m", "a", false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	route.Client.SetCacheKey("destination-session")
++	_, _, err = route.Client.Stream(t.Context(), ai.Request{Model: "m", MaxTokens: 64, Messages: []ai.Message{{Role: "user", Content: "hi"}}}, func(string) {}, func(string) {}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if firstKey != nil || firstSession != "" || secondKey != nil || secondSession != "destination-session" {
++		t.Fatalf("primary=%v/%q fallback=%v/%q", firstKey, firstSession, secondKey, secondSession)
++	}
++}
++
++func TestOpenRouterModePreservesDeclaredAnthropicBlockTTLWithoutOpenAIFields(t *testing.T) {
++	var body map[string]any
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_ = json.NewDecoder(r.Body).Decode(&body)
++		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
++	}))
++	defer server.Close()
++	yes := true
++	client, err := ClientForProvider(config.Provider{Type: "codex", API: ai.APIChatCompletions, BaseURL: server.URL, APIKey: "fixture", PromptCacheHintMode: "openrouter-session", PromptCacheRetention: "long", CacheControlFormat: "anthropic", CacheCapabilities: ai.CacheCapabilities{SupportsLongRetention: &yes}}, "p", 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	client.SetCacheKey("session")
++	if _, _, err = client.Complete(t.Context(), ai.Request{Model: "claude-fixture", Messages: []ai.Message{{Role: "user", Content: "hi"}}}); err != nil {
++		t.Fatal(err)
++	}
++	if body["prompt_cache_key"] != nil || body["prompt_cache_retention"] != nil || body["prompt_cache_options"] != nil {
++		t.Fatal("OpenRouter mode leaked OpenAI extensions")
++	}
++	block := body["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
++	if block["cache_control"].(map[string]any)["ttl"] != "1h" {
++		t.Fatal("explicit compatible block TTL was lost")
++	}
++}
+diff --git a/internal/routing/route.go b/internal/routing/route.go
+index f1bbc55..9b05222 100644
+--- a/internal/routing/route.go
++++ b/internal/routing/route.go
+@@ -44,10 +44,11 @@ func ResolveRouteContext(ctx context.Context, cfg *config.Config, modelName, pro
+ 		return Route{}, fmt.Errorf("no provider configured for model %q", modelName)
+ 	}
+ 	var client ai.Client
++	cacheProvider := providerWithModelCacheHint(prov, mdl)
+ 	if optional {
+-		client, err = ClientForProviderOptionalContext(ctx, prov, providerName, cfg.MaxRetries)
++		client, err = ClientForProviderOptionalContext(ctx, cacheProvider, providerName, cfg.MaxRetries)
+ 	} else {
+-		client, err = ClientForProviderContext(ctx, prov, providerName, cfg.MaxRetries)
++		client, err = ClientForProviderContext(ctx, cacheProvider, providerName, cfg.MaxRetries)
+ 	}
+ 	if err != nil {
+ 		return Route{}, err

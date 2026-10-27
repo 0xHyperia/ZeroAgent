@@ -190,6 +190,35 @@ func TestSettingsReplacementDeletesProvidersAndPreservesDisabledModels(t *testin
 	}
 }
 
+func TestModelCacheOverrideProjectsAndInheritanceClearsOverGateway(t *testing.T) {
+	for _, mode := range []string{"auto", "openai-key", "openrouter-session", "none", ""} {
+		model := map[string]any{"id": "m"}
+		if mode != "" {
+			model["promptCacheHintMode"] = mode
+		}
+		raw, _ := json.Marshal(map[string]any{"id": "p", "type": "codex", "models": []any{model}})
+		var provider map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &provider); err != nil {
+			t.Fatal(err)
+		}
+		update, err := kbrainProviderUpdate(provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := update["models"].([]any)[0].(map[string]any)["promptCacheHintMode"]
+		if got != mode {
+			t.Fatalf("mode=%q sent=%v", mode, got)
+		}
+		projected := providerModel(kbrainProvider{ID: "p"}, kbrainModel{ID: "m", PromptCacheHintMode: mode})
+		if mode != "" && projected["promptCacheHintMode"] != mode {
+			t.Fatal("read lost model override")
+		}
+		if mode == "" && projected["promptCacheHintMode"] != nil {
+			t.Fatal("inherit projected as an override")
+		}
+	}
+}
+
 func TestSettingsCredentialIntentAndUsageSidecars(t *testing.T) {
 	previous := json.RawMessage(`{"providers":[{"id":"p","apiKeyConfigured":true,"models":[],"usageQuery":{"mode":"newapi","apiKey":"","apiKeyConfigured":true}}]}`)
 	for _, tc := range []struct {

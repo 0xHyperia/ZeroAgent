@@ -55,18 +55,19 @@ type kbrainProvider struct {
 }
 
 type kbrainModel struct {
-	Provider        string   `json:"provider"`
-	ID              string   `json:"id"`
-	Name            string   `json:"name,omitempty"`
-	DisplayName     string   `json:"displayName,omitempty"`
-	OwnedBy         string   `json:"ownedBy,omitempty"`
-	LimitsSource    string   `json:"limitsSource,omitempty"`
-	ContextWindow   int      `json:"contextWindow,omitempty"`
-	MaxOutputTokens int      `json:"maxOutputTokens,omitempty"`
-	MaxOutputToken  int      `json:"maxOutputToken,omitempty"`
-	InputModalities []string `json:"inputModalities,omitempty"`
-	Vision          bool     `json:"vision,omitempty"`
-	ImageAdapter    string   `json:"imageAdapter,omitempty"`
+	PromptCacheHintMode string   `json:"promptCacheHintMode,omitempty"`
+	Provider            string   `json:"provider"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name,omitempty"`
+	DisplayName         string   `json:"displayName,omitempty"`
+	OwnedBy             string   `json:"ownedBy,omitempty"`
+	LimitsSource        string   `json:"limitsSource,omitempty"`
+	ContextWindow       int      `json:"contextWindow,omitempty"`
+	MaxOutputTokens     int      `json:"maxOutputTokens,omitempty"`
+	MaxOutputToken      int      `json:"maxOutputToken,omitempty"`
+	InputModalities     []string `json:"inputModalities,omitempty"`
+	Vision              bool     `json:"vision,omitempty"`
+	ImageAdapter        string   `json:"imageAdapter,omitempty"`
 	// ImageModel is K-brain's read-only effective image toggle; absent on older K-brain.
 	ImageModel *bool `json:"imageModel,omitempty"`
 }
@@ -117,6 +118,9 @@ func providerModel(provider kbrainProvider, model kbrainModel) map[string]any {
 	}
 	if model.ImageAdapter != "" {
 		out["imageAdapter"] = model.ImageAdapter
+	}
+	if model.PromptCacheHintMode != "" {
+		out["promptCacheHintMode"] = model.PromptCacheHintMode
 	}
 	if model.ImageModel != nil {
 		out["imageModel"] = *model.ImageModel
@@ -568,6 +572,14 @@ func kbrainProviderUpdate(provider map[string]json.RawMessage) (map[string]any, 
 			for key, value := range model {
 				if modelFields[key] {
 					clean[key] = value
+				}
+			}
+			if ptype == "codex" {
+				// An omitted override in the UI means inherit, so explicitly clear
+				// an earlier backend override rather than keeping its old value.
+				clean["promptCacheHintMode"] = model["promptCacheHintMode"]
+				if clean["promptCacheHintMode"] == nil {
+					clean["promptCacheHintMode"] = ""
 				}
 			}
 			// "Auto" omits imageAdapter, but K-brain keeps an omitted field, so clear

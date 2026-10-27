@@ -2,6 +2,17 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "patches/kbrain/0009-prompt-cache-hint-inheritance.patch",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "上游Responses自动与Chat端点解析规则，模型覆盖优先且默认继承",
+        "既有明确模式/旧false、同ID供应商隔离、清除覆盖与落盘重开",
+        "真实出站字段、OpenRouter会话头、Native代理转发与故障转移目的地",
+        "固定源码和前八补丁字节保持，上游等价接线验证后撤销"
+      ]
+    },
+    {
       "glob": "crates/agent-gui/index.html",
       "ownership": "adapted",
       "risk": "medium",
