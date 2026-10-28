@@ -384,6 +384,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
 
 function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
   const [valid, setValid] = useState(Boolean(host));
+  const [environments, setEnvironments] = useState(host?.environments ?? []);
   const [authError, setAuthError] = useState<string | null>(null);
   const invalidated = useRef(false);
   const invalidate = useCallback(
@@ -421,12 +422,13 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
 
   const applyExecutionPresence = useCallback(
     (presence: readonly ExecutionPresence[]) => {
-      if (!host) return;
-      if (presence.some((item) => item.agent_id === host.environment.device_id && !item.online)) {
-        invalidate("所选设备已离线，请重新连接此设备。");
-      }
+      if (!host || invalidated.current || !host.isCurrent()) return;
+      // Presence can briefly go offline while the selected agent reconnects.
+      // Keep the live lease and workbench so the existing transport can recover;
+      // only an authorization rejection or its fixed expiry invalidates them.
+      setEnvironments((current) => mergeExecutionPresence(current, presence));
     },
-    [host, invalidate],
+    [host],
   );
   const unavailableLogin = useCallback(async () => {
     throw new Error("请使用桌面账号入口登录。");
@@ -446,8 +448,8 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
   );
   const reloadEnvironments = useCallback(async () => {
     requireCurrentDesktopRemoteHost();
-    return host?.environments ?? [];
-  }, [host]);
+    return environments;
+  }, [environments]);
   const clearSession = useCallback(
     async (revokeRemotely = true) => {
       if (!host) return;
@@ -465,7 +467,7 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
   return {
     token,
     accountUser: host?.accountUser ?? null,
-    environments: host?.environments ?? [],
+    environments,
     // An invalid remote mount retains its target; it never becomes Cloud Chat/local.
     selection: host?.selection ?? null,
     authInitializing: false,

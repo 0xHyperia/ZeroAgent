@@ -57,19 +57,24 @@ test("the complete remote session uses the verified Native identity and preserve
   assert.ok(f.events.reset >= 1, "unmount disposes the previous module's Gateway client");
 });
 
-test("an offline presence push blocks the remote session while retaining the exact selected target", async (t) => {
+test("offline presence remains visible without revoking the exact selected target", async (t) => {
   const f = await fixture(t);
+  const token = f.state().token;
   await f.env.act(async () => f.state().applyExecutionPresence([{ agent_id: "device-b", online: false }]));
   assert.match(f.state().token, /^selection\./, "another device cannot invalidate this mount");
   await f.env.act(async () => f.state().applyExecutionPresence([{ agent_id: "device-a", online: false }]));
-  assert.equal(f.state().token, "");
+  assert.equal(f.state().token, token);
+  assert.equal(f.state().environments[0].online, false);
+  assert.equal((await f.state().reloadEnvironments())[0].online, false);
   assert.equal(f.state().selection.device_id, "device-a");
   assert.equal(f.state().selection.runtime_kind, "device_agent");
-  assert.equal(f.container.textContent, "blocked");
-  assert.equal(f.events.invalid.length, 1);
-  assert.equal(f.events.ephemeral.at(-1), "");
+  assert.equal(f.container.textContent, "connected");
+  assert.equal(f.events.invalid.length, 0);
   await f.env.act(async () => window.dispatchEvent(new Event("zeroagent:gateway-selection-invalid")));
   assert.equal(f.events.invalid.length, 1, "the same failure does not repeatedly reset the desktop target");
+  assert.equal(f.state().token, "", "an explicit authorization rejection still blocks the session");
+  await f.env.act(async () => f.state().applyExecutionPresence([{ agent_id: "device-a", online: true }]));
+  assert.equal(f.state().token, "", "late presence cannot revive a rejected lease");
 });
 
 test("lease expiry blocks future work without changing the remote selection to cloud or local", async (t) => {
@@ -104,4 +109,19 @@ test("Native logout failures retain the current connection and permit a successf
   assert.equal(f.state().selection.device_id, "device-a", "logout does not silently select a local/cloud target");
   assert.equal(f.events.invalid.length, 1);
   assert.ok(f.events.reset > resets);
+});
+
+
+test("a remote operation's offline/online presence transition does not revoke its live selection", async (t) => {
+  const f = await fixture(t);
+  const token = f.state().token;
+  const resetCount = f.events.reset;
+  await f.env.act(async () => f.state().applyExecutionPresence([{ agent_id: "device-a", online: false }]));
+  assert.equal(f.state().token, token, "device presence is not an authorization rejection");
+  assert.equal(f.state().environments[0].online, false, "the UI still sees actual offline presence");
+  await f.env.act(async () => f.state().applyExecutionPresence([{ agent_id: "device-a", online: true }]));
+  assert.equal(f.state().token, token);
+  assert.equal(f.state().environments[0].online, true);
+  assert.equal(f.events.reset, resetCount, "presence must not dispose the in-flight workbench client");
+  assert.deepEqual(f.events.invalid, []);
 });

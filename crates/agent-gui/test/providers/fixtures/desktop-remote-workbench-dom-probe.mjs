@@ -155,6 +155,16 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     assert.ok(slots.account?.isConnected, "desktop account menu has a live portal target");
     assert.ok(slots.window?.isConnected, "desktop window controls have a live portal target");
     assert.ok(server.frames.some((frame) => frame.json.agent_id === "device-a" && frame.json.agent_request?.settings_get));
+    const workbench = root.querySelector("[data-app-workbench-chrome]");
+    const peer = server.frames.find((frame) => frame.case === "hello" && frame.peer.agent === "device-a").peer;
+    peer.send({ agent_id: "device-a", status: { agent_id: "device-a", online: false } });
+    await new Promise((resolvePresence) => setTimeout(resolvePresence, 50));
+    assert.deepEqual(invalid, [], "offline presence cannot revoke a valid desktop lease");
+    assert.equal(root.querySelector("[data-app-workbench-chrome]"), workbench, "the shipped workbench stays mounted while its target reconnects");
+    peer.send({ agent_id: "device-a", status: { agent_id: "device-a", online: true, agent_ready: true, chat_runtime_ready: true } });
+    await new Promise((resolvePresence) => setTimeout(resolvePresence, 50));
+    assert.deepEqual(invalid, []);
+    assert.equal(root.querySelector("[data-app-workbench-chrome]"), workbench);
     first.dispose();
     first = null;
     assert.equal(root.childElementCount, 0);
