@@ -1,0 +1,4926 @@
+{
+  "schema_version": 1,
+  "upstream_commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "product_merge_commit": "5fc68941829b15ff13a4d7cb17cd67dded97816d",
+  "excludes": [
+    "docs/upstream/v2.0.0-beta.24-local-differences.json"
+  ],
+  "path_count": 983,
+  "files": [
+    {
+      "path": ".dockerignore",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": ".gitattributes",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": ".github/CONTRIBUTING.md",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.15.md",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.16.md",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.17.md",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.18.md",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.19.md",
+      "added": 25,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.20.md",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.21.md",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.22.md",
+      "added": 30,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.3.23.md",
+      "added": 24,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes-public/v0.4.0-beta.2.md",
+      "added": 26,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.15.md",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.16.md",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.17.md",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.18.md",
+      "added": 25,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.19.md",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.20.md",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.21.md",
+      "added": 24,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.22.md",
+      "added": 38,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.3.23.md",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": ".github/release-notes/v0.4.0-beta.2.md",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": ".github/upstream-ownership.yaml",
+      "added": 798,
+      "deleted": 0
+    },
+    {
+      "path": ".github/upstream-sync.json",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": ".github/workflows/android-release.yml",
+      "added": 276,
+      "deleted": 0
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "added": 98,
+      "deleted": 185
+    },
+    {
+      "path": ".github/workflows/desktop-release.yml",
+      "added": 339,
+      "deleted": 232
+    },
+    {
+      "path": ".github/workflows/gateway-docker.yml",
+      "added": 34,
+      "deleted": 4
+    },
+    {
+      "path": ".github/workflows/pr-governance.yml",
+      "added": 0,
+      "deleted": 183
+    },
+    {
+      "path": ".github/workflows/stale.yml",
+      "added": 0,
+      "deleted": 36
+    },
+    {
+      "path": ".github/workflows/update-model-catalog.yml",
+      "added": 4,
+      "deleted": 10
+    },
+    {
+      "path": ".github/workflows/update-star-history.yml",
+      "added": 0,
+      "deleted": 70
+    },
+    {
+      "path": ".gitignore",
+      "added": 6,
+      "deleted": 2
+    },
+    {
+      "path": "AGENTS.md",
+      "added": 33,
+      "deleted": 0
+    },
+    {
+      "path": "Cargo.lock",
+      "added": 189,
+      "deleted": 77
+    },
+    {
+      "path": "Dockerfile",
+      "added": 11,
+      "deleted": 7
+    },
+    {
+      "path": "Makefile",
+      "added": 85,
+      "deleted": 107
+    },
+    {
+      "path": "README.md",
+      "added": 97,
+      "deleted": 378
+    },
+    {
+      "path": "README.zh-CN.md",
+      "added": 98,
+      "deleted": 379
+    },
+    {
+      "path": "biome.json",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/buf.gen.yaml",
+      "added": 3,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/cmd/gateway/main.go",
+      "added": 53,
+      "deleted": 33
+    },
+    {
+      "path": "crates/agent-gateway/cmd/gateway/main_test.go",
+      "added": 26,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/go.mod",
+      "added": 4,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-gateway/go.sum",
+      "added": 12,
+      "deleted": 49
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/desktop_bound_selection_test.go",
+      "added": 80,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/device_name_test.go",
+      "added": 216,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/device_presence_test.go",
+      "added": 95,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/http.go",
+      "added": 601,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/http_test.go",
+      "added": 795,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/password_verification.go",
+      "added": 58,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/password_verification_test.go",
+      "added": 133,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/persistent_store.go",
+      "added": 760,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/service.go",
+      "added": 1046,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/store.go",
+      "added": 494,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/types.go",
+      "added": 169,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/usa_client.go",
+      "added": 678,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/web_chat_http.go",
+      "added": 295,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/account/workspace_snapshot_test.go",
+      "added": 65,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/agenttoken/store.go",
+      "added": 0,
+      "deleted": 519
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/agenttoken/store_benchmark_test.go",
+      "added": 0,
+      "deleted": 302
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/agenttoken/store_test.go",
+      "added": 0,
+      "deleted": 625
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/bearer_test.go",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/http_middleware.go",
+      "added": 18,
+      "deleted": 26
+    },
+    {
+      "path": "crates/agent-gateway/internal/auth/image_principal.go",
+      "added": 1,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gateway/internal/config/config.go",
+      "added": 134,
+      "deleted": 159
+    },
+    {
+      "path": "crates/agent-gateway/internal/config/config_test.go",
+      "added": 53,
+      "deleted": 73
+    },
+    {
+      "path": "crates/agent-gateway/internal/db/db.go",
+      "added": 0,
+      "deleted": 47
+    },
+    {
+      "path": "crates/agent-gateway/internal/db/sqlite.go",
+      "added": 0,
+      "deleted": 37
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/agents.go",
+      "added": 0,
+      "deleted": 202
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/health.go",
+      "added": 23,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/health_test.go",
+      "added": 33,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/upload.go",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/usa_zero_proxy.go",
+      "added": 89,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/usa_zero_proxy_test.go",
+      "added": 85,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue_test.go",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/mcp_settings_test.go",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings.go",
+      "added": 24,
+      "deleted": 17
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings_contract_test.go",
+      "added": 29,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/chat_ingress_test.go",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway.pb.go",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway_ws.pb.go",
+      "added": 461,
+      "deleted": 270
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/agent_conn.go",
+      "added": 58,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_conn.go",
+      "added": 61,
+      "deleted": 12
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_events.go",
+      "added": 27,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_local.go",
+      "added": 30,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/controller_selection.go",
+      "added": 46,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/handshake.go",
+      "added": 18,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/server.go",
+      "added": 37,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/terminal_conn.go",
+      "added": 58,
+      "deleted": 21
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/workspace_guard.go",
+      "added": 172,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/workspace_guard_test.go",
+      "added": 98,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/shared/origin.go",
+      "added": 4,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http.go",
+      "added": 122,
+      "deleted": 53
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http_test.go",
+      "added": 103,
+      "deleted": 11
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/local_http.go",
+      "added": 64,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/history_observer_sync_test.go",
+      "added": 56,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager.go",
+      "added": 14,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_history_sync.go",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_settings_sync_stt_test.go",
+      "added": 0,
+      "deleted": 65
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_settings_sync_test.go",
+      "added": 59,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/tunnel_state.go",
+      "added": 40,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/tunnel_state_test.go",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/aliyun_dashscope.go",
+      "added": 0,
+      "deleted": 199
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/aliyun_wire_test.go",
+      "added": 0,
+      "deleted": 100
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/baidu_cloud.go",
+      "added": 0,
+      "deleted": 195
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/common.go",
+      "added": 0,
+      "deleted": 315
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/http.go",
+      "added": 0,
+      "deleted": 222
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/live_provider_test.go",
+      "added": 0,
+      "deleted": 63
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/manager.go",
+      "added": 0,
+      "deleted": 165
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/settings.go",
+      "added": 0,
+      "deleted": 307
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/stt_test.go",
+      "added": 0,
+      "deleted": 833
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/tencent_cloud.go",
+      "added": 0,
+      "deleted": 161
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/volcengine_seed_v3.go",
+      "added": 0,
+      "deleted": 293
+    },
+    {
+      "path": "crates/agent-gateway/internal/stt/volcengine_v2.go",
+      "added": 0,
+      "deleted": 314
+    },
+    {
+      "path": "crates/agent-gateway/internal/transport/wscore/authorization_test.go",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/internal/transport/wscore/conn.go",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway.proto",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway_ws.proto",
+      "added": 24,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/test/auth/auth_test.go",
+      "added": 0,
+      "deleted": 85
+    },
+    {
+      "path": "crates/agent-gateway/test/helpers/load-web-module.mjs",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/http/agents_api_test.go",
+      "added": 0,
+      "deleted": 402
+    },
+    {
+      "path": "crates/agent-gateway/test/http/http_routes_test.go",
+      "added": 15,
+      "deleted": 12
+    },
+    {
+      "path": "crates/agent-gateway/test/testutil/account_fixture.go",
+      "added": 91,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/test/upload/import_directory_test.go",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/account_history_sync_test.go",
+      "added": 105,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/account_isolation_test.go",
+      "added": 74,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go",
+      "added": 464,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/agent_token_test.go",
+      "added": 0,
+      "deleted": 356
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/multiagent_benchmark_test.go",
+      "added": 0,
+      "deleted": 196
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_hardening_test.go",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_helpers_test.go",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_multiagent_test.go",
+      "added": 0,
+      "deleted": 334
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/auth-storage.test.mjs",
+      "added": 8,
+      "deleted": 49
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/browser-uuid.test.mjs",
+      "added": 17,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/session-workbench-web.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/upload-readable-files.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/web-settings.test.mjs",
+      "added": 5,
+      "deleted": 91
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/workspace-projects.test.mjs",
+      "added": 30,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/index.html",
+      "added": 6,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gateway/web/package.json",
+      "added": 5,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/public/favicon.svg",
+      "added": 0,
+      "deleted": 107
+    },
+    {
+      "path": "crates/agent-gateway/web/public/icon-simple.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gateway/web/public/zeroagent-logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/assistantAvatar.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/imageStudio.ts",
+      "added": 7,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/kbrainSkills.ts",
+      "added": 8,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/providerSettings.tsx",
+      "added": 8,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "added": 47,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
+      "added": 369,
+      "deleted": 70
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "added": 89,
+      "deleted": 68
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/UserMenu.tsx",
+      "added": 87,
+      "deleted": 45
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/constants.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/gatewayConversationRestore.ts",
+      "added": 7,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySession.ts",
+      "added": 459,
+      "deleted": 78
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
+      "added": 46,
+      "deleted": 35
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayWorkspaceProjects.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/sidebar/GatewaySidebarContainer.tsx",
+      "added": 13,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/workbench/sessionWorkbench.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/CodeFlowBackground.tsx",
+      "added": 165,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/DesktopHostSlot.tsx",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/ExecutionEnvironmentSwitcher.tsx",
+      "added": 202,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/GatewayBrand.tsx",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/mobile/MobileAppExperience.tsx",
+      "added": 197,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/onboarding/FirstRunOnboarding.tsx",
+      "added": 259,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/relay/GroupMultiSelect.tsx",
+      "added": 115,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/relay/RelayAccessGate.tsx",
+      "added": 407,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/relay/RelayKeyCopyDialog.tsx",
+      "added": 78,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/relay/ZeroAgentLogo.tsx",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/desktopRemoteEntry.tsx",
+      "added": 59,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/i18n/config.ts",
+      "added": 22,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gateway/web/src/index.css",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/accountRequest.ts",
+      "added": 48,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/adminApi.ts",
+      "added": 0,
+      "deleted": 124
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/agentTypes.ts",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chatUi.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
+      "added": 127,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/executionTargets.ts",
+      "added": 236,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewayAuth.ts",
+      "added": 0,
+      "deleted": 57
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocket.ts",
+      "added": 22,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketRpc.ts",
+      "added": 12,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketShared.ts",
+      "added": 20,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketTransport.ts",
+      "added": 26,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts",
+      "added": 21,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/historyShare.ts",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/imageIdentity.ts",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/imageStudio.ts",
+      "added": 2,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/mobileAppUpdate.ts",
+      "added": 141,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/mobileRuntime.ts",
+      "added": 472,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts",
+      "added": 143,
+      "deleted": 45
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/relay/client.ts",
+      "added": 564,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/relay/providers.ts",
+      "added": 249,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/storage.ts",
+      "added": 15,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/stt/webSttSettingsService.ts",
+      "added": 0,
+      "deleted": 49
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/stt/webSttTransport.ts",
+      "added": 0,
+      "deleted": 157
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/terminal/gatewayTerminalStreamClient.ts",
+      "added": 8,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/uploadDirectory.ts",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/uploadReadableFiles.ts",
+      "added": 4,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/webSettings.ts",
+      "added": 5,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gateway/web/src/main.tsx",
+      "added": 13,
+      "deleted": 16
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/AccountLoginPage.tsx",
+      "added": 404,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/CloudChatPage.tsx",
+      "added": 920,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/DevicesAdminPage.tsx",
+      "added": 0,
+      "deleted": 22
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/LoginPage.tsx",
+      "added": 0,
+      "deleted": 271
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/SettingsSyncLoading.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/SharedHistoryPage.tsx",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/StatusDashboardPage.tsx",
+      "added": 0,
+      "deleted": 1583
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/AccountSection.tsx",
+      "added": 414,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/DevicesSection.tsx",
+      "added": 190,
+      "deleted": 863
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/RelayProvidersSection.tsx",
+      "added": 246,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/types.ts",
+      "added": 8,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/shims/tauriCore.ts",
+      "added": 7,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gateway/web/src/shims/tauriEvent.ts",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/src/shims/tauriOpener.ts",
+      "added": 9,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/styles/zeroagent.css",
+      "added": 260,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/vite-env.d.ts",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/src/zeroagent.css",
+      "added": 260,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/account-login-submit.test.mjs",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/account-request.test.mjs",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/account-session-ownership.test.mjs",
+      "added": 71,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/account-status-settings.test.mjs",
+      "added": 25,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/ai-approval-settings.test.mjs",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs",
+      "added": 38,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/conversation-grouping.test.mjs",
+      "added": 48,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/execution-targets.test.mjs",
+      "added": 182,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-sync-errors.test.mjs",
+      "added": 44,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-v2-adapters.test.mjs",
+      "added": 7,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/test/image-studio.test.mjs",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/test/kbrain-skills-adapter.test.mjs",
+      "added": 36,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gateway/web/test/mobile-app-update.test.mjs",
+      "added": 249,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs",
+      "added": 143,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/relay-client.test.mjs",
+      "added": 363,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/relay-password-verification.test.mjs",
+      "added": 39,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/status-dashboard-settings.test.mjs",
+      "added": 0,
+      "deleted": 44
+    },
+    {
+      "path": "crates/agent-gateway/web/test/trajectory-mobile-layout.test.mjs",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/test/user-menu-navigation.test.mjs",
+      "added": 75,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gateway/web/vite.config.ts",
+      "added": 48,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/README.md",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/browser-extension/background.js",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/browser-extension/manifest.json",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/index.html",
+      "added": 11,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/package.json",
+      "added": 8,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/public/favicon.svg",
+      "added": 0,
+      "deleted": 107
+    },
+    {
+      "path": "crates/agent-gui/public/zeroagent-logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/Cargo.toml",
+      "added": 22,
+      "deleted": 12
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/build.rs",
+      "added": 40,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/.editorconfig",
+      "added": 12,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/.gitignore",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/.gitignore",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/build.gradle.kts",
+      "added": 71,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/proguard-rules.pro",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/java/top/usa0/zeroagent/MainActivity.kt",
+      "added": 142,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml",
+      "added": 30,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/drawable/ic_launcher_background.xml",
+      "added": 170,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/layout/activity_main.xml",
+      "added": 18,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/values-night/themes.xml",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/colors.xml",
+      "added": 10,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/strings.xml",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/values/themes.xml",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/app/src/main/res/xml/file_paths.xml",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/build.gradle.kts",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/buildSrc/build.gradle.kts",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/buildSrc/src/main/java/top/usa0/zeroagent/kotlin/BuildTask.kt",
+      "added": 68,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/buildSrc/src/main/java/top/usa0/zeroagent/kotlin/RustPlugin.kt",
+      "added": 85,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/gradle.properties",
+      "added": 24,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.jar",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/gradlew",
+      "added": 185,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/gradlew.bat",
+      "added": 89,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/gen/android/settings.gradle",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/128x128-windows.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/128x128.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/128x128@2x-windows.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/128x128@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/32x32-windows.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/32x32.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/64x64.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square107x107Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square142x142Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square150x150Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square284x284Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square30x30Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square310x310Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square44x44Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square71x71Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/Square89x89Logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/StoreLogo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/android/values/ic_launcher_background.xml",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon-1024.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon-simple.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon-windows.ico",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon-windows.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon.icns",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon.ico",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/icon.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@1x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@2x-1.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-20x20@3x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@1x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@2x-1.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-29x29@3x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@1x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@2x-1.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-40x40@3x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-512@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-60x60@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-60x60@3x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-76x76@1x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-76x76@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/icons/liveagent-logo.svg",
+      "added": 0,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/liveagent-code-review/SKILL.md",
+      "added": 0,
+      "deleted": 87
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-creator/SKILL.md",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-creator/references/agent-skill-format.md",
+      "added": 7,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-creator/references/authoring-patterns.md",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-installer/SKILL.md",
+      "added": 5,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-installer/references/install-sources.md",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/skills-installer/references/safety-and-conflicts.md",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/prompt/skills/zeroagent-code-review/SKILL.md",
+      "added": 87,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/app.rs",
+      "added": 14,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/mod.rs",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/system.rs",
+      "added": 63,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/update.rs",
+      "added": 17,
+      "deleted": 16
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/automation/cron.rs",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/automation/hook.rs",
+      "added": 19,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/backup_io.rs",
+      "added": 40,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain.rs",
+      "added": 524,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/backup_kbrain_tests.rs",
+      "added": 855,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/backup_snapshot.rs",
+      "added": 139,
+      "deleted": 36
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/canonical_configuration.rs",
+      "added": 841,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/ccs_import.rs",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/cherry_import.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/commands.rs",
+      "added": 65,
+      "deleted": 18
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs",
+      "added": 572,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/db.rs",
+      "added": 111,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
+      "added": 673,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs",
+      "added": 337,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/gateway_skills_tests.rs",
+      "added": 148,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/gateway_sync.rs",
+      "added": 16,
+      "deleted": 23
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding.rs",
+      "added": 266,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/mcp_oauth_binding_tests.rs",
+      "added": 326,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/mod.rs",
+      "added": 12,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/native_batch.rs",
+      "added": 420,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/native_batch_tests.rs",
+      "added": 207,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/remote.rs",
+      "added": 54,
+      "deleted": 13
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/skills_http_tests.rs",
+      "added": 456,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/tests.rs",
+      "added": 373,
+      "deleted": 91
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/types.rs",
+      "added": 7,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences.rs",
+      "added": 148,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/ui_preferences_tests.rs",
+      "added": 133,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/webdav_backup_tests.rs",
+      "added": 228,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/webdav_sync.rs",
+      "added": 269,
+      "deleted": 86
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
+      "added": 13,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/pi_migration.rs",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/image_export.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/browser.rs",
+      "added": 8,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/gateway.rs",
+      "added": 62,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
+      "added": 147,
+      "deleted": 212
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/mcp_oauth.rs",
+      "added": 98,
+      "deleted": 9
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/mcp_protocol.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/mod.rs",
+      "added": 3,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/planning.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/checkpoint.rs",
+      "added": 2,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/fs.rs",
+      "added": 7,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/git.rs",
+      "added": 42,
+      "deleted": 16
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/subagent_worktree.rs",
+      "added": 7,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "added": 361,
+      "deleted": 130
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/data_home.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/sandbox.rs",
+      "added": 36,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/shell_runner.rs",
+      "added": 11,
+      "deleted": 11
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/shell_session.rs",
+      "added": 50,
+      "deleted": 21
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/registry.rs",
+      "added": 8,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/shell.rs",
+      "added": 39,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/state.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/tests.rs",
+      "added": 6,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/windows_sandbox.rs",
+      "added": 95,
+      "deleted": 51
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_identity.rs",
+      "added": 440,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session.rs",
+      "added": 1152,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session/api.rs",
+      "added": 703,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
+      "added": 537,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote/tests.rs",
+      "added": 415,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session/gateway.rs",
+      "added": 1083,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/account_session/tests.rs",
+      "added": 1609,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/automation/db.rs",
+      "added": 3,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/automation/mod.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/automation/scheduler.rs",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/automation/store.rs",
+      "added": 10,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
+      "added": 631,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
+      "added": 711,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
+      "added": 239,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/bridge.rs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/launcher.rs",
+      "added": 1,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/mod.rs",
+      "added": 5,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/configuration_coordinator.rs",
+      "added": 244,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/desktop_oauth.rs",
+      "added": 424,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/device_credentials.rs",
+      "added": 465,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/connection.rs",
+      "added": 48,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "added": 15,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "added": 140,
+      "deleted": 248
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/history_sync.rs",
+      "added": 29,
+      "deleted": 9
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_memory.rs",
+      "added": 7,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "added": 20,
+      "deleted": 60
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/terminal.rs",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/tests.rs",
+      "added": 17,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/util.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/ws_transport.rs",
+      "added": 151,
+      "deleted": 26
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "added": 203,
+      "deleted": 105
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+      "added": 1558,
+      "deleted": 110
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend/managed_model_discovery_tests.rs",
+      "added": 511,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs",
+      "added": 225,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_tests.rs",
+      "added": 521,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend/prompt_cache_tests.rs",
+      "added": 127,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend/remote_managed_bindings_tests.rs",
+      "added": 60,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/local_gateway.rs",
+      "added": 14,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/managed_model_broker.rs",
+      "added": 1016,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker.rs",
+      "added": 315,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/retired_extensions_tests.rs",
+      "added": 41,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/rotation_tests.rs",
+      "added": 191,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/broker/tests.rs",
+      "added": 266,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/discovery.rs",
+      "added": 13,
+      "deleted": 19
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/error_tests.rs",
+      "added": 131,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/flow.rs",
+      "added": 17,
+      "deleted": 29
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/mod.rs",
+      "added": 219,
+      "deleted": 79
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/register.rs",
+      "added": 7,
+      "deleted": 39
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation.rs",
+      "added": 311,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/rotation/tests.rs",
+      "added": 405,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/scoped_tests.rs",
+      "added": 296,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs",
+      "added": 632,
+      "deleted": 135
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/store/retry_tests.rs",
+      "added": 109,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/maintenance.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/mod.rs",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/paths.rs",
+      "added": 1,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/store.rs",
+      "added": 4,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/tests.rs",
+      "added": 37,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
+      "added": 612,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mobile_gateway/session.rs",
+      "added": 301,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mobile_gateway/session/tests.rs",
+      "added": 305,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mobile_secure_store.rs",
+      "added": 324,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mod.rs",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/planning/backend.rs",
+      "added": 4,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/planning/legacy.rs",
+      "added": 34,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/planning/mod.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/planning/notification.rs",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/provider_usage.rs",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/proxy.rs",
+      "added": 89,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/builtin.rs",
+      "added": 61,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/clawhub.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/tests.rs",
+      "added": 53,
+      "deleted": 17
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/stt/baidu_cloud.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/stt/mod.rs",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/tray.rs",
+      "added": 7,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/webdav.rs",
+      "added": 8,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/webdav_auto_sync.rs",
+      "added": 69,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.android.conf.json",
+      "added": 30,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.conf.json",
+      "added": 21,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.conf.json",
+      "added": 7,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.release.conf.json",
+      "added": 7,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src/App.tsx",
+      "added": 440,
+      "deleted": 159
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/assistantAvatar.ts",
+      "added": 1,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "added": 14,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts",
+      "added": 14,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/providerSettings.tsx",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/settingsExtension.tsx",
+      "added": 46,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx",
+      "added": 2,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/systemSettings.tsx",
+      "added": 0,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/components/CodeFlowBackground.tsx",
+      "added": 165,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/DesktopExecutionSwitcher.tsx",
+      "added": 168,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/ReleaseAnnouncementDialog.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/components/WindowsTitleBar.tsx",
+      "added": 2,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/components/app/AppBootShell.tsx",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/components/chat/UserMenu.tsx",
+      "added": 120,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/cron/CronPromptRunner.tsx",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/components/onboarding/FirstRunOnboarding.tsx",
+      "added": 240,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/relay/GroupMultiSelect.tsx",
+      "added": 130,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/relay/RelayAccessGate.tsx",
+      "added": 523,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/relay/RelayKeyCopyDialog.tsx",
+      "added": 84,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/components/relay/ZeroAgentLogo.tsx",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/i18n/config.ts",
+      "added": 65,
+      "deleted": 31
+    },
+    {
+      "path": "crates/agent-gui/src/lib/automation/backend.ts",
+      "added": 7,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/lib/automation/hookRunner.ts",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/automation/kbrainCron.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/automation/kbrainHooks.ts",
+      "added": 3,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/backup/index.ts",
+      "added": 36,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src/lib/host.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/bootstrap.ts",
+      "added": 37,
+      "deleted": 13
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/catalog.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "added": 61,
+      "deleted": 21
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/configurationVersion.ts",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/goalStore.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/history.ts",
+      "added": 41,
+      "deleted": 41
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "added": 34,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/manualHistoryImport.ts",
+      "added": 32,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/mapping.ts",
+      "added": 6,
+      "deleted": 42
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/mcp.ts",
+      "added": 22,
+      "deleted": 15
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/memory.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/profile.ts",
+      "added": 35,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/prompts.ts",
+      "added": 23,
+      "deleted": 9
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "added": 10,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/queueClient.ts",
+      "added": 13,
+      "deleted": 9
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/runtimeConnection.ts",
+      "added": 8,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sessionSync.ts",
+      "added": 19,
+      "deleted": 18
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sessionSyncState.ts",
+      "added": 4,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/toolPolicies.ts",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/trajectory.ts",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/transport.ts",
+      "added": 4,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
+      "added": 26,
+      "deleted": 17
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/types.ts",
+      "added": 7,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/managed-process/backend.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/memory/prompts/extraction.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/memory/prompts/managerTool.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/memory/prompts/organizer.ts",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/lib/memory/prompts/shared.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/planning/kbrain.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/providerRuntimeConfig.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/streamRetry.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/textOnlyRuntime.ts",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/service/llmService.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/usageQuery.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/accountProxy.ts",
+      "added": 9,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/client.ts",
+      "added": 794,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/desktopExecution.ts",
+      "added": 164,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/desktopRemoteHost.ts",
+      "added": 315,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/desktopRemoteRuntime.ts",
+      "added": 70,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/desktopRequest.ts",
+      "added": 83,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/deviceRegistration.ts",
+      "added": 137,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/installation.ts",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/managedCredentials.ts",
+      "added": 30,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/nativeGatewaySocket.ts",
+      "added": 165,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/nativeSession.ts",
+      "added": 210,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/providers.ts",
+      "added": 288,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/relay/remoteDeviceState.ts",
+      "added": 91,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/backendOwnedMerge.ts",
+      "added": 25,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/errors.ts",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/legacyMcpImport.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/storage.ts",
+      "added": 501,
+      "deleted": 470
+    },
+    {
+      "path": "crates/agent-gui/src/lib/startup/render.ts",
+      "added": 16,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/src/lib/stt/desktopSttSettingsService.ts",
+      "added": 30,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/bus.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/browserTools.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/builtinRegistry.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/cronTools.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/cuaSelfGuard.ts",
+      "added": 15,
+      "deleted": 15
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/fsTools.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/mcpManagerTools.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/mcpTools.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/shellTools.ts",
+      "added": 8,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/skillAccessPolicy.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/skillTools.ts",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/sshManagerTools.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tray/trayMenu.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tray/trayPrefs.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/main.tsx",
+      "added": 41,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "added": 105,
+      "deleted": 21
+    },
+    {
+      "path": "crates/agent-gui/src/pages/RemoteDeviceWorkbench.tsx",
+      "added": 197,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/chatPageTypes.ts",
+      "added": 9,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/DesktopCheckpointRewindProvider.tsx",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/KBrainCheckpointRewindProvider.tsx",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayComposerActions.ts",
+      "added": 5,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts",
+      "added": 29,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/sidebar/ChatSidebarContainer.tsx",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/surfaces/ConversationPaneHostEnvironment.tsx",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/workbench/sessionWorkbench.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/workspace/useProjectTerminals.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/workspace/useWorkspaceProjects.ts",
+      "added": 19,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/AboutSection.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/AccountSection.tsx",
+      "added": 416,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/BackupSyncSection.tsx",
+      "added": 17,
+      "deleted": 12
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/CherryStudioImportModal.tsx",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/DevicesSection.tsx",
+      "added": 256,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/RelayProvidersSection.tsx",
+      "added": 251,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/types.ts",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/src/shims/tauriCore.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/src/vite-env.d.ts",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/backend/cargo-smoke.test.mjs",
+      "added": 35,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-android.test.mjs",
+      "added": 300,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-branding.test.mjs",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-manifest.test.mjs",
+      "added": 43,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-notes.test.mjs",
+      "added": 5,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-upstream-adaptation.test.mjs",
+      "added": 67,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/backend/release-version.test.mjs",
+      "added": 44,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-branding.test.mjs",
+      "added": 41,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-image-viewer.test.mjs",
+      "added": 31,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-stop-timing.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-group-indent.test.mjs",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-pages.test.mjs",
+      "added": 11,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-picker-icons.test.mjs",
+      "added": 6,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/chat/conversation-thinking.test.mjs",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/conversation-title-job.test.mjs",
+      "added": 14,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/edge-measure-exit.test.mjs",
+      "added": 36,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/chat/execution-mode-model-picker.test.mjs",
+      "added": 10,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-composer-actions.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-bootstrap.test.mjs",
+      "added": 65,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-composer-commands-backend.test.mjs",
+      "added": 6,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-host-boundary.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-managed-mapping.test.mjs",
+      "added": 9,
+      "deleted": 7
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-runtime-default.test.mjs",
+      "added": 4,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-sync-backend.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-settings-page-runtime.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sharing-ui.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-workspace-sidebar.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/markdown-image-policy.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/mention-refetch.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/chat/permission-modes-backend.test.mjs",
+      "added": 12,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/chat/sidebar-shells.test.mjs",
+      "added": 34,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/sidebar-store.test.mjs",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/sidebar-workspace-sections.test.mjs",
+      "added": 56,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/workbench-window-session.test.mjs",
+      "added": 4,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/chat/workspace-parity.test.mjs",
+      "added": 52,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs",
+      "added": 43,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/desktop-execution-switcher-layout.test.mjs",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/edge-measure.mjs",
+      "added": 35,
+      "deleted": 22
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/kbrain-binary.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/kbrain-trajectory-fixture.mjs",
+      "added": 20,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/load-ts-module.mjs",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/native-configuration-fixture.mjs",
+      "added": 61,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/i18n/shared-translations.test.mjs",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/i18n/translations.test.mjs",
+      "added": 11,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/image-size.test.mjs",
+      "added": 103,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/studio-controller.test.mjs",
+      "added": 7,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",
+      "added": 43,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-remote-gateway-runtime.test.mjs",
+      "added": 156,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-remote-host.test.mjs",
+      "added": 166,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-remote-native-host.test.mjs",
+      "added": 172,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-remote-session.test.mjs",
+      "added": 107,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/desktop-remote-workbench.test.mjs",
+      "added": 164,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/desktop-remote-browser-probe.mjs",
+      "added": 45,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/desktop-remote-gateway-fixture.mjs",
+      "added": 223,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/desktop-remote-native-pair-probe.mjs",
+      "added": 10,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/desktop-remote-workbench-dom-probe.mjs",
+      "added": 188,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-approval.mjs",
+      "added": 42,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-bridge.mjs",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-matrix.mjs",
+      "added": 58,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-model-server.mjs",
+      "added": 50,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-reconnect.mjs",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-rpc.mjs",
+      "added": 74,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/native-pair-slow-models.mjs",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/fixtures/prompt-cache-runtime-probe.mjs",
+      "added": 83,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-backend-boundary.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-checkpoint-acceptance.mjs",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-client.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",
+      "added": 38,
+      "deleted": 26
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-legacy-provider-deleted-reimport.test.mjs",
+      "added": 12,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-legacy-provider-import-retry.test.mjs",
+      "added": 0,
+      "deleted": 9
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-manual-history-import.test.mjs",
+      "added": 37,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-mcp-settings.test.mjs",
+      "added": 8,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-provider-migration.test.mjs",
+      "added": 10,
+      "deleted": 20
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-provider-settings.test.mjs",
+      "added": 37,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-reconnect.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-resource-client.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-text-runtime.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/providers/managed-model-settings.test.mjs",
+      "added": 134,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/native-gateway-socket.test.mjs",
+      "added": 42,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/native-profile-credential.test.mjs",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/native-session.test.mjs",
+      "added": 114,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/provider-runtime-config.test.mjs",
+      "added": 4,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/test/providers/relay-binding.test.mjs",
+      "added": 202,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/relay-client.test.mjs",
+      "added": 197,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/relay-password-verification.test.mjs",
+      "added": 62,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/relay-session-expiry.test.mjs",
+      "added": 107,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/relay-settings-refresh.test.mjs",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/providers/user-menu-logout.test.mjs",
+      "added": 44,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/backup-restore.test.mjs",
+      "added": 40,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/configuration-http.test.mjs",
+      "added": 106,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/desktop-execution-switcher-dialog.test.mjs",
+      "added": 67,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/device-settings-version.test.mjs",
+      "added": 55,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/kbrain-mcp-adapter.test.mjs",
+      "added": 31,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/managed-provider-connections.test.mjs",
+      "added": 50,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/model-picker.test.mjs",
+      "added": 89,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/test/settings/model-vendor.test.mjs",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/native-config-batch.test.mjs",
+      "added": 232,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/normalization.test.mjs",
+      "added": 17,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/settings/planning-default-timezone-backend.test.mjs",
+      "added": 5,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-gui/test/settings/planning-host.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/settings/portal-layering.test.mjs",
+      "added": 32,
+      "deleted": 8
+    },
+    {
+      "path": "crates/agent-gui/test/settings/prompts-backend.test.mjs",
+      "added": 15,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-brand-model.test.mjs",
+      "added": 10,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-edit-deeplink.test.mjs",
+      "added": 21,
+      "deleted": 17
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-modal-managed.test.mjs",
+      "added": 79,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-usage-query-form.test.mjs",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/settings/remote-device-state.test.mjs",
+      "added": 206,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review2-memory-switch-verified.test.mjs",
+      "added": 13,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/settings/service-endpoints.test.mjs",
+      "added": 63,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/storage.test.mjs",
+      "added": 69,
+      "deleted": 48
+    },
+    {
+      "path": "crates/agent-gui/test/settings/stt-committed-settings.test.mjs",
+      "added": 63,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/stt-settings.test.mjs",
+      "added": 9,
+      "deleted": 26
+    },
+    {
+      "path": "crates/agent-gui/test/settings/workspace-projects.test.mjs",
+      "added": 21,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/settings/zeroagent-public-branding.test.mjs",
+      "added": 61,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/settings/zeroagent-settings-contract.test.mjs",
+      "added": 48,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/shared/host-command-unavailable.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/skills/builtin-code-review.test.mjs",
+      "added": 8,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-gui/test/skills/clawhub-contract.test.mjs",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/skills/clawhub-web-adapter.test.mjs",
+      "added": 35,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/skills/explicit-skill-mentions.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/test/skills/fixtures/clawhub-runtime-probe.mjs",
+      "added": 97,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/skills/fixtures/code-review-runtime-probe.mjs",
+      "added": 105,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/skills/resource-http-adapters.test.mjs",
+      "added": 11,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-gui/test/skills/skills-configuration-version.test.mjs",
+      "added": 78,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/startup/migration-progress.test.mjs",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/test/subagents/bus-delta.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/subagents/bus-roster.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-gui/test/tools/mcp-manager-tools.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/tools/path-and-system-tools.test.mjs",
+      "added": 17,
+      "deleted": 17
+    },
+    {
+      "path": "crates/agent-gui/test/tools/shell-tools.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-gui/test/tray/tray-menu.test.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-gui/tsconfig.json",
+      "added": 13,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-gui/vite.config.ts",
+      "added": 23,
+      "deleted": 11
+    },
+    {
+      "path": "crates/agent-ui/src/application/AppWorkbenchChrome.tsx",
+      "added": 8,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/assets/providers/zai.svg",
+      "added": 219,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/IconSet.tsx",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/ProviderBrandIcon.tsx",
+      "added": 32,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/AssistantReplyShareDialog.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
+      "added": 5,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx",
+      "added": 56,
+      "deleted": 40
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarRows.tsx",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarTypes.ts",
+      "added": 12,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerAttachmentCard.tsx",
+      "added": 9,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "added": 29,
+      "deleted": 281
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ImagePreview.tsx",
+      "added": 39,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/UserAttachmentCards.tsx",
+      "added": 9,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolImages.tsx",
+      "added": 1,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/imageLoadState.ts",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
+      "added": 445,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/scroll-area.tsx",
+      "added": 7,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/sidebar.tsx",
+      "added": 4,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageSizePicker.tsx",
+      "added": 126,
+      "deleted": 44
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/TargetParameterForm.tsx",
+      "added": 9,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/framing.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/parameterLabels.ts",
+      "added": 37,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/studioController.ts",
+      "added": 8,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/planningTranslations.ts",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSCommon.ts",
+      "added": 18,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "added": 30,
+      "deleted": 28
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
+      "added": 18,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "added": 31,
+      "deleted": 29
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/useComposerActions.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/modelPickerOptions.ts",
+      "added": 113,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/customHeaders.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/modelVendor.ts",
+      "added": 7,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/lib/resourceHost.ts",
+      "added": 17,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/gatewaySettingsSaveLineage.ts",
+      "added": 86,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "added": 56,
+      "deleted": 10
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "added": 41,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/types.ts",
+      "added": 18,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/recentConversations.ts",
+      "added": 10,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/store.ts",
+      "added": 31,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/lib/skills/clawHub.ts",
+      "added": 8,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/lib/skills/index.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-ui/src/lib/stt/types.ts",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workbench/featureFlags.ts",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workspaceProjects.ts",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
+      "added": 14,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/pages/mcp-hub/McpServerEditModal.tsx",
+      "added": 23,
+      "deleted": 28
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/AIApprovalSection.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/KBrainComputerSection.tsx",
+      "added": 10,
+      "deleted": 3
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/KBrainSettingsSection.tsx",
+      "added": 14,
+      "deleted": 11
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ManagedProvidersView.tsx",
+      "added": 276,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderModal.tsx",
+      "added": 34,
+      "deleted": 14
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderModalView.tsx",
+      "added": 543,
+      "deleted": 491
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProvidersSection.tsx",
+      "added": 2,
+      "deleted": 13
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/RemoteSection.tsx",
+      "added": 214,
+      "deleted": 487
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/RetryErrorSection.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "added": 16,
+      "deleted": 19
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsShell.tsx",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SttSection.tsx",
+      "added": 25,
+      "deleted": 12
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SystemSettingsForm.tsx",
+      "added": 229,
+      "deleted": 216
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/cuaDriverForm.ts",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "added": 8,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemoryPanel.tsx",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
+      "added": 21,
+      "deleted": 6
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/modelPicker.tsx",
+      "added": 58,
+      "deleted": 227
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/providerUtils.ts",
+      "added": 14,
+      "deleted": 2
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/SkillsHubPage.tsx",
+      "added": 5,
+      "deleted": 1
+    },
+    {
+      "path": "crates/agent-ui/src/styles/base.css",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/.env.dev.example",
+      "added": 9,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/compose.dev.yaml",
+      "added": 36,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/compose.integration.yaml",
+      "added": 54,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/compose.smoke.yaml",
+      "added": 42,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/.env.example",
+      "added": 35,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/backup.sh",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/compose.yaml",
+      "added": 67,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/deploy.sh",
+      "added": 37,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/lib.sh",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/smoke.sh",
+      "added": 24,
+      "deleted": 0
+    },
+    {
+      "path": "deploy/production/validate.sh",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "docs/architecture/gateway.md",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/architecture/gui.md",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/architecture/protocols.md",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/architecture/webui.md",
+      "added": 5,
+      "deleted": 4
+    },
+    {
+      "path": "docs/design/browser-automation.md",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/design/session-workbench-pane-architecture.md",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "docs/features/config-backup-sync.md",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/features/tools.md",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "docs/images/zeroagent-logo.png",
+      "added": null,
+      "deleted": null
+    },
+    {
+      "path": "docs/operations/deployment.md",
+      "added": 43,
+      "deleted": 23
+    },
+    {
+      "path": "docs/operations/development.md",
+      "added": 83,
+      "deleted": 21
+    },
+    {
+      "path": "docs/operations/multi-agent.md",
+      "added": 5,
+      "deleted": 5
+    },
+    {
+      "path": "docs/product/PRODUCT_CONTRACT.md",
+      "added": 59,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0001-usa-zero-oauth.md",
+      "added": 18,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0002-cloud-chat-and-device-agent.md",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0003-device-identity-and-sessions.md",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0004-managed-key-security.md",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0005-private-source-public-distribution.md",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0006-published-preview-sync.md",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0007-v2-execution-boundaries.md",
+      "added": 49,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0008-managed-model-broker.md",
+      "added": 58,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0009-web-cookie-account-consistency.md",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0010-canonical-configuration-backups.md",
+      "added": 53,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0011-windows-backend-cold-start.md",
+      "added": 47,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0012-password-verification-preserves-oauth.md",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0013-tunnel-desired-state-coalescing.md",
+      "added": 18,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0014-explicit-disabled-automation-import.md",
+      "added": 29,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0015-legacy-provider-archives.md",
+      "added": 38,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0016-native-account-and-config-boundaries.md",
+      "added": 226,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0017-native-preference-snapshot-revisions.md",
+      "added": 34,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0018-shared-profile-configuration-gate.md",
+      "added": 33,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0019-canonical-configuration-batches.md",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0020-native-http-configuration-versions.md",
+      "added": 17,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0021-native-ui-preferences.md",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0022-native-device-settings-commit.md",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0023-in-process-source-test-compiler.md",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0024-read-bound-skills-http.md",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0025-scoped-mcp-oauth-operations.md",
+      "added": 45,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0026-canonical-mcp-oauth-targets.md",
+      "added": 34,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0027-native-mcp-credential-bridge.md",
+      "added": 65,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0028-retained-mcp-refresh-rotation.md",
+      "added": 36,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0029-go-mcp-runtime-control.md",
+      "added": 68,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0030-mcp-sse-message-endpoint.md",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0031-owned-mcp-process-lifecycle.md",
+      "added": 60,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0032-inferred-sse-message-endpoints.md",
+      "added": 23,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0033-mcp-client-product-identity.md",
+      "added": 12,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0034-upstream-first-fresh-preview.md",
+      "added": 31,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0035-platform-model-settings-and-history-import.md",
+      "added": 35,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0036-local-development-origins.md",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0037-cloud-chat-upstream-layout.md",
+      "added": 13,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0038-full-height-sidebar-layout.md",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0039-managed-provider-settings-experience.md",
+      "added": 24,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0040-shared-model-picker-views.md",
+      "added": 26,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0041-beta23-memory-image-and-import.md",
+      "added": 46,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0042-zeroagent-public-names-and-storage.md",
+      "added": 36,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0043-runtime-code-review-skill.md",
+      "added": 35,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0044-clawhub-store-runtime.md",
+      "added": 30,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0045-prompt-cache-provider-and-model-inheritance.md",
+      "added": 32,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0046-desktop-remote-webui-workbench.md",
+      "added": 68,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/decisions/0047-upstream-session-summary-sync.md",
+      "added": 26,
+      "deleted": 0
+    },
+    {
+      "path": "docs/product/features.yaml",
+      "added": 509,
+      "deleted": 0
+    },
+    {
+      "path": "docs/releases/v0.4.0-beta.1.md",
+      "added": 26,
+      "deleted": 0
+    },
+    {
+      "path": "docs/releases/v0.4.0-beta.2.md",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-clawhub-store-runtime.md",
+      "added": 70,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-code-review-runtime.md",
+      "added": 75,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-desktop-remote-webui.md",
+      "added": 190,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-lan-windows-installer.md",
+      "added": 44,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-prompt-cache-alignment.md",
+      "added": 75,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-27-zeroagent-public-names.md",
+      "added": 65,
+      "deleted": 0
+    },
+    {
+      "path": "docs/testing/2026-10-28-native-remote-pair.md",
+      "added": 72,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/template.md",
+      "added": 39,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v1.2.4.md",
+      "added": 74,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v1.2.5.md",
+      "added": 103,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v1.2.6.md",
+      "added": 119,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-backend-validation.md",
+      "added": 112,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-conflicts.json",
+      "added": 577,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-inventory.json",
+      "added": 25728,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-kbrain-patches.md",
+      "added": 85,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-linux-native.md",
+      "added": 198,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-local-differences.md",
+      "added": 112,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-local-differences.tsv",
+      "added": 768,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-preview-readiness.md",
+      "added": 94,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20-slimming-review.md",
+      "added": 123,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.20.md",
+      "added": 1330,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.21-inventory.json",
+      "added": 488,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.21-local-differences.json",
+      "added": 4136,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.21.md",
+      "added": 220,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.23-inventory.json",
+      "added": 331,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.23-local-differences.json",
+      "added": 4231,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.23.md",
+      "added": 233,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.24-inventory.json",
+      "added": 531,
+      "deleted": 0
+    },
+    {
+      "path": "docs/upstream/v2.0.0-beta.24.md",
+      "added": 77,
+      "deleted": 0
+    },
+    {
+      "path": "package.json",
+      "added": 15,
+      "deleted": 10
+    },
+    {
+      "path": "patches/kbrain/0001-native-mcp-credentials.patch",
+      "added": 729,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0002-windows-selfhost-fixtures.patch",
+      "added": 179,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0003-mcp-credential-history-and-legacy-sse.patch",
+      "added": 1291,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0004-owned-mcp-lifecycle.patch",
+      "added": 1862,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0006-host-owned-code-review-skill.patch",
+      "added": 193,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0007-concurrent-trajectory-section-publication.patch",
+      "added": 140,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0008-clawhub-store-integration.patch",
+      "added": 848,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/0009-prompt-cache-hint-inheritance.patch",
+      "added": 721,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/README.md",
+      "added": 106,
+      "deleted": 0
+    },
+    {
+      "path": "patches/kbrain/manifest.json",
+      "added": 45,
+      "deleted": 0
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "added": 194,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/check-biome-changed.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "scripts/check-diff-hygiene.mjs",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/check-diff-hygiene.test.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/check-gateway-docker-smoke.sh",
+      "added": 52,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/check-zeroagent-migration.mjs",
+      "added": 229,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/check-zeroagent-product-contract.mjs",
+      "added": 359,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/check.mjs",
+      "added": 13,
+      "deleted": 13
+    },
+    {
+      "path": "scripts/dev-stack-paths.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/dev-stack-readiness.mjs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/dev-stack.mjs",
+      "added": 53,
+      "deleted": 27
+    },
+    {
+      "path": "scripts/generate-model-catalog.mjs",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/kbrain-startup-budget.mjs",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/kbrain-startup-budget.test.mjs",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/prepare-desktop-remote.mjs",
+      "added": 64,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/prepare-desktop-remote.test.mjs",
+      "added": 25,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/build-kbrain-source.mjs",
+      "added": 43,
+      "deleted": 7
+    },
+    {
+      "path": "scripts/release/build-kbrain-source.test.mjs",
+      "added": 6,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/release/create-ai-release-notes.mjs",
+      "added": 86,
+      "deleted": 143
+    },
+    {
+      "path": "scripts/release/create-ai-release-notes.test.mjs",
+      "added": 12,
+      "deleted": 12
+    },
+    {
+      "path": "scripts/release/create-tauri-updater-manifest.mjs",
+      "added": 7,
+      "deleted": 5
+    },
+    {
+      "path": "scripts/release/kbrain-patches.mjs",
+      "added": 41,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/kbrain-patches.test.mjs",
+      "added": 160,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/prepare-app-version-from-tag.mjs",
+      "added": 13,
+      "deleted": 12
+    },
+    {
+      "path": "scripts/release/prepare-kbrain.mjs",
+      "added": 25,
+      "deleted": 11
+    },
+    {
+      "path": "scripts/release/prepare-kbrain.test.mjs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "scripts/release/test-windows-installers.ps1",
+      "added": 537,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/tests/test-windows-installers-contract.ps1",
+      "added": 149,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-kbrain-packaging.mjs",
+      "added": 14,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/release/verify-kbrain-packaging.test.mjs",
+      "added": 12,
+      "deleted": 5
+    },
+    {
+      "path": "scripts/release/verify-linux-glibc-baseline.sh",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/Cargo.lock",
+      "added": 203,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/Cargo.toml",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/README.md",
+      "added": 61,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/src/main.rs",
+      "added": 148,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/cli.rs",
+      "added": 297,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/NOTICE.md",
+      "added": 41,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/legacy.minisig",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/prehashed.minisig",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/release/verify-updater-signatures/tests/fixtures/public-key.minisign",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/typescript-source-tools.mjs",
+      "added": 66,
+      "deleted": 12
+    },
+    {
+      "path": "scripts/typescript-source-tools.test.mjs",
+      "added": 85,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/update-contributors.py",
+      "added": 0,
+      "deleted": 112
+    },
+    {
+      "path": "scripts/upstream-release.mjs",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/upstream-release.test.mjs",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "skills/sync-liveagent-release/SKILL.md",
+      "added": 80,
+      "deleted": 0
+    },
+    {
+      "path": "skills/sync-liveagent-release/agents/openai.yaml",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": "skills/sync-liveagent-release/references/validation.md",
+      "added": 49,
+      "deleted": 0
+    },
+    {
+      "path": "skills/sync-liveagent-release/scripts/verify-release.mjs",
+      "added": 64,
+      "deleted": 0
+    },
+    {
+      "path": "skills/sync-liveagent-release/scripts/verify-release.test.mjs",
+      "added": 31,
+      "deleted": 0
+    }
+  ]
+}

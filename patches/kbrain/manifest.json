@@ -38,7 +38,7 @@
     },
     {
       "file": "0009-prompt-cache-hint-inheritance.patch",
-      "sha256": "e8d5f6ea24622b83579870892838393927848b4d94017b2502c90269d814d106"
+      "sha256": "a9f8fa7a49149b50916228f12f4380ed0c57fbf32d130995f061971201834361"
     }
   ],
   "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, ClawHub and upstream prompt-cache provider/model settings wired through requests"

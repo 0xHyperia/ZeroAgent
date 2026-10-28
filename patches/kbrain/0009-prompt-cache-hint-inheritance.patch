@@ -706,3 +706,16 @@ index f1bbc55..9b05222 100644
  	}
  	if err != nil {
  		return Route{}, err
+diff --git a/cmd/kn/run_compaction_test.go b/cmd/kn/run_compaction_test.go
+index e542acd..7a88eab 100644
+--- a/cmd/kn/run_compaction_test.go
++++ b/cmd/kn/run_compaction_test.go
+@@ -29,6 +29,8 @@ func configureRunCompaction(t *testing.T, endpoint string) {
+ 	}
+ 	p := cfg.Providers["testprov"]
+ 	p.BaseURL = endpoint + "/v1"
++	// This fixture asserts session affinity; a loopback endpoint must opt in.
++	p.PromptCacheHintMode = "openai-key"
+ 	cfg.Providers["testprov"] = p
+ 	m := cfg.Models["test"]
+ 	m.Context = 400

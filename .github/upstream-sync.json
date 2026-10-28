@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.0-beta.23",
-  "base_commit": "0b2d0e24af9489012de5cc936aa54998a59cd195",
-  "commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
-  "integration_commit": "1c2851556f87516e40d02271a9f61ee80b056df3",
-  "previous_tag": "v2.0.0-beta.21",
-  "previous_upstream_commit": "0f82fc04db46fa5ea2712a6c560471d79861a189",
+  "tag": "v2.0.0-beta.24",
+  "base_commit": "3e6960ea3968b58ce36163bc22731b82a046d6ec",
+  "commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "integration_commit": "5fc68941829b15ff13a4d7cb17cd67dded97816d",
+  "previous_tag": "v2.0.0-beta.23",
+  "previous_upstream_commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
   "prerelease": true,
-  "validation_status": "local integration, frontend, Windows Native/debug, Linux backend normal/race and Docker checks passed as detailed in report; inherited upstream Windows Planning POSIX-mode assertion remains failing; target-platform GUI/Android/signed-release and authenticated acceptance pending",
+  "validation_status": "local merge validated: GUI/WebUI/Windows Native, explicit real-backend runtime, Linux Gateway full/race and backend full/affected-race, plus isolated PostgreSQL18/Redis8 runtime image smoke passed; production Dockerfile build blocked by Go image pull; macOS/Android/signing/real-account acceptance pending",
   "channel": "preview",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.23",
-  "published_at": "2026-10-26T16:27:41Z"
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.24",
+  "published_at": "2026-10-28T09:54:26Z"
 }
