@@ -88,12 +88,17 @@ func NewServer(cfg *config.Config, sm *session.Manager, authenticator AgentAuthe
 				kbrain.ModelRef{Provider: cfg.KBrainProvider, Model: cfg.KBrainModel}, "", queuePath,
 				server.kbrainCallbacks(cfg.KBrainAgentID))
 			if relayErr == nil {
+				callbacks := server.kbrainCallbacks(cfg.KBrainAgentID)
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				if err := relay.EnableBackendQueue(ctx, server.kbrainCallbacks(cfg.KBrainAgentID)); err != nil {
+				if err := relay.EnableBackendQueue(ctx, callbacks); err != nil {
 					slog.Warn("K-brain queue capability negotiation failed", "err", err)
 				}
 				cancel()
-				server.kbrainRelay, server.kbrainTargetID = relay, cfg.KBrainAgentID
+				if err := relay.StartHistorySync(callbacks); err != nil {
+					slog.Warn("K-brain history synchronization unavailable", "err", err)
+				}
+				server.kbrainRelay = relay
+				server.kbrainTargetID = cfg.KBrainAgentID
 			}
 		}
 	}
@@ -103,6 +108,7 @@ func NewServer(cfg *config.Config, sm *session.Manager, authenticator AgentAuthe
 func (s *Server) Close() {
 	if s.kbrainRelay != nil {
 		s.kbrainRelay.Close()
+		s.sm.ClearHistorySyncState(s.kbrainTargetID)
 	}
 }
 

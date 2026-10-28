@@ -1,0 +1,531 @@
+{
+  "schema_version": 1,
+  "previous_tag": "v2.0.0-beta.23",
+  "previous_commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
+  "tag": "v2.0.0-beta.24",
+  "commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "product_base": "3e6960ea3968b58ce36163bc22731b82a046d6ec",
+  "merge_base": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/buf.gen.yaml",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_delete_sync_test.go",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_sync.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_sync_test.go",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/relay.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway.pb.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway_ws.pb.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_conn.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_events.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_local.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/history_sync_test.go",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/server.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_dispatch.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_history_sync.go",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_history_sync_test.go",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_state.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/tunnel_state.go",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway.proto",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway_ws.proto",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_history_sync_test.go",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocket.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketShared.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketTransport.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewayTypes.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/sidebar/webSidebarBackend.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/main.tsx",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/sidebar-store.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/web-sidebar-backend.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/web-sidebar-mutation-sync.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/gateway.rs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/history_sync.rs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/types.rs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/history.ts",
+      "decision": "partial",
+      "reason": "采用变更水位确认和删除协调；不恢复缺失映射时的隐式旧历史导入，保留现有显式导入及错误处理。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/mapping.ts",
+      "decision": "partial",
+      "reason": "采用缓存、批量持久化、删除别名和稳定数据根；拒绝无数据根身份的旧托管命名空间自动认领，保留既有 ZeroAgent 账号作用域。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sessionSync.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sessionSyncState.ts",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/types.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/sidebar/guiSidebarBackend.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/src/main.tsx",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayHistoryActions.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-history-actions.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-managed-mapping.test.mjs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-sync-backend.test.mjs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-sync-rescan.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-sync-review.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-sync.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-incremental.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-offline-alias.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-publication.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-gui/test/system/react-dev-timeline.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游回归断言；针对本轮合并后的真实实现运行，不使用上游历史通过数量。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/backend.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/reconcile.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/store.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/types.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/system/reactDevTimeline.ts",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "docs/architecture/gateway.md",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "docs/architecture/session-sync.md",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/README.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/automation.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/evidence/README.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/evidence/desktop-session-sync-fixture.png",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/evidence/webui-session-sync-fixture.png",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/gateway-verification.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/progress.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/relay-compat.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/requirements.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "docs/plans/2026-10-28-session-sync/verification.md",
+      "decision": "adopt",
+      "reason": "保留上游架构/测试过程记录供追溯；其中结果不作为 ZeroAgent 当前版本验证证据。"
+    },
+    {
+      "path": "scripts/check-biome-changed.mjs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "scripts/check-biome-changed.test.mjs",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "scripts/check-mirror.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "decision": "adapt",
+      "reason": "采用上游实现并保留 ZeroAgent 的账号、设备、配置、产品命名、构建和协议扩展；适配点及验证见同步报告和 ADR0047。"
+    },
+    {
+      "path": "scripts/testing/fixtures/fake-acp-agent.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-acp.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-benchmark.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-cdp-monitor.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-cdp.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-configure-fixture.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-cycle.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-generate-dataset.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-harness.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-launch-edge.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-mock-model.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-process-tree.ps1",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-relay.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-run-backend-benchmark.ps1",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-run-tui-fixture.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-sample.ps1",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-source-manifest.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-summarize.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-tauri.mjs",
+      "decision": "defer",
+      "reason": "保留上游诊断夹具作为来源参考；其 token/交互式宿主流程不是 ZeroAgent 账号验收入口，本轮使用受限账号 WebSocket 与受控真实后端测试。"
+    },
+    {
+      "path": "scripts/testing/session-sync-tools.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-tools.test.mjs",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    },
+    {
+      "path": "scripts/testing/session-sync-watch-tui.ps1",
+      "decision": "adopt",
+      "reason": "采用上游会话摘要、资源回收或诊断公共实现，保留共享模块单一所有权；已纳入相关类型、测试和构建检查。"
+    }
+  ]
+}

@@ -314,7 +314,10 @@
         "crates/agent-gui/src/lib/kbrain/manualHistoryImport.ts",
         "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
         "crates/agent-gui/src/lib/kbrain/LegacyHistoryImportSettings.tsx",
-        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs"
+        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
+        "crates/agent-gui/src/lib/kbrain/sessionSync.ts",
+        "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
+        "crates/agent-gateway/internal/session/manager_history_sync.go"
       ],
       "tests": [
         "crates/agent-gui/test/providers/kbrain-history.test.mjs",
@@ -322,9 +325,13 @@
         "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs",
         "crates/agent-gui/test/providers/kbrain-manual-history-import.test.mjs",
         "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",
-        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs"
+        "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs",
+        "crates/agent-gui/test/chat/kbrain-session-sync-backend.test.mjs",
+        "crates/agent-gui/test/chat/kbrain-session-sync-review.test.mjs",
+        "crates/agent-gateway/test/websocket/account_history_sync_test.go",
+        "crates/agent-gateway/internal/session/history_observer_sync_test.go"
       ],
-      "security": "历史记录和工作区限定在已认证账户范围。只通过桌面显式操作只读导入本机旧ZeroAgent会话，操作绑定当前profile/连接；旧内容保留，幂等与删除意图保留，退出/切号后的迟到结果不写入新空间。无启动自动迁移、其他产品扫描或旧供应商/密钥导入。",
+      "security": "历史记录和工作区限定在已认证账户范围。只通过桌面显式操作只读导入本机旧ZeroAgent会话，操作绑定当前profile/连接；旧内容保留，幂等与删除意图保留，退出/切号后的迟到结果不写入新空间。无启动自动迁移、其他产品扫描或旧供应商/密钥导入。 ADR0047采用上游摘要快照与增量水位，发布源绑定当前 Native 数据根；Gateway 快照按账号设备与发布工作空间投影，未授权行通过既有重同步水位推进，不泄漏摘要。现有账号映射不自动认领无身份旧命名空间。",
       "upstream_relation": "adapt"
     },
     {

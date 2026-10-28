@@ -1145,7 +1145,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
 
   async updateSettings(
     payload: GatewaySettingsSyncUpdatePayload,
-  ): Promise<GatewaySettingsUpdateReceipt | void> {
+  ): Promise<GatewaySettingsUpdateReceipt | undefined> {
     const response = await this.request<GatewaySettingsUpdateResponse>("settings.update", payload);
     if (response?.accepted === false) {
       const message = response.message?.trim() || "Gateway settings update rejected";

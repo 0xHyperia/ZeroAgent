@@ -1305,6 +1305,14 @@ impl GatewayController {
                 });
                 Ok(())
             }
+            Some(proto::gateway_envelope::Payload::HistoryResync(_)) => {
+                self.send_error_response(
+                    request_id,
+                    400,
+                    "history resync is handled by the Gateway".to_string(),
+                )
+                .await
+            }
             None => Ok(()),
         }
     }

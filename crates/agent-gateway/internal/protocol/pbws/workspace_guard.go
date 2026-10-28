@@ -7,7 +7,44 @@ import (
 
 	"github.com/liveagent/agent-gateway/internal/account"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
+	"google.golang.org/protobuf/proto"
 )
+
+func (c *browserConn) historyAgentAllowed(agentID string) bool {
+	return c.boundAgentID == "" || agentID == "" || agentID == c.boundAgentID
+}
+
+func (c *browserConn) historyWorkdirAllowed(workdir string) bool {
+	if c.selectionScope == "" {
+		return true
+	}
+	if strings.TrimSpace(workdir) == "" {
+		return c.selectionScope == account.SelectionScopeDevice
+	}
+	return c.workspaceAllows(workdir)
+}
+
+// Project the immutable authority before paging so totals, workdirs and rows
+// describe only this selection. The manager keeps its device-wide cut/sequence.
+func (c *browserConn) scopedHistorySnapshot(snapshot *gatewayv2.HistorySyncSnapshot) *gatewayv2.HistorySyncSnapshot {
+	if c.selectionScope == "" {
+		return snapshot
+	}
+	out := proto.Clone(snapshot).(*gatewayv2.HistorySyncSnapshot)
+	out.Conversations = nil
+	out.Workdirs = nil
+	for _, row := range snapshot.GetConversations() {
+		if c.historyWorkdirAllowed(row.GetCwd()) {
+			out.Conversations = append(out.Conversations, proto.Clone(row).(*gatewayv2.ConversationSummary))
+		}
+	}
+	for _, row := range snapshot.GetWorkdirs() {
+		if c.workspaceAllows(row.GetPath()) {
+			out.Workdirs = append(out.Workdirs, proto.Clone(row).(*gatewayv2.HistoryWorkdirSummary))
+		}
+	}
+	return out
+}
 
 func normalizeRemoteWorkspacePath(value string) (string, bool) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))

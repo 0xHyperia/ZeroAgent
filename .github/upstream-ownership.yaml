@@ -2,6 +2,14 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gateway/test/websocket/account_history_sync_test.go",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "真实WebSocket上的账号设备隔离、工作空间快照投影、过滤后的分页总数和退出后推送拒绝"
+      ]
+    },
+    {
       "glob": "crates/agent-gui/test/providers/fixtures/native-pair-*.mjs",
       "ownership": "zeroagent_owned",
       "risk": "high",

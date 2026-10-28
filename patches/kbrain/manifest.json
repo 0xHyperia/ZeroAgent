@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "60e614f07c600b7aa5c0acbb9631d708e33dbb8b",
+  "sourceRevision": "51c827d3d56533550e67bc4f78ff7673fa7bd9a3",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
@@ -23,10 +23,6 @@
     {
       "file": "0004-owned-mcp-lifecycle.patch",
       "sha256": "844f16c315622be9193845a514f1881747f11bc736b4e75719a1303dc51371d8"
-    },
-    {
-      "file": "0005-image-unknown-history-deletion.patch",
-      "sha256": "128e659ed79053d410325259903e53d4d5cf82ed4e1947d1383d1f23f39ebfc0"
     },
     {
       "file": "0006-host-owned-code-review-skill.patch",

@@ -1,4 +1,5 @@
 import { GATEWAY_WEBUI_MARKER } from "@liveagent/ui/lib/runtimeEnv";
+import { installReactDevTimelineLimit } from "@liveagent/ui/lib/system/reactDevTimeline";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -19,6 +20,11 @@ async function start() {
       <MobileAppExperience />
     </React.StrictMode>,
   );
+}
+
+if (import.meta.env.DEV) {
+  const stopReactTimelineLimit = installReactDevTimelineLimit();
+  import.meta.hot?.dispose(stopReactTimelineLimit);
 }
 
 void start();
