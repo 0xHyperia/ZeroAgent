@@ -146,3 +146,45 @@ handoff 建立指定设备会话。原截图首次异常未采集，不能断言
   侧车的一致性、固定后端和九个补丁的打包来源核对均通过；同目录保存构建收据及校验值。
 - 构建保留既有 Rust 编译警告；NSIS 数字版本字段不支持语义版本 metadata，按既有构建
   行为使用数字 0，应用 ProductVersion 的完整版本字符串已核对。未自动安装或操作 UI。
+
+## 2026-10-28：内嵌运行时 process 全局缺失
+
+用户提供的新截图显示 `process is not defined`。在此前打包的真实远程 bundle 上新增
+无 Node 浏览器 realm 探针，复现 `ReferenceError: process is not defined`，堆栈位于
+`createDesktopRemoteRuntime` 初始化 React 入口阶段。原完整 DOM 探针直接在 Node 中导入
+产物，借用了 Node 的 `process`，未覆盖这项浏览器环境差异。
+
+Vite 的 library 构建保留 `process.env.NODE_ENV` 供消费者替换，而该独立内嵌产物直接由
+WebView 动态导入，没有二次构建。仅在 `embedded-desktop` 模式增加 production 常量定义。
+不提供全局 process shim、不暴露环境变量、不对生成的 JavaScript 做正则替换；普通 WebUI
+和 Android 构建模式保持原行为，第三方库受 `typeof process` 保护的环境检测也保持。
+
+新增 `desktop-remote-browser-probe.mjs` 在 jsdom 的独立浏览器 VM realm 中加载真实 ESM、
+连续创建两个运行时，前后断言 `process`、`require`、`Buffer`、`module` 不存在。仅补充
+jsdom 缺失的标准 TextEncoder/TextDecoder，并将无渲染器的 canvas 检测返回 null。每次
+`prepare-desktop-remote.mjs` 都要求该检查通过后才生成 manifest；Node 的实验 VM 模块参数
+只用于构建验证，不影响 WebView 的执行方式。
+
+旧产物在新探针中失败，修复后真实产物通过。同一修复后 bundle 的完整工作台 DOM 探针
+通过，包含两个设备的完整界面挂载、38 帧真实二进制协议消息和 10 次宿主 HTTP 调用；
+卸载时既有异步 disposed 诊断保留。WebUI 全量 883 项通过、0 失败、0 跳过，两端类型
+检查和 factory 包装的 2 项脚本回归通过。此次不涉及 Gateway 服务端或 Native Rust 逻辑修改。
+
+桌面远程工作台、租约状态及标准弹窗的 21 项针对性回归也全部通过。最终编译后的
+`dist/remote-device/runtime.js` 另行通过无 Node realm 检查和完整双设备 DOM 探针；其
+SHA-256 与准备目录、manifest 一致。
+
+本轮早期因日志目录不存在，首次前端测试命令未执行；已修正目录后执行 WebUI 完整回归。
+没有将未完成的 GUI 全量日志计作通过。最终打包还会运行桌面类型检查和上述浏览器启动检查。
+日志、脚本和构建收据位于 `.codex-artifacts/desktop-process-fix-20261028/`；不推送。
+
+新包为 `0.4.0-beta.2+lan.remote.process.20261028`，Windows x64 NSIS，地址仍为
+`http://172.16.0.121:5174` 与 `http://172.16.0.121:5173`。文件位于
+`dist/windows-lan-remote-process-20261028/ZeroAgent_0.4.0-beta.2+lan.remote.process.20261028_Windows-x64-Setup.exe`，
+66,077,264 字节，SHA-256：`046dbd1eb98d0fca14ea9a0219d6873f9dd1799e63aa357b6a76e729190f580c`。
+固定后端九补丁的打包来源及内网地址检查通过；沿用私网 HTTP debug 构建，无 Authenticode
+签名、无 updater 产物。
+
+已启动本工作区 `target/debug/zeroagent.exe`，核对 ProductVersion 为本次版本，启动时 PID
+12268，窗口存在且响应正常。没有操作桌面控件、安装 NSIS、手动登录或进行真实账号远程
+对话；保留现有账号数据，不把进程启动当作人工远程验收通过。代码未提交、未推送。

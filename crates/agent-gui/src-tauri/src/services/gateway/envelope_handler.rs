@@ -608,20 +608,28 @@ impl GatewayController {
                 Ok(())
             }
             Some(proto::gateway_envelope::Payload::ProviderModels(request)) => {
-                match gateway_bridge::handle_provider_models(self.app_handle.clone(), request).await
-                {
-                    Ok(response) => {
-                        self.send_agent_envelope(proto::AgentEnvelope {
+                // Model discovery can wait on an external service. Keep history,
+                // chat and heartbeat dispatch independent of that wait, and keep
+                // its response on the connection that accepted the request.
+                let sender = self.current_outbound_sender()?;
+                let app = self.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let envelope = match gateway_bridge::handle_provider_models(app, request).await
+                    {
+                        Ok(response) => proto::AgentEnvelope {
                             request_id,
                             timestamp: now_unix_seconds(),
                             payload: Some(proto::agent_envelope::Payload::ProviderModelsResp(
                                 response,
                             )),
-                        })
-                        .await
+                        },
+                        Err(error) => build_error_response_envelope(request_id, 502, error),
+                    };
+                    if let Err(error) = send_agent_envelope_to(sender, envelope).await {
+                        eprintln!("gateway provider models response failed: {error}");
                     }
-                    Err(error) => self.send_error_response(request_id, 502, error).await,
-                }
+                });
+                Ok(())
             }
             Some(proto::gateway_envelope::Payload::PromptTemplateList(_))
             | Some(proto::gateway_envelope::Payload::PromptTemplateExpand(_)) => {

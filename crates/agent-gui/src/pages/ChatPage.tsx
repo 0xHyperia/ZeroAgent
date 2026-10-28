@@ -307,13 +307,17 @@ const RestorableConversationPaneHost = lazy(async () => ({
   default: (await import("./chat/surfaces/ConversationPaneHost")).RestorableConversationPaneHost,
 }));
 export function ChatPage(props: ChatPageProps) {
+  const active = props.active !== false;
   return (
-    <SidebarProvider>
+    <SidebarProvider keyboardShortcutEnabled={active} className={active ? undefined : "hidden"}>
       <ChatPageContent {...props} />
     </SidebarProvider>
   );
 }
 function ChatPageContent(props: ChatPageProps) {
+  const active = props.active !== false;
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const {
     settings: directSettings,
     setSettings,
@@ -2132,6 +2136,8 @@ function ChatPageContent(props: ChatPageProps) {
       });
 
     listen<{ action: string; id?: string; value?: string }>("app:action", (event) => {
+      if (!activeRef.current && !["stop-run", "stop-all-runs"].includes(event.payload.action))
+        return;
       const params = appActionParamsRef.current;
       switch (event.payload.action) {
         case "new-chat": {
@@ -3505,7 +3511,7 @@ function ChatPageContent(props: ChatPageProps) {
   // W closes it, and =/+ equalizes its parent split. Every command needs at
   // least two panes; with one pane the workbench has nothing to navigate.
   useEffect(() => {
-    if (!sessionWorkbench.enabled) return;
+    if (!active || !sessionWorkbench.enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || !event.altKey || !(event.metaKey || event.ctrlKey)) return;
       const layout = workbench.layoutRef.current;
@@ -3557,7 +3563,7 @@ function ChatPageContent(props: ChatPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleWorkbenchFocusPane, requestWorkbenchClosePane, workbench]);
+  }, [active, handleWorkbenchFocusPane, requestWorkbenchClosePane, workbench]);
 
   // Background pane controllers (conversations visible in unfocused panes).
   const backgroundControllersRef = useRef(new Map<string, ConversationSurfaceController>());
@@ -4328,6 +4334,8 @@ function ChatPageContent(props: ChatPageProps) {
         {workbenchDragState.payload.title || t("chat.pendingTitle")}
       </div>
     ) : null;
+
+  if (!active) return null;
 
   return (
     <div

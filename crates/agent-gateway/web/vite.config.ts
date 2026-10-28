@@ -79,6 +79,11 @@ export default defineConfig(({ mode }) => ({
     // into a ~23 MB main bundle, which is fine for Tauri but not for WebUI.
   },
   define: {
+    // Vite library mode leaves this flag for consumers to replace. The
+    // standalone WebView runtime has no second bundling step or Node globals.
+    ...(mode === "embedded-desktop"
+      ? { "process.env.NODE_ENV": JSON.stringify("production") }
+      : {}),
     __ZEROAGENT_EMBEDDED_MOBILE__: JSON.stringify(mode === "embedded-mobile"),
     __ZEROAGENT_APP_VERSION__: JSON.stringify(appVersion),
   },

@@ -39,6 +39,17 @@ export async function prepareDesktopRemote() {
     child.stdin.end(wrapped);
   });
   await writeFile(join(output, "runtime.js"), wrapped);
+  // Run the actual factory without Node globals: importing it in Node alone
+  // masks browser-only failures such as an untransformed process.env.NODE_ENV.
+  await new Promise((resolveProbe, reject) => {
+    const child = spawn(process.execPath, [
+      "--experimental-vm-modules",
+      join(root, "crates/agent-gui/test/providers/fixtures/desktop-remote-browser-probe.mjs"),
+      join(output, "runtime.js"),
+    ], { cwd: root, stdio: "inherit", windowsHide: true });
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolveProbe() : reject(new Error("Desktop WebUI browser bootstrap failed")));
+  });
   await rm(modulePath);
   const styles = (await readdir(output)).filter((name) => name.endsWith(".css")).sort();
   if (styles.length !== 1) throw new Error("Desktop WebUI must have one removable stylesheet");

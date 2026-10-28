@@ -1111,8 +1111,9 @@ export default function App() {
           <Suspense
             fallback={<AppBootShell loadingLabel={translate("app.loading", settings.locale)} />}
           >
-            {localExecutionSelected ? (
+            <>
               <ChatPage
+                active={localExecutionSelected}
                 relayUser={relayUser}
                 relayStats={relayStats}
                 onRefreshRelayAccount={refreshRelayAccount}
@@ -1132,28 +1133,30 @@ export default function App() {
                 appUpdate={appUpdate}
                 onRunningConversationCountChange={handleRunningConversationCountChange}
               />
-            ) : selectedExecutionEnvironment ? (
-              <RemoteDeviceWorkbench
-                key={selectedExecutionEnvironment.device_id}
-                settings={settings}
-                environment={selectedExecutionEnvironment}
-                environments={desktopEnvironments}
-                expiresAt={selectedRemoteLease?.expiresAt ?? 0}
-                selectionError={selectedRemoteLease?.invalidReason}
-                onSelectionInvalid={(reason) =>
-                  handleRemoteSelectionInvalid(
-                    selectedExecutionEnvironment.device_id,
-                    selectedRemoteLease?.lease ?? "",
-                    reason,
-                  )
-                }
-                onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
-                selectionLease={selectedRemoteLease?.lease ?? ""}
-                headerLeadingActions={executionSwitcher}
-              />
-            ) : (
-              <AppBootShell loadingLabel="请重新选择并授权设备" />
-            )}
+              {!localExecutionSelected &&
+                (selectedExecutionEnvironment ? (
+                  <RemoteDeviceWorkbench
+                    key={selectedExecutionEnvironment.device_id}
+                    settings={settings}
+                    environment={selectedExecutionEnvironment}
+                    environments={desktopEnvironments}
+                    expiresAt={selectedRemoteLease?.expiresAt ?? 0}
+                    selectionError={selectedRemoteLease?.invalidReason}
+                    onSelectionInvalid={(reason) =>
+                      handleRemoteSelectionInvalid(
+                        selectedExecutionEnvironment.device_id,
+                        selectedRemoteLease?.lease ?? "",
+                        reason,
+                      )
+                    }
+                    onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
+                    selectionLease={selectedRemoteLease?.lease ?? ""}
+                    headerLeadingActions={executionSwitcher}
+                  />
+                ) : (
+                  <AppBootShell loadingLabel="请重新选择并授权设备" />
+                ))}
+            </>
           </Suspense>
         </AppErrorBoundary>
         {visible && (

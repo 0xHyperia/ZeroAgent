@@ -12,6 +12,40 @@ const mediaListeners = new Set();
 window.matchMedia = () => ({ get matches() { return mobile; }, media: "", addEventListener: (_, listener) => mediaListeners.add(listener), removeEventListener: (_, listener) => mediaListeners.delete(listener) });
 const { Sidebar, SidebarProvider, SidebarTrigger, useSidebar } = env.loadModule("@liveagent/ui/components/ui/sidebar.tsx");
 
+test("a background local sidebar yields shortcuts to the visible remote sidebar without losing its state", async () => {
+  mobile = false;
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  const states = {};
+  const identities = new Set();
+  function Content({ name }) {
+    const sidebar = useSidebar();
+    states[name] = sidebar.open;
+    if (name === "local") identities.add(sidebar.setOpen);
+    return React.createElement("span", { "data-test-sidebar": name }, String(sidebar.open));
+  }
+  const render = async (localActive) => act(async () => root.render(
+    React.createElement(React.Fragment, null,
+      React.createElement(SidebarProvider, { keyboardShortcutEnabled: localActive }, React.createElement(Content, { name: "local" })),
+      React.createElement(SidebarProvider, { keyboardShortcutEnabled: !localActive }, React.createElement(Content, { name: "remote" }))),
+  ));
+  const toggle = async () => act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, cancelable: true })));
+  try {
+    await render(true);
+    await toggle();
+    assert.deepEqual(states, { local: false, remote: true });
+    const local = container.querySelector('[data-test-sidebar="local"]');
+    await render(false);
+    await toggle();
+    assert.deepEqual(states, { local: false, remote: false });
+    await render(true);
+    assert.equal(container.querySelector('[data-test-sidebar="local"]'), local);
+    assert.equal(identities.size, 1);
+    await toggle();
+    assert.deepEqual(states, { local: true, remote: false });
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
 function mount() {
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);

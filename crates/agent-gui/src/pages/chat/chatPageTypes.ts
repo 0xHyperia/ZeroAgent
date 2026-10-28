@@ -8,6 +8,8 @@ import type { AppSettings, SttProviderId } from "../../lib/settings";
 import type { SectionId } from "../settings/types";
 
 export type ChatPageProps = {
+  /** Keep the local runtime serving remote clients while another device is visible. */
+  active?: boolean;
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;
   onRefreshRelayAccount: () => Promise<void>;

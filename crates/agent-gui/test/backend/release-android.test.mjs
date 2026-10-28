@@ -94,7 +94,8 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(androidConfig, /agent-gateway\/web exec vite --mode embedded-mobile/);
   assert.match(androidConfig, /"devUrl": "http:\/\/localhost:2120"/);
   assert.match(androidConfig, /"frontendDist": "\.\.\/\.\.\/agent-gateway\/web\/dist-mobile"/);
-  assert.match(readRepoFile("crates/agent-gateway/web/vite.config.ts"), /outDir: mode === "embedded-mobile" \? "dist-mobile" : "dist"/);
+  const outDir = gatewayViteConfig.match(/outDir:([\s\S]*?)emptyOutDir:/)?.[1] ?? "";
+  assert.match(outDir, /mode === "embedded-mobile"\s*\?\s*"dist-mobile"\s*:\s*"dist"/);
   assert.match(androidConfig, /"url": "index\.html"/);
   assert.doesNotMatch(androidConfig, /usa0\.top/);
   assert.deepEqual(tauriConfig.plugins["deep-link"].mobile, [

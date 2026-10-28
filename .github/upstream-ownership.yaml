@@ -2,6 +2,15 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/test/providers/fixtures/native-pair-*.mjs",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "只接受 loopback 合成账号 700127，两个 Native profile/设备/vault/WebView 完全隔离",
+        "真实 Gateway/Native/Go 历史、配置 CAS、流式、审批允许拒绝、慢模型及断线恢复"
+      ]
+    },
+    {
       "glob": "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote*",
       "ownership": "zeroagent_owned",
       "risk": "critical",

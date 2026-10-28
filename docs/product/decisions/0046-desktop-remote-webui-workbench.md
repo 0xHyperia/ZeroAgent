@@ -14,6 +14,12 @@ WebUI 与 GUI 的 `@liveagent/app` / adapters 指向不同宿主，直接放进�
 头部设备开关与 Windows 控件通过 DOM 插槽使用原桌面 React 上下文，普通布局插槽不进入
 弹窗层级。卸载回收远程 React、样式、连接和 handler，恢复桌面根标记。
 
+2026-10-28 安装版复现 `process is not defined`：Vite library 模式默认保留
+`process.env.NODE_ENV`，独立内嵌产物没有后续消费者构建去替换该常量。仅为
+`embedded-desktop` 增加构建期的 production 定义，不注入 `process` 全局、不改写整包文本。
+每次准备产物都执行实际 ESM 工厂的无 Node 浏览器 realm 检查，拒绝初始化失败；保留
+原有完整工作台 DOM/二进制 WebSocket 探针。VM 模块参数仅用于 Node 构建检查，不进入客户端。
+
 账号和真实 token 仍由 Native 持有。账号、托管密钥列表/创建、复制及退出复用现有 Native
 遮罩与密码证明，不能从 WebUI Cookie 代理取得原始密钥。原始 Cookie 和一次性 handoff code
 不进入渲染层；新增 Native bridge 只在内存保留临时 Gateway 会话，固定来源和设备，供标准
@@ -49,3 +55,14 @@ token 刷新改变控制端 ID 后误拒绝尚未到期的选择；跨账号及�
 Gateway 客户端的模型/CAS/流式/审批及丢 ACK、双设备/租约/断线/切号、Native HTTP 与真实
 固定 Go 后端的新密钥绑定/保存、完整 Native 与 Gateway 回归和 Windows 打包来源检查。
 不操作桌面 UI、不使用真实收费模型，也不把本地合成服务验证当作真人登录或其他平台验收。
+
+2026-10-28 双本机 Native 实例验收发现两项真实链路缺口。目标切换到远程设备时，原
+ChatPage 的卸载会一起撤销本机 Gateway 历史、运行和审批监听器；因此保持原宿主挂载，
+仅令 `active=false` 的本机页面返回空界面，保留已有映射与 Go 执行链。隐藏宿主不响应
+页面操作/工作台快捷键，SidebarProvider 仅由当前可见实例处理快捷键；本机停止运行的
+托盘命令仍可用。没有新增执行引擎、协议或隐藏的第二套工作台。
+
+ProviderModels 等待外部模型发现时原先阻塞串行 Gateway dispatcher，连续慢请求能使
+后续历史请求返回原始 `request timed out`。该独立读取异步派发，回复捕获接收请求时的
+outbound sender，不借用重连后的设备连接。模型自己的网络超时保持原行为，配置写入
+仍使用现有事务/CAS，不改为并发派发全部请求。
