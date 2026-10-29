@@ -87,6 +87,12 @@ func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64
 	if !errors.Is(err, ErrNotFound) {
 		return nil, false, err
 	}
+	if err = cloudSpaceQuotaTx(ctx, tx, userID, a.Size); err != nil {
+		if errors.Is(err, ErrCloudFileQuota) {
+			err = ErrCloudArtifactQuota
+		}
+		return nil, false, err
+	}
 	run, err := artifactTxRun(ctx, tx, userID, a.SourceRunID, owner, attempt)
 	if err != nil {
 		return nil, false, err
@@ -156,7 +162,7 @@ func (s *PersistentStore) ListCloudArtifacts(ctx context.Context, userID int64, 
 		}
 		createdAt = anchorTime
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT "+artifactMetadataColumns+` FROM zeroagent_cloud_artifact_versions a WHERE a.user_id=$1 AND a.deleted_at IS NULL AND ($2='' OR a.conversation_id::text=$2) AND ($3='' OR a.family_id::text=$3) AND ($4::timestamptz IS NULL OR (a.created_at,a.id)<($4::timestamptz,NULLIF($5,'')::uuid)) ORDER BY a.created_at DESC,a.id DESC LIMIT $6`, userID, conversationID, familyID, createdAt, before, limit+1)
+	rows, err := s.db.QueryContext(ctx, "SELECT "+artifactMetadataColumns+` FROM zeroagent_cloud_artifact_versions a WHERE a.user_id=$1 AND a.deleted_at IS NULL AND ($2<>'' OR $3<>'' OR NOT EXISTS(SELECT 1 FROM zeroagent_cloud_space_metadata m WHERE m.user_id=a.user_id AND m.kind='artifact' AND m.id=a.family_id AND m.trashed)) AND ($2='' OR a.conversation_id::text=$2) AND ($3='' OR a.family_id::text=$3) AND ($4::timestamptz IS NULL OR (a.created_at,a.id)<($4::timestamptz,NULLIF($5,'')::uuid)) ORDER BY a.created_at DESC,a.id DESC LIMIT $6`, userID, conversationID, familyID, createdAt, before, limit+1)
 	if err != nil {
 		return nil, err
 	}

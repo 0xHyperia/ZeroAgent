@@ -22,7 +22,9 @@ func prepareCloudFile(input *CloudFile, now time.Time) (*CloudFile, error) {
 	}
 	file := cloneCloudFile(*input)
 	file.ID, _ = canonicalCloudFileID(file.ID)
-	file.ConversationID, _ = canonicalCloudFileID(file.ConversationID)
+	if file.ConversationID != "" {
+		file.ConversationID, _ = canonicalCloudFileID(file.ConversationID)
+	}
 	file.Text, file.TextBytes, file.ErrorCode = "", 0, ""
 	file.ParseTask, file.Segments = nil, nil
 	file.ParseTruncated = false
@@ -63,7 +65,7 @@ func (s *MemoryStore) CreateCloudFile(ctx context.Context, input *CloudFile) (*C
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	conversation, exists := s.cloudConversations[file.ConversationID]
-	if !exists || conversation.UserID != file.UserID {
+	if file.ConversationID != "" && (!exists || conversation.UserID != file.UserID) {
 		return nil, ErrNotFound
 	}
 	if s.cloudFiles == nil {
@@ -83,7 +85,7 @@ func (s *MemoryStore) CreateCloudFile(ctx context.Context, input *CloudFile) (*C
 			usedBytes += other.Size
 		}
 	}
-	if count >= CloudFileMaxAccountFiles || usedBytes+file.Size > CloudFileMaxAccountBytes {
+	if count >= CloudFileMaxAccountFiles || usedBytes+file.Size > CloudFileMaxAccountBytes || !s.cloudSpaceQuotaLocked(file.UserID, file.Size) {
 		return nil, ErrCloudFileQuota
 	}
 	s.cloudFiles[file.ID] = cloneCloudFile(*file)
@@ -135,6 +137,9 @@ func (s *MemoryStore) ListCloudFiles(ctx context.Context, userID int64, conversa
 	files := make([]CloudFile, 0)
 	for _, file := range s.cloudFiles {
 		if file.UserID != userID || file.DeletedAt != nil || conversationID != "" && file.ConversationID != conversationID {
+			continue
+		}
+		if conversationID == "" && s.cloudSpace[userID]["file:"+file.ID].Trashed {
 			continue
 		}
 		if beforeID != "" && (!file.CreatedAt.Before(before.CreatedAt) && !(file.CreatedAt.Equal(before.CreatedAt) && file.ID < before.ID)) {

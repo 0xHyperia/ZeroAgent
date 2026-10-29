@@ -3,6 +3,7 @@ import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
+import { cloudArtifactImageDimensions } from "@/lib/cloudChatArtifacts";
 import {
   CLOUD_FILE_CONTEXT_BYTES,
   type CloudChatFile,
@@ -25,6 +26,7 @@ type Props = {
   onDeleted: (id: string) => void;
   onError: (cause: unknown) => void;
   onUpload?: () => void;
+  onBrowseLibrary?: () => void;
 };
 
 export function CloudChatFilePanel(props: Props) {
@@ -33,6 +35,8 @@ export function CloudChatFilePanel(props: Props) {
   const [nextCursor, setNextCursor] = useState("");
   const [selected, setSelected] = useState<CloudChatFile | null>(null);
   const [source, setSource] = useState<CloudFileSource | null>(null);
+  const [image, setImage] = useState("");
+  const imageURL = useRef("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -46,6 +50,11 @@ export function CloudChatFilePanel(props: Props) {
   function valid() {
     return mounted.current && currentProps.current.isCurrent();
   }
+  function clearImage() {
+    if (imageURL.current) URL.revokeObjectURL(imageURL.current);
+    imageURL.current = "";
+    setImage("");
+  }
   function report(cause: unknown) {
     if (!valid()) return;
     setError(cause instanceof Error ? cause.message : "文件操作失败");
@@ -58,6 +67,7 @@ export function CloudChatFilePanel(props: Props) {
     setBusy(true);
     setError("");
     setSelected(null);
+    clearImage();
     setSource(null);
     setConfirmDelete(null);
     try {
@@ -87,11 +97,21 @@ export function CloudChatFilePanel(props: Props) {
     setError("");
     setSource(null);
     setConfirmDelete(null);
+    clearImage();
     try {
       const file = await client.get(id, controller.current.signal);
       guard();
       if (!valid() || generation.current !== seq) return;
       setSelected(file);
+      if (file.state === "vision_ready" && ["image/png", "image/jpeg"].includes(file.mime)) {
+        const result = await client.download(file, controller.current.signal);
+        guard();
+        result.guard();
+        cloudArtifactImageDimensions(new Uint8Array(await result.blob.arrayBuffer()), file.mime);
+        if (!valid() || generation.current !== seq) return;
+        imageURL.current = URL.createObjectURL(new Blob([result.blob], { type: file.mime }));
+        setImage(imageURL.current);
+      }
       if (
         file.state === "ready" &&
         (!file.workspace_loadable || file.text_bytes <= CLOUD_FILE_CONTEXT_BYTES)
@@ -124,6 +144,7 @@ export function CloudChatFilePanel(props: Props) {
       mounted.current = false;
       generation.current++;
       controller.current.abort();
+      if (imageURL.current) URL.revokeObjectURL(imageURL.current);
     };
   }, [client, initialFileId, fromLine, toLine]);
 
@@ -170,6 +191,7 @@ export function CloudChatFilePanel(props: Props) {
       setFiles((old) => old.filter((item) => item.id !== file.id));
       setSelected(null);
       setSource(null);
+      clearImage();
       setConfirmDelete(null);
     } catch (cause) {
       if (!controller.current.signal.aborted) report(cause);
@@ -250,7 +272,7 @@ export function CloudChatFilePanel(props: Props) {
             size="sm"
             type="button"
             disabled={busy}
-            onClick={() => void loadLibrary()}
+            onClick={() => (props.onBrowseLibrary ? props.onBrowseLibrary() : void loadLibrary())}
           >
             全部文件
           </Button>
@@ -317,6 +339,9 @@ export function CloudChatFilePanel(props: Props) {
               {cloudFileStatus(selected)} · {(selected.size / 1024).toFixed(1)} KiB
             </p>
             {actions(selected)}
+            {image ? (
+              <img src={image} alt={selected.name} className="cloud-space-original-image" />
+            ) : null}
             {source ? (
               <>
                 <p className="mt-16px mb-8px text-xs text-muted-foreground">

@@ -76,6 +76,7 @@ import {
 import { CloudChatSourcesPanel } from "@/components/cloudchat/CloudChatSourcesPanel";
 import { CloudContextSidebar } from "@/components/cloudchat/CloudContextSidebar";
 import { CloudConversationTitle } from "@/components/cloudchat/CloudConversationTitle";
+import { CloudSpacePage } from "@/components/cloudchat/CloudSpacePage";
 import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPreview";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
@@ -87,6 +88,14 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import {
+  CLOUD_SPACE_HOME,
+  CloudSpaceError,
+  type CloudSpaceItem,
+  type CloudSpaceLocation,
+  createCloudSpaceClient,
+} from "@/lib/cloudSpace";
+import "../cloud-space.css";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
 import {
@@ -371,6 +380,10 @@ export function CloudChatPage({
   const [artifactPanel, setArtifactPanel] = useState<{ versionId?: string } | null>(null);
   const [workPanel, setWorkPanel] = useState<"projects" | "memory" | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"chat" | "library" | "projects">("chat");
+  const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(CLOUD_SPACE_HOME);
+  const [spaceRevision, setSpaceRevision] = useState(0);
+  const [spaceVisited, setSpaceVisited] = useState(false);
+  const [spaceStorageOpen, setSpaceStorageOpen] = useState(false);
   const [presentation, setPresentation] = useState<CloudChatPresentation>("work");
   const [composerMenu, setComposerMenu] = useState<CloudComposerMenu>(null);
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLElement | null>(null);
@@ -485,6 +498,10 @@ export function CloudChatPage({
   const runsClient = useMemo(() => createCloudChatRunsClient(accountFetch), []);
   const filesClient = useMemo(
     () => createCloudChatFilesClient(accountFetch, captureAccountRequestGuard),
+    [],
+  );
+  const spaceClient = useMemo(
+    () => createCloudSpaceClient(accountFetch, captureAccountRequestGuard),
     [],
   );
   const branchesClient = useMemo(
@@ -2317,11 +2334,78 @@ export function CloudChatPage({
       setWorkPanel(resource === "projects" || resource === "memory" ? resource : null);
       setInitialProjectId(projectId);
       setWorkspaceView(page ? (resource === "projects" ? "projects" : "library") : "chat");
+      if (page && (resource === "files" || resource === "artifacts")) {
+        setSpaceVisited(true);
+        setSpaceLocation({
+          ...CLOUD_SPACE_HOME,
+          category: resource === "artifacts" ? "outputs" : "all",
+        });
+      }
       if (page && sidebar.isMobile) setSidebarOpen(false);
     });
   }
   function openProject(id = "") {
     openResource("projects", true, id);
+  }
+  function navigateSpace(location: CloudSpaceLocation) {
+    projectNavigation.request(() => {
+      setSpaceVisited(true);
+      clearResources();
+      setSpaceLocation(location);
+      setWorkspaceView("library");
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
+  }
+  function openSpaceItem(item: CloudSpaceItem) {
+    if (item.kind === "folder") {
+      navigateSpace({ ...CLOUD_SPACE_HOME, folder: item.id });
+      return;
+    }
+    projectNavigation.request(() => {
+      setSpaceVisited(true);
+      setFilePanel(item.kind === "file" ? { fileId: item.target_id } : null);
+      setArtifactPanel(item.kind === "artifact" ? { versionId: item.target_id } : null);
+      setSourcePanel(null);
+      setWorkPanel(null);
+      setWorkspaceView("library");
+      sidebarPreview.dismiss();
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
+  }
+  async function referenceSpaceItems(items: CloudSpaceItem[]) {
+    if (composerLocked || streaming || modelPreparationAbortRef.current)
+      throw new Error("请等待当前操作完成后再引用资料。");
+    const view = viewRef.current,
+      guard = captureWorkGuard();
+    const files: CloudChatFile[] = [],
+      versions: CloudChatArtifactVersion[] = [];
+    for (const item of items) {
+      guard();
+      if (item.kind === "file") {
+        const file = await filesClient.get(item.target_id);
+        guard();
+        if (!cloudFileCanReference(file))
+          throw new Error(`${item.name}暂不能引用，请打开预览查看处理状态。`);
+        files.push(file);
+      } else if (item.kind === "artifact") {
+        const version = await artifactsClient.get(item.target_id);
+        guard();
+        if (version.state !== "ready") throw new Error(`${item.name}尚未保存完成。`);
+        versions.push(version);
+      }
+    }
+    guard();
+    if (!isCurrentView(view)) return;
+    const newFiles = files.filter((file) => !attachments.some((old) => old.id === file.id)),
+      newVersions = versions.filter(
+        (version) => !artifactAttachments.some((old) => old.id === version.id),
+      );
+    if (attachments.length + artifactAttachments.length + newFiles.length + newVersions.length > 8)
+      throw new Error("每条消息最多引用 8 个文件或成果。");
+    setAttachments((old) => [...old, ...newFiles]);
+    setArtifactAttachments((old) => [...old, ...newVersions]);
+    clearResources();
+    requestAnimationFrame(() => composerRef.current?.focus());
   }
   function pinSidebarPreview() {
     if (shownSidebarDestination === "library") {
@@ -2644,7 +2728,7 @@ export function CloudChatPage({
         },
         {
           id: "library",
-          label: "资料库",
+          label: "资料空间",
           icon: <NavigationLibrary className="size-5" aria-hidden="true" />,
           activeIcon: <NavigationLibraryFilled className="size-5" aria-hidden="true" />,
           onSelect: () => openResource("files", true),
@@ -2734,7 +2818,7 @@ export function CloudChatPage({
                             onClick={() => openResource("files", true)}
                           >
                             <BookOpen className="size-4" />
-                            资料库
+                            资料空间
                           </button>
                         </div>
                         <CloudChatProjectNavigation
@@ -2837,6 +2921,20 @@ export function CloudChatPage({
                       : undefined
                   }
                   files={filesClient}
+                  spaceClient={spaceClient}
+                  spaceLocation={spaceLocation}
+                  spaceRevision={spaceRevision}
+                  onSpaceNavigate={navigateSpace}
+                  onSpaceOpen={openSpaceItem}
+                  onSpaceStorage={() =>
+                    projectNavigation.request(() => {
+                      clearResources();
+                      setSpaceVisited(true);
+                      setWorkspaceView("library");
+                      setSpaceStorageOpen(true);
+                      if (sidebar.isMobile) setSidebarOpen(false);
+                    })
+                  }
                   environments={environments}
                   onOpenResource={(resource) => openResource(resource, true)}
                   onOpenFile={(id) => openResource("files", true, undefined, id)}
@@ -2906,7 +3004,7 @@ export function CloudChatPage({
                         className={`min-w-0 truncate text-sm font-medium ${landing && workspaceView === "chat" ? "cloud-header-title-landing" : ""}`}
                       >
                         {workspaceView === "library"
-                          ? "资料库"
+                          ? "资料空间"
                           : workspaceView === "projects"
                             ? "项目"
                             : conversations.find((item) => item.id === conversationId)?.title ||
@@ -2925,15 +3023,21 @@ export function CloudChatPage({
                   </>
                 }
                 trailingActions={
-                  <CloudChatHeaderActions
-                    modelLimitsDisabled={!selectedModelOption || preparingExecution || streaming}
-                    exportDisabled={
-                      !conversationId || historyLoading || streaming || branchBusy || exporting
-                    }
-                    onOpenModelLimits={() => setModelLimitsOpen(true)}
-                    onExport={(format) => void exportConversation(format)}
-                    onOpenResource={(resource) => openResource(resource)}
-                  />
+                  workspaceView === "chat" ? (
+                    <CloudChatHeaderActions
+                      modelLimitsDisabled={!selectedModelOption || preparingExecution || streaming}
+                      exportDisabled={
+                        !conversationId || historyLoading || streaming || branchBusy || exporting
+                      }
+                      onOpenModelLimits={() => setModelLimitsOpen(true)}
+                      onExport={(format) => void exportConversation(format)}
+                      onOpenResource={(resource) => openResource(resource)}
+                    />
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={closeResources}>
+                      返回对话
+                    </Button>
+                  )
                 }
                 settings={settings}
                 sidebarOpen={sidebarOpen}
@@ -2946,12 +3050,14 @@ export function CloudChatPage({
                 }
                 onOpenSidebar={() => setSidebarOpen(true)}
                 preThemeActions={
-                  <ExecutionEnvironmentSwitcher
-                    environments={environments}
-                    selection={selection}
-                    disabled={streaming}
-                    onSwitch={onSwitch}
-                  />
+                  workspaceView === "chat" ? (
+                    <ExecutionEnvironmentSwitcher
+                      environments={environments}
+                      selection={selection}
+                      disabled={streaming}
+                      onSwitch={onSwitch}
+                    />
+                  ) : null
                 }
               />
               <ApplicationView
@@ -3335,50 +3441,72 @@ export function CloudChatPage({
                 }}
               />
               <CloudChatResourcePresentation.Provider
-                value={workspaceView === "chat" ? "panel" : "page"}
+                value={
+                  workspaceView === "chat" || (workspaceView === "library" && !sourcePanel)
+                    ? "panel"
+                    : "page"
+                }
               >
                 <div className={workspaceView === "chat" ? "contents" : "cloud-workspace-content"}>
-                  {workspaceView === "library" ? (
-                    <nav className="cloud-library-tabs" aria-label="资料分类">
-                      {(
-                        [
-                          { id: "files", label: "文件" },
-                          { id: "artifacts", label: "成果" },
-                          { id: "sources", label: "来源" },
-                        ] as const
-                      ).map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          aria-current={
-                            (
-                              tab.id === "files"
-                                ? filePanel
-                                : tab.id === "artifacts"
-                                  ? artifactPanel
-                                  : sourcePanel
-                            )
-                              ? "page"
-                              : undefined
-                          }
-                          onClick={() => openResource(tab.id, true)}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </nav>
+                  {spaceVisited &&
+                  !accountInvalidatedRef.current &&
+                  viewRef.current.userId === user.id ? (
+                    <div
+                      className={
+                        workspaceView === "library" && !sourcePanel ? "contents" : "hidden"
+                      }
+                      inert={workspaceView !== "library" || Boolean(sourcePanel)}
+                    >
+                      <CloudSpacePage
+                        key={user.id}
+                        client={spaceClient}
+                        files={filesClient}
+                        artifacts={artifactsClient}
+                        revision={spaceRevision}
+                        active={workspaceView === "library" && !sourcePanel}
+                        storageOpen={spaceStorageOpen}
+                        onStorageOpenChange={setSpaceStorageOpen}
+                        location={spaceLocation}
+                        onNavigate={navigateSpace}
+                        onOpen={openSpaceItem}
+                        onReference={referenceSpaceItems}
+                        onCreateWork={(text) => {
+                          if (composerLocked || streaming) return;
+                          clearResources();
+                          if (landing) setPresentation("work");
+                          fillStarter(text);
+                        }}
+                        canReference={!composerLocked && !streaming}
+                        captureGuard={captureAccountRequestGuard}
+                        onChanged={() => setSpaceRevision((old) => old + 1)}
+                        onError={(cause) => {
+                          if (cause instanceof CloudSpaceError && cause.status === 401)
+                            notifyRelaySessionExpired();
+                        }}
+                      />
+                    </div>
                   ) : null}
-                  {filePanel && viewRef.current.userId === user.id && !accountInvalidatedRef.current
+                  {filePanel &&
+                  (workspaceView !== "library" || filePanel.fileId) &&
+                  viewRef.current.userId === user.id &&
+                  !accountInvalidatedRef.current
                     ? (() => {
                         const view = viewRef.current;
                         return (
                           <CloudChatFilePanel
                             key={`${user.id}:${conversationId}:${filePanel.fileId ?? "library"}`}
                             client={filesClient}
-                            onUpload={() => {
-                              closeResources();
-                              fileRef.current?.click();
-                            }}
+                            onBrowseLibrary={
+                              workspaceView === "library" ? () => setFilePanel(null) : undefined
+                            }
+                            onUpload={
+                              workspaceView === "library"
+                                ? undefined
+                                : () => {
+                                    closeResources();
+                                    fileRef.current?.click();
+                                  }
+                            }
                             initialFileId={filePanel.fileId}
                             fromLine={filePanel.fromLine}
                             toLine={filePanel.toLine}
@@ -3390,7 +3518,14 @@ export function CloudChatPage({
                               !submissionQueueFull
                             }
                             isCurrent={() => isCurrentView(view)}
-                            onClose={closeResources}
+                            onClose={
+                              workspaceView === "library"
+                                ? () => {
+                                    setFilePanel(null);
+                                    setSpaceRevision((old) => old + 1);
+                                  }
+                                : closeResources
+                            }
                             onAttach={(file) => {
                               if (!isCurrentView(view) || modelPreparationAbortRef.current) return;
                               if (attachments.length + artifactAttachments.length >= 8) {
@@ -3419,6 +3554,7 @@ export function CloudChatPage({
                       })()
                     : null}
                   {artifactPanel &&
+                  (workspaceView !== "library" || artifactPanel.versionId) &&
                   viewRef.current.userId === user.id &&
                   !accountInvalidatedRef.current
                     ? (() => {
@@ -3438,7 +3574,14 @@ export function CloudChatPage({
                             conversationId={conversationId || undefined}
                             initialVersionId={artifactPanel.versionId}
                             isCurrent={() => isCurrentView(view)}
-                            onClose={closeResources}
+                            onClose={
+                              workspaceView === "library"
+                                ? () => {
+                                    setArtifactPanel(null);
+                                    setSpaceRevision((old) => old + 1);
+                                  }
+                                : closeResources
+                            }
                             onContinue={
                               canContinue
                                 ? (version) => {

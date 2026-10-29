@@ -17,6 +17,7 @@ import (
 
 func (h *HTTPHandler) registerCloudFiles(mux *http.ServeMux) {
 	h.registerCloudArtifacts(mux)
+	h.registerCloudSpace(mux)
 	mux.HandleFunc("POST /api/web-chat/files", h.withSession(h.uploadCloudFile))
 	mux.HandleFunc("GET /api/web-chat/files", h.withSession(h.listCloudFiles))
 	mux.HandleFunc("GET /api/web-chat/files/{id}", h.withSession(h.getCloudFile))
@@ -103,18 +104,21 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
-	if len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 || len(r.MultipartForm.Value) != 1 || len(r.MultipartForm.Value["conversation_id"]) != 1 {
+	if len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 || len(r.MultipartForm.Value) > 1 || (len(r.MultipartForm.Value) == 1 && len(r.MultipartForm.Value["conversation_id"]) != 1) {
 		writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
 		return
 	}
-	conversationID, err := canonicalCloudFileID(r.MultipartForm.Value["conversation_id"][0])
-	if err != nil {
-		writeError(w, cloudFileAPIError(err))
-		return
-	}
-	if _, err = h.service.store.GetCloudConversation(r.Context(), session.UserID, conversationID); err != nil {
-		writeError(w, cloudFileAPIError(ErrNotFound))
-		return
+	conversationID := r.FormValue("conversation_id")
+	if conversationID != "" {
+		conversationID, err = canonicalCloudFileID(conversationID)
+		if err != nil {
+			writeError(w, cloudFileAPIError(err))
+			return
+		}
+		if _, err = h.service.store.GetCloudConversation(r.Context(), session.UserID, conversationID); err != nil {
+			writeError(w, cloudFileAPIError(ErrNotFound))
+			return
+		}
 	}
 	header := r.MultipartForm.File["file"][0]
 	if header.Size > CloudFileMaxBytes {

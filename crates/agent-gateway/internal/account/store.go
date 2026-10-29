@@ -60,6 +60,8 @@ type MemoryStore struct {
 	cloudMessages        map[string][]CloudMessage
 	cloudRuns            *cloudRunMemoryState
 	cloudFiles           map[string]CloudFile
+	cloudSpace           map[int64]map[string]CloudSpaceMetadata
+	cloudSpaceLimits     map[int64]int64
 	cloudBranches        map[string]cloudBranchReceipt
 	cloudTools           *cloudToolMemoryState
 	cloudArtifacts       *cloudArtifactMemoryState

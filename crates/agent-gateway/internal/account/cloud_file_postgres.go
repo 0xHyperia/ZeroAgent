@@ -18,7 +18,7 @@ const CloudFileSchema = `
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_files (
  id UUID PRIMARY KEY,
  user_id BIGINT NOT NULL CHECK (user_id > 0),
- conversation_id UUID NOT NULL,
+ conversation_id UUID NULL,
  object_key TEXT NOT NULL UNIQUE,
  name TEXT NOT NULL CHECK (octet_length(name) BETWEEN 1 AND 255),
  mime TEXT NOT NULL,
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_files (
  deleted_at TIMESTAMPTZ NULL,
  CONSTRAINT zeroagent_cloud_files_tombstone CHECK (deleted_at IS NULL OR state IN ('deleting','deleted'))
 );
+ALTER TABLE zeroagent_cloud_files ALTER COLUMN conversation_id DROP NOT NULL;
 ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parser_task JSONB NULL;
 ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parsed_segments JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parse_truncated BOOLEAN NOT NULL DEFAULT false;
@@ -47,7 +48,7 @@ CREATE INDEX IF NOT EXISTS zeroagent_cloud_files_conversation_idx
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_files_cleanup_idx
  ON zeroagent_cloud_files(updated_at,id) WHERE state='deleting';`
 
-const cloudFileColumns = `f.id::text,f.user_id,f.conversation_id::text,f.object_key,f.name,f.mime,f.size,f.sha256,
+const cloudFileColumns = `f.id::text,f.user_id,COALESCE(f.conversation_id::text,''),f.object_key,f.name,f.mime,f.size,f.sha256,
  f.state,f.processing_stage,f.extracted_text,f.error_code,f.version,f.created_at,f.updated_at,f.uploaded_at,f.deleted_at,octet_length(f.extracted_text),f.parser_task,f.parsed_segments,f.parse_truncated`
 
 // File-library pages need the text byte count, never all extracted bodies.
@@ -96,6 +97,9 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = cloudSpaceQuotaTx(ctx, tx, file.UserID, file.Size); err != nil {
+		return nil, err
+	}
 	// Account-scoped quota serialization works across Gateway processes. Failed
 	// and deleting originals consume quota until remote deletion is confirmed.
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_cloud_files:' || $1::text,0))`, file.UserID); err != nil {
@@ -110,7 +114,9 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 		return nil, ErrCloudFileQuota
 	}
 	var conversationID string
-	err = tx.QueryRowContext(ctx, `SELECT id::text FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2 FOR KEY SHARE`, file.ConversationID, file.UserID).Scan(&conversationID)
+	if file.ConversationID != "" {
+		err = tx.QueryRowContext(ctx, `SELECT id::text FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2 FOR KEY SHARE`, file.ConversationID, file.UserID).Scan(&conversationID)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -124,7 +130,7 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 	file.CreatedAt, file.UpdatedAt = now, now
 	_, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_files
  (id,user_id,conversation_id,object_key,name,mime,size,sha256,state,processing_stage,version,created_at,updated_at)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,$11,$11)`, file.ID, file.UserID, file.ConversationID, file.ObjectKey, file.Name, file.MIME, file.Size, file.SHA256, file.State, file.ProcessingStage, now)
+ VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,$9,$10,1,$11,$11)`, file.ID, file.UserID, file.ConversationID, file.ObjectKey, file.Name, file.MIME, file.Size, file.SHA256, file.State, file.ProcessingStage, now)
 	if err != nil {
 		var pg *pq.Error
 		if errors.As(err, &pg) && pg.Code == "23505" {
@@ -168,6 +174,9 @@ func (s *PersistentStore) ListCloudFiles(ctx context.Context, userID int64, conv
 		beforeCreated = before.CreatedAt
 	}
 	query := "SELECT " + cloudFileMetadataColumns + " FROM zeroagent_cloud_files f WHERE f.user_id=$1 AND f.deleted_at IS NULL"
+	if conversationID == "" {
+		query += " AND NOT EXISTS (SELECT 1 FROM zeroagent_cloud_space_metadata m WHERE m.user_id=f.user_id AND m.kind='file' AND m.id=f.id AND m.trashed)"
+	}
 	args := []any{userID}
 	if conversationID != "" {
 		args = append(args, conversationID)

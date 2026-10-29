@@ -299,7 +299,7 @@ export function cloudArtifactCanPreviewImage(version: CloudChatArtifactVersion) 
     version.size <= CLOUD_ARTIFACT_IMAGE_BYTES
   );
 }
-function cloudArtifactImageDimensions(bytes: Uint8Array, mime: string) {
+export function cloudArtifactImageDimensions(bytes: Uint8Array, mime: string) {
   let width = 0,
     height = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

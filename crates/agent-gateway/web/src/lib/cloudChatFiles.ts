@@ -85,7 +85,7 @@ function parseFile(value: unknown): CloudChatFile {
   const file = value as CloudChatFile;
   if (
     !UUID.test(file.id) ||
-    !UUID.test(file.conversation_id) ||
+    (file.conversation_id !== "" && !UUID.test(file.conversation_id)) ||
     typeof file.name !== "string" ||
     !file.name ||
     file.name.length > 255 ||
@@ -193,11 +193,11 @@ export function createCloudChatFilesClient(request: Request, captureGuard: Captu
     return readJSON(response, guard);
   }
   return {
-    async upload(file: File, conversationId: string, signal?: AbortSignal) {
+    async upload(file: File, conversationId = "", signal?: AbortSignal) {
       if (file.size > CLOUD_FILE_MAX_BYTES)
         throw new CloudChatFileError("文件超过当前 32 MiB 大小限制。", 413);
       const data = new FormData();
-      data.set("conversation_id", fileID(conversationId));
+      if (conversationId) data.set("conversation_id", fileID(conversationId));
       data.set("file", file);
       try {
         return parseFile(

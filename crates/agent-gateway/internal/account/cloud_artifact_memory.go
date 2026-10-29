@@ -66,7 +66,7 @@ func (s *MemoryStore) ReserveCloudArtifact(ctx context.Context, userID int64, ow
 			number = other.Number + 1
 		}
 	}
-	if count >= CloudArtifactMaxAccountVersions || used+version.Size > CloudArtifactMaxAccountBytes || number > CloudArtifactMaxFamilyVersions {
+	if count >= CloudArtifactMaxAccountVersions || used+version.Size > CloudArtifactMaxAccountBytes || number > CloudArtifactMaxFamilyVersions || !s.cloudSpaceQuotaLocked(userID, version.Size) {
 		return nil, false, ErrCloudArtifactQuota
 	}
 	if !exists {
@@ -130,6 +130,9 @@ func (s *MemoryStore) ListCloudArtifacts(ctx context.Context, userID int64, conv
 		}
 	}
 	for _, version := range s.cloudArtifacts.versions {
+		if conversationID == "" && familyID == "" && s.cloudSpace[userID]["artifact:"+version.FamilyID].Trashed {
+			continue
+		}
 		if version.UserID == userID && version.DeletedAt == nil && (conversationID == "" || version.ConversationID == conversationID) && (familyID == "" || version.FamilyID == familyID) {
 			if before != "" && (version.CreatedAt.After(anchor.CreatedAt) || (version.CreatedAt.Equal(anchor.CreatedAt) && version.ID >= anchor.ID)) {
 				continue

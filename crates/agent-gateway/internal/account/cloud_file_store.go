@@ -32,7 +32,7 @@ func validateCloudFile(file *CloudFile) error {
 	if err != nil {
 		return ErrCloudFileInvalid
 	}
-	if _, err := uuid.Parse(file.ConversationID); err != nil {
+	if _, err := uuid.Parse(file.ConversationID); file.ConversationID != "" && err != nil {
 		return ErrCloudFileInvalid
 	}
 	digest, err := hex.DecodeString(file.SHA256)

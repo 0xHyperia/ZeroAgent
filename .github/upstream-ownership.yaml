@@ -2,6 +2,12 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gateway/internal/account/cloud_space*.go",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": ["账户范围的原件/成果只读投影，元数据CAS和回收站不复活原件", "Memory/PostgreSQL隔离与并发、真实额度统计/双类预留、独立上传及备份范围"]
+    },
+    {
       "glob": "crates/agent-ui/src/components/chat/ReasoningSlider.tsx",
       "ownership": "zeroagent_owned",
       "risk": "medium",
