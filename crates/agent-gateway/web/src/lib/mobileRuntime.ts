@@ -13,6 +13,12 @@ type MobileGatewayResponse = {
   cached?: boolean;
 };
 
+type MobileGatewayStreamItem =
+  | { kind: "headers"; status: number; headers: Record<string, string> }
+  | { kind: "chunk"; data: string };
+
+const activeHttpStreams = new Set<() => void>();
+
 type MobileGatewayMultipartPart = {
   name: string;
   value?: string;
@@ -336,24 +342,150 @@ function installGatewayWebSocketBridge() {
 function isGatewayRequest(input: RequestInfo | URL) {
   const value =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-  return value.startsWith("/") || value.startsWith(window.location.origin);
+  try {
+    return new URL(value, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 function requestPath(input: RequestInfo | URL) {
   const value =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-  if (value.startsWith("/")) return value;
-  const url = new URL(value);
+  const url = new URL(value, window.location.href);
   return `${url.pathname}${url.search}`;
 }
 
-function installGatewayFetchBridge() {
+async function fetchGatewayStream(
+  request: { path: string; method: string; headers: Record<string, string>; body: string },
+  signal: AbortSignal | null | undefined,
+) {
+  const abortError = () =>
+    signal?.reason ?? new DOMException("The request was aborted", "AbortError");
+  if (signal?.aborted) throw abortError();
+  let id: string | undefined;
+  let closed = false;
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let rejectAbort: (reason: unknown) => void = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    rejectAbort = reject;
+  });
+  const closeNative = () => {
+    if (id) void nativeInvoke("mobile_gateway_stream_close", { id }).catch(() => {});
+  };
+  const dispose = () => {
+    closed = true;
+    signal?.removeEventListener("abort", abort);
+    activeHttpStreams.delete(abort);
+    closeNative();
+  };
+  const abort = () => {
+    if (closed) return;
+    const reason = abortError();
+    dispose();
+    rejectAbort(reason);
+    controller?.error(reason);
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  activeHttpStreams.add(abort);
+  try {
+    const opening = nativeInvoke<string>("mobile_gateway_stream_open", { request });
+    // Open only registers a native request. A late result after abort is immediately closed.
+    void opening.then(
+      (value) => {
+        id = value;
+        if (closed) closeNative();
+      },
+      () => {},
+    );
+    id = await Promise.race([opening, aborted]);
+    const head = await Promise.race([
+      nativeInvoke<MobileGatewayStreamItem | null>("mobile_gateway_stream_read", { id }),
+      aborted,
+    ]);
+    if (!head || head.kind !== "headers") throw new Error("Gateway stream response is invalid");
+    if ([204, 205, 304].includes(head.status)) {
+      dispose();
+      return new Response(null, { status: head.status, headers: head.headers });
+    }
+    const body = new ReadableStream<Uint8Array>(
+      {
+        start(value) {
+          controller = value;
+        },
+        async pull(value) {
+          try {
+            const item = await nativeInvoke<MobileGatewayStreamItem | null>(
+              "mobile_gateway_stream_read",
+              { id },
+            );
+            if (closed) return;
+            if (item === null) {
+              dispose();
+              value.close();
+            } else if (item.kind === "chunk") {
+              value.enqueue(base64ToBytes(item.data));
+            } else {
+              throw new Error("Gateway stream chunk is invalid");
+            }
+          } catch (cause) {
+            if (closed) return;
+            dispose();
+            value.error(cause);
+          }
+        },
+        cancel() {
+          dispose();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return new Response(body, { status: head.status, headers: head.headers });
+  } catch (cause) {
+    dispose();
+    throw cause;
+  }
+}
+
+export function installGatewayFetchBridge() {
   const browserFetch = window.fetch.bind(window);
+  window.addEventListener("pagehide", () => {
+    for (const abort of [...activeHttpStreams]) abort();
+  });
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!isGatewayRequest(input)) return browserFetch(input, init);
 
-    const headers = new Headers(init?.headers);
-    const body = init?.body;
+    const source = input instanceof Request ? input : undefined;
+    const headers = new Headers(init?.headers ?? source?.headers);
+    const method = init?.method ?? source?.method ?? "GET";
+    const signal = init?.signal ?? source?.signal;
+    if (signal?.aborted)
+      throw signal.reason ?? new DOMException("The request was aborted", "AbortError");
+    let body = init?.body;
+    const streaming = headers
+      .get("Accept")
+      ?.split(",")
+      .some(
+        (type) =>
+          type.split(";")[0].trim().toLowerCase() === "text/event-stream" ||
+          (type.split(";")[0].trim().toLowerCase() === "application/octet-stream" &&
+            requestPath(input).startsWith("/api/web-chat/")),
+      );
+    if (streaming) {
+      if (body === undefined && source?.body) body = await source.clone().text();
+      if (body !== undefined && body !== null && typeof body !== "string") {
+        throw new TypeError("Gateway stream body must be text");
+      }
+      return fetchGatewayStream(
+        {
+          path: requestPath(input),
+          method,
+          headers: Object.fromEntries(headers.entries()),
+          body: body ?? "",
+        },
+        signal,
+      );
+    }
     if (body instanceof FormData) {
       const parts: MobileGatewayMultipartPart[] = [];
       for (const [name, value] of body.entries()) {
@@ -373,7 +505,7 @@ function installGatewayFetchBridge() {
         {
           request: {
             path: requestPath(input),
-            method: init?.method ?? "POST",
+            method: init?.method ?? source?.method ?? "POST",
             headers: Object.fromEntries(headers.entries()),
             parts,
           },
@@ -390,7 +522,7 @@ function installGatewayFetchBridge() {
     const response = await nativeInvoke<MobileGatewayResponse>("mobile_gateway_request", {
       request: {
         path: requestPath(input),
-        method: init?.method ?? "GET",
+        method,
         headers: Object.fromEntries(headers.entries()),
         body: body ?? "",
       },
@@ -428,6 +560,7 @@ export async function openEmbeddedExternalUrl(url: string) {
 
 export async function clearEmbeddedMobileGatewaySession() {
   if (!isEmbeddedMobileRuntime()) return;
+  for (const abort of [...activeHttpStreams]) abort();
   await nativeInvoke("mobile_gateway_logout");
 }
 

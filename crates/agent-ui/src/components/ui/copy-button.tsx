@@ -1,7 +1,7 @@
 import { Check, Copy } from "@liveagent/ui/components/IconSet";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { COPY_FEEDBACK_DURATION, useCopyFeedback } from "@liveagent/ui/lib/shared/useCopyFeedback";
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { cn } from "../../lib/shared/utils";
 import { Button } from "./button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
@@ -17,6 +17,7 @@ export function CopyButton(props: {
 }) {
   const { value, label, copiedLabel, className, iconClassName } = props;
   const [tooltipOpen, setTooltipOpen] = useState(false);
+  const tooltipTriggerId = useId();
   const { copied, showCopied } = useCopyFeedback(false, COPY_FEEDBACK_DURATION.tooltip, () =>
     setTooltipOpen(false),
   );
@@ -34,12 +35,14 @@ export function CopyButton(props: {
     <>
       <Tooltip
         open={tooltipOpen}
+        triggerId={tooltipTriggerId}
         disabled={disabled}
         onOpenChange={(open) => {
           if (!copied || open) setTooltipOpen(open);
         }}
       >
         <TooltipTrigger
+          id={tooltipTriggerId}
           delay={300}
           closeOnClick={false}
           disabled={disabled}

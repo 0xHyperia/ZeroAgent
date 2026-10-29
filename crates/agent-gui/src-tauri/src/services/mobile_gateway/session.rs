@@ -296,6 +296,9 @@ pub async fn run_owned<T>(
     }
 }
 
+#[path = "http_stream.rs"]
+pub mod http_stream;
+
 #[cfg(test)]
 #[path = "session/tests.rs"]
 mod tests;

@@ -32,7 +32,7 @@ const buttonVariants = cva(
   },
 );
 
-type ButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "className"> &
+export type ButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "className"> &
   VariantProps<typeof buttonVariants> & {
     className?: string;
     /** Base UI composition: replace the host element. */

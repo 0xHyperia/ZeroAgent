@@ -261,6 +261,7 @@ export function SettingsPage(props: SettingsPageProps) {
 
   return (
     <SettingsShell
+      presentation={props.presentation}
       registry={registry}
       context={undefined}
       saveState={saveState}

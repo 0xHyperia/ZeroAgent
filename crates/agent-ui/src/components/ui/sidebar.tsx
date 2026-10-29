@@ -10,12 +10,12 @@ import * as React from "react";
 import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { cn } from "../../lib/shared/utils";
-import { Button } from "./button";
 import { Input } from "./input";
 import { Separator } from "./separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./sheet";
 import { Skeleton } from "./skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
+import { TooltipButton as Button } from "./tooltip-button";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -167,6 +167,7 @@ function Sidebar({
   side = "left",
   variant = "sidebar",
   collapsible = "offcanvas",
+  previewOpen = false,
   className,
   children,
   dir,
@@ -178,10 +179,12 @@ function Sidebar({
   label?: string;
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  previewOpen?: boolean;
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
   const { t } = useLocale();
   const accessibleLabel = label ?? t("sidebar.navigation");
+  const previewing = previewOpen && state === "collapsed" && collapsible === "offcanvas";
 
   if (collapsible === "none") {
     return (
@@ -234,6 +237,7 @@ function Sidebar({
     <div
       className="group peer relative h-full shrink-0 text-sidebar-foreground"
       data-state={state}
+      data-preview={previewing ? "true" : undefined}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
@@ -257,8 +261,9 @@ function Sidebar({
         role="complementary"
         style={style}
         aria-label={accessibleLabel}
-        aria-hidden={state === "collapsed" && collapsible === "offcanvas"}
-        inert={state === "collapsed" && collapsible === "offcanvas"}
+        aria-hidden={state === "collapsed" && collapsible === "offcanvas" && !previewing}
+        inert={state === "collapsed" && collapsible === "offcanvas" && !previewing}
+        data-preview={previewing ? "true" : undefined}
         data-side={side}
         className={cn(
           "absolute inset-y-0 z-10 flex h-full w-(--sidebar-width) transition-[translate] duration-200 ease-out motion-reduce:transition-none data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:-translate-x-full data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:translate-x-full",
@@ -267,6 +272,7 @@ function Sidebar({
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
+          previewing && "translate-x-0!",
         )}
         {...props}
       >
@@ -282,7 +288,12 @@ function Sidebar({
   );
 }
 
-function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
+function SidebarTrigger({
+  children,
+  className,
+  onClick,
+  ...props
+}: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
   const { t } = useLocale();
 
@@ -299,7 +310,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       }}
       {...props}
     >
-      <PanelLeftClose />
+      {children ?? <PanelLeftClose />}
       <span className="sr-only">{t("sidebar.navigation")}</span>
     </Button>
   );

@@ -18,10 +18,10 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
-import { Button } from "@liveagent/ui/components/ui/button";
 import { menuSurfaceClassName } from "@liveagent/ui/components/ui/menu-surface";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { Switch } from "@liveagent/ui/components/ui/switch";
+import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
   COMPOSER_CONTROL_CHEVRON_CLASS,
@@ -87,6 +87,9 @@ function RuntimeToggleChip(props: {
 }
 
 export type ComposerModelControlsProps = {
+  /** Compact chat shows effort; its accessible name still identifies the selected model. */
+  compactLabel?: boolean;
+  showProviderIcon?: boolean;
   executionMode: ExecutionMode;
   hasModels: boolean;
   currentModelLabel: string;
@@ -118,6 +121,8 @@ export const ComposerModelControls = memo(function ComposerModelControls(
   props: ComposerModelControlsProps,
 ) {
   const {
+    compactLabel = false,
+    showProviderIcon = true,
     executionMode,
     hasModels,
     currentModelLabel,
@@ -218,18 +223,22 @@ export const ComposerModelControls = memo(function ComposerModelControls(
           />
         }
       >
-        {selectedOption ? (
+        {showProviderIcon && selectedOption ? (
           <ProviderBrandIcon
             type={selectedOption.providerType}
             model={selectedOption.model}
             className="opacity-90"
           />
-        ) : (
+        ) : showProviderIcon ? (
           <Layers className="size-4 shrink-0" />
-        )}
+        ) : null}
         <span className={COMPOSER_CONTROL_LABEL_CLASS}>
-          {triggerLabel}
-          {thinkingOn ? ` · ${t(REASONING_COMPACT_I18N_KEYS[selectedEffort])}` : ""}
+          {compactLabel && thinkingSupported
+            ? t(REASONING_COMPACT_I18N_KEYS[selectedEffort])
+            : triggerLabel}
+          {!compactLabel && thinkingOn
+            ? ` · ${t(REASONING_COMPACT_I18N_KEYS[selectedEffort])}`
+            : ""}
         </span>
         <ChevronDown
           className={cn(COMPOSER_CONTROL_CHEVRON_CLASS, isModelPickerOpen && "rotate-180")}

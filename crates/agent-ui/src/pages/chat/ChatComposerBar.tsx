@@ -27,6 +27,8 @@ import {
   type MentionComposerHandle,
   type MentionComposerSkill,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import { useComposerShapeMotion } from "@liveagent/ui/components/chat/useComposerShapeMotion";
+import { useInlineComposerLayout } from "@liveagent/ui/components/chat/useInlineComposerLayout";
 import { GitBranchSelector } from "@liveagent/ui/components/git/GitBranchSelector";
 import {
   ArrowUp,
@@ -46,7 +48,6 @@ import {
   Trash2,
   WandSparkles,
 } from "@liveagent/ui/components/IconSet";
-import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ import {
 import { LabelTooltip as RuntimeControlTooltip } from "@liveagent/ui/components/ui/label-tooltip";
 import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
+import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { requestCheckpointRewindLatest } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
@@ -164,6 +166,7 @@ function PendingComposerAttachment(props: {
   closePreviewLabel: string;
   imagePreviewLoader?: UploadedImagePreviewLoader;
   onRemove: (relativePath: string) => void;
+  onOpen?: (relativePath: string) => void;
 }) {
   const {
     file,
@@ -174,6 +177,7 @@ function PendingComposerAttachment(props: {
     closePreviewLabel,
     imagePreviewLoader,
     onRemove,
+    onOpen,
   } = props;
   const { imageSrc, isLoading } = useComposerUploadedImagePreview(
     file,
@@ -187,7 +191,7 @@ function PendingComposerAttachment(props: {
       file={file}
       workspaceRoot={workdir}
       fileName={file.fileName}
-      pathTitle={file.relativePath}
+      pathTitle={onOpen ? file.fileName : file.relativePath}
       imageSrc={imageSrc}
       isImageLoading={isLoading}
       fallbackIcon={<TypeIcon className="size-4" />}
@@ -196,6 +200,7 @@ function PendingComposerAttachment(props: {
       previewLabel={previewLabel}
       closePreviewLabel={closePreviewLabel}
       onRemove={() => onRemove(file.relativePath)}
+      onOpen={onOpen ? () => onOpen(file.relativePath) : undefined}
     />
   );
 }
@@ -279,6 +284,7 @@ export type ChatComposerBarProps = {
   isSending: boolean;
   isUploadingFiles: boolean;
   isInputDisabled: boolean;
+  allowQueueWhileSending?: boolean;
   allowUploadsWithoutWorkspace?: boolean;
   sttProvider?: SttProviderId | null;
   sttProviderConfigured?: boolean;
@@ -293,6 +299,17 @@ export type ChatComposerBarProps = {
    */
   hidden?: boolean;
   inputPlaceholder: string;
+  /** Replaces the default local upload menu with host-supported capabilities. */
+  capabilityMenu?: ReactNode;
+  /** Optional project/file context tray; draft state remains in this composer. */
+  contextBar?: ReactNode;
+  /** Optional host feedback, included in the measured composer height. */
+  feedback?: ReactNode;
+  /** Opt-in text-only Web layout; the standard desktop/agent controls stay intact. */
+  layout?: "standard" | "inline";
+  expandedInput?: boolean;
+  leadingControls?: ReactNode;
+  contextBarPosition?: "above" | "below";
   workdir: string;
   enabledSkills: MentionComposerSkill[];
   /** Earlier conversations available to the structured @ reference picker. */
@@ -316,6 +333,8 @@ export type ChatComposerBarProps = {
   reasoningOptions: ReasoningLevel[];
   thinkingAlwaysOn: boolean;
   gitClient?: GitClient | null;
+  /** Hosts without a Git runtime omit its controls instead of showing a disabled local tool. */
+  showGitControls?: boolean;
   gitWriteEnabled?: boolean;
   gitDisabledMessage?: string;
   /** 当前会话上下文占用 token；与 contextWindow 齐备时显示用量环。 */
@@ -353,6 +372,7 @@ export type ChatComposerBarProps = {
   loadHistoryPrompts?: () => readonly string[];
   pendingUploadedFiles: PendingUploadedFile[];
   onRemovePendingUpload: (relativePath: string) => void;
+  onOpenPendingUpload?: (relativePath: string) => void;
   /** 输入框上方的目标栏（/goal）；与指令队列上下排列。 */
   goalBar?: ReactNode;
   queuedTurns: ChatQueueTurnPreview[];
@@ -410,6 +430,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     isSending,
     isUploadingFiles,
     isInputDisabled,
+    allowQueueWhileSending = true,
     allowUploadsWithoutWorkspace = false,
     sttProvider = null,
     sttProviderConfigured,
@@ -436,6 +457,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     reasoningOptions,
     thinkingAlwaysOn,
     gitClient,
+    showGitControls = true,
     gitWriteEnabled = true,
     gitDisabledMessage,
     contextUsageTokens,
@@ -462,6 +484,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     loadHistoryPrompts,
     pendingUploadedFiles,
     onRemovePendingUpload,
+    onOpenPendingUpload,
     goalBar,
     queuedTurns,
     queuePaused,
@@ -525,6 +548,20 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const [composerHasOverflow, setComposerHasOverflow] = useState(false);
   const isComposerExpandedRef = useRef(false);
   const glassCardRef = useRef<HTMLDivElement | null>(null);
+  const inlineLayout = props.layout === "inline" && surface === "web" && executionMode === "text";
+  const singleLineInput = useInlineComposerLayout({
+    enabled: inlineLayout,
+    expanded: Boolean(props.expandedInput) || isComposerExpanded,
+    hasAttachments: pendingUploadedFiles.length > 0,
+    isEmpty: composerIsEmpty,
+    cardRef: glassCardRef,
+    composerRef,
+  });
+  useComposerShapeMotion(
+    glassCardRef,
+    inlineLayout && !isComposerExpanded,
+    `${props.expandedInput}:${singleLineInput}:${pendingUploadedFiles.length}`,
+  );
   const conversationDragDepthRef = useRef(0);
   const [conversationDropReference, setConversationDropReference] =
     useState<ConversationMentionReference | null>(null);
@@ -616,7 +653,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const composerAddMenuDisabled = isAgentMode ? controlsDisabled : uploadDisabled;
   const hasSendableDraft = !composerIsEmpty || pendingUploadedFiles.length > 0;
   const sendDisabled = isInputDisabled || stt.active || isUploadingFiles || !hasSendableDraft;
-  const canQueueDraftWhileSending = isSending && !sendDisabled;
+  const canQueueDraftWhileSending = allowQueueWhileSending && isSending && !sendDisabled;
   const primaryActionTitle = canQueueDraftWhileSending
     ? t("chat.queue.addToQueue")
     : isSending
@@ -1022,13 +1059,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
   /** 发送（含排队）后退出全高编辑态，让路给回复内容。 */
   const handleComposerSend = useCallback(() => {
+    if (isSending && !allowQueueWhileSending) return;
     // 澄清进行中禁发：避免把半成品草稿发出去（设计文档「交互」）。
     if (clarifyOpen) return;
     // 以已注册指令开头的草稿改走指令执行（发送按钮路径；Enter 在输入框内已拦截）。
     if (composerRef.current?.runCommandDraft()) return;
     setComposerExpanded(false);
     onSend();
-  }, [clarifyOpen, composerRef, onSend, setComposerExpanded]);
+  }, [allowQueueWhileSending, isSending, clarifyOpen, composerRef, onSend, setComposerExpanded]);
 
   useEffect(() => {
     const editor = glassCardRef.current?.querySelector<HTMLElement>(".mention-composer");
@@ -1182,9 +1220,39 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     overlayHeightOwnerRef,
   ]);
 
+  const modelControls = (
+    <ComposerModelControls
+      compactLabel={inlineLayout && !props.expandedInput}
+      showProviderIcon={!inlineLayout}
+      executionMode={executionMode}
+      hasModels={hasModels}
+      currentModelLabel={currentModelLabel}
+      modelOptions={modelOptions}
+      selectedValue={selectedValue}
+      modelsRefreshing={modelsRefreshing}
+      onRefreshModels={onRefreshModels}
+      chatRuntimeControls={chatRuntimeControls}
+      reasoningOptions={reasoningOptions}
+      thinkingAlwaysOn={thinkingAlwaysOn}
+      disabled={controlsDisabled}
+      onSelectModel={onSelectModel}
+      onSelectExecutionMode={onSelectExecutionMode}
+      onOpenSettings={onOpenSettings}
+      onChatRuntimeControlsChange={onChatRuntimeControlsChange}
+      open={modelPickerOpen}
+      onOpenChange={setModelPickerOpen}
+    />
+  );
+  const contextTray = props.contextBar ? (
+    <div key="context-tray" data-composer-context-bar="" className="pointer-events-auto">
+      {props.contextBar}
+    </div>
+  ) : null;
   return (
     <div
       ref={composerLayerRef}
+      data-composer-layout={inlineLayout ? "inline" : "standard"}
+      data-composer-empty={composerIsEmpty ? "true" : "false"}
       className={cn(
         surface === "desktop"
           ? cn(
@@ -1434,10 +1502,19 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             }}
           />
         ) : null}
+        {props.feedback ? (
+          <div data-composer-feedback="" className="pointer-events-auto">
+            {props.feedback}
+          </div>
+        ) : null}
+        {props.contextBarPosition === "above" ? contextTray : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape 捕获仅在展开态生效，焦点始终在内部 textbox 上，包装层不参与 Tab 序。 */}
         <div
+          key="composer-card"
           hidden={approvalBar != null}
           ref={glassCardRef}
+          data-composer-single-line={singleLineInput ? "true" : "false"}
+          data-composer-expanded-input={props.expandedInput || undefined}
           data-file-upload-drop-zone=""
           data-file-upload-conversation-id={conversationId}
           data-workspace-path-drop-zone={workspacePathDropState ?? "idle"}
@@ -1549,6 +1626,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     closePreviewLabel={t("chat.upload.closePreview")}
                     imagePreviewLoader={onLoadUploadedImagePreview}
                     onRemove={onRemovePendingUpload}
+                    onOpen={onOpenPendingUpload}
                   />
                 ))}
               </div>
@@ -1585,6 +1663,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               收窄编辑器 border box 才能把滚动条一并推到按钮左侧。 */}
             <div
               className={cn(
+                "composer-editor-field",
                 "relative flex flex-1 pl-4 pr-12",
                 pendingUploadedFiles.length > 0 ? "pt-1.5" : "pt-3",
                 isComposerExpanded && "min-h-0",
@@ -1626,106 +1705,109 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               />
             </div>
 
-            <div className="relative flex items-center justify-between gap-2 px-3 pb-2 pt-0.5">
-              <div className="flex min-w-0 flex-1 items-center gap-1">
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        disabled={composerAddMenuDisabled}
-                        aria-label={addMenuTooltip}
-                        title={addMenuTooltip}
-                        className={cn(
-                          "composer-toolbar-action relative inline-flex size-8 shrink-0 items-center justify-center",
-                          "rounded-full outline-hidden transition-colors",
-                          "hover:bg-muted/60 focus-visible:bg-muted/60 data-[popup-open]:bg-muted/60",
-                          "disabled:pointer-events-none disabled:opacity-40",
-                          pendingUploadedFiles.length > 0
-                            ? "text-sky-600 hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
-                            : "text-muted-foreground hover:text-foreground dark:hover:text-white",
-                        )}
-                      />
-                    }
-                  >
-                    {isUploadingFiles ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Plus className="size-4" />
-                    )}
-                    {pendingUploadedFiles.length > 0 ? (
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "absolute -right-0.5 -top-0.5 flex h-15px min-w-15px items-center justify-center",
-                          "rounded-full bg-sky-500 px-3px",
-                          "text-tiny font-semibold leading-none text-white shadow-ui-chatcomposerbar-41",
-                          "dark:bg-sky-400 dark:text-slate-900 dark:shadow-ui-chatcomposerbar-42",
-                        )}
-                      >
-                        {pendingUploadedFiles.length}
-                      </span>
-                    ) : null}
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    variant="soft"
-                    className="flex w-60 flex-col overflow-hidden"
-                    side="top"
-                    align="start"
-                  >
-                    <DropdownMenuLabel>{t("chat.upload.addSection")}</DropdownMenuLabel>
-                    <DropdownMenuItem
-                      onSelect={onPickReadableFiles}
-                      disabled={uploadDisabled}
-                      className="gap-2"
-                    >
-                      <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-medium leading-5">{t("chat.upload.files")}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={onPickWorkspaceFolder}
-                      disabled={uploadDisabled}
-                      className="gap-2"
-                    >
-                      <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-medium leading-5">{t("chat.upload.folder")}</span>
-                    </DropdownMenuItem>
-                    {isAgentMode ? (
-                      // 计划模式开关行:整行即开关,右侧迷你 switch 呈现状态。
-                      // closeOnClick=false 让切换就地生效——开关动画可见,菜单
-                      // 不弹跳;行为说明降为 hover 提示,不再挤占行内小字。
-                      <DropdownMenuItem
-                        closeOnClick={false}
-                        role="menuitemcheckbox"
-                        aria-checked={chatRuntimeControls.planModeEnabled}
-                        title={t("chat.runtime.planModeHint")}
-                        onSelect={() =>
-                          onChatRuntimeControlsChange({
-                            planModeEnabled: !chatRuntimeControls.planModeEnabled,
-                          })
-                        }
-                        className="gap-2"
-                      >
-                        <Lightbulb
+            <div className="composer-actions-row relative flex items-center justify-between gap-2 px-3 pb-2 pt-0.5">
+              <div data-composer-leading="" className="flex min-w-0 flex-1 items-center gap-1">
+                {props.capabilityMenu ?? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <button
+                          type="button"
+                          disabled={composerAddMenuDisabled}
+                          aria-label={addMenuTooltip}
+                          title={addMenuTooltip}
                           className={cn(
-                            "size-3.5 shrink-0 transition-colors",
-                            chatRuntimeControls.planModeEnabled
-                              ? "text-sky-600 dark:text-sky-300"
-                              : "text-muted-foreground",
+                            "composer-toolbar-action relative inline-flex size-8 shrink-0 items-center justify-center",
+                            "rounded-full outline-hidden transition-colors",
+                            "hover:bg-muted/60 focus-visible:bg-muted/60 data-[popup-open]:bg-muted/60",
+                            "disabled:pointer-events-none disabled:opacity-40",
+                            pendingUploadedFiles.length > 0
+                              ? "text-sky-600 hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
+                              : "text-muted-foreground hover:text-foreground dark:hover:text-white",
                           )}
                         />
-                        <span className="min-w-0 flex-1 truncate font-medium leading-5">
-                          {t("chat.runtime.planModeTitle")}
+                      }
+                    >
+                      {isUploadingFiles ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Plus className="size-4" />
+                      )}
+                      {pendingUploadedFiles.length > 0 ? (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute -right-0.5 -top-0.5 flex h-15px min-w-15px items-center justify-center",
+                            "rounded-full bg-sky-500 px-3px",
+                            "text-tiny font-semibold leading-none text-white shadow-ui-chatcomposerbar-41",
+                            "dark:bg-sky-400 dark:text-slate-900 dark:shadow-ui-chatcomposerbar-42",
+                          )}
+                        >
+                          {pendingUploadedFiles.length}
                         </span>
-                        <SwitchIndicator
-                          className="ml-auto"
-                          checked={chatRuntimeControls.planModeEnabled}
-                        />
+                      ) : null}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      variant="soft"
+                      className="flex w-60 flex-col overflow-hidden"
+                      side="top"
+                      align="start"
+                    >
+                      <DropdownMenuLabel>{t("chat.upload.addSection")}</DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onSelect={onPickReadableFiles}
+                        disabled={uploadDisabled}
+                        className="gap-2"
+                      >
+                        <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="font-medium leading-5">{t("chat.upload.files")}</span>
                       </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <DropdownMenuItem
+                        onSelect={onPickWorkspaceFolder}
+                        disabled={uploadDisabled}
+                        className="gap-2"
+                      >
+                        <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="font-medium leading-5">{t("chat.upload.folder")}</span>
+                      </DropdownMenuItem>
+                      {isAgentMode ? (
+                        // 计划模式开关行:整行即开关,右侧迷你 switch 呈现状态。
+                        // closeOnClick=false 让切换就地生效——开关动画可见,菜单
+                        // 不弹跳;行为说明降为 hover 提示,不再挤占行内小字。
+                        <DropdownMenuItem
+                          closeOnClick={false}
+                          role="menuitemcheckbox"
+                          aria-checked={chatRuntimeControls.planModeEnabled}
+                          title={t("chat.runtime.planModeHint")}
+                          onSelect={() =>
+                            onChatRuntimeControlsChange({
+                              planModeEnabled: !chatRuntimeControls.planModeEnabled,
+                            })
+                          }
+                          className="gap-2"
+                        >
+                          <Lightbulb
+                            className={cn(
+                              "size-3.5 shrink-0 transition-colors",
+                              chatRuntimeControls.planModeEnabled
+                                ? "text-sky-600 dark:text-sky-300"
+                                : "text-muted-foreground",
+                            )}
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium leading-5">
+                            {t("chat.runtime.planModeTitle")}
+                          </span>
+                          <SwitchIndicator
+                            className="ml-auto"
+                            checked={chatRuntimeControls.planModeEnabled}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
 
+                {props.leadingControls}
                 {/* 计划模式开启指示(Codex 风格 pill):一眼可见,点击即关。 */}
                 {isAgentMode && chatRuntimeControls.planModeEnabled ? (
                   <button
@@ -1797,7 +1879,18 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 ) : null}
               </div>
 
-              <div className="flex shrink-0 items-center gap-1">
+              <div data-composer-trailing="" className="flex shrink-0 items-center gap-1">
+                {inlineLayout ? modelControls : null}
+                {inlineLayout &&
+                (contextDisplayMode === "ring" || contextDisplayMode === "both") ? (
+                  <ComposerContextUsageRing
+                    source={contextUsageTokensSource}
+                    totalTokens={contextUsageTokens}
+                    contextWindow={contextWindow}
+                    disabled={controlsDisabled || isSending || manualCompactBlocked}
+                    onConfirm={onManualCompactConfirm}
+                  />
+                ) : null}
                 <Button
                   disabled={isSending ? false : sendDisabled}
                   onClick={() => {
@@ -1854,69 +1947,56 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             </div>
           </div>
 
-          <div
-            className={cn(
-              "composer-control-deck relative z-0 flex min-h-9 shrink-0 items-center justify-between",
-              "gap-2 bg-muted px-3 py-1",
-            )}
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-              {commandSafetyMode && onCommandSafetyModeChange ? (
-                <CommandSafetyModeSelector
-                  value={commandSafetyMode}
-                  planModeEnabled={chatRuntimeControls.planModeEnabled}
-                  onPlanModeChange={(planModeEnabled) =>
-                    onChatRuntimeControlsChange({ planModeEnabled })
-                  }
-                  disabled={controlsDisabled || !isAgentMode}
-                  onChange={onCommandSafetyModeChange}
+          {!inlineLayout ? (
+            <div
+              className={cn(
+                "composer-control-deck relative z-0 flex min-h-9 shrink-0 items-center justify-between",
+                "gap-2 bg-muted px-3 py-1",
+              )}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                {commandSafetyMode && onCommandSafetyModeChange ? (
+                  <CommandSafetyModeSelector
+                    value={commandSafetyMode}
+                    planModeEnabled={chatRuntimeControls.planModeEnabled}
+                    onPlanModeChange={(planModeEnabled) =>
+                      onChatRuntimeControlsChange({ planModeEnabled })
+                    }
+                    disabled={controlsDisabled || !isAgentMode}
+                    onChange={onCommandSafetyModeChange}
+                  />
+                ) : null}
+
+                {modelControls}
+
+                {showGitControls ? (
+                  <GitBranchSelector
+                    workdir={workdir}
+                    gitClient={gitClient}
+                    workspaceActivityClient={workspaceActivityClient}
+                    disabled={controlsDisabled}
+                    canWrite={gitWriteEnabled}
+                    disabledMessage={gitDisabledMessage}
+                    onOpenWorktree={onOpenWorktree}
+                    onWorktreeRemoved={onWorktreeRemoved}
+                  />
+                ) : null}
+              </div>
+
+              {contextDisplayMode === "ring" || contextDisplayMode === "both" ? (
+                <ComposerContextUsageRing
+                  source={contextUsageTokensSource}
+                  totalTokens={contextUsageTokens}
+                  contextWindow={contextWindow}
+                  disabled={controlsDisabled || isSending || manualCompactBlocked}
+                  onConfirm={onManualCompactConfirm}
                 />
               ) : null}
-
-              <ComposerModelControls
-                executionMode={executionMode}
-                hasModels={hasModels}
-                currentModelLabel={currentModelLabel}
-                modelOptions={modelOptions}
-                selectedValue={selectedValue}
-                modelsRefreshing={modelsRefreshing}
-                onRefreshModels={onRefreshModels}
-                chatRuntimeControls={chatRuntimeControls}
-                reasoningOptions={reasoningOptions}
-                thinkingAlwaysOn={thinkingAlwaysOn}
-                disabled={controlsDisabled}
-                onSelectModel={onSelectModel}
-                onSelectExecutionMode={onSelectExecutionMode}
-                onOpenSettings={onOpenSettings}
-                onChatRuntimeControlsChange={onChatRuntimeControlsChange}
-                open={modelPickerOpen}
-                onOpenChange={setModelPickerOpen}
-              />
-
-              <GitBranchSelector
-                workdir={workdir}
-                gitClient={gitClient}
-                workspaceActivityClient={workspaceActivityClient}
-                disabled={controlsDisabled}
-                canWrite={gitWriteEnabled}
-                disabledMessage={gitDisabledMessage}
-                onOpenWorktree={onOpenWorktree}
-                onWorktreeRemoved={onWorktreeRemoved}
-              />
             </div>
-
-            {contextDisplayMode === "ring" || contextDisplayMode === "both" ? (
-              <ComposerContextUsageRing
-                source={contextUsageTokensSource}
-                totalTokens={contextUsageTokens}
-                contextWindow={contextWindow}
-                disabled={controlsDisabled || isSending || manualCompactBlocked}
-                onConfirm={onManualCompactConfirm}
-              />
-            ) : null}
-          </div>
+          ) : null}
           {fileDropOverlay}
         </div>
+        {props.contextBarPosition !== "above" ? contextTray : null}
         {/* 会话统计状态栏插槽：贴卡片下缘，与卡片同宽；审批面板可见时让位；
             只在 "ring" 展示模式下不挂载——"statsBar" 与 "both" 都渲染（§4.7）。 */}
         {statsBar && approvalBar == null && contextDisplayMode !== "ring" ? statsBar : null}

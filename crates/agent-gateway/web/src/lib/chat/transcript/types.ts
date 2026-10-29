@@ -77,6 +77,13 @@ export type TranscriptRow =
       attachments: PendingUploadedFile[];
       referencedConversations: ConversationMentionReference[];
       messageRef?: HistoryMessageRef;
+      contentOmitted?: boolean;
+      // A labelled rendering excerpt; never use it as canonical edit/retry text.
+      contentPreview?: boolean;
+      retryText?: string;
+      inlineEditText?: string;
+      copyContent?: () => Promise<boolean>;
+      copyDisabledReason?: string;
       timestamp?: number;
     }
   | {
@@ -85,6 +92,11 @@ export type TranscriptRow =
       kind: "assistant";
       rounds: GatewayTranscriptRound[];
       turnKey?: string;
+      contentOmitted?: boolean;
+      contentPreview?: boolean;
+      copyContent?: () => Promise<boolean>;
+      copyDisabledReason?: string;
+      shareText?: string;
       timestamp?: number;
     }
   | {

@@ -3,6 +3,12 @@ import ZaiLogo from "@liveagent/ui/assets/providers/zai.svg";
 import { type ComponentType, type SVGProps, useId } from "react";
 import McpLogoSource from "~icons/gravity-ui/logo-mcp";
 import ConnectionIconSource from "~icons/gravity-ui/plug-connection";
+import NavigationLibrarySource from "~icons/heroicons/book-open";
+import NavigationLibraryFilledSource from "~icons/heroicons/book-open-solid";
+import NavigationChatSource from "~icons/heroicons/chat-bubble-left";
+import NavigationChatFilledSource from "~icons/heroicons/chat-bubble-left-solid";
+import NavigationSettingsSource from "~icons/heroicons/cog-6-tooth";
+import NavigationDevicesSource from "~icons/heroicons/computer-desktop";
 import ClaudeSource from "~icons/logos/claude-icon";
 import DeepseekSource from "~icons/logos/deepseek-icon";
 import GrokSource from "~icons/logos/grok-icon";
@@ -28,6 +34,7 @@ import BrainSource from "~icons/lucide/brain";
 import BrushCleaningSource from "~icons/lucide/brush-cleaning";
 import CableSource from "~icons/lucide/cable";
 import CalendarDaysSource from "~icons/lucide/calendar-days";
+import ChartColumnSource from "~icons/lucide/chart-column";
 import CheckSource from "~icons/lucide/check";
 import ChevronDownSource from "~icons/lucide/chevron-down";
 import ChevronRightSource from "~icons/lucide/chevron-right";
@@ -489,6 +496,13 @@ function GeminiIconSource({ title, ...props }: SVGProps<SVGSVGElement> & { title
 }
 
 export const AlertTriangle = createIcon(AlertTriangleSource);
+// Matching outline/solid silhouettes keep navigation selection legible at 20px.
+export const NavigationChat = createIcon(NavigationChatSource);
+export const NavigationChatFilled = createIcon(NavigationChatFilledSource);
+export const NavigationLibrary = createIcon(NavigationLibrarySource);
+export const NavigationLibraryFilled = createIcon(NavigationLibraryFilledSource);
+export const NavigationDevices = createIcon(NavigationDevicesSource);
+export const NavigationSettings = createIcon(NavigationSettingsSource);
 export const AlertCircle = createIcon(AlertCircleSource);
 export const ClaudeIcon = createIcon(ClaudeSource);
 export const DeepseekIcon = createIcon(DeepseekSource);
@@ -519,6 +533,7 @@ export const AudioLines = createIcon(AudioLinesSource);
 export const Ban = createIcon(BanSource);
 export const Blend = createIcon(BlendSource);
 export const BookOpen = createIcon(BookOpenSource);
+export const ChartColumn = createIcon(ChartColumnSource);
 export const Bot = createIcon(BotSource);
 export const Brackets = createIcon(BracketsSource);
 export const Brain = createIcon(BrainSource);

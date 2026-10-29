@@ -17,20 +17,34 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/liveagent/agent-gateway/internal/cloudexecutor"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 )
 
 type Service struct {
-	store             Store
-	usa               *USAClient
-	sessionTTL        time.Duration
-	selectionLeaseTTL time.Duration
-	now               func() time.Time
-	deviceRevoker     func(userID int64, deviceID string)
-	webKeyMu          sync.Mutex
-	webKeys           map[int64]string
-	credentialMu      sync.RWMutex
-	credentialEpochs  map[string]uint64
+	store              Store
+	usa                *USAClient
+	sessionTTL         time.Duration
+	selectionLeaseTTL  time.Duration
+	now                func() time.Time
+	deviceRevoker      func(userID int64, deviceID string)
+	webKeyMu           sync.Mutex
+	webKeys            map[int64]string
+	credentialMu       sync.RWMutex
+	credentialEpochs   map[string]uint64
+	cloudRuntimeMu     sync.Mutex
+	cloudRuntime       *cloudRunRuntime
+	cloudRuntimeConfig CloudRuntimeConfig
+	cloudViewerMu      sync.Mutex
+	cloudViewers       map[int64]int
+	cloudViewerCount   int
+	refreshLocks       sync.Map
+	cloudFileMu        sync.RWMutex
+	cloudFiles         *cloudFileService
+	cloudExecutor      *cloudexecutor.Client
+	cloudFileParser    *cloudFileParser
+	cloudResearchMu    sync.RWMutex
+	cloudResearch      *cloudResearchService
 }
 
 func (s *Service) SetDeviceRevoker(revoker func(userID int64, deviceID string)) {
@@ -83,105 +97,19 @@ func (s *Service) Register(ctx context.Context, email, password, verifyCode, inv
 }
 
 func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
-	session, err := s.store.GetSession(ctx, strings.TrimSpace(id))
-	if err != nil {
-		return nil, &APIError{Status: http.StatusUnauthorized, Message: "account session is missing or expired"}
-	}
-	if session.AccessExpiresAt.After(s.now().Add(30 * time.Second)) {
-		return session, nil
-	}
-	if session.RefreshToken == "" {
-		_ = s.store.DeleteSession(ctx, session.ID)
-		return nil, &APIError{Status: http.StatusUnauthorized, Message: "account session expired"}
-	}
-	if session.IsOAuth() {
-		refreshed, err := s.usa.RefreshApp(ctx, session.OAuthClientID, session.RefreshToken)
-		if err != nil {
-			_ = s.store.DeleteSession(ctx, session.ID)
-			return nil, err
-		}
-		session.AccessToken = refreshed.AccessToken
-		session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
-		session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
-		if err := s.store.PutSession(ctx, session); err != nil {
-			return nil, err
-		}
-		return session, nil
-	}
-	refreshed, err := s.usa.Refresh(ctx, session.RefreshToken)
-	if err != nil {
-		_ = s.store.DeleteSession(ctx, session.ID)
-		return nil, err
-	}
-	session.AccessToken = refreshed.AccessToken
-	session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
-	session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
-	if len(refreshed.User) > 0 {
-		session.User = refreshed.User
-	}
-	if err := s.store.PutSession(ctx, session); err != nil {
-		return nil, err
-	}
-	return session, nil
+	return s.coordinatedSession(ctx, id, false)
 }
 
 func (s *Service) Refresh(ctx context.Context, id string) (*Session, error) {
-	session, err := s.store.GetSession(ctx, id)
-	if err != nil || session.RefreshToken == "" {
-		return nil, &APIError{Status: http.StatusUnauthorized, Message: "account session cannot be refreshed"}
-	}
-	if session.IsOAuth() {
-		refreshed, err := s.usa.RefreshApp(ctx, session.OAuthClientID, session.RefreshToken)
-		if err != nil {
-			return nil, err
-		}
-		session.AccessToken = refreshed.AccessToken
-		session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
-		session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
-		return session, s.store.PutSession(ctx, session)
-	}
-	refreshed, err := s.usa.Refresh(ctx, session.RefreshToken)
-	if err != nil {
-		return nil, err
-	}
-	session.AccessToken = refreshed.AccessToken
-	session.RefreshToken = firstNonEmpty(refreshed.RefreshToken, session.RefreshToken)
-	session.AccessExpiresAt = s.accessExpiry(refreshed.ExpiresIn)
-	if len(refreshed.User) > 0 {
-		session.User = refreshed.User
-	}
-	return session, s.store.PutSession(ctx, session)
+	return s.coordinatedSession(ctx, id, true)
 }
 
 func (s *Service) Logout(ctx context.Context, id string) error {
-	session, err := s.store.GetSession(ctx, id)
-	if err == nil && session.RefreshToken != "" {
-		if session.IsOAuth() {
-			_ = s.usa.RevokeApp(ctx, session.RefreshToken, "refresh_token")
-		} else {
-			_ = s.usa.Logout(ctx, session.RefreshToken)
-		}
-	}
-	return s.store.DeleteSession(ctx, id)
+	return s.coordinatedLogout(ctx, id)
 }
 
 func (s *Service) RefreshUser(ctx context.Context, session *Session) (json.RawMessage, error) {
-	var user json.RawMessage
-	var err error
-	if session.IsOAuth() {
-		user, err = s.usa.AppMe(ctx, session.AccessToken)
-		user = markOAuthUser(user)
-	} else {
-		user, err = s.usa.Me(ctx, session.AccessToken)
-	}
-	if err != nil {
-		return nil, err
-	}
-	session.User = user
-	if err := s.store.PutSession(ctx, session); err != nil {
-		return nil, err
-	}
-	return user, nil
+	return s.coordinatedRefreshUser(ctx, session)
 }
 
 type RegisterDeviceInput struct {
@@ -864,10 +792,8 @@ func (s *Service) UpdateWebSettings(ctx context.Context, userID int64, input Web
 	if input.Model == "" || len(input.Model) > 200 {
 		return nil, &APIError{Status: http.StatusBadRequest, Message: "model must be 1-200 characters"}
 	}
-	switch input.ReasoningEffort {
-	case "low", "medium", "high":
-	default:
-		return nil, &APIError{Status: http.StatusBadRequest, Message: "reasoning_effort must be low, medium or high"}
+	if input.ReasoningEffort == "" || !validCloudReasoningEffort(input.ReasoningEffort) {
+		return nil, &APIError{Status: http.StatusBadRequest, Message: "reasoning_effort must be none, minimal, low, medium, high, xhigh or max"}
 	}
 	if err := s.store.PutWebSettings(ctx, userID, input); err != nil {
 		return nil, err

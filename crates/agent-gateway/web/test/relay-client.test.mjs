@@ -73,7 +73,7 @@ test("multi-group key creation is sequential and preserves group names", async (
     );
     assert.deepEqual(
       Array.from(created, (key) => key.key),
-      ["sk-1", "sk-2"],
+      ["••••••••", "••••••••"],
     );
   } finally {
     globalThis.fetch = originalFetch;

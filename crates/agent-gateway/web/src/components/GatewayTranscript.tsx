@@ -51,6 +51,7 @@ import {
   type Dispatch,
   type MutableRefObject,
   memo,
+  type ReactNode,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -74,6 +75,11 @@ import {
 import type { SectionId } from "../pages/settings/types";
 
 type GatewayTranscriptProps = {
+  editRequest?: { token: string; messageId: string } | null;
+  onEditRequestHandled?: (token: string) => void;
+  emptyState?: ReactNode;
+  /** Host-owned feedback follows the final turn inside the same reading column. */
+  footer?: ReactNode;
   conversationId?: string;
   // The whole transcript as one row list, rendered by one virtualizer. Rows
   // come from one store assembly, so a row can never render twice.
@@ -100,6 +106,9 @@ type GatewayTranscriptProps = {
   // under the live status (mirrors the desktop app).
   retryAttempts?: readonly RetryAttemptRecord[];
   isStreaming?: boolean;
+  // Local Agent turns retain their live structure until folding. Cloud has a
+  // separate durable Run lifecycle: settled prose is already the saved answer.
+  assistantLiveMode?: "retained" | "streaming";
   isLoading?: boolean;
   loadingTitle?: string;
   hasModels?: boolean;
@@ -123,6 +132,7 @@ type GatewayTranscriptProps = {
   // Anchor messageId of the branch request in flight; the matching row shows
   // a spinner and every branch button disables until it settles.
   branchPendingMessageId?: string | null;
+  resendCreatesBranch?: boolean;
   onSuggestionSelect?: (text: string) => void;
   readOnly?: boolean;
   redactToolContent?: boolean;
@@ -147,9 +157,15 @@ const TRANSCRIPT_ROW_GAP = 18;
 // upgrade. Mirrors the GUI's versioned key.
 const TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION = "gateway-rows-v2";
 
-function buildVersionedTranscriptLayoutKey(viewportWidth: number, contentWidth: number) {
+function buildVersionedTranscriptLayoutKey(
+  viewportWidth: number,
+  contentWidth: number,
+  assistantLiveMode: "retained" | "streaming",
+) {
   const layoutKey = buildTranscriptLayoutKey(viewportWidth, contentWidth);
-  return layoutKey ? `${layoutKey}:${TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION}` : "";
+  return layoutKey
+    ? `${layoutKey}:${TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION}${assistantLiveMode === "streaming" ? ":cloud-settled-v1" : ""}`
+    : "";
 }
 
 // Measured row heights survive conversation switches: saved on unmount,
@@ -281,6 +297,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
     uploadedFiles: PendingUploadedFile[],
     referencedConversations: ConversationMentionReference[],
   ) => void;
+  onLoadContent?: () => void;
 }) {
   const {
     row,
@@ -294,21 +311,39 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
     onLoadUploadedImagePreview,
     loadCommitDetails,
     onResendFromEdit,
+    onLoadContent,
   } = props;
   const { locale, t } = useLocale();
   const effectiveMessageRef = row.messageRef;
   const missingStableRef = !effectiveMessageRef;
-  const editDisabled = readOnly || isStreaming || !onResendFromEdit || missingStableRef;
-  const editTitle = missingStableRef
+  const editDisabled =
+    readOnly ||
+    isStreaming ||
+    !onResendFromEdit ||
+    missingStableRef ||
+    Boolean(row.contentOmitted || (row.contentPreview && row.inlineEditText === undefined));
+  const editTitle = row.contentOmitted
     ? locale === "en-US"
-      ? "This older message cannot be edited because it has no stable message identifier."
-      : "旧历史缺少稳定消息标识，无法编辑重发"
-    : t("chat.edit");
+      ? "Load the full message before editing."
+      : "请先读取完整消息再编辑"
+    : row.contentPreview && row.inlineEditText === undefined
+      ? locale === "en-US"
+        ? "This message is too long for inline editing. View it in sections or download the complete text."
+        : "消息较长，请分段查看或下载完整正文；暂不支持直接编辑长消息"
+      : isStreaming
+        ? locale === "en-US"
+          ? "Wait for this reply to finish before editing."
+          : "回复进行中，完成后可编辑重发"
+        : missingStableRef
+          ? locale === "en-US"
+            ? "This older message cannot be edited because it has no stable message identifier."
+            : "旧历史缺少稳定消息标识，无法编辑重发"
+          : t("chat.edit");
 
-  if (isEditing && effectiveMessageRef) {
+  if (isEditing && effectiveMessageRef && !editDisabled) {
     return (
       <EditableUserMessageBubble
-        initialText={row.text}
+        initialText={row.inlineEditText ?? row.text}
         attachments={row.attachments}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
@@ -338,11 +373,28 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         loadCommitDetails={loadCommitDetails}
       />
+      {(row.contentOmitted || row.contentPreview) && onLoadContent ? (
+        <button
+          type="button"
+          className="mt-8px rounded-md border border-border px-10px py-6px text-xs hover:bg-accent"
+          onClick={onLoadContent}
+        >
+          {row.contentPreview
+            ? locale === "en-US"
+              ? "View complete text in sections"
+              : "分段查看完整正文"
+            : locale === "en-US"
+              ? "View message content"
+              : "查看消息正文"}
+        </button>
+      ) : null}
       <TranscriptUserMessageActions
         timestamp={row.timestamp}
         copied={isCopied}
+        copyDisabled={row.contentOmitted || (row.contentPreview && !row.copyContent)}
+        copyTitle={row.copyDisabledReason}
         onCopy={() => {
-          void copyTextToClipboard(row.text).then((copied) => {
+          void (row.copyContent?.() ?? copyTextToClipboard(row.text)).then((copied) => {
             if (!copied) return;
             setCopiedMessageId(row.key);
             window.setTimeout(() => {
@@ -389,6 +441,7 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   branchPendingMessageId?: string | null;
+  resendCreatesBranch?: boolean;
 }) {
   const {
     row,
@@ -401,6 +454,7 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
     onResendFromEdit,
     onBranchConversation,
     branchPendingMessageId,
+    resendCreatesBranch,
   } = props;
   const { locale, t } = useLocale();
   const replyText = row.rounds
@@ -417,30 +471,66 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
     [row.rounds, showUsage],
   );
   const retryMessageRef = retryTarget?.messageRef;
-  const retryPrompt = retryTarget?.text;
-  const shareSource = useMemo<ReplyShareSource>(
-    () => ({ reply: replyText, prompt: retryPrompt, timestamp: row.timestamp }),
-    [replyText, retryPrompt, row.timestamp],
+  const retryPrompt = retryTarget?.inlineEditText ?? retryTarget?.text;
+  const shareSource = useMemo<ReplyShareSource | undefined>(
+    () =>
+      (row.contentPreview && row.shareText === undefined) ||
+      row.contentOmitted ||
+      (retryTarget?.contentPreview && retryTarget.inlineEditText === undefined) ||
+      retryTarget?.contentOmitted
+        ? undefined
+        : { reply: row.shareText ?? replyText, prompt: retryPrompt, timestamp: row.timestamp },
+    [
+      replyText,
+      retryPrompt,
+      row.timestamp,
+      row.contentPreview,
+      row.shareText,
+      row.contentOmitted,
+      retryTarget?.contentPreview,
+      retryTarget?.inlineEditText,
+      retryTarget?.contentOmitted,
+    ],
   );
-  const retryDisabled = isStreaming || !onResendFromEdit || !retryMessageRef;
-  const retryTitle = retryMessageRef
-    ? t("chat.retry")
-    : locale === "en-US"
-      ? "This reply cannot be retried because its prompt has no stable message identifier."
-      : "旧历史缺少稳定消息标识，无法重试";
+  const retryDisabled =
+    isStreaming || !onResendFromEdit || !retryMessageRef || Boolean(retryTarget?.contentOmitted);
+  const retryTitle = !retryTarget
+    ? locale === "en-US"
+      ? "Load the earlier prompt before regenerating."
+      : "请先加载更早的原问题，再重新生成"
+    : retryTarget?.contentOmitted
+      ? locale === "en-US"
+        ? "Load the prompt before regenerating."
+        : "请先读取原问题正文再重新生成"
+      : isStreaming
+        ? locale === "en-US"
+          ? "Wait for this reply to finish before retrying."
+          : "回复进行中，完成后可重新生成"
+        : retryMessageRef
+          ? t("chat.retry")
+          : locale === "en-US"
+            ? "This reply cannot be retried because its prompt has no stable message identifier."
+            : "旧历史缺少稳定消息标识，无法重试";
   const branchPending = branchPendingMessageId != null;
   const isRowBranchPending =
     branchPending && !!retryMessageRef && branchPendingMessageId === retryMessageRef.messageId;
   const branchDisabled = isStreaming || !onBranchConversation || !retryMessageRef || branchPending;
-  const branchTitle = retryMessageRef ? t("chat.branch") : t("chat.branchUnavailable");
+  const branchTitle = !retryTarget
+    ? locale === "en-US"
+      ? "Load the earlier prompt before branching."
+      : "请先加载更早的原问题，再创建分支"
+    : retryMessageRef
+      ? t("chat.branch")
+      : t("chat.branchUnavailable");
 
   return (
     <TranscriptAssistantMessageActions
       timestamp={row.timestamp}
       copied={isCopied}
-      copyDisabled={!replyText}
+      copyDisabled={!replyText || row.contentOmitted || (row.contentPreview && !row.copyContent)}
+      copyTitle={row.copyDisabledReason}
       onCopy={() => {
-        void copyTextToClipboard(replyText).then((copied) => {
+        void (row.copyContent?.() ?? copyTextToClipboard(replyText)).then((copied) => {
           if (!copied) return;
           setCopiedMessageId(row.key);
           window.setTimeout(() => {
@@ -452,11 +542,18 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
       usageContextWindow={showUsage ? usageContextWindow : undefined}
       retryDisabled={retryDisabled}
       retryTitle={retryTitle}
+      retryConfirmDescription={
+        resendCreatesBranch
+          ? locale === "en-US"
+            ? "Keep this conversation and regenerate the reply in a new branch."
+            : "保留当前对话，并在新分支中重新生成回复。"
+          : undefined
+      }
       onRetry={() => {
         if (!retryTarget || !retryMessageRef) return;
         onResendFromEdit?.(
           retryMessageRef,
-          retryTarget.text,
+          retryTarget.retryText ?? retryTarget.text,
           retryTarget.attachments,
           retryTarget.referencedConversations,
         );
@@ -531,6 +628,8 @@ function estimateVirtualItemHeight(item: GatewayTranscriptVirtualItem): number {
 }
 
 const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(props: {
+  editRequest?: { token: string; messageId: string } | null;
+  onEditRequestHandled?: (token: string) => void;
   conversationId?: string;
   rows: readonly TranscriptRow[];
   liveStartIndex: number;
@@ -545,6 +644,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   isLoadingMoreHistory?: boolean;
   onLoadEarlierHistory?: () => void;
   isStreaming: boolean;
+  assistantLiveMode: "retained" | "streaming";
   showUsage: boolean;
   usageContextWindow?: number;
   workspaceRoot?: string;
@@ -559,6 +659,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   ) => void;
   onBranchConversation?: (messageRef: HistoryMessageRef) => void;
   branchPendingMessageId?: string | null;
+  resendCreatesBranch?: boolean;
   toolStatus?: string | null;
   toolStatusIsCompaction: boolean;
   retryAttempts?: readonly RetryAttemptRecord[];
@@ -566,6 +667,8 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   redactToolContent?: boolean;
 }) {
   const {
+    editRequest,
+    onEditRequestHandled,
     conversationId,
     rows,
     liveStartIndex,
@@ -580,6 +683,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     isLoadingMoreHistory,
     onLoadEarlierHistory,
     isStreaming,
+    assistantLiveMode,
     showUsage,
     usageContextWindow,
     workspaceRoot,
@@ -589,6 +693,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     onResendFromEdit,
     onBranchConversation,
     branchPendingMessageId,
+    resendCreatesBranch,
     toolStatus,
     toolStatusIsCompaction,
     retryAttempts,
@@ -597,6 +702,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   } = props;
   const { locale } = useLocale();
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const consumedEditRequestRef = useRef<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const historyIdentityKey = `${conversationId ?? ""}\n${rows[0]?.key ?? ""}`;
   const loadCommitDetails = useCommitDetailsLoader(workspaceRoot, gitClient, historyIdentityKey);
@@ -712,7 +818,11 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
       (conversationId && scrollViewport
         ? transcriptMeasurementsLru.restore(
             conversationId,
-            buildVersionedTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
+            buildVersionedTranscriptLayoutKey(
+              scrollViewport.clientWidth,
+              contentWidth,
+              assistantLiveMode,
+            ),
           )
         : null) ?? [],
   );
@@ -745,6 +855,34 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     initialMeasurementsCache,
     rangeExtractor: extractTranscriptRange,
   });
+
+  useEffect(() => {
+    if (!editRequest || consumedEditRequestRef.current === editRequest.token) return;
+    consumedEditRequestRef.current = editRequest.token;
+    onEditRequestHandled?.(editRequest.token);
+    if (readOnly || isStreaming || !onResendFromEdit) return;
+    const index = rows.findIndex((row) => row.kind === "user" && row.key === editRequest.messageId);
+    const row = rows[index];
+    if (
+      !row ||
+      row.kind !== "user" ||
+      !row.messageRef ||
+      row.contentOmitted ||
+      (row.contentPreview && row.inlineEditText === undefined)
+    )
+      return;
+    setEditingMessageId(row.key);
+    transcriptVirtualizer.scrollToIndex?.(index + leadingOffset, { align: "center" });
+  }, [
+    editRequest,
+    onEditRequestHandled,
+    readOnly,
+    isStreaming,
+    onResendFromEdit,
+    rows,
+    transcriptVirtualizer,
+    leadingOffset,
+  ]);
 
   // TanStack exposes the resize-compensation predicate as an instance field,
   // not an option; reassigning per render keeps the closure's inputs current.
@@ -868,7 +1006,11 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     if (!conversationId || !scrollViewport) return;
     transcriptMeasurementsLru.save(
       conversationId,
-      buildVersionedTranscriptLayoutKey(scrollViewport.clientWidth, contentWidth),
+      buildVersionedTranscriptLayoutKey(
+        scrollViewport.clientWidth,
+        contentWidth,
+        assistantLiveMode,
+      ),
       transcriptVirtualizer.takeSnapshot(),
     );
   };
@@ -961,6 +1103,12 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 onLoadUploadedImagePreview={onLoadUploadedImagePreview}
                 loadCommitDetails={loadCommitDetails}
                 onResendFromEdit={onResendFromEdit}
+                onLoadContent={
+                  (row.contentOmitted || row.contentPreview) && onOpenFileLink
+                    ? () =>
+                        onOpenFileLink({ path: `cloud-messages/${row.key}`, source: "relative" })
+                    : undefined
+                }
               />
             </article>
           );
@@ -968,7 +1116,8 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
 
         if (row.kind === "assistant") {
           const rowIndex = virtualRow.index - leadingOffset;
-          const isLatestLiveAssistant = rowIndex === liveAssistantIndex;
+          const isLatestLiveAssistant =
+            rowIndex === liveAssistantIndex && (assistantLiveMode === "retained" || isStreaming);
           const isLatestLiveStreaming = isStreaming && isLatestLiveAssistant;
           const retryTarget = findRetryTarget(rows, rowIndex);
           const durationMs = chatDuration(retryTarget?.timestamp, row.timestamp);
@@ -1021,6 +1170,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                     onResendFromEdit={onResendFromEdit}
                     onBranchConversation={onBranchConversation}
                     branchPendingMessageId={branchPendingMessageId}
+                    resendCreatesBranch={resendCreatesBranch}
                   />
                 ) : null}
               </div>
@@ -1071,6 +1221,10 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
 });
 
 export function GatewayTranscript({
+  editRequest,
+  onEditRequestHandled,
+  emptyState,
+  footer,
   conversationId,
   rows,
   liveStartIndex = -1,
@@ -1085,6 +1239,7 @@ export function GatewayTranscript({
   toolStatusIsCompaction = false,
   retryAttempts,
   isStreaming = false,
+  assistantLiveMode = "retained",
   isLoading = false,
   loadingTitle,
   hasModels = true,
@@ -1101,6 +1256,7 @@ export function GatewayTranscript({
   onResendFromEdit,
   onBranchConversation,
   branchPendingMessageId,
+  resendCreatesBranch = false,
   onSuggestionSelect,
   readOnly = false,
   redactToolContent = false,
@@ -1141,12 +1297,16 @@ export function GatewayTranscript({
         >
           {/* Keyed per conversation so the hero entrance replays when
               switching between empty conversations, not just on mount. */}
-          <ChatEmptyState
-            key={conversationId ?? "shared"}
-            variant={showNoModelsState ? "no-models" : "start-chat"}
-            onOpenSettings={onOpenSettings}
-            onSuggestionSelect={readOnly ? undefined : onSuggestionSelect}
-          />
+          {!showNoModelsState && emptyState ? (
+            emptyState
+          ) : (
+            <ChatEmptyState
+              key={conversationId ?? "shared"}
+              variant={showNoModelsState ? "no-models" : "start-chat"}
+              onOpenSettings={onOpenSettings}
+              onSuggestionSelect={readOnly ? undefined : onSuggestionSelect}
+            />
+          )}
         </div>
       </div>
     );
@@ -1164,6 +1324,8 @@ export function GatewayTranscript({
         <GatewayTranscriptListRegion
           key={conversationId ?? "shared"}
           conversationId={conversationId}
+          editRequest={editRequest}
+          onEditRequestHandled={onEditRequestHandled}
           rows={rows}
           liveStartIndex={liveStartIndex}
           activeTurnKey={activeTurnKey}
@@ -1177,6 +1339,7 @@ export function GatewayTranscript({
           isLoadingMoreHistory={isLoadingMoreHistory}
           onLoadEarlierHistory={onLoadEarlierHistory}
           isStreaming={isStreaming}
+          assistantLiveMode={assistantLiveMode}
           showUsage={showUsage}
           usageContextWindow={usageContextWindow}
           workspaceRoot={workspaceRoot}
@@ -1186,6 +1349,7 @@ export function GatewayTranscript({
           onResendFromEdit={onResendFromEdit}
           onBranchConversation={onBranchConversation}
           branchPendingMessageId={branchPendingMessageId}
+          resendCreatesBranch={resendCreatesBranch}
           toolStatus={toolStatus}
           toolStatusIsCompaction={toolStatusIsCompaction}
           retryAttempts={retryAttempts}
@@ -1202,6 +1366,7 @@ export function GatewayTranscript({
             {inlineErrorText}
           </div>
         ) : null}
+        {footer}
       </div>
       <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
     </div>

@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.12.1",
+    "@iconify-json/heroicons": "1.2.3",
     "@iconify-json/logos": "^1.2.11",
     "@iconify-json/lucide": "^1.2.108",
     "@iconify-json/material-icon-theme": "1.2.67",

@@ -1,6 +1,48 @@
 @import "./tokens.css";
 @import "./animations.css";
 
+/* Navigation selection survives hover; the solid glyph belongs to the host. */
+.application-rail .application-rail-item {
+  background: transparent;
+  color: hsl(var(--navigation-icon-rest));
+}
+
+@media (hover: hover) {
+  .application-rail .application-rail-item:hover {
+    background: hsl(var(--navigation-item-highlight));
+    color: hsl(var(--navigation-icon-emphasis));
+  }
+}
+
+.application-rail .application-rail-item[aria-current="page"] {
+  background: hsl(var(--navigation-item-highlight));
+  color: hsl(var(--navigation-icon-emphasis));
+}
+
+@media (forced-colors: active) {
+  .application-rail-item[aria-current="page"] {
+    outline: 1px solid currentColor;
+    outline-offset: -1px;
+  }
+}
+
+/* One tooltip surface, including structured statistics rendered through a portal. */
+.app-tooltip-surface {
+  --background: var(--tooltip-surface);
+  --foreground: var(--tooltip-foreground);
+  --popover: var(--tooltip-surface);
+  --popover-foreground: var(--tooltip-foreground);
+  --muted-foreground: var(--tooltip-muted);
+  --border: var(--tooltip-border);
+  max-inline-size: calc(100vw - 16px);
+  overflow-wrap: anywhere;
+  background: hsl(var(--tooltip-surface));
+  color: hsl(var(--tooltip-foreground));
+  border-color: hsl(var(--tooltip-border));
+  box-shadow: var(--tooltip-shadow);
+  -webkit-font-smoothing: antialiased;
+}
+
 /* shimmer — ejected from shadcn/tailwind.css */
 @property --shimmer-angle {
   syntax: "<angle>";

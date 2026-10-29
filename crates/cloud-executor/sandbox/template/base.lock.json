@@ -1,0 +1,70 @@
+{
+  "format": 2,
+  "identity_verified_at": "2026-10-29",
+  "platform": "linux/amd64",
+  "base_kind": "official_public_template_build",
+  "template": "nlhz8vlwyupq845jsdg9:696af675-2a44-45ce-a889-7e09c65eb749",
+  "template_id": "nlhz8vlwyupq845jsdg9",
+  "build_id": "696af675-2a44-45ce-a889-7e09c65eb749",
+  "official_resolver_source_commit": "b9941e251c126641bd2dd5b7c15099dc5c00a898",
+  "official_interpreter_source_commit": "7c895a1eb24107039186650682d8f1942ec94784",
+  "inventory_verified": true,
+  "inventory_verified_at": "2026-10-29T04:05:11.272Z",
+  "inventory_expectations_source": "one <=60s exact immutable public-base VM; actual packages/user/startup files and SDK code endpoint checked; kill confirmed",
+  "previous_failed_plan_sha256": "490abf999242d0b847263f1addcae660cab707b248c0ebe74339e95d6cd739b4",
+  "previous_inventory_mismatch_plan_sha256": "5786bd45d759e578fd52e20362c1d534640fc80162cd2c4e68f1023ede959d7c",
+  "python": "3.13.16",
+  "user": "user",
+  "uid": 1000,
+  "gid": 1000,
+  "workdir": "/home/user",
+  "executor_workspace": "/home/user/zeroagent-workspace",
+  "startup_contract": "inherit_immutable_base_start_and_ready",
+  "ready_url": "http://localhost:49999/health",
+  "startup_files": {
+    "/etc/systemd/system/jupyter.service": "1678ddd47028b949d9dbc37540da0c81757f60cab202f4672c096a2cee4da1c7",
+    "/etc/systemd/system/code-interpreter.service": "c18968ecc8e465017e3874d0aa5fdeac0ffb4575fbf6ed26f83205c340261749",
+    "/root/.jupyter/jupyter-healthcheck.sh": "27eb96afceb0e6111eaf9e8723a301891b44d8aef05824ae9d3041e0f06f7c91"
+  },
+  "sdk": { "e2b": "2.62.0", "@e2b/code-interpreter": "2.9.0" },
+  "inherited_packages": {
+    "numpy": "2.3.5",
+    "pandas": "2.2.3",
+    "matplotlib": "3.10.9",
+    "Pillow": "12.3.0",
+    "openpyxl": "3.1.5",
+    "python-docx": "1.1.2",
+    "defusedxml": "0.7.1",
+    "lxml": "6.1.3",
+    "typing_extensions": "4.16.0"
+  },
+  "additional_packages": {
+    "pypdf": "6.21.4",
+    "python-pptx": "1.0.2",
+    "XlsxWriter": "3.2.9"
+  },
+  "matplotlib_defaults": {
+    "family": "Noto Sans SC",
+    "font_file": "/usr/local/share/fonts/zeroagent/NotoSansSC-VF.ttf",
+    "required_text": "销售金额统计",
+    "pdf_fonttype": 42
+  },
+  "envd": {
+    "minimum_version": "0.5.2",
+    "public_base_metadata_version": "0.10.0",
+    "public_base_actual_version": "0.10.0",
+    "provider_version_pin_available_in_sdk_build_options": false,
+    "live_acceptance_required": true
+  },
+  "sources": [
+    "https://docs.e2b.dev/code-interpreting/customize-template",
+    "https://docs.e2b.dev/template/tags",
+    "https://docs.e2b.dev/template/base-image",
+    "https://github.com/e2b-dev/runtime/tree/b9941e251c126641bd2dd5b7c15099dc5c00a898",
+    "https://github.com/e2b-dev/code-interpreter/tree/7c895a1eb24107039186650682d8f1942ec94784/template",
+    "https://pypi.org/pypi/pypdf/6.21.4/json",
+    "https://pypi.org/pypi/defusedxml/0.7.1/json",
+    "https://pypi.org/pypi/python-pptx/1.0.2/json",
+    "https://pypi.org/pypi/XlsxWriter/3.2.9/json"
+  ]
+}

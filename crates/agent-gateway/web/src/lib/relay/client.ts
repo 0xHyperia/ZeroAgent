@@ -4,6 +4,7 @@ import {
   ACCOUNT_SESSION_STORAGE_KEY,
   accountFetch,
   accountOwnerHeaders,
+  captureAccountRequestGuard,
   invalidateAccountRequests,
 } from "../accountRequest";
 import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "../desktopRemoteHost";
@@ -128,6 +129,8 @@ export type RelayGroup = {
 export type RelayApiKey = {
   id: number;
   key: string;
+  key_masked?: boolean;
+  key_configured?: boolean;
   name: string;
   group_id: number | null;
   status: string;
@@ -441,19 +444,45 @@ export async function listRelayApiKeys() {
   const page = await requestRelay<RelayPaginated<RelayApiKey>>("/keys?page=1&page_size=1000", {
     authenticated: true,
   });
-  return page.items;
+  return page.items.map(managedKeySummary);
+}
+
+function managedKeySummary(key: RelayApiKey): RelayApiKey {
+  const configured = key.key_configured ?? Boolean(key.key?.trim());
+  return {
+    id: key.id, name: key.name, group_id: key.group_id, status: key.status,
+    quota: key.quota, quota_used: key.quota_used, created_at: key.created_at,
+    group: key.group, key: configured ? "••••••••" : "",
+    key_masked: true, key_configured: configured,
+  };
+}
+
+/** Return a key only for this operation; never put it in settings or component state. */
+export async function revealRelayApiKey(keyId: number, password: string): Promise<string> {
+  if (!Number.isSafeInteger(keyId) || keyId <= 0 || !password)
+    throw new RelayApiError("请选择密钥并输入当前账户密码", 400);
+  const requireCurrent = captureAccountRequestGuard();
+  const response = await requestGatewayAccount<{ key: string }>(
+    `/api/managed-provider-keys/${keyId}/reveal`,
+    { method: "POST", authenticated: true, body: { password } },
+  );
+  requireCurrent();
+  if (typeof response.key !== "string" || !response.key.trim())
+    throw new RelayApiError("账户服务未返回密钥", 502);
+  return response.key;
 }
 
 export function listRelayGroups() {
   return requestRelay<RelayGroup[]>("/groups/available", { authenticated: true });
 }
 
-export function createRelayApiKey(name: string, groupId: number) {
-  return requestRelay<RelayApiKey>("/keys", {
+export async function createRelayApiKey(name: string, groupId: number) {
+  const key = await requestRelay<RelayApiKey>("/keys", {
     method: "POST",
     authenticated: true,
     body: { name: name.trim(), group_id: groupId },
   });
+  return managedKeySummary(key);
 }
 
 export async function createRelayApiKeys(name: string, groupIds: number[], groups: RelayGroup[]) {
@@ -546,14 +575,10 @@ export async function logoutRelay() {
   }
   const ownerHeaders = accountOwnerHeaders();
   return changeRelaySession(async () => {
-    try {
-      await requestGatewayAccount<void>("/api/auth/logout", {
-        method: "POST",
-        headers: ownerHeaders,
-      });
-    } catch {
-      // The UI session still clears when USA-Zero is temporarily unavailable.
-    }
+    await requestGatewayAccount<void>("/api/auth/logout", {
+      method: "POST",
+      headers: ownerHeaders,
+    });
     if (isEmbeddedMobileRuntime()) {
       await clearEmbeddedMobileGatewaySession();
     }

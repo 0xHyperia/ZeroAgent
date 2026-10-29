@@ -1,0 +1,9 @@
+**
+!base.lock.json
+!requirements.lock.txt
+!check_environment.py
+!acceptance.py
+!matplotlibrc
+!configure_fonts.py
+!font-assets.lock.json
+!install_fonts.py

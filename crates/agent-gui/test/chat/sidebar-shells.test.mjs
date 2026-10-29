@@ -265,3 +265,25 @@ test("five sidebar toggles do not update 200 memoized plain menu rows or replace
     assert.equal(document.cookie.includes("sidebar_state=false"), true);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+test("desktop hover preview exposes the same sidebar without pinning it or changing persistence", async () => {
+ mobile=false;
+ const container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
+ let pinned;const render=preview=>act(async()=>root.render(React.createElement(SidebarProvider,{defaultOpen:false},React.createElement(Content,{preview}))));
+ function Content({preview}){pinned=useSidebar().open;return React.createElement(Sidebar,{previewOpen:preview},React.createElement('button',{id:'peek-entry'},'History'));}
+ try{
+  await render(false);
+  const entry=container.querySelector('#peek-entry'),cookie=document.cookie;
+  await render(true);
+  const pane=container.querySelector('[data-slot=sidebar-container]');
+  assert.equal(pinned,false);
+  assert.equal(pane.getAttribute('aria-hidden'),'false');
+  assert.equal(pane.hasAttribute('inert'),false);
+  assert.equal(container.querySelector('[data-slot=sidebar]').dataset.collapsible,'offcanvas');
+  assert.equal(document.cookie,cookie);
+  assert.equal(container.querySelector('#peek-entry'),entry);
+  await render(false);
+  assert.ok(pane.hasAttribute('inert'));
+  assert.equal(container.querySelector('#peek-entry'),entry);
+ }finally{await act(async()=>root.unmount());container.remove();}
+});

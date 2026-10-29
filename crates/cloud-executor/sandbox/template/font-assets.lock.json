@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "family": "Noto Sans SC",
+  "font_tag": "Sans2.004",
+  "font_commit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+  "assets": [
+    {
+      "filename": "NotoSansSC-VF.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+      "sha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
+      "bytes": 17773132
+    },
+    {
+      "filename": "OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/9862abc066c9b83bf84c3e8ed1fc2d8d48f9bbf0/ofl/notosanssc/OFL.txt",
+      "sha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+      "bytes": 4388
+    }
+  ],
+  "license": "SIL Open Font License 1.1",
+  "font_modified": false
+}

@@ -74,6 +74,7 @@ type ModalProps = {
   providerType: ProviderId;
   initialData?: CustomProvider;
   connectionManaged?: boolean;
+  cloudChatMode?: boolean;
   onSave: (data: Omit<CustomProvider, "id">) => void;
   onClose: () => void;
 };
@@ -154,6 +155,7 @@ function useProviderModalController({
   providerType: defaultProviderType,
   initialData,
   connectionManaged = false,
+  cloudChatMode = false,
   onSave,
   onClose,
 }: ModalProps) {
@@ -997,6 +999,7 @@ function useProviderModalController({
     ? customHeaderIssueMessage(firstHeaderIssue, t)
     : null;
   const viewModel = {
+    cloudChatMode,
     connectionManaged,
     activeCodingPlanProvider,
     activeModels,

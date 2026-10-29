@@ -3,6 +3,7 @@
 .codex
 .claude
 .codex-artifacts
+**/.codex-artifacts
 .liveagent
 .zeroagent
 

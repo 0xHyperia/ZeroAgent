@@ -116,13 +116,9 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
     composerSource.indexOf("aria-label={addMenuTooltip}") <
       composerSource.indexOf("<CommandSafetyModeSelector"),
   );
-  assert.ok(
-    composerSource.indexOf("<CommandSafetyModeSelector") <
-      composerSource.indexOf("<ComposerModelControls"),
-  );
-  assert.ok(
-    composerSource.indexOf("<ComposerModelControls") < composerSource.indexOf("<GitBranchSelector"),
-  );
+  const standardDeck = composerSource.slice(composerSource.indexOf('"composer-control-deck'), composerSource.indexOf('{fileDropOverlay}'));
+  assert.ok(standardDeck.indexOf("<CommandSafetyModeSelector") < standardDeck.indexOf("{modelControls}"));
+  assert.ok(standardDeck.indexOf("{modelControls}") < standardDeck.indexOf("<GitBranchSelector"));
   assert.doesNotMatch(headerSource, /model-selector-trigger|Popover\.Root|currentModelLabel/);
 
   for (const source of pickerSources) {

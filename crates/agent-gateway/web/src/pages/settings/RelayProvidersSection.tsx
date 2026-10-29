@@ -4,6 +4,7 @@ import { ProviderModal } from "@liveagent/ui/pages/settings/ProviderModal";
 import { ProviderSettingsDialog } from "@liveagent/ui/pages/settings/ProvidersSection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
+import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import {
   createRelayApiKeys,
@@ -13,7 +14,7 @@ import {
   type RelayApiKey,
   type RelayGroup,
   type RelayUser,
-  verifyRelayPassword,
+  revealRelayApiKey,
 } from "@/lib/relay/client";
 import {
   applyRelayProviderModelSettings,
@@ -27,12 +28,6 @@ function message(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message.trim() : fallback;
 }
 
-function maskKey(value: string) {
-  const key = value.trim();
-  if (key.length <= 12) return `${key.slice(0, 3)}••••••`;
-  return `${key.slice(0, 7)}••••••••${key.slice(-4)}`;
-}
-
 function platformLabel(platform: string) {
   const type = relayProviderTypeForPlatform(platform);
   if (type === "claude_code") return "Claude";
@@ -42,7 +37,11 @@ function platformLabel(platform: string) {
   return platform;
 }
 
-export function RelayProvidersSection({ settings, setSettings }: SettingsSectionProps) {
+export function RelayProvidersSection({
+  settings,
+  setSettings,
+  cloudChatMode = false,
+}: SettingsSectionProps & { cloudChatMode?: boolean }) {
   const [user, setUser] = useState<RelayUser | null>(null);
   const [keys, setKeys] = useState<RelayApiKey[]>([]);
   const [groups, setGroups] = useState<RelayGroup[]>([]);
@@ -145,14 +144,21 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
       requireCurrentDesktopRemoteHost();
       await navigator.clipboard.writeText(key);
     } else {
-      await verifyRelayPassword(user.email, password);
-      await navigator.clipboard.writeText(copyTarget.key);
+      const requireCurrent = captureAccountRequestGuard();
+      const key = await revealRelayApiKey(copyTarget.id, password);
+      requireCurrent();
+      await navigator.clipboard.writeText(key);
     }
     setSuccess(`密钥“${copyTarget.name}”已复制到剪贴板。`);
   }
 
   return (
     <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+      {cloudChatMode ? (
+        <p className="rounded-xl border border-border p-12px text-sm text-muted-foreground">
+          云端窗口和最大输出可在对话页顶部的“模型参数”保存到账户。已保存的账户偏好优先；尚未保存时使用下方已有模型配置。
+        </p>
+      ) : null}
       <ManagedProvidersView
         keys={keys.map((key) => {
           const group = groupForKey(key);
@@ -162,7 +168,7 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
           return {
             id: key.id,
             name: key.name,
-            maskedKey: maskKey(key.key),
+            maskedKey: key.key_configured === false ? "未配置" : "••••••••",
             status: key.status,
             groupId: group?.id ?? key.group_id ?? null,
             groupName: group?.name ?? "未分组",
@@ -193,7 +199,7 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
         onCopy={(keyId) => setCopyTarget(keys.find((key) => key.id === keyId) ?? null)}
         onOpenModels={(keyId) => setEditingProviderId(relayProviderId(keyId))}
         onRefresh={() => void loadData()}
-        onOpenPreferences={() => setPreferencesOpen(true)}
+        onOpenPreferences={cloudChatMode ? undefined : () => setPreferencesOpen(true)}
       />
       {preferencesOpen && (
         <ProviderSettingsDialog
@@ -221,6 +227,7 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
           providerType={editingProvider.type}
           initialData={editingProvider}
           connectionManaged
+          cloudChatMode={cloudChatMode}
           onClose={() => setEditingProviderId(null)}
           onSave={(draft) => {
             try {

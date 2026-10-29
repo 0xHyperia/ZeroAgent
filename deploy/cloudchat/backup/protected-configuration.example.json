@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "executor_namespace": "your-reviewed-executor-namespace",
+  "executor_scope_key": "replace-with-the-current-stable-sdk-scope-signing-key",
+  "files": {
+    "gateway.env": "replace privately with the exact reviewed current Gateway configuration",
+    "executor.env": "replace privately with the exact reviewed current SDK configuration"
+  }
+}

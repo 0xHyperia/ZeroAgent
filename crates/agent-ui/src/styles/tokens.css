@@ -456,6 +456,12 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
+    --tooltip-surface: 0 0% 9%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 0 0% 76%;
+    --tooltip-border: 0 0% 15%;
+    --tooltip-shadow: 0 4px 16px rgb(0 0 0 / 0.14), 0 1px 4px rgb(0 0 0 / 0.1);
+
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
 
@@ -471,6 +477,9 @@
     --settings-tile: 0 0% 96.5%;
     --settings-tile-hover: 0 0% 94%;
     --settings-active: 0 0% 88.5%;
+    --navigation-icon-rest: 0 0% 56%;
+    --navigation-icon-emphasis: 0 0% 5%;
+    --navigation-item-highlight: 0 0% 92.2%;
     --control-surface: var(--background);
     --segmented-track: var(--settings-active);
     --segmented-selected: var(--background);
@@ -553,6 +562,10 @@
     --popover: 0 0% 12.9%;
     --popover-foreground: 0 0% 98%;
 
+    --tooltip-surface: 0 0% 16%;
+    --tooltip-border: 0 0% 28%;
+    --tooltip-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+
     --primary: 210 30% 96%;
     --primary-foreground: 222.2 47.4% 11.2%;
 
@@ -566,6 +579,9 @@
     --settings-tile: 0 0% 12.9%;
     --settings-tile-hover: 0 0% 18.8%;
     --settings-active: 0 0% 25.5%;
+    --navigation-icon-rest: 0 0% 64%;
+    --navigation-icon-emphasis: 0 0% 98%;
+    --navigation-item-highlight: 0 0% 18.8%;
     --control-surface: 0 0% 18.8%;
     --segmented-track: 0 0% 9.4%;
     --segmented-selected: 0 0% 25.5%;

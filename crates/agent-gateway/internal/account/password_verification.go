@@ -3,43 +3,41 @@ package account
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 )
 
 // VerifyPassword checks the current account without creating a ZeroAgent session
 // or returning the temporary upstream login credentials to the browser.
-func (s *Service) VerifyPassword(ctx context.Context, session *Session, email, password string) error {
-	denied := func() error { return &APIError{Status: http.StatusForbidden, Message: "密码验证失败"} }
+func (s *Service) VerifyPassword(ctx context.Context, session *Session, email, password string) (err error) {
+	current, err := s.currentManagedWebSession(ctx, session)
+	if err != nil {
+		return err
+	}
 	var identity struct {
 		ID    int64  `json:"id"`
 		Email string `json:"email"`
 	}
-	if session == nil || json.Unmarshal(session.User, &identity) != nil || identity.ID != session.UserID || strings.TrimSpace(identity.Email) == "" || !strings.EqualFold(strings.TrimSpace(email), strings.TrimSpace(identity.Email)) || password == "" {
-		return denied()
+	if json.Unmarshal(current.User, &identity) != nil || identity.ID != current.UserID || strings.TrimSpace(identity.Email) == "" || !strings.EqualFold(strings.TrimSpace(email), strings.TrimSpace(identity.Email)) || password == "" || len(password) > 2048 {
+		return passwordProofDenied()
 	}
-	result, err := s.usa.Login(ctx, strings.TrimSpace(identity.Email), password)
+	// Parse even a failed response privately: a platform can have issued a
+	// refresh credential before returning an invalid identity or error envelope.
+	result, err := s.managedPasswordProof(ctx, strings.TrimSpace(identity.Email), password)
+	defer func() {
+		if cleanupErr := s.cleanupManagedPasswordProof(ctx, current, result); cleanupErr != nil {
+			err = cleanupErr
+		}
+	}()
 	if err != nil {
-		var apiErr *APIError
-		if errors.As(err, &apiErr) && (apiErr.Status == http.StatusBadRequest || apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden) {
-			return denied()
-		}
-		status := http.StatusBadGateway
-		if errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
-			status = http.StatusTooManyRequests
-		}
-		return &APIError{Status: status, Message: "暂时无法验证密码，请稍后重试"}
+		return err
 	}
-	if result == nil || (!result.Requires2FA && result.UserID != session.UserID) || (result.Requires2FA && strings.TrimSpace(result.TempToken) == "") {
-		return denied()
+	if result == nil || (!result.Requires2FA && (result.UserID != current.UserID || result.AccessToken == "")) || (result.Requires2FA && strings.TrimSpace(result.TempToken) == "") {
+		return passwordProofDenied()
 	}
 	// A pending proof must not approve a session revoked while USA-Zero was replying.
-	current, err := s.store.GetSession(ctx, session.ID)
-	if err != nil || current == nil || current.UserID != session.UserID || current.AuthKind != session.AuthKind || current.OAuthClientID != session.OAuthClientID {
-		return &APIError{Status: http.StatusUnauthorized, Message: "account session is missing or expired"}
-	}
-	return nil
+	_, err = s.currentManagedWebSession(ctx, current)
+	return err
 }
 
 func (h *HTTPHandler) verifyPassword(w http.ResponseWriter, r *http.Request, session *Session) {

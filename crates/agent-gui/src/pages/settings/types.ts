@@ -31,6 +31,7 @@ export type SectionId =
 import type { SettingsHostAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
 
 export type SettingsPageProps = {
+  presentation?: "workbench" | "page";
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;
   onRelayUserChange: (user: RelayUser) => void;

@@ -40,10 +40,8 @@ test("sandbox control is icon-only and sits before the model picker", () => {
   assert.match(safetySelectorSource, /w-8 justify-center gap-0 px-0/);
   assert.doesNotMatch(safetySelectorSource, /COMPOSER_CONTROL_LABEL_CLASS/);
   assert.doesNotMatch(safetySelectorSource, /ChevronDown/);
-  assert.ok(
-    composerSource.indexOf("<CommandSafetyModeSelector") <
-      composerSource.indexOf("<ComposerModelControls"),
-  );
+  const standardDeck = composerSource.slice(composerSource.indexOf('"composer-control-deck'), composerSource.indexOf('{fileDropOverlay}'));
+  assert.ok(standardDeck.indexOf("<CommandSafetyModeSelector") < standardDeck.indexOf("{modelControls}"), "the standard agent deck keeps command safety before the shared model control");
   assert.match(
     safetySelectorSource,
     /web:max-480:w-8[^"\n]*web:max-480:px-0/,

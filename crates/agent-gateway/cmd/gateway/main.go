@@ -10,11 +10,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/liveagent/agent-gateway/internal/account"
+	"github.com/liveagent/agent-gateway/internal/cloudexecutor"
+	"github.com/liveagent/agent-gateway/internal/cloudresearch"
 	"github.com/liveagent/agent-gateway/internal/config"
+	"github.com/liveagent/agent-gateway/internal/objectstore"
 	"github.com/liveagent/agent-gateway/internal/observability"
 	"github.com/liveagent/agent-gateway/internal/server"
 	"github.com/liveagent/agent-gateway/internal/session"
@@ -61,7 +66,9 @@ func main() {
 		persistentStore, storeErr := account.OpenPersistentStore(startupCtx, cfg.DatabaseURL, cfg.RedisURL)
 		startupCancel()
 		if storeErr != nil {
-			fatal("account storage startup failed", "err", storeErr)
+			// URL/driver errors can contain the complete configured DSN, including
+			// its password. Do not forward them to process/container logs.
+			fatal("account storage startup failed; verify PostgreSQL/Redis configuration, availability and permissions")
 		}
 		accountStore = persistentStore
 		closeAccountStore = persistentStore.Close
@@ -71,6 +78,137 @@ func main() {
 		slog.Warn("DATABASE_URL and REDIS_URL are not configured; account sessions and devices use in-memory development storage")
 	}
 	accountService := account.NewService(accountStore, usaClient, cfg.WebSessionTTL, cfg.SelectionLeaseTTL)
+	runContext, stopRuns := context.WithCancel(context.Background())
+	defer stopRuns()
+	var waitMaintenance func()
+	if !managedDesktop {
+		runtimeConfig, runtimeConfigErr := account.CloudRuntimeConfigFromEnv()
+		if runtimeConfigErr != nil {
+			fatal("invalid cloud runtime configuration", "err", runtimeConfigErr)
+		}
+		if err := accountService.SetCloudRuntimeConfig(runtimeConfig); err != nil {
+			fatal("cloud runtime configuration failed", "err", err)
+		}
+		objectConfig, configErr := objectstore.ConfigFromEnv(os.Getenv)
+		if configErr != nil {
+			fatal("invalid cloud object storage configuration", "err", configErr)
+		}
+		objects, objectErr := objectstore.New(objectConfig)
+		if objectErr != nil {
+			fatal("invalid cloud object storage configuration", "err", objectErr)
+		}
+		defer objects.Close()
+		if objects.Status().Enabled {
+			if err := accountService.SetCloudObjectStore(objects); err != nil {
+				fatal("cloud file service startup failed", "err", err)
+			}
+			slog.Info("cloud object storage configured")
+			previousCheck := readinessCheck
+			readinessCheck = func(ctx context.Context) error {
+				if previousCheck != nil {
+					if err := previousCheck(ctx); err != nil {
+						return err
+					}
+				}
+				return objects.Ready(ctx)
+			}
+		} else {
+			slog.Info("cloud object storage disabled", "missing", objects.Status().Missing)
+		}
+		executorURL := strings.TrimSpace(os.Getenv("ZEROAGENT_CLOUD_EXECUTOR_URL"))
+		executorToken := os.Getenv("ZEROAGENT_CLOUD_EXECUTOR_TOKEN")
+		if executorURL != "" || executorToken != "" {
+			if executorURL == "" || executorToken == "" {
+				fatal("cloud executor URL and internal token must be configured together")
+			}
+			executor, executorErr := cloudexecutor.New(cloudexecutor.Config{BaseURL: executorURL, Token: executorToken})
+			if executorErr != nil {
+				fatal("invalid cloud executor configuration", "err", executorErr)
+			}
+			defer executor.CloseIdleConnections()
+			if err := accountService.SetCloudExecutor(executor); err != nil {
+				fatal("cloud executor service startup failed", "err", err)
+			}
+			if err := accountService.StartCloudFileParser(runContext); err != nil {
+				fatal("cloud file parser startup failed", "err", err)
+			}
+			defer accountService.CloseCloudFileParser()
+			previousCheck := readinessCheck
+			readinessCheck = func(ctx context.Context) error {
+				if previousCheck != nil {
+					if err := previousCheck(ctx); err != nil {
+						return err
+					}
+				}
+				health, err := executor.Health(ctx)
+				if err != nil {
+					return err
+				}
+				if !health.Enabled {
+					return errors.New("cloud execution is unavailable")
+				}
+				if health.Journal != nil && health.Journal.AdmissionAvailable != nil && !*health.Journal.AdmissionAvailable {
+					return errors.New("cloud execution journal cannot accept new operations")
+				}
+				return nil
+			}
+			slog.Info("cloud execution adapter configured")
+		}
+		searchConfig, searchConfigErr := cloudresearch.TavilyConfigFromEnv(os.Getenv)
+		if searchConfigErr != nil {
+			fatal("invalid cloud search configuration")
+		}
+		search, searchErr := cloudresearch.NewTavily(searchConfig)
+		if searchErr != nil {
+			fatal("invalid cloud search configuration", "err", searchErr)
+		}
+		fetchEnabled := search.Status().Enabled
+		if value := strings.TrimSpace(os.Getenv("ZEROAGENT_CLOUD_WEB_FETCH_ENABLED")); value != "" {
+			fetchEnabled, err = strconv.ParseBool(value)
+			if err != nil {
+				fatal("invalid cloud web fetch setting")
+			}
+		}
+		var fetch *cloudresearch.Fetcher
+		if fetchEnabled {
+			fetch, err = cloudresearch.NewFetcher(cloudresearch.FetchConfig{})
+			if err != nil {
+				fatal("invalid cloud web fetch configuration", "err", err)
+			}
+		}
+		if err := accountService.SetCloudResearch(search, fetch); err != nil {
+			fatal("cloud research startup failed", "err", err)
+		}
+		slog.Info("cloud research configured", "search", search.Status().Enabled, "public_page_fetch", fetchEnabled)
+		if err := accountService.StartCloudRuns(runContext); err != nil {
+			fatal("cloud task runtime startup failed", "err", err)
+		}
+		defer accountService.CloseCloudRuns()
+		maintenanceDone := make(chan struct{})
+		go func() {
+			defer close(maintenanceDone)
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-runContext.Done():
+					return
+				case <-ticker.C:
+					cleanupCtx, cancel := context.WithTimeout(runContext, 30*time.Second)
+					var err error
+					if objects.Status().Enabled {
+						err = accountService.ReconcileCloudFiles(cleanupCtx, 50)
+					}
+					cancel()
+					if err != nil && runContext.Err() == nil {
+						slog.Warn("cloud file reconciliation incomplete")
+					}
+				}
+			}
+		}()
+		waitMaintenance = func() { stopRuns(); <-maintenanceDone }
+		defer waitMaintenance()
+	}
 
 	images := server.NewLocalImageHub(cfg)
 	var httpHandler http.Handler
@@ -91,6 +229,7 @@ func main() {
 		Handler:           httpHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return runContext },
 	}
 
 	errCh := make(chan error, 1)
@@ -128,8 +267,14 @@ func main() {
 		fatal("server error", "err", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	stopRuns()
+	accountService.CloseCloudRuns()
+	accountService.CloseCloudFileParser()
+	if waitMaintenance != nil {
+		waitMaintenance()
+	}
 
 	if err := httpServer.Shutdown(ctx); err != nil {
 		slog.Warn("http shutdown error", "err", err)

@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "api_key": "REPLACE_IN_PRIVATE_IGNORED_FILE",
+  "alias": "zeroagent-cloudchat:REPLACE-VERSION",
+  "approved_plan_sha256": "REPLACE_WITH_REVIEWED_PLAN_SHA256",
+  "budget_reference": "REPLACE_WITH_EXPLICIT_BUDGET_APPROVAL",
+  "approved_until": "REPLACE_WITH_ISO_UTC_WITHIN_24_HOURS",
+  "max_build_requests": 1,
+  "acknowledge_no_provider_spend_cap": true,
+  "receipt_path": "REPLACE_WITH_NEW_ABSOLUTE_PRIVATE_RECEIPT_PATH"
+}

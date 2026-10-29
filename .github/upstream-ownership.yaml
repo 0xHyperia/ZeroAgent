@@ -2,6 +2,163 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["CloudChat 新对话导航模式显式 opt-in", "默认桌面/设备侧栏和主题操作保持，宽窄屏与类型检查"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/ChatHistorySidebar*",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["历史菜单、搜索、批量选择和原移动 Sheet 保持", "预览固定交给宿主，不反向切换当前固定状态"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/ui/sidebar.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["悬停预览显式 opt-in，不写固定状态、不占布局宽度", "同一侧栏实例、inert、手机 Sheet、快捷键及默认设备行为回归"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/MentionComposer.tsx",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": ["富文本、IME、光标选择和原发送判定保持", "可访问名称与宿主输入用途一致，不引入另一份草稿"]
+    },
+    {
+      "glob": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": ["默认桌面/Agent 命令安全、队列、Git 与语音契约保持", "inline 显式 opt-in，单一编辑器/模型、草稿/引用及窄屏回归", "可选 feedback 插槽计入原高度测量；不重建编辑器，不改变默认宿主行为"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["紧凑标签不另建模型状态，完整可访问名称保持", "模型/推理/参数、触控焦点与两宿主回归"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/useInlineComposerLayout.ts",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": ["不克隆编辑器，测量字体/真实宽度及附件并清理观察器", "模式/手机重排保持节点、选择范围和草稿"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/useComposerShapeMotion.ts",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": ["快速反向从当前高度接续，退出取消动画", "降低动态效果、默认布局与控件稳定定位"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/ui/*tooltip*.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["Base UI 定位、菜单复合、ref 与单次点击保持", "统一语义表面、焦点描述/Escape、复制与受控触屏回归"]
+    },
+    {
+      "glob": "crates/agent-ui/src/application/ApplicationRail.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["宿主提供真实导航与可访问名称，不自行选择执行目标", "CloudChat 宽窄屏、主题和共享 UI 类型检查"]
+    },
+    {
+      "glob": "crates/agent-ui/src/application/useUnsavedChangesPrompt.tsx",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": ["项目草稿、刷新与离开保护，确认动作绑定原账户", "切号撤销待执行导航，菜单/Sheet 焦点与关闭语义"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/ui/sheet.tsx",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": [
+        "默认遮罩/焦点语义保持，显式非模态资源栏才可省略遮罩",
+        "共享类型检查、桌面与窄屏回归"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/web/src/components/cloudchat/**",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "共享主题/菜单/资源栏与窄屏一致，所有原入口可达",
+        "账户切换清理、引用/下载/项目/成果回归"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/internal/cloudbackup/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "维护窗口一致快照、对象摘要、加密配置和独占journal备份",
+        "空目标显式恢复、写前实测条件语义且不支持/未知即拒绝、默认只读不探测",
+        "探针归属/清理回执、撤销旧认证和任务围栏、消息顺序与隔离恢复演练"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/cmd/cloudchat-backup/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "默认只读校验，恢复须明确目标及变更授权",
+        "秘密不输出、部分恢复不伪报成功、不覆盖已有对象或历史"
+      ]
+    },
+    {
+      "glob": "deploy/cloudchat/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "独立Gateway/SDK秘密、仅loopback通信、非root/只读/资源限制",
+        "Compose静态校验、容器启动与健康检查、对象及journal备份恢复演练"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/internal/cloudresearch/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "搜索固定来源/凭据隔离、未知收费请求不重发",
+        "网页每跳公共DNS/实际peer校验、SSRF、解压/正文/时间限额与原文来源摘要"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/internal/cloudexecutor/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "强认证loopback客户端、无重定向/代理、稳定操作ID/未知结果",
+        "实际取消回执、分块文件摘要与scope/沙箱绑定、隔离解析结果校验"
+      ]
+    },
+    {
+      "glob": "crates/cloud-executor/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "SDK 固定版本、内部认证、账户/工作区归属、默认网络隔离",
+        "持久操作幂等、未知结果不重发、实际取消与沙箱终止回执"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/internal/objectstore/**",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "固定存储配置、不加载环境外凭据、不跟随重定向",
+        "对象长度/完整性、账户原件键、隔离协议测试及真实服务验收"
+      ]
+    },
+    {
+      "glob": "crates/agent-gateway/test/cloudchat/**",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "测试专用合成账户及生产构建浏览器流程，夹具显式开启、生命周期清理",
+        "不得将本地模型夹具当作真实外部链路验收"
+      ]
+    },
+    {
       "glob": "crates/agent-gateway/test/websocket/account_history_sync_test.go",
       "ownership": "zeroagent_owned",
       "risk": "critical",

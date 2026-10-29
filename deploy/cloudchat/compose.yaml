@@ -1,0 +1,45 @@
+# Optional overlay for deploy/production/compose.yaml. No deployment is implied.
+services:
+  app:
+    environment:
+      ZEROAGENT_OBJECT_STORAGE_ENDPOINT: ${ZEROAGENT_OBJECT_STORAGE_ENDPOINT:?required}
+      ZEROAGENT_OBJECT_STORAGE_BUCKET: ${ZEROAGENT_OBJECT_STORAGE_BUCKET:?required}
+      ZEROAGENT_OBJECT_STORAGE_REGION: ${ZEROAGENT_OBJECT_STORAGE_REGION:?required}
+      ZEROAGENT_OBJECT_STORAGE_ACCESS_KEY_ID: ${ZEROAGENT_OBJECT_STORAGE_ACCESS_KEY_ID:?required}
+      ZEROAGENT_OBJECT_STORAGE_SECRET_ACCESS_KEY: ${ZEROAGENT_OBJECT_STORAGE_SECRET_ACCESS_KEY:?required}
+      ZEROAGENT_CLOUD_EXECUTOR_URL: http://127.0.0.1:17843
+      ZEROAGENT_CLOUD_EXECUTOR_TOKEN: ${ZEROAGENT_CLOUD_EXECUTOR_TOKEN:?required}
+      ZEROAGENT_CLOUD_WEB_FETCH_ENABLED: ${ZEROAGENT_CLOUD_WEB_FETCH_ENABLED:-false}
+      ZEROAGENT_TAVILY_API_KEY: ${ZEROAGENT_TAVILY_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/readyz"]
+      timeout: 5s
+    stop_grace_period: 60s
+  cloud-executor:
+    image: ${CLOUD_EXECUTOR_IMAGE:?required}
+    restart: unless-stopped
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_started
+    env_file:
+      - ${CLOUD_EXECUTOR_ENV_FILE:?required}
+    environment:
+      ZEROAGENT_CLOUD_EXECUTOR_HOST: 127.0.0.1
+      ZEROAGENT_CLOUD_EXECUTOR_PORT: "17843"
+      ZEROAGENT_CLOUD_EXECUTOR_TOKEN: ${ZEROAGENT_CLOUD_EXECUTOR_TOKEN:?required}
+      ZEROAGENT_CLOUD_EXECUTOR_DATA_DIR: /var/lib/zeroagent/cloud-executor
+    volumes:
+      - ${USA0_DATA_ROOT:-/opt/usa0/data}/zeroagent/cloud-executor:/var/lib/zeroagent/cloud-executor
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: ${CLOUD_EXECUTOR_MEMORY_LIMIT:-2g}
+    cpus: ${CLOUD_EXECUTOR_CPUS:-2}
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options: {max-size: 50m, max-file: "5"}

@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS zerobox_cloud_conversations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS zerobox_cloud_conversations_user_idx ON zerobox_cloud_conversations (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS zeroagent_cloud_conversations_page_idx ON zerobox_cloud_conversations (user_id, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS zerobox_cloud_messages (
   id UUID PRIMARY KEY,
@@ -201,6 +202,33 @@ CREATE TABLE IF NOT EXISTS zerobox_web_settings (
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate ZeroAgent account schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudRunSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud run schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudModelLimitsSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud model preference schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudToolSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud tool schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudResearchSourceSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud source schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudFileSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud file schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudArtifactSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud artifact schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudBranchSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud branch schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudProjectSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud project schema: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, CloudMemorySchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud memory schema: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit ZeroAgent account schema migration: %w", err)
@@ -236,7 +264,7 @@ func (s *PersistentStore) GetSession(ctx context.Context, id string) (*Session, 
 }
 
 func (s *PersistentStore) DeleteSession(ctx context.Context, id string) error {
-	return s.rdb.Del(ctx, sessionKey(id)).Err()
+	return s.rdb.Del(ctx, sessionKey(id), cloudSessionReferenceKey(cloudSessionReference(id))).Err()
 }
 
 func (s *PersistentStore) UpsertDevice(ctx context.Context, device *Device) error {
@@ -556,11 +584,30 @@ func (s *PersistentStore) DeleteCloudConversation(ctx context.Context, userID in
 }
 
 func (s *PersistentStore) AddCloudMessage(ctx context.Context, message *CloudMessage) error {
+	if message == nil {
+		return ErrCloudRunInvalid
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var owned string
+	err = tx.QueryRowContext(ctx, `SELECT id::text FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2 FOR UPDATE`, message.ConversationID, message.UserID).Scan(&owned)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	now, err := cloudRunDBTime(ctx, tx)
+	if err != nil {
+		return err
+	}
+	message.CreatedAt, err = nextCloudMessageTimeTx(ctx, tx, message.UserID, message.ConversationID, now)
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages (id,conversation_id,user_id,role,content,usage,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		message.ID, message.ConversationID, message.UserID, message.Role, message.Content, nullableJSON(message.Usage), message.CreatedAt)
 	if err != nil {
@@ -573,23 +620,7 @@ func (s *PersistentStore) AddCloudMessage(ctx context.Context, message *CloudMes
 }
 
 func (s *PersistentStore) ListCloudMessages(ctx context.Context, userID int64, conversationID string) ([]CloudMessage, error) {
-	if _, err := s.GetCloudConversation(ctx, userID, conversationID); err != nil {
-		return nil, err
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id::text,conversation_id::text,user_id,role,content,COALESCE(usage,'null'::jsonb),created_at FROM zerobox_cloud_messages WHERE conversation_id=$1 AND user_id=$2 ORDER BY created_at,id`, conversationID, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	items := make([]CloudMessage, 0)
-	for rows.Next() {
-		var message CloudMessage
-		if err := rows.Scan(&message.ID, &message.ConversationID, &message.UserID, &message.Role, &message.Content, &message.Usage, &message.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, message)
-	}
-	return items, rows.Err()
+	return boundedLegacyCloudMessages(ctx, s, userID, conversationID)
 }
 
 func (s *PersistentStore) PutWebSettings(ctx context.Context, userID int64, settings WebSettings) error {

@@ -3,6 +3,7 @@ packages:
   - "crates/agent-gui"
   - "crates/agent-gateway/web"
   - "crates/virtual-core"
+  - "crates/cloud-executor"
 
 # pnpm 11+ reads these from this file and ignores package.json#pnpm.
 # Keep the same pins as package.json so CI (pnpm 10) and local (11) agree.

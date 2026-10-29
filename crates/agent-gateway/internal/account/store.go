@@ -13,6 +13,7 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type Store interface {
+	sessionAuthorityStore
 	PutSession(ctx context.Context, session *Session) error
 	GetSession(ctx context.Context, id string) (*Session, error)
 	DeleteSession(ctx context.Context, id string) error
@@ -49,18 +50,29 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu                 sync.RWMutex
-	sessions           map[string]Session
-	devices            map[string]Device
-	deviceSessions     map[string]string
-	leases             map[string]SelectionLease
-	cloudConversations map[string]CloudConversation
-	cloudMessages      map[string][]CloudMessage
-	webSettings        map[int64]WebSettings
-	conversationRoutes map[string]ConversationRoute
-	handoffs           map[string]DesktopHandoff
-	oauthTransactions  map[string]OAuthTransaction
-	now                func() time.Time
+	mu                   sync.RWMutex
+	sessions             map[string]Session
+	devices              map[string]Device
+	deviceSessions       map[string]string
+	leases               map[string]SelectionLease
+	cloudConversations   map[string]CloudConversation
+	cloudModelLimits     map[cloudModelLimitKey]CloudModelLimits
+	cloudMessages        map[string][]CloudMessage
+	cloudRuns            *cloudRunMemoryState
+	cloudFiles           map[string]CloudFile
+	cloudBranches        map[string]cloudBranchReceipt
+	cloudTools           *cloudToolMemoryState
+	cloudArtifacts       *cloudArtifactMemoryState
+	cloudResearchSources *cloudResearchSourceMemoryState
+	cloudProjects        *cloudProjectMemoryState
+	cloudMemories        map[string]CloudMemory
+	cloudMemorySettings  map[int64]CloudMemorySettings
+	sessionRefresh       *memorySessionRefreshState
+	webSettings          map[int64]WebSettings
+	conversationRoutes   map[string]ConversationRoute
+	handoffs             map[string]DesktopHandoff
+	oauthTransactions    map[string]OAuthTransaction
+	now                  func() time.Time
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -368,34 +380,39 @@ func (s *MemoryStore) DeleteCloudConversation(_ context.Context, userID int64, i
 	}
 	delete(s.cloudConversations, id)
 	delete(s.cloudMessages, id)
+	s.deleteCloudRunsLocked(id)
+	s.deleteCloudToolRunRecordsLocked(id)
+	s.deleteCloudProjectConversationLocked(id)
 	return nil
 }
 
-func (s *MemoryStore) AddCloudMessage(_ context.Context, message *CloudMessage) error {
+func (s *MemoryStore) AddCloudMessage(ctx context.Context, message *CloudMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if message == nil {
+		return ErrCloudRunInvalid
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cloudMessages[message.ConversationID] = append(s.cloudMessages[message.ConversationID], cloneCloudMessage(*message))
 	conversation, ok := s.cloudConversations[message.ConversationID]
-	if ok {
-		conversation.UpdatedAt = message.CreatedAt
-		s.cloudConversations[conversation.ID] = conversation
+	if !ok || conversation.UserID != message.UserID {
+		return ErrNotFound
 	}
+	for _, existing := range s.cloudMessages[message.ConversationID] {
+		if existing.ID == message.ID {
+			return ErrCloudRunConflict
+		}
+	}
+	message.CreatedAt = s.nextCloudMessageTimeLocked(message.ConversationID, s.now())
+	s.cloudMessages[message.ConversationID] = append(s.cloudMessages[message.ConversationID], cloneCloudMessage(*message))
+	conversation.UpdatedAt = message.CreatedAt
+	s.cloudConversations[conversation.ID] = conversation
 	return nil
 }
 
-func (s *MemoryStore) ListCloudMessages(_ context.Context, userID int64, conversationID string) ([]CloudMessage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	conversation, ok := s.cloudConversations[conversationID]
-	if !ok || conversation.UserID != userID {
-		return nil, ErrNotFound
-	}
-	items := s.cloudMessages[conversationID]
-	result := make([]CloudMessage, len(items))
-	for index := range items {
-		result[index] = cloneCloudMessage(items[index])
-	}
-	return result, nil
+func (s *MemoryStore) ListCloudMessages(ctx context.Context, userID int64, conversationID string) ([]CloudMessage, error) {
+	return boundedLegacyCloudMessages(ctx, s, userID, conversationID)
 }
 
 func (s *MemoryStore) PutWebSettings(_ context.Context, userID int64, settings WebSettings) error {

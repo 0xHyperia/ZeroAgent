@@ -57,6 +57,7 @@ function resolveKeyGroup(key: RelayApiKey, groups: RelayGroup[]) {
 export function enforceRelayProviderConstraint(settings: AppSettings): AppSettings {
   const customProviders = settings.customProviders.filter(isRelayProvider).map((provider) => ({
     ...provider,
+    apiKey: "",
     baseUrl: relayProviderBaseUrl(provider.type),
     isFullUrl: false,
     modelsUrl: undefined,
@@ -104,7 +105,7 @@ export async function buildRelayProviders(
   const existingById = new Map(existingProviders.map((provider) => [provider.id, provider]));
   const providers = await Promise.all(
     keys
-      .filter((key) => key.status === "active" && key.group_id != null && key.key.trim())
+      .filter((key) => key.status === "active" && key.group_id != null && key.key_configured !== false)
       .map(async (key): Promise<CustomProvider | null> => {
         const group = resolveKeyGroup(key, groups);
         if (group?.status !== "active") return null;
@@ -140,8 +141,8 @@ export async function buildRelayProviders(
           baseUrl: relayProviderBaseUrl(type),
           isFullUrl: false,
           modelsUrl: undefined,
-          apiKey: key.key,
-          apiKeyConfigured: Boolean(key.key.trim()),
+          apiKey: "",
+          apiKeyConfigured: true,
           customHeaders: [],
           usageQuery: getDefaultUsageQueryConfig(),
           models,

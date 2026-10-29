@@ -1,5 +1,5 @@
 import { ArrowLeft, Search } from "@liveagent/ui/components/IconSet";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
 import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/registry";
 import { useLocale } from "../../i18n";
@@ -19,6 +19,7 @@ const WEB_SETTINGS_CONTENT_RESPONSIVE_CLASS = cn(
 );
 
 type SettingsShellProps<Context> = {
+  presentation?: "workbench" | "page";
   registry: UiExtensionRegistry<Context>;
   context: Context;
   saveState: SettingsSaveState;
@@ -65,8 +66,10 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     onSectionChange,
     hiddenSections = [],
     fontScale = 1,
+    presentation = "workbench",
   } = props;
   const { t } = useLocale();
+  const shellRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState(initialSection);
   const [previousInitialSection, setPreviousInitialSection] = useState(initialSection);
   useEffect(() => {
@@ -78,6 +81,13 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     setSection(initialSection);
   }
   const [navQuery, setNavQuery] = useState("");
+  const [mobileDetail, setMobileDetail] = useState(initialSection !== "system");
+  useEffect(() => {
+    if (presentation === "page")
+      shellRef.current
+        ?.querySelector<HTMLElement>(mobileDetail ? ".settings-section-title" : "h1")
+        ?.focus({ preventScroll: true });
+  }, [mobileDetail, presentation]);
   const hiddenSectionSet = useMemo(() => new Set(hiddenSections), [hiddenSections]);
   const sections = useMemo(
     () =>
@@ -130,10 +140,14 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
   const fillContent = activeSection.contentMode === "fill";
   const saveIndicator = getSaveIndicator(saveState, t);
   const showSaveIndicator = activeSection.showSaveIndicator !== false;
+  const SectionTitle = presentation === "page" ? "h2" : "div";
 
   return (
     <ZoneFontScaleContext.Provider value={fontScale}>
       <div
+        ref={shellRef}
+        data-settings-presentation={presentation}
+        data-mobile-detail={mobileDetail ? "true" : "false"}
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
         className={cn(
           "zone-font-scale flex h-full bg-background",
@@ -174,28 +188,37 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                 </button>
               </div>
             ) : null}
-            <div className="px-3 pb-2 pt-4 web:max-820:hidden">
-              <button
-                type="button"
-                onClick={onBack}
-                aria-keyshortcuts="Escape"
-                title={t("settings.backToChatHint")}
-                className={cn(
-                  "settings-back-button flex w-full cursor-pointer items-center justify-start gap-1 rounded-md px-2 py-1.5 text-left",
-                  "text-sm text-muted-foreground transition-colors duration-150 hover:bg-settings-tile-hover hover:text-foreground",
-                )}
-              >
-                <ArrowLeft className="size-3.5 shrink-0" />
-                <span>{t("settings.backToChat")}</span>
-                <kbd
+            <div className="settings-nav-header px-3 pb-2 pt-4 web:max-820:hidden">
+              {presentation === "page" ? (
+                <h1
+                  tabIndex={-1}
+                  className="settings-page-title px-2.5 pb-3 text-lg font-semibold outline-none"
+                >
+                  {t("settings.title")}
+                </h1>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  aria-keyshortcuts="Escape"
+                  title={t("settings.backToChatHint")}
                   className={cn(
-                    "ml-auto rounded border border-border/60 px-1.5 py-0.5",
-                    "font-sans text-tiny leading-none text-muted-foreground/70",
+                    "settings-back-button flex w-full cursor-pointer items-center justify-start gap-1 rounded-md px-2 py-1.5 text-left",
+                    "text-sm text-muted-foreground transition-colors duration-150 hover:bg-settings-tile-hover hover:text-foreground",
                   )}
                 >
-                  Esc
-                </kbd>
-              </button>
+                  <ArrowLeft className="size-3.5 shrink-0" />
+                  <span>{t("settings.backToChat")}</span>
+                  <kbd
+                    className={cn(
+                      "ml-auto rounded border border-border/60 px-1.5 py-0.5",
+                      "font-sans text-tiny leading-none text-muted-foreground/70",
+                    )}
+                  >
+                    Esc
+                  </kbd>
+                </button>
+              )}
               <div className="relative mt-2.5">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/75" />
                 <input
@@ -238,8 +261,10 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                           key={definition.id}
                           type="button"
                           onClick={() => {
-                            if (definition.id !== section && (canLeaveSection?.() ?? true))
+                            if (definition.id === section || (canLeaveSection?.() ?? true)) {
                               setSection(definition.id);
+                              setMobileDetail(true);
+                            }
                           }}
                           aria-current={active ? "page" : undefined}
                           data-testid={`settings-nav-${definition.id}`}
@@ -294,6 +319,18 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
             ) : null}
           </aside>
           <main className="flex min-w-0 flex-1 flex-col web:min-w-0 web:max-820:min-h-0 web:max-820:flex-auto">
+            {presentation === "page" ? (
+              <button
+                type="button"
+                className="settings-mobile-back"
+                onClick={() => {
+                  if (canLeaveSection?.() ?? true) setMobileDetail(false);
+                }}
+              >
+                <ArrowLeft className="size-4" />
+                {t("settings.title")}
+              </button>
+            ) : null}
             {registry.slots.mainLeading}
             <header
               className={cn(
@@ -302,9 +339,13 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               )}
             >
               <div className="settings-main-title mx-auto w-full max-w-920px overflow-hidden">
-                <div key={activeSection.id} className="text-2xl font-semibold tracking-tight">
+                <SectionTitle
+                  key={activeSection.id}
+                  tabIndex={presentation === "page" ? -1 : undefined}
+                  className="settings-section-title text-2xl font-semibold tracking-tight outline-none"
+                >
                   {t(activeSection.labelKey)}
-                </div>
+                </SectionTitle>
               </div>
               {web && showSaveIndicator ? (
                 <div

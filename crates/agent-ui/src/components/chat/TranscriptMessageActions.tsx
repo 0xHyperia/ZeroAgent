@@ -15,6 +15,7 @@ import type { ReplyShareSource } from "../../lib/chat/replyShare";
 import { cachedDateTimeFormat } from "../../lib/shared/intlFormatters";
 import { cn } from "../../lib/shared/utils";
 import { ConfirmActionPopover } from "../ui/confirm-action-popover";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { type UsageDetailEntry, UsageInfoPopover } from "./UsagePanel";
 
 // 分享弹窗依赖 Markdown 渲染和截图库，按需加载，不进转录区首屏。
@@ -79,6 +80,7 @@ function TranscriptTimestampLabel(props: { timestamp?: number; className?: strin
 type SharedActionProps = {
   copied: boolean;
   copyDisabled?: boolean;
+  copyTitle?: string;
   onCopy: () => void;
   alwaysShowActions?: boolean;
 };
@@ -97,6 +99,7 @@ export function TranscriptUserMessageActions(
   const {
     copied,
     copyDisabled = false,
+    copyTitle,
     onCopy,
     alwaysShowActions = false,
     timestamp,
@@ -124,50 +127,65 @@ export function TranscriptUserMessageActions(
       >
         {!readOnly ? (
           <div className="flex gap-0.5">
-            <button
-              type="button"
-              className={cn(
-                "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-              title={t("chat.copy")}
-              aria-label={t("chat.copy")}
-              disabled={copyDisabled}
-              onClick={onCopy}
-            >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-              title={editTitle}
-              aria-label={editTitle}
-              disabled={editDisabled}
-              onClick={onEdit}
-            >
-              <SquarePen className="size-3.5" />
-            </button>
+            <LabelTooltip
+              label={copyTitle ?? t("chat.copy")}
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
+                    "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                  title={copyTitle ?? t("chat.copy")}
+                  aria-label={copyTitle ?? t("chat.copy")}
+                  disabled={copyDisabled}
+                  onClick={onCopy}
+                >
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                </button>
+              }
+            />
+            <LabelTooltip
+              label={editTitle}
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
+                    "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                  title={editTitle}
+                  aria-label={editTitle}
+                  disabled={editDisabled}
+                  onClick={onEdit}
+                >
+                  <SquarePen className="size-3.5" />
+                </button>
+              }
+            />
             {rewind ? (
-              <button
-                type="button"
-                className={cn(
-                  "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                  "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                )}
-                title={rewindTitle}
-                aria-label={rewindTitle}
-                disabled={rewind.disabled}
-                onClick={rewind.onRewind}
-              >
-                {rewind.pending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Undo2 className="size-3.5" />
-                )}
-              </button>
+              <LabelTooltip
+                label={rewindTitle}
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
+                      "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                    )}
+                    title={rewindTitle}
+                    aria-label={rewindTitle}
+                    disabled={rewind.disabled}
+                    onClick={rewind.onRewind}
+                  >
+                    {rewind.pending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Undo2 className="size-3.5" />
+                    )}
+                  </button>
+                }
+              />
             ) : null}
           </div>
         ) : null}
@@ -184,6 +202,7 @@ export function TranscriptAssistantMessageActions(
     usageContextWindow?: number;
     retryDisabled: boolean;
     retryTitle: string;
+    retryConfirmDescription?: string;
     onRetry: () => void;
     branchDisabled: boolean;
     branchTitle: string;
@@ -197,6 +216,7 @@ export function TranscriptAssistantMessageActions(
   const {
     copied,
     copyDisabled = false,
+    copyTitle,
     onCopy,
     alwaysShowActions = false,
     timestamp,
@@ -204,6 +224,7 @@ export function TranscriptAssistantMessageActions(
     usageContextWindow,
     retryDisabled,
     retryTitle,
+    retryConfirmDescription,
     onRetry,
     branchDisabled,
     branchTitle,
@@ -227,56 +248,71 @@ export function TranscriptAssistantMessageActions(
         )}
         data-force-visible={branchPending ? "true" : undefined}
       >
-        <button
-          type="button"
-          className={cn(
-            "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-            "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-          )}
-          title={t("chat.copy")}
-          aria-label={t("chat.copy")}
-          disabled={copyDisabled}
-          onClick={onCopy}
-        >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </button>
-        {shareSource ? (
-          <button
-            type="button"
-            className={cn(
-              "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-              "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-            title={t("chat.share")}
-            aria-label={t("chat.share")}
-            disabled={shareDisabled}
-            onClick={() => setShareOpen(true)}
-          >
-            <Share2 className="size-3.5" />
-          </button>
-        ) : null}
-        <ConfirmActionPopover
-          title={t("chat.retryConfirmTitle")}
-          description={t("chat.retryConfirmDescription")}
-          confirmLabel={t("chat.retry")}
-          align="start"
-          side="top"
-          onConfirm={onRetry}
-        >
-          {(open) => (
+        <LabelTooltip
+          label={copyTitle ?? t("chat.copy")}
+          render={
             <button
               type="button"
               className={cn(
                 "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
                 "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
               )}
-              title={retryTitle}
-              aria-label={retryTitle}
-              disabled={retryDisabled}
-              onClick={open}
+              title={copyTitle ?? t("chat.copy")}
+              aria-label={copyTitle ?? t("chat.copy")}
+              disabled={copyDisabled}
+              onClick={onCopy}
             >
-              <RefreshCw className="size-3.5" />
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </button>
+          }
+        />
+        {shareSource ? (
+          <LabelTooltip
+            label={t("chat.share")}
+            render={
+              <button
+                type="button"
+                className={cn(
+                  "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
+                  "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                )}
+                title={t("chat.share")}
+                aria-label={t("chat.share")}
+                disabled={shareDisabled}
+                onClick={() => setShareOpen(true)}
+              >
+                <Share2 className="size-3.5" />
+              </button>
+            }
+          />
+        ) : null}
+        <ConfirmActionPopover
+          title={t("chat.retryConfirmTitle")}
+          description={retryConfirmDescription ?? t("chat.retryConfirmDescription")}
+          confirmLabel={t("chat.retry")}
+          align="start"
+          side="top"
+          onConfirm={onRetry}
+        >
+          {(open) => (
+            <LabelTooltip
+              label={retryTitle}
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
+                    "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                  title={retryTitle}
+                  aria-label={retryTitle}
+                  disabled={retryDisabled}
+                  onClick={open}
+                >
+                  <RefreshCw className="size-3.5" />
+                </button>
+              }
+            />
           )}
         </ConfirmActionPopover>
         <ConfirmActionPopover
@@ -289,23 +325,28 @@ export function TranscriptAssistantMessageActions(
           onConfirm={onBranch}
         >
           {(open) => (
-            <button
-              type="button"
-              className={cn(
-                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-              title={branchTitle}
-              aria-label={branchTitle}
-              disabled={branchDisabled}
-              onClick={open}
-            >
-              {branchPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <GitBranch className="size-3.5" />
-              )}
-            </button>
+            <LabelTooltip
+              label={branchTitle}
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
+                    "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                  title={branchTitle}
+                  aria-label={branchTitle}
+                  disabled={branchDisabled}
+                  onClick={open}
+                >
+                  {branchPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <GitBranch className="size-3.5" />
+                  )}
+                </button>
+              }
+            />
           )}
         </ConfirmActionPopover>
         <UsageInfoPopover entries={usageEntries} contextWindow={usageContextWindow} />

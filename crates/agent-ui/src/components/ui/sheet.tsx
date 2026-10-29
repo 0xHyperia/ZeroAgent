@@ -45,6 +45,7 @@ type SheetPopupProps = React.ComponentPropsWithoutRef<typeof SheetPrimitive.Popu
   closeLabel?: string;
   closeProps?: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Close>;
   showCloseButton?: boolean;
+  showBackdrop?: boolean;
   side?: SheetSide;
   variant?: SheetVariant;
 };
@@ -59,12 +60,13 @@ export const SheetPopup = React.forwardRef<HTMLDivElement, SheetPopupProps>(
       closeLabel = "Close",
       closeProps,
       showCloseButton = true,
+      showBackdrop = true,
       ...props
     },
     ref,
   ) => (
     <SheetPortal>
-      <SheetBackdrop />
+      {showBackdrop ? <SheetBackdrop /> : null}
       <SheetPrimitive.Popup
         ref={ref}
         data-slot="sheet-popup"

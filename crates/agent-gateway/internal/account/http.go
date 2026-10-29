@@ -30,6 +30,7 @@ func NewHTTPHandler(service *Service, cookieSecure bool, publicOrigin ...string)
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	h.registerWebChat(mux)
+	h.registerManagedWebKeys(mux)
 	mux.HandleFunc("GET /api/auth/settings", h.publicSettings)
 	mux.HandleFunc("POST /api/auth/send-verify-code", h.sendVerifyCode)
 	mux.HandleFunc("POST /api/auth/register", h.registerAccount)
@@ -39,7 +40,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/oauth/complete", h.completeOAuth)
 	mux.HandleFunc("GET /api/auth/handoff", h.consumeDesktopHandoff)
 	mux.HandleFunc("POST /api/auth/2fa", h.login2FA)
-	mux.HandleFunc("POST /api/auth/refresh", h.withSession(h.refresh))
+	mux.HandleFunc("POST /api/auth/refresh", h.refresh)
 	mux.HandleFunc("POST /api/auth/logout", h.logout)
 	mux.HandleFunc("GET /api/auth/me", h.withSession(h.me))
 	mux.HandleFunc("POST /api/auth/verify-password", h.withSession(h.verifyPassword))
@@ -306,20 +307,43 @@ func (h *HTTPHandler) consumeDesktopHandoff(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/?"+query.Encode(), http.StatusSeeOther)
 }
 
-func (h *HTTPHandler) refresh(w http.ResponseWriter, r *http.Request, session *Session) {
-	updated, err := h.service.Refresh(r.Context(), session.ID)
+func (h *HTTPHandler) refresh(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !h.cloudWriteAllowed(w, r) {
+		return
+	}
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		writeError(w, sessionMissingError())
+		return
+	}
+	// Validate the tab's asserted owner before a one-use token can be consumed.
+	// Refresh itself checks current authority; the preliminary lookup grants none.
+	if r.Header.Get("X-ZeroAgent-Account-ID") != "" {
+		identity, err := h.service.SessionForLogout(r.Context(), cookie.Value)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if !matchesRequestAccount(w, r, identity) {
+			return
+		}
+	}
+	updated, err := h.service.Refresh(r.Context(), cookie.Value)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	h.setSessionCookie(w, updated)
+	if r.Header.Get("X-ZeroAgent-Account-ID") == "" {
+		h.setSessionCookie(w, updated)
+	}
 	writeRawObject(w, http.StatusOK, "user", updated.User)
 }
 
 func (h *HTTPHandler) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
 		if r.Header.Get("X-ZeroAgent-Account-ID") != "" {
-			session, err := h.service.Session(r.Context(), cookie.Value)
+			session, err := h.service.SessionForLogout(r.Context(), cookie.Value)
 			if err != nil {
 				writeError(w, err)
 				return
@@ -328,7 +352,10 @@ func (h *HTTPHandler) logout(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		_ = h.service.Logout(r.Context(), cookie.Value)
+		if err := h.service.Logout(r.Context(), cookie.Value); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	// A response for session A can arrive after another tab has installed cookie B. New
 	// clients revoke A server-side and clear local state, without a stale Set-Cookie deletion.
@@ -446,6 +473,10 @@ func (h *HTTPHandler) revokeDevice(w http.ResponseWriter, r *http.Request, sessi
 }
 
 func (h *HTTPHandler) proxyUSAZero(w http.ResponseWriter, r *http.Request, session *Session) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && !h.cloudWriteAllowed(w, r) {
+		return
+	}
 	apiPath := strings.TrimPrefix(r.URL.Path, "/api/usa-zero/")
 	if r.URL.RawQuery != "" {
 		apiPath += "?" + r.URL.RawQuery
@@ -455,7 +486,7 @@ func (h *HTTPHandler) proxyUSAZero(w http.ResponseWriter, r *http.Request, sessi
 		writeError(w, &APIError{Status: http.StatusRequestEntityTooLarge, Message: "request body is too large"})
 		return
 	}
-	data, err := h.service.ProxyUSA(r.Context(), session, r.Method, apiPath, body)
+	data, err := h.service.ProxyManagedWeb(r.Context(), session, r.Method, apiPath, body)
 	if err != nil {
 		var apiError *APIError
 		if errors.As(err, &apiError) {
@@ -498,6 +529,16 @@ func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 		if err != nil || strings.TrimSpace(cookie.Value) == "" {
 			writeError(w, &APIError{Status: http.StatusUnauthorized, Message: "account login required"})
 			return
+		}
+		if r.Header.Get("X-ZeroAgent-Account-ID") != "" {
+			identity, identityErr := h.service.SessionForLogout(r.Context(), cookie.Value)
+			if identityErr != nil {
+				writeError(w, identityErr)
+				return
+			}
+			if !matchesRequestAccount(w, r, identity) {
+				return
+			}
 		}
 		session, err := h.service.Session(r.Context(), cookie.Value)
 		if err != nil {

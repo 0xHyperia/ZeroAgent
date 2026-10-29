@@ -49,7 +49,19 @@ func TestPasswordVerificationPreservesOAuthSession(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
+			var cleanups atomic.Int32
 			_, store, handler, original := passwordVerificationFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/auth/logout" {
+					cleanups.Add(1)
+					var input struct {
+						RefreshToken string `json:"refresh_token"`
+					}
+					if json.NewDecoder(r.Body).Decode(&input) != nil || input.RefreshToken != "temporary-refresh-token" {
+						t.Error("password proof cleaned the wrong credential")
+					}
+					_, _ = io.WriteString(w, `{"code":0,"data":{}}`)
+					return
+				}
 				calls.Add(1)
 				var input struct{ Email, Password string }
 				if r.URL.Path != "/api/v1/auth/login" || json.NewDecoder(r.Body).Decode(&input) != nil || input.Email != "a@example.test" {
@@ -83,6 +95,9 @@ func TestPasswordVerificationPreservesOAuthSession(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 			if rec.Code != tc.status || len(rec.Result().Cookies()) != 0 || int(calls.Load()) != tc.upstreamCalls {
 				t.Fatalf("status=%d cookies=%d upstream calls=%d", rec.Code, len(rec.Result().Cookies()), calls.Load())
+			}
+			if tc.name == "accepted" && cleanups.Load() != 1 {
+				t.Fatal("temporary password refresh was not cleaned")
 			}
 			for _, forbidden := range []string{"temporary-verification-token", "temporary-refresh-token", "do-not-echo-upstream-secret"} {
 				if strings.Contains(rec.Body.String(), forbidden) {

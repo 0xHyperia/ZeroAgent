@@ -102,12 +102,10 @@ test("WebUI manual compaction converges from the transcript store and a bounded 
   assert.match(gatewayAppSource, /chat\.manualCompactTimedOut/);
 });
 
-test("context usage ring lives in the stacked runtime control deck", () => {
+test("standard context usage ring lives in the stacked runtime control deck", () => {
   assert.match(chatComposerBarSource, /composer-control-deck/);
-  assert.ok(
-    chatComposerBarSource.indexOf("composer-control-deck") <
-      chatComposerBarSource.indexOf("<ComposerContextUsageRing"),
-  );
+  const standardDeck = chatComposerBarSource.slice(chatComposerBarSource.indexOf('"composer-control-deck'), chatComposerBarSource.indexOf('{fileDropOverlay}'));
+  assert.ok(standardDeck.includes("<ComposerContextUsageRing"));
   assert.doesNotMatch(chatComposerBarSource, /absolute right-3 top-1\/2/);
 });
 

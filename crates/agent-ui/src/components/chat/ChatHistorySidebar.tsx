@@ -16,6 +16,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
+  PanelLeft,
   PanelLeftClose,
   Plus,
   Search,
@@ -24,7 +25,6 @@ import {
   Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
-import { Button } from "@liveagent/ui/components/ui/button";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import {
   DropdownMenu,
@@ -34,6 +34,7 @@ import {
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
+import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type {
@@ -270,8 +271,12 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onOpenSettings,
     onOpenResourceHub,
     headerTop,
+    navigationContent,
     brand,
     hideCloseButton = false,
+    previewOpen = false,
+    newConversationIcon,
+    onPinPreview,
     footerTrailing,
     accountMenu,
   } = props;
@@ -1377,6 +1382,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
   return (
     <>
       <Sidebar
+        previewOpen={previewOpen}
         label={t("sidebar.navigation")}
         data-app-frame-column="sidebar"
         className="chat-history-sidebar zone-font-scale bg-settings-rail group-data-[side=left]:border-r-0 [&_button:not(:disabled)]:cursor-pointer"
@@ -1443,13 +1449,24 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 </Button>
                 {!hideCloseButton || isMobileMenuLayout ? (
                   <SidebarTrigger
+                    onClick={(event) => {
+                      if (previewOpen && onPinPreview) {
+                        event.preventDefault();
+                        onPinPreview();
+                      }
+                    }}
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    title={t("sidebar.closeSidebar")}
+                    title={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
+                    aria-label={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
                     className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
                   >
-                    <PanelLeftClose className="size-4" />
+                    {previewOpen ? (
+                      <PanelLeft className="size-4" />
+                    ) : (
+                      <PanelLeftClose className="size-4" />
+                    )}
                   </SidebarTrigger>
                 ) : null}
               </div>
@@ -1467,7 +1484,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground",
                   )}
                 >
-                  <CirclePlus className="size-4 shrink-0 text-foreground/85" />
+                  {newConversationIcon ?? (
+                    <CirclePlus className="size-4 shrink-0 text-foreground/85" />
+                  )}
                   <span className="web:font-app web:[font-size:inherit] web:[line-height:inherit] web:[font-weight:inherit]">
                     {t("chat.newConversation")}
                   </span>
@@ -1511,6 +1530,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
             </SidebarMenu>
           </SidebarHeader>
 
+          {navigationContent}
           <SidebarContent
             aria-disabled={sectionsDisabled || undefined}
             inert={sectionsDisabled}

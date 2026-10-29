@@ -89,6 +89,7 @@ func newAccountTestRuntime(t *testing.T) (*Service, *MemoryStore, http.Handler) 
 	store := NewMemoryStore()
 	client := NewUSAClientWithHTTPClient(usa.URL, usa.Client())
 	service := NewService(store, client, time.Hour, time.Hour)
+	t.Cleanup(service.CloseCloudRuns)
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, true).Register(mux)
 	return service, store, mux

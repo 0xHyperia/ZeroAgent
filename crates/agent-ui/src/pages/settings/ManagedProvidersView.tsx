@@ -45,7 +45,7 @@ export function ManagedProvidersView(props: {
   onCopy: (keyId: number) => void;
   onOpenModels: (keyId: number) => void;
   onRefresh: () => void;
-  onOpenPreferences: () => void;
+  onOpenPreferences?: () => void;
 }) {
   const [connecting, setConnecting] = useState<ManagedProviderGroup | null>(null);
   const [keyName, setKeyName] = useState("ZeroAgent");
@@ -82,10 +82,12 @@ export function ManagedProvidersView(props: {
           使用 USA-零 的模型分组。模型和参数可独立配置。
         </p>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={props.onOpenPreferences}>
-            <Settings className="size-4" />
-            高级设置
-          </Button>
+          {props.onOpenPreferences ? (
+            <Button variant="outline" size="sm" onClick={props.onOpenPreferences}>
+              <Settings className="size-4" />
+              高级设置
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

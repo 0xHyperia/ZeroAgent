@@ -171,12 +171,37 @@
       ],
       "entrypoints": [
         "crates/agent-gateway/web/src/pages/CloudChatPage.tsx",
-        "crates/agent-gateway/internal/server/http.go"
+        "crates/agent-gateway/internal/server/http.go",
+        "crates/agent-gateway/internal/account/cloud_run_runtime.go",
+        "crates/agent-gateway/internal/account/cloud_run_http.go",
+        "crates/agent-gateway/internal/account/cloud_file_service.go",
+        "crates/agent-gateway/web/src/components/cloudchat/CloudChatHeaderActions.tsx",
+        "crates/agent-gateway/web/src/app/UserMenu.tsx",
+        "crates/agent-gateway/web/src/components/cloudchat/CloudChatContextPicker.tsx",
+        "crates/agent-gateway/web/src/components/cloudchat/CloudChatResourcePanel.tsx"
       ],
       "tests": [
-        "crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs"
+        "crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-runs.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-runs-page.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-feedback.test.mjs",
+        "crates/agent-gateway/internal/account/cloud_run_store_test.go",
+        "crates/agent-gateway/internal/account/cloud_run_http_test.go",
+        "crates/agent-gateway/internal/account/cloud_file_store_test.go",
+        "crates/agent-gateway/internal/account/cloud_file_http_test.go",
+        "crates/agent-gateway/internal/account/cloud_file_context_test.go",
+        "crates/agent-gateway/web/test/mobile-http-stream.test.mjs",
+        "crates/agent-gateway/test/cloudchat/browser_fixture_test.go",
+        "crates/agent-gateway/web/test/cloud-chat-scroll-follow.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-chrome.test.mjs",
+        "crates/agent-gateway/web/test/user-menu-navigation.test.mjs",
+        "crates/agent-gateway/web/test/chat-work-experience.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-context-picker.test.mjs",
+        "crates/agent-gateway/web/test/cloud-sidebar-preview.test.mjs",
+        "crates/agent-gateway/web/test/cloud-settings-page.test.mjs",
+        "crates/agent-gateway/web/test/cloud-workspace-chrome.test.mjs"
       ],
-      "security": "Cloud Chat 不得暴露仅桌面端可用的本地执行控制。",
+      "security": "Cloud Chat 不得暴露仅桌面端可用的本地执行控制。ADR0048 的账户持久任务使用请求幂等、租约代次、规范历史和有序重放；页面离开与服务端取消分开。任务只存会话摘要引用，凭据由服务端当前会话解析；失联和未知结果不自动重发。文件原件、提取内容、下载和引用均按账户校验，先记录删除意图再清理对象；会话删除保留账户文件库。PDF/Office 未完成隔离解析不能冒充 ready。真实模型/S3/E2B、真机和完整工作场景按 docs/cloudchat/ACCEPTANCE.md 分别验收，不以本地协议夹具推定通过。",
       "upstream_relation": "adapt"
     },
     {

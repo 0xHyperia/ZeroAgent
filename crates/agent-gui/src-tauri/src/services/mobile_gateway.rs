@@ -24,6 +24,8 @@ const DEFAULT_GATEWAY_PORT: u16 = 443;
 
 #[path = "mobile_gateway/session.rs"]
 mod session;
+pub use session::http_stream::HttpStreamItem;
+use session::http_stream::{self, HttpStreams};
 pub use session::MobileGatewayResponse;
 use session::{MobileGatewaySession, RequestOwner, SocketRegistry};
 
@@ -45,6 +47,7 @@ pub struct MobileGatewayState {
     websocket_tls: Arc<rustls::ClientConfig>,
     session: Arc<Mutex<MobileGatewaySession>>,
     sockets: Arc<Mutex<SocketRegistry<SocketChannels>>>,
+    streams: HttpStreams,
 }
 
 impl Default for MobileGatewayState {
@@ -60,6 +63,8 @@ impl Default for MobileGatewayState {
         .with_no_client_auth();
         let client = Client::builder()
             .tls_backend_preconfigured(tls.clone())
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(15))
             .build()
             .expect("ZeroAgent mobile Gateway HTTPS client must initialize");
 
@@ -68,6 +73,7 @@ impl Default for MobileGatewayState {
             websocket_tls: Arc::new(tls),
             session: Arc::new(Mutex::new(MobileGatewaySession::default())),
             sockets: Arc::new(Mutex::new(SocketRegistry::default())),
+            streams: Arc::new(Mutex::new(SocketRegistry::default())),
         }
     }
 }
@@ -248,7 +254,185 @@ pub fn mobile_gateway_logout(state: tauri::State<'_, MobileGatewayState>) -> Res
     for channels in sockets.drain() {
         let _ = channels.cancel.send(());
     }
+    let mut streams = state
+        .streams
+        .lock()
+        .map_err(|_| "Gateway streams are unavailable")?;
+    http_stream::close_all(&mut streams);
     Ok(())
+}
+
+fn stream_request_header_allowed(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "cookie"
+            | "cookie2"
+            | "authorization"
+            | "proxy-authorization"
+            | "host"
+            | "origin"
+            | "connection"
+            | "content-length"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
+#[tauri::command]
+pub async fn mobile_gateway_stream_open(
+    request: MobileGatewayRequest,
+    state: tauri::State<'_, MobileGatewayState>,
+) -> Result<String, String> {
+    if !request.path.starts_with("/api/web-chat/") {
+        return Err("Streaming requires a CloudChat API path".into());
+    }
+    if request.body.len() > 32 * 1024 * 1024 {
+        return Err("Gateway stream request is too large".into());
+    }
+    let method = Method::from_bytes(request.method.as_bytes())
+        .map_err(|_| "Gateway request method is invalid")?;
+    if method != Method::GET && method != Method::POST {
+        return Err("Gateway stream method is not supported".into());
+    }
+    let owner = state
+        .session
+        .lock()
+        .map_err(|_| "Gateway session is unavailable")?
+        .owner()?;
+    let url = request_url(&owner.origin, &request.path)?;
+    if !url.path().starts_with("/api/web-chat/") || request.path.contains('\\') {
+        return Err("Streaming requires a canonical CloudChat API path".into());
+    }
+    let mut builder = state.client.request(method, url);
+    for (name, value) in &request.headers {
+        if stream_request_header_allowed(name) {
+            if let (Ok(name), Ok(value)) = (
+                header::HeaderName::from_bytes(name.as_bytes()),
+                header::HeaderValue::from_str(value),
+            ) {
+                builder = builder.header(name, value);
+            }
+        }
+    }
+    if !owner.session_id.is_empty() {
+        builder = builder.header(
+            header::COOKIE,
+            format!("{SESSION_COOKIE}={}", owner.session_id),
+        );
+    }
+    if !request.body.is_empty() {
+        builder = builder.body(request.body);
+    }
+    let registered = {
+        let session = state
+            .session
+            .lock()
+            .map_err(|_| "Gateway session is unavailable")?;
+        let mut streams = state
+            .streams
+            .lock()
+            .map_err(|_| "Gateway streams are unavailable")?;
+        http_stream::register(&session, &mut streams, owner.clone())?
+    };
+    let id = registered.id.clone();
+    let session = Arc::clone(&state.session);
+    let streams = Arc::clone(&state.streams);
+    tokio::spawn(async move {
+        let sender = registered.sender;
+        let work = async {
+            let result = async {
+                let response = builder
+                    .send()
+                    .await
+                    .map_err(|_| "Unable to connect Gateway stream")?;
+                let status = response.status().as_u16();
+                let headers = response
+                    .headers()
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        value
+                            .to_str()
+                            .ok()
+                            .map(|value| (name.as_str().to_string(), value.to_string()))
+                    })
+                    .collect();
+                let cookies = response
+                    .headers()
+                    .get_all(header::SET_COOKIE)
+                    .iter()
+                    .filter_map(|value| value.to_str().ok().map(str::to_string))
+                    .collect::<Vec<_>>();
+                let public = {
+                    let mut session = session
+                        .lock()
+                        .map_err(|_| "Gateway session is unavailable")?;
+                    let public = session.accept_response(
+                        &owner,
+                        &request.path,
+                        status,
+                        headers,
+                        &cookies,
+                        String::new(),
+                        None,
+                    )?;
+                    persist_session(&session)?;
+                    session.require_owner(&owner)?;
+                    public
+                };
+                sender
+                    .send(Ok(HttpStreamItem::Headers {
+                        status: public.status,
+                        headers: public.headers,
+                    }))
+                    .await
+                    .map_err(|_| "Gateway stream consumer closed")?;
+                http_stream::forward_response(response, &sender).await
+            }
+            .await;
+            if let Err(error) = result {
+                let _ = sender.send(Err(error)).await;
+            }
+        };
+        // This also cancels waiting for response headers and a full bounded IPC buffer.
+        if http_stream::run_owned(
+            owner.clone(),
+            registered.cancelled,
+            registered.activity,
+            work,
+        )
+        .await
+        .is_none()
+        {
+            if let Ok(mut streams) = streams.lock() {
+                streams.remove_current(&registered.id, registered.instance);
+            }
+        }
+    });
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn mobile_gateway_stream_read(
+    id: String,
+    state: tauri::State<'_, MobileGatewayState>,
+) -> Result<Option<HttpStreamItem>, String> {
+    http_stream::read(&state.session, &state.streams, id.trim()).await
+}
+
+#[tauri::command]
+pub fn mobile_gateway_stream_close(
+    id: String,
+    state: tauri::State<'_, MobileGatewayState>,
+) -> Result<(), String> {
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| "Gateway session is unavailable")?;
+    let mut streams = state
+        .streams
+        .lock()
+        .map_err(|_| "Gateway streams are unavailable")?;
+    http_stream::close(&session, &mut streams, id.trim())
 }
 
 fn emit_owned_socket_event(

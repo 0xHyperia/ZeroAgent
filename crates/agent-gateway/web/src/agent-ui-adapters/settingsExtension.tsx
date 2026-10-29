@@ -33,7 +33,11 @@ export function createSettingsExtension(props: SettingsPageProps): {
     iconClassName: "size-4",
     slots: {},
     renderProviders: () => (
-      <RelayProvidersSection settings={props.settings} setSettings={props.setSettings} />
+      <RelayProvidersSection
+        settings={props.settings}
+        setSettings={props.setSettings}
+        cloudChatMode={props.runtimeKind === "web_chat"}
+      />
     ),
     sections: [
       {

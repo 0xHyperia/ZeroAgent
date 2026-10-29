@@ -32,11 +32,15 @@ test("desktop managed key copy uses the password-bound native reveal result", ()
 
 test("web managed key copy still requires USA-Zero password verification", () => {
   const source = managedProviderSources[1];
-  const verification = source.indexOf("await verifyRelayPassword(user.email, password)");
-  const clipboardWrite = source.indexOf("await navigator.clipboard.writeText(copyTarget.key)");
+  const verification = source.indexOf("await revealRelayApiKey(copyTarget.id, password)");
+  const accountGuard = source.indexOf("requireCurrent();", verification);
+  const clipboardWrite = source.indexOf("await navigator.clipboard.writeText(key)", verification);
   assert.notEqual(verification, -1);
+  assert.notEqual(accountGuard, -1);
   assert.notEqual(clipboardWrite, -1);
-  assert.ok(verification < clipboardWrite, "password verification must precede key exposure");
+  assert.ok(verification < accountGuard && accountGuard < clipboardWrite,
+    "password-bound reveal and the captured account guard must precede clipboard exposure");
+  assert.doesNotMatch(source, /clipboard\.writeText\(copyTarget\.key\)/);
 });
 
 test("generic provider settings cannot bypass the managed USA-Zero provider boundary", () => {

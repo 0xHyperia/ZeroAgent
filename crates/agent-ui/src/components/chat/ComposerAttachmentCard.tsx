@@ -20,6 +20,7 @@ export function ComposerAttachmentCard(props: {
   previewLabel?: string;
   closePreviewLabel?: string;
   onRemove: () => void;
+  onOpen?: () => void;
 }) {
   const {
     file,
@@ -34,6 +35,7 @@ export function ComposerAttachmentCard(props: {
     previewLabel,
     closePreviewLabel,
     onRemove,
+    onOpen,
   } = props;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -177,9 +179,21 @@ export function ComposerAttachmentCard(props: {
         {fallbackIcon}
       </span>
 
-      <span className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground/90">
-        {fileName}
-      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onOpen}
+          title={fileName}
+          className="min-w-0 flex-1 truncate text-left text-xs font-medium leading-4 tracking-tight text-foreground/90 hover:underline disabled:opacity-50"
+        >
+          {fileName}
+        </button>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground/90">
+          {fileName}
+        </span>
+      )}
 
       <button
         type="button"

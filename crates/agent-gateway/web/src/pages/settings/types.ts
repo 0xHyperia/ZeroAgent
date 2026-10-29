@@ -28,6 +28,7 @@ export type SectionId =
 import type { SettingsHostAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
 
 export type SettingsPageProps = {
+  presentation?: "workbench" | "page";
   settings: AppSettings;
   settingsHost?: SettingsHostAdapter;
   imageClient?: ImageStudioClient;

@@ -62,7 +62,7 @@ func NewUSAClient(origin, authorizationOrigin string, timeout time.Duration, web
 	if len(webClientSecret) > 0 {
 		secret = strings.TrimSpace(webClientSecret[0])
 	}
-	return &USAClient{origin: origin, authorizationOrigin: authorizationOrigin, client: &http.Client{Timeout: timeout}, webClientSecret: secret}, nil
+	return &USAClient{origin: origin, authorizationOrigin: authorizationOrigin, client: usaPrivateHTTPClient(&http.Client{Timeout: timeout}), webClientSecret: secret}, nil
 }
 
 func NewUSAClientWithHTTPClient(origin string, client *http.Client, webClientSecret ...string) *USAClient {
@@ -71,7 +71,20 @@ func NewUSAClientWithHTTPClient(origin string, client *http.Client, webClientSec
 		secret = strings.TrimSpace(webClientSecret[0])
 	}
 	origin = strings.TrimRight(origin, "/")
-	return &USAClient{origin: origin, authorizationOrigin: origin, client: client, webClientSecret: secret}
+	return &USAClient{origin: origin, authorizationOrigin: origin, client: usaPrivateHTTPClient(client), webClientSecret: secret}
+}
+
+// Platform credentials and password bodies are bound to the configured origin.
+// Do not follow redirects or share a cookie jar across account requests. Clone
+// the caller's client so these restrictions cannot mutate another subsystem.
+func usaPrivateHTTPClient(input *http.Client) *http.Client {
+	client := http.Client{Timeout: 30 * time.Second}
+	if input != nil {
+		client = *input
+	}
+	client.Jar = nil
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
 }
 
 func (c *USAClient) Origin() string { return c.origin }
@@ -489,7 +502,12 @@ func (c *USAClient) StreamChatCompletion(ctx context.Context, apiKey string, pay
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	response, err := c.client.Do(req)
+	// Stream lifetime is bounded by the owning Run's context, independently of
+	// the short account API timeout. Never follow a model gateway redirect.
+	streamClient := *c.client
+	streamClient.Timeout = 0
+	streamClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := streamClient.Do(req)
 	if err != nil {
 		return nil, &APIError{Status: http.StatusBadGateway, Message: "USA-Zero model gateway is unavailable"}
 	}

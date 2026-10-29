@@ -155,8 +155,13 @@ export type ChatHistorySidebarProps = {
   onOpenSettings: () => void;
   onOpenResourceHub: (resource: SidebarShortcutId) => void;
   headerTop?: ReactNode;
+  /** Account-scoped navigation supplied by hosts without local workspace trees. */
+  navigationContent?: ReactNode;
   brand?: ReactNode;
   hideCloseButton?: boolean;
+  previewOpen?: boolean;
+  newConversationIcon?: ReactNode;
+  onPinPreview?: () => void;
   footerTrailing?: ReactNode;
   accountMenu?: ReactNode;
   onNewRecentConversation?: () => void;

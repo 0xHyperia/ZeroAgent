@@ -24,6 +24,16 @@ export function accountOwnerHeaders(): Record<string, string> {
   return owner === null ? {} : { [ACCOUNT_OWNER_HEADER]: String(owner) };
 }
 
+/** Keep a sensitive result bound through JSON parsing and its immediate use. */
+export function captureAccountRequestGuard(): () => void {
+  const started = revision;
+  const startedOwner = owner;
+  return () => {
+    if (started !== revision || startedOwner !== owner)
+      throw new Error("Account changed while the request was pending");
+  };
+}
+
 export async function accountFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!path.startsWith("/api/")) return desktopRemoteFetch(path, init);
   const started = revision;

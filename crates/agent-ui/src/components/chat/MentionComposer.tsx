@@ -2306,6 +2306,7 @@ export const MentionComposer = memo(
           role="textbox"
           tabIndex={disabled ? undefined : 0}
           aria-multiline
+          aria-label={placeholder || undefined}
           aria-placeholder={placeholder}
           aria-disabled={disabled}
           onInput={handleInput}
