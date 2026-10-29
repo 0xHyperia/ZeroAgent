@@ -32,6 +32,7 @@ import type { SharedModelOption } from "@liveagent/ui/lib/models/modelOptions";
 import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ComposerInlineModelControls } from "./ComposerInlineModelControls";
 
 const REASONING_I18N_KEYS: Record<ReasoningLevel, string> = {
   off: "settings.reasoning.off",
@@ -87,6 +88,7 @@ function RuntimeToggleChip(props: {
 }
 
 export type ComposerModelControlsProps = {
+  presentation?: "standard" | "inline";
   /** Compact chat shows effort; its accessible name still identifies the selected model. */
   compactLabel?: boolean;
   showProviderIcon?: boolean;
@@ -117,7 +119,7 @@ const isCoarsePointer = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-export const ComposerModelControls = memo(function ComposerModelControls(
+const StandardComposerModelControls = memo(function StandardComposerModelControls(
   props: ComposerModelControlsProps,
 ) {
   const {
@@ -485,5 +487,15 @@ export const ComposerModelControls = memo(function ComposerModelControls(
         )}
       </PopoverContent>
     </Popover>
+  );
+});
+
+export const ComposerModelControls = memo(function ComposerModelControls(
+  props: ComposerModelControlsProps,
+) {
+  return props.presentation === "inline" ? (
+    <ComposerInlineModelControls {...props} />
+  ) : (
+    <StandardComposerModelControls {...props} />
   );
 });

@@ -70,7 +70,7 @@ test("keyboard focus reveals label, description and shortcut through aria-descri
   });
   const tooltip = document.querySelector('[role="tooltip"]');
   assert.ok(tooltip, document.body.innerHTML);
-  assert.match(tooltip.textContent, /搜索会话.*Ctrl K.*查找已保存的对话/);
+  assert.match(tooltip.textContent, /搜索会话.*Ctrl\+K.*查找已保存的对话/);
   assert.deepEqual(button.getAttribute("aria-describedby").split(/\s+/), ["existing-help", tooltip.id]);
   assert.ok(tooltip.classList.contains("app-tooltip-surface"));
   await app.env.act(async () => {
@@ -78,6 +78,22 @@ test("keyboard focus reveals label, description and shortcut through aria-descri
   });
   assert.equal(button.getAttribute("aria-describedby"), "existing-help");
   assert.equal(document.activeElement, button);
+});
+
+test("shared shortcut pills format modifier chords and read existing aria-keyshortcuts", async (t) => {
+  const app = await setup(t);
+  const { TooltipButton } = app.env.loadModule("../../agent-ui/src/components/ui/tooltip-button.tsx");
+  const { LabelTooltip } = app.env.loadModule("../../agent-ui/src/components/ui/label-tooltip.tsx");
+  const h = app.env.React.createElement;
+  await app.render(h(LabelTooltip, { label: "选择项目", shortcut: "Control Alt Shift o", open: true, render: h('button', null, '选择') }));
+  assert.equal(document.querySelector('kbd').textContent, 'Ctrl+Alt+Shift+O');
+  assert.equal(document.querySelectorAll('kbd').length, 1, 'one chord uses one pill');
+  await app.render(h(TooltipButton, { title: "查找", "aria-keyshortcuts": "Control+Shift+k" }, '查找'));
+  await app.env.act(async () => {
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key:'Tab',bubbles:true}));
+    app.host.querySelector('button').focus(); await tick();
+  });
+  assert.equal(document.querySelector('[role=tooltip] kbd').textContent, 'Ctrl+Shift+K');
 });
 
 test("a composed menu retains its own trigger behavior and suppresses the hint while expanded", async (t) => {

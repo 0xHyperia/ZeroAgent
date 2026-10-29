@@ -32,6 +32,7 @@ type SidebarContextProps = {
   setOpenMobile: React.Dispatch<React.SetStateAction<boolean>>;
   isMobile: boolean;
   toggleSidebar: () => void;
+  keyboardShortcutEnabled: boolean;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -43,6 +44,15 @@ function useSidebar() {
   }
 
   return context;
+}
+
+/** A hint exists only when this provider actually installs the keyboard binding. */
+export function useSidebarShortcutHint() {
+  const context = React.useContext(SidebarContext);
+  if (!context?.keyboardShortcutEnabled) return undefined;
+  return /Mac|iPhone|iPad|iPod/i.test(typeof navigator === "undefined" ? "" : navigator.platform)
+    ? "⌘B"
+    : "Ctrl+B";
 }
 
 function SidebarProvider({
@@ -136,8 +146,9 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      keyboardShortcutEnabled,
     }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar],
+    [state, open, setOpen, isMobile, openMobile, toggleSidebar, keyboardShortcutEnabled],
   );
 
   return (
@@ -168,6 +179,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   previewOpen = false,
+  mobileRail,
   className,
   children,
   dir,
@@ -180,6 +192,8 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
   previewOpen?: boolean;
+  /** Opt-in navigation rail inside the mobile modal; default Sheet presentation is unchanged. */
+  mobileRail?: React.ReactNode;
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
   const { t } = useLocale();
@@ -212,9 +226,12 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          data-mobile-rail={mobileRail ? "true" : undefined}
+          backdropVariant={mobileRail ? "navigation" : undefined}
           className={cn(
             "w-(--sidebar-width) max-w-none bg-sidebar p-0 text-sidebar-foreground",
             className,
+            mobileRail && "sidebar-mobile-rail-layout",
           )}
           style={
             {
@@ -227,7 +244,10 @@ function Sidebar({
           <SheetHeader className="sr-only">
             <SheetTitle>{accessibleLabel}</SheetTitle>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          {mobileRail ? <div className="sidebar-mobile-navigation">{mobileRail}</div> : null}
+          <div className={mobileRail ? "sidebar-mobile-panel" : "flex h-full w-full flex-col"}>
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );
@@ -292,10 +312,14 @@ function SidebarTrigger({
   children,
   className,
   onClick,
+  showShortcut = true,
   ...props
-}: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar();
+}: React.ComponentProps<typeof Button> & { showShortcut?: boolean }) {
+  const { toggleSidebar, keyboardShortcutEnabled } = useSidebar();
   const { t } = useLocale();
+  const mac = /Mac|iPhone|iPad|iPod/i.test(
+    typeof navigator === "undefined" ? "" : navigator.platform,
+  );
 
   return (
     <Button
@@ -303,6 +327,12 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon-sm"
+      tooltipShortcut={
+        showShortcut && keyboardShortcutEnabled ? (mac ? "⌘B" : "Ctrl+B") : undefined
+      }
+      aria-keyshortcuts={
+        showShortcut && keyboardShortcutEnabled ? (mac ? "Meta+b" : "Control+b") : undefined
+      }
       className={cn(className)}
       onClick={(event) => {
         onClick?.(event);

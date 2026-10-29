@@ -2,6 +2,36 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-ui/src/components/chat/ReasoningSlider.tsx",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": ["连续视觉位置与离散参数提交分离，悬停不保存", "指针捕获、取消、键盘整档、按模型重置与减少动态"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/ComposerInlineModelControls.tsx",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": ["复用宿主模型/思考状态和共享选择器，明确路由不换密钥", "一个视觉胶囊的两个直达区域与单弹层、预览隔离/取消、键盘/触屏/禁用、三端类型与浏览器验收"]
+    },
+    {
+      "glob": "crates/agent-ui/src/styles/composer-inline.css",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": ["仅 inline 类，主题/焦点/减少动态和44px触控保持", "长模型名、窄屏与停止状态不溢出"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": ["revealSelected 显式 opt-in，默认折叠与厂商/分组具体路由保留", "只滚动模型列表，手动折叠/搜索/排序/刷新/键盘回归"]
+    },
+    {
+      "glob": "crates/agent-ui/src/styles/base.css",
+      "ownership": "adapted",
+      "risk": "medium",
+      "checks": ["语义交互控件默认手型，文本/禁用/拖拽缩放专用光标保持", "共享菜单及两宿主构建、真实浏览器 computed cursor 验证"]
+    },
+    {
       "glob": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
       "ownership": "adapted",
       "risk": "medium",
@@ -11,13 +41,13 @@
       "glob": "crates/agent-ui/src/components/chat/ChatHistorySidebar*",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["历史菜单、搜索、批量选择和原移动 Sheet 保持", "预览固定交给宿主，不反向切换当前固定状态"]
+      "checks": ["历史菜单、搜索、批量选择和默认移动 Sheet 保持；CloudChat mobileRail 显式 opt-in", "预览固定交给宿主，不反向切换当前固定状态"]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/sidebar.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["悬停预览显式 opt-in，不写固定状态、不占布局宽度", "同一侧栏实例、inert、手机 Sheet、快捷键及默认设备行为回归"]
+      "checks": ["悬停预览显式 opt-in，不写固定状态、不占布局宽度", "mobileRail 与面板共用一个手机模态，inert/焦点/关闭及默认设备行为回归"]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/MentionComposer.tsx",
@@ -73,6 +103,7 @@
       "risk": "medium",
       "checks": [
         "默认遮罩/焦点语义保持，显式非模态资源栏才可省略遮罩",
+        "navigation 背景语义变体仅退让背景且不模糊，继续保留模态和点外关闭",
         "共享类型检查、桌面与窄屏回归"
       ]
     },

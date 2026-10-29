@@ -273,6 +273,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     headerTop,
     navigationContent,
     brand,
+    mobileRail,
     hideCloseButton = false,
     previewOpen = false,
     newConversationIcon,
@@ -1383,6 +1384,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     <>
       <Sidebar
         previewOpen={previewOpen}
+        mobileRail={mobileRail}
         label={t("sidebar.navigation")}
         data-app-frame-column="sidebar"
         className="chat-history-sidebar zone-font-scale bg-settings-rail group-data-[side=left]:border-r-0 [&_button:not(:disabled)]:cursor-pointer"
@@ -1449,6 +1451,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 </Button>
                 {!hideCloseButton || isMobileMenuLayout ? (
                   <SidebarTrigger
+                    showShortcut={!previewOpen}
                     onClick={(event) => {
                       if (previewOpen && onPinPreview) {
                         event.preventDefault();
@@ -1462,7 +1465,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     aria-label={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
                     className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
                   >
-                    {previewOpen ? (
+                    {mobileRail && isMobileMenuLayout ? (
+                      <X className="size-4" />
+                    ) : previewOpen ? (
                       <PanelLeft className="size-4" />
                     ) : (
                       <PanelLeftClose className="size-4" />

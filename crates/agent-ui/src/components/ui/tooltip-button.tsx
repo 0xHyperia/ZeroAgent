@@ -19,7 +19,7 @@ export const TooltipButton = forwardRef<HTMLElement, TooltipButtonProps>(
       <LabelTooltip
         label={label}
         description={tooltipDescription}
-        shortcut={tooltipShortcut}
+        shortcut={tooltipShortcut ?? props["aria-keyshortcuts"]}
         side={tooltipSide}
         disabled={props.disabled || expanded}
         render={<Button ref={ref} {...props} />}

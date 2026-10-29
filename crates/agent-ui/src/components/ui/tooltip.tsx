@@ -149,9 +149,9 @@ export const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentPro
             ref={ref}
             data-slot="tooltip-content"
             className={cn(
-              "app-tooltip-surface max-w-72 rounded-xl border px-3 py-1.5",
-              "text-sm font-medium leading-4 outline-none transition-[transform,opacity] duration-150 origin-[var(--transform-origin)]",
-              "data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              "app-tooltip-surface max-w-72 rounded-2xl border px-3 py-1.5",
+              "text-sm font-semibold leading-4 outline-none transition-opacity duration-150",
+              "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
               className,
             )}
             {...props}

@@ -81,7 +81,7 @@ const SelectScrollUpButton = React.forwardRef<
     // must be anchored and given a background or they float transparently
     // over the list items.
     className={cn(
-      "left-0 top-0 z-10 flex w-full cursor-default items-center justify-center",
+      "left-0 top-0 z-10 flex w-full cursor-pointer items-center justify-center",
       "rounded-t-md bg-popover py-1",
       className,
     )}
@@ -99,7 +99,7 @@ const SelectScrollDownButton = React.forwardRef<
   <SelectPrimitive.ScrollDownArrow
     ref={ref}
     className={cn(
-      "bottom-0 left-0 z-10 flex w-full cursor-default items-center justify-center",
+      "bottom-0 left-0 z-10 flex w-full cursor-pointer items-center justify-center",
       "rounded-b-md bg-popover py-1",
       className,
     )}
@@ -187,7 +187,7 @@ export const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-xs",
+      "relative flex w-full cursor-pointer select-none items-center rounded-xs data-[disabled]:cursor-default",
       "py-1.5 pl-2 pr-8 text-sm outline-hidden",
       "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,

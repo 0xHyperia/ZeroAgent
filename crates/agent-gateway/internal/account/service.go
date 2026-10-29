@@ -460,7 +460,7 @@ func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, 
 	environments := make([]Environment, 0, len(devices)+1)
 	if !desktop {
 		environments = append(environments, Environment{
-			RuntimeKind: RuntimeKindWebChat, Name: "网页对话", Online: true,
+			RuntimeKind: RuntimeKindWebChat, Name: "云端对话", Online: true,
 			Workspaces:        []Workspace{{ID: CloudWorkspaceID, Name: "云端对话"}},
 			TargetFingerprint: TargetFingerprint(RuntimeKindWebChat, "", CloudWorkspaceID),
 			Capabilities:      []string{"chat", "reasoning", "attachments", "model_native"},

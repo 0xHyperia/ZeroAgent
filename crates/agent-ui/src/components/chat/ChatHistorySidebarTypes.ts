@@ -158,6 +158,7 @@ export type ChatHistorySidebarProps = {
   /** Account-scoped navigation supplied by hosts without local workspace trees. */
   navigationContent?: ReactNode;
   brand?: ReactNode;
+  mobileRail?: ReactNode;
   hideCloseButton?: boolean;
   previewOpen?: boolean;
   newConversationIcon?: ReactNode;

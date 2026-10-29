@@ -19,6 +19,7 @@ import {
   NavigationDevices,
   NavigationLibrary,
   NavigationLibraryFilled,
+  PanelLeft,
   SquarePen,
   X,
 } from "@liveagent/ui/components/IconSet";
@@ -427,7 +428,7 @@ export function CloudChatPage({
   );
   const [settingsSection, setSettingsSection] = useState<SectionId>(initialSettingsSection);
   const settingsHistoryOpen = useRef(accountSettingsOpen);
-  const sidebarDestination = !sidebar.isMobile && workspaceView === "library" ? "library" : "chat";
+  const sidebarDestination = workspaceView === "library" ? "library" : "chat";
   const sidebarPreview = useCloudSidebarPreview(
     !sidebar.isMobile && !accountSettingsOpen,
     user.id,
@@ -2282,7 +2283,10 @@ export function CloudChatPage({
     setWorkspaceView("chat");
   }
   function closeResources() {
-    projectNavigation.request(clearResources);
+    projectNavigation.request(() => {
+      clearResources();
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
   }
   function navigateConversation(id?: string) {
     projectNavigation.request(() => {
@@ -2292,8 +2296,8 @@ export function CloudChatPage({
         selectConversationView("");
         composerRef.current?.clear();
         composerRef.current?.focus();
-        if (sidebar.isMobile) setSidebarOpen(false);
       }
+      if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
   function openResource(
@@ -2578,7 +2582,7 @@ export function CloudChatPage({
 
   const accountMenu = (
     <UserMenu
-      variant={sidebar.isMobile ? "sidebar" : "rail"}
+      variant="rail"
       open={userMenuOpen}
       onOpenChange={setUserMenuOpen}
       userMenuLabel={userMenuLabel}
@@ -2604,6 +2608,62 @@ export function CloudChatPage({
     />
   );
 
+  const renderApplicationRail = (mobile = false) => (
+    <ApplicationRail
+      previewId={sidebarPreview.open ? sidebarPreview.destination : undefined}
+      brand={
+        mobile ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            title="关闭边栏"
+            aria-label="关闭边栏"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <PanelLeft className="size-5" />
+          </Button>
+        ) : (
+          <img
+            src="/zeroagent-logo.png"
+            alt="ZeroAgent"
+            draggable={false}
+            className="size-8 object-contain"
+          />
+        )
+      }
+      activeId={
+        accountSettingsOpen ? "settings" : workspaceView === "projects" ? "chat" : workspaceView
+      }
+      items={[
+        {
+          id: "chat",
+          label: "对话",
+          icon: <NavigationChat className="size-5" aria-hidden="true" />,
+          activeIcon: <NavigationChatFilled className="size-5" aria-hidden="true" />,
+          onSelect: closeResources,
+        },
+        {
+          id: "library",
+          label: "资料库",
+          icon: <NavigationLibrary className="size-5" aria-hidden="true" />,
+          activeIcon: <NavigationLibraryFilled className="size-5" aria-hidden="true" />,
+          onSelect: () => openResource("files", true),
+        },
+        {
+          id: "devices",
+          label: "设备",
+          icon: <NavigationDevices className="size-5" aria-hidden="true" />,
+          onSelect: () => {
+            if (mobile) setSidebarOpen(false);
+            setSettingsSection("devices");
+            setAccountSettingsOpen(true);
+          },
+        },
+      ]}
+      footer={accountMenu}
+    />
+  );
+
   return (
     <AppErrorBoundary>
       <div
@@ -2623,50 +2683,7 @@ export function CloudChatPage({
           ref={sidebarPreview.rootRef}
           className="gateway-editor-host relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden"
         >
-          <ApplicationRail
-            previewId={sidebarPreview.open ? sidebarPreview.destination : undefined}
-            brand={
-              <img
-                src="/zeroagent-logo.png"
-                alt="ZeroAgent"
-                draggable={false}
-                className="size-8 object-contain"
-              />
-            }
-            activeId={
-              accountSettingsOpen
-                ? "settings"
-                : workspaceView === "projects"
-                  ? "chat"
-                  : workspaceView
-            }
-            items={[
-              {
-                id: "chat",
-                label: "对话",
-                icon: <NavigationChat className="size-5" aria-hidden="true" />,
-                activeIcon: <NavigationChatFilled className="size-5" aria-hidden="true" />,
-                onSelect: closeResources,
-              },
-              {
-                id: "library",
-                label: "资料库",
-                icon: <NavigationLibrary className="size-5" aria-hidden="true" />,
-                activeIcon: <NavigationLibraryFilled className="size-5" aria-hidden="true" />,
-                onSelect: () => openResource("files", true),
-              },
-              {
-                id: "devices",
-                label: "设备",
-                icon: <NavigationDevices className="size-5" aria-hidden="true" />,
-                onSelect: () => {
-                  setSettingsSection("devices");
-                  setAccountSettingsOpen(true);
-                },
-              },
-            ]}
-            footer={!sidebar.isMobile ? accountMenu : null}
-          />
+          {!sidebar.isMobile ? renderApplicationRail() : null}
           <div
             data-cloud-conversation-workspace
             aria-hidden={accountSettingsOpen}
@@ -2691,118 +2708,122 @@ export function CloudChatPage({
               data-sidebar-context={shownSidebarDestination}
               className="relative shrink-0"
             >
-              <div
-                className={shownSidebarDestination === "chat" ? "contents" : "hidden"}
-                aria-hidden={shownSidebarDestination !== "chat"}
-                inert={shownSidebarDestination !== "chat"}
-              >
-                <ChatHistorySidebar
-                  newConversationIcon={<SquarePen className="size-4 shrink-0" />}
-                  onPinPreview={pinSidebarPreview}
-                  previewOpen={sidebarPreview.open && shownSidebarDestination === "chat"}
-                  brand={
-                    <div className="cloud-sidebar-brand">
-                      <GatewayBrand />
-                    </div>
-                  }
-                  navigationContent={
-                    <>
-                      <div className="cloud-sidebar-utilities">
+              {!sidebar.isMobile || shownSidebarDestination === "chat" ? (
+                <div
+                  className={shownSidebarDestination === "chat" ? "contents" : "hidden"}
+                  aria-hidden={shownSidebarDestination !== "chat"}
+                  inert={shownSidebarDestination !== "chat"}
+                >
+                  <ChatHistorySidebar
+                    mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
+                    newConversationIcon={<SquarePen className="size-4 shrink-0" />}
+                    onPinPreview={pinSidebarPreview}
+                    previewOpen={sidebarPreview.open && shownSidebarDestination === "chat"}
+                    brand={
+                      <div className="cloud-sidebar-brand">
+                        <GatewayBrand />
+                      </div>
+                    }
+                    navigationContent={
+                      <>
+                        <div className="cloud-sidebar-utilities">
+                          <button
+                            type="button"
+                            className="cloud-sidebar-destination"
+                            aria-current={workspaceView === "library" ? "page" : undefined}
+                            onClick={() => openResource("files", true)}
+                          >
+                            <BookOpen className="size-4" />
+                            资料库
+                          </button>
+                        </div>
+                        <CloudChatProjectNavigation
+                          key={user.id}
+                          client={projectsClient}
+                          captureGuard={captureAccountRequestGuard}
+                          revision={navigationRevision}
+                          onOpen={openProject}
+                        />
+                      </>
+                    }
+                    onOpenResourceHub={() => setFilePanel({})}
+                    items={sidebarItems}
+                    currentConversationId={workspaceView === "chat" ? conversationId : ""}
+                    busyConversationIds={EMPTY_MUTATIONS}
+                    runningConversationIds={runningConversationIds}
+                    listStatus={conversationsLoading ? "loading" : "ready"}
+                    scopeKey="web-chat"
+                    totalItems={sidebarItems.length}
+                    hasMore={conversationsHasMore}
+                    isLoadingMore={conversationsLoadingMore}
+                    errorMessage={conversationsError || null}
+                    actionErrorMessage={error || null}
+                    renamingId={renamingId}
+                    renameDraft={renameDraft}
+                    isOpen={
+                      shownSidebarDestination === "chat" && (sidebarOpen || sidebarPreview.open)
+                    }
+                    fontScale={settings.customSettings.fontScale.sidebar}
+                    activeView="chat"
+                    showProjects={false}
+                    showAgentHubs={false}
+                    missingProjectPathKeys={EMPTY_PATHS}
+                    runningProjectPathKeys={EMPTY_PATHS}
+                    onNewConversation={() => navigateConversation()}
+                    onSelectConversation={(id) => navigateConversation(id)}
+                    onStartRenaming={(item) => {
+                      setRenamingId(item.id);
+                      setRenameDraft(item.title);
+                    }}
+                    onRenameDraftChange={setRenameDraft}
+                    onCommitRename={() => void renameConversation()}
+                    onCancelRename={() => {
+                      setRenamingId(null);
+                      setRenameDraft("");
+                    }}
+                    onSetPinned={(id, pinned) =>
+                      setPinnedConversationIds((current) => {
+                        const next = new Set(current);
+                        if (pinned) next.add(id);
+                        else next.delete(id);
+                        return next;
+                      })
+                    }
+                    onMoveToWorkspace={() => undefined}
+                    onMoveConversationsToWorkspace={async (ids) => ids}
+                    canShareConversations={false}
+                    sharedConversationCount={0}
+                    onShareConversation={() => undefined}
+                    onOpenSharedConversations={() => undefined}
+                    onDeleteConversation={(id) => void removeConversation(id)}
+                    onDeleteConversations={removeConversations}
+                    onLoadMore={() => void loadMoreConversations()}
+                    footerTrailing={
+                      conversationsError ? (
                         <button
                           type="button"
-                          className="cloud-sidebar-destination"
-                          aria-current={workspaceView === "library" ? "page" : undefined}
-                          onClick={() => openResource("files", true)}
+                          className="text-xs text-destructive"
+                          onClick={() =>
+                            void (conversationsHasMore
+                              ? loadMoreConversations()
+                              : refreshConversations().catch(() => undefined))
+                          }
                         >
-                          <BookOpen className="size-4" />
-                          资料库
+                          重试会话列表
                         </button>
-                      </div>
-                      <CloudChatProjectNavigation
-                        key={user.id}
-                        client={projectsClient}
-                        captureGuard={captureAccountRequestGuard}
-                        revision={navigationRevision}
-                        onOpen={openProject}
-                      />
-                    </>
-                  }
-                  onOpenResourceHub={() => setFilePanel({})}
-                  items={sidebarItems}
-                  currentConversationId={workspaceView === "chat" ? conversationId : ""}
-                  busyConversationIds={EMPTY_MUTATIONS}
-                  runningConversationIds={runningConversationIds}
-                  listStatus={conversationsLoading ? "loading" : "ready"}
-                  scopeKey="web-chat"
-                  totalItems={sidebarItems.length}
-                  hasMore={conversationsHasMore}
-                  isLoadingMore={conversationsLoadingMore}
-                  errorMessage={conversationsError || null}
-                  actionErrorMessage={error || null}
-                  renamingId={renamingId}
-                  renameDraft={renameDraft}
-                  isOpen={
-                    shownSidebarDestination === "chat" && (sidebarOpen || sidebarPreview.open)
-                  }
-                  fontScale={settings.customSettings.fontScale.sidebar}
-                  activeView="chat"
-                  showProjects={false}
-                  showAgentHubs={false}
-                  missingProjectPathKeys={EMPTY_PATHS}
-                  runningProjectPathKeys={EMPTY_PATHS}
-                  onNewConversation={() => navigateConversation()}
-                  onSelectConversation={(id) => navigateConversation(id)}
-                  onStartRenaming={(item) => {
-                    setRenamingId(item.id);
-                    setRenameDraft(item.title);
-                  }}
-                  onRenameDraftChange={setRenameDraft}
-                  onCommitRename={() => void renameConversation()}
-                  onCancelRename={() => {
-                    setRenamingId(null);
-                    setRenameDraft("");
-                  }}
-                  onSetPinned={(id, pinned) =>
-                    setPinnedConversationIds((current) => {
-                      const next = new Set(current);
-                      if (pinned) next.add(id);
-                      else next.delete(id);
-                      return next;
-                    })
-                  }
-                  onMoveToWorkspace={() => undefined}
-                  onMoveConversationsToWorkspace={async (ids) => ids}
-                  canShareConversations={false}
-                  sharedConversationCount={0}
-                  onShareConversation={() => undefined}
-                  onOpenSharedConversations={() => undefined}
-                  onDeleteConversation={(id) => void removeConversation(id)}
-                  onDeleteConversations={removeConversations}
-                  onLoadMore={() => void loadMoreConversations()}
-                  footerTrailing={
-                    conversationsError ? (
-                      <button
-                        type="button"
-                        className="text-xs text-destructive"
-                        onClick={() =>
-                          void (conversationsHasMore
-                            ? loadMoreConversations()
-                            : refreshConversations().catch(() => undefined))
-                        }
-                      >
-                        重试会话列表
-                      </button>
-                    ) : undefined
-                  }
-                  onOpenSettings={() => {
-                    setSettingsSection("system");
-                    setAccountSettingsOpen(true);
-                  }}
-                  accountMenu={sidebar.isMobile ? accountMenu : false}
-                />
-              </div>
+                      ) : undefined
+                    }
+                    onOpenSettings={() => {
+                      setSettingsSection("system");
+                      setAccountSettingsOpen(true);
+                    }}
+                    accountMenu={false}
+                  />
+                </div>
+              ) : null}
               {shownSidebarDestination !== "chat" ? (
                 <CloudContextSidebar
+                  mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
                   key={`${user.id}:${shownSidebarDestination}`}
                   destination={shownSidebarDestination}
                   preview={sidebarPreview.open}

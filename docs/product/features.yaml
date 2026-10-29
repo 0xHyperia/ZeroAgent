@@ -185,6 +185,7 @@
         "crates/agent-gateway/web/test/cloud-chat-runs.test.mjs",
         "crates/agent-gateway/web/test/cloud-chat-runs-page.test.mjs",
         "crates/agent-gateway/web/test/cloud-chat-feedback.test.mjs",
+        "crates/agent-gateway/web/test/composer-inline-model-controls.test.mjs",
         "crates/agent-gateway/internal/account/cloud_run_store_test.go",
         "crates/agent-gateway/internal/account/cloud_run_http_test.go",
         "crates/agent-gateway/internal/account/cloud_file_store_test.go",

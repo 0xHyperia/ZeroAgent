@@ -116,7 +116,7 @@ export function SettingsCombobox({
                   key={option.value}
                   value={option}
                   className={cn(
-                    "flex min-h-8 cursor-default items-center gap-2",
+                    "flex min-h-8 cursor-pointer items-center gap-2 data-[disabled]:cursor-default",
                     "rounded-lg px-2.5 py-1.5 text-sm outline-none select-none",
                     "data-[highlighted]:bg-settings-tile-hover data-[selected]:bg-settings-active",
                   )}

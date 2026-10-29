@@ -10,7 +10,7 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { type Ref, useId, useState } from "react";
+import { type Ref, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   type ProviderSortMode,
   persistProviderSortMode,
@@ -25,7 +25,7 @@ import {
   readModelPickerView,
 } from "../../lib/models/modelPickerOptions";
 import { cn } from "../../lib/shared/utils";
-import { Button } from "../ui/button";
+import { Button, RefreshButton } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +47,8 @@ export function ModelPickerContent(props: {
   onOpenProvider?: (id: string) => void;
   onRefresh?: () => void | Promise<void>;
   refreshing?: boolean;
+  /** Opt-in: reveal the current route without changing the chosen model or group. */
+  revealSelected?: boolean;
 }) {
   const { t } = useLocale();
   const id = useId();
@@ -66,11 +68,73 @@ export function ModelPickerContent(props: {
       : (groups.flatMap((group) => group.entries).find((entry) => entry.id === pendingModel)
           ?.options ?? []);
   const searching = search.trim().length > 0;
+  const listRef = useRef<HTMLDivElement>(null);
+  const revealedRef = useRef("");
+  const scrollPendingRef = useRef(false);
+  const listPageRef = useRef(`${activeView}:${pendingModel ?? ""}`);
+  const selectedGroupId = groups.find((group) =>
+    group.entries.some((entry) => entry.options.some((option) => option.value === props.value)),
+  )?.id;
+  useLayoutEffect(() => {
+    if (!props.revealSelected || !props.value || !selectedGroupId || searching) return;
+    const key = `${activeView}:${props.value}`;
+    if (revealedRef.current === key) return;
+    revealedRef.current = key;
+    scrollPendingRef.current = true;
+    setExpanded((previous) => new Set([...previous, selectedGroupId]));
+  }, [activeView, props.value, props.revealSelected, selectedGroupId, searching]);
+  useLayoutEffect(() => {
+    if (
+      !scrollPendingRef.current ||
+      !props.revealSelected ||
+      !selectedGroupId ||
+      !expanded.has(selectedGroupId) ||
+      searching ||
+      pendingModel !== null
+    )
+      return;
+    const list = listRef.current;
+    const row = list?.querySelector<HTMLButtonElement>('[data-model-option][aria-pressed="true"]');
+    if (!list || !row) return;
+    const item = row.getBoundingClientRect();
+    const viewport = list.getBoundingClientRect();
+    list.scrollTop = Math.max(
+      0,
+      list.scrollTop + item.top - viewport.top - (list.clientHeight - item.height) / 2,
+    );
+    scrollPendingRef.current = false;
+  }, [expanded, props.revealSelected, selectedGroupId, searching, pendingModel]);
+  useLayoutEffect(() => {
+    const page = `${activeView}:${pendingModel ?? ""}`;
+    if (listPageRef.current === page) return;
+    listPageRef.current = page;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const animation = listRef.current?.animate?.(
+      [
+        { opacity: 0.65, transform: "translateY(2px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 140, easing: "ease-out" },
+    );
+    return () => animation?.cancel();
+  }, [activeView, pendingModel]);
 
   function changeView(next: ModelPickerView) {
+    if (next === activeView) return;
+    const nextGroups = buildModelPickerGroups(props.options, next, search, providerFilter, sort);
+    const current =
+      props.revealSelected && props.value
+        ? nextGroups.find((group) =>
+            group.entries.some((entry) =>
+              entry.options.some((option) => option.value === props.value),
+            ),
+          )?.id
+        : undefined;
+    revealedRef.current = current ? `${next}:${props.value}` : "";
+    scrollPendingRef.current = Boolean(current);
     setView(next);
     persistModelPickerView(next);
-    setExpanded(new Set());
+    setExpanded(new Set(current ? [current] : []));
     setPendingModel(null);
   }
 
@@ -207,17 +271,18 @@ export function ModelPickerContent(props: {
             )}
           </Button>
           {props.onRefresh && (
-            <Button
+            <RefreshButton
               variant="ghost"
               size="icon-xs"
               className="shrink-0 bg-settings-tile-hover"
               disabled={props.refreshing}
+              aria-busy={props.refreshing}
               title={t("chat.refreshModels")}
               aria-label={t("chat.refreshModels")}
               onClick={() => void props.onRefresh?.()}
             >
-              <RefreshCw className={cn("size-3.5", props.refreshing && "animate-spin")} />
-            </Button>
+              <RefreshCw data-refresh-icon className="size-3.5" />
+            </RefreshButton>
           )}
         </div>
       ) : (
@@ -237,11 +302,35 @@ export function ModelPickerContent(props: {
           <p className="mt-1 text-xs text-muted-foreground">{t("chat.modelPickerChooseGroup")}</p>
         </div>
       )}
+      <div className="mb-1 h-0.5 shrink-0 overflow-hidden rounded-full" aria-hidden="true">
+        <div
+          className={cn(
+            "h-full bg-foreground/20 transition-opacity motion-reduce:animate-none",
+            props.refreshing ? "animate-pulse opacity-100" : "opacity-0",
+          )}
+        />
+      </div>
       <div
+        ref={listRef}
+        aria-busy={props.refreshing || undefined}
         className="max-h-[min(17.5rem,50dvh)] min-h-0 w-full overflow-x-hidden overflow-y-auto overscroll-contain scroll-pb-2 pb-2 pr-1 [scrollbar-gutter:stable]"
         data-model-picker-list
       >
-        {pendingModel !== null ? (
+        {props.refreshing && props.options.length === 0 ? (
+          <div role="status" aria-label={t("chat.loadingModels")} className="space-y-2 px-2 py-2">
+            <span className="sr-only">{t("chat.loadingModels")}</span>
+            {[0, 1, 2, 3].map((row) => (
+              <div
+                key={row}
+                className="flex h-9 animate-pulse items-center gap-2 rounded-lg bg-muted/35 px-2 motion-reduce:animate-none"
+                aria-hidden="true"
+              >
+                <span className="size-4 rounded bg-muted" />
+                <span className={cn("h-2.5 rounded bg-muted", row % 2 ? "w-2/3" : "w-1/2")} />
+              </div>
+            ))}
+          </div>
+        ) : pendingModel !== null ? (
           routes.length ? (
             routes.map((option) => (
               <button

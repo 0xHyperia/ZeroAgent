@@ -253,7 +253,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     "@liveagent/ui/components/chat/ChatHistorySidebar": { ChatHistorySidebar: (props) => env.React.createElement("nav", {"data-sidebar-loading":props.listStatus},
       env.React.createElement("button", {"data-new-conversation":"",onClick:props.onNewConversation}, "新对话"),
       props.items.map((item) => env.React.createElement("button", { key: item.id, "data-conversation": item.id, onClick: () => props.onSelectConversation(item.id) }, item.title)),
-      props.hasMore?env.React.createElement("button",{"data-more-conversations":"",disabled:props.isLoadingMore,onClick:props.onLoadMore},props.isLoadingMore?"正在加载更多会话":"加载更多会话"):null,props.accountMenu,
+      props.hasMore?env.React.createElement("button",{"data-more-conversations":"",disabled:props.isLoadingMore,onClick:props.onLoadMore},props.isLoadingMore?"正在加载更多会话":"加载更多会话"):null,props.accountMenu,props.mobileRail,
       props.errorMessage?env.React.createElement("p",{role:"alert"},props.errorMessage):null,props.footerTrailing) },
     "@liveagent/ui/components/ui/scroll-area": { ScrollArea: (props) => env.React.createElement("div", { ref: props.viewportRef }, props.children) },
     "@liveagent/ui/components/ui/sidebar": { useSidebar: () => ({ isMobile: mobileLayout, open: true, openMobile: true, setOpen: () => undefined, setOpenMobile: () => undefined }) },
@@ -1048,14 +1048,15 @@ test('an unconfirmed first submission does not restore the mode switch',async t=
  assert.equal(new Set(submissions.map(call=>JSON.parse(call.body).client_request_id)).size,1);
 });
 
-test('CloudChat keeps one account avatar in the desktop rail or mobile sidebar without a rail settings button',async t=>{
- for(const mobileLayout of [false,true]) await t.test(mobileLayout?'mobile sidebar':'desktop rail',async child=>{
+test('CloudChat keeps one account avatar in the desktop or mobile navigation rail without a rail settings button',async t=>{
+ for(const mobileLayout of [false,true]) await t.test(mobileLayout?'mobile rail':'desktop rail',async child=>{
   const app=await mount(child,{mobileLayout});
   assert.equal(app.host.querySelectorAll('[data-account-menu]').length,1);
   const rail=app.host.querySelector('.application-rail');
   assert.equal(rail.querySelector('[aria-label="设置"]'),null);
-  assert.equal(Boolean(rail.querySelector('[data-account-menu="rail"]')),!mobileLayout);
-  assert.equal(Boolean(app.host.querySelector('nav[data-sidebar-loading] [data-account-menu="sidebar"]')),mobileLayout);
+  assert.equal(Boolean(rail.querySelector('[data-account-menu="rail"]')),true);
+  assert.equal(Boolean(app.host.querySelector('nav[data-sidebar-loading] .application-rail')),mobileLayout);
+  assert.equal(app.host.querySelector('[data-account-menu="sidebar"]'),null);
  });
 });
 

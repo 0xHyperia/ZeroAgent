@@ -32,6 +32,7 @@ import { useInlineComposerLayout } from "@liveagent/ui/components/chat/useInline
 import { GitBranchSelector } from "@liveagent/ui/components/git/GitBranchSelector";
 import {
   ArrowUp,
+  ArrowUpRight,
   ChevronUp,
   Clock3,
   FolderOpen,
@@ -71,6 +72,7 @@ import {
   registerConversationReferenceDropZone,
 } from "@liveagent/ui/lib/chat/conversationReferenceDrag";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
+import { readSendShortcut } from "@liveagent/ui/lib/chat/sendShortcut";
 import {
   clearActiveWorkspacePathDrag,
   getActiveWorkspacePathDrag,
@@ -659,6 +661,12 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     : isSending
       ? t("chat.stopGeneration")
       : t("chat.sendMessage");
+  const sendShortcutHint =
+    readSendShortcut() === "ctrlEnter"
+      ? /Mac|iPhone|iPad|iPod/i.test(typeof navigator === "undefined" ? "" : navigator.platform)
+        ? "⌘+Enter"
+        : "Ctrl+Enter"
+      : "Enter";
   const uploadTooltip = isUploadingFiles
     ? t("chat.upload.uploading")
     : !allowUploadsWithoutWorkspace && !isAgentMode
@@ -1222,8 +1230,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
   const modelControls = (
     <ComposerModelControls
+      presentation={inlineLayout ? "inline" : "standard"}
       compactLabel={inlineLayout && !props.expandedInput}
-      showProviderIcon={!inlineLayout}
+      showProviderIcon
       executionMode={executionMode}
       hasModels={hasModels}
       currentModelLabel={currentModelLabel}
@@ -1892,6 +1901,15 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   />
                 ) : null}
                 <Button
+                  data-composer-primary-action={
+                    inlineLayout
+                      ? canQueueDraftWhileSending
+                        ? "queue"
+                        : isSending
+                          ? "stop"
+                          : "send"
+                      : undefined
+                  }
                   disabled={isSending ? false : sendDisabled}
                   onClick={() => {
                     if (canQueueDraftWhileSending) {
@@ -1907,38 +1925,54 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   }}
                   size="sm"
                   title={primaryActionTitle}
+                  tooltipShortcut={
+                    !isSending || canQueueDraftWhileSending ? sendShortcutHint : undefined
+                  }
                   aria-label={primaryActionTitle}
                   style={
-                    canQueueDraftWhileSending
-                      ? {
-                          backgroundColor: "var(--ui-color-hsl-160-84-39)",
-                          backgroundImage: "none",
-                          color: "white",
-                        }
-                      : isSending
+                    inlineLayout
+                      ? undefined
+                      : canQueueDraftWhileSending
                         ? {
-                            backgroundColor: "var(--destructive)",
+                            backgroundColor: "var(--ui-color-hsl-160-84-39)",
                             backgroundImage: "none",
-                            color: "var(--destructive-foreground)",
+                            color: "white",
                           }
-                        : undefined
+                        : isSending
+                          ? {
+                              backgroundColor: "var(--destructive)",
+                              backgroundImage: "none",
+                              color: "var(--destructive-foreground)",
+                            }
+                          : undefined
                   }
                   className={cn(
-                    // 点击区保持 32px；背景经 p-0.5 + bg-clip-content 只涂 28px 内圆，
-                    // 与用量环外径、展开按钮悬停圆等大，避免实心圆盘显大。
-                    "size-8 shrink-0 rounded-full border-0 bg-clip-content p-0.5 shadow-none transition-all",
-                    "[&_svg]:stroke-[2.25]",
-                    canQueueDraftWhileSending
-                      ? "hover:brightness-105 active:scale-95"
-                      : isSending
-                        ? "hover:opacity-90 active:scale-95"
-                        : "disabled:opacity-100 [&:not(:disabled)]:bg-foreground [&:not(:disabled)]:text-background [&:not(:disabled)]:hover:bg-foreground/85 [&:not(:disabled)]:active:scale-95 disabled:bg-muted/60 disabled:text-muted-foreground",
+                    inlineLayout
+                      ? "composer-primary-key shrink-0"
+                      : [
+                          // 点击区保持 32px；背景经 p-0.5 + bg-clip-content 只涂 28px 内圆，
+                          // 与用量环外径、展开按钮悬停圆等大，避免实心圆盘显大。
+                          "size-8 shrink-0 rounded-full border-0 bg-clip-content p-0.5 shadow-none transition-all",
+                          "[&_svg]:stroke-[2.25]",
+                          canQueueDraftWhileSending
+                            ? "hover:brightness-105 active:scale-95"
+                            : isSending
+                              ? "hover:opacity-90 active:scale-95"
+                              : "disabled:opacity-100 [&:not(:disabled)]:bg-foreground [&:not(:disabled)]:text-background [&:not(:disabled)]:hover:bg-foreground/85 [&:not(:disabled)]:active:scale-95 disabled:bg-muted/60 disabled:text-muted-foreground",
+                        ],
                   )}
                 >
                   {canQueueDraftWhileSending ? (
                     <ArrowUp className="size-4" />
                   ) : isSending ? (
-                    <Square className="size-3 fill-current" />
+                    <>
+                      <Square className="size-3 fill-current" />
+                      {inlineLayout ? (
+                        <span className="composer-stop-label">{t("chat.stopShort")}</span>
+                      ) : null}
+                    </>
+                  ) : inlineLayout ? (
+                    <ArrowUpRight className="size-5" />
                   ) : (
                     <ArrowUp className="size-4" />
                   )}

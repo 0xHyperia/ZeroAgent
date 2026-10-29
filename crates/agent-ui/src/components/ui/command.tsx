@@ -96,7 +96,7 @@ export function CommandItem({ className, ...props }: Autocomplete.Item.Props) {
     <Autocomplete.Item
       data-slot="command-item"
       className={cn(
-        "flex cursor-default select-none flex-col items-start rounded-lg px-3 py-2 text-left text-sm outline-none data-[highlighted]:bg-settings-active dark:data-[highlighted]:bg-settings-tile-hover data-[highlighted]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "flex cursor-pointer select-none flex-col items-start rounded-lg px-3 py-2 text-left text-sm outline-none data-[highlighted]:bg-settings-active dark:data-[highlighted]:bg-settings-tile-hover data-[highlighted]:text-foreground data-[disabled]:cursor-default data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         className,
       )}
       {...props}

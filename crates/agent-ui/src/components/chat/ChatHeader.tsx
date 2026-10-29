@@ -6,6 +6,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, type ReactNode } from "react";
 import { ThemeToggleButton } from "../ThemeToggleButton";
+import { useSidebarShortcutHint } from "../ui/sidebar";
 
 export type ChatHeaderProps = {
   settings: AppSettings;
@@ -40,6 +41,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
   } = props;
   const { t } = useLocale();
   const desktopTitleBarInset = isDesktopChatHeaderInset();
+  const sidebarShortcutHint = useSidebarShortcutHint();
 
   return (
     <header
@@ -66,6 +68,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
             size="icon-sm"
             onClick={onOpenSidebar}
             title={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
+            tooltipShortcut={sidebarShortcutHint}
             aria-expanded={sidebarOpen}
             data-cloud-sidebar-open=""
             aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}

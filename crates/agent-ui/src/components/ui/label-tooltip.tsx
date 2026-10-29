@@ -2,6 +2,19 @@ import { type ComponentProps, type ReactElement, type ReactNode, useId } from "r
 import { cn } from "../../lib/shared/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
+/** One keyboard chord uses one pill, with the same type size as its tooltip label. */
+export function TooltipShortcut({ value }: { value: string }) {
+  const formatted = value
+    .trim()
+    .replace(/\bControl\b/gi, "Ctrl")
+    .replace(/\s*\+\s*/g, "+")
+    .replace(/\b(Ctrl|Alt|Shift|Cmd|Command|Meta)\s+(?=\S)/g, "$1+")
+    .split("+")
+    .map((key) => (key.length === 1 ? key.toUpperCase() : key))
+    .join("+");
+  return <kbd className="app-tooltip-shortcut">{formatted}</kbd>;
+}
+
 /**
  * 纯文本标签气泡（Base UI）：composer 运行时控件与上下文用量环共用同一视觉。
  * 默认非受控（悬停展示）；触屏点按驱动的调用方（上下文用量环）传入
@@ -42,6 +55,12 @@ export function LabelTooltip(props: {
         render={props.render ?? <span className="inline-flex shrink-0">{props.children}</span>}
       />
       <TooltipContent
+        data-tooltip-shortcut={props.shortcut ? "true" : undefined}
+        data-tooltip-detail={
+          props.description || (typeof props.label !== "string" && typeof props.label !== "number")
+            ? "true"
+            : undefined
+        }
         side={props.side}
         align={props.align}
         sideOffset={props.sideOffset}
@@ -49,13 +68,9 @@ export function LabelTooltip(props: {
       >
         {props.shortcut || props.description ? (
           <span className="flex min-w-0 flex-col gap-1">
-            <span className="flex items-center gap-3">
+            <span className="flex min-w-0 items-center gap-1.5">
               <span className="min-w-0">{props.label}</span>
-              {props.shortcut ? (
-                <kbd className="ml-auto shrink-0 font-app text-xs font-normal text-muted-foreground">
-                  {props.shortcut}
-                </kbd>
-              ) : null}
+              {props.shortcut ? <TooltipShortcut value={props.shortcut} /> : null}
             </span>
             {props.description ? (
               <span className="font-normal leading-relaxed text-muted-foreground">

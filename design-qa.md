@@ -1,8 +1,9 @@
 # CloudChat 对话标题、圆角框架与上下文预览验收
 
 日期：2026-10-29。结果：**passed（本轮四项 UI 交互范围）**。
-预览：http://127.0.0.1:52386/。最新本地构建：/assets/index-Djj56qVc.js（反馈改版，见文末）。
-规范：docs/design/cloudchat-chat-work-ux.md v1.5；决策：ADR0053、ADR0054、ADR0055。
+原预览：http://127.0.0.1:52386/（已停）。当前开发预览：http://localhost:5174/。
+最新本地构建：/assets/index-ezaO2R2x.js；规范 v1.12。最新手机侧栏验收见文末，以下保留历史记录。
+原规范：docs/design/cloudchat-chat-work-ux.md v1.6；决策：ADR0051、ADR0053、ADR0054、ADR0055。
 证据目录：.codex-artifacts/workspace-polish-20261029/。上一轮 QA 存为 previous-design-qa.md。
 
 ## 参考和对照
@@ -123,3 +124,185 @@ final result: **passed（本轮 CloudChat 任务与输入反馈范围）**。
 本次没有制造真实未知提交、队列满或付费模型故障；这些恢复路径通过现有组件/页面回归验证。
 浏览器手机视口不替代真机输入法验收；没有声称全产品所有面板提示均已替换。
 保留 main 和已有工作区修改，未提交、推送、部署、调用付费模型/E2B 或清理用户数据。
+
+## 2026-10-30：可交互区域的光标反馈
+
+final result: **passed（共享语义控件与菜单光标范围）**。修复前真实浏览器读到应用轨的对话、
+资料库、设备和头像均为 cursor:default；部分共享菜单还有显式 cursor-default 覆盖。
+共享 base 层按 HTML/ARIA 交互语义补齐手型默认值，文本编辑保留 text，禁用不显示手型；
+菜单、选择器、命令列表和设置组合选项去掉默认箭头覆盖。基础规则不覆盖拖拽/缩放等专用 utilities，
+不新增事件、不改变禁用、授权、提交或键盘行为。
+
+- 原 52386 预览服务已停止。使用显式 loopback 浏览器夹具加载最终生产构建，数据均为合成测试内容，
+  没有重新发送真实模型请求或改动真实账户。
+- 实测导航、头像、侧栏操作及 Portal 账户菜单的账号/设置/退出均为 pointer；编辑器为 text；
+  空草稿发送按钮为 default 且 pointer-events:none。截图只记录界面，光标判定以实际 computed style 为准。
+- 证据：.codex-artifacts/cursor-20261030/browser-evidence.json、menu-after.jpg；
+  构建 hash index-BeRmXwHa.js。未改变视口、主题或真实账户偏好。
+- 17 项已有 Tooltip、用户菜单、上下文选择回归通过；Web 类型/生产构建、共享 UI/Desktop 类型、
+  UI 边界、产品契约（15 项功能、110 条所有权规则）和 diff whitespace 检查通过。
+  5 个源码 Biome 检查完成，base.css 既有 forced-colors 规则的 noDescendingSpecificity 警告保留；
+  构建仍有既有动态导入不分块提示。没有为纯样式规则新增镜像测试。
+- 日志：workspace-polish-20261029/cursor-tests-20261030.log、cursor-build-20261030.log。
+
+修复位于 codex/cloudchat-workspace-20261030，未追加提交、推送或部署。
+
+## 2026-10-30：CloudChat 合并模型入口、离散思考滑条与提示质感
+
+final result: **passed（本轮输入区与提示范围）**。
+从用户最新四张参考归纳为：默认控件克制、展开后呈现细节、当前选择靠表面而非新增按钮表达。
+撤换本轮中间版本的两个独立入口和单选列表，最终保留一个厂商图标＋模型名＋思考短标签入口。
+点击先展开 320px 思考滑条，模型名称在同一弹层内进入模型列表，可返回；显式 /model 直接开模型列表。
+默认桌面/设备工作台仍采用原呈现，新增界面由 inline 宿主显式选择。
+
+- 参考：`.codex-artifacts/composer-controls-20261030/reference-{tooltip,mode,slider,maximum}.png`。
+  对照：`reference-comparison.png`；实际输入区裁切：`final-composer.png`。
+  对照按区域缩放参考、保留实际截图原尺寸；不宣称后台能力或逐像素完全相同。
+- 短提示使用近黑底、白字 600 字重、软投影和快捷键浅色底；淡入不缩放文字。
+  模式底轨高 32px、选中块高 40px；实测未选 hover 从 rgb(100,116,139) 到 rgb(2,8,23)，
+  背景始终透明、box-shadow 为 none，未改变选中模式。证据 `mode-tooltip-desktop.jpg`。
+- 实际 GPT-6.1 Sol：七个宿主档位，标准值为索引 3。拖动仅预览，松手保存；
+  键盘箭头/Home/End 调节，Escape 取消未提交预览。原生鼠标拖到末端后入口与 slider 都更新为“最高”。
+  max 对应原能力，紫色渐变和静态光点不增加 Ultra 协议/档位；深色使用更亮文字。
+  证据 `maximum-desktop-final.jpg`、`maximum-dark.jpg`。
+- 模型列表打开时当前分组展开，选中 GPT-6.1 Sol 在 280px 列表中可见，scrollTop=34；
+  厂商视图和具体分组的明确选择、手动折叠、默认设备全部折叠通过回归。
+  修复受控弹层把普通点击误当外部 /model 的问题，并用受控宿主测试覆盖。
+- 添加菜单锚定加号，展开转为关闭形态，保留原四个真实资源动作；证据 `add-menu-desktop.jpg`。
+  主操作采用深色圆形与斜向箭头，生成时同一按钮扩为有文字的停止胶囊。
+- loopback 合成模型实际生成/停止两次，停止按钮实测宽 76px、高 36px、enabled、文字可读；
+  点击后服务端确认 cancelled，已生成的“这是一份”保留，恢复发送禁用态，未自动重试。
+  证据 `stop-desktop.jpg`。夹具进程正常 PASS 后关闭；未调用真实模型、E2B、Tavily 或 S3。
+- 390×844 与 320×740 无横向溢出。模型、加号、发送触控高 44px；滑条保持视口内并自动翻到上方。
+  证据 `slider-mobile-390.jpg`、`slider-mobile-320.jpg`。窄屏为浏览器视口，未替代真机输入法/触觉验收。
+- 恢复原 GPT-6.1 Sol、标准思考、工作模式、自动主题和空白草稿；没有新增真实会话记录。
+  临时视口已 reset。Gateway 50052、Web 5174、Desktop 2120 和桥接 9224 均 ready。
+  Native 窗口 AX 验证原设备/默认模型控件仍在；本轮不以原生截图作像素验收证据。
+- 159 项对话恢复、资源/参数/账户守卫、Tooltip、默认模型选择测试通过；新增合并入口/滑条三项及
+  既有模式/单编辑器三项也通过，合计 165 项相关检查。最后一轮 12 项控件/Tooltip 验证日志为
+  `final-controls-tests.log`。共享 UI、Web、Desktop 类型、Web 生产构建、UI 边界与产品契约通过。
+- 新组件和受改 TSX 的 Biome 检查通过。现有 `web/src/zeroagent.css` 全文件格式与
+  noDescendingSpecificity 警告仍是既有债务（HEAD 的 stdin 检查同样需要 fix）；未为本轮顺带重排整份样式。
+  changed-check 包装器依赖的 mise 不在本机 PATH，已直接运行仓库固定的 Biome CLI 完成相关检查。
+
+P0/P1/P2 视觉问题在本轮范围内均已处理：入口分裂、受控默认页、hover 额外底色、窄屏挤压、最高档状态层次。
+剩余差异为当前真实能力：无语音入口/Ultra 执行档位，建议卡使用 ZeroAgent 现有内容和图标。
+没有新增品牌资产、迁移、清理、发布、推送或追加 Git 提交。实现规范 v1.7 与 ADR0056 已同步。
+
+## 2026-10-30：理解能力语义后的输入配置修订（最新）
+
+final result: **passed（模型/思考控件及其输入区兼容范围）**。
+这替代上节 v1.7 对本区域的验收结论。此前把 max 套用 Ultra 的紫色、常驻说明导致密度过高，
+以及模型选择必须先经过滑条的问题，不能因为功能测试通过就认定体验成熟。
+
+本次 source of truth 是已登录 ChatGPT Web 的真实交互观察，原图和记录位于
+`.codex-artifacts/chatgpt-model-study-20261030/`，尤其是 `02-reasoning-high.jpg`、
+`03-max.jpg`、`04-ultra.jpg`、`05-model-list.jpg`、`11-mobile-work-slider.jpg` 和 `study.json`。
+观察限定于当日该账户的界面，不声称掌握其内部设计意图或全部模型能力。
+
+本轮证据目录：`.codex-artifacts/composer-redesign-20261030/`。
+`source-before-after.png` 已打开对照：前两栏来自上轮同尺寸截图裁切，第三栏来自本轮实际生产构建；
+只裁切/拼接截图，不重绘控件。`final-composer.png` 保留标题、编辑器、上下文栏和建议的实际相对位置。
+
+| 原问题 | 修订与实测 |
+| --- | --- |
+| P1：换模型需多走一步，信息层级被参数表单占据 | 一枚连续视觉胶囊，模型和思考分别直达；独立焦点但无双框；任一时刻一个弹层 |
+| P1：紫色最高档暗示另一种执行策略 | 全档蓝色；不新增 Ultra/Fast/推荐路由，保持原宿主参数与分组授权 |
+| P2：常驻说明、装饰灯泡和过大留白 | 312×101px 桌面滑条，18px 圆角；问号实际控制按需说明；模型页相同宽度及锚点 |
+| P2：内部导航后原触发区域可能关闭弹层 | 已补真实交互回归；模型→思考→原模型区域仍直达模型页，单弹层不叠加 |
+| P2：手机密度和操作空间没有独立考虑 | 说明/恢复、面板模型导航、两个入口和滑条至少44px；手机面板约132px高 |
+
+- `desktop-light.jpg`、`desktop-dark.jpg`：实际浅/深色界面。桌面滑条实测312×101.33px，
+  列表页宽312px，同一右边界和锚点；有完整的当前模型/档位，无额外的配置副本。
+  深浅色均来自隔离夹具，没有改真实模型参数或主题。深色补查淘汰了捕获到旧浅色帧的截图；
+  `dark-evidence.json`核实dark类、24/33灰阶表面和蓝色文字，最终投影使用黑色软阴影，避免泛白光晕。
+- `models-desktop.jpg`、`models-mobile-320.jpg`：当前分组展开、当前模型可见；搜索/刷新/厂商路由
+  继续共享实现。模型编辑入口留在设置及默认选择器，CloudChat 日常列表不再重复放置管理操作。
+- `maximum-blue.jpg`、`help-expanded.jpg`：合成模型调节到max依然蓝色；说明可展开再收起。
+  原生 range 支持方向键/Home/End，拖动预览/松手提交、Esc撤销、模型变化丢弃旧预览有行为测试。
+  最高档只代表宿主参数选项，不宣称跨厂商能力排序或执行策略等价。
+- `mobile-320-final.jpg`、`mobile-390-final.jpg`、`mobile-evidence.json`：320×740与390×844无横向溢出；
+  320px下面板288px宽、左右各16px；三个面板导航/说明/恢复目标以及两个入口高度均44px。
+  手机增高来自实际命中区，保持自动翻向上方。响应式浏览器验收不替代真机触摸和输入法测试。
+- `stop-mobile-320.jpg`：两次本地合成生成/停止，确认已生成“这是一份”保留，停止后恢复禁用发送，
+  不自动重试。稳定停止按钮实测70×44px；`stop-mobile-evidence.json`记录首次宽度动画初帧44px，
+  后续稳定帧测得70px，截图为稳定帧。名称优先收缩，停止始终可点。
+- loopback Go浏览器夹具加载生产bundle并正常PASS，最终`fixture-status.json`标记synthetic，
+  无真实模型/E2B/Tavily/S3请求，S3各类操作数均为0。夹具已结束，临时页已关闭，两个浏览器视口均reset。
+- 实际开发页模型GPT-5.5、轻度、工作模式和空草稿保持；真实会话历史保留。
+  外部/model、分组/厂商明确路由、预览隔离、单编辑器/模式、Run恢复、文件上下文、Tooltip以及
+  默认Desktop/设置选择器相关测试共146项通过：`regression-final.log`。
+- 共享UI、Web和Desktop类型检查、最终Web生产构建、UI边界及产品契约检查（15项功能/113条规则）通过。
+  `build-final.log`记录最终hash `index-ByOjw4of.js`。18个相关源码文件Biome检查通过，
+  既有zeroagent.css全文件格式债务仍按上一节说明保留；构建保留既有动态导入提示。
+- 180ms高度过渡只改变表面高度，不缩放文字；中途反向从可见高度继续。减少动态的实现分支取消
+  高度动画和装饰位移。本轮未修改操作系统的减少动态偏好，不把该分支称为真机动态验收。
+
+本轮范围内未留下已知P0/P1/P2阻断。触控可发现性、真实手机输入法及长期使用效果仍需实际使用反馈；
+不将一次工程验收称为“全面超越”。当前没有可靠的跨模型评估/路由策略，所以不展示推荐组合或协作开关。
+
+规范v1.8、ADR0056和所有权检查已同步。Gateway已重启加载最终bundle，Web/Desktop开发服务继续运行。
+未追加Git提交、推送、发布或修改真实账户数据。
+
+
+## 2026-10-30：四项交互反馈修复（最新）
+
+删除重复说明；滑块及进度补换档过渡，拖动直接跟手，滑条cursor:pointer与实测ChatGPT一致。
+补说明/恢复/模型入口的Hover和按压反馈、滑块光圈与刻度反馈。
+模型切换视图一次确定展开项，绘制前定位，消除先折叠再展开的一帧；刷新保留数据，
+无数据时显示骨架，按钮复用共享刷新反馈。
+真实开发页查看分组→厂商→分组，当前模型仍可见；未更换模型/参数或发送消息。
+截图interaction-fix.jpg记录厂商列表的过渡画面，不能作为恢复后分组偏好的截图证据。
+只运行8项相关控件与模型选择行为测试，Web生产构建、Desktop类型、相关源码Biome及产品契约通过。
+日志interaction-fix-tests.log、interaction-fix-build.log。规范v1.9已同步，未推送或提交。
+
+
+## 2026-10-30：连续拖动与逐点Hover（最新）
+
+上轮仅增加过渡但仍使用step=1，未解决拖动时逐档跳动。现独立ReasoningSlider将连续视觉位置与离散参数分开。
+指针使用step=any保留小数位置；拖动时transform直接跟手，松手按最近档位吸附并提交，键盘整档、取消及模型隔离保留。
+参考实测：ChatGPT轨道24px、圆钮28px、档位点4px；只有悬停一点放大2倍并brightness(.85)。
+当前实现采用相同尺寸及单点效果，撤掉全体刻度一起变化和蓝色光圈。参考账户模型/强度未改，弹层已关闭。
+实际鼠标在本地合成夹具拖动到两档之间后松手，正确归位到深入；悬停另一点保持原档位，
+continuous-slider-evidence.json记录唯一放大点matrix(2)、轨道/圆钮24/28px、step=any和当前离散值4。
+截图continuous-slider.jpg，裁切continuous-slider-crop.png；只裁切真实运行截图。
+6项相关控件行为测试通过（含小数位置2.65预览、松手3、悬停不保存），Web类型/生产构建、Biome、UI边界、
+产品契约（15项功能/114条所有权规则）通过；只做本范围必要验证，没有重复全量回归。
+新组件所有权、ADR0056与体验规范v1.10同步。无真实模型请求，夹具正常结束；未推送或提交。
+
+
+## 2026-10-30：手柄放大、快捷键胶囊与标题剩余空间（最新）
+
+手柄Hover/按住平滑放大1.1倍，实测matrix(1.1)、28px变为30.8px，档位保持3，DOM证据hover-handle-evidence.json。手柄局部截图捕获到了另一个弹层，已剔除，不能作为该项像素证据。
+LabelTooltip共用TooltipShortcut，修饰键组合放同一胶囊，以加号分隔，与标签同14px/600；兼容旧文案与已有aria-keyshortcuts。
+已接入真实侧栏开关和发送偏好；禁用绑定/预览固定操作不显示误导提示，不增加键盘处理。
+真实Hover显示“关闭边栏 Ctrl+B”，kbd计算颜色white/.24，14px/600。
+标题移除负边距造成的固有宽度缩减及固定宽度上限，按右侧按钮之外的可用空间布局；
+实测“你好”由20px提前截断恢复为28px，scrollWidth同为28px。
+证据shortcut-title-evidence.json及shortcut-title.jpg；控件预览没有发送消息、重试或修改标题。
+13项针对性Tooltip/滑块测试通过，Web类型/生产构建、Desktop类型、UI边界与产品契约114条规则通过。
+相关源码Biome通过，base.css既有forced-colors specificity警告仍保留。日志hover-title-shortcut-*.log。
+规范v1.11、ADR0051/0054及Tooltip文档同步；服务更新，未提交或推送。
+
+## 2026-10-30：手机侧栏与清晰背景（最新）
+
+按用户提供的手机参考图，将 CloudChat 手机侧栏统一为应用轨和独立内容面板：
+52px 应用轨保留真实导航及底部唯一头像，280px 历史/资料面板按窄屏收缩，至少留出48px背景。
+标题、搜索、关闭、选中行和主题色复用既有规范；触控目标至少44px，并处理安全区。
+导航抽屉采用语义化 navigation 遮层，主题底色60%透明度，不应用 backdrop blur；
+其他 Sheet 的默认样式保持。应用轨和内容处于同一模态焦点范围，同一时刻只挂载一个手机侧栏。
+导航、历史选择、关闭和账户入口共用现有行为，选择后收起抽屉，不新增空会话记录。
+
+证据目录 `.codex-artifacts/mobile-sidebar-20261030/`：
+`mobile-390.jpg`、`mobile-320.jpg` 为最终生产 bundle 实际浏览器截图；
+`evidence-390.json`、`evidence-320.json` 记录390×844和320×740，无横向溢出，
+组合宽度分别332px与272px，应用轨52px、backdrop-filter:none，单一 dialog。
+已实际查看长历史选择后的清晰背景及头像菜单。临时视口已恢复、夹具页已关闭。
+本次是响应式浏览器验收，不替代真机触摸及输入法验收。
+
+12项侧栏/应用轨与4项宿主针对性行为测试通过，覆盖默认手机抽屉、焦点回退和新会话草稿等；
+语义化遮层调整后再次通过10项共享侧栏检查（为上述集合子集）。Web/Desktop 类型检查、
+UI边界、产品契约15项功能/114条规则及最终 Web 生产构建通过。
+`build-final.log` 记录最终 `index-ezaO2R2x.js`，保留既有动态导入构建提示。
+Go生产 bundle浏览器夹具正常PASS，无真实模型或外部工具调用。
+体验规范v1.12、ADR0053和上游所有权同步，未提交或推送。

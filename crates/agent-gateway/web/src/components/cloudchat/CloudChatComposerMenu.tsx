@@ -10,6 +10,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
@@ -28,32 +29,36 @@ export function CloudChatComposerMenu(props: {
 }) {
   const triggerRef = useRef<HTMLElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [localOpen, setLocalOpen] = useState(false);
+  const isOpen = props.open ?? localOpen;
   return (
     <DropdownMenu
-      open={props.open}
+      open={isOpen}
       onOpenChange={(open) => {
-        if (open)
-          setAnchor(triggerRef.current?.closest<HTMLElement>(".composer-glass-card") ?? null);
+        if (open) setAnchor(triggerRef.current);
+        if (props.open === undefined) setLocalOpen(open);
         props.onOpenChange?.(open);
       }}
     >
       <DropdownMenuTrigger
         render={<Button ref={triggerRef} variant="ghost" size="icon-sm" />}
         aria-label="添加资料与工具"
-        title="添加资料与工具"
+        title={isOpen ? "关闭添加菜单" : "添加资料与工具"}
         disabled={props.disabled}
-        className="rounded-full text-foreground"
+        className="cloud-composer-add"
+        data-open={isOpen || undefined}
       >
         <Plus className="size-5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         side="bottom"
         align="start"
+        sideOffset={8}
         variant="soft"
         anchor={anchor ?? undefined}
         className="cloud-composer-menu max-w-[calc(100vw-32px)]"
-        style={{ width: "var(--anchor-width, 360px)" }}
       >
+        <DropdownMenuLabel className="cloud-composer-menu-heading">添加到对话</DropdownMenuLabel>
         <DropdownMenuItem className="gap-3" onClick={props.onUpload}>
           <Paperclip className="size-4 shrink-0" />
           <span>
@@ -114,9 +119,11 @@ export function CloudChatModeSwitch({
           { id: "work", label: "工作" },
         ] as const
       ).map((mode) => (
-        <button
+        <Button
           key={mode.id}
           type="button"
+          variant="ghost"
+          title={mode.id === "chat" ? "提问并探索想法" : "完成任务与交付成果"}
           aria-pressed={value === mode.id}
           tabIndex={value === mode.id ? 0 : -1}
           onClick={() => {
@@ -141,7 +148,7 @@ export function CloudChatModeSwitch({
           data-mode={mode.id}
         >
           {mode.label}
-        </button>
+        </Button>
       ))}
     </fieldset>
   );

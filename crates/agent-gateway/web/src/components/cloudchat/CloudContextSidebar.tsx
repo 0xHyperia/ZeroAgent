@@ -6,9 +6,10 @@ import {
   MonitorSmartphone,
   PanelLeft,
   PanelLeftClose,
+  X,
 } from "@liveagent/ui/components/IconSet";
 import { Sidebar, SidebarHeader, SidebarTrigger } from "@liveagent/ui/components/ui/sidebar";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { CloudChatFile, CloudChatFilesClient } from "@/lib/cloudChatFiles";
 import type { ExecutionEnvironment } from "@/lib/executionTargets";
 
@@ -19,6 +20,7 @@ type Resource = "files" | "artifacts" | "sources" | "projects" | "memory";
 export function CloudContextSidebar(props: {
   destination: Exclude<CloudSidebarDestination, "chat">;
   preview: boolean;
+  mobileRail?: ReactNode;
   activeResource?: Resource;
   files: CloudChatFilesClient;
   environments: readonly ExecutionEnvironment[];
@@ -58,6 +60,7 @@ export function CloudContextSidebar(props: {
     <Sidebar
       label={destination === "library" ? "资料库导航" : "设备导航"}
       previewOpen={props.preview}
+      mobileRail={props.mobileRail}
       className="cloud-context-sidebar bg-settings-rail"
       data-context-destination={destination}
     >
@@ -67,6 +70,7 @@ export function CloudContextSidebar(props: {
             {destination === "library" ? "资料库" : "设备"}
           </h2>
           <SidebarTrigger
+            showShortcut={!props.preview}
             title={
               props.preview
                 ? destination === "library"
@@ -88,7 +92,9 @@ export function CloudContextSidebar(props: {
               }
             }}
           >
-            {props.preview ? (
+            {props.mobileRail ? (
+              <X className="size-4" />
+            ) : props.preview ? (
               <PanelLeft className="size-4" />
             ) : (
               <PanelLeftClose className="size-4" />

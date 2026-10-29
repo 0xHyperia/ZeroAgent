@@ -46,7 +46,7 @@ test("a background local sidebar yields shortcuts to the visible remote sidebar 
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 
-function mount() {
+function mount({rail=false}={}) {
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);
   let setOpen;
@@ -55,7 +55,7 @@ function mount() {
     setOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
     return React.createElement(React.Fragment, null,
       React.createElement(SidebarTrigger, { id: "open-navigation" }),
-      React.createElement(Sidebar, { label: "Navigation" }, React.createElement("button", { id: "inside-navigation" }, "Conversation")));
+      React.createElement(Sidebar, { label: "Navigation", mobileRail:rail?React.createElement('nav',{'aria-label':'Application'},React.createElement(SidebarTrigger,{id:'close-mobile-rail'})):undefined }, React.createElement("button", { id: "inside-navigation" }, "Conversation")));
   }
   function Harness() { return React.createElement(SidebarProvider, { defaultOpen: false }, React.createElement(Content)); }
   return { container, root, Harness, setOpen: value => setOpen(value), destroy: async () => { await act(async () => root.unmount()); container.remove(); } };
@@ -93,6 +93,24 @@ test("mobile sidebar uses a real Sheet dialog with a label and Escape dismissal"
     assert.equal(document.querySelector('[role="dialog"]'), null);
     assert.equal(document.activeElement, opener);
   } finally { await h.destroy(); mobile = false; }
+});
+
+test("an opted-in mobile rail shares one modal with the panel and its close action restores focus", async () => {
+  mobile=true;
+  const h=mount({rail:true});
+  try {
+    await act(async()=>h.root.render(React.createElement(h.Harness)));
+    const opener=document.getElementById('open-navigation'); opener.focus();
+    await act(async()=>opener.click());
+    const dialog=document.querySelector('[role=dialog]');
+    assert.equal(document.querySelectorAll('[role=dialog]').length,1);
+    assert.ok(dialog.querySelector('nav[aria-label=Application]'));
+    assert.ok(dialog.querySelector('.sidebar-mobile-panel #inside-navigation'));
+    assert.ok(document.querySelector('.sheet-navigation-backdrop'));
+    await act(async()=>document.getElementById('close-mobile-rail').click());
+    assert.equal(document.querySelector('[role=dialog]'),null);
+    assert.equal(document.activeElement,opener);
+  } finally {await h.destroy(); mobile=false;}
 });
 
 // react-resizable-panels measures panels; jsdom returns 0 for everything, so

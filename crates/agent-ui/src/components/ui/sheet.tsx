@@ -23,14 +23,17 @@ export function SheetClose(props: React.ComponentPropsWithoutRef<typeof SheetPri
 
 export const SheetBackdrop = React.forwardRef<
   HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Backdrop>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Backdrop> & {
+    variant?: "default" | "navigation";
+  }
+>(({ className, variant = "default", ...props }, ref) => (
   <SheetPrimitive.Backdrop
     ref={ref}
     data-slot="sheet-backdrop"
     className={cn(
-      "layer-modal fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-200",
+      "layer-modal fixed inset-0 transition-opacity duration-200",
       "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+      variant === "navigation" ? "sheet-navigation-backdrop" : "bg-black/40 backdrop-blur-xs",
       className,
     )}
     {...props}
@@ -46,6 +49,7 @@ type SheetPopupProps = React.ComponentPropsWithoutRef<typeof SheetPrimitive.Popu
   closeProps?: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Close>;
   showCloseButton?: boolean;
   showBackdrop?: boolean;
+  backdropVariant?: "default" | "navigation";
   side?: SheetSide;
   variant?: SheetVariant;
 };
@@ -61,12 +65,13 @@ export const SheetPopup = React.forwardRef<HTMLDivElement, SheetPopupProps>(
       closeProps,
       showCloseButton = true,
       showBackdrop = true,
+      backdropVariant,
       ...props
     },
     ref,
   ) => (
     <SheetPortal>
-      {showBackdrop ? <SheetBackdrop /> : null}
+      {showBackdrop ? <SheetBackdrop variant={backdropVariant} /> : null}
       <SheetPrimitive.Popup
         ref={ref}
         data-slot="sheet-popup"

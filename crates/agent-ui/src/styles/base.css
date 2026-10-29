@@ -1,5 +1,13 @@
 @import "./tokens.css";
 @import "./animations.css";
+@import "./composer-inline.css";
+
+/* Navigation keeps the current page legible while the modal still owns focus and dismissal. */
+.sheet-navigation-backdrop {
+  background: hsl(var(--background) / 0.6);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 
 /* Navigation selection survives hover; the solid glyph belongs to the host. */
 .application-rail .application-rail-item {
@@ -41,6 +49,21 @@
   border-color: hsl(var(--tooltip-border));
   box-shadow: var(--tooltip-shadow);
   -webkit-font-smoothing: antialiased;
+}
+.app-tooltip-surface[data-tooltip-detail] {
+  border-radius: 14px;
+}
+.app-tooltip-shortcut {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.24);
+  padding: 1px 6px;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  white-space: nowrap;
 }
 
 /* shimmer — ejected from shadcn/tailwind.css */
@@ -370,6 +393,64 @@ body > div:has([data-streamdown="table-fullscreen"]):not(#root) {
   select,
   textarea {
     font: inherit;
+  }
+
+  /* Shared affordance defaults; cursor utilities still own resize/drag/zoom controls. */
+  :where(
+    button,
+    a[href],
+    summary,
+    select,
+    input:is(
+      [type="button"],
+      [type="submit"],
+      [type="reset"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="color"]
+    ),
+    [role="button"],
+    [role="link"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="tab"],
+    [role="option"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
+
+  label:has(input:is([type="checkbox"], [type="radio"]):enabled),
+  input[type="file"]:enabled::file-selector-button {
+    cursor: pointer;
+  }
+
+  input:is(
+    :not([type]),
+    [type="text"],
+    [type="search"],
+    [type="email"],
+    [type="url"],
+    [type="password"],
+    [type="tel"],
+    [type="number"]
+  ),
+  textarea,
+  [contenteditable="true"],
+  [contenteditable="plaintext-only"],
+  [role="textbox"] {
+    cursor: text;
+  }
+
+  :where(button, input, select, textarea, [role]):is(
+    :disabled,
+    [aria-disabled="true"],
+    [data-disabled]
+  ) {
+    cursor: default;
   }
 
   input,

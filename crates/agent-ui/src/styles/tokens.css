@@ -456,11 +456,11 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --tooltip-surface: 0 0% 9%;
+    --tooltip-surface: 0 0% 6%;
     --tooltip-foreground: 0 0% 98%;
     --tooltip-muted: 0 0% 76%;
     --tooltip-border: 0 0% 15%;
-    --tooltip-shadow: 0 4px 16px rgb(0 0 0 / 0.14), 0 1px 4px rgb(0 0 0 / 0.1);
+    --tooltip-shadow: 0 8px 24px rgb(0 0 0 / 0.18), 0 2px 5px rgb(0 0 0 / 0.1);
 
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
