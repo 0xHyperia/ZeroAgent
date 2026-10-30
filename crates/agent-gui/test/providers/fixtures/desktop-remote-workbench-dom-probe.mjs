@@ -113,7 +113,7 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
   const { createDesktopRemoteRuntime } = await import(pathToFileURL(bundle).href);
   assert.equal(typeof createDesktopRemoteRuntime, "function");
   const root = document.getElementById("remote-root");
-  const slots = { header: null, account: null, window: null };
+  const slots = { header: null, account: null, window: null, update: null };
   const requests = [];
   const invalid = [];
   const publicUser = { id: 7, email: "synthetic@example.invalid", username: "Synthetic", status: "active" };
@@ -135,6 +135,7 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
       onHeaderTarget: (element) => { slots.header = element; },
       onAccountTarget: (element) => { slots.account = element; },
       onWindowControlsTarget: (element) => { slots.window = element; },
+      onUpdateTarget: (element) => { slots.update = element; },
       onSelectionInvalid: (reason) => invalid.push(reason),
     };
     const runtime = createDesktopRemoteRuntime();
@@ -159,6 +160,7 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     assert.ok(slots.header?.isConnected, "desktop device switcher has a live header portal target");
     assert.ok(slots.account?.isConnected, "desktop account menu has a live portal target");
     assert.ok(slots.window?.isConnected, "desktop window controls have a live portal target");
+    assert.ok(slots.update?.isConnected, "desktop updates have a live navigation portal target");
     assert.ok(server.frames.some((frame) => frame.json.agent_id === "device-a" && frame.json.agent_request?.settings_get));
     const workbench = root.querySelector("[data-app-workbench-chrome]");
     const peer = server.frames.find((frame) => frame.case === "hello" && frame.peer.agent === "device-a").peer;
@@ -173,7 +175,7 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     first.dispose();
     first = null;
     assert.equal(root.childElementCount, 0);
-    assert.deepEqual(slots, { header: null, account: null, window: null });
+    assert.deepEqual(slots, { header: null, account: null, window: null, update: null });
     for (const [name, value] of nativeAttributes) assert.equal(dom.window.document.documentElement.getAttribute(name), value, `${name} restored to native shell`);
     assert.equal(dom.window.document.title, "Native ZeroAgent");
     await waitFor(() => server.peerCount === 0, "the previous device's actual WebSocket to close");

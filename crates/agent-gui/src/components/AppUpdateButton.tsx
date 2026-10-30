@@ -1,3 +1,4 @@
+import { NavigationUpdateButton } from "@liveagent/ui/application/NavigationUpdateButton";
 import { Download, Loader2, RefreshCw } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { useLocale } from "@liveagent/ui/i18n/index";
@@ -9,6 +10,7 @@ type AppUpdateButtonProps = {
   className?: string;
   iconOnly?: boolean;
   iconClassName?: string;
+  rail?: boolean;
 };
 
 function interpolate(template: string, values: Record<string, string>) {
@@ -23,6 +25,7 @@ export function AppUpdateButton({
   className,
   iconOnly = false,
   iconClassName,
+  rail = false,
 }: AppUpdateButtonProps) {
   const { t } = useLocale();
   if (!appUpdate.showUpdateButton) {
@@ -41,6 +44,21 @@ export function AppUpdateButton({
         : version
           ? interpolate(t("appUpdate.updateTo"), { version })
           : t("appUpdate.update");
+
+  const install = () => {
+    void (installed ? appUpdate.restart() : appUpdate.installAndRestart()).catch(() => undefined);
+  };
+  if (rail) {
+    return (
+      <NavigationUpdateButton
+        label={title}
+        busy={busy}
+        restart={installed}
+        error={appUpdate.status === "error"}
+        onClick={install}
+      />
+    );
+  }
 
   return (
     <Button
@@ -64,11 +82,7 @@ export function AppUpdateButton({
       disabled={busy}
       title={title}
       aria-label={title}
-      onClick={() =>
-        void (installed ? appUpdate.restart() : appUpdate.installAndRestart()).catch(
-          () => undefined,
-        )
-      }
+      onClick={install}
     >
       {busy ? (
         <Loader2 className={cn(iconOnly ? "size-3" : "size-13px", iconClassName, "animate-spin")} />

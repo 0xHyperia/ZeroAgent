@@ -40,6 +40,7 @@ type HostInput = {
   signal?: AbortSignal;
   onHeaderTarget?: DesktopRemoteHost["onHeaderTarget"];
   onWindowControlsTarget?: DesktopRemoteHost["onWindowControlsTarget"];
+  onUpdateTarget?: DesktopRemoteHost["onUpdateTarget"];
   onSelectionInvalid: DesktopRemoteHost["onSelectionInvalid"];
 };
 type Dependencies = {
@@ -224,6 +225,7 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
       isCurrent,
       onHeaderTarget: input.onHeaderTarget,
       onWindowControlsTarget: input.onWindowControlsTarget,
+      onUpdateTarget: input.onUpdateTarget,
       onSelectionInvalid: input.onSelectionInvalid,
       logout: async () => {
         requireCurrent();

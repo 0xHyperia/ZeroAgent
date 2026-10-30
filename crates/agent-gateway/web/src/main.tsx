@@ -16,8 +16,9 @@ async function start() {
   document.documentElement.dataset.liveagentWebui = GATEWAY_WEBUI_MARKER;
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <App />
-      <MobileAppExperience />
+      <MobileAppExperience>
+        <App />
+      </MobileAppExperience>
     </React.StrictMode>,
   );
 }

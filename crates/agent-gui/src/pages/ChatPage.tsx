@@ -131,6 +131,7 @@ import { kbrainSettingsAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { createTauriTrajectoryHost } from "../agent-ui-adapters/trajectory";
 import { WorkspaceCloneTaskOverlayAdapter } from "../agent-ui-adapters/workspaceCloneTasks";
 import { desktopWorkspaceProjectRootClient } from "../agent-ui-adapters/workspaceProjectRoots";
+import { AppUpdateButton } from "../components/AppUpdateButton";
 import { PaneLoadingSkeleton } from "../components/app/PaneLoadingSkeleton";
 import { UserMenu } from "../components/chat/UserMenu";
 import { isMacOsTauri, MacOsTitleBarToggle } from "../components/MacOsTitleBarSpacer";
@@ -4368,15 +4369,18 @@ function ChatPageContent(props: ChatPageProps) {
       }}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
       footer={
-        <UserMenu
-          variant="rail"
-          user={props.relayUser}
-          stats={props.relayStats}
-          onRefreshAccount={props.onRefreshRelayAccount}
-          onOpenAccount={() => onOpenSettings("account")}
-          onOpenSettings={() => onOpenSettings("system")}
-          onLogout={() => import("../lib/relay/client").then(({ logoutRelay }) => logoutRelay())}
-        />
+        <>
+          {appUpdate ? <AppUpdateButton appUpdate={appUpdate} rail /> : null}
+          <UserMenu
+            variant="rail"
+            user={props.relayUser}
+            stats={props.relayStats}
+            onRefreshAccount={props.onRefreshRelayAccount}
+            onOpenAccount={() => onOpenSettings("account")}
+            onOpenSettings={() => onOpenSettings("system")}
+            onLogout={() => import("../lib/relay/client").then(({ logoutRelay }) => logoutRelay())}
+          />
+        </>
       }
     />
   );

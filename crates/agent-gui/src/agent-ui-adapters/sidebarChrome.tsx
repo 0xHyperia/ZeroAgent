@@ -1,8 +1,6 @@
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { useState } from "react";
-import { AppUpdateButton } from "../components/AppUpdateButton";
 import { isMacOsTauri } from "../components/MacOsTitleBarSpacer";
-import type { AppUpdateController } from "../lib/appUpdates";
 
 // 宽布局的侧栏在应用标题栏下方，不需要额外留白；窄布局（<768px）侧栏改为
 // 从窗口顶边开始的浮层，原生红绿灯会压在品牌行上，需要让出一个标题栏高度。
@@ -35,10 +33,6 @@ export function DesktopSidebarBrand() {
       </div>
     </div>
   );
-}
-
-export function DesktopSidebarUpdate({ appUpdate }: { appUpdate?: AppUpdateController }) {
-  return appUpdate?.showUpdateButton ? <AppUpdateButton appUpdate={appUpdate} iconOnly /> : null;
 }
 
 export function hideDesktopSidebarCloseButton() {

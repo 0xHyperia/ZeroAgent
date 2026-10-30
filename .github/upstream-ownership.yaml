@@ -12,7 +12,7 @@
       "checks": ["ADR0058 跨端语义角色、浅深主题、减少动态及44px触控", "Web/GUI/mobile/remote构建与实际渲染，不侵入平台数据和执行边界"]
     },
     {
-      "glob": "crates/agent-ui/src/application/{WorkbenchNavigationRail.tsx,useNavigationPreview.ts}",
+      "glob": "crates/agent-ui/src/application/{WorkbenchNavigationRail.tsx,useNavigationPreview.ts,NavigationUpdateButton.tsx}",
       "ownership": "zeroagent_owned", "risk": "medium",
       "checks": ["预览不改固定状态，菜单/焦点/切号/触屏清理", "导航只调用宿主回调，不自行选择执行目标或创建会话"]
     },

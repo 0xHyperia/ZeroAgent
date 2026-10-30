@@ -41,6 +41,7 @@ import { LocaleContext } from "@liveagent/ui/i18n/LocaleContext";
 import { DEFAULT_CHAT_RUNTIME_CONTROLS } from "@liveagent/ui/lib/settings/types";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { UpdateNavigationPreview } from "./UpdateNavigationPreview";
 
 // Isolated display data. No account, Gateway, Tauri, upload or model client is mounted.
 const models: ComposerModelControlsProps["modelOptions"] = [
@@ -341,4 +342,7 @@ function App() {
 }
 
 const root = document.getElementById("root");
-if (root) createRoot(root).render(<App />);
+if (root)
+  createRoot(root).render(
+    new URLSearchParams(location.search).has("updates") ? <UpdateNavigationPreview /> : <App />,
+  );

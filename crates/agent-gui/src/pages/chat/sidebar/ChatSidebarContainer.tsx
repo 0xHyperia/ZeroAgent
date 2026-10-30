@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DesktopSidebarBrand,
   DesktopSidebarTitleBar,
-  DesktopSidebarUpdate,
   hideDesktopSidebarCloseButton,
 } from "../../../agent-ui-adapters/sidebarChrome";
 import type { AppUpdateController } from "../../../lib/appUpdates";
@@ -296,7 +295,6 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
       previewOpen={props.previewOpen}
       onPinPreview={props.onPinPreview}
       onNewRecentConversation={props.onNewRecentConversation}
-      footerTrailing={<DesktopSidebarUpdate appUpdate={props.appUpdate} />}
     />
   );
 }

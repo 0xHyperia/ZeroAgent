@@ -4,7 +4,6 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useEffect, useState } from "react";
 import type { AppUpdateController } from "../lib/appUpdates";
-import { AppUpdateButton } from "./AppUpdateButton";
 
 type TauriWindow = Window & { __TAURI_INTERNALS__?: unknown };
 
@@ -169,7 +168,6 @@ export function MacOsTitleBarToggle({
   sidebarOpen,
   onToggle,
   onOpenSettings,
-  appUpdate,
 }: {
   sidebarOpen: boolean;
   onToggle: () => void;
@@ -233,9 +231,6 @@ export function MacOsTitleBarToggle({
           <Settings className="size-4" />
         </button>
       )}
-      {!sidebarOpen && onOpenSettings && appUpdate ? (
-        <AppUpdateButton appUpdate={appUpdate} className="ml-1" />
-      ) : null}
     </div>
   );
 }

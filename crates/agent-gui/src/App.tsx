@@ -29,6 +29,7 @@ import {
 import { useDesktopImageStudioHost } from "./agent-ui-adapters/imageStudio";
 import { settingsHostAdapter } from "./agent-ui-adapters/kbrainSettings";
 import { kbrainSkillsAdapter } from "./agent-ui-adapters/kbrainSkills";
+import { AppUpdateButton } from "./components/AppUpdateButton";
 import { AppBootShell } from "./components/app/AppBootShell";
 import { DesktopExecutionSwitcher } from "./components/DesktopExecutionSwitcher";
 import { useNativeInputContextMenu } from "./components/input-context-menu/NativeInputContextMenu";
@@ -1142,6 +1143,7 @@ export default function App() {
                 {!localExecutionSelected &&
                   (selectedExecutionEnvironment ? (
                     <RemoteDeviceWorkbench
+                      navigationUpdate={<AppUpdateButton appUpdate={appUpdate} rail />}
                       key={selectedExecutionEnvironment.device_id}
                       settings={settings}
                       environment={selectedExecutionEnvironment}

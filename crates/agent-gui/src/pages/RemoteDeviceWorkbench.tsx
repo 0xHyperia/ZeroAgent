@@ -23,6 +23,7 @@ type Props = {
   expiresAt: number;
   selectionError?: string;
   headerLeadingActions?: ReactNode;
+  navigationUpdate?: ReactNode;
   onSelectionInvalid?: (reason: string) => void;
   onReconnect: () => Promise<void>;
 };
@@ -43,6 +44,7 @@ export function RemoteDeviceWorkbench(props: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
   const [windowTarget, setWindowTarget] = useState<HTMLElement | null>(null);
+  const [updateTarget, setUpdateTarget] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
@@ -77,6 +79,7 @@ export function RemoteDeviceWorkbench(props: Props) {
     setError("");
     setHeaderTarget(null);
     setWindowTarget(null);
+    setUpdateTarget(null);
     if (selectionError) {
       setLoading(false);
       setError(selectionError);
@@ -107,6 +110,7 @@ export function RemoteDeviceWorkbench(props: Props) {
         signal: controller.signal,
         onHeaderTarget: setHeaderTarget,
         onWindowControlsTarget: setWindowTarget,
+        onUpdateTarget: setUpdateTarget,
         onSelectionInvalid(reason) {
           if (controller.signal.aborted) return;
           setError(reason);
@@ -198,6 +202,7 @@ export function RemoteDeviceWorkbench(props: Props) {
             windowTarget,
           )
         : null}
+      {updateTarget ? createPortal(props.navigationUpdate, updateTarget) : null}
     </div>
   );
 }

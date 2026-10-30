@@ -97,6 +97,7 @@ import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
 import { DesktopHostSlot } from "@/components/DesktopHostSlot";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
+import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { executeClarifyPromptTurn } from "@/lib/chat/clarifyPromptTurn";
 import { gatewayOrigin, getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
@@ -1405,27 +1406,34 @@ export function GatewayAppView({
       }}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
       footer={
-        desktopHost?.onAccountTarget ? (
-          <DesktopHostSlot kind="account" />
-        ) : (
-          <UserMenu
-            variant="rail"
-            open={userMenuOpen}
-            onOpenChange={setUserMenuOpen}
-            userMenuLabel={userMenuLabel}
-            userAvatarLabel={userAvatarLabel}
-            email={relayUser?.email ?? ""}
-            balance={relayUser?.balance}
-            todayTokens={relayStats?.today_tokens}
-            avatarUrl={relayUser?.avatar_url}
-            online={Boolean(status?.online)}
-            onRefreshAccount={refreshRelayAccount}
-            onDismissNavigation={() => setSidebarOpen(false)}
-            onOpenAccount={() => openSettings("account")}
-            onOpenSettings={() => openSettings("system")}
-            onLogout={handleLogout}
-          />
-        )
+        <>
+          {desktopHost?.onUpdateTarget ? (
+            <DesktopHostSlot kind="update" />
+          ) : (
+            <MobileSidebarUpdate />
+          )}
+          {desktopHost?.onAccountTarget ? (
+            <DesktopHostSlot kind="account" />
+          ) : (
+            <UserMenu
+              variant="rail"
+              open={userMenuOpen}
+              onOpenChange={setUserMenuOpen}
+              userMenuLabel={userMenuLabel}
+              userAvatarLabel={userAvatarLabel}
+              email={relayUser?.email ?? ""}
+              balance={relayUser?.balance}
+              todayTokens={relayStats?.today_tokens}
+              avatarUrl={relayUser?.avatar_url}
+              online={Boolean(status?.online)}
+              onRefreshAccount={refreshRelayAccount}
+              onDismissNavigation={() => setSidebarOpen(false)}
+              onOpenAccount={() => openSettings("account")}
+              onOpenSettings={() => openSettings("system")}
+              onLogout={handleLogout}
+            />
+          )}
+        </>
       }
     />
   );

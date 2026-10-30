@@ -81,6 +81,7 @@ import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPr
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
+import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import {
   ACCOUNT_CHANGED_EVENT,
@@ -2783,7 +2784,12 @@ export function CloudChatPage({
           },
         },
       ]}
-      footer={accountMenu}
+      footer={
+        <>
+          <MobileSidebarUpdate />
+          {accountMenu}
+        </>
+      }
     />
   );
 

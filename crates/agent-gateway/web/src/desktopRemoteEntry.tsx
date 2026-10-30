@@ -46,6 +46,7 @@ export function mount(container: HTMLElement, host: DesktopRemoteHost): { dispos
       host.onHeaderTarget?.(null);
       host.onAccountTarget?.(null);
       host.onWindowControlsTarget?.(null);
+      host.onUpdateTarget?.(null);
       for (const [name, value] of previousAttributes) {
         if (value === null) documentRoot.removeAttribute(name);
         else documentRoot.setAttribute(name, value);

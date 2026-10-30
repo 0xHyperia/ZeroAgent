@@ -19,6 +19,7 @@ export type DesktopRemoteHost = {
   onHeaderTarget?: (element: HTMLElement | null) => void;
   onAccountTarget?: (element: HTMLElement | null) => void;
   onWindowControlsTarget?: (element: HTMLElement | null) => void;
+  onUpdateTarget?: (element: HTMLElement | null) => void;
   onSelectionInvalid: (reason: string) => void;
 };
 
