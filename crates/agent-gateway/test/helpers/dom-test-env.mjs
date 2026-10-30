@@ -35,6 +35,8 @@ export async function createWebDomTestEnv(options = {}) {
       disconnect() {}
     },
     IS_REACT_ACT_ENVIRONMENT: true,
+    // Vite injects this constant in every Web/mobile build. Restore it with the DOM globals.
+    __ZEROAGENT_APP_VERSION__: globalThis.__ZEROAGENT_APP_VERSION__ ?? "0.0.0-test",
   };
   const previous = new Map();
   for (const [key, value] of Object.entries(globals)) {

@@ -1,13 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import {
-  Blend,
-  Brain,
-  Cable,
-  CalendarDays,
-  Clock3,
-  ImageIcon,
-  SquarePen,
-} from "../components/IconSet";
+import { SquarePen } from "../components/IconSet";
 import {
   Sidebar,
   SidebarContent,
@@ -17,13 +9,13 @@ import {
 } from "../components/ui/sidebar";
 import { useLocale } from "../i18n";
 import {
-  normalizeSidebarShortcuts,
   SIDEBAR_SHORTCUTS,
   type SidebarShortcutId,
   type SidebarShortcuts,
 } from "../lib/settings/sidebarShortcuts";
 import { cn } from "../lib/shared/utils";
 import type { ApplicationViewId } from "./ApplicationView";
+import { getWorkbenchFeatureNavigation } from "./workbenchNavigation";
 
 /** Feature navigation replaces workspace/history navigation outside a conversation. */
 export function WorkbenchFeatureSidebar({
@@ -50,15 +42,6 @@ export function WorkbenchFeatureSidebar({
   const select = (action: () => void) => {
     action();
     if (isMobile) setOpenMobile(false);
-  };
-  const enabled = normalizeSidebarShortcuts(shortcuts);
-  const icons = {
-    skills: Blend,
-    mcp: Cable,
-    cron: Clock3,
-    planning: CalendarDays,
-    "image-studio": ImageIcon,
-    memory: Brain,
   };
   const current = SIDEBAR_SHORTCUTS.find(({ id }) => activeView === `${id}-hub`);
   const rowClass =
@@ -87,8 +70,7 @@ export function WorkbenchFeatureSidebar({
             {t("chat.newConversation")}
           </button>
           <div className="my-2 border-t border-border/60" />
-          {SIDEBAR_SHORTCUTS.filter(({ id }) => enabled[id]).map(({ id, labelKey }) => {
-            const Icon = icons[id];
+          {getWorkbenchFeatureNavigation(shortcuts).map(({ id, labelKey, icon: Icon }) => {
             return (
               <button
                 key={id}

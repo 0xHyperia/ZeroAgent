@@ -279,37 +279,19 @@ html[data-zeroagent-platform="android"]
 .cloud-chat-shell .chat-history-sidebar {
   border-right: 1px solid hsl(var(--border) / 0.6);
 }
-.cloud-chat-shell .chat-history-sidebar-inner > [data-sidebar="header"] {
-  padding-top: 16px;
-}
 .cloud-sidebar-brand,
-.cloud-chat-shell .cloud-context-sidebar h2,
-.cloud-settings-page .settings-page-title {
+.cloud-chat-shell .cloud-context-sidebar h2 {
   font-size: 17px;
   font-weight: 600;
   line-height: 24px;
 }
 .cloud-chat-shell {
-  --cloud-frame-radius: var(--za-radius-workbench);
-  background: hsl(var(--settings-rail));
-}
-.cloud-chat-shell .gateway-editor-host {
-  padding: 2px 2px 2px 0;
   background: hsl(var(--settings-rail));
 }
 .cloud-chat-shell .application-rail {
   border-right: 0;
 }
-.cloud-chat-shell [data-cloud-conversation-workspace],
-.cloud-chat-shell .cloud-settings-page {
-  border: 1px solid var(--za-workbench-border);
-  border-radius: var(--cloud-frame-radius);
-  overflow: hidden;
-  background: hsl(var(--background));
-}
-.cloud-chat-shell .chat-history-sidebar,
-.cloud-chat-shell .cloud-context-sidebar,
-.cloud-settings-page aside {
+.cloud-chat-shell .cloud-context-sidebar {
   background: hsl(var(--background));
 }
 .cloud-chat-shell .chat-history-sidebar [data-sidebar="footer"] {
@@ -356,7 +338,6 @@ html[data-zeroagent-platform="android"]
   .cloud-chat-shell .gateway-cloud-main [data-app-workbench-chrome] {
     --app-header-height: 52px;
   }
-  .cloud-chat-shell .chat-history-sidebar-inner > [data-sidebar="header"],
   .cloud-chat-shell .cloud-context-sidebar > [data-slot="sidebar-inner"] > [data-sidebar="header"] {
     padding-top: 10px;
   }
@@ -428,14 +409,6 @@ html[data-zeroagent-platform="android"]
   box-shadow: 0 4px 16px #00000012;
 }
 @media (max-width: 820px) {
-  .cloud-chat-shell .gateway-editor-host {
-    padding: 0;
-  }
-  .cloud-chat-shell [data-cloud-conversation-workspace],
-  .cloud-chat-shell .cloud-settings-page {
-    border: 0;
-    border-radius: 0;
-  }
   .cloud-title-input {
     width: 100%;
     min-width: 0;

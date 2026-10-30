@@ -1,23 +1,14 @@
 import { ApplicationRail } from "@liveagent/ui/application/ApplicationRail";
 import type { ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
-import {
-  Blend,
-  Brain,
-  Cable,
-  CalendarDays,
-  Clock3,
-  ImageIcon,
-  MessageSquare,
-  NavigationChatFilled,
-  PanelLeftClose,
-} from "@liveagent/ui/components/IconSet";
+import { PanelLeftClose } from "@liveagent/ui/components/IconSet";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n";
-import {
-  SIDEBAR_SHORTCUTS,
-  type SidebarShortcuts,
-} from "@liveagent/ui/lib/settings/sidebarShortcuts";
+import type { SidebarShortcuts } from "@liveagent/ui/lib/settings/sidebarShortcuts";
 import type { ReactNode } from "react";
+import {
+  createWorkbenchNavigationItem,
+  getWorkbenchFeatureNavigation,
+} from "./workbenchNavigation";
 
 /** Navigation only. Local execution and the selected device remain host-owned. */
 export function WorkbenchNavigationRail({
@@ -36,14 +27,6 @@ export function WorkbenchNavigationRail({
   brand: ReactNode;
 }) {
   const { t } = useLocale();
-  const icons = {
-    skills: Blend,
-    mcp: Cable,
-    cron: Clock3,
-    planning: CalendarDays,
-    "image-studio": ImageIcon,
-    memory: Brain,
-  };
   return (
     <ApplicationRail
       activeId={activeView}
@@ -63,23 +46,10 @@ export function WorkbenchNavigationRail({
         )
       }
       items={[
-        {
-          id: "chat",
-          label: t("sidebar.navigation"),
-          icon: <MessageSquare className="size-5" />,
-          activeIcon: <NavigationChatFilled className="size-5" />,
-
-          onSelect: () => onSelectView("chat"),
-        },
-        ...SIDEBAR_SHORTCUTS.filter(({ id }) => shortcuts[id]).map(({ id, labelKey }) => {
-          const Icon = icons[id];
-          return {
-            id: `${id}-hub`,
-            label: t(labelKey),
-            icon: <Icon className="size-5" />,
-            onSelect: () => onSelectView(`${id}-hub`),
-          };
-        }),
+        createWorkbenchNavigationItem("chat", t("sidebar.navigation"), () => onSelectView("chat")),
+        ...getWorkbenchFeatureNavigation(shortcuts).map(({ view, labelKey }) =>
+          createWorkbenchNavigationItem(view, t(labelKey), () => onSelectView(view)),
+        ),
       ]}
       footer={footer}
     />

@@ -1,7 +1,11 @@
 import { ApplicationRail } from "@liveagent/ui/application/ApplicationRail";
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { BrandMark } from "@liveagent/ui/application/BrandMark";
+import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
 import { useUnsavedChangesPrompt } from "@liveagent/ui/application/useUnsavedChangesPrompt";
+import { WorkbenchCanvas, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
+import { createWorkbenchNavigationItem } from "@liveagent/ui/application/workbenchNavigation";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import {
   ChatHistorySidebar,
@@ -11,21 +15,11 @@ import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
-import {
-  BookOpen,
-  Globe,
-  NavigationChat,
-  NavigationChatFilled,
-  NavigationDevices,
-  NavigationLibrary,
-  NavigationLibraryFilled,
-  PanelLeft,
-  SquarePen,
-  X,
-} from "@liveagent/ui/components/IconSet";
+import { BookOpen, Globe, PanelLeft, SquarePen, X } from "@liveagent/ui/components/IconSet";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
@@ -2747,42 +2741,20 @@ export function CloudChatPage({
             <PanelLeft className="size-5" />
           </Button>
         ) : (
-          <img
-            src="/zeroagent-logo.png"
-            alt="ZeroAgent"
-            draggable={false}
-            className="size-8 object-contain"
-          />
+          <BrandMark />
         )
       }
       activeId={
         accountSettingsOpen ? "settings" : workspaceView === "projects" ? "chat" : workspaceView
       }
       items={[
-        {
-          id: "chat",
-          label: "对话",
-          icon: <NavigationChat className="size-5" aria-hidden="true" />,
-          activeIcon: <NavigationChatFilled className="size-5" aria-hidden="true" />,
-          onSelect: closeResources,
-        },
-        {
-          id: "library",
-          label: "资料空间",
-          icon: <NavigationLibrary className="size-5" aria-hidden="true" />,
-          activeIcon: <NavigationLibraryFilled className="size-5" aria-hidden="true" />,
-          onSelect: () => openResource("files", true),
-        },
-        {
-          id: "devices",
-          label: "设备",
-          icon: <NavigationDevices className="size-5" aria-hidden="true" />,
-          onSelect: () => {
-            if (mobile) setSidebarOpen(false);
-            setSettingsSection("devices");
-            setAccountSettingsOpen(true);
-          },
-        },
+        createWorkbenchNavigationItem("chat", "对话", closeResources),
+        createWorkbenchNavigationItem("library", "资料空间", () => openResource("files", true)),
+        createWorkbenchNavigationItem("devices", "设备", () => {
+          if (mobile) setSidebarOpen(false);
+          setSettingsSection("devices");
+          setAccountSettingsOpen(true);
+        }),
       ]}
       footer={
         <>
@@ -2808,12 +2780,13 @@ export function CloudChatPage({
           aria-label="选择附件"
           onChange={(event) => void attachFiles(event)}
         />
-        <div
+        <WorkbenchShell
           ref={sidebarPreview.rootRef}
-          className="gateway-editor-host relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+          layout="page"
+          className="gateway-editor-host flex-1"
         >
           {!sidebar.isMobile ? renderApplicationRail() : null}
-          <div
+          <WorkbenchCanvas
             data-cloud-conversation-workspace
             aria-hidden={accountSettingsOpen}
             inert={accountSettingsOpen}
@@ -3276,7 +3249,7 @@ export function CloudChatPage({
                           </ScrollArea>
                         </div>
                         <ChatComposerBar
-                          showExecutionControls={false}
+                          capabilities={CLOUD_COMPOSER_CAPABILITIES}
                           feedback={composerFeedback}
                           layout="inline"
                           expandedInput={presentation === "work"}
@@ -3285,7 +3258,7 @@ export function CloudChatPage({
                           onPickWorkspaceFolder={() => undefined}
                           onRefreshModels={() => void refreshModels()}
                           modelsRefreshing={modelsLoading}
-                          surface="web"
+                          presentation="column"
                           conversationId={conversationId}
                           composerRef={composerRef}
                           isSending={streaming}
@@ -3372,7 +3345,6 @@ export function CloudChatPage({
                             </div>
                           }
                           workdir=""
-                          showGitControls={false}
                           enabledSkills={[]}
                           executionMode="text"
                           hasModels={modelOptions.length > 0}
@@ -3745,10 +3717,10 @@ export function CloudChatPage({
                 </div>
               </CloudChatResourcePresentation.Provider>
             </main>
-          </div>
+          </WorkbenchCanvas>
 
           {accountSettingsOpen ? (
-            <div className="cloud-settings-page flex min-h-0 min-w-0 flex-1">
+            <SettingsWorkspace navigation="external" className="cloud-settings-page flex-1">
               <SettingsPage
                 presentation="page"
                 settings={settings}
@@ -3785,9 +3757,9 @@ export function CloudChatPage({
                 runtimeKind="web_chat"
                 sttSettingsService={disabledSttSettingsService}
               />
-            </div>
+            </SettingsWorkspace>
           ) : null}
-        </div>
+        </WorkbenchShell>
         {modelLimitsOpen &&
         selectedModelOption &&
         viewRef.current.userId === user.id &&

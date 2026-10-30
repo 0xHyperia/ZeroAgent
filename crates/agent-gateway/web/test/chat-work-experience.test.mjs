@@ -91,4 +91,17 @@ test("the real inline composer retains its editor, selection and single model co
   const safety=deck.querySelector('[data-safety]'),model=deck.querySelector('[data-model]'),git=deck.querySelector('[data-git]');
   assert.ok(safety);assert.ok(model);assert.ok(git);assert.ok(safety.compareDocumentPosition(model)&4);assert.ok(model.compareDocumentPosition(git)&4);
   assert.equal(host.querySelectorAll('[data-model]').length,1);assert.equal(sends,0);
+  const {CLOUD_COMPOSER_CAPABILITIES,DEVICE_COMPOSER_CAPABILITIES}=env.loadModule('@liveagent/ui/contracts/composerPresentation.ts');
+  // The host can vary geometry or supported controls without replacing the draft owner.
+  const retainedEditor=host.querySelector('textarea'),retainedModelMounts=modelMounts;retainedEditor.focus();retainedEditor.setSelectionRange(1,3);
+  props.presentation='pane';props.capabilities=DEVICE_COMPOSER_CAPABILITIES;
+  await render(false);assert.equal(host.querySelector('textarea'),retainedEditor);
+  props.presentation='column';props.capabilities=CLOUD_COMPOSER_CAPABILITIES;
+  await render(false);
+  assert.equal(host.querySelector('[data-safety]'),null,'cloud capabilities suppress device execution controls even if callbacks exist');
+  assert.equal(host.querySelector('[data-git]'),null,'a cloud host cannot expose local Git by requesting its visibility');
+  assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(retainedEditor.selectionStart,1);assert.equal(retainedEditor.selectionEnd,3);
+  props.capabilities=DEVICE_COMPOSER_CAPABILITIES;
+  await render(false);assert.ok(host.querySelector('[data-safety]'));assert.ok(host.querySelector('[data-git]'));
+  assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(mounts,1);assert.equal(modelMounts,retainedModelMounts);assert.equal(sends,0);
 });

@@ -3,9 +3,12 @@ import { listen } from "@liveagent/app/shims/tauriEvent";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail as DesktopNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
+import { WorkbenchBody, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
@@ -42,6 +45,7 @@ import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/Workbenc
 import { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { getAutomationState, useAutomation } from "@liveagent/ui/lib/automation/index";
 import { formatCheckpointRewoundNotification } from "@liveagent/ui/lib/chat/checkpointRewind";
@@ -127,7 +131,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
 import { loadComposerUploadedImagePreview } from "../agent-ui-adapters/composerImagePreview";
 import { kbrainSettingsAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { createTauriTrajectoryHost } from "../agent-ui-adapters/trajectory";
@@ -2570,7 +2573,8 @@ function ChatPageContent(props: ChatPageProps) {
         onSuggestionSelect: handleEmptyStateSuggestion,
       },
       composer: {
-        surface: "desktop",
+        presentation: "pane",
+        capabilities: DEVICE_COMPOSER_CAPABILITIES,
         conversationId: currentConversationId,
         isUploadingFiles,
         isInputDisabled: isComposerInputDisabled,
@@ -3829,7 +3833,8 @@ function ChatPageContent(props: ChatPageProps) {
         onSuggestionSelect: focusGuard(handleEmptyStateSuggestion),
       },
       composer: {
-        surface: "desktop",
+        presentation: "pane",
+        capabilities: DEVICE_COMPOSER_CAPABILITIES,
         conversationId,
         isUploadingFiles: false,
         isInputDisabled: false,
@@ -4350,14 +4355,7 @@ function ChatPageContent(props: ChatPageProps) {
 
   const renderNavigationRail = (mobile = false) => (
     <DesktopNavigationRail
-      brand={
-        <img
-          src="/zeroagent-logo.png"
-          alt="ZeroAgent"
-          draggable={false}
-          className="size-8 select-none"
-        />
-      }
+      brand={<BrandMark />}
       activeView={activeView}
       shortcuts={settings.customSettings.sidebarShortcuts}
       onSelectView={(view) => {
@@ -4392,13 +4390,10 @@ function ChatPageContent(props: ChatPageProps) {
   if (!active) return null;
 
   return (
-    <div
+    <WorkbenchShell
       ref={navigationPreview.rootRef}
       data-app-frame="three-column"
-      className={cn(
-        "app-workspace-shell relative size-full min-h-0 overflow-hidden",
-        isMacOsTauri() ? "flex flex-col" : "app-workbench-layout",
-      )}
+      layout={isMacOsTauri() ? "stacked-panels" : "panels"}
     >
       {activeView === "image-studio-hub" ? (
         <AppHeaderFrame sidebarOpen={sidebarOpen}>
@@ -4475,20 +4470,12 @@ function ChatPageContent(props: ChatPageProps) {
           }
         />
       )}
-      <div
-        data-app-workbench-body=""
-        className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
-      >
+      <WorkbenchBody>
         {workbenchDragGhost}
         {!sidebar.isMobile ? (
-          settingsNavigationTarget ? (
-            <>
-              <div data-navigation-rail-placeholder="" aria-hidden="true" />
-              {createPortal(renderNavigationRail(), settingsNavigationTarget)}
-            </>
-          ) : (
-            renderNavigationRail()
-          )
+          <WorkbenchNavigationMount target={settingsNavigationTarget}>
+            {renderNavigationRail()}
+          </WorkbenchNavigationMount>
         ) : null}
         {!sidebar.isMobile && !sidebar.open ? (
           <div data-sidebar-hover-edge="" aria-hidden="true" />
@@ -4803,7 +4790,7 @@ function ChatPageContent(props: ChatPageProps) {
             />
           </WorkspaceToolsPanel>
         </WorkspacePanelGroup>
-      </div>
+      </WorkbenchBody>
       {projectSettingsProject ? (
         <WorkspaceProjectSettingsModal
           project={projectSettingsProject}
@@ -4821,6 +4808,6 @@ function ChatPageContent(props: ChatPageProps) {
           }}
         />
       ) : null}
-    </div>
+    </WorkbenchShell>
   );
 }

@@ -1,6 +1,6 @@
 # ZeroAgent 跨端组件与交互规范
 
-版本：1.5。基准：当前 CloudChat v1.13；决策：[ADR0058](../product/decisions/0058-cross-platform-design-system.md)。
+版本：1.6。基准：当前 CloudChat v1.13；决策：[ADR0058](../product/decisions/0058-cross-platform-design-system.md)、[ADR0059](../product/decisions/0059-workbench-composition-and-capabilities.md)。
 
 ## 基础视觉
 
@@ -60,6 +60,19 @@ hover不触发导航、保存或执行；聚焦不等于选择。禁用态保留
 支持减少动态、强制颜色、系统字号和缩放。鼠标使用手型、文字使用I型，拖拽/缩放保留专用光标。
 
 ## 维护和验收
+
+工作台统一消费 `WorkbenchShell`，分栏工作台用 `WorkbenchBody`，页面及设置用 `WorkbenchCanvas`。
+外框圆角、边界和手机收边由共享样式负责，宿主不再另外覆盖一份。导航图标与功能定义来自
+`workbenchNavigation`，品牌来自 `BrandMark`；导航目的地、快捷入口偏好和回调仍由宿主提供。
+
+输入栏的 `presentation` 表达画布几何，`capabilities` 表达可呈现的能力，两者不得互相推导。
+本机分栏采用 pane，设备 WebUI、内嵌远程和 CloudChat 阅读列采用 column；这两种组合复用相同控件、
+动效、表面和交互。云端关闭设备执行、Git 与本机目录入口；设备工作台保留这些入口原有的可用性条件。
+前端能力声明不能代替服务端授权、设备租约或原生凭据检查。
+
+设置复用 `SettingsWorkspace`。宿主轨道可以通过 `WorkbenchNavigationMount` 移入，后台保留宽度占位；
+CloudChat 保留外部轨道，两种方式均只显示一个账户入口。会话树保持挂载并在后台 inert，不能因为换外框、
+设置往返或切换功能而重建草稿、队列、订阅或模型控制器。独立桌面远程工厂继续隔离加载与释放。
 
 应用更新入口在左侧应用轨底部、头像上方，使用同一蓝色下载图标与黑胶囊提示；不放到
 标题栏或会话列表脚部。手机入口至少44px，点击展开详情；自动发现不弹窗打断，“稍后”

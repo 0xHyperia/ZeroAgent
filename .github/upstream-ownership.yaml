@@ -2,6 +2,16 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-ui/src/application/{WorkbenchShell.tsx,WorkbenchNavigationMount.tsx,workbenchNavigation.tsx,BrandMark.tsx,SettingsWorkspace.tsx,WorkbenchFeatureSidebar.tsx,workbenchNavigationPortal.ts}",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["ADR0059 共享外框、导航和品牌，宿主保留状态、回调及独立远程工厂", "设置往返不重挂会话树，轨道单实例、inert/离开守卫及宽窄屏验收"]
+    },
+    {
+      "glob": "crates/agent-ui/src/contracts/composerPresentation.ts",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["布局 presentation 与 UI capabilities 分离，不授予执行或认证权限", "云端不能被 visibility 放大能力，本机/远程保留原发送、停止、草稿及队列控制器"]
+    },
+    {
       "glob": "crates/agent-gui/test/design-system-browser/**",
       "ownership": "zeroagent_owned", "risk": "low",
       "checks": ["ADR0058 真实共享组件样板，不挂载账户和执行客户端", "独立类型/构建及浏览器主题字号焦点验收，不替代原生和在线工作台"]

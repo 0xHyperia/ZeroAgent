@@ -106,6 +106,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  type ComposerCapabilities,
+  type ComposerPresentation,
+  resolveComposerControls,
+  resolveComposerPresentation,
+} from "../../contracts/composerPresentation";
+import {
   getUploadedImagePreviewCacheKey,
   loadUploadedImagePreview,
   readUploadedImagePreviewCache,
@@ -278,7 +284,10 @@ function prefersReducedMotion() {
 }
 
 export type ChatComposerBarProps = {
-  surface: "desktop" | "web";
+  /** Upstream default only. Product hosts explicitly supply presentation. */
+  surface?: "desktop" | "web";
+  presentation?: ComposerPresentation;
+  capabilities?: ComposerCapabilities;
   /** Web surface that owns the measured composer-height CSS variable. */
   overlayHeightOwnerRef?: RefObject<HTMLElement | null>;
   conversationId: string;
@@ -427,7 +436,6 @@ export type ChatComposerBarProps = {
 
 export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposerBarProps) {
   const {
-    surface,
     overlayHeightOwnerRef,
     conversationId,
     composerRef,
@@ -461,7 +469,6 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     reasoningOptions,
     thinkingAlwaysOn,
     gitClient,
-    showGitControls = true,
     gitWriteEnabled = true,
     gitDisabledMessage,
     contextUsageTokens,
@@ -509,6 +516,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     statsBar,
     contextDisplayMode,
   } = props;
+  const panePresentation = resolveComposerPresentation(props) === "pane";
+  const { executionControls, gitControls: showGitControls } = resolveComposerControls(
+    props.capabilities,
+    {
+      executionControls: props.showExecutionControls,
+      gitControls: props.showGitControls,
+    },
+  );
   const { t } = useLocale();
   const [composerIsEmpty, setComposerIsEmpty] = useState(true);
   // 可澄清文本存在性：与 composerIsEmpty 分开跟踪——空态只看编辑器整体
@@ -552,7 +567,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const [composerHasOverflow, setComposerHasOverflow] = useState(false);
   const isComposerExpandedRef = useRef(false);
   const glassCardRef = useRef<HTMLDivElement | null>(null);
-  const inlineLayout = props.layout === "inline" && surface === "web" && executionMode === "text";
+  const inlineLayout = props.layout === "inline" && !panePresentation && executionMode === "text";
   const singleLineInput = useInlineComposerLayout({
     enabled: inlineLayout,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
@@ -1140,7 +1155,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     const composerLayer = composerLayerRef.current;
     if (!composerLayer) return;
 
-    if (surface === "desktop") {
+    if (panePresentation) {
       if (!onHeightChange && !onFloatingOverhangChange && !onCenterOffsetChange) return;
 
       let animationFrame: number | null = null;
@@ -1225,7 +1240,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     onHeightChange,
     onFloatingOverhangChange,
     onCenterOffsetChange,
-    surface,
+    panePresentation,
     taskProgressBarElement,
     overlayHeightOwnerRef,
   ]);
@@ -1233,7 +1248,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const modelControls = (
     <ComposerModelControls
       presentation="inline"
-      showExecutionControls={props.showExecutionControls ?? true}
+      showExecutionControls={executionControls}
       compactLabel={inlineLayout && !props.expandedInput}
       showProviderIcon
       executionMode={executionMode}
@@ -1266,7 +1281,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       data-composer-layout={inlineLayout ? "inline" : "standard"}
       data-composer-empty={composerIsEmpty ? "true" : "false"}
       className={cn(
-        surface === "desktop"
+        panePresentation
           ? cn(
               "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-5",
               "pb-4",
@@ -1275,7 +1290,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               "gateway-composer-layer pointer-events-none absolute inset-x-0 bottom-0 z-20 grid max-h-full",
               "grid-cols-[minmax(var(--gateway-chat-column-gutter,var(--spacing-16px)),1fr)_minmax(0,min(calc(var(--chat-transcript-content-width,var(--spacing-768px))-var(--spacing-40px)),100%))_minmax(var(--gateway-chat-column-gutter,var(--spacing-16px)),1fr)] pb-[var(--gateway-chat-composer-bottom,var(--spacing-16px))] max-640:pb-[var(--gateway-chat-composer-bottom,var(--spacing-12px))]",
             ),
-        isComposerExpanded && (surface === "desktop" ? "top-14" : "top-0 pt-3"),
+        isComposerExpanded && (panePresentation ? "top-14" : "top-0 pt-3"),
         hidden && "hidden",
       )}
     >
@@ -1288,14 +1303,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         className={cn(
           "pointer-events-none absolute bottom-0 top-[calc(var(--radius)+var(--radius-16px))] bg-background",
           // Leave the native scrollbar gutter exposed beside the floating card.
-          surface === "desktop" ? "inset-x-5" : "inset-x-0",
+          panePresentation ? "inset-x-5" : "inset-x-0",
         )}
       />
       {/* The reading column is centered independently of the native scrollbar. */}
       <div
         ref={composerColumnRef}
         className={cn(
-          surface === "desktop"
+          panePresentation
             ? "pointer-events-auto relative w-full max-w-transcript-gui"
             : cn(
                 "gateway-chat-column pointer-events-auto relative col-[2] flex w-full min-w-0 max-h-full",
@@ -1555,7 +1570,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             // 区吸收多余空间，工具栏才能始终贴住卡片底边。
             "composer-glass-card @container relative flex flex-col overflow-hidden",
             "rounded-4xl border border-border/65 bg-muted transition-colors focus-within:border-border",
-            surface === "desktop" && "z-10",
+            panePresentation && "z-10",
             isComposerExpanded && "min-h-0 flex-1",
           )}
         >
@@ -1712,7 +1727,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   // min-h 覆盖编辑器默认 70px，为卡片下方的会话统计栏留出高度预算。
                   "min-h-60px p-0",
                   isComposerExpanded &&
-                    (surface === "desktop" ? "h-full max-h-none" : "h-full! max-h-none!"),
+                    (panePresentation ? "h-full max-h-none" : "h-full! max-h-none!"),
                 )}
               />
             </div>
@@ -1774,14 +1789,16 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                         <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="font-medium leading-5">{t("chat.upload.files")}</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={onPickWorkspaceFolder}
-                        disabled={uploadDisabled}
-                        className="gap-2"
-                      >
-                        <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="font-medium leading-5">{t("chat.upload.folder")}</span>
-                      </DropdownMenuItem>
+                      {props.capabilities?.workspaceFolders !== false ? (
+                        <DropdownMenuItem
+                          onSelect={onPickWorkspaceFolder}
+                          disabled={uploadDisabled}
+                          className="gap-2"
+                        >
+                          <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="font-medium leading-5">{t("chat.upload.folder")}</span>
+                        </DropdownMenuItem>
+                      ) : null}
                       {isAgentMode ? (
                         // 计划模式开关行:整行即开关,右侧迷你 switch 呈现状态。
                         // closeOnClick=false 让切换就地生效——开关动画可见,菜单
@@ -1951,7 +1968,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               )}
             >
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-                {commandSafetyMode && onCommandSafetyModeChange ? (
+                {executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
                   <CommandSafetyModeSelector
                     value={commandSafetyMode}
                     planModeEnabled={chatRuntimeControls.planModeEnabled}

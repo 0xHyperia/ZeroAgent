@@ -1,8 +1,11 @@
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
+import { WorkbenchBody, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
@@ -42,6 +45,7 @@ import { WorkbenchCanvas } from "@liveagent/ui/components/workbench/WorkbenchCan
 import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/WorkbenchEmptyState";
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
 import {
   type CheckpointRewindClient,
@@ -92,7 +96,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   type TrustedGatewayImageIdentity,
   useWebImageStudioHost,
@@ -1390,14 +1393,7 @@ export function GatewayAppView({
     ) : null;
   const renderNavigationRail = (mobile = false) => (
     <WorkbenchNavigationRail
-      brand={
-        <img
-          src="/zeroagent-logo.png"
-          alt="ZeroAgent"
-          draggable={false}
-          className="size-8 select-none"
-        />
-      }
+      brand={<BrandMark />}
       activeView={activeView}
       shortcuts={settings.customSettings.sidebarShortcuts}
       onSelectView={(view) => {
@@ -1480,11 +1476,11 @@ export function GatewayAppView({
           />
           {workbenchDragGhost}
 
-          <div
+          <WorkbenchShell
             ref={navigationPreview.rootRef}
             inert={settingsOpen}
             aria-hidden={settingsOpen || undefined}
-            className="app-workspace-shell gateway-editor-host app-workbench-layout relative min-w-0 min-h-0 flex-1 h-full overflow-hidden"
+            className="gateway-editor-host flex-1"
           >
             <AppWorkbenchChrome
               settings={settings}
@@ -1530,19 +1526,11 @@ export function GatewayAppView({
                 </>
               }
             />
-            <div
-              data-app-workbench-body=""
-              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
-            >
+            <WorkbenchBody>
               {!sidebar.isMobile ? (
-                navigationTarget ? (
-                  <>
-                    <div data-navigation-rail-placeholder="" aria-hidden="true" />
-                    {createPortal(renderNavigationRail(), navigationTarget)}
-                  </>
-                ) : (
-                  renderNavigationRail()
-                )
+                <WorkbenchNavigationMount target={navigationTarget}>
+                  {renderNavigationRail()}
+                </WorkbenchNavigationMount>
               ) : null}
               {!sidebar.isMobile && !sidebar.open ? (
                 <div data-sidebar-hover-edge="" aria-hidden="true" />
@@ -1915,7 +1903,8 @@ export function GatewayAppView({
                                   </button>
                                 ) : null}
                                 <ChatComposerBar
-                                  surface="web"
+                                  presentation="column"
+                                  capabilities={DEVICE_COMPOSER_CAPABILITIES}
                                   overlayHeightOwnerRef={chatFrameRef}
                                   runClarifyTurn={
                                     settings.customSettings.promptClarifyEnabled
@@ -2285,8 +2274,8 @@ export function GatewayAppView({
                   ) : null}
                 </WorkspaceToolsPanel>
               </WorkspacePanelGroup>
-            </div>
-          </div>
+            </WorkbenchBody>
+          </WorkbenchShell>
 
           {projectSettingsProject ? (
             <WorkspaceProjectSettingsModal

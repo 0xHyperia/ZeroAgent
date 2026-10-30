@@ -86,10 +86,10 @@ for (const stage of ["load", "native", "styles", "mount"]) {
     const message = `${stage}: synthetic connection failure`;
     const f = await fixture(t, { [stage]: stage === "native" ? message : new Error(message) });
     await f.render();
-    assert.equal(f.target.querySelector('[role="status"]').textContent, message);
+    assert.equal(f.target.querySelector('[role="status"] .app-status-message').textContent, message);
     assert.deepEqual(f.invalidations, [], "initialization failures must not invalidate authorization");
     await f.render({ environments: [{ ...f.input.environment, name: "Updated directory" }] });
-    assert.equal(f.target.querySelector('[role="status"]').textContent, message);
+    assert.equal(f.target.querySelector('[role="status"] .app-status-message').textContent, message);
     if (["styles", "mount"].includes(stage))
       assert.equal(f.calls.filter((call) => call.command === "account_remote_close").length, 1);
     if (stage === "mount")
@@ -108,7 +108,7 @@ test("a failed explicit reconnect preserves its new error and remains retryable"
   const f = await fixture(t, { load: new Error("initial failure"), reconnect: "Gateway 连接失败，请稍后重试。" });
   await f.render();
   await f.retry();
-  assert.equal(f.target.querySelector('[role="status"]').textContent, "Gateway 连接失败，请稍后重试。");
+  assert.equal(f.target.querySelector('[role="status"] .app-status-message').textContent, "Gateway 连接失败，请稍后重试。");
   assert.equal(f.target.querySelector("button").disabled, false);
   assert.deepEqual(f.invalidations, []);
   delete f.stages.reconnect;
@@ -124,7 +124,7 @@ test("remote authorization rejection keeps its reason through the parent rerende
   const reason = "此设备已撤销控制权限，请重新验证。";
   await f.env.act(async () => host.onSelectionInvalid(reason));
   assert.deepEqual(f.invalidations, [reason]);
-  assert.equal(f.target.querySelector('[role="status"]').textContent, reason);
+  assert.equal(f.target.querySelector('[role="status"] .app-status-message').textContent, reason);
   assert.equal(host.isCurrent(), false);
   assert.equal(f.calls.filter((call) => call.command === "unmount").length, 1);
   assert.equal(f.calls.filter((call) => call.command === "account_remote_close").length, 1);

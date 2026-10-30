@@ -408,5 +408,34 @@ for (const [entryFile, viewFile] of applicationEntries) {
   );
 }
 
+const workbenchConsumers = [
+  ["crates/agent-gui/src/pages/ChatPage.tsx", ["WorkbenchShell", "WorkbenchBody"]],
+  ["crates/agent-gateway/web/src/app/GatewayAppView.tsx", ["WorkbenchShell", "WorkbenchBody"]],
+  ["crates/agent-gateway/web/src/pages/CloudChatPage.tsx", ["WorkbenchShell", "WorkbenchCanvas"]],
+];
+for (const [file, components] of workbenchConsumers) {
+  const absolute = join(repoRoot, file);
+  const source = readFileSync(absolute, "utf8");
+  for (const component of components) {
+    if (rendersImportedComponent(source, absolute, "@liveagent/ui/application/WorkbenchShell", component)) continue;
+    failures++;
+    console.error(`${file}: 工作台必须消费共享 ${component}，不能复制布局骨架`);
+  }
+  if (!rendersImportedComponent(source, absolute, "@liveagent/ui/application/BrandMark", "BrandMark")) {
+    failures++;
+    console.error(`${file}: 应用轨品牌必须使用共享 BrandMark`);
+  }
+}
+const cloudWorkbench = "crates/agent-gateway/web/src/pages/CloudChatPage.tsx";
+if (!rendersImportedComponent(readFileSync(join(repoRoot, cloudWorkbench), "utf8"), join(repoRoot, cloudWorkbench), "@liveagent/ui/application/SettingsWorkspace", "SettingsWorkspace")) {
+  failures++;
+  console.error(`${cloudWorkbench}: 设置页面必须消费共享 SettingsWorkspace`);
+}
+const sharedComposer = "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx";
+if (/surface\s*===|===\s*["'](?:desktop|web)["']/.test(readFileSync(join(repoRoot, sharedComposer), "utf8"))) {
+  failures++;
+  console.error(`${sharedComposer}: 布局应使用显式 presentation，平台能力通过 capabilities 注入`);
+}
+
 if (failures > 0) process.exit(1);
 console.log("UI boundary check passed.");

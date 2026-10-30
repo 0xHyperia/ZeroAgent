@@ -268,7 +268,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
       }));
       return env.React.createElement("footer", null,
         props.feedback,
-        realModelControls?env.React.createElement(env.loadModule("../../agent-ui/src/components/chat/ComposerModelControls.tsx").ComposerModelControls,{...props,open:true}):null,
+        realModelControls?env.React.createElement(env.loadModule("../../agent-ui/src/components/chat/ComposerModelControls.tsx").ComposerModelControls,{...props,open:true,showExecutionControls:env.loadModule("@liveagent/ui/contracts/composerPresentation.ts").resolveComposerControls(props.capabilities,{executionControls:props.showExecutionControls}).executionControls}):null,
         env.React.createElement("div",{"data-pending-attachments":""},props.pendingUploadedFiles.map(file=>env.React.createElement("div",{key:file.relativePath},env.React.createElement("button",{onClick:()=>props.onOpenPendingUpload?.(file.relativePath)},file.fileName),env.React.createElement("button",{"aria-label":`移除 ${file.fileName}`,onClick:()=>props.onRemovePendingUpload(file.relativePath)},"移除")))),
         env.React.createElement("button", { "data-action": "send", onClick: props.onSend, disabled: props.isSending || props.isInputDisabled }, "发送"),
         env.React.createElement("button", { "data-action": "stop", onClick: props.onStop, disabled: !props.isSending }, "停止"));
@@ -988,7 +988,7 @@ test("the actual model controls off callback persists none across reload and lat
 });
 
 test("the existing network switch defaults off and authorizes exactly one visible public topic per send",async(t)=>{
- const app=await mount(t,{realModelControls:true});assert.equal(app.composer.showExecutionControls,false);assert.equal(app.host.querySelector('[role="switch"]'),null,"CloudChat does not expose device execution controls");assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);await app.env.act(async()=>{app.composer.capabilityMenu.props.onToggleResearch();await tick();});
+ const app=await mount(t,{realModelControls:true});assert.deepEqual(app.composer.capabilities,{executionControls:false,gitControls:false,workspaceFolders:false});assert.equal(app.host.querySelector('[role="switch"]'),null,"CloudChat does not expose device execution controls");assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);await app.env.act(async()=>{app.composer.capabilityMenu.props.onToggleResearch();await tick();});
  await app.click('[data-action="send"]');assert.match(app.host.querySelector('[role="dialog"]').textContent,/确认公开检索主题/);assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);assert.equal(app.draft,"新的问题");
  await app.clickText("取消联网发送");assert.equal(app.host.querySelector('[role="dialog"]'),null);assert.equal(app.runs.size,0);app.draft="新的公开问题";
  await app.click('[data-action="send"]');assert.equal(app.host.querySelector('textarea[aria-label="可用于公开检索的主题"]').value,"新的公开问题");await app.setResearchTopic("公开主题：行业报告");app.draft="关闭窗口前出现的私有草稿";await app.clickText("确认公开主题并继续");
@@ -1147,10 +1147,13 @@ test('CloudChat settings replaces the workspace in normal flow and preserves the
  await app.click('[data-account-menu]');
  const page=app.host.querySelector('[data-settings-page="page"]');
  assert.ok(page);
- assert.equal(page.parentElement.parentElement,workspace.parentElement);
+ const settingsWorkspace=page.closest('[data-settings-workspace]');
+ assert.ok(settingsWorkspace);
+ assert.ok(page.closest('[data-settings-canvas]'));
+ assert.ok(settingsWorkspace.parentElement===workspace.parentElement,'settings replace the hidden conversation beside the owning rail');
  assert.ok(workspace.hasAttribute('inert'));
  assert.equal(workspace.getAttribute('aria-hidden'),'true');
- assert.equal(workspace.className,'hidden');
+ assert.ok(workspace.classList.contains('hidden'));
  assert.equal(app.host.querySelector('footer'),editor);
  await app.emit('run-a',2,'text_delta',{delta:'期间的输出'});
  await app.click('[data-settings-back]');

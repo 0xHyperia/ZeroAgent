@@ -273,9 +273,18 @@ for (const path of [
 }
 requireMatch(
   "crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx",
-  /\/zeroagent-logo\.png[\s\S]*ZeroAgent/,
+  /<BrandMark[\s\S]*>ZeroAgent</,
   "Desktop 对话侧栏未使用 ZeroAgent 品牌",
 );
+requireMatch(
+  "crates/agent-ui/src/application/BrandMark.tsx",
+  /ZEROAGENT_BRAND_MARK\s*=\s*"\/zeroagent-logo\.png"/,
+  "共享品牌标记未引用随应用打包的 ZeroAgent Logo",
+);
+for (const packagePath of ["crates/agent-gui", "crates/agent-gateway/web"]) {
+  const path = `${packagePath}/public/zeroagent-logo.png`;
+  if (!existsSync(resolve(root, path))) failures.push(`${path}：共享品牌资源未随宿主打包`);
+}
 
 for (const path of [
   "crates/agent-gateway/web/src/i18n/config.ts",
