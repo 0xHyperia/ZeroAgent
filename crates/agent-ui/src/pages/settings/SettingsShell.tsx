@@ -1,8 +1,10 @@
 import { ArrowLeft, Search } from "@liveagent/ui/components/IconSet";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { TooltipButton } from "../../components/ui/tooltip-button";
 import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
 import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/registry";
 import { useLocale } from "../../i18n";
+import { PLATFORM_BACK_EVENT } from "../../lib/platformBack";
 import { useSettingsEscapeToClose } from "../../lib/settings/useSettingsEscapeToClose";
 import { cn } from "../../lib/shared/utils";
 
@@ -66,7 +68,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     onSectionChange,
     hiddenSections = [],
     fontScale = 1,
-    presentation = "workbench",
+    presentation = "page",
   } = props;
   const { t } = useLocale();
   const shellRef = useRef<HTMLDivElement>(null);
@@ -132,6 +134,22 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
 
   // Above the early return below: hooks cannot be called conditionally.
   useSettingsEscapeToClose(onBack);
+  useEffect(() => {
+    const handleBack = (event: Event) => {
+      const shell = shellRef.current;
+      if (event.defaultPrevented || !shell || shell.closest('[inert], [aria-hidden="true"]'))
+        return;
+      event.preventDefault();
+      if (mobileDetail && window.matchMedia("(max-width: 820px)").matches) {
+        if (canLeaveSection && !canLeaveSection()) return;
+        setMobileDetail(false);
+      } else {
+        onBack();
+      }
+    };
+    window.addEventListener(PLATFORM_BACK_EVENT, handleBack, { capture: true });
+    return () => window.removeEventListener(PLATFORM_BACK_EVENT, handleBack, { capture: true });
+  }, [canLeaveSection, mobileDetail, onBack]);
 
   const activeSection = sections.find((definition) => definition.id === section) ?? sections[0];
   if (!activeSection) return null;
@@ -147,6 +165,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
       <div
         ref={shellRef}
         data-settings-presentation={presentation}
+        data-design-settings=""
         data-mobile-detail={mobileDetail ? "true" : "false"}
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
         className={cn(
@@ -192,8 +211,19 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               {presentation === "page" ? (
                 <h1
                   tabIndex={-1}
-                  className="settings-page-title px-2.5 pb-3 text-lg font-semibold outline-none"
+                  className="settings-page-title flex items-center gap-2 px-2.5 pb-3 text-lg font-semibold outline-none"
                 >
+                  <TooltipButton
+                    variant="ghost"
+                    size="icon-sm"
+                    className="max-[820px]:hidden"
+                    title={t("settings.backToChatHint")}
+                    aria-label={t("settings.backToChat")}
+                    onClick={onBack}
+                    aria-keyshortcuts="Escape"
+                  >
+                    <ArrowLeft className="size-4" />
+                  </TooltipButton>
                   {t("settings.title")}
                 </h1>
               ) : (

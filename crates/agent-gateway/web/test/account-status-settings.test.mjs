@@ -18,7 +18,7 @@ test("account menu keeps verified account refresh and separate account/settings 
 
 test("Cloud Chat keeps the same footer menu with its own account/system destinations", () => {
   const source = readFileSync(new URL("../src/pages/CloudChatPage.tsx", import.meta.url), "utf8");
-  const menu = source.slice(source.indexOf("accountMenu={"), source.indexOf("onLogout={onLogout}"));
+  const menu = source.slice(source.indexOf("const accountMenu ="), source.indexOf("onLogout={onLogout}"));
   assert.match(menu, /onOpenAccount=\{\(\) => \{\s*setSettingsSection\("account"\)/);
   assert.match(menu, /onOpenSettings=\{\(\) => \{\s*setSettingsSection\("system"\)/);
   assert.doesNotMatch(menu, /setSettingsSection\("devices"\)/);

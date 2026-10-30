@@ -21,6 +21,16 @@ function isFunctionImplementation(node) {
   return node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression";
 }
 
+export function hasHandwrittenDialogRole(source, fileName) {
+  let found = false;
+  walkSyntaxTree(parseTypeScriptSource(source, fileName), (node) => {
+    if (node.type !== "JSXAttribute" || node.name?.name !== "role") return;
+    const value = node.value?.type === "JSXExpressionContainer" ? node.value.expression : node.value;
+    if (staticStringValue(value) === "dialog") found = true;
+  });
+  return found;
+}
+
 export function findRetiredSharedDeclarations(source, fileName, retiredNames) {
   const retired = retiredNames instanceof Set ? retiredNames : new Set(retiredNames);
   const syntaxTree = parseTypeScriptSource(source, fileName);

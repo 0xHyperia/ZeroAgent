@@ -22,7 +22,7 @@ export function DesktopSidebarTitleBar() {
 
 export function DesktopSidebarBrand() {
   return (
-    <div className="flex min-w-0 -translate-y-0.5 items-center gap-2">
+    <div data-app-sidebar-brand="" className="flex min-w-0 -translate-y-0.5 items-center gap-2">
       <img
         src="/zeroagent-logo.png"
         alt=""

@@ -1,0 +1,83 @@
+/* Fixture layout only. Component colors, states and surfaces come from agent-ui. */
+body {
+  overflow: auto;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.fixture-shell {
+  display: grid;
+  max-width: 960px;
+  gap: 24px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+.fixture-shell h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+.fixture-shell h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.fixture-shell section {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  border-top: 1px solid var(--za-border);
+  padding-top: 24px;
+}
+.fixture-shell header > p,
+.fixture-shell section > p {
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+}
+.fixture-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.fixture-shell header > .fixture-row {
+  margin-top: 20px;
+}
+.fixture-row > .za-segmented-control {
+  width: 270px;
+  max-width: 100%;
+}
+.fixture-shell select {
+  min-height: 44px;
+  border: 1px solid var(--za-border);
+  border-radius: 10px;
+  padding: 4px 10px;
+  background: hsl(var(--background));
+}
+.fixture-model-row {
+  justify-content: space-between;
+  font-size: 12px;
+}
+.fixture-model-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: hsl(var(--muted-foreground));
+}
+.fixture-navigation {
+  display: flex;
+  min-height: 250px;
+  gap: 24px;
+  border: 1px solid var(--za-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.fixture-navigation > .fixture-row {
+  flex: 1;
+  padding: 16px;
+}
+@media (max-width: 480px) {
+  .fixture-shell {
+    padding: 20px 16px 40px;
+  }
+  .fixture-navigation {
+    gap: 4px;
+  }
+}

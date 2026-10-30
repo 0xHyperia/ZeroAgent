@@ -180,6 +180,7 @@ import type {
   ExecutionSelection,
   ExecutionWorkspace,
 } from "@/lib/executionTargets";
+import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT } from "@/lib/mobileRuntime";
 import { toModelValue } from "@/lib/providers/llm";
 import {
   getRelayDashboardStats,
@@ -2305,6 +2306,44 @@ export function CloudChatPage({
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
+  useEffect(() => {
+    if (!isEmbeddedMobileRuntime()) return;
+    const handleBack = (event: Event) => {
+      // Settings owns its native Back handler, including the mobile list/detail step.
+      if (event.defaultPrevented || accountSettingsOpen) return;
+      if (composerMenu) {
+        setComposerMenu(null);
+      } else if (
+        filePanel ||
+        artifactPanel ||
+        sourcePanel ||
+        workPanel ||
+        workspaceView !== "chat"
+      ) {
+        projectNavigation.request(() => {
+          setFilePanel(null);
+          setArtifactPanel(null);
+          setSourcePanel(null);
+          setWorkPanel(null);
+          setWorkspaceView("chat");
+        });
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener(MOBILE_BACK_EVENT, handleBack, { capture: true });
+    return () => window.removeEventListener(MOBILE_BACK_EVENT, handleBack, { capture: true });
+  }, [
+    accountSettingsOpen,
+    artifactPanel,
+    composerMenu,
+    filePanel,
+    projectNavigation.request,
+    sourcePanel,
+    workPanel,
+    workspaceView,
+  ]);
   function navigateConversation(id?: string) {
     projectNavigation.request(() => {
       clearResources();
@@ -2530,7 +2569,7 @@ export function CloudChatPage({
           canReviewTerminalRequest ? (
             <button
               type="button"
-              className="cloud-feedback-action"
+              className="app-status-action"
               disabled={
                 historyLoading ||
                 branchBusy ||
@@ -2565,7 +2604,7 @@ export function CloudChatPage({
     submissionUnconfirmed ||
     submissionQueueFull ||
     branchUnconfirmed ? (
-      <div className="cloud-feedback-stack" data-cloud-composer-feedback="">
+      <div className="app-status-stack" data-cloud-composer-feedback="">
         {error ? <CloudChatFeedback tone="error" message={error} /> : null}
         {historyError && historyError !== error ? (
           <CloudChatFeedback
@@ -2574,7 +2613,7 @@ export function CloudChatPage({
             actions={
               <button
                 type="button"
-                className="cloud-feedback-action"
+                className="app-status-action"
                 disabled={historyPageLoading}
                 onClick={() => void loadEarlierHistory()}
               >
@@ -2590,7 +2629,7 @@ export function CloudChatPage({
             actions={
               <button
                 type="button"
-                className="cloud-feedback-action"
+                className="app-status-action"
                 disabled={streaming}
                 onClick={() => void send()}
               >
@@ -2608,7 +2647,7 @@ export function CloudChatPage({
               <>
                 <button
                   type="button"
-                  className="cloud-feedback-action"
+                  className="app-status-action"
                   disabled={streaming}
                   onClick={() => void send()}
                 >
@@ -2616,7 +2655,7 @@ export function CloudChatPage({
                 </button>
                 <button
                   type="button"
-                  className="cloud-feedback-action"
+                  className="app-status-action"
                   disabled={streaming}
                   onClick={() => {
                     pendingSubmissionRef.current = null;
@@ -2640,7 +2679,7 @@ export function CloudChatPage({
             actions={
               <button
                 type="button"
-                className="cloud-feedback-action"
+                className="app-status-action"
                 disabled={branchBusy}
                 onClick={() => {
                   const pending = pendingBranchRef.current;
@@ -3231,6 +3270,7 @@ export function CloudChatPage({
                           </ScrollArea>
                         </div>
                         <ChatComposerBar
+                          showExecutionControls={false}
                           feedback={composerFeedback}
                           layout="inline"
                           expandedInput={presentation === "work"}

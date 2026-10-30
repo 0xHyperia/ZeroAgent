@@ -1,31 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "../../lib/shared/utils";
 
-export function HubBackdrop(props: { tone?: "amber" | "violet" | "neutral" }) {
-  const { tone = "neutral" } = props;
-  const haloClass =
-    tone === "amber"
-      ? "bg-surface-glow-1 dark:bg-surface-glow-2"
-      : tone === "violet"
-        ? "bg-surface-glow-3 dark:bg-surface-glow-4"
-        : "bg-surface-glow-5 dark:bg-surface-glow-6";
-  return (
-    <>
-      <div className="pointer-events-none absolute inset-0 bg-[hsl(var(--hub-canvas))]" />
-      <div
-        className={cn(
-          "pointer-events-none absolute -left-32 -top-24 size-420px rounded-full opacity-90 blur-3xl",
-          haloClass,
-        )}
-      />
-      <div
-        className={cn(
-          "pointer-events-none absolute -right-24 bottom-0 size-360px rounded-full opacity-60 blur-3xl",
-          haloClass,
-        )}
-      />
-    </>
-  );
+export function HubBackdrop(_props: { tone?: "amber" | "violet" | "neutral" }) {
+  return <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-background" />;
 }
 
 // 侧栏开关不在这里渲染：AppWorkbenchChrome(ChatHeader)常驻于所有视图之上，
@@ -71,7 +48,7 @@ export function HubHeader(props: {
             <h1
               className={cn(
                 "font-semibold leading-tight tracking-tight text-foreground",
-                prominent ? "text-3xl" : "text-xl",
+                prominent ? "text-2xl" : "text-xl",
               )}
             >
               {title}
@@ -107,24 +84,18 @@ export function GlassPanel(props: {
       case "muted":
         return "border-border/40 bg-muted/40";
       case "error":
-        return "border-destructive/30 bg-destructive/5";
+        return "border-border/65 bg-foreground/[0.025]";
       case "amber":
       case "violet":
       case "neutral":
-        return active
-          ? "border-border/55 bg-background/80 shadow-ui-hubchrome-24 dark:border-white/[0.09] dark:bg-white/[0.06] dark:shadow-ui-hubchrome-25"
-          : "border-border/40 bg-background/60";
+        return active ? "border-foreground/20 bg-background" : "border-border/65 bg-background";
       default:
-        return "border-border/40 bg-background/60";
+        return "border-border/65 bg-background";
     }
   })();
   return (
     <div
-      className={cn(
-        "hub-glass-panel rounded-2xl border px-4 py-3.5 backdrop-blur-xl",
-        toneClass,
-        className,
-      )}
+      className={cn("hub-glass-panel za-resource-card border px-4 py-3.5", toneClass, className)}
     >
       {children}
     </div>

@@ -33,7 +33,7 @@ export const SheetBackdrop = React.forwardRef<
     className={cn(
       "layer-modal fixed inset-0 transition-opacity duration-200",
       "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
-      variant === "navigation" ? "sheet-navigation-backdrop" : "bg-black/40 backdrop-blur-xs",
+      variant === "navigation" ? "sheet-navigation-backdrop" : "za-modal-backdrop",
       className,
     )}
     {...props}

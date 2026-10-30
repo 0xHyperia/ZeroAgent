@@ -33,11 +33,9 @@ async function setup() {
     onSelectModel: () => {}, onSelectExecutionMode: () => {}, onOpenSettings: () => {}, onChatRuntimeControlsChange: () => {},
   })));
   await env.act(async () => document.querySelector('[data-slot="popover-trigger"]').click());
-  const toModel = [...document.querySelectorAll("button")].find(n => n.textContent.trim().startsWith("chat.selectModel"));
-  await env.act(async () => toModel.click());
   const headers = [...document.querySelectorAll('[data-model-group]')];
-  assert.ok(headers.every(header => header.getAttribute('aria-expanded') === 'false'));
-  for (const header of headers) await env.act(async () => header.click());
+  assert.equal(headers.find(header=>header.dataset.modelGroup==='anthropic').getAttribute('aria-expanded'),'true');
+  for (const header of headers) if(header.getAttribute("aria-expanded")==="false") await env.act(async () => header.click());
   return { env, root, modelOptions };
 }
 

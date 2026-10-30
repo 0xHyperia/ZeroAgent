@@ -4,6 +4,8 @@ import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
+import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchNavigationRail as DesktopNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
@@ -11,7 +13,7 @@ import type { MentionComposerDraft } from "@liveagent/ui/components/chat/Mention
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { PanelLeft } from "@liveagent/ui/components/IconSet";
+import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
@@ -22,7 +24,9 @@ import {
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
+import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { PaneChrome } from "@liveagent/ui/components/workbench/PaneChrome";
 import {
   type ProjectToolPaneEnvironment,
@@ -300,6 +304,8 @@ import { useProjectTerminals } from "./chat/workspace/useProjectTerminals";
 import { useWorkspaceProjectRemoval } from "./chat/workspace/useWorkspaceProjectRemoval";
 import { useWorkspaceProjects } from "./chat/workspace/useWorkspaceProjects";
 
+const DESKTOP_PREVIEW_DESTINATIONS = ["chat"] as const;
+
 const ConversationPaneHost = lazy(async () => ({
   default: (await import("./chat/surfaces/ConversationPaneHost")).ConversationPaneHost,
 }));
@@ -475,6 +481,11 @@ function ChatPageContent(props: ChatPageProps) {
   const sidebar = useSidebar();
   const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
   const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
+  const navigationPreview = useNavigationPreview(active && !sidebar.isMobile, props.relayUser.id, {
+    pinnedOpen: sidebar.open,
+    destination: "chat",
+    destinations: DESKTOP_PREVIEW_DESTINATIONS,
+  });
   const [conversationSearchRequestKey, setConversationSearchRequestKey] = useState(0);
   const { remoteRuntimeStatus, setRemoteRuntimeStatus } = useGatewayStatus({
     remote: settings.remote,
@@ -4245,15 +4256,13 @@ function ChatPageContent(props: ChatPageProps) {
               ? t("workbench.projectMissing")
               : null;
           const blockedBanner = blockedMessage ? (
-            <div
+            <StatusNotice
               data-workbench-pane-blocked=""
-              className={cn(
-                "flex shrink-0 items-center gap-2",
-                "border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400",
-              )}
-            >
-              {blockedMessage}
-            </div>
+              compact
+              tone="warning"
+              message={blockedMessage}
+              className="shrink-0 px-3"
+            />
           ) : null;
           const host = (
             <Suspense fallback={<PaneLoadingSkeleton label={t("app.loading")} />}>
@@ -4335,13 +4344,51 @@ function ChatPageContent(props: ChatPageProps) {
       </div>
     ) : null;
 
+  const renderNavigationRail = (mobile = false) => (
+    <DesktopNavigationRail
+      brand={
+        <img
+          src="/zeroagent-logo.png"
+          alt="ZeroAgent"
+          draggable={false}
+          className="size-8 select-none"
+        />
+      }
+      activeView={activeView}
+      shortcuts={settings.customSettings.sidebarShortcuts}
+      onSelectView={(view) => {
+        navigationPreview.dismiss();
+        if (view !== "chat") {
+          cacheActiveComposerDraft();
+          setRightDockOpen(false);
+        }
+        setActiveView(view);
+        if (mobile) setSidebarOpen(false);
+        else if (view === "chat") setSidebarOpen(true);
+      }}
+      onClose={mobile ? () => setSidebarOpen(false) : undefined}
+      footer={
+        <UserMenu
+          variant="rail"
+          user={props.relayUser}
+          stats={props.relayStats}
+          onRefreshAccount={props.onRefreshRelayAccount}
+          onOpenAccount={() => onOpenSettings("account")}
+          onOpenSettings={() => onOpenSettings("system")}
+          onLogout={() => import("../lib/relay/client").then(({ logoutRelay }) => logoutRelay())}
+        />
+      }
+    />
+  );
+
   if (!active) return null;
 
   return (
     <div
+      ref={navigationPreview.rootRef}
       data-app-frame="three-column"
       className={cn(
-        "relative size-full min-h-0 overflow-hidden",
+        "app-workspace-shell relative size-full min-h-0 overflow-hidden",
         isMacOsTauri() ? "flex flex-col" : "app-workbench-layout",
       )}
     >
@@ -4387,8 +4434,20 @@ function ChatPageContent(props: ChatPageProps) {
           onOpenSettings={onOpenSettings}
           onToggleTheme={onToggleTheme}
           onOpenSidebar={handleToggleSidebar}
+          accountInRail
           leadingActions={
             <>
+              {activeView === "chat" && hasConversationReply && !sidebarOpen ? (
+                <TooltipButton
+                  variant="ghost"
+                  size="icon"
+                  title={t("chat.newConversation")}
+                  aria-label={t("chat.newConversation")}
+                  onClick={handleNewRecentConversation}
+                >
+                  <SquarePen className="size-4.5" />
+                </TooltipButton>
+              ) : null}
               {headerLeadingActions}
               {activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes ? (
                 <ConversationViewTabs
@@ -4413,21 +4472,20 @@ function ChatPageContent(props: ChatPageProps) {
         className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
       >
         {workbenchDragGhost}
+        {!sidebar.isMobile ? renderNavigationRail() : null}
+        {!sidebar.isMobile && !sidebar.open ? (
+          <div data-sidebar-hover-edge="" aria-hidden="true" />
+        ) : null}
         {/* ---- Left column: navigation/sidebar ---- */}
         <ChatSidebarContainer
+          mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+          previewOpen={navigationPreview.open}
+          onPinPreview={() => {
+            navigationPreview.dismiss();
+            setSidebarOpen(true);
+          }}
           onNewRecentConversation={handleNewRecentConversation}
-          accountMenu={
-            <UserMenu
-              user={props.relayUser}
-              stats={props.relayStats}
-              onRefreshAccount={props.onRefreshRelayAccount}
-              onOpenAccount={() => onOpenSettings("account")}
-              onOpenSettings={() => onOpenSettings("system")}
-              onLogout={() =>
-                import("../lib/relay/client").then(({ logoutRelay }) => logoutRelay())
-              }
-            />
-          }
+          accountMenu={false}
           pinnedOrder={settings.system.sidebarPinnedOrder}
           onReorderPinned={(sidebarPinnedOrder) =>
             setSettings((previous) => ({

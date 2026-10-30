@@ -381,6 +381,10 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
       })}
       brand={<GatewayBrand />}
       accountMenu={props.accountMenu}
+      mobileRail={props.mobileRail}
+      previewOpen={props.previewOpen}
+      onPinPreview={props.onPinPreview}
+      showAgentHubs={false}
       onNewRecentConversation={props.onNewRecentConversation}
     />
   );

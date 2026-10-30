@@ -17,6 +17,7 @@ export type ChatHeaderProps = {
   navigationActions?: ReactNode;
   /** CloudChat may replace the collapsed navigation slot with a new-chat action. */
   navigationMode?: "sidebar" | "new-chat";
+  accountInRail?: boolean;
   leadingActions?: ReactNode;
   preThemeActions?: ReactNode;
   trailingActions?: ReactNode;
@@ -33,6 +34,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
     onOpenSidebar,
     navigationActions,
     navigationMode = "sidebar",
+    accountInRail = false,
     leadingActions,
     preThemeActions,
     trailingActions,
@@ -58,7 +60,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
           sidebarOpen && !desktopTitleBarInset && "hidden",
           sidebarOpen &&
             desktopTitleBarInset &&
-            "desktop:min-[768px]:min-w-[calc(var(--sidebar-width)-1rem)]",
+            "desktop:min-[768px]:min-w-[calc(var(--sidebar-width)+var(--app-rail-width,0px)-1rem)]",
         )}
       >
         {navigationActions}
@@ -71,6 +73,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
             tooltipShortcut={sidebarShortcutHint}
             aria-expanded={sidebarOpen}
             data-cloud-sidebar-open=""
+            data-sidebar-open=""
             aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
             className={cn(
               "rounded-lg text-muted-foreground hover:text-foreground",
@@ -96,7 +99,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
       >
         {preThemeActions}
         <ThemeToggleButton theme={settings.theme} onToggle={onToggleTheme} />
-        {!sidebarOpen && !desktopTitleBarInset ? (
+        {!sidebarOpen && !desktopTitleBarInset && !accountInRail ? (
           <Button
             variant="ghost"
             size="icon-sm"

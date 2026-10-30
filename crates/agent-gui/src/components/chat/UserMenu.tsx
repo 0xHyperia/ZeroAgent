@@ -1,5 +1,5 @@
 import { ChevronUp, LogOut, Settings, User } from "@liveagent/ui/components/IconSet";
-import { Button } from "@liveagent/ui/components/ui/button";
+import { AccountAvatar, AccountIdentity } from "@liveagent/ui/components/ui/account-identity";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,10 +7,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useRef, useState } from "react";
 import type { RelayDashboardStats, RelayUser } from "../../lib/relay/client";
 
 type UserMenuProps = {
+  variant?: "sidebar" | "rail";
   user: RelayUser;
   stats: RelayDashboardStats | null;
   onRefreshAccount: () => Promise<void>;
@@ -20,6 +22,7 @@ type UserMenuProps = {
 };
 
 export function UserMenu({
+  variant = "sidebar",
   user,
   onRefreshAccount,
   onOpenAccount,
@@ -33,6 +36,8 @@ export function UserMenu({
   const [logoutFailed, setLogoutFailed] = useState(false);
   const displayName = user.username?.trim() || user.email.split("@")[0] || `用户 ${user.id}`;
   const avatarLabel = displayName.slice(0, 1).toUpperCase();
+  const rail = variant === "rail";
+  const avatar = <AccountAvatar label={avatarLabel} avatarUrl={user.avatar_url || undefined} />;
 
   const handleOpenChange = (open: boolean) => {
     setOpen(open);
@@ -68,29 +73,45 @@ export function UserMenu({
           <Button
             type="button"
             variant="ghost"
-            className="h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-foreground shadow-none hover:bg-foreground/[0.08]"
+            className={
+              rail
+                ? "application-rail-item size-10 shrink-0 rounded-xl p-0 text-foreground"
+                : "h-11 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-foreground shadow-none hover:bg-foreground/[0.08]"
+            }
             title="用户菜单"
+            aria-label="用户菜单"
           />
         }
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-foreground text-[calc(11px*var(--zone-font-scale,1))] font-semibold text-background">
-          {user.avatar_url ? (
-            <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
-          ) : (
-            avatarLabel
-          )}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left text-[calc(13px*var(--zone-font-scale,1))] font-medium">
-          {displayName}
-        </span>
-        <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {avatar}
+        {!rail ? (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left text-[calc(13px*var(--zone-font-scale,1))] font-medium">
+              {displayName}
+            </span>
+            <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </>
+        ) : null}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side="top"
-        align="start"
+        side={rail ? "right" : "top"}
+        align={rail ? "end" : "start"}
         sideOffset={8}
-        className="w-[224px] rounded-lg border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-popover/90"
+        collisionPadding={12}
+        className="w-72 max-w-[calc(100vw-24px)] p-2 outline-none"
       >
+        {rail ? (
+          <>
+            <DropdownMenuItem
+              onSelect={onOpenAccount}
+              aria-label="账户"
+              className="min-h-14 gap-3 px-3 py-2"
+            >
+              <AccountIdentity name={displayName} description={user.email} avatar={avatar} />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="mx-2 my-1.5" />
+          </>
+        ) : null}
         <DropdownMenuItem onSelect={onOpenAccount} className="gap-2 rounded-md">
           <User className="h-4 w-4" />
           账户

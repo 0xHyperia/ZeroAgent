@@ -1,5 +1,7 @@
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
@@ -25,6 +27,8 @@ import {
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
+import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { PaneChrome } from "@liveagent/ui/components/workbench/PaneChrome";
 import {
@@ -145,6 +149,7 @@ import {
 import { GatewayTerminalPaneHost } from "./workbench/GatewayTerminalPaneHost";
 import { sessionWorkbench } from "./workbench/sessionWorkbench";
 
+const DEVICE_PREVIEW_DESTINATIONS = ["chat"] as const;
 export function GatewayAppView({
   viewModel,
   imageStudioIdentity,
@@ -449,6 +454,16 @@ export function GatewayAppView({
     workspaceSshTerminalOpen,
     workspaceSshTerminalOpenRequest,
   } = viewModel;
+  const sidebar = useSidebar();
+  const navigationPreview = useNavigationPreview(
+    !sidebar.isMobile && !settingsOpen,
+    relayUser?.id ?? "device",
+    {
+      pinnedOpen: sidebar.open,
+      destination: "chat",
+      destinations: DEVICE_PREVIEW_DESTINATIONS,
+    },
+  );
   const sttSettingsService = useMemo<SttSettingsService>(
     () => ({
       runtimeLabel: "设备 WebUI",
@@ -1365,6 +1380,55 @@ export function GatewayAppView({
           translate("chat.pendingTitle", settings.locale)}
       </div>
     ) : null;
+  const renderNavigationRail = (mobile = false) => (
+    <WorkbenchNavigationRail
+      brand={
+        <img
+          src="/icon-simple.png"
+          alt="ZeroAgent"
+          draggable={false}
+          className="size-8 select-none"
+        />
+      }
+      activeView={activeView}
+      shortcuts={settings.customSettings.sidebarShortcuts}
+      onSelectView={(view) => {
+        navigationPreview.dismiss();
+        if (view === "chat") {
+          setActiveView("chat");
+          if (!mobile) setSidebarOpen(true);
+        } else
+          handleSidebarOpenResourceHub(
+            view.replace(/-hub$/, "") as Parameters<typeof handleSidebarOpenResourceHub>[0],
+          );
+        if (mobile) setSidebarOpen(false);
+      }}
+      onClose={mobile ? () => setSidebarOpen(false) : undefined}
+      footer={
+        desktopHost?.onAccountTarget ? (
+          <DesktopHostSlot kind="account" />
+        ) : (
+          <UserMenu
+            variant="rail"
+            open={userMenuOpen}
+            onOpenChange={setUserMenuOpen}
+            userMenuLabel={userMenuLabel}
+            userAvatarLabel={userAvatarLabel}
+            email={relayUser?.email ?? ""}
+            balance={relayUser?.balance}
+            todayTokens={relayStats?.today_tokens}
+            avatarUrl={relayUser?.avatar_url}
+            online={Boolean(status?.online)}
+            onRefreshAccount={refreshRelayAccount}
+            onDismissNavigation={() => setSidebarOpen(false)}
+            onOpenAccount={() => openSettings("account")}
+            onOpenSettings={() => openSettings("system")}
+            onLogout={handleLogout}
+          />
+        )
+      }
+    />
+  );
   return (
     <LocaleContext.Provider value={localeContextValue}>
       <Toaster />
@@ -1398,7 +1462,12 @@ export function GatewayAppView({
           />
           {workbenchDragGhost}
 
-          <div className="gateway-editor-host app-workbench-layout relative min-w-0 min-h-0 flex-1 h-full overflow-hidden">
+          <div
+            ref={navigationPreview.rootRef}
+            inert={settingsOpen}
+            aria-hidden={settingsOpen || undefined}
+            className="app-workspace-shell gateway-editor-host app-workbench-layout relative min-w-0 min-h-0 flex-1 h-full overflow-hidden"
+          >
             <AppWorkbenchChrome
               settings={settings}
               sidebarOpen={sidebarOpen}
@@ -1445,29 +1514,18 @@ export function GatewayAppView({
               data-app-workbench-body=""
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
+              {!sidebar.isMobile ? renderNavigationRail() : null}
+              {!sidebar.isMobile && !sidebar.open ? (
+                <div data-sidebar-hover-edge="" aria-hidden="true" />
+              ) : null}
               <GatewaySidebarContainer
-                accountMenu={
-                  desktopHost?.onAccountTarget ? (
-                    <DesktopHostSlot kind="account" />
-                  ) : (
-                    <UserMenu
-                      open={userMenuOpen}
-                      onOpenChange={setUserMenuOpen}
-                      userMenuLabel={userMenuLabel}
-                      userAvatarLabel={userAvatarLabel}
-                      email={relayUser?.email ?? ""}
-                      balance={relayUser?.balance}
-                      todayTokens={relayStats?.today_tokens}
-                      avatarUrl={relayUser?.avatar_url}
-                      online={Boolean(status?.online)}
-                      onRefreshAccount={refreshRelayAccount}
-                      onDismissNavigation={() => setSidebarOpen(false)}
-                      onOpenAccount={() => openSettings("account")}
-                      onOpenSettings={() => openSettings("system")}
-                      onLogout={handleLogout}
-                    />
-                  )
-                }
+                mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+                previewOpen={navigationPreview.open}
+                onPinPreview={() => {
+                  navigationPreview.dismiss();
+                  setSidebarOpen(true);
+                }}
+                accountMenu={false}
                 pinnedOrder={settings.system.sidebarPinnedOrder}
                 onReorderPinned={(sidebarPinnedOrder) =>
                   setSettings((previous) => ({
@@ -1665,48 +1723,32 @@ export function GatewayAppView({
                         content: (
                           <>
                             {statusError ? (
-                              <div
-                                className={cn(
-                                  "gateway-banner-error mx-20px mt-12px mb-0",
-                                  "rounded-14px border border-destructive/16 bg-destructive/8 px-12px py-10px text-sm text-destructive",
-                                  "max-640:mx-10px max-640:mt-8px max-640:mb-0",
-                                )}
-                              >
-                                {statusError}
-                              </div>
+                              <StatusNotice
+                                tone="error"
+                                message={statusError}
+                                className="mx-5 mt-3 max-sm:mx-3"
+                              />
                             ) : null}
                             {chatProtocolIncompatibleMessage && !statusError ? (
-                              <div
-                                className={cn(
-                                  "gateway-banner-error mx-20px mt-12px mb-0",
-                                  "rounded-14px border border-destructive/16 bg-destructive/8 px-12px py-10px text-sm text-destructive",
-                                  "max-640:mx-10px max-640:mt-8px max-640:mb-0",
-                                )}
-                              >
-                                {chatProtocolIncompatibleMessage}
-                              </div>
+                              <StatusNotice
+                                tone="error"
+                                message={chatProtocolIncompatibleMessage}
+                                className="mx-5 mt-3 max-sm:mx-3"
+                              />
                             ) : null}
                             {settingsSyncError ? (
-                              <div
-                                className={cn(
-                                  "gateway-banner-error mx-20px mt-12px mb-0",
-                                  "rounded-14px border border-destructive/16 bg-destructive/8 px-12px py-10px text-sm text-destructive",
-                                  "max-640:mx-10px max-640:mt-8px max-640:mb-0",
-                                )}
-                              >
-                                {settingsSyncError}
-                              </div>
+                              <StatusNotice
+                                tone="error"
+                                message={settingsSyncError}
+                                className="mx-5 mt-3 max-sm:mx-3"
+                              />
                             ) : null}
                             {chatError && displayedTranscriptRowCount === 0 ? (
-                              <div
-                                className={cn(
-                                  "gateway-banner-error mx-20px mt-12px mb-0",
-                                  "rounded-14px border border-destructive/16 bg-destructive/8 px-12px py-10px text-sm text-destructive",
-                                  "max-640:mx-10px max-640:mt-8px max-640:mb-0",
-                                )}
-                              >
-                                {chatError}
-                              </div>
+                              <StatusNotice
+                                tone="error"
+                                message={chatError}
+                                className="mx-5 mt-3 max-sm:mx-3"
+                              />
                             ) : null}
 
                             {sessionWorkbench.enabled ? (

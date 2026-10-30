@@ -60,6 +60,8 @@ workspace.zip
 /crates/agent-gui/public/remote-device/
 
 # Local workflow artifacts
+# Kotlin's generated build cache is not product source.
+**/.kotlin/
 /.trellis
 /AGENTS.md
 /CLAUDE.md

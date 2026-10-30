@@ -95,25 +95,11 @@ const ToastEntry = memo(function ToastEntry(props: { toast: ToastObject<ToastDat
           ? undefined
           : `cubic-bezier(${(notification.transitionStatus === "ending" ? UI_MOTION_TRANSITION.feedbackExit : UI_MOTION_TRANSITION.feedback).ease.join(",")})`,
       }}
+      data-tone={isWarning ? "warning" : isSuccess ? "success" : "error"}
       className={cn(
-        "pointer-events-auto flex shrink-0 items-start gap-2.5 rounded-lg border",
-        notice ? "w-96 max-w-[calc(100vw-2rem)]" : "w-notification",
-        "px-3 py-2.5 text-sm",
-        notice ? "bg-background" : "shadow-lg backdrop-blur-xl",
-        "transition-[opacity,translate] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
-        !prefersReducedMotion &&
-          "data-[starting-style]:translate-x-5 data-[ending-style]:translate-x-5",
-        notice
-          ? isWarning
-            ? "border-amber-500/30"
-            : isSuccess
-              ? "border-emerald-500/30"
-              : "border-destructive/30"
-          : isWarning
-            ? "border-amber-500/30 bg-amber-50/95 dark:bg-amber-950/80 dark:border-amber-500/25"
-            : isSuccess
-              ? "border-emerald-500/30 bg-emerald-50/95 dark:bg-emerald-950/80 dark:border-emerald-500/25"
-              : "border-red-500/30 bg-red-50/95 dark:bg-red-950/80 dark:border-red-500/25",
+        "app-notice za-floating-surface pointer-events-auto flex shrink-0 items-start gap-2.5 bg-popover text-popover-foreground",
+        notice ? "w-96 max-w-[calc(100vw-2rem)]" : "w-notification max-w-[calc(100vw-2rem)]",
+        "text-sm transition-opacity data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
       )}
     >
       {isWarning ? (
@@ -138,21 +124,15 @@ const ToastEntry = memo(function ToastEntry(props: { toast: ToastObject<ToastDat
         ) : null}
         <ToastDescription
           className={cn(
-            "whitespace-pre-wrap break-words leading-relaxed",
-            notice
-              ? notification.title
-                ? "mt-0.5 max-h-40 overflow-y-auto text-xs text-muted-foreground"
-                : "text-foreground"
-              : isWarning
-                ? "text-amber-800 dark:text-amber-200"
-                : isSuccess
-                  ? "text-emerald-800 dark:text-emerald-200"
-                  : "text-red-800 dark:text-red-200",
+            "whitespace-pre-wrap break-words leading-relaxed text-foreground",
+            notice &&
+              notification.title &&
+              "mt-0.5 max-h-40 overflow-y-auto text-xs text-muted-foreground",
           )}
         />
         {notification.data?.action ? (
           <ToastAction
-            className="mt-2 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
+            className="app-status-action mt-2 text-xs"
             onClick={() => {
               notification.data?.action?.onClick();
               toast.dismiss(notification.id);
@@ -166,7 +146,7 @@ const ToastEntry = memo(function ToastEntry(props: { toast: ToastObject<ToastDat
         type="button"
         aria-label={t("common.dismissNotification")}
         className={cn(
-          "mt-0.5 shrink-0 rounded p-0.5 opacity-50 transition-opacity",
+          "app-status-dismiss mt-0.5 shrink-0 rounded-lg p-1 opacity-50 transition-opacity",
           "hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current focus-visible:ring-offset-1 focus-visible:ring-offset-transparent",
         )}
       >

@@ -39,10 +39,6 @@ test("model picker shows the provider brand icon on group headers and model rows
       onChatRuntimeControlsChange: () => {},
     })));
     await env.act(async () => document.querySelector('[data-slot="popover-trigger"]').click());
-    const toModelPage = [...document.querySelectorAll("button")].find(node => node.textContent.trim().startsWith("chat.selectModel"));
-    assert.ok(toModelPage, "root panel links to the model page");
-    await env.act(async () => toModelPage.click());
-
     const headers = [...document.querySelectorAll("[data-model-group]")];
     assert.deepEqual(
       headers.map(header => brandIcon(header)?.getAttribute("data-brand-icon")),
@@ -51,9 +47,8 @@ test("model picker shows the provider brand icon on group headers and model rows
     );
     for (const header of headers) assert.match(brandIcon(header).className, /size-3\.5/);
 
-    assert.ok(headers.every(header => header.getAttribute("aria-expanded") === "false"), "every group starts collapsed, including the selected group");
-    assert.equal(document.querySelectorAll("[data-model-option]").length, 0);
-    for (const header of headers) await env.act(async () => header.click());
+    assert.ok(headers.some(header => header.getAttribute("aria-expanded") === "true"), "the selected route is revealed");
+    for (const header of headers) if(header.getAttribute("aria-expanded")==="false") await env.act(async () => header.click());
     const rows = [...document.querySelectorAll("[data-model-option]")];
     assert.deepEqual(
       rows.map(row => brandIcon(row)?.getAttribute("data-brand-icon")),

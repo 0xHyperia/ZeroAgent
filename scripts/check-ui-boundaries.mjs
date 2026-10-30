@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
 import {
   findRetiredSharedDeclarations,
+  hasHandwrittenDialogRole,
   rendersImportedComponent,
 } from "./ui-boundary-declarations.mjs";
 
@@ -165,10 +166,6 @@ const retiredDialogPatterns = [
       "Dialog 退场必须使用 Base UI onOpenChangeComplete，不能恢复手写计时器",
   },
   {
-    pattern: /\brole=["']dialog["']/,
-    reason: "业务组件不能手写 dialog 语义，必须使用共享 Dialog/AlertDialog",
-  },
-  {
     pattern:
       /\b(?:overlayClassName|viewportClassName|backdropClassName|portalProps)\b/,
     reason:
@@ -191,6 +188,10 @@ for (const root of [
   for (const file of listUiFiles(root)) {
     const source = readFileSync(file, "utf8");
     const filePath = toPosixPath(relative(repoRoot, file));
+    if (/\.tsx$/.test(file) && /\brole\s*=/.test(source) && hasHandwrittenDialogRole(source, file)) {
+      failures += 1;
+      console.error(`${filePath}: 业务组件不能手写 dialog 语义，必须使用共享 Dialog/AlertDialog`);
+    }
     if (
       /from\s+["']@base-ui\/react(?:\/[^"']+)?["']/.test(source) &&
       !filePath.startsWith("crates/agent-ui/src/components/ui/")

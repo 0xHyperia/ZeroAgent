@@ -2,10 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   findRetiredSharedDeclarations,
+  hasHandwrittenDialogRole,
   rendersImportedComponent,
 } from "./ui-boundary-declarations.mjs";
 
 const retiredName = "normalizeTerminalSession";
+
+test("dialog role boundary checks JSX attributes while allowing semantic DOM selectors", () => {
+  for (const jsx of ['<div role="dialog" />', "<div role='dialog' />", '<div role={"dialog"} />']) {
+    assert.equal(hasHandwrittenDialogRole(`const view = ${jsx};`, "view.tsx"), true);
+  }
+  assert.equal(hasHandwrittenDialogRole(`document.querySelector('[data-open][role="dialog"]');`, "view.tsx"), false);
+  assert.equal(hasHandwrittenDialogRole('const view = <Dialog />; // role="dialog"', "view.tsx"), false);
+});
 
 function detectedKinds(source) {
   return findRetiredSharedDeclarations(source, "host.ts", new Set([retiredName])).map(

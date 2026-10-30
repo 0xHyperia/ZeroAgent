@@ -33,7 +33,7 @@ const DialogOverlay = React.forwardRef<
     data-slot="dialog-overlay"
     forceRender
     className={cn(
-      "layer-modal fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-150",
+      "za-modal-backdrop layer-modal fixed inset-0 transition-opacity duration-150",
       "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
       className,
     )}
@@ -115,9 +115,9 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
               // No default padding: the header/body/footer slots own their own
               // spacing, and every call site was cancelling a `p-6` here.
               "group/dialog relative my-auto w-full max-w-md",
-              "rounded-2xl border border-border/70 bg-background text-foreground shadow-2xl outline-none",
-              "transition-[transform,opacity] duration-150 ease-out",
-              "data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              "za-dialog-surface border border-border/70 bg-background text-foreground outline-none",
+              "transition-opacity duration-150 ease-out",
+              "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
               layout === "lightbox" &&
                 "pointer-events-none fixed inset-0 m-0 h-full w-full max-w-none rounded-none border-0 bg-transparent shadow-none data-[starting-style]:scale-100 data-[ending-style]:scale-100",
               layout === "fullscreen-mobile" &&

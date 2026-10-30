@@ -28,8 +28,33 @@ test('page settings keeps real section navigation, mobile list/detail and nested
   await act(async()=>host.querySelector('main').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
   assert.equal(backs,1);
   await act(async()=>root.render(React.createElement(SettingsShell,props)));
-  assert.equal(host.querySelector('[data-settings-presentation]').dataset.settingsPresentation,'workbench');
-  assert.equal(host.querySelector('.settings-page-title'),null);
-  assert.equal(host.querySelector('.settings-mobile-back'),null);
+  assert.equal(host.querySelector('[data-settings-presentation]').dataset.settingsPresentation,'page');
+  assert.ok(host.querySelector('.settings-page-title'));
+  assert.ok(host.querySelector('.settings-mobile-back'));
+ }finally{await act(async()=>root.unmount());host.remove();env.cleanup();}
+});
+
+test('native Back goes from mobile settings detail to categories, honors leave guards and ignores an inert host',async()=>{
+ const env=await createWebDomTestEnv({mocks:{
+  '@liveagent/ui/components/IconSet':new Proxy({},{get:()=>()=>null}),
+  '../../i18n':{useLocale:()=>({t:key=>key})},
+ }});
+ const {React,act,createRoot}=env;
+ // An 800px viewport still uses the shared compact settings layout.
+ window.matchMedia=query=>({matches:Number(query.match(/max-width:\s*(\d+)px/)?.[1])>=800,addEventListener(){},removeEventListener(){}});
+ const {SettingsShell}=env.loadModule('@liveagent/ui/pages/settings/SettingsShell.tsx');
+ const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);
+ let backs=0,allowLeave=false;
+ const props={registry:{surface:'web',services:{},slots:{},settingsSections:[{id:'account',labelKey:'account',groupKey:'general',groupOrder:0,order:0,render:()=>React.createElement('p',null,'account content')}]},context:null,saveState:{status:'saved'},initialSection:'account',onBack:()=>backs++,canLeaveSection:()=>allowLeave};
+ const back=async()=>{const event=new Event('zeroagent:mobile-back',{cancelable:true});await act(async()=>window.dispatchEvent(event));return event.defaultPrevented;};
+ try{
+  await act(async()=>root.render(React.createElement(SettingsShell,props)));
+  const shell=host.querySelector('[data-design-settings]');
+  assert.equal(shell.dataset.mobileDetail,'true');
+  assert.equal(await back(),true);assert.equal(shell.dataset.mobileDetail,'true');assert.equal(backs,0);
+  allowLeave=true;
+  assert.equal(await back(),true);assert.equal(shell.dataset.mobileDetail,'false');assert.equal(backs,0);
+  assert.equal(await back(),true);assert.equal(backs,1);
+  host.setAttribute('inert','');assert.equal(await back(),false);assert.equal(backs,1);
  }finally{await act(async()=>root.unmount());host.remove();env.cleanup();}
 });

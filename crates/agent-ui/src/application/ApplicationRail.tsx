@@ -29,7 +29,7 @@ export function ApplicationRail({
     <TooltipProvider>
       <nav aria-label="应用导航" className="application-rail">
         <div className="application-rail-brand">{brand}</div>
-        <div className="flex flex-col items-center gap-2">
+        <div className="application-rail-destinations">
           {items.map((item) => (
             <Button
               key={item.id}

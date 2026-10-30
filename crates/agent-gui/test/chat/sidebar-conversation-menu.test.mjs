@@ -125,6 +125,65 @@ test("desktop more menu reaches workspace transfer and confirmed deletion", asyn
   }
 });
 
+test("mobile has a direct menu trigger without selecting the conversation", async () => {
+  window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+  const row = mountRow({ isMobileMenuLayout: true, menuSide: "bottom" });
+  try {
+    const more = row.container.querySelector('[aria-label="chat.conversationMore"]');
+    assert.ok(more, "touch actions must not depend on long press");
+    assert.equal(more.getAttribute("aria-hidden"), null);
+    await click(more);
+    assert.equal(more.getAttribute("aria-expanded"), "true");
+    assert.ok(menuItem("chat.conversationRename"));
+    assert.deepEqual(row.calls.selected, []);
+    await click(menuItem("chat.conversationBulkSelect"));
+    assert.equal(document.querySelector('[role="menu"]'), null);
+    assert.deepEqual(row.calls.selected, []);
+    const title = row.container.querySelector('button[title="Conversation"]');
+    await click(title);
+    assert.equal(row.calls.bulkSelected.length, 1);
+    assert.deepEqual(row.calls.deleted, []);
+  } finally {
+    await row.cleanup();
+    window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  }
+});
+
+test("mobile running rows retain direct actions and their mutation restrictions", async () => {
+  const row = mountRow({ isMobileMenuLayout: true, isRunning: true, isDeleteDisabled: true, menuSide: "bottom" });
+  try {
+    assert.ok(row.container.querySelector('[aria-label="chat.statusRunningReply"]'));
+    await click(row.container.querySelector('[aria-label="chat.conversationMore"]'));
+    assert.equal(menuItem("chat.conversationMoveToWorkspace").getAttribute("aria-disabled"), "true");
+    assert.equal(menuItem("chat.conversationDelete").getAttribute("aria-disabled"), "true");
+    assert.deepEqual(row.calls.selected, []);
+    assert.deepEqual(row.calls.moved, []);
+    assert.deepEqual(row.calls.deleted, []);
+  } finally { await row.cleanup(); }
+});
+
+test("mobile long press still opens the same anchored menu without a trailing selection", async () => {
+  const row = mountRow({ isMobileMenuLayout: true, menuSide: "bottom" });
+  try {
+    const title = row.container.querySelector('button[title="Conversation"]');
+    await act(async () => {
+      title.dispatchEvent(new window.PointerEvent("pointerdown", {
+        bubbles: true, pointerId: 2, pointerType: "touch", button: 0, clientX: 20, clientY: 20,
+      }));
+      await new Promise(resolve => setTimeout(resolve, 550));
+    });
+    assert.ok(menuItem("chat.conversationRename"));
+    await act(async () => {
+      title.dispatchEvent(new window.PointerEvent("pointerup", {
+        bubbles: true, pointerId: 2, pointerType: "touch", clientX: 20, clientY: 20,
+      }));
+      title.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    assert.deepEqual(row.calls.selected, []);
+    assert.deepEqual(row.calls.deleted, []);
+  } finally { await row.cleanup(); }
+});
+
 test("running conversation keeps the menu reachable and mutation restrictions intact", async () => {
   const row = mountRow({ isRunning: true, isDeleteDisabled: true });
   try {

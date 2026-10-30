@@ -149,8 +149,13 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     newConversation.click();
     await waitFor(() => root.querySelector("[contenteditable='true'],textarea"), "the complete shared composer");
     assert.ok(/New Conversation|新对话/.test(root.textContent), "shared navigation is present");
-    assert.ok(root.textContent.includes("Skills"), "the full resource sidebar is present");
-    assert.ok(root.textContent.includes("MCP"), "the full resource sidebar is present");
+    // Resource destinations moved to the shared icon rail; their accessible
+    // names and actions remain available without expanding a text sidebar.
+    for (const label of ["Skills", "MCP"]) {
+      const action = root.querySelector(`nav button[aria-label="${label}"]`);
+      assert.ok(action, `${label} remains reachable in the shared application rail`);
+      assert.equal(action.disabled, false, `${label} is an enabled destination`);
+    }
     assert.ok(slots.header?.isConnected, "desktop device switcher has a live header portal target");
     assert.ok(slots.account?.isConnected, "desktop account menu has a live portal target");
     assert.ok(slots.window?.isConnected, "desktop window controls have a live portal target");

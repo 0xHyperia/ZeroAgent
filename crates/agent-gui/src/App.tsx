@@ -1107,63 +1107,70 @@ export default function App() {
             <CronPromptRunner settings={settings} />
           </Suspense>
         ) : null}
-        <AppErrorBoundary fallbackHeader={<WindowsTitleBar />}>
-          <Suspense
-            fallback={<AppBootShell loadingLabel={translate("app.loading", settings.locale)} />}
-          >
-            <>
-              <ChatPage
-                active={localExecutionSelected}
-                relayUser={relayUser}
-                relayStats={relayStats}
-                onRefreshRelayAccount={refreshRelayAccount}
-                headerLeadingActions={executionSwitcher}
-                settings={settings}
-                setSettings={setSettings}
-                resourceHost={guiResourceHostCapabilities}
-                imageStudioHost={imageStudioHost}
-                onImageStudioWorkspaceChange={setImageStudioWorkspace}
-                sttProviderOverride={sttProviderOverride}
-                getMcpSettings={getMcpSettings}
-                getToolPolicies={getToolPolicies}
-                context={context}
-                setContext={setContext}
-                onOpenSettings={openSettings}
-                onToggleTheme={toggleTheme}
-                appUpdate={appUpdate}
-                onRunningConversationCountChange={handleRunningConversationCountChange}
-              />
-              {!localExecutionSelected &&
-                (selectedExecutionEnvironment ? (
-                  <RemoteDeviceWorkbench
-                    key={selectedExecutionEnvironment.device_id}
-                    settings={settings}
-                    environment={selectedExecutionEnvironment}
-                    environments={desktopEnvironments}
-                    expiresAt={selectedRemoteLease?.expiresAt ?? 0}
-                    selectionError={selectedRemoteLease?.invalidReason}
-                    onSelectionInvalid={(reason) =>
-                      handleRemoteSelectionInvalid(
-                        selectedExecutionEnvironment.device_id,
-                        selectedRemoteLease?.lease ?? "",
-                        reason,
-                      )
-                    }
-                    onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
-                    selectionLease={selectedRemoteLease?.lease ?? ""}
-                    headerLeadingActions={executionSwitcher}
-                  />
-                ) : (
-                  <AppBootShell loadingLabel="请重新选择并授权设备" />
-                ))}
-            </>
-          </Suspense>
-        </AppErrorBoundary>
+        <div
+          data-desktop-workspace-host=""
+          className="contents"
+          inert={visible}
+          aria-hidden={visible || undefined}
+        >
+          <AppErrorBoundary fallbackHeader={<WindowsTitleBar />}>
+            <Suspense
+              fallback={<AppBootShell loadingLabel={translate("app.loading", settings.locale)} />}
+            >
+              <>
+                <ChatPage
+                  active={localExecutionSelected}
+                  relayUser={relayUser}
+                  relayStats={relayStats}
+                  onRefreshRelayAccount={refreshRelayAccount}
+                  headerLeadingActions={executionSwitcher}
+                  settings={settings}
+                  setSettings={setSettings}
+                  resourceHost={guiResourceHostCapabilities}
+                  imageStudioHost={imageStudioHost}
+                  onImageStudioWorkspaceChange={setImageStudioWorkspace}
+                  sttProviderOverride={sttProviderOverride}
+                  getMcpSettings={getMcpSettings}
+                  getToolPolicies={getToolPolicies}
+                  context={context}
+                  setContext={setContext}
+                  onOpenSettings={openSettings}
+                  onToggleTheme={toggleTheme}
+                  appUpdate={appUpdate}
+                  onRunningConversationCountChange={handleRunningConversationCountChange}
+                />
+                {!localExecutionSelected &&
+                  (selectedExecutionEnvironment ? (
+                    <RemoteDeviceWorkbench
+                      key={selectedExecutionEnvironment.device_id}
+                      settings={settings}
+                      environment={selectedExecutionEnvironment}
+                      environments={desktopEnvironments}
+                      expiresAt={selectedRemoteLease?.expiresAt ?? 0}
+                      selectionError={selectedRemoteLease?.invalidReason}
+                      onSelectionInvalid={(reason) =>
+                        handleRemoteSelectionInvalid(
+                          selectedExecutionEnvironment.device_id,
+                          selectedRemoteLease?.lease ?? "",
+                          reason,
+                        )
+                      }
+                      onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
+                      selectionLease={selectedRemoteLease?.lease ?? ""}
+                      headerLeadingActions={executionSwitcher}
+                    />
+                  ) : (
+                    <AppBootShell loadingLabel="请重新选择并授权设备" />
+                  ))}
+              </>
+            </Suspense>
+          </AppErrorBoundary>
+        </div>
         {visible && (
           <div
             className={cn(
-              "absolute inset-0 z-50 flex flex-col transition-all duration-300 ease-out",
-              active ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6",
+              "absolute inset-0 z-50 flex flex-col bg-background transition-opacity duration-150 ease-out motion-reduce:transition-none",
+              active ? "opacity-100" : "pointer-events-none opacity-0",
             )}
             onTransitionEnd={handleTransitionEnd}
           >

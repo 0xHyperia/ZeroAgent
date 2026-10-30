@@ -624,7 +624,7 @@
   gap: 8px;
   font-size: 13px;
 }
-.cloud-space-page > .cloud-feedback {
+.cloud-space-page > .app-status-notice {
   margin-block: 12px;
 }
 .cloud-space-page button:focus-visible,

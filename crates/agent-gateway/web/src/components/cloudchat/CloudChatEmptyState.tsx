@@ -1,3 +1,4 @@
+import { ConversationStarter } from "@liveagent/ui/components/chat/ConversationStarter";
 import { ChartColumn, FileText, Lightbulb, Search } from "@liveagent/ui/components/IconSet";
 import type { CloudChatPresentation } from "./CloudChatComposerMenu";
 
@@ -56,16 +57,14 @@ export function CloudChatStarters({
       </p>
       <div className="cloud-starter-items">
         {starters.map(({ id, icon: Icon, title, description, prompt }) => (
-          <button key={id} type="button" className="cloud-starter" onClick={() => onSelect(prompt)}>
-            <span className="cloud-starter-top">
-              <Icon className="size-5" aria-hidden="true" />
-              <span className="cloud-starter-try" aria-hidden="true">
-                试一试
-              </span>
-            </span>
-            <span className="cloud-starter-title">{title}</span>
-            <span className="cloud-starter-description">{description}</span>
-          </button>
+          <ConversationStarter
+            key={id}
+            title={title}
+            description={description}
+            icon={<Icon className="size-5" />}
+            actionLabel="试一试"
+            onSelect={() => onSelect(prompt)}
+          />
         ))}
       </div>
     </nav>

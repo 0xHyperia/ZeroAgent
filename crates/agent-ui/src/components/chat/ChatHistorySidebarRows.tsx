@@ -853,6 +853,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
         props.isDragging && "opacity-35",
         "chat-history-row group/item relative grid sidebar-list-row grid-cols-[minmax(0,1fr)_auto] items-center rounded-md",
         "pl-1 transition-colors [contain:layout_paint_style]",
+        isMobileMenuLayout && "min-h-11",
         isSelectionMode && isSelected
           ? "bg-primary/10 text-foreground hover:bg-primary/[0.14]"
           : isActive
@@ -873,19 +874,6 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
         {/* biome-ignore lint/complexity/noUselessFragments: DropdownMenu keeps trigger and popup siblings under one provider child */}
         <>
           <div className="relative min-w-0">
-            {isMobileMenuLayout && !isSelectionMode ? (
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    className="chat-history-row-title-menu-anchor absolute inset-0 size-full rounded-2xl opacity-0 pointer-events-none"
-                  />
-                }
-              />
-            ) : null}
-
             <SidebarMenuButton
               isActive={isActive}
               ref={titleButtonRef}
@@ -918,6 +906,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
                 "bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent",
                 "text-left outline-hidden transition-colors",
                 "focus-visible:ring-2 focus-visible:ring-ring web:max-820:[-webkit-touch-callout:none] web:max-820:select-none web:max-820:touch-pan-y",
+                isMobileMenuLayout && "min-h-11",
               )}
               title={branchHint ? [item.title, branchHint].join("\n") : item.title}
             >
@@ -969,17 +958,12 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
             className={cn(
               "relative flex items-center justify-end overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
               isSelectionMode && "hidden",
-              showRunningIndicator
-                ? // Mobile rows render no inline action buttons, so this flex
-                  // box has zero content width AND zero height — max-w alone
-                  // leaves the absolutely-positioned spinner fully clipped by
-                  // overflow-hidden. Reserve the spinner slot explicitly
-                  // (both axes) and skip the hover/focus swap.
-                  isMobileMenuLayout
-                  ? "size-7 opacity-100"
-                  : "max-w-7 opacity-100 group-hover/item:max-w-16 group-focus-within/item:max-w-16"
-                : "max-w-0 opacity-0 group-hover/item:max-w-16 group-hover/item:opacity-100 group-focus-within/item:max-w-16 group-focus-within/item:opacity-100",
-              menuOpen && "max-w-16 opacity-100",
+              isMobileMenuLayout
+                ? "max-w-none opacity-100"
+                : showRunningIndicator
+                  ? "max-w-7 opacity-100 group-hover/item:max-w-16 group-focus-within/item:max-w-16"
+                  : "max-w-0 opacity-0 group-hover/item:max-w-16 group-hover/item:opacity-100 group-focus-within/item:max-w-16 group-focus-within/item:opacity-100",
+              !isMobileMenuLayout && menuOpen && "max-w-16 opacity-100",
             )}
           >
             {showRunningIndicator ? (
@@ -988,11 +972,12 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
                 aria-label={t("chat.statusRunningReply")}
                 title={t("chat.statusRunningReply")}
                 className={cn(
-                  "pointer-events-none absolute right-1.5 flex size-4 items-center justify-center text-muted-foreground",
+                  "pointer-events-none flex size-4 items-center justify-center text-muted-foreground",
                   "transition-opacity duration-200",
                   isMobileMenuLayout
-                    ? "opacity-100"
+                    ? "relative mr-1 shrink-0 opacity-100"
                     : [
+                        "absolute right-1.5",
                         "opacity-100 group-hover/item:opacity-0 group-focus-within/item:opacity-0",
                         menuOpen && "opacity-0",
                       ],
@@ -1004,43 +989,45 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
             <div
               className={cn(
                 "flex items-center gap-0.5 transition-opacity duration-200",
-                showRunningIndicator
+                showRunningIndicator && !isMobileMenuLayout
                   ? "opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100"
                   : "opacity-100",
                 menuOpen && "opacity-100",
               )}
             >
               {!isMobileMenuLayout ? (
-                <>
+                <SidebarMenuAction
+                  type="button"
+                  className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
+                  title={item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
+                  aria-label={
+                    item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")
+                  }
+                  onClick={handleTogglePinned}
+                  disabled={isInteractionDisabled || isBusy || item.isPending}
+                >
+                  {item.isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                </SidebarMenuAction>
+              ) : null}
+              <DropdownMenuTrigger
+                render={
                   <SidebarMenuAction
                     type="button"
-                    className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
-                    title={item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
-                    aria-label={
-                      item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")
-                    }
-                    onClick={handleTogglePinned}
-                    disabled={isInteractionDisabled || isBusy || item.isPending}
-                  >
-                    {item.isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-                  </SidebarMenuAction>
-                  <DropdownMenuTrigger
-                    render={
-                      <SidebarMenuAction
-                        type="button"
-                        className={cn(PROJECT_ICON_BUTTON_CLASS, "static after:hidden")}
-                        disabled={isInteractionDisabled || isBusy}
-                        title={t("chat.conversationMore")}
-                        aria-label={t("chat.conversationMore")}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                    }
-                  >
-                    <MoreHorizontal className="size-3.5" />
-                  </DropdownMenuTrigger>
-                </>
-              ) : null}
+                    className={cn(
+                      PROJECT_ICON_BUTTON_CLASS,
+                      "static after:hidden",
+                      isMobileMenuLayout && "size-11",
+                    )}
+                    disabled={isInteractionDisabled || isBusy}
+                    title={t("chat.conversationMore")}
+                    aria-label={t("chat.conversationMore")}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                }
+              >
+                <MoreHorizontal className="size-3.5" />
+              </DropdownMenuTrigger>
             </div>
           </div>
 

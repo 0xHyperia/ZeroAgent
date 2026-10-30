@@ -72,7 +72,7 @@ import {
   registerConversationReferenceDropZone,
 } from "@liveagent/ui/lib/chat/conversationReferenceDrag";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
-import { readSendShortcut } from "@liveagent/ui/lib/chat/sendShortcut";
+import { readComposerSendShortcut } from "@liveagent/ui/lib/chat/sendShortcut";
 import {
   clearActiveWorkspacePathDrag,
   getActiveWorkspacePathDrag,
@@ -309,6 +309,8 @@ export type ChatComposerBarProps = {
   feedback?: ReactNode;
   /** Opt-in text-only Web layout; the standard desktop/agent controls stay intact. */
   layout?: "standard" | "inline";
+  /** Host capability, independent of layout. CloudChat explicitly disables device controls. */
+  showExecutionControls?: boolean;
   expandedInput?: boolean;
   leadingControls?: ReactNode;
   contextBarPosition?: "above" | "below";
@@ -662,7 +664,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       ? t("chat.stopGeneration")
       : t("chat.sendMessage");
   const sendShortcutHint =
-    readSendShortcut() === "ctrlEnter"
+    readComposerSendShortcut() === "ctrlEnter"
       ? /Mac|iPhone|iPad|iPod/i.test(typeof navigator === "undefined" ? "" : navigator.platform)
         ? "⌘+Enter"
         : "Ctrl+Enter"
@@ -1230,7 +1232,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
   const modelControls = (
     <ComposerModelControls
-      presentation={inlineLayout ? "inline" : "standard"}
+      presentation="inline"
+      showExecutionControls={props.showExecutionControls ?? true}
       compactLabel={inlineLayout && !props.expandedInput}
       showProviderIcon
       executionMode={executionMode}
@@ -1727,7 +1730,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                           title={addMenuTooltip}
                           className={cn(
                             "composer-toolbar-action relative inline-flex size-8 shrink-0 items-center justify-center",
-                            "rounded-full outline-hidden transition-colors",
+                            "composer-add-trigger rounded-full outline-hidden transition-colors",
                             "hover:bg-muted/60 focus-visible:bg-muted/60 data-[popup-open]:bg-muted/60",
                             "disabled:pointer-events-none disabled:opacity-40",
                             pendingUploadedFiles.length > 0
@@ -1902,13 +1905,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 ) : null}
                 <Button
                   data-composer-primary-action={
-                    inlineLayout
-                      ? canQueueDraftWhileSending
-                        ? "queue"
-                        : isSending
-                          ? "stop"
-                          : "send"
-                      : undefined
+                    canQueueDraftWhileSending ? "queue" : isSending ? "stop" : "send"
                   }
                   disabled={isSending ? false : sendDisabled}
                   onClick={() => {
@@ -1929,52 +1926,17 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     !isSending || canQueueDraftWhileSending ? sendShortcutHint : undefined
                   }
                   aria-label={primaryActionTitle}
-                  style={
-                    inlineLayout
-                      ? undefined
-                      : canQueueDraftWhileSending
-                        ? {
-                            backgroundColor: "var(--ui-color-hsl-160-84-39)",
-                            backgroundImage: "none",
-                            color: "white",
-                          }
-                        : isSending
-                          ? {
-                              backgroundColor: "var(--destructive)",
-                              backgroundImage: "none",
-                              color: "var(--destructive-foreground)",
-                            }
-                          : undefined
-                  }
-                  className={cn(
-                    inlineLayout
-                      ? "composer-primary-key shrink-0"
-                      : [
-                          // 点击区保持 32px；背景经 p-0.5 + bg-clip-content 只涂 28px 内圆，
-                          // 与用量环外径、展开按钮悬停圆等大，避免实心圆盘显大。
-                          "size-8 shrink-0 rounded-full border-0 bg-clip-content p-0.5 shadow-none transition-all",
-                          "[&_svg]:stroke-[2.25]",
-                          canQueueDraftWhileSending
-                            ? "hover:brightness-105 active:scale-95"
-                            : isSending
-                              ? "hover:opacity-90 active:scale-95"
-                              : "disabled:opacity-100 [&:not(:disabled)]:bg-foreground [&:not(:disabled)]:text-background [&:not(:disabled)]:hover:bg-foreground/85 [&:not(:disabled)]:active:scale-95 disabled:bg-muted/60 disabled:text-muted-foreground",
-                        ],
-                  )}
+                  className="composer-primary-key shrink-0"
                 >
                   {canQueueDraftWhileSending ? (
                     <ArrowUp className="size-4" />
                   ) : isSending ? (
                     <>
                       <Square className="size-3 fill-current" />
-                      {inlineLayout ? (
-                        <span className="composer-stop-label">{t("chat.stopShort")}</span>
-                      ) : null}
+                      <span className="composer-stop-label">{t("chat.stopShort")}</span>
                     </>
-                  ) : inlineLayout ? (
-                    <ArrowUpRight className="size-5" />
                   ) : (
-                    <ArrowUp className="size-4" />
+                    <ArrowUpRight className="size-5" />
                   )}
                 </Button>
               </div>

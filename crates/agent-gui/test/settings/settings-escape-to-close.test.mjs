@@ -144,13 +144,15 @@ test("SettingsShell wires Escape to its back action", async () => {
     await env.act(async () => pressEscape(env));
     assert.equal(backs, 1, "Escape inside settings must invoke onBack");
 
-    const backButton = host.querySelector(".settings-back-button");
+    const backButton = host.querySelector('button[aria-keyshortcuts="Escape"]');
     assert.ok(backButton, "the back control must exist");
     assert.equal(
       backButton.getAttribute("aria-keyshortcuts"),
       "Escape",
       "the shortcut must be announced to assistive tech",
     );
+    await env.act(async () => backButton.click());
+    assert.equal(backs, 2, "the visible page back control must invoke the same action");
   } finally {
     await env.act(async () => root.unmount());
     host.remove();

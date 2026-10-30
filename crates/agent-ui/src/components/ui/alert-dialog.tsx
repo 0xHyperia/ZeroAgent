@@ -55,7 +55,7 @@ const AlertDialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="alert-dialog-overlay"
     className={cn(
-      "layer-modal fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-150",
+      "za-modal-backdrop layer-modal fixed inset-0 transition-opacity duration-150",
       "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
       className,
     )}
@@ -99,9 +99,9 @@ export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogCo
               // 落在所有 zone 之外），且 padding 由 header/body/footer 各自负责。
               "zone-font-scale",
               "relative my-auto w-full max-w-md",
-              "rounded-2xl border border-border/70 bg-background text-foreground shadow-2xl outline-none",
-              "transition-[transform,opacity] duration-150 ease-out",
-              "data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              "za-dialog-surface border border-border/70 bg-background text-foreground outline-none",
+              "transition-opacity duration-150 ease-out",
+              "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
               className,
             )}
             {...props}

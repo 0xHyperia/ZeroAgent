@@ -291,6 +291,10 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
       brand={<DesktopSidebarBrand />}
       hideCloseButton={hideDesktopSidebarCloseButton()}
       accountMenu={props.accountMenu}
+      showAgentHubs={false}
+      mobileRail={props.mobileRail}
+      previewOpen={props.previewOpen}
+      onPinPreview={props.onPinPreview}
       onNewRecentConversation={props.onNewRecentConversation}
       footerTrailing={<DesktopSidebarUpdate appUpdate={props.appUpdate} />}
     />

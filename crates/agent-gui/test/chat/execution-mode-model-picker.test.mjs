@@ -6,7 +6,7 @@ import test from "node:test";
 
 const pickerSources = [
   readFileSync(
-    new URL("../../../agent-ui/src/components/chat/ComposerModelControls.tsx", import.meta.url),
+    new URL("../../../agent-ui/src/components/chat/ComposerInlineModelControls.tsx", import.meta.url),
     "utf8",
   ),
 ];
@@ -48,42 +48,31 @@ test("model pickers use popover semantics instead of menu semantics", () => {
       source,
       /import \{ Popover, PopoverContent, PopoverTrigger \} from "@liveagent\/ui\/components\/ui\/popover"/,
     );
-    assert.match(source, /<Popover open=\{isModelPickerOpen\}/);
+    assert.match(source, /<Popover[\s\S]*?open=\{open\}/);
     assert.match(source, /<PopoverContent/);
-    assert.match(source, /aria-label=\{t\("chat\.selectModel"\)\}/);
+    assert.match(source, /t\("chat\.selectModel"\)/);
     assert.match(sharedPickerSource, /<DropdownMenuRadioGroup\s+value=\{providerFilter\}/);
   }
 });
 
-test("execution mode switchers expose a native radio group", () => {
-  for (const source of pickerSources) {
-    assert.match(source, /role="radiogroup"/);
-    assert.match(source, /aria-label=\{t\("settings\.executionMode"\)\}/);
-    assert.match(source, /value="text"/);
-    assert.match(source, /value="tools"/);
-    assert.match(source, /checked=\{!isAgent\}/);
-    assert.match(source, /checked=\{isAgent\}/);
-    assert.match(source, /onChange=\{\(\) => onSelectExecutionMode\("text"\)\}/);
-    assert.match(source, /onChange=\{\(\) => onSelectExecutionMode\("tools"\)\}/);
-    assert.match(source, /has-\[:focus-visible\]:ring-2/);
-  }
+test("execution controls retain native radios behind host capability opt-in", () => {
+  const source=pickerSources[0];
+  assert.match(source,/props.showExecutionControls/);
+  assert.match(source,/role="radiogroup"/);
+  for(const mode of ["text","tools"]) assert.match(source,new RegExp(`value="${mode}"`));
+  assert.match(source,/onChange=\{\(\) => props.onSelectExecutionMode/);
 });
-
-test("model selection uses an in-place page and returns to the root panel", () => {
-  for (const source of pickerSources) {
-    assert.match(source, /showView\("model"\)/);
-    assert.match(source, /showView\("root"\)/);
-    assert.doesNotMatch(source, /expandedGroupId|toggleGroup/);
-    assert.match(sharedPickerSource, /aria-pressed=\{isSelected\}/);
-    assert.match(source, /onSelectModel\(parsed\);[\s\S]{0,240}?showView\("root"\);/);
-  }
+test("model selection reveals its route and closes after an explicit selection", () => {
+  const source=pickerSources[0];
+  assert.match(source,/<ModelPickerContent[\s\S]*?revealSelected/);
+  assert.match(source,/props.onSelectModel\(parsed\);\s+setOpen\(false\)/);
+  assert.match(sharedPickerSource,/aria-pressed=\{isSelected\}/);
 });
-
 test("model pickers search models and providers", () => {
   for (const source of pickerSources) {
-    assert.match(source, /initialFocus=\{resolveModelPickerInitialFocus\}/);
-    assert.match(source, /openType === "touch"/);
-    assert.match(source, /searchInputRef\.current/);
+    assert.match(source, /initialFocus=\{/);
+    assert.match(source, /type === "touch"/);
+    assert.match(source, /searchRef\.current/);
     assert.match(source, /<ModelPickerContent/);
     assert.match(sharedPickerSource, /t\("chat\.searchModel"\)/);
     assert.match(sharedOptionsSource, /model, option\.label, option\.providerName/);
@@ -94,7 +83,7 @@ test("model pickers search models and providers", () => {
 test("provider groups keep a reachable edit affordance", () => {
   for (const source of pickerSources) {
     assert.match(sharedPickerSource, /t\("settings\.editProvider"\)/);
-    assert.match(source, /setIsModelPickerOpen\(false\);\s+onOpenSettings\("providers", providerId\);/);
+    assert.match(source, /setOpen\(false\);\s+props.onOpenSettings\("providers", providerId\);/);
   }
 });
 
@@ -121,21 +110,12 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
   assert.ok(standardDeck.indexOf("{modelControls}") < standardDeck.indexOf("<GitBranchSelector"));
   assert.doesNotMatch(headerSource, /model-selector-trigger|Popover\.Root|currentModelLabel/);
 
-  for (const source of pickerSources) {
-    assert.match(source, /aria-label=\{t\("chat\.runtime\.controls"\)\}/);
-    assert.match(source, /nativeWebSearchEnabled: checked/);
-    assert.match(source, /thinkingEnabled: !chatRuntimeControls\.thinkingEnabled/);
-    assert.match(source, /thinkingEnabled: true,\s+reasoning: level/);
-    assert.match(source, /thinkingEnabled: false/);
-    assert.match(source, /showView\("reasoning"\)/);
-    assert.match(source, /type="radio"/);
-    assert.match(source, /checked=\{selectedEffort === level\}/);
-    assert.doesNotMatch(source, /ReasoningEffortSegments|ResizeObserver|setPointerCapture/);
-    assert.doesNotMatch(source, /from "@liveagent\/ui\/components\/ui\/select"/);
-
-  }
+  assert.match(pickerSources[0], /nativeWebSearchEnabled: checked/);
+  assert.match(pickerSources[0], /thinkingEnabled: true, reasoning: level/);
+  assert.match(pickerSources[0], /thinkingEnabled: false/);
+  assert.match(pickerSources[0], /<ReasoningSlider/);
+  assert.doesNotMatch(pickerSources[0], /from "@liveagent\/ui\/components\/ui\/select"/);
 });
-
 test("branch selector reuses the model trigger visual language", () => {
   assert.match(branchSelectorSource, /COMPOSER_CONTROL_TRIGGER_CLASS/);
   assert.match(branchSelectorSource, /COMPOSER_CONTROL_LABEL_CLASS/);

@@ -18,13 +18,14 @@ export function ResourceTabsList<Value extends string>(props: {
   triggerClassName?: string;
   variant?: "default" | "segmented";
 }) {
+  const variant = props.variant ?? "segmented";
   return (
     <TabsList
       aria-label={props.ariaLabel}
-      variant={props.variant}
+      variant={variant}
       className={cn(
         "max-w-full shrink-0 justify-start overflow-x-auto",
-        props.variant !== "segmented" && "h-8 rounded-lg bg-muted p-1",
+        variant !== "segmented" && "h-8 rounded-lg bg-muted p-1",
         "text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         props.className,
       )}
@@ -36,10 +37,10 @@ export function ResourceTabsList<Value extends string>(props: {
           <TabsTrigger
             key={item.value}
             value={item.value}
-            variant={props.variant}
+            variant={variant}
             className={cn(
               "group relative shrink-0 gap-1.5",
-              props.variant !== "segmented" && "rounded-md px-3",
+              variant !== "segmented" && "rounded-md px-3",
               "hover:text-foreground data-[active]:bg-background data-[active]:text-foreground data-[active]:shadow-sm",
               props.triggerClassName,
             )}
@@ -51,7 +52,7 @@ export function ResourceTabsList<Value extends string>(props: {
                 variant={active ? "secondary" : "muted"}
                 className={cn(
                   "ml-0.5 h-5 px-1.5 text-tiny tabular-nums",
-                  props.variant === "segmented" &&
+                  variant === "segmented" &&
                     "border-0 bg-transparent px-0 text-current shadow-none",
                 )}
               >

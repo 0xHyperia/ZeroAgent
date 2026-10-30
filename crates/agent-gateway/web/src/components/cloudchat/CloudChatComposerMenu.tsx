@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { SegmentedControl } from "@liveagent/ui/components/ui/segmented-control";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useRef, useState } from "react";
 
@@ -111,45 +112,15 @@ export function CloudChatModeSwitch({
   onChange: (value: CloudChatPresentation) => void;
 }) {
   return (
-    <fieldset aria-label="输入体验" className="cloud-mode-switch" data-mode={value}>
-      <span className="cloud-mode-indicator" aria-hidden="true" />
-      {(
-        [
-          { id: "chat", label: "对话" },
-          { id: "work", label: "工作" },
-        ] as const
-      ).map((mode) => (
-        <Button
-          key={mode.id}
-          type="button"
-          variant="ghost"
-          title={mode.id === "chat" ? "提问并探索想法" : "完成任务与交付成果"}
-          aria-pressed={value === mode.id}
-          tabIndex={value === mode.id ? 0 : -1}
-          onClick={() => {
-            if (value !== mode.id) onChange(mode.id);
-          }}
-          onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            const next =
-              event.key === "Home"
-                ? "chat"
-                : event.key === "End"
-                  ? "work"
-                  : value === "chat"
-                    ? "work"
-                    : "chat";
-            if (next !== value) onChange(next);
-            event.currentTarget.parentElement
-              ?.querySelector<HTMLButtonElement>(`button[data-mode="${next}"]`)
-              ?.focus();
-          }}
-          data-mode={mode.id}
-        >
-          {mode.label}
-        </Button>
-      ))}
-    </fieldset>
+    <SegmentedControl
+      value={value}
+      onChange={onChange}
+      label="输入体验"
+      className="cloud-mode-switch"
+      options={[
+        { value: "chat", label: "对话", description: "提问并探索想法" },
+        { value: "work", label: "工作", description: "完成任务与交付成果" },
+      ]}
+    />
   );
 }

@@ -246,6 +246,9 @@ export type ChatHistorySidebarContainerSource = Required<
     projects: WorkspaceProject[];
     accountMenu?: ReactNode;
     onNewRecentConversation?: () => void;
+    mobileRail?: ReactNode;
+    previewOpen?: boolean;
+    onPinPreview?: () => void;
   };
 
 type ChatHistorySidebarConversationSource = Pick<

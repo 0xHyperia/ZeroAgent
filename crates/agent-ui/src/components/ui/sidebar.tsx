@@ -227,7 +227,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           data-mobile-rail={mobileRail ? "true" : undefined}
-          backdropVariant={mobileRail ? "navigation" : undefined}
+          backdropVariant="navigation"
           className={cn(
             "w-(--sidebar-width) max-w-none bg-sidebar p-0 text-sidebar-foreground",
             className,

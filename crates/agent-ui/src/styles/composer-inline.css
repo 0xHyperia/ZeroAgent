@@ -28,7 +28,7 @@
   border-radius: 999px;
   padding: 0 7px;
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--zone-font-scale, 1));
   font-weight: 400;
   transition: color 150ms ease;
 }
@@ -123,7 +123,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 0 5px 6px;
-  font-size: 13px;
+  font-size: calc(13px * var(--zone-font-scale, 1));
   font-weight: 500;
 }
 .composer-popup-effort-link {
@@ -132,7 +132,7 @@
   gap: 2px;
   border-radius: 999px;
   padding: 0 5px 0 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--zone-font-scale, 1));
   font-weight: 400;
   color: hsl(var(--muted-foreground));
 }
@@ -177,8 +177,8 @@
   align-items: center;
 }
 .composer-reasoning-value {
-  font-size: 18px;
-  line-height: 24px;
+  font-size: calc(18px * var(--zone-font-scale, 1));
+  line-height: calc(24px * var(--zone-font-scale, 1));
   font-weight: 500;
   color: var(--reasoning-ink, #2a67da);
 }
@@ -206,7 +206,7 @@
   border-radius: 6px;
   padding: 0 3px;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: calc(12px * var(--zone-font-scale, 1));
 }
 .composer-reasoning-model > span {
   overflow: hidden;
@@ -357,8 +357,8 @@
   margin: 6px 0 2px;
   border-top: 1px solid hsl(var(--foreground) / 0.07);
   padding: 8px 2px 2px;
-  font-size: 12px;
-  line-height: 19px;
+  font-size: calc(12px * var(--zone-font-scale, 1));
+  line-height: calc(19px * var(--zone-font-scale, 1));
   color: hsl(var(--muted-foreground));
 }
 .dark .composer-reasoning-popup {
@@ -464,7 +464,7 @@
   fill: currentColor;
 }
 .composer-stop-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--zone-font-scale, 1));
   font-weight: 500;
   white-space: nowrap;
 }
@@ -522,7 +522,7 @@
   }
   .composer-reasoning-model {
     min-height: 44px;
-    font-size: 13px;
+    font-size: calc(13px * var(--zone-font-scale, 1));
   }
   .composer-reasoning-slider,
   .composer-reasoning-slider input {
@@ -541,7 +541,7 @@
   }
   .composer-model-popup input {
     min-height: 40px;
-    font-size: 16px;
+    font-size: calc(16px * var(--zone-font-scale, 1));
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -9,7 +9,7 @@ export const DropdownMenuTrigger = Menu.Trigger;
 export const DropdownMenuSub = Menu.SubmenuRoot;
 
 type MenuVariant = "default" | "soft";
-const MenuVariantContext = React.createContext<MenuVariant>("default");
+const MenuVariantContext = React.createContext<MenuVariant>("soft");
 const softMenuClassName = cn(menuSurfaceClassName, "p-1.5");
 const softItemClassName =
   "rounded-lg px-2.5 data-[highlighted]:bg-settings-active data-[highlighted]:text-foreground data-[popup-open]:bg-settings-active";
@@ -26,7 +26,7 @@ export const DropdownMenuContent = React.forwardRef<HTMLDivElement, DropdownMenu
   (
     {
       className,
-      variant = "default",
+      variant = "soft",
       side,
       align,
       sideOffset = 4,
@@ -58,8 +58,8 @@ export const DropdownMenuContent = React.forwardRef<HTMLDivElement, DropdownMenu
               "min-w-48 max-h-select-popup overflow-x-hidden overflow-y-auto",
               floatingSurfaceClassName,
               "p-1",
-              "data-[open]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[open]:fade-in-0 data-[closed]:zoom-out-95 data-[open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-              "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+              "transition-opacity duration-150 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none",
+
               variant === "soft" && softMenuClassName,
               className,
             )}
@@ -103,7 +103,7 @@ export const DropdownMenuSubTrigger = React.forwardRef<HTMLElement, DropdownMenu
       ref={ref}
       openOnHover={clickToggle ? false : undefined}
       className={cn(
-        "relative flex cursor-pointer select-none items-center rounded-xs px-2 py-1.5 data-[disabled]:cursor-default",
+        "za-menu-item relative flex cursor-pointer select-none items-center px-2 py-1.5 data-[disabled]:cursor-default",
         "text-sm outline-hidden transition-colors",
         "data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[popup-open]:bg-accent data-[popup-open]:text-accent-foreground data-[disabled]:opacity-50",
         React.useContext(MenuVariantContext) === "soft" && softItemClassName,
@@ -119,7 +119,7 @@ export const DropdownMenuSubContent = React.forwardRef<HTMLDivElement, DropdownM
   (
     {
       className,
-      variant = "default",
+      variant = "soft",
       children,
       side = "right",
       align = "start",
@@ -151,8 +151,8 @@ export const DropdownMenuSubContent = React.forwardRef<HTMLDivElement, DropdownM
               "min-w-48 max-h-select-popup overflow-x-hidden overflow-y-auto",
               floatingSurfaceClassName,
               "p-1",
-              "data-[open]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[open]:fade-in-0 data-[closed]:zoom-out-95 data-[open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-              "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+              "transition-opacity duration-150 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none",
+
               variant === "soft" && softMenuClassName,
               className,
             )}
@@ -176,7 +176,7 @@ export const DropdownMenuItem = React.forwardRef<HTMLDivElement, DropdownMenuIte
     <Menu.Item
       ref={ref}
       className={cn(
-        "relative flex cursor-pointer select-none items-center rounded-xs px-2 py-1.5 data-[disabled]:cursor-default",
+        "za-menu-item relative flex cursor-pointer select-none items-center px-2 py-1.5 data-[disabled]:cursor-default",
         "text-sm outline-hidden transition-colors",
         "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         React.useContext(MenuVariantContext) === "soft" && softItemClassName,
@@ -200,7 +200,7 @@ export const DropdownMenuRadioItem = React.forwardRef<
   <Menu.RadioItem
     ref={ref}
     className={cn(
-      "flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 data-[disabled]:cursor-default",
+      "za-menu-item flex cursor-pointer items-center justify-between gap-3 px-3 py-2 data-[disabled]:cursor-default",
       "text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50",
       React.useContext(MenuVariantContext) === "soft" && softItemClassName,
       className,

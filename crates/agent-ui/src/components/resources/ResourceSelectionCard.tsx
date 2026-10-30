@@ -17,8 +17,8 @@ export function ResourceSelectionCard(props: {
     <article
       className={cn(
         "flex items-center gap-2.5",
-        "rounded-lg border bg-card p-2.5 text-left transition-[border-color,background-color]",
-        props.checked ? "border-emerald-600/25" : "border-border",
+        "za-resource-card border bg-card p-3 text-left transition-[border-color,background-color]",
+        props.checked ? "border-foreground/20" : "border-border/65",
         props.disabled && "bg-muted/10",
       )}
     >

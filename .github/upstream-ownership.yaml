@@ -2,6 +2,31 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/test/design-system-browser/**",
+      "ownership": "zeroagent_owned", "risk": "low",
+      "checks": ["ADR0058 真实共享组件样板，不挂载账户和执行客户端", "独立类型/构建及浏览器主题字号焦点验收，不替代原生和在线工作台"]
+    },
+    {
+      "glob": "crates/agent-ui/src/styles/design-system.css",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["ADR0058 跨端语义角色、浅深主题、减少动态及44px触控", "Web/GUI/mobile/remote构建与实际渲染，不侵入平台数据和执行边界"]
+    },
+    {
+      "glob": "crates/agent-ui/src/application/{WorkbenchNavigationRail.tsx,useNavigationPreview.ts}",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["预览不改固定状态，菜单/焦点/切号/触屏清理", "导航只调用宿主回调，不自行选择执行目标或创建会话"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/ui/{status-notice,segmented-control,account-identity}.tsx",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["纯呈现、文本转义和明确回调，错误保留真实角色和恢复动作", "键盘、禁用、焦点、表单和跨宿主回归"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/chat/ConversationStarter.tsx",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["只向宿主建议草稿，不发送请求或启用工具", "Cloud/桌面同源卡片、键盘与窄屏"]
+    },
+    {
       "glob": "crates/agent-gateway/internal/account/cloud_space*.go",
       "ownership": "zeroagent_owned",
       "risk": "critical",
@@ -23,7 +48,7 @@
       "glob": "crates/agent-ui/src/styles/composer-inline.css",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["仅 inline 类，主题/焦点/减少动态和44px触控保持", "长模型名、窄屏与停止状态不溢出"]
+      "checks": ["模型/思考及发送停止跨宿主共用，主题/焦点/减少动态和44px触控保持", "长模型名、窄屏与停止状态不溢出"]
     },
     {
       "glob": "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
@@ -41,13 +66,13 @@
       "glob": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["CloudChat 新对话导航模式显式 opt-in", "默认桌面/设备侧栏和主题操作保持，宽窄屏与类型检查"]
+      "checks": ["CloudChat 新对话导航模式显式 opt-in", "ADR0058 桌面/设备账户迁至轨道，原生窗口/主题及宽窄屏保持"]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ChatHistorySidebar*",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["历史菜单、搜索、批量选择和默认移动 Sheet 保持；CloudChat mobileRail 显式 opt-in", "预览固定交给宿主，不反向切换当前固定状态"]
+      "checks": ["历史菜单、搜索、批量选择保留；ADR0058 各宿主接入 mobileRail", "预览固定交给宿主，不反向切换当前固定状态"]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/sidebar.tsx",

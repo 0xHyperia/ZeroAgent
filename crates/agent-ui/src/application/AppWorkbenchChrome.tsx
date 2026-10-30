@@ -27,7 +27,9 @@ export function AppHeaderFrame({
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 left-0 bg-settings-rail transition-[width] duration-200 ease-out motion-reduce:transition-none desktop:max-[767px]:hidden web:max-820:hidden"
-          style={{ width: sidebarOpen ? "var(--sidebar-width)" : 0 }}
+          style={{
+            width: sidebarOpen ? "calc(var(--sidebar-width) + var(--app-rail-width, 0px))" : 0,
+          }}
         />
       ) : null}
       {children}

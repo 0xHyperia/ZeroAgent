@@ -9,7 +9,7 @@ test("logout failures stay visible and retry completes without overlapping nativ
  t.after(async()=>{await env.act(async()=>root.unmount());env.cleanup();});
  const {UserMenu}=env.loadModule("src/components/chat/UserMenu.tsx");const first=deferred(),second=deferred();let calls=0;
  await env.act(async()=>root.render(env.React.createElement(UserMenu,{user:{id:7,email:"current@example.test"},stats:null,onRefreshAccount:async()=>{},onOpenAccount:()=>{},onOpenSettings:()=>{},onLogout:()=>++calls===1?first.promise:second.promise})));
- await env.act(async()=>{document.querySelector('[title="用户菜单"]').click();await tick();});
+ await env.act(async()=>{document.querySelector('[aria-label="用户菜单"]').click();await tick();});
  const item=()=>[...document.querySelectorAll('[role="menuitem"]')].find(el=>/退出/.test(el.textContent));
  assert.ok(item(),"logout menu is visible");
  await env.act(async()=>{item().click();item().click();});
@@ -31,7 +31,7 @@ test("compact account menu keeps details on the account page and separates accou
  t.after(async()=>{await env.act(async()=>root.unmount());env.cleanup();});
  const {UserMenu}=env.loadModule("src/components/chat/UserMenu.tsx");const routes=[];let refreshes=0;
  await env.act(async()=>root.render(env.React.createElement(UserMenu,{user:{id:7,email:"private@example.test",username:"Zero",balance:123},stats:{today_tokens:321},onRefreshAccount:async()=>{refreshes++},onOpenAccount:()=>routes.push("account"),onOpenSettings:()=>routes.push("settings"),onLogout:async()=>{}})));
- const open=async()=>env.act(async()=>{document.querySelector('[title="用户菜单"]').click();await tick();});
+ const open=async()=>env.act(async()=>{document.querySelector('[aria-label="用户菜单"]').click();await tick();});
  assert.equal(host.querySelector('button').textContent.includes("Zero"),true);
  await open();assert.equal(refreshes,1);
  assert.doesNotMatch(document.body.textContent,/private@example|余额|今日 Token|123|321/);

@@ -392,3 +392,345 @@ final result: **passed（本轮个人空间功能与响应式设计范围）**�
 重启受管Web开发服务后，相同模块URL已返回新增导出；刷新用户两个白屏标签，均恢复应用正文。
 当前资料空间已正常打开，控制台未新增同类异常；没有修改账户或清除浏览器数据。
 证据：`white-screen-fixed.jpg`；不需要额外产品源码补丁，未提交、推送。
+
+## 2026-10-30：以 CloudChat 为基准统一跨端体验（ADR0058）
+
+当前结论：**实现及自动检查完成；原生与在线远程交互验收未完成，完整目标仍进行中。**
+规范为 `docs/design/zeroagent-cross-platform-ux.md` v1.1，范围、页面清单与待验收项见
+`docs/design/cross-platform-implementation.md`。基线 `dd23fe0d`，本轮未提交、推送或清除用户数据。
+
+### 实际改动
+
+- 共享 `design-system.css` 统一表面、边界、圆角、阴影、动效、字号缩放和触控尺寸。
+  基础按钮、表单、菜单、Popover、Dialog、Sheet、页签及资源卡片直接消费共享实现。
+  Tooltip 延续已有黑胶囊与快捷键底面，没有在各宿主复制一套。
+- 桌面和设备接入同一应用轨、轨道头像、临时侧栏预览与手机导航 Sheet；预览不改固定偏好。
+  收起预览仍保留焦点/菜单区域，鼠标移动到无关联资源入口不切换执行目标。
+- 所有聊天宿主共用模型/思考组合、连续拖动与离散提交的滑条、发送/队列/停止外观和起步卡片。
+  设备执行方式、原生联网由显式能力参数控制；CloudChat 明确关闭这些设备控件。
+  安全模式、Git、工作树、命令、语音、队列、审批和原单编辑器控制器保留。
+- 设置采用同源页面/分类样式与手机列表/详情；账户身份、普通提示、设置提示和 Toast 共用视觉原语。
+  通知的角色、超时、重试、未知结果处理仍由原业务负责。
+- Native 凭据、设备租约、本机文件与云资料协议、两个独立远程 React 运行时的边界未改变。
+
+### 浏览器验收
+
+地址 `http://localhost:5174/`，Gateway `http://localhost:50052/`；使用现有已登录的测试会话。
+实际检查桌面首页与设置、390×844 的模型/思考浮层、导航、设置列表/详情/返回及深色模式。
+手机实测文档 clientWidth 与 scrollWidth 同为 390，侧栏遮层为白色 60%，backdrop-filter 为 none；
+思考浮层在视口内（left 16、right 328、bottom 747）。主题最后恢复自动，临时视口 reset。
+没有发送真实模型请求或调用付费外部工具。
+
+本地证据：`.codex-artifacts/cross-platform-design-20261030/`。
+`01`–`03` 是实施前基线，不能作为改后验收；改后截图为：
+
+- `04-shared-settings.jpg`：桌面设置。
+- `05-mobile-model-effort.jpg`：手机模型/思考浮层。
+- `06-mobile-navigation.jpg`：手机应用轨、侧栏及清晰浅遮层。
+- `07-mobile-settings-dark.jpg`：深色设置。
+- `08-final-web-home.png`：最终源码重新加载后的桌面首页。
+
+共享 context 经开发热更新后，页面曾出现 `useSidebar must be used within a SidebarProvider`；
+检查真实组件树确认 Provider 存在，完整刷新后恢复应用与既有登录，最终首页已复拍。
+没有将 HTTP 200 或之前的生产构建当作开发页面可用的证据，也未因此新增认证或状态补丁。
+
+### 自动检查及产物
+
+日志均在上述证据目录。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `pnpm test:webui` | 两批分别 696/696、494/494，通过；`web-tests-final.log` |
+| `pnpm test:gui` | 634 项中 631 通过；3 项因 Edge `DevToolsActivePort` 文件锁 EBUSY 失败，不能报告整次退出成功；`gui-tests-final.log` |
+| 队列宽窄布局失败文件隔离重跑 | 3/3 通过，覆盖 GUI/Web 宽窄输入及目标栏接缝；`queue-geometry-retry.log` |
+| 最终 CloudChat 页面回归 | 120/120，涵盖草稿、切号、重放、参数、设置、编辑与确认；`cloud-runs-page-tests-final.log` |
+| 模型能力与连续滑条专项 | 10/10；`model-capability-tests.log`。覆盖离散提交、分数视觉位置、Escape 取消、模型变更和设备执行参数 |
+| 分段组件专项 | 1/1；同一用例覆盖方向键、禁用项、重复选择和表单不误提交 |
+| 类型与边界 | `typecheck:ui`、`typecheck:gui`、`typecheck:webui`、UI 边界通过；`typecheck-final.log` |
+| 产品契约及空白 | 15 项功能、119 条所有权规则通过；`git diff --check` 通过 |
+| Biome | 新共享控件和设计样式通过；修改文件没有剩余错误。严格 warning 门禁未通过：base.css 1 条、App.tsx 9 条及 2 条 info、zeroagent.css 24 条，涉及既有选择器和 effect 等，未扩大本轮去改业务 effect |
+| `pnpm build:webui` | 通过，入口 `index-CNrG8ibJ.js`、`index-Bn27ZiEk.css`；`web-build-final.log` |
+| `pnpm build:gui` | 通过，包含 embedded-desktop 独立工厂构建及无 Node 全局的浏览器初始化检查；GUI 入口 `index-CveJdwMD.js`；`gui-build-final.log` |
+| Android debug APK | `tauri android build --debug --apk --target x86_64 --ci --config src-tauri/tauri.android.conf.json` 通过；`android-build-final.log` |
+
+Android 产物为
+`crates/agent-gui/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`，
+属于调试包，已通过 `adb install -r` 安装到 `emulator-5554`（Success），保留原数据；安装成功不代表交互验收通过。
+构建保留现有 Rust、Gradle/JDK 与分块警告，不宣称发布构建零警告。
+本轮没有服务端接口、数据库或 Rust 行为修改，因此没有重新执行真实模型/S3/E2B 链路。
+
+### 原生与远程验收限制
+
+原生桌面开发端已启动，访问树能读到新应用轨、头像、原工作空间和历史、安全模式、模型/思考及 Git 入口。
+Android `ZeroAgent_API_35` 模拟器在线。两者的原生截图仍为黑屏，激活/点击被界面工具拒绝；
+这是目前无法继续验收的具体环境条件，不能把可访问树或 APK 编译成功写成视觉通过。
+已请求用户确认 Windows 已解锁并保持连接，等待可交互会话后补做：
+
+1. 桌面浅深、宽窄窗、侧栏/菜单、窗口控件与拖动区。
+2. Android 软键盘和中文 IME、选择范围/撤销、系统返回、安全区、文件选择与关闭内层菜单。
+3. 在线远程工作台挂载、宿主账户插槽及卸载；当前浏览器账号的设备离线，没有绕过身份或租约。
+
+这些项目仍为未验收，不将浏览器视口或自动回归作为替代。现有用户数据和账号边界保留。
+
+### 续验：共享组件状态样板与 150% 字号
+
+原生窗口本次复核仍为黑屏，未获得可交互会话。在等待期间补齐规范要求的独立控件样板：
+`crates/agent-gui/test/design-system-browser/`。使用真实共享组件和本地内存数据，不挂载账户、
+Gateway、Tauri 或模型客户端；不增加生产路由和依赖，不改变产品设置。
+已有桌面 Vite 可访问 `http://localhost:2120/test/design-system-browser/index.html`，
+独立启动/构建方式见该目录 README。
+
+样板类型检查、独立 Vite 构建和四文件严格 Biome 检查通过；日志 `gallery-typecheck.log`、`gallery-build.log`。
+实际浏览器检查：
+
+- 真实 Dialog 打开后焦点进入输入；Escape 后关闭，焦点归还“打开样例弹窗”；过渡为 opacity。
+- 菜单选择“引用资料”后生成本地回执，禁用项保持不可用。
+- 思考滑条按 End 提交最高现有档位 `max`，模型仍为原样例模型；没有新增或伪造 Ultra 协议档位。
+- 深色、150% 字号下，普通按钮和反馈主文字均为 21px；Portal 继承字号比例 1.5。
+- 390×844 下实际文档 clientWidth/scrollWidth 均为 384（浏览器滚动条占宽），无横向溢出；
+  浮层 left 16、right 328、bottom 597，保持在视口内。切到 Web 样例后设备执行控件数量为 0。
+- 错误提示文字自然换行，动作位于说明下方；关闭入口实测 44×44。
+- 按真实 Tab 顺序跳过两个禁用按钮后聚焦快捷键提示，显示 `选择项目` 和完整的
+  `Ctrl+Alt+Shift+O` 单个 kbd 胶囊；触发器的 aria-describedby 指向当前 Tooltip。
+
+截图 `09-gallery-dark-large.png`、`10-gallery-mobile-effort.png`、`11-gallery-mobile-feedback.png`、
+`12-gallery-keyboard-tooltip.png`。新增样板所有权规则后，产品契约复查为 15 项功能/120 条规则。
+浏览器 `matchMedia('(pointer: coarse)').matches` 为 false：上述是手机宽度下的鼠标/键盘检查，
+不是实际触控、Android IME 或系统返回验收。前文手机截图也按这一边界理解。
+没有因为增加样板而重复运行未变动的产品全量测试或平台构建；本轮产品源码未进一步修改。
+临时样板标签已关闭，浏览器视口已恢复。没有启动额外后台服务，产品开发服务继续运行。
+
+### 第三轮原生环境复核：锁屏阻塞
+
+Gateway、Web 和桌面开发进程均仍为 ready；原生访问树仍能读取 ZeroAgent 工作台。
+对当前窗口执行其公开的 Raise 动作仍返回 `failed to activate captured window`，
+最新截图已明确显示 Windows 锁屏，不能继续原生 UI 操作。此前黑屏现象不再仅凭推测解释。
+没有重启仍存活的服务，也没有尝试绕过系统锁屏。
+
+同一原生会话阻塞已连续出现三轮；独立可推进的实现、样板和浏览器验收已完成。
+目标记录为受阻，未宣称完整验收完成。用户解锁并保持可交互会话、提供可用在线设备后，
+继续上述桌面/Android/在线远程验收，保留原目标范围。代码和构建产物留在本地，未提交、未推送。
+
+### 会话恢复后的原生续验
+
+用户已解锁 Windows 并授权继续检查。原生窗口和 Android 模拟器现可交互，原锁屏阻塞已解除。
+本次没有清空用户数据、复制账号凭据或启用新的远程访问。
+
+- 桌面实际显示共享应用轨、底部头像、起步卡片、账户菜单及设置页；模型/思考浮层内原有 Chat/Agent 和原生联网控件仍可达。
+  截图 `13-native-desktop-effort.png`、`14-native-desktop-settings.png`，文件位于本次跨端证据目录。
+- 发现设置页打开后读屏仍可遍历背后聊天。GUI 的本机/远程宿主包装层及设备 Web 工作台增加 `inert`/`aria-hidden`，保持挂载与控制器不变。
+  Native 修复后访问树：设置可见=true、聊天编辑器=false、模型控件=false。返回聊天后原中文多行草稿保留。
+- 实测全选、粘贴替换和 Ctrl+Z 撤销，完整恢复原中文及换行；文件选择打开 Windows 原生“打开”对话框后取消，未上传文件。
+  测试草稿已清空恢复初始状态，没有发送、取消或执行模型任务。
+- 实测窗口最大化控制后可访问树显示“还原”；1305×1022 和宽窗画面均已查看。
+  界面工具的多区域/DPI 坐标映射在拖动/还原后会变化，不能仅凭一次拖拽尝试宣称拖动区和 600px 窄窗已通过。
+- Android 以已授权的开发账号登录本地测试 Gateway，登录后首页与手机导航浅遮层清晰，覆盖安装保留会话。
+  截图 `15-android-cloudchat-home.jpg`、`17-android-navigation.jpg`。这些截图证明布局，不作为返回修复的结果证据。
+  专用 debug 包使用进程内编译变量连接 `10.0.2.2:50052` 及已授权开发账户服务器；没有修改正式默认地址或私有配置。
+- 原生返回复验发现导航无法关闭，补上由弹层到页面的返回路由：浮层沿用 Escape 及原关闭守卫；禁止关闭时不穿透；
+  CloudChat 与设备宿主不重复响应；手机设置详情先回分类；项目未保存确认、运行任务和草稿保留。
+  导航会覆盖弹层的 `data-slot`，因此以 `role` 与打开状态识别弹层，回归包含真实共享浮层的自定义导航标记。
+  最终覆盖安装后的系统返回仍待复验，不因组件测试通过便报告原生通过。
+
+续验检查：GUI/Web 类型通过；新增四个源码严格 Biome 通过；UI 边界、产品契约 15 功能/120 所有权规则及 diff 空白通过。
+CloudChat 页面 `cloud-runs-page-native-back.log` 121/121；原生返回/手机设置 `native-back-integration.log` 5/5；
+自定义导航标记 `mobile-back-semantic-popup.log` 3/3；GUI 设置 `gui-settings-native-back.log` 6/6。
+GUI 设置用例原先依赖旧 workbench CSS 类，已改为验证真实 Escape 语义按钮并实际点击，保留无障碍与返回行为断言。
+最终构建结果及尚未完成项继续记在此条目后；在线设备仍离线，已请求用户提供可用测试设备。
+
+最终源码的 Web、GUI（含独立远程工厂）及 Android debug 构建均退出 0，日志分别为
+`web-build-delivery.log`、`gui-build-delivery.log`、`android-build-delivery.log`；保留既有分块、Rust 和 Gradle 警告。
+最后的 APK 已再次 `adb install -r`（Success），保持原测试登录及数据。Native 深色设置已实测并保存
+`18-native-settings-dark.jpg`，随后恢复自动主题并返回空草稿工作台。
+
+最终 Android 包已通过真实边缘返回手势复验：导航抽屉关闭后仍在 CloudChat，未退回系统桌面；
+截图 `19-android-after-navigation-back.jpg`。模型/思考浮层在手机安全区内打开，显示原已选模型和标准档位，
+未更改模型或参数；截图 `20-android-effort.jpg`。模拟器工具栏的原生 AX 坐标不适用于其独立工具窗，
+返回验收使用手机画面内的真实系统边缘手势，不把无效工具栏点击当作产品返回失败。
+
+后续键盘与设置续验发现并修复：
+
+- 模拟器默认将鼠标作为手写笔，Gboard 的“Use stylus to write in text fields”为开启；临时关闭后，普通底部软键盘实际出现。
+  输入框、模型及发送控件位于键盘上方，截图 `22-android-keyboard.jpg`。该输入法偏好待最终键盘复验后恢复。
+- 验证回车时曾发送一条 `Test`，服务端任务呈终止失败状态；没有自动重发或删除记录。
+  此前“未发送模型请求”的结论仅适用于前面的桌面和布局阶段，本轮总计已发起这一次测试提交，不能再报告 0 次。
+  共享编辑器改为手机/平板回车换行、Ctrl/Command+Enter 明确发送；桌面仍读取原发送偏好，窄桌面窗口不因此改变快捷键。
+  `mobile-enter-tests.log` 6/6，包含 IME 确认、不重复发送及窄桌面回归；`composer-input-regression.log` 26/26。
+- Android 设置入口与系统状态栏重叠，CloudChat 设置页补用已有 Native 安全区变量，未新增另一套键盘/高度状态。
+- 查阅当前安装的 Tauri 源码确认 AppPlugin 在存在 WebView 历史时先调用 `goBack`，绕过 Activity 的后备返回桥。
+  现接入 SDK 自带 `app.onBackButtonPress`，将返回交给同一页面/弹层路由，退出页面时注销监听；不改 Rust/Kotlin 或认证权限。
+  手机设置返回的断点与 820px 布局一致。`native-back-upstream.log` 6/6；最终 APK 实测尚待完成。
+- UI 边界扫描原先将 DOM 查询字符串中的 `role="dialog"` 误判为手写弹窗。改为现有 AST 工具检查真实 JSX 属性，
+  同时覆盖 `role={"dialog"}`，保留原限制；选择器、注释及字符串不会误报。边界及产品契约重新通过，专项见 `ui-boundary-role-regression.log`。
+
+最终 Web 页面新标签重新加载后显示现有账户工作台与历史，控制台 error 为空；截图 `24-delivery-web.png`。
+
+### 最终原生产物与续验结果
+
+本条更新前面仍写“待复验”的状态，不将早期截图或中间 APK 当作最终证据。
+
+- 最新构建日志为 `web-build-native-final.log`、`gui-build-native-final.log`、`android-build-native-final.log`，三个命令均退出 0。
+  GUI 包含独立远程工厂与浏览器初始化检查；Android x86_64 本地验收 debug APK 已再次覆盖安装成功，原登录和记录保留。
+- Android 最新 APK 的设置入口和详情均避开状态栏。系统边缘返回由详情回到分类，再次返回 CloudChat；
+  截图 `25-android-settings-safe-area.jpg`、`26-android-settings-back-categories.jpg`。
+  这次实际结果确认 SDK `onBackButtonPress` 生效，不再仅凭组件测试判断返回通过。
+- 实际底部软键盘输入 `Te`、回车、`Yi`，编辑器显示两行，仍处于新对话草稿；收起软键盘后两行保留。
+  没有发起任务或创建会话，截图 `27-android-soft-enter-multiline.jpg`。
+- 临时添加 Gboard 简体拼音布局，真实按键输入 `nihao` 后显示候选“你好”；确认候选、软回车均未触发发送。
+  截图 `28-android-pinyin-composition.jpg`。结束后清除测试文字，移除本轮临时拼音布局，语言恢复原 English (US) QWERTY；
+  “Use stylus to write in text fields”开关已重新开启并实测确认。未改动原有物理键盘开关或其他输入偏好。
+- Android 系统文件选择器已实际打开 Recent 页并取消，证据 `21-android-file-picker.jpg`；未选择或上传文件。
+  模型和思考程度保留原值；本次最终键盘和设置复验没有追加请求。前述一条 Test 失败记录仍保留，不报告本轮总计 0 次请求。
+- Native 桌面已查看宽窗、1305×1022 和系统贴靠窗口，最大化/还原及项目工具栏开关可用；工具栏已恢复收起。
+  自动主题和原账户保持。`29`、`30` 为窗口操作过程截图，均未达到可证明的精确 600–750px 逻辑宽度，
+  不作为最小窗宽或原生标题拖动区通过的证据。
+- 最终 Web 开发页再次完整刷新，实际呈现既有账号、历史和共享输入控件，控制台 error 日志为空；
+  截图 `31-final-web-home.png`。验收临时标签已关闭；产品开发服务继续运行。
+- `typecheck:ui` 最终通过；CloudChat 页面 121/121、原生返回集成 6/6、GUI 设置 6/6、输入回归 26/26、
+  UI 边界 AST 9/9 通过。UI 边界、产品契约 15 功能/120 所有权规则及 `git diff --check` 通过。
+
+当前仍未单独实测：精确最小 Native 窗宽/标题拖动区、Android 选择范围/撤销，以及在线远程工作台挂载/卸载和宿主账户插槽。
+已有两台设备仍离线，在线远程问题已向用户提出，等待测试设备；没有为此复制凭据或扩大访问权限。
+共享实现及本地产物已就绪，但完整目标继续保持未完成。没有提交、推送、发布、打标签或清除原用户数据。
+
+### 继续验收：远程实际产物及手机文字选择
+
+- 执行仓库已有的 `desktop-remote-workbench-dom-probe.mjs`，直接导入最终编译的 remote-device/runtime.js。
+  旧断言依赖文字侧栏中常显的 Skills/MCP，已改为检查图标轨中真实、启用且命名正确的导航按钮；未删入口或放宽功能要求。
+  探针 1/1 通过，实际挂载两个完整工作台，确认设备、账号及窗口控件的宿主插槽连接，断线期间保留挂载，卸载后回收插槽/连接并恢复文档属性。
+  共 51 帧真实回环二进制协议通信和 10 次夹具提供的宿主 HTTP 回调。HTTP/账户数据是合成夹具，不能称为真实 Native 认证或在线设备视觉验收。
+  日志 `remote-bundle-mount-final.log`；卸载时出现原有 managed-process 初始化被 dispose 的日志，命令退出 0，不称作无警告。
+- Native 设备目录重新打开，现有“此电脑”和“ZeroAgent device”仍显示离线；截图 `33-native-device-directory.jpg`。
+  未选择离线目标，未更改远程访问配置或授权。
+- Android 在原手写工具菜单中临时“Show on-screen keyboard”，没有再次改动手写偏好；输入测试草稿后，双击选中单词“Test”，显示系统 Cut/Copy/Paste/Select all。
+  截图 `34-android-native-word-selection.jpg`。输入 Q 只替换选中单词，其余“ bext”保留；没有发送请求。
+- Ctrl+Z 被模拟器自身的 Zoom 截获，已再次关闭 Zoom。此行为不能用来断言编辑器撤销失败或通过。
+  已打开模拟器 Extended Controls，但其工具栏和系统贴靠菜单的 DPI 坐标受到界面工具边界限制；不能把拒绝的点击视为产品功能失败。
+- F1 被本机 Snipaste 的全局截图快捷键截获，截图层覆盖界面；界面工具发出的 Esc/右键未能取消。
+  已请用户在本机取消该截图层后继续。当前手机仍有本轮合成草稿 `Q bext`，待恢复交互后清空；没有原用户文字或请求被删除。
+
+本次仅改验收脚本与记录，产品源代码没有进一步变动，因此未重复全量测试或重建已经通过的三个产物。
+
+### 阻塞复核
+
+在线测试设备在最近连续三轮目标工作中均未恢复：首次原生续验已确认离线并向用户请求测试设备，
+随后 Native 目录仍为两台离线，本轮 Web 多客户端管理实际点击刷新后依然全部离线。
+最新截图 `35-current-device-status.png`；临时标签已关闭，没有选择设备、改权限或提交请求。
+原生截图层也仍覆盖模拟器扩展面板，无法继续完成撤销快捷键路由、测试草稿清理及精确窄窗/拖动区检查。
+
+可独立推进的实现、构建、组件/页面回归、远程实际产物挂载和其余原生检查已完成或如实记录。
+剩余验收现在需要用户取消截图层并提供在线设备，当前没有可安全继续的独立步骤；目标标记为受阻，未标记完成。
+保留完整目标和未完成项，等待环境恢复后继续，不将夹具或浏览器视口替代未完成的真实验收。
+
+### 用户取消截图层后的恢复检查
+
+用户已在本机取消 Snipaste 截图层；重新读取 Extended Controls 的实际画面已不再被覆盖，原截图层阻塞解除。
+
+- 记录模拟器原偏好为 `Send keyboard shortcuts to = Emulator controls (default)`、`Enforce keycode forwarding = off`。
+  临时改为 Virtual device 并尝试按键码转发后，Ctrl+Z 仍未使 `Q bext` 恢复，Ctrl+A 也未显示全选。
+  因无法确认快捷键完整到达编辑器，Android 硬件撤销保持未验证；`36-android-undo.jpg` 仅为该未验证尝试的画面，不能作为通过证据。
+- Gboard 的 Text editing 提供实际全选：整段 `Q bext` 被选中，截图 `37-android-select-all.jpg`。
+  使用软键盘删除选区后，输入框恢复占位文案且发送禁用，截图 `38-android-clean-draft.jpg`。
+  本轮合成草稿已清空，无新请求、上传、删除会话或原用户数据操作。
+- 两项模拟器偏好已恢复并复拍 `39-emulator-settings-restored.jpg`；手写输入偏好保持原开启。
+  Extended Controls 已关闭，没有重启或清空模拟器。
+- Native 窗口边框拖动仍误落到内部项目工具栏，不能证明窗口已缩窄；工具栏随后恢复收起。
+  已再次请用户将当前约 1305px 窗口手动缩窄至 600–750px 并保持，后续仅观察不再拖动。
+
+此轮没有改动产品源代码，未重复构建或全量回归。在线设备请求仍待用户准备，目标未完成、未提交、未推送。
+
+### 用户保持窄窗后的检查与最终修整
+
+用户确认已缩窄并保持。本次没有再拖动、缩放或贴靠原生窗口。捕获图像为 1126×826；该像素尺寸不能证明
+精确逻辑窗宽已达到 600–750px，也未重新声称原生标题拖动区已验证。
+
+- 当前窗口的设置、模型选择及思考弹层均可使用，证据 `40-native-user-narrow-window.jpg`、
+  `41-native-user-narrow-settings.jpg`、`42-native-narrow-model-picker.jpg`、`43-native-narrow-effort.jpg`。
+- 双侧栏展开后聊天画布较窄，起步卡片三列被挤压。共享 ChatEmptyState 改用容器查询，依据实际画布宽度响应，
+  小于 640px 时横向浏览卡片，保留现有卡片与填入草稿回调。滚动条使用共享圆角样式。
+  `45-native-pane-starters.jpg` 证明卡片宽度恢复；从空编辑器 Shift+Tab 后第三卡片完整滚入视野且焦点环未裁切，
+  证据 `46-native-starter-keyboard.jpg`，没有激活卡片、填入草稿或发送。随后回到空编辑器及卡片列表起点。
+- Native 头像与项目工具栏开关改为共享 LabelTooltip/TooltipButton，移除原生 title；菜单打开时让位，
+  普通工具栏展开状态仍可获得提示。保留原账户逻辑、展开/禁用语义和单一真实按钮。
+  `menu-tooltip-regression.log` 2/2，`panel-tooltip-regression.log` 11/11；最新 `polish-typecheck.log` 通过，
+  四文件严格 Biome、UI 边界、产品契约 15 项功能/120 条所有权规则通过。
+- 最新 Web、GUI 与 Android x86_64 debug 构建均成功，日志为 `web-build-polish-final.log`、
+  `gui-build-polish-final.log`、`android-build-polish-final.log`；保留已有分块、Rust/Gradle 警告。
+  最终 APK 已 `install -r` 成功，见 `android-install-polish-final.log`；没有清除既有登录、记录或用户数据。
+- 本次最终 GUI 编译产物再次执行实际远程双工作台挂载探针，`remote-bundle-polish-final.log` 1/1 通过。
+  这仍是本地回环协议与合成账户夹具，不能代替真实在线设备或 Native 认证验收；保留既有 dispose 初始化日志。
+- 最后复拍时 Native 截图全黑且 Raise 失败；Android 窗口捕获到 Windows 锁屏壁纸。没有继续盲点、重调窗口、
+  修改输入法或模拟器偏好。最新 APK 安装后的原生界面复拍与最新 tooltip 视觉复核未完成，不引用旧截图冒充。
+
+这次未产生新请求、上传、会话删除或远程授权操作。在线设备仍等待用户准备；精确最小窗宽/拖动区、
+Android 硬件撤销和最终包复拍保持明确的未验证项。规范已更新为 v1.3；完整目标保持未完成，未提交、未推送。
+
+### 桌面固定侧栏与 CloudChat 外框对齐
+
+用户反馈截图证明桌面将圆角画在主内容区，而固定侧栏仍为直角。实际查看 CloudChat 与 Native 后，
+改为同一个装饰外框包住固定侧栏和内容区，应用轨留在框外。共享18px外框半径和边界，展开时取消
+主内容区左侧重复圆角；收起时恢复内容区完整左圆角。临时预览保留16px浮层和共享阴影。
+装饰框 pointer-events:none，不改变状态/挂载、设备选择、窗口控制和执行流程。
+
+侧栏右键及更多菜单统一14px文字、16px图标、8px条目圆角、36px行高；粗指针至少44px。
+新对话采用与CloudChat一致的编辑图标。没有调用重命名、置顶、删除、发送或其他业务动作。
+规范更新至v1.4，说明外框归属、浮层和触控边界。
+
+Windows会话已恢复，可继续截图。`47-cloud-frame-reference.png` 为实际CloudChat参考；
+`48-native-frame-menu.jpg` 为固定侧栏及菜单；`49-native-frame-collapsed.jpg` 为最终稳定收起状态；
+`50-native-frame-preview.jpg` 与 `51-native-preview-menu.jpg` 为实际临时侧栏及其上层菜单。
+进入预览后正文位置未变，菜单可显示在预览之上，Escape关闭菜单；没有把中间收起动画当成稳定布局。
+构建期间远程工厂热更新触发Native开发页完整重载并回到空草稿首页；原有会话记录仍在，未新建记录。
+
+`frame-sidebar-regression.log` 22/22，通过侧栏身份/状态、菜单动作、受控开关及页头控件回归；
+`frame-typecheck.log`、严格Biome、UI边界和产品契约15功能/120规则通过。
+最新前端构建日志为 `web-build-frame-final.log`、`gui-build-frame-final.log`，两者退出0；本次未重建Android APK，
+前一版Android安装与已验证交互仍按其对应记录解释。此次仅修整展示，没有追加模型请求或上传。
+完整目标的其余未完成项继续保留，未提交、未推送。
+
+### 继续目标：Native功能页与手机直接管理入口
+
+上一轮为实质进展：外框、侧栏和菜单展示已经修改、构建和实际观察。本轮继续原完整目标，未缩减范围。
+
+- Native依次实际打开Skills、MCP、定时任务、日程、图像工作台和记忆，截图 `52`–`57`。
+  页面可呈现原有列表、空态、设置行、日程多栏及既有图像历史；未安装技能、添加MCP、创建任务、生成图片或触发执行。
+  结束后返回原对话，窗口未缩放、拖动或贴靠。原生账户菜单和设置也可打开/返回，未改账户或配置。
+- 已有设备目录再次显示“此电脑”和“ZeroAgent device”均离线，证据 `58-device-status-recheck.jpg`。
+  未选择离线设备、修改远程权限或复制凭据；真实在线设备验收仍缺外部条件。
+- 第一轮Android更新保留数据安装成功，`59`、`60`证明新版可从主屏启动并保留账户、现有Test历史和手机导航浅遮层。
+  实测发现会话行缺直接管理入口，只能长按，与规范不符。共享行补常显44px“更多”按钮，同时保留长按。
+  移除原隐形菜单锚点，直接按钮作为唯一锚点；运行标记与菜单并列，窄窗最小行高同步为44px，
+  多选时仍隐藏常规操作，原忙碌、运行中和权限限制保留。
+- `mobile-direct-menu-regression.log` 10/10，包含直接点按不选择会话、进入多选、长按后不误触选择、运行限制及原桌面菜单行为。
+  UI类型、两源文件严格Biome、UI边界和产品契约15功能/120规则通过。没有重复先前1190/634项全量套件。
+- 在更新后的实际Android包中，`61-android-direct-menu-trigger.jpg` 显示常显入口，点按后 `62-android-direct-menu-open.jpg` 显示原管理菜单。
+  没有执行任何菜单业务动作，背后仍是未发送的新对话；没有新模型请求、上传或删除历史。
+
+### 手机嵌套菜单的返回修正
+
+- 实际边缘返回曾同时关闭菜单和抽屉，修复前截图重命名为 `63-android-back-before-fix.jpg`，不得作通过证据。
+  模拟器工具栏的坐标点击未产生可观察效果；AX点击明确被工具以“超出窗口边界”拒绝，
+  `64-android-toolbar-back-unverified.jpg` 不能证明系统返回已送达。没有改动模拟器或输入法偏好。
+- 新增真实Sheet+DropdownMenu回归：焦点留在触发器时原代码通过；将焦点blur回body后稳定复现父抽屉也被关闭。
+  修正 `handleMobileBack`：选择最后打开的弹层，将Escape交给其内部焦点或弹层自身，而非无条件发给body。
+  不直接改业务open状态、不绕过Base UI取消守卫，也不引入额外定时器或原生手势识别器。
+  `mobile-nested-menu-back.log` 5/5通过；`native-settings-back-final.log` 3/3通过。
+- 最终GUI实际编译远程产物挂载探针 `remote-bundle-back-final.log` 1/1通过，仍是回环协议与合成账户夹具，
+  保留原有卸载初始化日志，不能代替真实在线设备或Native认证验收。
+
+最终产物复拍与安装结果将在本条后补充。精确最小Native窗宽/拖动区、Android硬件撤销及在线设备验收继续保留；
+本轮仍有独立工作和实际修复进展，目标不标记完成或受阻。未提交、未推送、未清理原用户数据。
+
+### 2026-10-30：冷加载 Logo 偏左修正
+
+本条对应清除旧目标后的独立修复请求。登录恢复界面是 `SidebarProvider` 横向 flex 容器的
+直接子项；缺少宽度和伸展约束时按 Logo 内容宽度占位，导致 Web 与 Android 共用界面偏左。
+给恢复界面补 `w-full min-w-0 flex-1`，Logo 加 `shrink-0`，保留原脉冲动画及安全区规则。
+
+通过临时本地代理延迟 `/api/auth/me`，观察实际登录恢复分支，没有切换账户或清理数据。
+2552×1227 视口的 Logo 中心为 (1276, 613.5)，390×844 视口为 (195, 422)，
+均与视口中心一致，Logo 保持 48×48。截图在 `.codex-artifacts/cold-load-check/`；
+临时验证页已关闭，浏览器尺寸已恢复，代理已停止。
+原登录回归 9/9、Web 类型及构建、UI 边界和产品契约检查通过。Android 使用同一修复源码构建，
+x86_64 调试 APK 构建成功并覆盖安装到 emulator-5554（Success），未清理应用数据。
+手机截图是浏览器视口验证，不作为 Android 原生冷启动截图。未提交、未推送。

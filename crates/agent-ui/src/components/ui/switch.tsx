@@ -58,7 +58,7 @@ export const Switch = React.forwardRef<HTMLElement, SwitchProps>(
       data-slot="switch"
       className={cn(
         switchTrackClassName,
-        "peer",
+        "za-switch relative peer",
         size !== "lg" && "inline-flex cursor-pointer items-center",
         "focus-visible:outline-none focus-visible:ring-2 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-60 data-[unchecked]:hover:bg-muted-foreground/30",
         SWITCH_SIZES[size].track,

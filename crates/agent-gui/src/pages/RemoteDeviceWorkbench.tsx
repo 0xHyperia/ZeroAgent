@@ -1,5 +1,6 @@
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
@@ -163,17 +164,22 @@ export function RemoteDeviceWorkbench(props: Props) {
       ) : null}
       {error ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-sm text-muted-foreground">
-          <p role="status" className="max-w-lg break-words text-center">
-            {error}
-          </p>
-          <Button
-            variant="outline"
-            disabled={reconnecting || !online}
-            onClick={() => void reconnect()}
-          >
-            {reconnecting && <Loader2 className="h-4 w-4 animate-spin" />}
-            重新连接
-          </Button>
+          <StatusNotice
+            message={error}
+            tone="error"
+            role="status"
+            className="w-full max-w-lg"
+            actions={
+              <Button
+                variant="outline"
+                disabled={reconnecting || !online}
+                onClick={() => void reconnect()}
+              >
+                {reconnecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                重新连接
+              </Button>
+            }
+          />
         </div>
       ) : null}
       {headerTarget

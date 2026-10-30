@@ -3,6 +3,7 @@ import { FolderTree, Lightbulb, Settings, Wrench } from "@liveagent/ui/component
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useEffect, useState } from "react";
+import { ConversationStarter } from "./ConversationStarter";
 
 type GreetingPeriod = "morning" | "noon" | "afternoon" | "evening" | "night";
 
@@ -77,13 +78,10 @@ export function ChatEmptyState({
   const period = useGreetingPeriod();
 
   return (
-    <div className="relative flex w-full flex-col items-center">
+    <div className="conversation-starter-container relative flex w-full flex-col items-center">
       <div className="relative mb-5 flex size-14 items-center justify-center">
         <div className="relative flex size-full items-center justify-center">
-          <div
-            aria-hidden="true"
-            className="absolute inset-1 rounded-full bg-sky-500/10 blur-xl dark:bg-sky-400/10"
-          />
+          <div aria-hidden="true" className="hidden" />
           <img
             src={getAssistantAvatarUrl()}
             alt=""
@@ -122,39 +120,19 @@ export function ChatEmptyState({
         </>
       ) : (
         <>
-          <div className="whitespace-nowrap text-center text-xl font-semibold leading-7 tracking-tight text-foreground">
+          <div className="text-center text-2xl font-normal leading-8 tracking-tight text-foreground">
             {t(GREETING_KEYS[period])}，{t("chat.greetingSubtitle")}
           </div>
           {onSuggestionSelect ? (
-            <div
-              className={cn(
-                "mt-7 grid w-full max-w-520px grid-cols-1 gap-2 px-6",
-                "sm:grid-cols-3 sm:px-4",
-              )}
-            >
+            <div className="conversation-starter-grid mt-7 w-full max-w-768px px-4">
               {SUGGESTION_CARDS.map((card) => (
-                <button
+                <ConversationStarter
                   key={card.key}
-                  type="button"
-                  onClick={() => onSuggestionSelect(t(card.promptKey))}
-                  className={cn(
-                    "flex h-11 items-center gap-2 rounded-lg bg-foreground/[0.025] px-2.5",
-                    "text-left text-foreground/85 transition-colors",
-                    "hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.055] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex size-7 shrink-0 items-center justify-center",
-                      card.chipClassName,
-                    )}
-                  >
-                    <card.icon className="size-4" />
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-medium leading-5 text-foreground/90">
-                    {t(card.titleKey)}
-                  </span>
-                </button>
+                  title={t(card.titleKey)}
+                  description={t(card.promptKey)}
+                  icon={<card.icon className="size-5" />}
+                  onSelect={() => onSuggestionSelect(t(card.promptKey))}
+                />
               ))}
             </div>
           ) : null}

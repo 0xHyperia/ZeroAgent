@@ -66,8 +66,8 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
             className={cn(
               floatingSurfaceClassName,
               "w-72 origin-(--transform-origin) p-4",
-              "text-sm outline-none transition-[transform,scale,opacity] duration-150",
-              "data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              "text-sm outline-none transition-opacity duration-150",
+              "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
               className,
             )}
             {...props}

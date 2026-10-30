@@ -1,4 +1,5 @@
 import { ChevronUp, LogOut, RefreshCw, Settings, User } from "@liveagent/ui/components/IconSet";
+import { AccountAvatar, AccountIdentity } from "@liveagent/ui/components/ui/account-identity";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,15 +83,7 @@ export function UserMenu(props: UserMenuProps) {
     requestMobileAppUpdateCheck();
   };
 
-  const avatar = (
-    <span className="account-user-avatar flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-foreground text-[calc(11px*var(--zone-font-scale,1))] font-semibold text-background">
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-      ) : (
-        userAvatarLabel || <User className="h-3.5 w-3.5" />
-      )}
-    </span>
-  );
+  const avatar = <AccountAvatar label={userAvatarLabel} avatarUrl={avatarUrl} />;
   const itemClassName = rail ? "min-h-10 gap-3 rounded-xl px-3 font-normal" : "gap-2 rounded-md";
 
   return (
@@ -125,11 +118,11 @@ export function UserMenu(props: UserMenuProps) {
         align={rail ? "end" : "start"}
         sideOffset={8}
         collisionPadding={12}
-        variant={rail ? "soft" : "default"}
+        variant="soft"
         className={
           rail
             ? "cloud-account-menu w-72 max-w-[calc(100vw-24px)] rounded-2xl p-2 outline-none"
-            : "w-[224px] rounded-lg border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-popover/90"
+            : "w-72 max-w-[calc(100vw-24px)] p-2 outline-none"
         }
       >
         {rail ? (
@@ -139,13 +132,11 @@ export function UserMenu(props: UserMenuProps) {
               aria-label={t("settings.navAccount")}
               className="min-h-14 gap-3 rounded-xl px-3 py-2"
             >
-              {avatar}
-              <span className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-sm font-medium">{userMenuLabel}</span>
-                <span className="block text-xs font-normal text-muted-foreground">
-                  {t("settings.navAccount")}
-                </span>
-              </span>
+              <AccountIdentity
+                name={userMenuLabel}
+                description={t("settings.navAccount")}
+                avatar={avatar}
+              />
             </DropdownMenuItem>
             <DropdownMenuSeparator className="mx-2 my-1.5" />
           </>

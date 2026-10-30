@@ -54,8 +54,8 @@ export const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "flex h-9 w-full items-center justify-between",
-      "rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs",
-      "placeholder:text-muted-foreground focus:border-input focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+      "za-text-field border border-input bg-background px-3 py-2 text-sm",
+      "placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/25",
       "disabled:cursor-not-allowed disabled:opacity-50",
       variant === "plain" &&
         "border-0 bg-settings-tile-hover shadow-none focus-visible:ring-2 focus-visible:ring-ring/25",
@@ -149,8 +149,7 @@ export const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps
             className={cn(
               "max-h-96 min-w-32 overflow-hidden",
               floatingSurfaceClassName,
-              "data-[open]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[open]:fade-in-0 data-[closed]:zoom-out-95 data-[open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-              "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+              "transition-opacity duration-150 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none",
               className,
             )}
             {...props}
@@ -187,7 +186,7 @@ export const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-pointer select-none items-center rounded-xs data-[disabled]:cursor-default",
+      "za-menu-item relative flex w-full cursor-pointer select-none items-center data-[disabled]:cursor-default",
       "py-1.5 pl-2 pr-8 text-sm outline-hidden",
       "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,

@@ -26,7 +26,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   const projectRecords=new Map();
   const projectBindings=new Map();
   let delayProjectAssociation=false,finishProjectAssociation;
-  let composer;
+  let composer, modelPopoverChange;
   let clearCount = 0;
   let online = !uncertain;
   let queueIsFull=queueFull,finishQueueFull;
@@ -214,6 +214,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   };
 
   env = await createWebDomTestEnv({ mocks: {
+    "@/lib/mobileRuntime": { isEmbeddedMobileRuntime: () => mobileLayout, MOBILE_BACK_EVENT: "zeroagent:mobile-back" },
     "@liveagent/ui/components/IconSet": new Proxy({}, {get:()=>()=>null}),
     [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]: new Proxy({}, {get:()=>()=>null}),
     ...(realTranscript?{
@@ -241,7 +242,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
       "@liveagent/ui/components/ProviderBrandIcon":{ProviderBrandIcon:()=>null},
       "@liveagent/ui/components/ui/button":{Button:({variant,size,render,...props})=>env.React.createElement("button",props,props.children),buttonVariants:()=>""},
       "@liveagent/ui/components/ui/menu-surface":{menuSurfaceClassName:()=>""},
-      "@liveagent/ui/components/ui/popover":{Popover:props=>props.children,PopoverContent:props=>env.React.createElement("div",null,props.children),PopoverTrigger:props=>props.children},
+      "@liveagent/ui/components/ui/popover":{Popover:props=>{modelPopoverChange=props.onOpenChange;return props.children;},PopoverContent:props=>env.React.createElement("div",null,props.children),PopoverTrigger:props=>env.React.cloneElement(props.render,{...props.render.props,id:props.id,onClick:()=>modelPopoverChange?.(true,{reason:"trigger-press",trigger:{id:props.id}})},props.children)},
       "@liveagent/ui/components/ui/switch":{Switch:props=>env.React.createElement("input",{type:"checkbox",role:"switch","aria-label":props["aria-label"],checked:props.checked,disabled:props.disabled,onChange:event=>props.onCheckedChange(event.target.checked)})},
       "@liveagent/ui/i18n/index":{useLocale:()=>({locale:"zh-CN",t:key=>key})},
       "@liveagent/ui/components/IconSet":new Proxy({}, {get:()=>()=>null}),
@@ -381,7 +382,12 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     },
     async setResearchTopic(value){const input=host.querySelector('textarea[aria-label="可用于公开检索的主题"]');assert.ok(input);await env.act(async()=>{Object.getOwnPropertyDescriptor(env.dom.window.HTMLTextAreaElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));await tick();});},
     async setInput(label,value){const input=host.querySelector(`input[aria-label="${label}"]`);assert.ok(input);await env.act(async()=>{Object.getOwnPropertyDescriptor(env.dom.window.HTMLInputElement.prototype,"value").set.call(input,String(value));input.dispatchEvent(new Event("input",{bubbles:true}));await tick();});},
-    async showReasoning(){const button=[...host.querySelectorAll("button")].find(node=>node.textContent.startsWith("chat.runtime.reasoning"));assert.ok(button);await env.act(async()=>{button.click();await tick();});},
+    async effort(level) {
+      const input=host.querySelector('input[type="range"]'); assert.ok(input);
+      const choices=["off",...composer.reasoningOptions.filter(value=>value!=="off")], index=choices.indexOf(level); assert.ok(index>=0);
+      await env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set.call(input,String(index));input.dispatchEvent(new Event("input",{bubbles:true}));await tick();});
+      await env.act(async()=>{input.dispatchEvent(new KeyboardEvent("keyup",{key:"ArrowRight",bubbles:true}));await tick();});
+    },    async showReasoning(){const button=[...host.querySelectorAll("button")].find(node=>node.getAttribute("aria-label")?.startsWith("chat.runtime.reasoning:"));assert.ok(button);await env.act(async()=>{button.click();await tick();});},
   };
 }
 
@@ -963,7 +969,7 @@ test("an 8k report previews briefly but copies and edits the complete canonical 
 
 test("Cloud work starters append to the existing draft without creating a paid Run or enabling research",async(t)=>{
  const app=await mount(t,{initialMessages:[]});assert.match(app.host.textContent,/我们要做什么/);const originalDraft=app.draft;
- for(const [label,prompt]of [["研究一个问题","研究一个问题"],["分析表格与数据","分析表格与数据"],["撰写或完善文档","撰写或完善"]]){const starter=[...app.host.querySelectorAll("button.cloud-starter")].find(node=>node.querySelector(".cloud-starter-title").textContent===label);assert.ok(starter);await app.env.act(async()=>{starter.click();await tick();});assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));}
+ for(const [label,prompt]of [["研究一个问题","研究一个问题"],["分析表格与数据","分析表格与数据"],["撰写或完善文档","撰写或完善"]]){const starter=[...app.host.querySelectorAll("button.conversation-starter")].find(node=>node.querySelector(".conversation-starter-title").textContent===label);assert.ok(starter);await app.env.act(async()=>{starter.click();await tick();});assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));}
  assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);
  assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
  const editor=app.host.querySelector("footer");const clearBefore=app.clearCount;
@@ -973,16 +979,16 @@ test("Cloud work starters append to the existing draft without creating a paid R
 
 test("the actual model controls off callback persists none across reload and later high selection",async(t)=>{
  const app=await mount(t,{realModelControls:true});await app.showReasoning();
- await app.click('input[type="radio"][value="off"]');
+ await app.effort("off");
  assert.equal(app.composer.chatRuntimeControls.reasoning,"off");assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,false);
  const saved=app.calls.filter(call=>call.path==="/api/web-settings"&&call.method==="PATCH");assert.equal(JSON.parse(saved.at(-1).body).reasoning_effort,"none");
  await app.reload();assert.equal(app.composer.chatRuntimeControls.reasoning,"off");assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,false);
  await app.click('[data-action="send"]');let input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(input.reasoning_effort,"none");await app.emit("created-run","2","run.completed");
- await app.showReasoning();await app.click('input[type="radio"][value="high"]');assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,true);assert.equal(JSON.parse(app.calls.filter(call=>call.path==="/api/web-settings"&&call.method==="PATCH").at(-1).body).reasoning_effort,"high");await app.reload();assert.equal(app.composer.chatRuntimeControls.reasoning,"high");assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,true);
+ await app.showReasoning();await app.effort("high");assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,true);assert.equal(JSON.parse(app.calls.filter(call=>call.path==="/api/web-settings"&&call.method==="PATCH").at(-1).body).reasoning_effort,"high");await app.reload();assert.equal(app.composer.chatRuntimeControls.reasoning,"high");assert.equal(app.composer.chatRuntimeControls.thinkingEnabled,true);
 });
 
 test("the existing network switch defaults off and authorizes exactly one visible public topic per send",async(t)=>{
- const app=await mount(t,{realModelControls:true});const toggle=app.host.querySelector('[role="switch"]');assert.ok(toggle);assert.equal(toggle.checked,false);assert.equal(toggle.disabled,false);await app.click('[role="switch"]');
+ const app=await mount(t,{realModelControls:true});assert.equal(app.composer.showExecutionControls,false);assert.equal(app.host.querySelector('[role="switch"]'),null,"CloudChat does not expose device execution controls");assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);await app.env.act(async()=>{app.composer.capabilityMenu.props.onToggleResearch();await tick();});
  await app.click('[data-action="send"]');assert.match(app.host.querySelector('[role="dialog"]').textContent,/确认公开检索主题/);assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);assert.equal(app.draft,"新的问题");
  await app.clickText("取消联网发送");assert.equal(app.host.querySelector('[role="dialog"]'),null);assert.equal(app.runs.size,0);app.draft="新的公开问题";
  await app.click('[data-action="send"]');assert.equal(app.host.querySelector('textarea[aria-label="可用于公开检索的主题"]').value,"新的公开问题");await app.setResearchTopic("公开主题：行业报告");app.draft="关闭窗口前出现的私有草稿";await app.clickText("确认公开主题并继续");
@@ -1191,4 +1197,25 @@ test('a late inline-title response cannot restore conversation metadata after ac
  assert.equal(app.host.querySelectorAll('[data-conversation]').length,0);
  assert.doesNotMatch(app.host.textContent,/旧账号标题/);
  assert.match(app.host.textContent,/登录状态已更新，请刷新页面后继续。/);
+});
+
+test('Android page Back retains project edits until confirmed and leaves the conversation draft and Run intact',async t=>{
+ const app=await mount(t,{mobileLayout:true,initialRun:snapshot({output:'保留的输出'})});
+ app.draft='未发送的草稿';
+ await app.clickText('项目');
+ app.projectPanel.onDirtyChange(true);
+ const back=async()=>{const event=new Event('zeroagent:mobile-back',{cancelable:true});await app.env.act(async()=>{window.dispatchEvent(event);await tick();});return event.defaultPrevented;};
+ assert.equal(await back(),true);
+ assert.ok(app.host.querySelector('[data-project-panel]'));
+ assert.match(document.body.textContent,/保留项目修改/);
+ const clickDialog=async text=>{const button=[...document.querySelectorAll('button')].find(node=>node.textContent.trim()===text);assert.ok(button);await app.env.act(async()=>{button.click();await tick();});};
+ await clickDialog('继续编辑');
+ assert.ok(app.host.querySelector('[data-project-panel]'));
+ assert.equal(await back(),true);
+ await clickDialog('放弃修改并离开');
+ assert.equal(app.host.querySelector('[data-project-panel]'),null);
+ assert.equal(app.draft,'未发送的草稿');
+ assert.match(app.host.textContent,/保留的输出/);
+ assert.equal(app.calls.filter(call=>call.path.includes('/cancel')).length,0);
+ assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/runs'&&call.method==='POST').length,0);
 });

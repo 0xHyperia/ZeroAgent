@@ -1,6 +1,7 @@
 @import "./tokens.css";
 @import "./animations.css";
 @import "./composer-inline.css";
+@import "./design-system.css";
 
 /* Navigation keeps the current page legible while the modal still owns focus and dismissal. */
 .sheet-navigation-backdrop {

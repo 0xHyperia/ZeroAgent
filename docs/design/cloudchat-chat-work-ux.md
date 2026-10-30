@@ -3,6 +3,8 @@
 版本：1.13。日期：2026-10-30。适用范围：CloudChat Web、嵌入 Web 的 Android。
 实现决策：[ADR0052](../product/decisions/0052-chat-work-interaction-spec.md)。
 本规范是后续功能的共同验收依据；实际验收结果单独记录在仓库根目录 `design-qa.md`。
+跨端扩展按 [ADR0058](../product/decisions/0058-cross-platform-design-system.md) 和
+[跨端组件规范](zeroagent-cross-platform-ux.md) 执行，CloudChat 的账户和执行权限不随视觉复用改变。
 
 ## 1. 参考与完成标准
 

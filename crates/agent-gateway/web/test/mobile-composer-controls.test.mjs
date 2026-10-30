@@ -11,7 +11,7 @@ const safetySelectorSource = readFileSync(
   "utf8",
 );
 const modelControlsSource = readFileSync(
-  new URL("../../../agent-ui/src/components/chat/ComposerModelControls.tsx", import.meta.url),
+  new URL("../../../agent-ui/src/components/chat/ComposerInlineModelControls.tsx", import.meta.url),
   "utf8",
 );
 const composerSource = readFileSync(
@@ -48,15 +48,10 @@ test("sandbox control is icon-only and sits before the model picker", () => {
   );
 });
 
-test("model picker does not autofocus search on touch", () => {
-  assert.match(modelControlsSource, /initialFocus=\{resolveModelPickerInitialFocus\}/);
-  assert.match(modelControlsSource, /openType === "touch"/);
+test("all model surfaces avoid focusing search on touch", () => {
   assert.match(modelControlsSource, /\(hover: none\) and \(pointer: coarse\)/);
-  assert.match(modelControlsSource, /return popoverContentRef\.current \?\? false;/);
-  // 模型页的搜索框只在非粗指针下获得焦点（触控下会弹软键盘）。
-  assert.match(
-    modelControlsSource,
-    /view === "model" && !isCoarsePointer\(\) && searchInputRef\.current/,
-  );
-  assert.match(modelControlsSource, /searchInputRef\.current\.focus\(\);/);
+  assert.match(modelControlsSource, /type === "touch" \|\| coarsePointer\(\)/);
+  assert.match(modelControlsSource, /\? popupRef\.current/);
+  assert.match(modelControlsSource, /if \(coarsePointer\(\)\) popupRef\.current\?\.focus\(\)/);
+  assert.match(modelControlsSource, /next === "models"\) searchRef\.current\?\.focus\(\)/);
 });

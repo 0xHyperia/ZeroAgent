@@ -74,6 +74,28 @@ test("invalid stored preferences fall back to Enter", () => {
   window.localStorage.setItem("liveagent.sendShortcut.v1", "invalid");
   assert.equal(readSendShortcut(), "enter");
 });
+test("phone soft Enter inserts a line break, keeps the saved desktop preference and supports explicit modified send", async () => {
+  const previous = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+  Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36" });
+  try {
+    assert.equal(readSendShortcut(), "enter");
+    await enter();
+    await enter({ shiftKey: true });
+    await enter({ ctrlKey: true });
+    await enter({ ctrlKey: true, isComposing: true });
+    assert.equal(sends, 1); assert.equal(lineBreaks, 2);
+    assert.equal(readSendShortcut(), "enter");
+  } finally {
+    if (previous) Object.defineProperty(navigator, "userAgent", previous);
+    else delete navigator.userAgent;
+  }
+});
+test("a narrow desktop keeps its configured Enter action", async () => {
+  const width = window.innerWidth;
+  window.innerWidth = 390;
+  try { await enter(); assert.equal(sends, 1); assert.equal(lineBreaks, 0); }
+  finally { window.innerWidth = width; }
+});
 test.after(async () => {
   await env.act(async () => root.unmount());
   env.cleanup();

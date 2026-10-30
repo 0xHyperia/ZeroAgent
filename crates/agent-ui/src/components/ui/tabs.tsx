@@ -19,7 +19,7 @@ const tabsListVariants = cva(
       variant: {
         default: "",
         plain: "",
-        segmented: "h-9 gap-0.5 rounded-xl bg-segmented-track p-1 ring-1 ring-foreground/5",
+        segmented: "za-segmented h-9 gap-0.5 p-1",
         filter:
           "flex h-auto max-w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
       },
@@ -57,11 +57,11 @@ export const TabsTrigger = React.forwardRef<
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[active]:bg-background data-[active]:text-foreground data-[active]:shadow-sm",
       ],
       variant === "segmented" && [
-        "h-7 min-w-9 rounded-lg px-2.5 py-0 text-xs font-normal text-muted-foreground",
-        "hover:bg-control-surface hover:text-foreground",
+        "za-segment h-7 min-w-9 px-2.5 py-0 text-xs font-normal text-muted-foreground",
+        "hover:bg-transparent hover:text-foreground",
         "data-[active]:bg-segmented-selected data-[active]:font-medium data-[active]:text-foreground",
         "dark:data-[active]:[&_.text-muted-foreground]:text-foreground/75",
-        "data-[active]:shadow-none",
+        "data-[active]:shadow-sm",
       ],
       className,
     )}

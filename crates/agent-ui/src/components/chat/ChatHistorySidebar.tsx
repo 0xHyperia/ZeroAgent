@@ -7,7 +7,6 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
-  CirclePlus,
   Clock3,
   Folder,
   FolderClosed,
@@ -22,6 +21,7 @@ import {
   Search,
   Settings,
   Share2,
+  SquarePen,
   Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
@@ -87,6 +87,7 @@ import {
   SidebarMenuItem,
   SidebarTrigger,
 } from "../ui/sidebar";
+import { StatusNotice } from "../ui/status-notice";
 import { HistoryRow, ProjectGroupHeader, ProjectRow } from "./ChatHistorySidebarRows";
 import {
   HISTORY_RENAME_INPUT_CLASS,
@@ -1387,6 +1388,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         mobileRail={mobileRail}
         label={t("sidebar.navigation")}
         data-app-frame-column="sidebar"
+        data-sidebar-preview-region=""
         className="chat-history-sidebar zone-font-scale bg-settings-rail group-data-[side=left]:border-r-0 [&_button:not(:disabled)]:cursor-pointer"
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
       >
@@ -1490,7 +1492,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                   )}
                 >
                   {newConversationIcon ?? (
-                    <CirclePlus className="size-4 shrink-0 text-foreground/85" />
+                    <SquarePen className="size-4 shrink-0 text-foreground/85" />
                   )}
                   <span className="web:font-app web:[font-size:inherit] web:[line-height:inherit] web:[font-weight:inherit]">
                     {t("chat.newConversation")}
@@ -2144,28 +2146,11 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 and never replace or relabel the successfully loaded rows. */}
               {actionErrorMessage ? (
                 <div className="shrink-0 px-2 pb-2">
-                  <div
-                    role="alert"
-                    title={actionErrorMessage}
-                    className={cn(
-                      "flex items-start gap-2",
-                      "rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2",
-                      "text-xs leading-4 text-destructive",
-                    )}
-                  >
-                    <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                    <span className="min-w-0 break-words">{actionErrorMessage}</span>
-                    {onDismissActionError ? (
-                      <button
-                        type="button"
-                        className="ml-auto shrink-0 rounded p-0.5 hover:bg-destructive/10"
-                        onClick={onDismissActionError}
-                        title={t("chat.cancel")}
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
+                  <StatusNotice
+                    tone="error"
+                    message={actionErrorMessage}
+                    onDismiss={onDismissActionError}
+                  />
                 </div>
               ) : null}
               <div

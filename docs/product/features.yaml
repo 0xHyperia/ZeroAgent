@@ -182,7 +182,10 @@
         "crates/agent-gateway/web/src/components/cloudchat/CloudChatHeaderActions.tsx",
         "crates/agent-gateway/web/src/app/UserMenu.tsx",
         "crates/agent-gateway/web/src/components/cloudchat/CloudChatContextPicker.tsx",
-        "crates/agent-gateway/web/src/components/cloudchat/CloudChatResourcePanel.tsx"
+        "crates/agent-gateway/web/src/components/cloudchat/CloudChatResourcePanel.tsx",
+        "crates/agent-ui/src/styles/design-system.css",
+        "crates/agent-ui/src/application/WorkbenchNavigationRail.tsx",
+        "crates/agent-ui/src/components/ui/status-notice.tsx"
       ],
       "tests": [
         "crates/agent-gateway/web/test/cloud-chat-capabilities.test.mjs",
@@ -206,7 +209,11 @@
         "crates/agent-gateway/web/test/cloud-chat-context-picker.test.mjs",
         "crates/agent-gateway/web/test/cloud-sidebar-preview.test.mjs",
         "crates/agent-gateway/web/test/cloud-settings-page.test.mjs",
-        "crates/agent-gateway/web/test/cloud-workspace-chrome.test.mjs"
+        "crates/agent-gateway/web/test/cloud-workspace-chrome.test.mjs",
+        "crates/agent-gateway/web/test/mobile-back-navigation.test.mjs",
+        "crates/agent-gui/test/chat/sidebar-conversation-menu.test.mjs",
+        "crates/agent-gui/test/settings/shared-design-controls.test.mjs",
+        "crates/agent-gui/test/chat/composer-model-pages.test.mjs"
       ],
       "security": "Cloud Chat 不得暴露仅桌面端可用的本地执行控制。ADR0048 的账户持久任务使用请求幂等、租约代次、规范历史和有序重放；页面离开与服务端取消分开。任务只存会话摘要引用，凭据由服务端当前会话解析；失联和未知结果不自动重发。文件原件、提取内容、下载和引用均按账户校验，先记录删除意图再清理对象；会话删除保留账户文件库。PDF/Office 未完成隔离解析不能冒充 ready。真实模型/S3/E2B、真机和完整工作场景按 docs/cloudchat/ACCEPTANCE.md 分别验收，不以本地协议夹具推定通过。",
       "upstream_relation": "adapt"
@@ -232,7 +239,10 @@
         "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
         "scripts/prepare-desktop-remote.mjs",
-        "crates/agent-gateway/internal/protocol/pbws/controller_selection.go"
+        "crates/agent-gateway/internal/protocol/pbws/controller_selection.go",
+        "crates/agent-ui/src/styles/design-system.css",
+        "crates/agent-ui/src/application/WorkbenchNavigationRail.tsx",
+        "crates/agent-ui/src/components/ui/status-notice.tsx"
       ],
       "tests": [
         "crates/agent-gateway/web/test/execution-targets.test.mjs",
@@ -254,7 +264,9 @@
         "crates/agent-gui/test/settings/desktop-execution-switcher-dialog.test.mjs",
         "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go",
         "crates/agent-gateway/internal/account/desktop_bound_selection_test.go",
-        "crates/agent-gui/test/providers/desktop-remote-presence-runtime.test.mjs"
+        "crates/agent-gui/test/providers/desktop-remote-presence-runtime.test.mjs",
+        "crates/agent-gui/test/settings/shared-design-controls.test.mjs",
+        "crates/agent-gui/test/chat/composer-model-pages.test.mjs"
       ],
       "security": "执行目标必须明确选择，并绑定到账户、设备、工作区和租约；失联或列表移除不得静默切换本机。控制请求及新输出均复核当前会话、租约和所有权；Desktop连接与handoff复用已认证主体的固定有效期，同账号token刷新不误废弃未到期租约，不能逐次延长或每次按键重复外部认证。初始化失败保留真实原因，服务端明确拒绝授权时保存原因并禁用租约复用，重新连接显式获取新租约；设备切换确认使用共享顶层Dialog。 设备在线状态变化仅更新presence，不作废有效租约或销毁在途工作台；授权明确拒绝和固定到期仍立即拦截，迟到上线不能复活旧授权。",
       "upstream_relation": "adapt"
@@ -382,12 +394,20 @@
         "crates/agent-gateway/web/src/zeroagent.css",
         "crates/agent-gui/src-tauri/src/services/mobile_gateway.rs",
         "crates/agent-gui/src-tauri/src/services/mobile_gateway/session.rs",
-        "crates/agent-gui/src-tauri/src/services/mobile_secure_store.rs"
+        "crates/agent-gui/src-tauri/src/services/mobile_secure_store.rs",
+        "crates/agent-gateway/web/src/lib/mobileRuntime.ts",
+        "crates/agent-ui/src/styles/design-system.css",
+        "crates/agent-ui/src/application/WorkbenchNavigationRail.tsx",
+        "crates/agent-ui/src/components/ui/status-notice.tsx"
       ],
       "tests": [
         "crates/agent-gui/test/backend/release-android.test.mjs",
         "crates/agent-gateway/web/test/mobile-app-update.test.mjs",
-        "crates/agent-gui/src-tauri/src/services/mobile_gateway/session/tests.rs"
+        "crates/agent-gateway/web/test/mobile-back-navigation.test.mjs",
+        "crates/agent-gui/test/chat/sidebar-conversation-menu.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/mobile_gateway/session/tests.rs",
+        "crates/agent-gui/test/settings/shared-design-controls.test.mjs",
+        "crates/agent-gui/test/chat/composer-model-pages.test.mjs"
       ],
       "security": "OAuth回调和持久化凭据使用移动平台安全设施；退出或切号后旧HTTP/上传响应、缓存及迟到socket不得复活旧身份，连接替换/失效取消旧读写，Set-Cookie不返回renderer。真实OAuth、加密存储写入/冷启解密和更新仍须实际平台验收。",
       "upstream_relation": "replace"

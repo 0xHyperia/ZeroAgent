@@ -1576,6 +1576,7 @@ function useGatewayAppController() {
   useEffect(() => {
     if (!isEmbeddedMobileRuntime()) return;
     const handleMobileBack = (rawEvent: Event) => {
+      if (rawEvent.defaultPrevented || selection?.runtime_kind === "web_chat") return;
       let handled = true;
       if (shareConversation) {
         handleCloseShareModal();
@@ -1611,6 +1612,7 @@ function useGatewayAppController() {
     projectPickerOpen,
     restorePreviousMobileNavigation,
     rightDockOpen,
+    selection?.runtime_kind,
     setActiveView,
     setProjectPickerOpen,
     setRightDockOpen,
@@ -2426,7 +2428,7 @@ function useGatewayAppController() {
   if (authInitializing) {
     return (
       <main
-        className="app-auth-restoring flex min-h-dvh items-center justify-center bg-background"
+        className="app-auth-restoring flex min-h-dvh w-full min-w-0 flex-1 items-center justify-center bg-background"
         role="status"
         aria-label="正在恢复登录状态"
       >
@@ -2435,7 +2437,7 @@ function useGatewayAppController() {
           alt=""
           width={48}
           height={48}
-          className="h-12 w-12 animate-pulse"
+          className="h-12 w-12 shrink-0 animate-pulse"
           draggable={false}
         />
       </main>

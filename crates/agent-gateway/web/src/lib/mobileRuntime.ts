@@ -1,3 +1,5 @@
+import { PLATFORM_BACK_EVENT } from "@liveagent/ui/lib/platformBack";
+
 type TauriCore = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
 };
@@ -39,7 +41,15 @@ type MobileSafeAreaInsets = {
 declare global {
   const __ZEROAGENT_EMBEDDED_MOBILE__: boolean;
   interface Window {
-    __TAURI__?: { core?: TauriCore; event?: TauriEvent };
+    __TAURI__?: {
+      core?: TauriCore;
+      event?: TauriEvent;
+      app?: {
+        onBackButtonPress(
+          handler: (payload: { canGoBack: boolean }) => void,
+        ): Promise<{ unregister(): Promise<void> }>;
+      };
+    };
     __ZEROAGENT_ANDROID__?: {
       getSafeAreaInsets(): string;
       moveTaskToBack(): void;
@@ -50,7 +60,7 @@ declare global {
   }
 }
 
-export const MOBILE_BACK_EVENT = "zeroagent:mobile-back";
+export const MOBILE_BACK_EVENT = PLATFORM_BACK_EVENT;
 
 let bootstrapped = false;
 let socketSequence = 0;
@@ -161,20 +171,48 @@ function syncMobileThemeColor() {
   meta.content = dark ? "#09090B" : "#FFFFFF";
 }
 
-function installMobileBackBridge() {
-  window.addEventListener(MOBILE_NATIVE_BACK_EVENT, (nativeEvent) => {
-    nativeEvent.preventDefault();
-    if (document.documentElement.dataset.zeroagentKeyboard === "open") {
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) activeElement.blur();
-      return;
-    }
-    const handled = !window.dispatchEvent(new Event(MOBILE_BACK_EVENT, { cancelable: true }));
-    if (!handled) window.__ZEROAGENT_ANDROID__?.moveTaskToBack();
-  });
+export function handleMobileBack() {
+  // Let Base UI dismiss its topmost layer through the same guarded Escape path
+  // as a keyboard. A floating IME can keep reporting visible after a sheet opens;
+  // blurring the sheet's focus in that state must not swallow every Back press.
+  const overlay = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-open]:is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"])',
+    ),
+  ).at(-1);
+  if (overlay) {
+    // Touch-opened menus may leave focus on body. Dispatching there lets the
+    // parent sheet consume the same Escape, closing two layers in one Back.
+    const focused = document.activeElement;
+    (focused && overlay.contains(focused) ? focused : overlay).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    return;
+  }
+  if (document.documentElement.dataset.zeroagentKeyboard === "open") {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) activeElement.blur();
+    return;
+  }
+  const handled = !window.dispatchEvent(new Event(MOBILE_BACK_EVENT, { cancelable: true }));
+  if (!handled) window.__ZEROAGENT_ANDROID__?.moveTaskToBack();
 }
 
-function installMobileExperience() {
+export async function installMobileBackBridge() {
+  window.addEventListener(MOBILE_NATIVE_BACK_EVENT, (nativeEvent) => {
+    nativeEvent.preventDefault();
+    handleMobileBack();
+  });
+  // Tauri's AppPlugin otherwise consumes Back with WebView.goBack before the
+  // Activity fallback, bypassing page guards whenever history contains settings.
+  const listen = window.__TAURI__?.app?.onBackButtonPress;
+  if (listen) {
+    const listener = await listen(() => handleMobileBack());
+    window.addEventListener("pagehide", () => void listener.unregister(), { once: true });
+  }
+}
+
+async function installMobileExperience() {
   document.documentElement.dataset.zeroagentPlatform = "android";
   const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
   viewport?.setAttribute(
@@ -191,7 +229,7 @@ function installMobileExperience() {
     attributes: true,
     attributeFilter: ["class"],
   });
-  installMobileBackBridge();
+  await installMobileBackBridge();
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -538,7 +576,7 @@ export function installGatewayFetchBridge() {
 
 export async function bootstrapEmbeddedMobileRuntime() {
   if (!isEmbeddedMobileRuntime() || bootstrapped) return;
-  installMobileExperience();
+  await installMobileExperience();
   await nativeInvoke("mobile_gateway_bootstrap");
   installGatewayFetchBridge();
   await installGatewayWebSocketBridge();

@@ -1,18 +1,14 @@
 import type { ComponentProps } from "react";
 import { cn } from "../../lib/shared/utils";
+import { NoticeSurface } from "../ui/status-notice";
 
 const variants = {
-  "action-error":
-    "flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs text-destructive",
-  "compact-error":
-    "flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5",
-  "multiline-error":
-    "whitespace-pre-wrap rounded-lg border border-destructive/20 bg-destructive/[0.05] px-3 py-2 text-xs text-destructive",
-  validation:
-    "flex items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/[0.06] px-3 py-2.5 text-xs text-destructive",
-  warning:
-    "rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-300",
-  "installation-warning": "rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3.5",
+  "action-error": "flex items-center gap-2 text-xs",
+  "compact-error": "flex items-center gap-2",
+  "multiline-error": "whitespace-pre-wrap text-xs",
+  validation: "flex items-start gap-2 text-xs",
+  warning: "text-xs leading-relaxed",
+  "installation-warning": "text-sm",
   "inline-error": "flex items-center gap-1.5 text-xs text-destructive",
 } as const;
 
@@ -22,5 +18,12 @@ export function SettingsNotice({
   className,
   ...props
 }: ComponentProps<"div"> & { variant: keyof typeof variants }) {
-  return <div {...props} className={cn(variants[variant], className)} />;
+  return (
+    <NoticeSurface
+      {...props}
+      tone={variant.includes("warning") ? "warning" : "error"}
+      density={variant === "inline-error" ? "compact" : undefined}
+      className={cn(variants[variant], className)}
+    />
+  );
 }

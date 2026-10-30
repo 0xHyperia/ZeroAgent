@@ -1,4 +1,9 @@
-import { DEFAULT_CHAT_RUNTIME_CONTROLS, type ReasoningLevel } from "@liveagent/app/lib/settings";
+import {
+  DEFAULT_CHAT_RUNTIME_CONTROLS,
+  isAgentDevMode,
+  isAgentExecutionMode,
+  type ReasoningLevel,
+} from "@liveagent/app/lib/settings";
 import {
   ChevronDown,
   ChevronRight,
@@ -6,12 +11,13 @@ import {
   Layers,
   RotateCcw,
 } from "@liveagent/ui/components/IconSet";
+import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
+import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
+import { Switch } from "@liveagent/ui/components/ui/switch";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { parseModelValue } from "../../lib/models/modelValue";
-import { ModelPickerContent } from "../models/ModelPickerContent";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { TooltipButton } from "../ui/tooltip-button";
 import type { ComposerModelControlsProps } from "./ComposerModelControls";
 import { ReasoningSlider } from "./ReasoningSlider";
@@ -95,6 +101,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
     ? props.reasoningOptions.filter((level) => level !== "off")
     : ["off", ...props.reasoningOptions.filter((level) => level !== "off")];
   const canAdjust = supported && choices.length > 1;
+  const nativeSearchSupported = option?.nativeWebSearchSupported === true;
   const [preview, setPreview] = useState<ReasoningLevel | null>(null);
   const previewRef = useRef<{ level: ReasoningLevel; model?: string } | null>(null);
   const displayed =
@@ -327,6 +334,10 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                   props.onSelectModel(parsed);
                   setOpen(false);
                 }}
+                onOpenProvider={(providerId) => {
+                  setOpen(false);
+                  props.onOpenSettings("providers", providerId);
+                }}
               />
             </>
           ) : (
@@ -405,6 +416,57 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
               </p>
             </>
           )}
+          {props.showExecutionControls ? (
+            <div className="composer-runtime-controls">
+              <div className="composer-runtime-row">
+                <span>{t("settings.executionMode")}</span>
+                <div
+                  role="radiogroup"
+                  aria-label={t("settings.executionMode")}
+                  className="composer-runtime-radio za-segmented"
+                >
+                  <label className="za-segment" data-segment="text">
+                    <input
+                      type="radio"
+                      name={`${id}-execution`}
+                      value="text"
+                      checked={!isAgentExecutionMode(props.executionMode)}
+                      disabled={props.disabled}
+                      onChange={() => props.onSelectExecutionMode("text")}
+                      className="sr-only"
+                    />
+                    Chat
+                  </label>
+                  <label className="za-segment" data-segment="tools">
+                    <input
+                      type="radio"
+                      name={`${id}-execution`}
+                      value="tools"
+                      checked={isAgentExecutionMode(props.executionMode)}
+                      disabled={props.disabled}
+                      onChange={() => props.onSelectExecutionMode("tools")}
+                      className="sr-only"
+                    />
+                    {isAgentDevMode(props.executionMode) ? "Agent·dev" : "Agent"}
+                  </label>
+                </div>
+              </div>
+              <label className="composer-runtime-row" htmlFor={`${id}-web`}>
+                <span>{t("chat.runtime.webSearch")}</span>
+                <Switch
+                  id={`${id}-web`}
+                  aria-label={t("chat.runtime.webSearch")}
+                  checked={
+                    nativeSearchSupported && props.chatRuntimeControls.nativeWebSearchEnabled
+                  }
+                  disabled={props.disabled || !nativeSearchSupported}
+                  onCheckedChange={(checked) =>
+                    props.onChatRuntimeControlsChange({ nativeWebSearchEnabled: checked })
+                  }
+                />
+              </label>
+            </div>
+          ) : null}
         </PopoverContent>
       </Popover>
     </div>

@@ -67,7 +67,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { readSendShortcut, shouldSendOnEnter } from "../../lib/chat/sendShortcut";
+import { readComposerSendShortcut, shouldSendOnEnter } from "../../lib/chat/sendShortcut";
 import { ComposerCommandPanel } from "./ComposerCommandPanel";
 import {
   COMMIT_MENTION_SHA_ATTR,
@@ -1988,7 +1988,7 @@ export const MentionComposer = memo(
         }
 
         // Send only with the configured combination, after IME and mention handling.
-        if (isEnter && shouldSendOnEnter(e, readSendShortcut())) {
+        if (isEnter && shouldSendOnEnter(e, readComposerSendShortcut())) {
           imeEnterSuppressUntilRef.current = 0;
           compositionEnterKeyRef.current = false;
           lastCompositionEndAtRef.current = 0;
