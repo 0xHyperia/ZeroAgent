@@ -116,6 +116,22 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
   const slots = { header: null, account: null, window: null, update: null };
   const requests = [];
   const invalid = [];
+  const navigationListeners = new Set();
+  let settingsTarget = null;
+  let canLeaveSettings = false;
+  const settingsNavigation = {
+    getSnapshot: () => settingsTarget,
+    subscribe(listener) { navigationListeners.add(listener); return () => navigationListeners.delete(listener); },
+    requestLeave() {
+      if (!canLeaveSettings) return false;
+      settingsTarget = null;
+      for (const listener of navigationListeners) listener();
+      return true;
+    },
+  };
+  const settingsRail = document.createElement("div");
+  document.body.append(settingsRail);
+  t.after(() => settingsRail.remove());
   const publicUser = { id: 7, email: "synthetic@example.invalid", username: "Synthetic", status: "active" };
   const mountHost = (agent) => {
     const environment = { runtime_kind: "device_agent", device_id: agent, agent_id: agent, name: agent, online: true, workspaces: [], capabilities: ["agent", "files", "terminal", "git", "mcp", "hooks", "cron"] };
@@ -123,6 +139,7 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     const host = {
       sessionHandle: "opaque-native-session", accountScope: "verified-account-a", gatewayOrigin: server.origin, accountUser: publicUser,
       environment, environments: [environment], selection, isCurrent: () => true,
+      settingsNavigation,
       async request(path) {
         requests.push(path);
         if (path.startsWith("/api/auth/me")) return Response.json({ user: publicUser });
@@ -161,6 +178,26 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     assert.ok(slots.account?.isConnected, "desktop account menu has a live portal target");
     assert.ok(slots.window?.isConnected, "desktop window controls have a live portal target");
     assert.ok(slots.update?.isConnected, "desktop updates have a live navigation portal target");
+    assert.equal(root.querySelector(".application-rail img").getAttribute("src"), "/zeroagent-logo.png", "remote rail uses the logo shipped by the desktop host");
+    const composer = root.querySelector("[contenteditable='true'],textarea");
+    root.querySelector('nav button[aria-label="Skills"]').click();
+    const featureSidebar = await waitFor(() => root.querySelector(".workbench-feature-sidebar"), "contextual feature navigation");
+    assert.ok(featureSidebar.querySelector('[aria-current="page"]').textContent.includes("Skills"));
+    assert.equal(featureSidebar.querySelector(".chat-history-row"), null, "Skills must not show the conversation/project list");
+    assert.equal(root.querySelector("[contenteditable='true'],textarea"), composer, "switching feature pages keeps the conversation mounted");
+    Array.from(featureSidebar.querySelectorAll("button")).find((button) => button.textContent.trim() === "MCP").click();
+    await waitFor(() => root.querySelector('.workbench-feature-sidebar [aria-current="page"]')?.textContent.trim() === "MCP", "feature navigation follows the selected page");
+    settingsTarget = settingsRail;
+    for (const listener of navigationListeners) listener();
+    await waitFor(() => settingsRail.querySelector(".application-rail"), "the owning remote rail in the Native settings canvas");
+    assert.equal(root.querySelector(".application-rail"), null, "only one live rail exists");
+    assert.ok(slots.update?.isConnected, "Native update controls remain mounted in settings");
+    settingsRail.querySelector('button[aria-label="Skills"]').click();
+    await new Promise((resolveGuard) => setTimeout(resolveGuard, 30));
+    assert.ok(root.querySelector('.workbench-feature-sidebar [aria-current="page"]').textContent.includes("MCP"), "a rejected settings leave guard blocks navigation");
+    canLeaveSettings = true;
+    settingsRail.querySelector('button[aria-label="Skills"]').click();
+    await waitFor(() => root.querySelector('.application-rail') && root.querySelector('.workbench-feature-sidebar [aria-current="page"]')?.textContent.includes("Skills"), "accepted navigation returns the rail and changes view");
     assert.ok(server.frames.some((frame) => frame.json.agent_id === "device-a" && frame.json.agent_request?.settings_get));
     const workbench = root.querySelector("[data-app-workbench-chrome]");
     const peer = server.frames.find((frame) => frame.case === "hello" && frame.peer.agent === "device-a").peer;
@@ -175,6 +212,8 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     first.dispose();
     first = null;
     assert.equal(root.childElementCount, 0);
+    assert.equal(settingsRail.childElementCount, 0, "disposed workbench leaves no settings navigation behind");
+    assert.equal(navigationListeners.size, 0, "disposed workbench unsubscribes from Native presentation state");
     assert.deepEqual(slots, { header: null, account: null, window: null, update: null });
     for (const [name, value] of nativeAttributes) assert.equal(dom.window.document.documentElement.getAttribute(name), value, `${name} restored to native shell`);
     assert.equal(dom.window.document.title, "Native ZeroAgent");

@@ -1,6 +1,8 @@
 import type { Context } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
+import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
+import { createWorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { Pin } from "@liveagent/ui/components/IconSet";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
@@ -840,14 +842,19 @@ export default function App() {
   }, [settingsReady, backgroundHostsReady]);
 
   const closeSettings = useCallback(() => {
-    if (settingsLeaveGuard.current?.() === false) return;
+    if (settingsLeaveGuard.current?.() === false) return false;
     closeSettingsOverlay();
+    return true;
   }, [closeSettingsOverlay]);
 
   // 动作总线（Rust `app:action`）中 App 拥有的动作：主题/打开设置/网关开关/
   // 检查更新，以及「新建对话」时先收起设置覆盖层（会话侧由 ChatPage 处理）。
   const closeSettingsRef = useRef(closeSettings);
   closeSettingsRef.current = closeSettings;
+  const settingsNavigation = useMemo(
+    () => createWorkbenchNavigationPortal(() => closeSettingsRef.current()),
+    [],
+  );
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const openSettingsRef = useRef(openSettings);
@@ -1120,6 +1127,7 @@ export default function App() {
             >
               <>
                 <ChatPage
+                  settingsNavigation={settingsNavigation}
                   active={localExecutionSelected}
                   relayUser={relayUser}
                   relayStats={relayStats}
@@ -1143,6 +1151,7 @@ export default function App() {
                 {!localExecutionSelected &&
                   (selectedExecutionEnvironment ? (
                     <RemoteDeviceWorkbench
+                      settingsNavigation={settingsNavigation}
                       navigationUpdate={<AppUpdateButton appUpdate={appUpdate} rail />}
                       key={selectedExecutionEnvironment.device_id}
                       settings={settings}
@@ -1176,10 +1185,10 @@ export default function App() {
             )}
             onTransitionEnd={handleTransitionEnd}
           >
-            {/* The overlay owns its title bar so the chat subtree below keeps a
-                constant height across open/close. */}
-            <WindowsSettingsHeader onBack={closeSettings} />
-            <div className="relative min-h-0 flex-1 overflow-hidden">
+            <SettingsWorkspace
+              navigationRef={settingsNavigation.setTarget}
+              windowControls={<WindowsSettingsHeader />}
+            >
               <AppErrorBoundary>
                 <Suspense
                   fallback={
@@ -1210,7 +1219,7 @@ export default function App() {
                   />
                 </Suspense>
               </AppErrorBoundary>
-            </div>
+            </SettingsWorkspace>
           </div>
         )}
         {windowPinned && (

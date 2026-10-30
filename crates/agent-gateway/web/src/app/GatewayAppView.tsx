@@ -1,7 +1,9 @@
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import { WorkbenchNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
+import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
@@ -87,8 +89,10 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   type TrustedGatewayImageIdentity,
   useWebImageStudioHost,
@@ -159,6 +163,9 @@ export function GatewayAppView({
   imageStudioIdentity?: TrustedGatewayImageIdentity;
 }) {
   const desktopHost = getDesktopRemoteHost();
+  const desktopSettingsTarget = useWorkbenchNavigationTarget(desktopHost?.settingsNavigation);
+  const [settingsRailTarget, setSettingsRailTarget] = useState<HTMLDivElement | null>(null);
+  const navigationTarget = desktopSettingsTarget ?? settingsRailTarget;
   const verifiedImageIdentity = useSingleUserImageIdentity(
     viewModel.imageStudioToken,
     imageStudioIdentity,
@@ -1385,7 +1392,7 @@ export function GatewayAppView({
     <WorkbenchNavigationRail
       brand={
         <img
-          src="/icon-simple.png"
+          src="/zeroagent-logo.png"
           alt="ZeroAgent"
           draggable={false}
           className="size-8 select-none"
@@ -1394,6 +1401,9 @@ export function GatewayAppView({
       activeView={activeView}
       shortcuts={settings.customSettings.sidebarShortcuts}
       onSelectView={(view) => {
+        if (desktopSettingsTarget && desktopHost?.settingsNavigation?.requestLeave() === false)
+          return;
+        if (settingsOpen && closeSettings() === false) return;
         navigationPreview.dismiss();
         if (view === "chat") {
           setActiveView("chat");
@@ -1498,7 +1508,9 @@ export function GatewayAppView({
                   ) : null}
                 </>
               }
-              windowControls={desktopHost ? <DesktopHostSlot kind="window" /> : undefined}
+              windowControls={
+                desktopHost && !settingsOpen ? <DesktopHostSlot kind="window" /> : undefined
+              }
               trailingActions={
                 <>
                   <ProjectToolsPanelToggle
@@ -1522,7 +1534,16 @@ export function GatewayAppView({
               data-app-workbench-body=""
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {!sidebar.isMobile ? renderNavigationRail() : null}
+              {!sidebar.isMobile ? (
+                navigationTarget ? (
+                  <>
+                    <div data-navigation-rail-placeholder="" aria-hidden="true" />
+                    {createPortal(renderNavigationRail(), navigationTarget)}
+                  </>
+                ) : (
+                  renderNavigationRail()
+                )
+              ) : null}
               {!sidebar.isMobile && !sidebar.open ? (
                 <div data-sidebar-hover-edge="" aria-hidden="true" />
               ) : null}
@@ -2303,30 +2324,42 @@ export function GatewayAppView({
               )}
               onTransitionEnd={handleSettingsTransitionEnd}
             >
-              <SettingsPage
-                imageClient={imageStudio.host?.client}
-                registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
-                settings={{
-                  ...settings,
-                  system: { ...settings.system, workspaceProjects },
-                }}
-                settingsHost={settingsHostAdapter}
-                setSettings={setSettings}
-                saveState={settingsSaveState}
-                onBack={closeSettings}
-                initialSection={settingsSection}
-                initialProviderId={settingsProviderId}
-                hiddenSections={["remote", "stt"]}
-                relayUser={relayUser}
-                relayStats={relayStats}
-                onRelayUserChange={() => void refreshRelayAccount()}
-                onRelayStatsChange={() => void refreshRelayAccount()}
-                sttSettingsService={sttSettingsService}
-                onAgentDirectoryChanged={async () => {
-                  if (!api) return;
-                  await api.listAgents();
-                }}
-              />
+              <SettingsWorkspace
+                navigationRef={setSettingsRailTarget}
+                windowControls={
+                  desktopHost ? (
+                    <div className="settings-window-chrome">
+                      <div className="h-full flex-1" data-tauri-drag-region />
+                      <DesktopHostSlot kind="window" />
+                    </div>
+                  ) : undefined
+                }
+              >
+                <SettingsPage
+                  imageClient={imageStudio.host?.client}
+                  registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
+                  settings={{
+                    ...settings,
+                    system: { ...settings.system, workspaceProjects },
+                  }}
+                  settingsHost={settingsHostAdapter}
+                  setSettings={setSettings}
+                  saveState={settingsSaveState}
+                  onBack={closeSettings}
+                  initialSection={settingsSection}
+                  initialProviderId={settingsProviderId}
+                  hiddenSections={["remote", "stt"]}
+                  relayUser={relayUser}
+                  relayStats={relayStats}
+                  onRelayUserChange={() => void refreshRelayAccount()}
+                  onRelayStatsChange={() => void refreshRelayAccount()}
+                  sttSettingsService={sttSettingsService}
+                  onAgentDirectoryChanged={async () => {
+                    if (!api) return;
+                    await api.listAgents();
+                  }}
+                />
+              </SettingsWorkspace>
             </div>
           ) : null}
           {relayUser ? (

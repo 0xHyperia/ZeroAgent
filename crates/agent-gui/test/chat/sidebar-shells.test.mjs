@@ -4,6 +4,7 @@ import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 const env = await createDomTestEnv({ mocks: {
   "@liveagent/ui/components/IconSet": new Proxy({}, { get: () => () => null }),
   "../IconSet": new Proxy({}, { get: () => () => null }),
+  "../components/IconSet": new Proxy({}, { get: () => () => null }),
 } });
 const { React, act, createRoot } = env;
 window.ResizeObserver = globalThis.ResizeObserver;
@@ -11,6 +12,42 @@ let mobile = false;
 const mediaListeners = new Set();
 window.matchMedia = () => ({ get matches() { return mobile; }, media: "", addEventListener: (_, listener) => mediaListeners.add(listener), removeEventListener: (_, listener) => mediaListeners.delete(listener) });
 const { Sidebar, SidebarProvider, SidebarTrigger, useSidebar } = env.loadModule("@liveagent/ui/components/ui/sidebar.tsx");
+const { WorkbenchFeatureSidebar } = env.loadModule("@liveagent/ui/application/WorkbenchFeatureSidebar.tsx");
+
+test("mobile feature navigation follows its page and closes its sheet without showing conversation history", async () => {
+  mobile = true;
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  let setOpen;
+  let selected = "skills-hub";
+  function Content() {
+    const sidebar = useSidebar();
+    setOpen = sidebar.setOpenMobile;
+    return React.createElement(WorkbenchFeatureSidebar, {
+      activeView: selected, fontScale: 1.25,
+      shortcuts: { skills: true, mcp: true, cron: false, planning: false, "image-studio": false, memory: false },
+      onOpenResourceHub: value => { selected = `${value}-hub`; },
+      onNewConversation() {},
+    });
+  }
+  try {
+    await act(async () => root.render(React.createElement(SidebarProvider, null, React.createElement(Content))));
+    await act(async () => setOpen(true));
+    const dialog = document.querySelector('[role="dialog"]');
+    assert.ok(dialog);
+    assert.match(dialog.querySelector('[aria-current="page"]').textContent, /Skills/);
+    assert.equal(dialog.querySelector(".chat-history-row"), null);
+    const buttons = Array.from(dialog.querySelectorAll("button"));
+    assert.equal(buttons.some(button => /定时任务|Scheduled Tasks/.test(button.textContent)), false, "shortcut visibility remains respected");
+    await act(async () => buttons.find(button => button.textContent.trim() === "MCP").click());
+    assert.equal(selected, "mcp-hub");
+    assert.equal(document.querySelector('[role="dialog"]'), null, "selection dismisses the mobile navigation sheet");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    mobile = false;
+  }
+});
 
 test("a background local sidebar yields shortcuts to the visible remote sidebar without losing its state", async () => {
   mobile = false;

@@ -3,6 +3,7 @@
 // ChatPage), the conversation-rename UI state, the delete flow, and the
 // error-code → i18n mapping. NOT mirrored — the web end has its own container.
 
+import { WorkbenchFeatureSidebar } from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import {
   buildChatHistorySidebarBaseProps,
   buildChatHistorySidebarConversationProps,
@@ -247,6 +248,22 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
   } else if (listState.error) {
     errorMessage = listState.errorDetail?.trim() || t(`chat.history.${listState.error}`);
   }
+
+  // Hub pages own their filters, tabs and navigation. Keep the history controller
+  // subscribed, without showing a conversation list beside an unrelated page.
+  if (props.activeView !== "chat")
+    return (
+      <WorkbenchFeatureSidebar
+        fontScale={props.fontScale}
+        activeView={props.activeView}
+        shortcuts={props.sidebarShortcuts}
+        onOpenResourceHub={props.onOpenResourceHub}
+        onNewConversation={props.onNewRecentConversation ?? props.onNewConversation}
+        mobileRail={props.mobileRail}
+        previewOpen={props.previewOpen}
+        headerTop={<DesktopSidebarTitleBar />}
+      />
+    );
 
   return (
     <ChatHistorySidebar

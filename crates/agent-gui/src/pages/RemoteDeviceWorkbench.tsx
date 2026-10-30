@@ -1,3 +1,4 @@
+import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
@@ -24,6 +25,7 @@ type Props = {
   selectionError?: string;
   headerLeadingActions?: ReactNode;
   navigationUpdate?: ReactNode;
+  settingsNavigation?: WorkbenchNavigationPortal;
   onSelectionInvalid?: (reason: string) => void;
   onReconnect: () => Promise<void>;
 };

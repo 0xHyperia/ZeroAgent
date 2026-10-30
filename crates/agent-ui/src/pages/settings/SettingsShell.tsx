@@ -216,7 +216,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   <TooltipButton
                     variant="ghost"
                     size="icon-sm"
-                    className="max-[820px]:hidden"
+                    className={web ? "max-[820px]:hidden" : undefined}
                     title={t("settings.backToChatHint")}
                     aria-label={t("settings.backToChat")}
                     onClick={onBack}
@@ -336,17 +336,6 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                 </div>
               ) : null}
             </nav>
-            {!web && showSaveIndicator ? (
-              <div className="px-3 py-3">
-                <div
-                  className="flex items-center gap-1.5 px-2.5 text-xs text-muted-foreground"
-                  title={saveIndicator.title}
-                >
-                  <div className={cn("size-1.5 rounded-full", saveIndicator.dotClass)} />
-                  {saveIndicator.text}
-                </div>
-              </div>
-            ) : null}
           </aside>
           <main className="flex min-w-0 flex-1 flex-col web:min-w-0 web:max-820:min-h-0 web:max-820:flex-auto">
             {presentation === "page" ? (
@@ -377,7 +366,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   {t(activeSection.labelKey)}
                 </SectionTitle>
               </div>
-              {web && showSaveIndicator ? (
+              {showSaveIndicator ? (
                 <div
                   className={cn(
                     "flex shrink-0 items-center gap-1.5",

@@ -222,6 +222,10 @@
   background: hsl(var(--background));
   border-right: 1px solid var(--za-workbench-border);
 }
+.app-workspace-shell .workbench-feature-sidebar {
+  background: hsl(var(--background));
+  border-right: 1px solid var(--za-workbench-border);
+}
 :where(.app-workspace-shell .chat-history-sidebar-inner) > [data-sidebar="header"] {
   padding-top: 10px;
 }
@@ -270,14 +274,22 @@
   border-radius: 16px;
   box-shadow: var(--za-shadow-floating);
 }
-:where(.app-workspace-shell.app-workbench-layout:has(.application-rail)) {
+:where(
+  .app-workspace-shell.app-workbench-layout:has(
+    .application-rail,
+    [data-navigation-rail-placeholder]
+  )
+) {
   --workbench-main-start-radius: var(--za-radius-workbench);
   grid-template-columns: 56px auto minmax(0, 1fr);
   padding: 2px 2px 2px 0;
 }
 /* One frame surrounds sidebar + canvas, just as in CloudChat. The border is
    decorative: it never owns focus, pointer events or native window dragging. */
-.app-workspace-shell.app-workbench-layout:has(.application-rail)::after {
+.app-workspace-shell.app-workbench-layout:has(
+  .application-rail,
+  [data-navigation-rail-placeholder]
+)::after {
   content: "";
   position: absolute;
   z-index: 21;
@@ -291,18 +303,33 @@
 ) {
   --workbench-main-start-radius: 0px;
 }
-:where(.app-workspace-shell.app-workbench-layout:has(.application-rail))
+:where(
+    .app-workspace-shell.app-workbench-layout:has(
+      .application-rail,
+      [data-navigation-rail-placeholder]
+    )
+  )
   > [data-app-workbench-chrome] {
   grid-column: 3;
   border-radius: var(--workbench-main-start-radius) var(--za-radius-workbench) 0 0;
 }
-:where(.app-workspace-shell.app-workbench-layout:has(.application-rail))
+:where(
+    .app-workspace-shell.app-workbench-layout:has(
+      .application-rail,
+      [data-navigation-rail-placeholder]
+    )
+  )
   > :where([data-app-workbench-body])
-  > .application-rail {
+  > :is(.application-rail, [data-navigation-rail-placeholder]) {
   grid-column: 1;
   grid-row: 1 / -1;
 }
-:where(.app-workspace-shell.app-workbench-layout:has(.application-rail))
+:where(
+    .app-workspace-shell.app-workbench-layout:has(
+      .application-rail,
+      [data-navigation-rail-placeholder]
+    )
+  )
   > :where([data-app-workbench-body])
   > [data-slot="sidebar"] {
   grid-column: 2;
@@ -314,7 +341,12 @@
   border-radius: var(--za-radius-workbench) 0 0 var(--za-radius-workbench);
   overflow: hidden;
 }
-:where(.app-workspace-shell.app-workbench-layout:has(.application-rail))
+:where(
+    .app-workspace-shell.app-workbench-layout:has(
+      .application-rail,
+      [data-navigation-rail-placeholder]
+    )
+  )
   > :where([data-app-workbench-body])
   > [data-slot="resizable-panel-group"] {
   grid-column: 3;
@@ -376,8 +408,12 @@
   border-radius: 50%;
   background: #3297f6;
   color: white;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 2px 6px rgb(30 120 220 / 0.12);
-  transition: transform 140ms var(--za-ease), background-color 140ms var(--za-ease);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.2),
+    0 2px 6px rgb(30 120 220 / 0.12);
+  transition:
+    transform 140ms var(--za-ease),
+    background-color 140ms var(--za-ease);
 }
 @media (hover: hover) {
   .application-rail-update:hover {
@@ -650,6 +686,59 @@
 }
 
 /* Settings use the same navigation and content rhythm in every host. */
+[data-settings-workspace] {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 2px 2px 0;
+  background: hsl(var(--settings-rail));
+}
+[data-settings-navigation] {
+  display: flex;
+  flex: 0 0 56px;
+  min-height: 0;
+}
+[data-settings-navigation]:empty {
+  display: none;
+}
+[data-navigation-rail-placeholder] {
+  width: 56px;
+  flex: 0 0 56px;
+}
+[data-settings-canvas] {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--za-workbench-border);
+  border-radius: var(--za-radius-workbench);
+  background: hsl(var(--background));
+}
+.settings-window-chrome {
+  position: absolute;
+  z-index: 10;
+  inset: 0 0 auto var(--sidebar-width, 272px);
+  display: flex;
+  height: 40px;
+  -webkit-app-region: drag;
+}
+@media (max-width: 767px) {
+  [data-settings-navigation] {
+    display: none;
+  }
+  [data-settings-workspace] {
+    padding: 0;
+  }
+}
+@media (max-width: 820px) {
+  .settings-window-chrome {
+    left: auto;
+  }
+}
 [data-design-settings] {
   width: 100%;
   min-height: 0;
@@ -657,6 +746,7 @@
 [data-design-settings] aside {
   width: var(--sidebar-width, 272px);
   border-right: 1px solid hsl(var(--border) / 0.55);
+  background: hsl(var(--background));
 }
 [data-design-settings] .settings-nav-header {
   padding: 10px 12px 8px;
@@ -965,9 +1055,6 @@
   font-weight: 400;
   line-height: calc(19px * var(--zone-font-scale, 1));
   color: hsl(var(--muted-foreground));
-}
-body:has([data-windows-settings-header]) [data-design-settings] .settings-page-title > button {
-  display: none;
 }
 @media (max-width: 767px) {
   .app-workspace-shell {

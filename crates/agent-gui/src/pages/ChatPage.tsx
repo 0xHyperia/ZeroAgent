@@ -6,6 +6,7 @@ import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/Ap
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import { WorkbenchNavigationRail as DesktopNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
+import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
@@ -126,6 +127,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import { loadComposerUploadedImagePreview } from "../agent-ui-adapters/composerImagePreview";
 import { kbrainSettingsAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { createTauriTrajectoryHost } from "../agent-ui-adapters/trajectory";
@@ -480,6 +482,7 @@ function ChatPageContent(props: ChatPageProps) {
     };
   }, [sidebarStore]);
   const sidebar = useSidebar();
+  const settingsNavigationTarget = useWorkbenchNavigationTarget(props.settingsNavigation);
   const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
   const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
   const navigationPreview = useNavigationPreview(active && !sidebar.isMobile, props.relayUser.id, {
@@ -4358,6 +4361,7 @@ function ChatPageContent(props: ChatPageProps) {
       activeView={activeView}
       shortcuts={settings.customSettings.sidebarShortcuts}
       onSelectView={(view) => {
+        if (settingsNavigationTarget && props.settingsNavigation?.requestLeave() === false) return;
         navigationPreview.dismiss();
         if (view !== "chat") {
           cacheActiveComposerDraft();
@@ -4476,7 +4480,16 @@ function ChatPageContent(props: ChatPageProps) {
         className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
       >
         {workbenchDragGhost}
-        {!sidebar.isMobile ? renderNavigationRail() : null}
+        {!sidebar.isMobile ? (
+          settingsNavigationTarget ? (
+            <>
+              <div data-navigation-rail-placeholder="" aria-hidden="true" />
+              {createPortal(renderNavigationRail(), settingsNavigationTarget)}
+            </>
+          ) : (
+            renderNavigationRail()
+          )
+        ) : null}
         {!sidebar.isMobile && !sidebar.open ? (
           <div data-sidebar-hover-edge="" aria-hidden="true" />
         ) : null}

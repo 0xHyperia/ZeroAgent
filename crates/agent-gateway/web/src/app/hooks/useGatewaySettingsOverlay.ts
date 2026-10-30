@@ -24,8 +24,9 @@ export function useGatewaySettingsOverlay(setSidebarOpen: Dispatch<SetStateActio
     };
   }, []);
   const closeSettings = useCallback(() => {
-    if (leaveGuard.current && !leaveGuard.current()) return;
+    if (leaveGuard.current && !leaveGuard.current()) return false;
     closeSettingsOverlay();
+    return true;
   }, [closeSettingsOverlay]);
 
   const openSettings = useCallback(

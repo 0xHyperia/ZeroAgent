@@ -1,5 +1,6 @@
 import type { Context } from "@liveagent/app/lib/agentTypes";
 import type { ImageStudioHost } from "@liveagent/ui/application/imageStudioHost";
+import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import type { ResourceHostCapabilities } from "@liveagent/ui/lib/resourceHost";
 import type { ReactNode } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
@@ -10,6 +11,7 @@ import type { SectionId } from "../settings/types";
 export type ChatPageProps = {
   /** Keep the local runtime serving remote clients while another device is visible. */
   active?: boolean;
+  settingsNavigation?: WorkbenchNavigationPortal;
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;
   onRefreshRelayAccount: () => Promise<void>;

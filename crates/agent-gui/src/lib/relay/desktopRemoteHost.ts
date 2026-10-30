@@ -41,6 +41,7 @@ type HostInput = {
   onHeaderTarget?: DesktopRemoteHost["onHeaderTarget"];
   onWindowControlsTarget?: DesktopRemoteHost["onWindowControlsTarget"];
   onUpdateTarget?: DesktopRemoteHost["onUpdateTarget"];
+  settingsNavigation?: DesktopRemoteHost["settingsNavigation"];
   onSelectionInvalid: DesktopRemoteHost["onSelectionInvalid"];
 };
 type Dependencies = {
@@ -226,6 +227,7 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
       onHeaderTarget: input.onHeaderTarget,
       onWindowControlsTarget: input.onWindowControlsTarget,
       onUpdateTarget: input.onUpdateTarget,
+      settingsNavigation: input.settingsNavigation,
       onSelectionInvalid: input.onSelectionInvalid,
       logout: async () => {
         requireCurrent();

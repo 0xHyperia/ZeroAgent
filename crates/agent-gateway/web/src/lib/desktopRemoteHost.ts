@@ -1,3 +1,4 @@
+import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import type { ExecutionEnvironment, ExecutionSelection } from "./executionTargets";
 import type { RelayUser } from "./relay/client";
 
@@ -20,6 +21,7 @@ export type DesktopRemoteHost = {
   onAccountTarget?: (element: HTMLElement | null) => void;
   onWindowControlsTarget?: (element: HTMLElement | null) => void;
   onUpdateTarget?: (element: HTMLElement | null) => void;
+  settingsNavigation?: WorkbenchNavigationPortal;
   onSelectionInvalid: (reason: string) => void;
 };
 

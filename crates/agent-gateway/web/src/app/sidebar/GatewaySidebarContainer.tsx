@@ -1,3 +1,4 @@
+import { WorkbenchFeatureSidebar } from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import { sortSidebarConversations } from "@liveagent/ui/lib/sidebar/reconcile";
 // Sidebar container for the web end: owns every useSidebarSelector
 // subscription plus the rename UI state, so store commits (activity ticks,
@@ -340,6 +341,19 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
       props.projectOrder,
     ],
   );
+
+  if (props.activeView !== "chat")
+    return (
+      <WorkbenchFeatureSidebar
+        fontScale={props.fontScale}
+        activeView={props.activeView}
+        shortcuts={props.sidebarShortcuts}
+        onOpenResourceHub={props.onOpenResourceHub}
+        onNewConversation={props.onNewRecentConversation ?? props.onNewConversation}
+        mobileRail={props.mobileRail}
+        previewOpen={props.previewOpen}
+      />
+    );
 
   return (
     <ChatHistorySidebar
