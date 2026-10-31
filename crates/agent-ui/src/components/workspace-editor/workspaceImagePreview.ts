@@ -17,6 +17,8 @@ const WORKSPACE_HTML_EXTENSIONS = new Set(["html", "htm"]);
 const WORKSPACE_MARKDOWN_EXTENSIONS = new Set(["md", "mdx"]);
 
 const WORKSPACE_DOCUMENT_EXTENSIONS = new Set(["doc", "docx", "rtf"]);
+const WORKSPACE_PRESENTATION_EXTENSIONS = new Set(["pptx"]);
+const WORKSPACE_ARCHIVE_EXTENSIONS = new Set(["zip"]);
 
 const WORKSPACE_SPREADSHEET_EXTENSIONS = new Set([
   "csv",
@@ -38,6 +40,8 @@ const WORKSPACE_TEXT_EXTENSIONS = new Set(["log", "txt"]);
 export type WorkspacePreviewKind =
   | "audio"
   | "document"
+  | "presentation"
+  | "archive"
   | "html"
   | "image"
   | "markdown"
@@ -66,6 +70,8 @@ export function getWorkspacePreviewKind(path: string): WorkspacePreviewKind | nu
   if (WORKSPACE_HTML_EXTENSIONS.has(extension)) return "html";
   if (WORKSPACE_MARKDOWN_EXTENSIONS.has(extension)) return "markdown";
   if (WORKSPACE_DOCUMENT_EXTENSIONS.has(extension)) return "document";
+  if (WORKSPACE_PRESENTATION_EXTENSIONS.has(extension)) return "presentation";
+  if (WORKSPACE_ARCHIVE_EXTENSIONS.has(extension)) return "archive";
   if (WORKSPACE_SPREADSHEET_EXTENSIONS.has(extension)) return "spreadsheet";
   if (WORKSPACE_AUDIO_EXTENSIONS.has(extension)) return "audio";
   if (WORKSPACE_VIDEO_EXTENSIONS.has(extension)) return "video";

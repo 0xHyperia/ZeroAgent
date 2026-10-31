@@ -1,4 +1,14 @@
-import { buttonVariants } from "@liveagent/ui/components/ui/button";
+import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/previewPolicy";
+import { ResourcePreview } from "@liveagent/ui/components/resource-preview/ResourcePreview";
+import { Button, buttonVariants } from "@liveagent/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@liveagent/ui/components/ui/dropdown-menu";
+import { TooltipButton as ReaderAction } from "@liveagent/ui/components/ui/tooltip-button";
 import { useEffect, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import {
@@ -9,17 +19,21 @@ import {
   cloudArtifactSize,
   cloudArtifactStatus,
 } from "@/lib/cloudChatArtifacts";
+import { CloudChatFeedback } from "./CloudChatFeedback";
 import { CloudChatResourcePanel } from "./CloudChatResourcePanel";
+import { CloudChatSiteView } from "./CloudChatSiteView";
 
 type Props = {
   client: CloudChatArtifactsClient;
   conversationId?: string;
   initialVersionId?: string;
+  initialSite?: boolean;
   isCurrent: () => boolean;
   onClose: () => void;
   onDeleted?: (familyId: string) => void;
   onOpenSourceRun?: (runId: string, conversationId: string) => void;
-  onContinue?: (version: CloudChatArtifactVersion) => void;
+  // biome-ignore lint/suspicious/noConfusingVoidType: existing hosts return void; false explicitly rejects a reference.
+  onContinue?: (version: CloudChatArtifactVersion) => boolean | void;
   onError?: (cause: unknown) => void;
 };
 const buttonClass = buttonVariants({ variant: "outline", size: "sm" });
@@ -29,6 +43,7 @@ export function CloudChatArtifactsPanel(props: Props) {
   const [versions, setVersions] = useState<CloudChatArtifactVersion[]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [selected, setSelected] = useState<CloudChatArtifactVersion | null>(null);
+  const [sitePreviewId, setSitePreviewId] = useState("");
   const [familyVersions, setFamilyVersions] = useState<CloudChatArtifactVersion[]>([]);
   const [scope, setScope] = useState<"conversation" | "account">(
     conversationId ? "conversation" : "account",
@@ -36,13 +51,6 @@ export function CloudChatArtifactsPanel(props: Props) {
   const [text, setText] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const [image, setImage] = useState<{
-    url: string;
-    width: number;
-    height: number;
-    guard: () => void;
-  } | null>(null);
-  const imageURL = useRef<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false),
     [notice, setNotice] = useState("");
   const mounted = useRef(true),
@@ -60,11 +68,6 @@ export function CloudChatArtifactsPanel(props: Props) {
       currentProps.current.onError?.(cause);
     }
   }
-  function clearImage() {
-    if (imageURL.current) URL.revokeObjectURL(imageURL.current);
-    imageURL.current = null;
-    setImage(null);
-  }
   async function loadList(nextScope: "conversation" | "account" = scope, before = "") {
     const seq = ++generation.current,
       guard = captureAccountRequestGuard();
@@ -73,7 +76,6 @@ export function CloudChatArtifactsPanel(props: Props) {
     setSelected(null);
     setFamilyVersions([]);
     setText(null);
-    clearImage();
     setConfirmDelete(false);
     setScope(nextScope);
     if (!before) {
@@ -108,8 +110,10 @@ export function CloudChatArtifactsPanel(props: Props) {
       guard = captureAccountRequestGuard();
     setBusy(true);
     setError("");
-    setText(null);
-    clearImage();
+    if (selected?.id !== versionId) {
+      setText(null);
+      setSelected(null);
+    }
     setConfirmDelete(false);
     try {
       const version = await client.get(versionId, abort.current.signal);
@@ -141,8 +145,6 @@ export function CloudChatArtifactsPanel(props: Props) {
       mounted.current = false;
       generation.current++;
       abort.current.abort();
-      if (imageURL.current) URL.revokeObjectURL(imageURL.current);
-      imageURL.current = null;
     };
   }, [client, conversationId, initialVersionId]);
 
@@ -153,7 +155,6 @@ export function CloudChatArtifactsPanel(props: Props) {
     setBusy(true);
     setError("");
     setText(null);
-    clearImage();
     try {
       metadataGuard.current?.();
       const result = await client.text(selected, abort.current.signal);
@@ -166,38 +167,14 @@ export function CloudChatArtifactsPanel(props: Props) {
       if (valid() && generation.current === seq) setBusy(false);
     }
   }
-  async function viewImage() {
+  function viewImage() {
     if (!selected || !valid()) return;
-    const guard = captureAccountRequestGuard(),
-      seq = ++generation.current;
-    setBusy(true);
-    setError("");
-    setText(null);
-    clearImage();
     try {
       metadataGuard.current?.();
-      const result = await client.image(selected, abort.current.signal);
-      guard();
-      result.guard();
-      if (!valid() || generation.current !== seq) return;
-      const url = URL.createObjectURL(result.blob);
-      try {
-        guard();
-        result.guard();
-        if (!valid() || generation.current !== seq) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-      } catch (cause) {
-        URL.revokeObjectURL(url);
-        throw cause;
-      }
-      imageURL.current = url;
-      setImage({ url, width: result.width, height: result.height, guard: result.guard });
+      setText(null);
+      setError("");
     } catch (cause) {
-      if (generation.current === seq && !abort.current.signal.aborted) report(cause);
-    } finally {
-      if (valid() && generation.current === seq) setBusy(false);
+      report(cause);
     }
   }
   async function download() {
@@ -239,7 +216,6 @@ export function CloudChatArtifactsPanel(props: Props) {
       seq = ++generation.current;
     setBusy(true);
     setError("");
-    clearImage();
     try {
       metadataGuard.current?.();
       const result = await client.removeFamily(selected.family_id, abort.current.signal);
@@ -273,56 +249,182 @@ export function CloudChatArtifactsPanel(props: Props) {
     }
   }
 
+  function continueWork() {
+    if (!selected || busy || selected.state !== "ready" || !valid()) return;
+    try {
+      metadataGuard.current?.();
+      if (currentProps.current.onContinue?.(selected) === false)
+        setError("未能添加此版本，请检查草稿中的资料数量或等待当前操作完成。");
+    } catch (cause) {
+      report(cause);
+    }
+  }
+
   return (
     <CloudChatResourcePanel
       title={selected ? selected.name : "成果库"}
+      dragResource={
+        selected?.state === "ready" && props.onContinue && !busy
+          ? { kind: "artifact", id: selected.family_id, target_id: selected.id }
+          : undefined
+      }
       description="只提供正式保存的版本。删除对话会保留成果，删除成果会移除它的全部版本。"
+      subtitle={
+        selected
+          ? `v${selected.number} · ${cloudArtifactStatus(selected)} · ${cloudArtifactSize(selected.size)} · ${selected.name.split(".").pop()?.toUpperCase()}`
+          : undefined
+      }
+      headerActions={
+        selected ? (
+          <>
+            {props.onContinue ? (
+              <Button
+                size="sm"
+                disabled={busy || selected.state !== "ready"}
+                onClick={continueWork}
+              >
+                继续修改
+              </Button>
+            ) : null}
+            <ReaderAction
+              variant="outline"
+              size="sm"
+              data-reader-secondary=""
+              aria-label="下载此版本"
+              tooltip="下载此版本"
+              disabled={busy || selected.state !== "ready"}
+              onClick={() => void download()}
+            >
+              <Download className="size-4" />
+              <span className="cloud-reader-action-label">下载此版本</span>
+            </ReaderAction>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label="成果更多操作"
+                disabled={busy}
+              >
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {conversationId ? (
+                  <DropdownMenuItem
+                    onClick={() => void loadList("conversation")}
+                    className="gap-2.5"
+                  >
+                    <FolderOpen className="size-4" />
+                    当前对话成果
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={() => void loadList("account")} className="gap-2.5">
+                  <FolderOpen className="size-4" />
+                  账户成果库
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void showVersion(selected.id)} className="gap-2.5">
+                  <RefreshCw className="size-4" />
+                  刷新状态
+                </DropdownMenuItem>
+                {props.onOpenSourceRun ? (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      try {
+                        metadataGuard.current?.();
+                        if (valid())
+                          currentProps.current.onOpenSourceRun?.(
+                            selected.source_run_id,
+                            selected.conversation_id,
+                          );
+                      } catch (cause) {
+                        report(cause);
+                      }
+                    }}
+                    className="gap-2.5"
+                  >
+                    <FileText className="size-4" />
+                    查看来源对话
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                {cloudArtifactCanPreviewImage(selected) ||
+                resourcePreviewKind(selected) === "image" ? (
+                  <DropdownMenuItem onClick={viewImage} className="gap-2.5">
+                    <ImageIcon className="size-4" />
+                    查看图片
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  disabled={!cloudArtifactCanViewText(selected)}
+                  onClick={() => void viewText()}
+                  className="gap-2.5"
+                >
+                  <FileText className="size-4" />
+                  查看文本
+                </DropdownMenuItem>
+                {text !== null ? (
+                  <DropdownMenuItem onClick={() => setText(null)} className="gap-2.5">
+                    <FileText className="size-4" />
+                    返回文件预览
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setConfirmDelete(true)}
+                  className="gap-2.5 text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                  删除全部版本
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : undefined
+      }
       closeLabel="关闭成果库"
+      wide={Boolean(
+        selected &&
+          ["docx", "pptx", "pdf", "sheet", "html", "svg", "archive"].includes(
+            resourcePreviewKind(selected),
+          ),
+      )}
       onClose={props.onClose}
     >
-      <div className="flex flex-wrap items-center gap-8px">
-        {conversationId ? (
+      {!selected ? (
+        <div className="flex flex-wrap items-center gap-8px">
+          {conversationId ? (
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={busy}
+              onClick={() => void loadList("conversation")}
+            >
+              当前对话成果
+            </button>
+          ) : null}
           <button
             type="button"
             className={buttonClass}
             disabled={busy}
-            onClick={() => void loadList("conversation")}
+            onClick={() => void loadList("account")}
           >
-            当前对话成果
+            账户成果库
           </button>
-        ) : null}
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={busy}
-          onClick={() => void loadList("account")}
-        >
-          账户成果库
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={busy}
-          onClick={() => (selected ? void showVersion(selected.id) : void loadList())}
-        >
-          刷新状态
-        </button>
-        {busy ? (
-          <span role="status" className="text-xs text-muted-foreground">
-            正在读取成果…
-          </span>
-        ) : null}
-      </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={busy}
+            onClick={() => void loadList()}
+          >
+            刷新状态
+          </button>
+          {busy ? (
+            <span role="status" className="text-xs text-muted-foreground">
+              正在读取成果…
+            </span>
+          ) : null}
+        </div>
       ) : null}
-      {notice ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {notice}
-        </p>
-      ) : null}
+      {error ? <CloudChatFeedback tone="error" message={error} compact /> : null}
+      {notice ? <CloudChatFeedback message={notice} compact /> : null}
       <div className="min-h-0 flex-1 overflow-auto">
         {selected ? (
           <>
@@ -342,89 +444,39 @@ export function CloudChatArtifactsPanel(props: Props) {
                 ))}
               </select>
             </label>
-            <p className="mt-12px text-sm text-muted-foreground">
-              v{selected.number} · {cloudArtifactStatus(selected)} ·{" "}
-              {cloudArtifactSize(selected.size)}
-            </p>
-            <p className="mt-4px text-xs text-muted-foreground">
-              保存于 {new Date(selected.created_at).toLocaleString()} · 来源任务{" "}
-              {selected.source_run_id.slice(0, 8)}
-            </p>
-            {props.onOpenSourceRun ? (
-              <button
-                type="button"
-                className={`${buttonClass} mt-8px`}
-                onClick={() => {
-                  try {
-                    metadataGuard.current?.();
-                    if (valid())
-                      props.onOpenSourceRun?.(selected.source_run_id, selected.conversation_id);
-                  } catch (cause) {
-                    report(cause);
-                  }
-                }}
-              >
-                查看来源对话
-              </button>
-            ) : null}
-            <div className="mt-16px flex flex-wrap gap-8px">
-              {props.onContinue ? (
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={busy || selected.state !== "ready"}
-                  onClick={() => {
-                    try {
-                      metadataGuard.current?.();
-                      if (valid() && selected.state === "ready")
-                        currentProps.current.onContinue?.(selected);
-                    } catch (cause) {
-                      report(cause);
-                    }
-                  }}
-                >
-                  继续修改
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={buttonClass}
-                disabled={busy || selected.state !== "ready"}
-                onClick={() => void download()}
-              >
-                下载此版本
-              </button>
-              {cloudArtifactCanPreviewImage(selected) ? (
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={busy}
-                  onClick={() => void viewImage()}
-                >
-                  查看图片
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={buttonClass}
-                disabled={busy || !cloudArtifactCanViewText(selected)}
-                onClick={() => void viewText()}
-              >
-                查看文本
-              </button>
-              <button
-                type="button"
-                className={`${buttonClass} text-destructive`}
-                disabled={busy}
-                onClick={() => setConfirmDelete(true)}
-              >
-                删除全部版本
-              </button>
-            </div>
             {selected.state !== "ready" ? (
               <p className="mt-12px text-sm text-muted-foreground">
                 正式文件尚未保存完成，此版本暂不可下载。请稍后刷新核对。
               </p>
+            ) : null}
+            {selected.state === "ready" && /\.zip$/i.test(selected.name) ? (
+              <CloudChatSiteView
+                key={`site:${selected.id}`}
+                client={client.sites}
+                artifact={selected}
+                openOnMount={props.initialSite}
+                isCurrent={valid}
+                onPreviewChange={(open) => setSitePreviewId(open ? selected.id : "")}
+              />
+            ) : null}
+            {selected.state === "ready" && sitePreviewId !== selected.id && text === null ? (
+              <ResourcePreview
+                key={selected.id}
+                resource={{ ...selected, identity: selected.id }}
+                load={async (signal) => {
+                  const guard = captureAccountRequestGuard();
+                  metadataGuard.current?.();
+                  const result = await client.download(selected, signal);
+                  const assertCurrent = () => {
+                    guard();
+                    result.guard();
+                    if (!valid()) throw new DOMException("预览已关闭", "AbortError");
+                  };
+                  assertCurrent();
+                  return { blob: result.blob, assertCurrent };
+                }}
+                onDownload={() => void download()}
+              />
             ) : null}
             {text !== null ? (
               <>
@@ -435,34 +487,6 @@ export function CloudChatArtifactsPanel(props: Props) {
                   {text}
                 </pre>
               </>
-            ) : null}
-            {image ? (
-              <figure className="mt-16px rounded-xl border border-border bg-muted/20 p-12px">
-                <img
-                  src={image.url}
-                  alt={selected.name}
-                  width={image.width}
-                  height={image.height}
-                  className="mx-auto max-h-[50dvh] w-auto max-w-full object-contain"
-                  onLoad={() => {
-                    try {
-                      image.guard();
-                      if (!valid() && imageURL.current === image.url) clearImage();
-                    } catch {
-                      if (imageURL.current === image.url) clearImage();
-                    }
-                  }}
-                  onError={() => {
-                    if (valid() && imageURL.current === image.url) {
-                      clearImage();
-                      setError("图片未能解码，请下载原件查看。");
-                    }
-                  }}
-                />
-                <figcaption className="mt-8px text-center text-xs text-muted-foreground">
-                  {selected.name} · {image.width} × {image.height}
-                </figcaption>
-              </figure>
             ) : null}
             {confirmDelete ? (
               <div
@@ -539,3 +563,13 @@ export function CloudChatArtifactsPanel(props: Props) {
     </CloudChatResourcePanel>
   );
 }
+
+import {
+  Download,
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  MoreHorizontal,
+  RefreshCw,
+  Trash2,
+} from "@liveagent/ui/components/IconSet";

@@ -1,0 +1,51 @@
+# Add after production/compose.yaml and cloudchat/compose.yaml. Generate the
+# private config first; no host ports, anonymous access or live data migration.
+services:
+  app:
+    environment:
+      ZEROAGENT_OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:18333
+      ZEROAGENT_OBJECT_STORAGE_ALLOW_LOOPBACK_HTTP: "true"
+  seaweedfs:
+    image: chrislusf/seaweedfs@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8
+    restart: unless-stopped
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_started
+    user: "10001:10001"
+    entrypoint: ["/usr/bin/weed", "-logtostderr=true"]
+    command:
+      - server
+      - -dir=/data/volumes
+      - -master.dir=/data/master
+      - -ip=127.0.0.1
+      - -ip.bind=127.0.0.1
+      - -volume.port=18080
+      - -volume.max=0
+      - -master.volumeSizeLimitMB=1024
+      - -filer
+      - -filer.exposeDirectoryData=false
+      - -filer.disableDirListing
+      - -s3
+      - -s3.port=18333
+      - -s3.ip.bind=127.0.0.1
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+      - -s3.readerCacheSizeMB=64
+      - -s3.concurrentUploadLimitMB=128
+    volumes:
+      - ${USA0_DATA_ROOT:-/opt/usa0/data}/zeroagent/seaweedfs:/data
+      - ${SEAWEEDFS_CONFIG_DIR:?generate private SeaweedFS config first}:/etc/seaweedfs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: ${SEAWEEDFS_MEMORY_LIMIT:-2g}
+    cpus: ${SEAWEEDFS_CPUS:-2}
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options: {max-size: 50m, max-file: "5"}

@@ -66,7 +66,8 @@ func (s *MemoryStore) ReserveCloudArtifact(ctx context.Context, userID int64, ow
 			number = other.Number + 1
 		}
 	}
-	if count >= CloudArtifactMaxAccountVersions || used+version.Size > CloudArtifactMaxAccountBytes || number > CloudArtifactMaxFamilyVersions || !s.cloudSpaceQuotaLocked(userID, version.Size) {
+	limits := s.spaceLimitsLocked(userID)
+	if count >= limits.MaxArtifactVersions || version.Size > limits.ArtifactBytes-used || number > CloudArtifactMaxFamilyVersions || !s.cloudSpaceQuotaLocked(userID, version.Size) {
 		return nil, false, ErrCloudArtifactQuota
 	}
 	if !exists {

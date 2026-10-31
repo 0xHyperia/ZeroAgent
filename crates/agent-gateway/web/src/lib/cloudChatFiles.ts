@@ -43,6 +43,9 @@ export type CloudFileSource = {
 };
 
 type Request = (path: string, init?: RequestInit) => Promise<Response>;
+
+export const CLOUD_FILE_ACCEPT =
+  ".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.go,.rs,.java,.c,.cpp,.h,.sh,.sql,.log,.rst,.toml,.ini,.conf,.pdf,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.png,.jpg,.jpeg,.gif,.webp,.svg,.avif,.bmp,.wav,.mp3,.flac,.ogg,.oga,.ogv,.mp4,.m4a,.mov,.webm,.weba,.zip";
 type CaptureGuard = () => () => void;
 export const CLOUD_FILE_MAX_BYTES = 32 * 1024 * 1024;
 export const CLOUD_FILE_CONTEXT_BYTES = 512 * 1024;
@@ -312,6 +315,14 @@ export function cloudFileCanReference(file: CloudChatFile) {
 
 export function cloudFileStatus(file: CloudChatFile): string {
   if (file.state === "vision_ready") return "图片已就绪，可引用";
+  if (
+    file.mime !== "application/zip" &&
+    file.processing_stage === "workspace_only" &&
+    file.state === "uploaded"
+  )
+    return file.workspace_loadable && file.uploaded_at
+      ? "原件可在隔离沙箱读取"
+      : "原件已保存，可预览或下载";
   if (
     file.mime === "application/zip" &&
     file.processing_stage === "workspace_only" &&

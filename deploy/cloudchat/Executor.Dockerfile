@@ -20,7 +20,7 @@ COPY --from=dependencies /build/node_modules ./node_modules
 COPY --from=dependencies /build/crates/cloud-executor/node_modules ./crates/cloud-executor/node_modules
 COPY crates/cloud-executor/package.json ./crates/cloud-executor/package.json
 COPY crates/cloud-executor/src ./crates/cloud-executor/src
-COPY crates/cloud-executor/sandbox/file_broker.py crates/cloud-executor/sandbox/file_parser.py crates/cloud-executor/sandbox/archive_extract.py ./crates/cloud-executor/sandbox/
+COPY crates/cloud-executor/sandbox/file_broker.py crates/cloud-executor/sandbox/file_parser.py crates/cloud-executor/sandbox/archive_extract.py crates/cloud-executor/sandbox/site_bundle.py ./crates/cloud-executor/sandbox/
 COPY deploy/cloudchat/executor-healthcheck.mjs ./executor-healthcheck.mjs
 USER zeroagent
 ENV ZEROAGENT_CLOUD_EXECUTOR_HOST=127.0.0.1 \

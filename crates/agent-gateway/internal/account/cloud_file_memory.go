@@ -85,7 +85,8 @@ func (s *MemoryStore) CreateCloudFile(ctx context.Context, input *CloudFile) (*C
 			usedBytes += other.Size
 		}
 	}
-	if count >= CloudFileMaxAccountFiles || usedBytes+file.Size > CloudFileMaxAccountBytes || !s.cloudSpaceQuotaLocked(file.UserID, file.Size) {
+	limits := s.spaceLimitsLocked(file.UserID)
+	if count >= limits.MaxFiles || file.Size > limits.FileBytes-usedBytes || !s.cloudSpaceQuotaLocked(file.UserID, file.Size) {
 		return nil, ErrCloudFileQuota
 	}
 	s.cloudFiles[file.ID] = cloneCloudFile(*file)

@@ -25,11 +25,11 @@ import (
 	"github.com/liveagent/agent-gateway/internal/objectstore"
 )
 
-type garagePrivateConfig struct {
+type s3AcceptanceConfig struct {
 	Endpoint, Bucket, Region, AccessKeyID, SecretAccessKey, TaskID string
 }
 
-type garageEvidence struct {
+type s3AcceptanceEvidence struct {
 	Phase                 string   `json:"phase"`
 	Passed                []string `json:"passed"`
 	ObjectBytes           int      `json:"object_bytes"`
@@ -39,7 +39,7 @@ type garageEvidence struct {
 	ChineseFilenameSHA256 string   `json:"chinese_filename_sha256"`
 }
 
-func garageDigest(value []byte) string {
+func acceptanceDigest(value []byte) string {
 	digest := sha256.Sum256(value)
 	return hex.EncodeToString(digest[:])
 }
@@ -56,7 +56,7 @@ func TestGarageS3Compatibility(t *testing.T) {
 	if err != nil || len(data) > 16<<10 {
 		t.Fatal("read private Garage test configuration")
 	}
-	var cfg garagePrivateConfig
+	var cfg s3AcceptanceConfig
 	if json.Unmarshal(data, &cfg) != nil {
 		t.Fatal("invalid private Garage test configuration")
 	}
@@ -94,13 +94,13 @@ func TestGarageS3Compatibility(t *testing.T) {
 	for index := range big {
 		big[index] = byte((index*31 + 17) % 251)
 	}
-	ownerA := garageDigest([]byte(cfg.TaskID + ":owner-a"))[:32]
-	ownerB := garageDigest([]byte(cfg.TaskID + ":owner-b"))[:32]
+	ownerA := acceptanceDigest([]byte(cfg.TaskID + ":owner-a"))[:32]
+	ownerB := acceptanceDigest([]byte(cfg.TaskID + ":owner-b"))[:32]
 	keyA := "accounts/" + ownerA + "/acceptance/immutable-original"
 	keyB := "accounts/" + ownerB + "/acceptance/immutable-original"
 	filename := "中文资料-互通验收.txt"
 	encodedName := base64.StdEncoding.EncodeToString([]byte(filename))
-	evidence := garageEvidence{Phase: phase, Passed: []string{"explicit_configuration", "signed_bucket_readiness"}, ObjectBytes: len(big), ObjectSHA256: garageDigest(big), OwnerAKeySHA256: garageDigest([]byte(keyA)), OwnerBKeySHA256: garageDigest([]byte(keyB)), ChineseFilenameSHA256: garageDigest([]byte(filename))}
+	evidence := s3AcceptanceEvidence{Phase: phase, Passed: []string{"explicit_configuration", "signed_bucket_readiness"}, ObjectBytes: len(big), ObjectSHA256: acceptanceDigest(big), OwnerAKeySHA256: acceptanceDigest([]byte(keyA)), OwnerBKeySHA256: acceptanceDigest([]byte(keyB)), ChineseFilenameSHA256: acceptanceDigest([]byte(filename))}
 	if phase == "prepare" {
 		_, err := store.Put(ctx, keyA, bytes.NewReader(big), int64(len(big)), objectstore.PutOptions{ContentType: "application/octet-stream", SHA256: evidence.ObjectSHA256, Metadata: map[string]string{"display-name-utf8-base64": encodedName, "owner-scope": ownerA}})
 		if err != nil {
@@ -171,7 +171,7 @@ func TestGarageS3Compatibility(t *testing.T) {
 			t.Fatal("delete second test object")
 		}
 		evidence.Passed = append(evidence.Passed, "delete_and_404", "distinct_owner_keys_survive_other_deletion")
-		garageCloudFileHTTP(t, store, cfg, &evidence)
+		cloudFileHTTPStorageContract(t, store, cfg, &evidence)
 	}
 	output := os.Getenv("ZEROAGENT_GARAGE_TEST_EVIDENCE_FILE")
 	if output == "" {
@@ -187,7 +187,7 @@ func TestGarageS3Compatibility(t *testing.T) {
 	t.Logf("real Garage phase=%s verified_bytes=%d sha256=%s", phase, len(big), evidence.ObjectSHA256)
 }
 
-func garageCloudFileHTTP(t *testing.T, objects *objectstore.S3Store, cfg garagePrivateConfig, evidence *garageEvidence) {
+func cloudFileHTTPStorageContract(t *testing.T, objects *objectstore.S3Store, cfg s3AcceptanceConfig, evidence *s3AcceptanceEvidence) {
 	t.Helper()
 	ctx := context.Background()
 	metadata := account.NewMemoryStore()
@@ -268,7 +268,7 @@ func garageCloudFileHTTP(t *testing.T, objects *objectstore.S3Store, cfg garageP
 	var result struct {
 		File *account.CloudFile `json:"file"`
 	}
-	if json.Unmarshal(data, &result) != nil || result.File == nil || result.File.Name != filename || result.File.State != account.CloudFileReady || result.File.SHA256 != garageDigest(original) {
+	if json.Unmarshal(data, &result) != nil || result.File == nil || result.File.Name != filename || result.File.State != account.CloudFileReady || result.File.SHA256 != acceptanceDigest(original) {
 		t.Fatal("real S3 canonical file response lost name, ready state, or digest")
 	}
 	file := result.File

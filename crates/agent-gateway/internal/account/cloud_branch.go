@@ -136,7 +136,10 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 		m.ID = uuid.NewString()
 		m.ConversationID = conversation.ID
 		m.UserID = source.UserID
-		m.CreatedAt = now.Add(-time.Duration(cut-i) * time.Microsecond)
+		// PostgreSQL stores microseconds and rounds half-microsecond inputs to
+		// even instants. Align first so adjacent clones cannot collapse and
+		// acquire a random UUID order after a database round trip.
+		m.CreatedAt = now.Truncate(time.Microsecond).Add(-time.Duration(cut-i) * time.Microsecond)
 		m.Content = append(json.RawMessage(nil), m.Content...)
 		m.Usage = append(json.RawMessage(nil), m.Usage...)
 		clones = append(clones, m)

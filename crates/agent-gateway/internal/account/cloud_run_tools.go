@@ -147,6 +147,9 @@ func (e *cloudRunToolExecution) schemas() []map[string]any {
 	if _, ok := any(e.runtime.service).(cloudToolArtifactPublisher); ok {
 		if _, err := e.runtime.service.cloudFileProvider(); err == nil {
 			tools = append(tools, cloudToolFunction("publish_artifact", "Publish a sandbox file to durable account storage. Only a successful ready result is downloadable; cite its immutable version ID as 【成果:VERSION_ID】, never invent a link. Supply the owned family_id to save a new version of an existing artifact.", map[string]any{"path": cloudToolString("Relative workspace file path."), "name": cloudToolString("Download filename."), "mime": cloudToolString("Optional MIME type."), "family_id": cloudToolString("Optional owned artifact family UUID for a new immutable version.")}, "path", "name"))
+			if _, err := e.runtime.service.siteProvider(); err == nil {
+				tools = append(tools, cloudToolFunction("publish_site", "Save a built static website directory as a private durable site version. Build first using workspace tools; use index.html, bundled local assets and relative base './'. This packages only the selected subdirectory, never the whole workspace. Hidden configuration, links, node_modules and server code are rejected. Cite a successful ready artifact as 【成果:VERSION_ID】. It does not create a public link; the user controls sharing. Supply the owned family_id to continue an existing site.", map[string]any{"path": cloudToolString("Selected relative build output directory, for example project/dist; not '.' or the workspace root."), "name": cloudToolString("Download filename ending in .zip."), "family_id": cloudToolString("Optional owned artifact family UUID for a new immutable site version.")}, "path", "name"))
+			}
 		}
 	}
 	if _, ok := any(e.runtime.service).(cloudToolWorkspaceLoader); ok {
@@ -195,6 +198,7 @@ type cloudToolInvocation struct {
 	artifact *struct{ Path, Name, MIME, FamilyID string }
 	load     *struct{ FileID, ArtifactVersionID, Path string }
 	archive  *struct{ Path, Destination string }
+	site     *struct{ Path, Name, FamilyID string }
 }
 
 func parseCloudToolInvocation(call cloudModelToolCall) (cloudToolInvocation, error) {
@@ -315,6 +319,28 @@ func parseCloudToolInvocation(call cloudModelToolCall) (cloudToolInvocation, err
 		invocation.artifact = &struct{ Path, Name, MIME, FamilyID string }{args.Path, args.Name, args.MIME, args.FamilyID}
 		invocation.input = map[string]any{"path": args.Path, "name": args.Name, "mime": args.MIME, "family_id": args.FamilyID}
 		invocation.timeout = 2 * time.Minute
+	case "publish_site":
+		var args struct {
+			Path     string `json:"path"`
+			Name     string `json:"name"`
+			FamilyID string `json:"family_id"`
+		}
+		if err := decodeCloudToolArguments(call.Arguments, &args); err != nil {
+			return invocation, err
+		}
+		if !cloudexecutor.ValidSiteSourcePath(args.Path) || !validCloudFileName(args.Name) || !strings.HasSuffix(strings.ToLower(args.Name), ".zip") {
+			return invalid()
+		}
+		if args.FamilyID != "" {
+			family, err := uuid.Parse(args.FamilyID)
+			if err != nil {
+				return invalid()
+			}
+			args.FamilyID = family.String()
+		}
+		invocation.site = &struct{ Path, Name, FamilyID string }{args.Path, args.Name, args.FamilyID}
+		invocation.input = map[string]any{"path": args.Path, "name": args.Name, "family_id": args.FamilyID}
+		invocation.timeout = 2 * time.Minute
 	case "load_uploaded_file":
 		var args struct {
 			FileID            string `json:"file_id"`
@@ -361,6 +387,8 @@ func (e *cloudRunToolExecution) emit(ctx context.Context, operation *CloudToolOp
 			status = "正在写入工作区文件"
 		case "publish_artifact":
 			status = "正在保存成果"
+		case "publish_site":
+			status = "正在保存站点"
 		case "load_uploaded_file":
 			status = "正在载入工作文件"
 		case "extract_archive":
@@ -715,6 +743,9 @@ func (e *cloudRunToolExecution) execute(ctx context.Context, round int, call clo
 	toolCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	var receipt cloudexecutor.Receipt
+	if invocation.site != nil {
+		return e.executeSite(toolCtx, round, call, op, binding, invocation.site.Path, invocation.site.Name, invocation.site.FamilyID)
+	}
 	if invocation.archive != nil {
 		return e.executeArchive(toolCtx, round, call, op, binding, invocation.archive.Path, invocation.archive.Destination)
 	}

@@ -1,3 +1,6 @@
+import { previewImageDimensions } from "@liveagent/ui/components/resource-preview/previewImageDimensions";
+import { createCloudChatSitesClient } from "./cloudChatSites";
+
 export type CloudChatArtifactVersion = {
   id: string;
   family_id: string;
@@ -172,6 +175,7 @@ export function createCloudChatArtifactsClient(request: Request, captureGuard: C
     return { ...result, guard };
   }
   return {
+    sites: createCloudChatSitesClient(request, captureGuard),
     async list(
       options: {
         conversationId?: string;
@@ -300,44 +304,7 @@ export function cloudArtifactCanPreviewImage(version: CloudChatArtifactVersion) 
   );
 }
 export function cloudArtifactImageDimensions(bytes: Uint8Array, mime: string) {
-  let width = 0,
-    height = 0;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (
-    mime === "image/png" &&
-    bytes.length >= 33 &&
-    [137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value) &&
-    view.getUint32(8) === 13 &&
-    String.fromCharCode(...bytes.subarray(12, 16)) === "IHDR"
-  ) {
-    width = view.getUint32(16);
-    height = view.getUint32(20);
-  } else if (mime === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8) {
-    let position = 2;
-    while (position + 8 < bytes.length && position < 256 * 1024) {
-      if (bytes[position++] !== 0xff) break;
-      while (bytes[position] === 0xff) position++;
-      const marker = bytes[position++];
-      if (marker === 0xda || marker === 0xd9 || position + 2 > bytes.length) break;
-      if (marker === 0x01 || marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) continue;
-      const size = view.getUint16(position);
-      if (size < 2 || position + size > bytes.length) break;
-      if (
-        [0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(
-          marker,
-        ) &&
-        size >= 8
-      ) {
-        height = view.getUint16(position + 3);
-        width = view.getUint16(position + 5);
-        break;
-      }
-      position += size;
-    }
-  }
-  if (!width || !height || width > 8192 || height > 8192 || width * height > 16_000_000)
-    throw new Error("图片格式或尺寸不适合当前预览，请下载原件查看。");
-  return { width, height };
+  return previewImageDimensions(bytes, mime);
 }
 export function cloudArtifactStatus(version: CloudChatArtifactVersion) {
   return {

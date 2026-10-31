@@ -97,7 +97,11 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 		return nil, err
 	}
 	defer tx.Rollback()
-	if err = cloudSpaceQuotaTx(ctx, tx, file.UserID, file.Size); err != nil {
+	if err = lockSpaceWrite(ctx, tx, file.UserID); err != nil {
+		return nil, err
+	}
+	limits, err := cloudSpaceQuotaTx(ctx, tx, file.UserID, file.Size)
+	if err != nil {
 		return nil, err
 	}
 	// Account-scoped quota serialization works across Gateway processes. Failed
@@ -110,7 +114,7 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(size),0) FROM zeroagent_cloud_files WHERE user_id=$1 AND state<>'deleted'`, file.UserID).Scan(&count, &usedBytes); err != nil {
 		return nil, err
 	}
-	if count >= CloudFileMaxAccountFiles || usedBytes+file.Size > CloudFileMaxAccountBytes {
+	if count >= limits.MaxFiles || file.Size > limits.FileBytes-usedBytes {
 		return nil, ErrCloudFileQuota
 	}
 	var conversationID string
@@ -217,6 +221,9 @@ func (s *PersistentStore) UpdateCloudFile(ctx context.Context, userID int64, id 
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
+		return nil, err
+	}
 	file, err := scanCloudFile(tx.QueryRowContext(ctx, "SELECT "+cloudFileColumns+" FROM zeroagent_cloud_files f WHERE f.id=$1 AND f.user_id=$2 FOR UPDATE", id, userID))
 	if err != nil {
 		return nil, err

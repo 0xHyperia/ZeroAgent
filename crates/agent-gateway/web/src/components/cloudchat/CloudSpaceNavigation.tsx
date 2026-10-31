@@ -2,6 +2,7 @@ import {
   BookOpen,
   FileText,
   FolderClosed,
+  Globe,
   ImageIcon,
   Layers,
   Search,
@@ -37,7 +38,7 @@ export function CloudSpaceNavigation(props: {
     const controller = new AbortController();
     setFailed(false);
     void client
-      .list(CLOUD_SPACE_HOME, "", "updated", 0, controller.signal)
+      .list(CLOUD_SPACE_HOME, "", "updated", "", controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) setPage(data);
       })
@@ -50,6 +51,7 @@ export function CloudSpaceNavigation(props: {
     { id: "all", label: "全部资料", Icon: Layers },
     { id: "documents", label: "文档与文件", Icon: FileText },
     { id: "images", label: "图像", Icon: ImageIcon },
+    { id: "sites", label: "站点", Icon: Globe },
     { id: "uploads", label: "我的上传", Icon: Upload },
     { id: "outputs", label: "工作产出", Icon: BookOpen },
   ] as const;

@@ -42,6 +42,8 @@ func cloudPublicToolStatus(name string) string {
 		return "正在保存工作文件"
 	case "publish_artifact":
 		return "正在保存可下载成果"
+	case "publish_site":
+		return "正在保存站点"
 	case "web_search":
 		return "正在搜索资料"
 	case "fetch_page":
@@ -272,7 +274,7 @@ func (s *PersistentStore) ListCloudRunActiveTools(ctx context.Context, userID in
 	if _, err := s.GetCloudRunHead(ctx, userID, runID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT o.id::text,o.name,o.state FROM zeroagent_cloud_tool_operations o JOIN zeroagent_cloud_runs r ON r.id=o.run_id AND r.user_id=o.user_id WHERE o.user_id=$1 AND o.run_id=$2 AND r.state IN ('queued','running','cancelling') AND o.state IN ('prepared','executing','unknown') AND o.name IN ('execute_code','execute_command','read_file','write_file','publish_artifact','web_search','fetch_page','read_source','load_uploaded_file','read_history','extract_archive') ORDER BY o.updated_at DESC,o.id LIMIT 8`, userID, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT o.id::text,o.name,o.state FROM zeroagent_cloud_tool_operations o JOIN zeroagent_cloud_runs r ON r.id=o.run_id AND r.user_id=o.user_id WHERE o.user_id=$1 AND o.run_id=$2 AND r.state IN ('queued','running','cancelling') AND o.state IN ('prepared','executing','unknown') AND o.name IN ('execute_code','execute_command','read_file','write_file','publish_artifact','publish_site','web_search','fetch_page','read_source','load_uploaded_file','read_history','extract_archive') ORDER BY o.updated_at DESC,o.id LIMIT 8`, userID, runID)
 	if err != nil {
 		return nil, err
 	}

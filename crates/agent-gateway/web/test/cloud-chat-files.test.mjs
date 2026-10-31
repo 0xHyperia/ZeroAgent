@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createTsModuleLoader } from "../../../agent-gui/test/helpers/load-ts-module.mjs";
+import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const ID="11111111-1111-4111-8111-111111111111";
 const CONV="22222222-2222-4222-8222-222222222222";
@@ -94,4 +95,55 @@ test("a server-verified original can be loaded in an isolated workspace without 
  }
  for(const data of [{uploaded_at:undefined},{state:"deleted"},{state:"deleting"},{state:"uploading"}])assert.equal(api.cloudFileCanReference(record({state:"uploaded",workspace_loadable:true,...data})),false);
  const client=api.createCloudChatFilesClient(async()=>Response.json({file:record({workspace_loadable:"yes"})}),safe);await assert.rejects(client.get(ID),/无效/);
+});
+
+async function mountReader(t, {fromLine, attachResult=false}={}) {
+ let env,closed=0;const attached=[];
+ const capture=()=>()=>undefined;
+ const icons=new Proxy({},{get:()=>()=>null});
+ const mocks={
+  "@liveagent/ui/components/IconSet":icons,
+  [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,
+  "@/lib/accountRequest":{captureAccountRequestGuard:capture},
+  "@liveagent/ui/components/resource-preview/ResourcePreview":{ResourcePreview:()=>env.React.createElement("div",{"data-file-preview":""},"文件正文")},
+  [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.title,props.subtitle,props.headerActions),props.children)},
+ };
+ env=await createWebDomTestEnv({mocks});
+ const {CloudChatFilePanel}=env.loadModule("src/components/CloudChatFilePanel.tsx");
+ const client={get:async()=>record(),source:async()=>({from_line:fromLine??1,to_line:3,total_lines:3,lines:[{line:fromLine??1,text:"资料原文"}]}),download:async()=>{throw new Error("unexpected download");}};
+ const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ await env.act(async()=>{root.render(env.React.createElement(CloudChatFilePanel,{client,initialFileId:ID,fromLine,canAttach:true,isCurrent:()=>true,onClose:()=>closed++,onAttach:file=>{attached.push(file.id);return attachResult;},onDeleted(){},onError(){}}));await flush();});
+ t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
+ return {env,host,client,attached,get closed(){return closed;},set attachResult(value){attachResult=value;},async click(label){const button=[...host.querySelectorAll("button")].find(item=>item.textContent===label);assert.ok(button,label);await env.act(async()=>{button.click();await flush();});}};
+}
+
+test("a rejected file reference stays in the reader with local feedback; a successful reference closes it",async t=>{
+ const app=await mountReader(t);
+ assert.ok(app.host.querySelector("header button"),"file actions remain beside the title");
+ await app.click("引用到消息");assert.deepEqual(app.attached,[ID]);assert.equal(app.closed,0);assert.match(app.host.querySelector('[role="alert"]').textContent,/未能添加引用/);assert.ok(app.host.querySelector("[data-file-preview]"));
+ app.attachResult=undefined;await app.click("引用到消息");assert.equal(app.closed,1,"existing void-returning hosts remain compatible");
+});
+
+test("file source is collapsed for ordinary reading and opened for an explicit line citation",async t=>{
+ const app=await mountReader(t);assert.equal(app.host.querySelector("details").open,false);
+ await app.env.act(async()=>{app.host.querySelector('[aria-label="文件更多操作"]').click();await new Promise(resolve=>setImmediate(resolve));});
+ const source=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent==="查看原文");assert.ok(source);
+ await app.env.act(async()=>{source.click();await new Promise(resolve=>setImmediate(resolve));});assert.equal(app.host.querySelector("details").open,true);
+});
+
+test("opening a cited file keeps the requested original lines expanded",async t=>{
+ const app=await mountReader(t,{fromLine:2});assert.equal(app.host.querySelector("details").open,true);assert.match(app.host.querySelector("summary").textContent,/第 2–3 行/);
+});
+
+
+test("refreshing the same original keeps its existing preview during the metadata read",async t=>{
+ const app=await mountReader(t);const preview=app.host.querySelector("[data-file-preview]");let finish;
+ app.client.get=()=>new Promise(resolve=>{finish=()=>resolve(record());});
+ await app.env.act(async()=>{app.host.querySelector('[aria-label="文件更多操作"]').click();await new Promise(resolve=>setImmediate(resolve));});
+ const refresh=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent==="刷新状态");
+ await app.env.act(async()=>{refresh.click();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(app.host.querySelector("[data-file-preview]"),preview,"pending metadata must not retire the reading canvas");
+ await app.env.act(async()=>{finish();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(app.host.querySelector("[data-file-preview]"),preview);
 });

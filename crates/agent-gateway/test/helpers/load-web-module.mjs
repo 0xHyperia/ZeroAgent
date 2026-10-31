@@ -3,9 +3,26 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { transpileTypeScriptModule } from "../../../../scripts/typescript-source-tools.mjs";
+import { parseTypeScriptSource, transpileTypeScriptModule, walkSyntaxTree } from "../../../../scripts/typescript-source-tools.mjs";
 
 const DEFAULT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".css"];
+
+// A vm.Script has no ESM resolver. Keep lazy component imports asynchronous while
+// resolving them through this loader's same React instance and scoped mocks.
+function resolveTestDynamicImports(source, filePath) {
+  if (!/\bimport\s*\(/.test(source)) return source;
+  const spans = [];
+  walkSyntaxTree(parseTypeScriptSource(source, filePath), node => {
+    if (node.type === "CallExpression" && node.callee.type === "Import" &&
+      node.arguments.length === 1 && node.arguments[0].type === "StringLiteral") {
+      const specifier = source.slice(node.arguments[0].start, node.arguments[0].end);
+      spans.push([node.start, node.end, `Promise.resolve().then(() => require(${specifier}))`]);
+    }
+  });
+  for (const [start, end, replacement] of spans.sort((a,b) => b[0]-a[0]))
+    source = source.slice(0, start) + replacement + source.slice(end);
+  return source;
+}
 
 function createDefaultMocks() {
   return {
@@ -200,7 +217,8 @@ export function createWebModuleLoader(options = {}) {
     }
 
     const source = fs.readFileSync(filePath, "utf8");
-    const outputText = transpileTypeScriptModule(source, filePath);
+    const compiledText = transpileTypeScriptModule(source, filePath);
+    const outputText = options.resolveDynamicImports ? resolveTestDynamicImports(compiledText, filePath) : compiledText;
 
     const module = { exports: {} };
     cache.set(filePath, module);

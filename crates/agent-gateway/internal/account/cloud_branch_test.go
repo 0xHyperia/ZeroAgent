@@ -56,7 +56,7 @@ func runCloudBranchContract(t *testing.T, fixture cloudRunTestFixture) {
 			}
 			for i, m := range prefix {
 				if m.ID == messages[i].ID || m.ConversationID != branch.Conversation.ID || string(m.Content) != string(messages[i].Content) {
-					t.Fatal("branch mutated or reused original message")
+					t.Fatalf("branch %s clone %d mismatch: id=%s original=%s conversation=%s want=%s content=%q want=%q time=%s", action, i, m.ID, messages[i].ID, m.ConversationID, branch.Conversation.ID, m.Content, messages[i].Content, m.CreatedAt.Format(time.RFC3339Nano))
 				}
 			}
 			if action == "edit" && string(branch.DraftContent) != `"改写问题"` {

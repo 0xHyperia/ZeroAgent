@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/liveagent/agent-gateway/internal/cloudexecutor"
+	"github.com/liveagent/agent-gateway/internal/cloudsite"
 	"github.com/liveagent/agent-gateway/internal/objectstore"
 )
 
@@ -102,7 +103,17 @@ func (s *Service) authorizeCloudArtifact(ctx context.Context, userID int64, pub 
 	if err != nil {
 		return nil, err
 	}
-	if op.Name != "publish_artifact" || op.RunID != run.ID || op.ConversationID != run.ConversationID || op.State != CloudToolExecuting || op.ExecutionAttempt != pub.ExecutionAttempt {
+	toolName, sourcePath := "publish_artifact", pub.Path
+	if pub.SiteSourcePath != "" {
+		toolName, sourcePath = "publish_site", pub.SiteSourcePath
+		if !cloudexecutor.ValidSiteSourcePath(sourcePath) || pub.Path != cloudexecutor.SiteBundlePath(pub.ToolOperationID) || pub.MIME != "application/zip" || !strings.HasSuffix(strings.ToLower(pub.Name), ".zip") {
+			return nil, ErrCloudArtifactInvalid
+		}
+		if _, err := s.siteProvider(); err != nil {
+			return nil, err
+		}
+	}
+	if op.Name != toolName || op.RunID != run.ID || op.ConversationID != run.ConversationID || op.State != CloudToolExecuting || op.ExecutionAttempt != pub.ExecutionAttempt {
 		return nil, ErrCloudArtifactConflict
 	}
 	var input struct {
@@ -111,7 +122,7 @@ func (s *Service) authorizeCloudArtifact(ctx context.Context, userID int64, pub 
 		MIME     string `json:"mime"`
 		FamilyID string `json:"family_id"`
 	}
-	if json.Unmarshal(op.Input, &input) != nil || input.Path != pub.Path || input.Name != pub.Name || input.FamilyID != pub.FamilyID || (input.MIME != "" && pub.MIME != "" && input.MIME != pub.MIME) {
+	if json.Unmarshal(op.Input, &input) != nil || input.Path != sourcePath || input.Name != pub.Name || input.FamilyID != pub.FamilyID || (input.MIME != "" && pub.MIME != "" && input.MIME != pub.MIME) {
 		return nil, ErrCloudArtifactConflict
 	}
 	binding, err := tools.GetCloudWorkspace(ctx, userID, pub.ConversationID)
@@ -126,7 +137,11 @@ func (s *Service) authorizeCloudArtifact(ctx context.Context, userID int64, pub 
 func artifactPublicationHash(pub CloudArtifactPublication) string {
 	// Only the semantic request and its server-authorized resource binding enter
 	// the fingerprint; VM-derived size/digest are independently recorded later.
-	data, _ := json.Marshal([]any{pub.ConversationID, pub.RunID, pub.ToolOperationID, pub.FamilyID, pub.Name, pub.MIME, pub.WorkspaceRef, pub.SandboxID, pub.Path})
+	fields := []any{pub.ConversationID, pub.RunID, pub.ToolOperationID, pub.FamilyID, pub.Name, pub.MIME, pub.WorkspaceRef, pub.SandboxID, pub.Path}
+	if pub.SiteSourcePath != "" {
+		fields = append(fields, "site-v1", pub.SiteSourcePath)
+	}
+	data, _ := json.Marshal(fields)
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
 }
@@ -300,6 +315,16 @@ func (s *Service) PublishCloudArtifact(ctx context.Context, userID int64, pub Cl
 	if _, err = staged.Seek(0, io.SeekStart); err != nil {
 		return nil, objectstore.ErrUnavailable
 	}
+	var siteManifest *cloudsite.Manifest
+	if pub.SiteSourcePath != "" {
+		siteManifest, err = cloudsite.Inspect(staged, info.Size, "index.html")
+		if err != nil {
+			return nil, err
+		}
+		if _, err = staged.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
 	if _, err = s.authorizeCloudArtifact(ctx, userID, pub); err != nil {
 		return nil, err
 	}
@@ -319,6 +344,18 @@ func (s *Service) PublishCloudArtifact(ctx context.Context, userID int64, pub Cl
 	}
 	if _, err = s.authorizeCloudArtifact(ctx, userID, pub); err != nil {
 		return nil, err
+	}
+	if siteManifest != nil {
+		sites, err := s.siteProvider()
+		if err != nil {
+			return nil, err
+		}
+		// Prepare the verified manifest before the canonical ready transition.
+		// Public reads and grants still reject the staging source. Failure cannot
+		// expose a ready site with no durable release metadata.
+		if _, err = sites.store.PrepareCloudSiteRelease(ctx, userID, version.ID, version.Version, pub.LeaseOwner, pub.ExecutionAttempt, *siteManifest); err != nil {
+			return nil, err
+		}
 	}
 	ready, err := store.UpdateCloudArtifact(ctx, userID, version.ID, version.Version, pub.LeaseOwner, pub.ExecutionAttempt, CloudArtifactUpdate{State: CloudArtifactReady})
 	if err != nil {

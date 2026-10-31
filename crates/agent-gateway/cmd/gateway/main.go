@@ -18,6 +18,7 @@ import (
 	"github.com/liveagent/agent-gateway/internal/account"
 	"github.com/liveagent/agent-gateway/internal/cloudexecutor"
 	"github.com/liveagent/agent-gateway/internal/cloudresearch"
+	"github.com/liveagent/agent-gateway/internal/cloudsite"
 	"github.com/liveagent/agent-gateway/internal/config"
 	"github.com/liveagent/agent-gateway/internal/objectstore"
 	"github.com/liveagent/agent-gateway/internal/observability"
@@ -81,6 +82,7 @@ func main() {
 	runContext, stopRuns := context.WithCancel(context.Background())
 	defer stopRuns()
 	var waitMaintenance func()
+	var siteConfig *cloudsite.Config
 	if !managedDesktop {
 		runtimeConfig, runtimeConfigErr := account.CloudRuntimeConfigFromEnv()
 		if runtimeConfigErr != nil {
@@ -114,6 +116,13 @@ func main() {
 			}
 		} else {
 			slog.Info("cloud object storage disabled", "missing", objects.Status().Missing)
+		}
+		siteConfig, err = cloudsite.ConfigFromEnv(os.Getenv, cfg.PublicOrigin)
+		if err != nil {
+			fatal("invalid isolated site hosting configuration")
+		}
+		if err := accountService.SetCloudSiteConfig(siteConfig); err != nil {
+			fatal("site hosting startup failed")
 		}
 		executorURL := strings.TrimSpace(os.Getenv("ZEROAGENT_CLOUD_EXECUTOR_URL"))
 		executorToken := os.Getenv("ZEROAGENT_CLOUD_EXECUTOR_TOKEN")
@@ -232,7 +241,24 @@ func main() {
 		BaseContext:       func(net.Listener) context.Context { return runContext },
 	}
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
+	var siteServer *http.Server
+	if siteConfig != nil {
+		// This listener has no account router, cookies or object-store endpoint.
+		// A separate HTTPS wildcard domain is terminated by the reverse proxy.
+		siteServer = &http.Server{Addr: siteConfig.ListenAddr, Handler: accountService.CloudSiteContentHandler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return runContext }}
+		listener, err := net.Listen("tcp", siteConfig.ListenAddr)
+		if err != nil {
+			fatal("isolated site listener startup failed")
+		}
+		defer listener.Close()
+		go func() {
+			if err := siteServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- errors.New("isolated site listener stopped")
+			}
+		}()
+		slog.Info("isolated site content listener configured")
+	}
 
 	go func() {
 		slog.Info("HTTP listening", "addr", cfg.HTTPAddr)
@@ -278,6 +304,11 @@ func main() {
 
 	if err := httpServer.Shutdown(ctx); err != nil {
 		slog.Warn("http shutdown error", "err", err)
+	}
+	if siteServer != nil {
+		if err := siteServer.Shutdown(ctx); err != nil {
+			slog.Warn("site content shutdown incomplete")
+		}
 	}
 	if closeAccountStore != nil {
 		if err := closeAccountStore(); err != nil {

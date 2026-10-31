@@ -70,6 +70,9 @@ type CloudArtifactPublication struct {
 	Size             int64
 	SHA256           string
 	TransferID       string
+	// Only publish_site may supply this selected source directory. Path is then
+	// the server-derived ZIP destination, not a model-selected extra file.
+	SiteSourcePath string
 }
 type CloudArtifactUpdate struct {
 	State     string

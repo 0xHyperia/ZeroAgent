@@ -2,7 +2,13 @@ import { createHmac } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { CommandExitError, Sandbox, type SandboxInfo, SandboxNotFoundError } from "e2b";
 import type { Adapter, Context } from "./adapter.ts";
-import { archiveInput, brokerCommand, brokerInput, parserInput } from "./file-broker.ts";
+import {
+  archiveInput,
+  brokerCommand,
+  brokerInput,
+  parserInput,
+  siteBundleInput,
+} from "./file-broker.ts";
 import { type Config, Fault, type Operation, scopeHash } from "./protocol.ts";
 import { sanitizeSdkEnvironment, sdkOptions } from "./sdk-options.ts";
 
@@ -52,6 +58,15 @@ function brokerError(value: unknown): string {
     "archive_invalid",
     "archive_failed",
     "archive_timeout",
+    "unsafe_site_entry",
+    "site_entries_limit",
+    "site_expansion_limit",
+    "site_entry_missing",
+    "site_atomic_publish_unavailable",
+    "site_destination_exists",
+    "site_archive_limit",
+    "site_bundle_timeout",
+    "site_bundle_failed",
   ];
   return typeof value === "string" && allowed.includes(value) ? value : "sandbox_file_error";
 }
@@ -273,6 +288,22 @@ export class E2BAdapter implements Adapter {
         invocation.input,
       );
       if (output.exit_code !== 0) throw new Fault("archive_failed", 502, true);
+      const parsed = JSON.parse(String(output.stdout));
+      if (parsed.error) throw new Fault(brokerError(parsed.error), 409, !!parsed.uncertain);
+      return { sandbox_id: id, ...parsed };
+    }
+    if (op.action === "site.bundle") {
+      const invocation = siteBundleInput({ ...op.input, root: this.config.workspaceRoot });
+      const output = await this.command(
+        sandbox,
+        invocation.command,
+        40_000,
+        context.signal,
+        4096,
+        this.config.workspaceRoot,
+        invocation.input,
+      );
+      if (output.exit_code !== 0) throw new Fault("site_bundle_failed", 502, true);
       const parsed = JSON.parse(String(output.stdout));
       if (parsed.error) throw new Fault(brokerError(parsed.error), 409, !!parsed.uncertain);
       return { sandbox_id: id, ...parsed };

@@ -19,6 +19,7 @@ export const actions = [
   "file.download.chunk",
   "file.parse",
   "archive.extract",
+  "site.bundle",
 ] as const;
 export type Action = (typeof actions)[number];
 export type Scope = { owner_scope: string; workspace_ref: string };
@@ -144,8 +145,25 @@ export function operation(value: unknown, config: Config): Operation {
     "file.download.chunk": ["path", "offset", "max_bytes", "expected_sha256"],
     "file.parse": ["path", "output_path", "format", "source_sha256"],
     "archive.extract": ["path", "destination", "source_sha256"],
+    "site.bundle": ["path", "output_path"],
   };
   only(input, allowed[action]);
+  if (action === "site.bundle") {
+    const path = archivePath(input.path);
+    if (
+      path
+        .split("/")
+        .some((part) => part.startsWith(".") || part.toLowerCase() === "node_modules") ||
+      path.split("/")[0] === "site-bundles" ||
+      /[%?#\p{Cf}]/u.test(path)
+    )
+      throw new Fault("invalid_path");
+    if (
+      typeof input.output_path !== "string" ||
+      !/^site-bundles\/[a-f0-9]{64}\.zip$/.test(input.output_path)
+    )
+      throw new Fault("invalid_path");
+  }
   if (action === "archive.extract") {
     archivePath(input.path);
     archivePath(input.destination);

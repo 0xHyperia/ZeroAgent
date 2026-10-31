@@ -133,8 +133,8 @@ func (h *HTTPHandler) downloadCloudArtifact(w http.ResponseWriter, r *http.Reque
 	}
 	cloudFileResponseHeaders(w, nil)
 	w.Header().Set("Content-Type", version.MIME)
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": version.Name}))
-	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	http.ServeContent(w, r, version.Name, version.CreatedAt, cloudFileDownloadReader{ReadSeeker: staged, valid: valid})
 }

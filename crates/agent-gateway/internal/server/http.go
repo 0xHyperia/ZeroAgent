@@ -111,8 +111,16 @@ func NewHTTPServerWithReadiness(
 		if err == nil {
 			if stat, statErr := file.Stat(); statErr == nil && !stat.IsDir() {
 				_ = file.Close()
-				if strings.HasPrefix(cleanPath, "assets/") {
+				if strings.HasPrefix(cleanPath, "assets/") || strings.HasPrefix(cleanPath, "resource-preview/pdf/") {
 					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
+				// The Windows MIME registry can classify .mjs as text/plain,
+				// preventing module workers. These are packaged app assets.
+				switch path.Ext(cleanPath) {
+				case ".mjs", ".js":
+					w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+				case ".wasm":
+					w.Header().Set("Content-Type", "application/wasm")
 				}
 				fileServer.ServeHTTP(w, r)
 				return

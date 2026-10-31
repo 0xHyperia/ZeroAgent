@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
+import { resourcePreviewAssets } from "../../../scripts/vite-resource-preview-assets.mjs";
 
 const DEFAULT_PROXY_API = "http://127.0.0.1:50052";
 const packageJson = JSON.parse(
@@ -22,7 +23,7 @@ function resolveProxyTarget() {
 export default defineConfig(({ mode }) => ({
   base: mode === "embedded-desktop" ? "/remote-device/" : "/",
   publicDir: mode === "embedded-desktop" ? false : "public",
-  plugins: [react(), Icons({ compiler: "jsx", jsx: "react" })],
+  plugins: [react(), Icons({ compiler: "jsx", jsx: "react" }), resourcePreviewAssets()],
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: {

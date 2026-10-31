@@ -37,6 +37,8 @@ type CloudSpaceItem struct {
 	State          string `json:"state"`
 	ConversationID string `json:"conversation_id"`
 	Versions       int    `json:"versions"`
+	SiteVersionID  string `json:"site_version_id,omitempty"`
+	sortName       string
 }
 type CloudSpaceUsage struct {
 	UsedBytes            int64 `json:"used_bytes"`
@@ -48,6 +50,8 @@ type CloudSpaceUsage struct {
 	FileCount            int   `json:"file_count"`
 	ArtifactVersionCount int   `json:"artifact_version_count"`
 	TrashBytes           int64 `json:"trash_bytes"`
+	FileLimitCount       int   `json:"file_limit_count"`
+	ArtifactLimitCount   int   `json:"artifact_limit_count"`
 }
 type CloudSpaceSnapshot struct {
 	Items []CloudSpaceItem `json:"items"`
@@ -55,20 +59,22 @@ type CloudSpaceSnapshot struct {
 }
 type CloudSpaceStore interface {
 	ReadCloudSpace(context.Context, int64) (*CloudSpaceSnapshot, error)
+	QueryCloudSpace(context.Context, int64, CloudSpaceQuery) (*CloudSpacePage, error)
 	PutCloudSpaceMetadata(context.Context, int64, CloudSpaceMetadata) (*CloudSpaceMetadata, error)
 }
 type cloudSpaceRecords struct {
 	files     []CloudFile
 	artifacts []CloudArtifactVersion
+	sites     map[string]CloudSiteRelease
 	metadata  []CloudSpaceMetadata
-	limit     int64
+	limits    CloudSpaceLimits
 }
 
 func (r cloudSpaceRecords) snapshot() *CloudSpaceSnapshot {
-	out := &CloudSpaceSnapshot{Items: []CloudSpaceItem{}, Usage: CloudSpaceUsage{LimitBytes: r.limit, FileLimitBytes: CloudFileMaxAccountBytes, ArtifactLimitBytes: CloudArtifactMaxAccountBytes}}
-	if out.Usage.LimitBytes == 0 {
-		out.Usage.LimitBytes = CloudSpaceDefaultBytes
+	if r.limits.TotalBytes == 0 {
+		r.limits = defaultSpaceLimits()
 	}
+	out := &CloudSpaceSnapshot{Items: []CloudSpaceItem{}, Usage: CloudSpaceUsage{LimitBytes: r.limits.TotalBytes, FileLimitBytes: r.limits.FileBytes, ArtifactLimitBytes: r.limits.ArtifactBytes, FileLimitCount: r.limits.MaxFiles, ArtifactLimitCount: r.limits.MaxArtifactVersions}}
 	metadata := map[string]CloudSpaceMetadata{}
 	for _, m := range r.metadata {
 		metadata[m.Kind+":"+m.ID] = m
@@ -100,6 +106,7 @@ func (r cloudSpaceRecords) snapshot() *CloudSpaceSnapshot {
 		out.Items = append(out.Items, apply(CloudSpaceItem{CloudSpaceMetadata: CloudSpaceMetadata{ID: f.ID, Kind: "file", Name: f.Name, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt}, TargetID: f.ID, MIME: f.MIME, Size: f.Size, State: f.State, ConversationID: f.ConversationID}))
 	}
 	latest := map[string]CloudArtifactVersion{}
+	latestSite := map[string]CloudArtifactVersion{}
 	counts := map[string]int{}
 	for _, a := range r.artifacts {
 		if a.State == CloudArtifactDeleted {
@@ -114,12 +121,21 @@ func (r cloudSpaceRecords) snapshot() *CloudSpaceSnapshot {
 			continue
 		}
 		counts[a.FamilyID]++
+		if site, ok := r.sites[a.ID]; ok && a.State == CloudArtifactReady && site.SiteID == a.FamilyID && site.SHA256 == a.SHA256 {
+			if old, ok := latestSite[a.FamilyID]; !ok || a.Number > old.Number {
+				latestSite[a.FamilyID] = a
+			}
+		}
 		if old, ok := latest[a.FamilyID]; !ok || a.Number > old.Number {
 			latest[a.FamilyID] = a
 		}
 	}
 	for _, a := range latest {
-		out.Items = append(out.Items, apply(CloudSpaceItem{CloudSpaceMetadata: CloudSpaceMetadata{ID: a.FamilyID, Kind: "artifact", Name: a.Name, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}, TargetID: a.ID, MIME: a.MIME, Size: a.Size, State: a.State, ConversationID: a.ConversationID, Versions: counts[a.FamilyID]}))
+		siteID := ""
+		if site, ok := latestSite[a.FamilyID]; ok && (a.State != CloudArtifactReady || a.ID == site.ID) {
+			siteID = site.ID
+		}
+		out.Items = append(out.Items, apply(CloudSpaceItem{CloudSpaceMetadata: CloudSpaceMetadata{ID: a.FamilyID, Kind: "artifact", Name: a.Name, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}, TargetID: a.ID, MIME: a.MIME, Size: a.Size, State: a.State, ConversationID: a.ConversationID, Versions: counts[a.FamilyID], SiteVersionID: siteID}))
 	}
 	for _, m := range r.metadata {
 		if m.Kind == "folder" {
@@ -188,10 +204,18 @@ func validateSpaceMutation(snapshot *CloudSpaceSnapshot, m CloudSpaceMetadata) e
 	return nil
 }
 
-// The canonical per-account stores cap originals and versions at 500 each.
-// Search/sort applies to this bounded metadata snapshot on the server, not to
-// one client page. No original bodies are loaded for library queries.
+// In-memory contract/reference implementation. Production library requests use
+// QueryCloudSpace's bounded database projection, never this whole snapshot.
 func filterCloudSpace(snapshot *CloudSpaceSnapshot, query, category, scope, folder, order string, offset int) ([]CloudSpaceItem, int) {
+	result := filterCloudSpaceItems(snapshot, query, category, scope, folder, order)
+	total := len(result)
+	if offset > total {
+		offset = total
+	}
+	return result[offset:min(offset+50, total)], total
+}
+
+func filterCloudSpaceItems(snapshot *CloudSpaceSnapshot, query, category, scope, folder, order string) []CloudSpaceItem {
 	result := []CloudSpaceItem{}
 	for _, item := range snapshot.Items {
 		if item.Trashed != (scope == "trash") {
@@ -215,6 +239,9 @@ func filterCloudSpace(snapshot *CloudSpaceSnapshot, query, category, scope, fold
 		if category == "images" && !strings.HasPrefix(item.MIME, "image/") {
 			continue
 		}
+		if category == "sites" && item.SiteVersionID == "" {
+			continue
+		}
 		if category == "documents" && (item.Kind == "folder" || strings.HasPrefix(item.MIME, "image/")) {
 			continue
 		}
@@ -228,7 +255,7 @@ func filterCloudSpace(snapshot *CloudSpaceSnapshot, query, category, scope, fold
 		if b.Kind == "folder" && a.Kind != "folder" {
 			return false
 		}
-		if order == "name" && a.Name != b.Name {
+		if order == "name" && strings.ToLower(a.Name) != strings.ToLower(b.Name) {
 			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		}
 		if order == "size" && a.Size != b.Size {
@@ -237,12 +264,10 @@ func filterCloudSpace(snapshot *CloudSpaceSnapshot, query, category, scope, fold
 		if !a.UpdatedAt.Equal(b.UpdatedAt) {
 			return a.UpdatedAt.After(b.UpdatedAt)
 		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
 		return a.ID > b.ID
 	})
-	total := len(result)
-	if offset > total {
-		offset = total
-	}
-	end := min(offset+50, total)
-	return result[offset:end], total
+	return result
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const CloudSpaceSchema = `
+const CloudSpaceSchema = CloudSiteSchema + `
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_space_metadata (
  user_id BIGINT NOT NULL CHECK(user_id>0), kind TEXT NOT NULL CHECK(kind IN('file','artifact','folder')),
  id UUID NOT NULL, name TEXT NOT NULL DEFAULT '' CHECK(octet_length(name)<=255),folder_id UUID NULL,
@@ -15,10 +15,17 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_space_metadata (
  PRIMARY KEY(user_id,kind,id));
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_space_folder_idx ON zeroagent_cloud_space_metadata(user_id,folder_id);
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_space_limits (
- user_id BIGINT PRIMARY KEY CHECK(user_id>0),limit_bytes BIGINT NOT NULL CHECK(limit_bytes>0));`
+ user_id BIGINT PRIMARY KEY CHECK(user_id>0),limit_bytes BIGINT NOT NULL CHECK(limit_bytes>0));` + spaceLimitsSchema + cloudSpacePagingSchema
 
 func (s *MemoryStore) spaceRecordsLocked(userID int64) cloudSpaceRecords {
-	r := cloudSpaceRecords{limit: s.cloudSpaceLimits[userID]}
+	r := cloudSpaceRecords{limits: s.spaceLimitsLocked(userID), sites: map[string]CloudSiteRelease{}}
+	if s.cloudSites != nil {
+		for id, site := range s.cloudSites.releases {
+			if site.UserID == userID {
+				r.sites[id] = CloudSiteRelease{ID: id, SiteID: site.SiteID, SHA256: site.SHA256}
+			}
+		}
+	}
 	for _, f := range s.cloudFiles {
 		if f.UserID == userID {
 			copy := f
@@ -87,7 +94,24 @@ func (s *MemoryStore) PutCloudSpaceMetadata(ctx context.Context, userID int64, m
 // Both metadata and usage are read from one database snapshot. Counts include
 // pending/failed/deleting objects until the object cleanup confirms deletion.
 func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpaceSnapshot, error) {
-	r := cloudSpaceRecords{}
+	r := cloudSpaceRecords{sites: map[string]CloudSiteRelease{}}
+	siteRows, err := tx.QueryContext(ctx, `SELECT id::text,site_id::text,sha256 FROM zeroagent_cloud_site_releases WHERE user_id=$1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	for siteRows.Next() {
+		var site CloudSiteRelease
+		if err = siteRows.Scan(&site.ID, &site.SiteID, &site.SHA256); err != nil {
+			siteRows.Close()
+			return nil, err
+		}
+		r.sites[site.ID] = site
+	}
+	err = siteRows.Err()
+	siteRows.Close()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryContext(ctx, "SELECT "+cloudFileMetadataColumns+" FROM zeroagent_cloud_files f WHERE f.user_id=$1 AND f.state<>'deleted'", userID)
 	if err != nil {
 		return nil, err
@@ -139,7 +163,7 @@ func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpac
 	if err != nil {
 		return nil, err
 	}
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT limit_bytes FROM zeroagent_cloud_space_limits WHERE user_id=$1),$2)`, userID, int64(CloudSpaceDefaultBytes)).Scan(&r.limit); err != nil {
+	if r.limits, err = readSpaceLimitsTx(ctx, tx, userID); err != nil {
 		return nil, err
 	}
 	return r.snapshot(), nil
@@ -168,10 +192,13 @@ func (s *PersistentStore) PutCloudSpaceMetadata(ctx context.Context, userID int6
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
+		return nil, err
+	}
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_space_metadata:'||$1::text,0))`, userID); err != nil {
 		return nil, err
 	}
-	snapshot, err := readCloudSpaceTx(ctx, tx, userID)
+	snapshot, err := readSpaceMutationTx(ctx, tx, userID, m)
 	if err != nil {
 		return nil, err
 	}
@@ -193,19 +220,23 @@ func (s *PersistentStore) PutCloudSpaceMetadata(ctx context.Context, userID int6
 	return &m, tx.Commit()
 }
 
-func cloudSpaceQuotaTx(ctx context.Context, tx *sql.Tx, userID, size int64) error {
+func cloudSpaceQuotaTx(ctx context.Context, tx *sql.Tx, userID, size int64) (CloudSpaceLimits, error) {
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_space_quota:'||$1::text,0))`, userID); err != nil {
-		return err
+		return CloudSpaceLimits{}, err
 	}
-	var used, limit int64
-	err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT SUM(size) FROM zeroagent_cloud_files WHERE user_id=$1 AND state<>'deleted'),0)+COALESCE((SELECT SUM(size) FROM zeroagent_cloud_artifact_versions WHERE user_id=$1 AND state<>'deleted'),0),COALESCE((SELECT limit_bytes FROM zeroagent_cloud_space_limits WHERE user_id=$1),$2)`, userID, int64(CloudSpaceDefaultBytes)).Scan(&used, &limit)
+	limits, err := readSpaceLimitsTx(ctx, tx, userID)
 	if err != nil {
-		return err
+		return limits, err
 	}
-	if used+size > limit {
-		return ErrCloudFileQuota
+	var used int64
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT SUM(size) FROM zeroagent_cloud_files WHERE user_id=$1 AND state<>'deleted'),0)+COALESCE((SELECT SUM(size) FROM zeroagent_cloud_artifact_versions WHERE user_id=$1 AND state<>'deleted'),0)`, userID).Scan(&used)
+	if err != nil {
+		return limits, err
 	}
-	return nil
+	if size > limits.TotalBytes-used {
+		return limits, ErrCloudFileQuota
+	}
+	return limits, nil
 }
 func (s *MemoryStore) cloudSpaceQuotaLocked(userID, size int64) bool {
 	usage := s.spaceRecordsLocked(userID).snapshot().Usage

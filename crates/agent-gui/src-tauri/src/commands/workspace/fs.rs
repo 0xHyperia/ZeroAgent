@@ -1022,6 +1022,8 @@ fn infer_workspace_preview_mime(path: &Path, bytes: &[u8]) -> Option<&'static st
         Some("txt") | Some("log") => Some("text/plain"),
         Some("csv") => Some("text/csv"),
         Some("tsv") => Some("text/tab-separated-values"),
+        Some("pptx") => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        Some("zip") => Some("application/zip"),
         Some("docx") => {
             Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         }
@@ -5131,6 +5133,8 @@ mod tests {
             ("docs/page.html", "text/html", b"<h1>Hello</h1>".as_slice()),
             ("docs/readme.md", "text/markdown", b"# Hello".as_slice()),
             ("docs/file.pdf", "application/pdf", b"%PDF-1.7\n".as_slice()),
+            ("docs/slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", b"PK\x03\x04".as_slice()),
+            ("docs/files.zip", "application/zip", b"PK\x03\x04".as_slice()),
         ];
 
         for (path, _mime_type, bytes) in files {

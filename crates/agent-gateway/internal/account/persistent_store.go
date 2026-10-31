@@ -224,6 +224,9 @@ CREATE TABLE IF NOT EXISTS zerobox_web_settings (
 	if _, err := tx.ExecContext(ctx, CloudSpaceSchema); err != nil {
 		return fmt.Errorf("migrate ZeroAgent cloud space schema: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, CloudSiteSchema); err != nil {
+		return fmt.Errorf("migrate ZeroAgent cloud site schema: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, CloudBranchSchema); err != nil {
 		return fmt.Errorf("migrate ZeroAgent cloud branch schema: %w", err)
 	}

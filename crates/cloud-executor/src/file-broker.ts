@@ -12,6 +12,19 @@ export const archiveExtractor = readFileSync(
   new URL("../sandbox/archive_extract.py", import.meta.url),
   "utf8",
 );
+export const siteBundler = readFileSync(
+  new URL("../sandbox/site_bundle.py", import.meta.url),
+  "utf8",
+);
+export function siteBundleInput(payload: Record<string, unknown>): {
+  command: string;
+  input: Uint8Array;
+} {
+  return {
+    command: `python3 -I -c 'import base64;exec(compile(base64.b64decode("${Buffer.from(siteBundler).toString("base64")}"),"site_bundle.py","exec"))'`,
+    input: Buffer.from(JSON.stringify(payload)),
+  };
+}
 function sourceCommand(): string {
   return `python3 -c 'import base64;exec(base64.b64decode("${Buffer.from(fileBroker).toString("base64")}"))'`;
 }

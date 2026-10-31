@@ -71,7 +71,7 @@ func TestCloudFileVisionSizeAndAggregateContextAreBounded(t *testing.T) {
 	original := cloudVisionFixture(t)
 	large := append(append([]byte(nil), original...), make([]byte, CloudFileMaxVisionBytes-len(original)+1)...)
 	file := f.upload(t, "large.png", large)
-	if file.State != CloudFileUploaded || file.ProcessingStage != "awaiting_isolated_parser" {
+	if file.State != CloudFileUploaded || file.ProcessingStage != "workspace_only" || file.TextBytes != 0 {
 		t.Fatal("oversized inline image accepted")
 	}
 	if _, err := f.service.canonicalCloudFileReferences(context.Background(), 1, cloudJSON([]any{map[string]any{"type": "file_reference", "file_id": file.ID}})); err == nil {

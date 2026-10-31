@@ -1,5 +1,5 @@
 export type CloudSpaceLocation = {
-  category: "all" | "documents" | "images" | "uploads" | "outputs";
+  category: "all" | "documents" | "images" | "uploads" | "outputs" | "sites";
   scope: "all" | "starred" | "trash";
   folder: string;
 };
@@ -20,6 +20,7 @@ export type CloudSpaceItem = {
   state: string;
   conversation_id: string;
   versions: number;
+  site_version_id?: string;
 };
 export type CloudSpaceUsage = {
   used_bytes: number;
@@ -31,11 +32,14 @@ export type CloudSpaceUsage = {
   file_count: number;
   artifact_version_count: number;
   trash_bytes: number;
+  file_limit_count: number;
+  artifact_limit_count: number;
 };
 export type CloudSpacePage = {
   items: CloudSpaceItem[];
   total: number;
   next_offset: number;
+  next_cursor: string;
   usage: CloudSpaceUsage;
   folders: CloudSpaceItem[];
   pinned: CloudSpaceItem[];
@@ -63,6 +67,10 @@ function parseItem(value: unknown): CloudSpaceItem {
     !UUID.test(item.id) ||
     !UUID.test(item.target_id) ||
     !["file", "artifact", "folder"].includes(item.kind) ||
+    (item.site_version_id !== undefined &&
+      (item.kind !== "artifact" ||
+        typeof item.site_version_id !== "string" ||
+        !UUID.test(item.site_version_id))) ||
     typeof item.name !== "string" ||
     !item.name ||
     new TextEncoder().encode(item.name).length > 255 ||
@@ -130,7 +138,10 @@ export function createCloudSpaceClient(
           {
             401: "账户会话已过期，请重新登录。",
             404: "资料或文件夹已不存在。",
-            409: "资料已变更，或文件夹仍有内容。请刷新后重试。",
+            409:
+              init.method === "PUT"
+                ? "资料已变更，或文件夹仍有内容。请刷新后重试。"
+                : "资料已更新，请刷新列表后继续浏览。",
             400: "资料名称或操作无效。",
             503: "资料空间暂时不可用，请稍后重试。",
           } as Record<number, string>
@@ -144,7 +155,7 @@ export function createCloudSpaceClient(
       location: CloudSpaceLocation = CLOUD_SPACE_HOME,
       query = "",
       sort = "updated",
-      offset = 0,
+      cursor = "",
       signal?: AbortSignal,
     ): Promise<CloudSpacePage> {
       const params = new URLSearchParams({
@@ -153,7 +164,7 @@ export function createCloudSpaceClient(
         folder: location.folder,
         q: query,
         sort,
-        offset: String(offset),
+        cursor,
       });
       const data = await json(`/api/web-chat/space?${params}`, { signal });
       if (
@@ -167,6 +178,9 @@ export function createCloudSpaceClient(
         data.total < 0 ||
         !Number.isSafeInteger(data.next_offset) ||
         data.next_offset < -1 ||
+        typeof data.next_cursor !== "string" ||
+        data.next_cursor.length > 2048 ||
+        (data.next_cursor !== "" && !/^[A-Za-z0-9_-]+$/.test(data.next_cursor)) ||
         !data.usage ||
         [
           "used_bytes",
@@ -178,6 +192,8 @@ export function createCloudSpaceClient(
           "file_count",
           "artifact_version_count",
           "trash_bytes",
+          "file_limit_count",
+          "artifact_limit_count",
         ].some((key) => !Number.isSafeInteger(data.usage[key]) || data.usage[key] < 0) ||
         !Number.isSafeInteger(data.usage.limit_bytes) ||
         data.usage.limit_bytes <= 0
@@ -238,6 +254,7 @@ export function cloudSpaceTitle(location: CloudSpaceLocation) {
     images: "图像",
     uploads: "我的上传",
     outputs: "工作产出",
+    sites: "站点",
   }[location.category];
 }
 export function cloudSpaceSize(bytes: number) {

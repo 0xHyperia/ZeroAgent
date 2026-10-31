@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createTsModuleLoader } from "../../../agent-gui/test/helpers/load-ts-module.mjs";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
+const streamdown = await import(new URL("../../../agent-ui/node_modules/streamdown/dist/index.js", import.meta.url));
 
 const V1="11111111-1111-4111-8111-111111111111",V2="22222222-2222-4222-8222-222222222222",FAMILY="33333333-3333-4333-8333-333333333333",CONV="44444444-4444-4444-8444-444444444444",RUN="55555555-5555-4555-8555-555555555555";
 const content="<html><script>window.untrusted=true</script><svg onload='alert(1)'></svg>合成网页</html>";
@@ -10,7 +12,7 @@ const version=(overrides={})=>({id:V2,family_id:FAMILY,number:2,conversation_id:
 const oldVersion=()=>version({id:V1,number:1,name:"older.html",download_url:`/api/web-chat/artifacts/versions/${V1}/download`});
 const load=()=>createTsModuleLoader({rootDir:fileURLToPath(new URL("..",import.meta.url))}).loadModule("src/lib/cloudChatArtifacts.ts");
 const safe=()=>()=>undefined;
-const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const tick=async()=>{for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
 
 test("artifact account/family metadata and immutable version downloads stay on owned API paths",async()=>{
  const api=load(),calls=[];
@@ -56,8 +58,9 @@ test("artifact citations identify exact versions without rewriting ordinary exte
  assert.equal(api.cloudArtifactVersionFromLink("/workspace/output.csv"),null);assert.equal(api.cloudArtifactVersionFromLink("https://example.com/a"),null);
 });
 
-async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",initial=true,libraryRecords,failInitial=false,binaryContent=content}={}){
+async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",initial=true,libraryRecords,failInitial=false,binaryContent=content,continueResult}={}){
  let env,revision=0,active=true,release;const calls=[],deleted=[],notices=[],continues=[];
+ const icons=new Proxy({},{get:()=>()=>null});
  const capture=()=>{const owner=revision;return()=>{if(owner!==revision)throw new Error("Account changed");};};
  const records=libraryRecords??[oldVersion(),record];let failMore=false,delayMore=false,finishMore;
  const request=async(path,init={})=>{
@@ -75,12 +78,12 @@ async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",
    }
    const id=path.split("/").at(-1);return Response.json({version:records.find(item=>item.id===id)});
  };
- env=await createWebDomTestEnv({mocks:{"@/lib/accountRequest":{captureAccountRequestGuard:capture},[fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("div",{role:"dialog"},env.React.createElement("h2",null,props.title),env.React.createElement("p",null,props.description),props.children)},"@liveagent/ui/components/ui/dialog":{Dialog:props=>props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)}}});
+ env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,"@liveagent/ui/components/IconSet":icons,[fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,"@/lib/accountRequest":{captureAccountRequestGuard:capture},[fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("div",{role:"dialog"},env.React.createElement("header",null,env.React.createElement("h2",null,props.title),env.React.createElement("p",null,props.subtitle??props.description),props.headerActions),props.children)},"@liveagent/ui/components/ui/dialog":{Dialog:props=>props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)}}});
  const {createCloudChatArtifactsClient}=env.loadModule("src/lib/cloudChatArtifacts.ts"),client=createCloudChatArtifactsClient(request,capture);
  const {CloudChatArtifactsPanel}=env.loadModule("src/components/cloudchat/CloudChatArtifactsPanel.tsx");const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
- await env.act(async()=>{root.render(env.React.createElement(CloudChatArtifactsPanel,{client,conversationId:CONV,initialVersionId:initial?record.id:undefined,isCurrent:()=>active,onClose:()=>{},onDeleted:id=>notices.push(id),onContinue:version=>continues.push(version)}));await tick();});
+ await env.act(async()=>{root.render(env.React.createElement(CloudChatArtifactsPanel,{client,conversationId:CONV,initialVersionId:initial?record.id:undefined,isCurrent:()=>active,onClose:()=>{},onDeleted:id=>notices.push(id),onContinue:version=>{continues.push(version);return continueResult;}}));await tick();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
- return{env,host,calls,deleted,notices,continues,switchAccount(){revision++;},set failInitial(value){failInitial=value;},set failMore(value){failMore=value;},set delayMore(value){delayMore=value;},async finishMore(){await env.act(async()=>{finishMore();await tick();});},async click(label){const button=[...host.querySelectorAll("button")].find(button=>button.textContent===label);assert.ok(button,`missing ${label}`);await env.act(async()=>{button.click();await tick();});},async choose(id){const select=host.querySelector('select[aria-label="成果版本"]');await env.act(async()=>{select.value=id;select.dispatchEvent(new Event("change",{bubbles:true}));await tick();});},async retire(){await env.act(async()=>{revision++;active=false;root.render(null);await tick();});},async finishBinary(){await env.act(async()=>{release();await tick();});}};
+ return{env,host,client,calls,deleted,notices,continues,switchAccount(){revision++;},set failInitial(value){failInitial=value;},set failMore(value){failMore=value;},set delayMore(value){delayMore=value;},async finishMore(){await env.act(async()=>{finishMore();await tick();});},async click(label){let button=[...host.querySelectorAll("button")].find(button=>button.textContent===label);if(!button){await env.act(async()=>{host.querySelector('[aria-label="成果更多操作"]').click();await tick();});button=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent===label);}assert.ok(button,`missing ${label}`);await env.act(async()=>{button.click();await tick();});},async choose(id){const select=host.querySelector('select[aria-label="成果版本"]');await env.act(async()=>{select.value=id;select.dispatchEvent(new Event("change",{bubbles:true}));await tick();});},async retire(){await env.act(async()=>{revision++;active=false;root.render(null);await tick();});},async finishBinary(){await env.act(async()=>{release();await tick();});}};
 }
 
 test("artifact reader switches immutable family versions and downloads the chosen old version",async(t)=>{
@@ -157,7 +160,7 @@ test("an initial library failure is not presented as an empty library and can be
 });
 
 const pngBytes=()=>new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jTMsAAAAASUVORK5CYII=","base64"));
-const pngVersion=()=>version({name:"chart.png",mime:"image/png",size:pngBytes().byteLength});
+const pngVersion=()=>version({name:"chart.png",mime:"image/png",size:pngBytes().byteLength,sha256:createHash("sha256").update(pngBytes()).digest("hex")});
 test("raster previews use guarded owned downloads and bound PNG/JPEG dimensions without enabling HTML or SVG",async()=>{
  const api=load(),calls=[];
  const client=api.createCloudChatArtifactsClient(async(path,init)=>{calls.push({path,init});return new Response(pngBytes());},safe);
@@ -168,10 +171,11 @@ test("raster previews use guarded owned downloads and bound PNG/JPEG dimensions 
  const jpeg=new Uint8Array([255,216,255,192,0,11,8,0,2,0,3,1,1,17,0,255,217]);const headerClient=api.createCloudChatArtifactsClient(async()=>new Response(jpeg),safe);const dimensions=await headerClient.image(version({name:"chart.jpg",mime:"image/jpeg",size:jpeg.length}));assert.equal(dimensions.width,3);assert.equal(dimensions.height,2);
 });
 
-test("the artifact panel explicitly previews one controlled raster Blob and revokes it when the selected version changes",async(t)=>{
- const app=await mount(t,{record:pngVersion(),binaryContent:pngBytes()});let blobs=0;const revoked=[];
+test("opening an image artifact previews one controlled raster Blob and revokes it when the selected version changes",async(t)=>{
+ let blobs=0;const revoked=[];
  const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=blob=>{blobs++;assert.equal(blob.type,"image/png");return "blob:private-chart";};URL.revokeObjectURL=url=>revoked.push(url);t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;});
- assert.equal(blobs,0);await app.click("查看图片");const image=app.host.querySelector("img");assert.ok(image);assert.equal(image.getAttribute("src"),"blob:private-chart");assert.equal(image.getAttribute("alt"),"chart.png");assert.equal(app.host.querySelector("iframe,svg,script"),null);assert.match(app.host.textContent,/1 × 1/);
+ const app=await mount(t,{record:pngVersion(),binaryContent:pngBytes()});for(let attempt=0;attempt<20&&!app.host.querySelector("img");attempt++)await app.env.act(async()=>{await tick();});const image=app.host.querySelector("img");assert.ok(image);assert.equal(blobs,1);assert.equal(image.getAttribute("src"),"blob:private-chart");assert.equal(image.getAttribute("alt"),"chart.png");assert.equal(app.host.querySelector("iframe,svg,script"),null);assert.match(app.host.textContent,/1 × 1/);
+ await app.click("查看图片");assert.equal(blobs,1,"the optional image action reuses the current preview");
  await app.choose(V1);assert.equal(app.host.querySelector("img"),null);assert.deepEqual(revoked,["blob:private-chart"]);
 });
 
@@ -181,6 +185,20 @@ test("a retired raster fetch never publishes a Blob URL or exposes an old-accoun
 });
 
 test("a raster decoder failure offers the original without changing the ready storage fact",async(t)=>{
- const app=await mount(t,{record:pngVersion(),binaryContent:pngBytes()});const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=()=>"blob:synthetic-image";URL.revokeObjectURL=()=>{};t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;});
+ const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=()=>"blob:synthetic-image";URL.revokeObjectURL=()=>{};t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;});const app=await mount(t,{record:pngVersion(),binaryContent:pngBytes()});
  await app.click("查看图片");await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("error")));assert.equal(app.host.querySelector("img"),null);assert.match(app.host.textContent,/图片未能解码，请下载原件查看/);assert.match(app.host.textContent,/正式版本已就绪/);assert.equal([...app.host.querySelectorAll("button")].find(button=>button.textContent==="下载此版本").disabled,false);
+});
+
+
+test("a refused continue action keeps the chosen version open with local feedback",async t=>{
+ const app=await mount(t,{continueResult:false});await app.click("继续修改");assert.equal(app.continues.length,1);assert.equal(app.continues[0].id,V2);assert.match(app.host.querySelector('[role="alert"]').textContent,/未能添加此版本/);assert.equal(app.host.querySelector("h2").textContent,version().name);
+});
+
+
+test("refreshing an immutable version preserves its current text reading mode",async t=>{
+ const app=await mount(t);await app.click("查看文本");const text=app.host.querySelector("pre");let finish;
+ app.client.get=()=>new Promise(resolve=>{finish=()=>resolve(version());});
+ await app.click("刷新状态");assert.equal(app.host.querySelector("pre"),text);
+ await app.env.act(async()=>{finish();await tick();});
+ assert.equal(app.host.querySelector("pre"),text);assert.equal(text.textContent,content);
 });

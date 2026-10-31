@@ -43,6 +43,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   const artifacts=new Map(initialArtifacts.map((version)=>[version.id,version]));
   const fileBodies=new Map(initialFiles.map((file)=>[file.id,"hello"]));
   let finishUpload;
+  let uploadOnline=true, fileListOnline=true;
   let transcript;
   const editScrolls=[];
   let projectPanel,memoryPanel,finishBranch,finishArtifact;
@@ -135,8 +136,10 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
       const file=fileRecord({conversation_id:init.body.get("conversation_id"),name:original.name,size:original.size,text_bytes:original.name.endsWith(".pdf")?0:original.size,state:original.name.endsWith(".pdf")?"uploaded":"ready",processing_stage:original.name.endsWith(".pdf")?"awaiting_isolated_parser":"complete"});
       files.set(file.id,file);fileBodies.set(file.id,await original.text());
       if(delayedUpload)await new Promise((resolve)=>{finishUpload=resolve;});
+      if(!uploadOnline)throw new Error("response lost after saving the original");
       return Response.json({file},{status:201});
     }
+    if(url.pathname==="/api/web-chat/files"&&!fileListOnline)throw new Error("file list offline");
     if(url.pathname==="/api/web-chat/files")return Response.json({files:[...files.values()].filter((file)=>file.state!=="deleted"),next_cursor:""});
     if(url.pathname.startsWith("/api/web-chat/files/")){
       const id=url.pathname.split("/")[4];const file=files.get(id);
@@ -361,6 +364,8 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     },
     async invalidate() { await env.act(async () => {accountRevision++; window.dispatchEvent(new Event("account-changed")); await tick(); }); },
     async finishCancel() { await env.act(async () => { resolveCancel(); await tick(); }); },
+    set uploadOnline(value){uploadOnline=value;},
+    set fileListOnline(value){fileListOnline=value;},
     async paste(files){await env.act(async()=>{composer.onPasteFiles(files);await tick();});},
     async finishUpload(){await env.act(async()=>{finishUpload();await tick();});},
     async finishBranch(){await env.act(async()=>{finishBranch();await tick();});},
@@ -589,16 +594,16 @@ test("a late upload is detached on conversation switch and cannot contaminate th
 test("the library restores reusable originals and source citations open authenticated line excerpts",async(t)=>{
  const app=await mount(t,{fileMode:true,initialFiles:[fileRecord()]});
  await app.clickText("文件库");
- assert.match(app.host.querySelector('[role="dialog"]').textContent,/notes.md/);
+ assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/notes.md/);
  await app.clickText("notes.md");
- assert.match(app.host.querySelector('[role="dialog"]').textContent,/L1hello/);
+ assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/L1hello/);
  await app.clickText("引用到消息");
  assert.equal(app.composer.pendingUploadedFiles[0].relativePath,fileId);
- assert.equal(app.host.querySelector('[role="dialog"]'),null);
+ assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);
  await app.env.act(async()=>{app.transcript.onOpenFileLink({path:`cloud-files/${fileId}`,source:"relative",line:1,endLine:1});await tick();});
  assert.ok(app.calls.some(call=>call.path===`/api/web-chat/files/${fileId}/content?from_line=1&to_line=1`));
  await app.invalidate();
- assert.equal(app.host.querySelector('[role="dialog"]'),null);
+ assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);
  assert.doesNotMatch(app.host.textContent,/notes.md|hello/);
 });
 
@@ -609,7 +614,7 @@ test("library deletion requires a concrete choice and removes draft references a
  await app.clickText("确认删除");
  assert.equal(app.calls.filter(call=>call.method==="DELETE"&&call.path===`/api/web-chat/files/${fileId}`).length,1);
  assert.equal(app.files.get(fileId).state,"deleted");
- assert.doesNotMatch(app.host.querySelector('[role="dialog"]').textContent,/notes.md/);
+ assert.doesNotMatch(app.host.querySelector('[data-cloud-resource-inline]').textContent,/notes.md/);
 });
 
 const branchMessages=[{id:"source-user",role:"user",content:"原始问题"},{id:"source-assistant",role:"assistant",content:"原始回复"},{id:"later-user",role:"user",content:"后续问题"},{id:"later-assistant",role:"assistant",content:"后续回复"}];
@@ -701,7 +706,7 @@ test("continuing a saved artifact submits only its exact version ID and survives
  const older=artifactRecord({id:olderArtifactID,number:1,name:"website-v1.html",download_url:`/api/web-chat/artifacts/versions/${olderArtifactID}/download`});
  const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord(),older]});
  await app.clickText("成果库");await app.clickText("website.html");await app.chooseArtifact(olderArtifactID);await app.clickText("继续修改");
- assert.equal(app.host.querySelector('[role="dialog"]'),null);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].fileName,"website-v1.html · v1");
+ assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].fileName,"website-v1.html · v1");
  assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website-v1.html · v1/);assert.equal(app.host.textContent.match(/website-v1.html · v1/g).length,1);assert.doesNotMatch(app.draft,/artifact|444444|555555|workspace/);
  await app.click('[data-action="send"]');
  const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
@@ -710,7 +715,7 @@ test("continuing a saved artifact submits only its exact version ID and survives
  await app.emit("created-run","2","message.delta",{delta:`已保存【成果:${olderArtifactID}】`});await app.emit("created-run","3","run.completed");
  await app.reload();assert.match(app.host.querySelector('[data-message="created-user"]').textContent,/website-v1.html · v1/);
  assert.match(app.transcript.rows.find(row=>row.kind==="assistant").rounds[0].blocks[0].text,new RegExp(`cloud-artifacts/${olderArtifactID}`));
- await app.openArtifact(olderArtifactID);assert.match(app.host.querySelector('[role="dialog"]').textContent,/v1 · 正式版本已就绪/);
+ await app.openArtifact(olderArtifactID);assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/v1 · 正式版本已就绪/);
  const downloads=[];const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=()=>"blob:old-artifact";URL.revokeObjectURL=()=>{};t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;});
  app.env.dom.window.HTMLAnchorElement.prototype.click=function(){downloads.push(this.download);};
  await app.clickText("下载此版本");assert.deepEqual(downloads,["website-v1.html"]);
@@ -719,7 +724,7 @@ test("continuing a saved artifact submits only its exact version ID and survives
 
 test("unknown artifact versions never become sendable or downloadable references",async(t)=>{
  const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord({state:"unknown",download_url:undefined})]});await app.openArtifact();
- assert.match(app.host.querySelector('[role="dialog"]').textContent,/保存结果待核对/);
+ assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/保存结果待核对/);
  for(const label of ["继续修改","下载此版本"])assert.equal([...app.host.querySelectorAll("button")].find(button=>button.textContent===label).disabled,true);
  await app.clickText("继续修改");assert.equal(app.composer.pendingUploadedFiles.length,0);assert.equal(app.calls.some(call=>call.path.endsWith("/download")),false);
 });
@@ -839,7 +844,7 @@ test("a ZIP file is offered by the chooser and sent only as a canonical workspac
 });
 test("the single pending artifact card opens its exact version and removes only its draft reference",async(t)=>{
  const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord()]});await app.openArtifact();await app.clickText("继续修改");assert.equal(app.host.textContent.match(/website.html · v2/g).length,1);
- await app.clickText("website.html · v2");assert.ok(app.host.querySelector('[role="dialog"]'));await app.clickText("关闭");await app.click('[aria-label="移除 website.html · v2"]');assert.equal(app.composer.pendingUploadedFiles.length,0);assert.equal(app.artifacts.size,1);assert.equal(app.calls.some(call=>call.method==="DELETE"),false);
+ await app.clickText("website.html · v2");assert.ok(app.host.querySelector('[data-cloud-resource-inline]'));await app.click('[aria-label="关闭成果库"]');await app.click('[aria-label="移除 website.html · v2"]');assert.equal(app.composer.pendingUploadedFiles.length,0);assert.equal(app.artifacts.size,1);assert.equal(app.calls.some(call=>call.method==="DELETE"),false);
 });
 
 test("a full account queue preserves the draft and both attachment kinds until an explicit same-request retry succeeds",async(t)=>{
@@ -1221,4 +1226,68 @@ test('Android page Back retains project edits until confirmed and leaves the con
  assert.match(app.host.textContent,/保留的输出/);
  assert.equal(app.calls.filter(call=>call.path.includes('/cancel')).length,0);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/runs'&&call.method==='POST').length,0);
+});
+
+
+function dropTransfer(types=["Files"],files=[]){const values=new Map();return {types,files,items:[],setData(type,value){values.set(type,value);if(!this.types.includes(type))this.types.push(type);},getData(type){return values.get(type)??"";}};}
+async function cloudDrop(app,data,type="drop"){
+ const event=new window.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(event,"dataTransfer",{value:data});
+ await app.env.act(async()=>{app.host.querySelector('[data-file-drop-boundary]').dispatchEvent(event);await tick();});return event;
+}
+
+test("first-draft file drops preserve structured content, create one conversation and never send automatically",async t=>{
+ const app=await mount(t,{newDraft:true,fileMode:true});
+ const paste={id:"large-file-drop",text:"保留原始长文本",label:"Pasted text"};
+ const rich={text:"草稿与长文本",textWithoutLargePastes:"草稿",segments:[{type:"text",text:"草稿"},{type:"largePaste",paste}],largePastes:[paste],skillMentions:[],appMentions:[],commitMentions:[],gitFileMentions:[],codeMentions:[],isEmpty:false};app.structuredDraft=rich;
+ const file=new File(["hello"],"notes.md",{type:"text/markdown"});
+ await cloudDrop(app,dropTransfer(["Files"],[file]));
+ assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/conversations"&&call.method==="POST").length,1);
+ assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);
+ assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
+ assert.deepEqual(app.structuredDraft,rich);assert.equal(app.composer.pendingUploadedFiles.length,1);
+});
+
+test("rejected first-draft files do not create a conversation and a claimed upload blocks immediate repeated drops",async t=>{
+ const app=await mount(t,{newDraft:true,fileMode:true,delayedUpload:true});
+ const oversized=new File([],"too-large.pdf");Object.defineProperty(oversized,"size",{value:33*1024*1024});
+ await cloudDrop(app,dropTransfer(["Files"],[oversized,new File([],"program.exe")]));
+ assert.equal(app.calls.some(call=>call.method==="POST"),false);assert.match(app.host.textContent,/32 MiB/);assert.match(app.host.textContent,/格式/);
+ const data=dropTransfer(["Files"],[new File(["hello"],"notes.md")]);
+ const boundary=app.host.querySelector('[data-file-drop-boundary]');
+ await app.env.act(async()=>{for(let index=0;index<2;index++){const event=new window.Event("drop",{bubbles:true,cancelable:true});Object.defineProperty(event,"dataTransfer",{value:data});boundary.dispatchEvent(event);}await tick();});
+ assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);await app.finishUpload();
+});
+
+test("an unknown file upload prevents further uploads until an explicit successful library check",async t=>{
+ const app=await mount(t,{fileMode:true});app.uploadOnline=false;
+ const file=new File(["hello"],"notes.md");await cloudDrop(app,dropTransfer(["Files"],[file]));
+ assert.match(app.host.textContent,/上传结果尚未确认/);assert.equal(app.files.size,1);
+ await app.paste([file]);assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);
+ app.fileListOnline=false;await app.clickText("刷新文件库核对");await app.paste([file]);
+ assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);
+ app.fileListOnline=true;app.uploadOnline=true;await app.clickText("刷新文件库核对");
+ assert.equal(app.host.textContent.includes("继续添加前请核对文件库"),false);
+ await app.paste([file]);assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,2);
+});
+
+test("cloud identity drops re-read canonical metadata, deduplicate and reject a forged identity without uploading",async t=>{
+ const app=await mount(t,{fileMode:true,initialFiles:[fileRecord()]});
+ const api=app.env.loadModule("src/lib/cloudResourceDrag.ts"),data=dropTransfer([]);
+ api.writeCloudResourceDragPayload(data,[{kind:"file",id:fileId,target_id:fileId}]);
+ await cloudDrop(app,data);assert.equal(app.composer.pendingUploadedFiles.length,1);
+ assert.ok(app.calls.some(call=>call.path===`/api/web-chat/files/${fileId}`));
+ await cloudDrop(app,data);assert.equal(app.composer.pendingUploadedFiles.length,1);
+ assert.equal(app.calls.some(call=>call.path==="/api/web-chat/files"&&call.method==="POST"),false);
+ for(let index=0;index<7;index++)await app.env.act(async()=>app.contextPicker.onAttach(fileRecord({id:`99999999-9999-4999-8999-99999999999${index}`})));
+ assert.equal(app.composer.pendingUploadedFiles.length,8);await cloudDrop(app,data);assert.equal(app.composer.pendingUploadedFiles.length,8);
+ api.writeCloudResourceDragPayload(data,[{kind:"file",id:artifactVersionID,target_id:fileId}]);
+ await cloudDrop(app,data);assert.match(app.host.textContent,/身份已变化/);assert.equal(app.composer.pendingUploadedFiles.length,8);
+});
+
+test("cloud reference validation cannot attach late metadata to another conversation",async t=>{
+ const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord()],delayedArtifact:true});
+ const api=app.env.loadModule("src/lib/cloudResourceDrag.ts"),data=dropTransfer([]);
+ api.writeCloudResourceDragPayload(data,[{kind:"artifact",id:artifactFamilyID,target_id:artifactVersionID}]);
+ await cloudDrop(app,data);await app.click(`[data-conversation="${secondFileConversation}"]`);await app.finishArtifact();
+ assert.equal(app.composer.pendingUploadedFiles.length,0);assert.doesNotMatch(app.host.textContent,/website.html/);
 });

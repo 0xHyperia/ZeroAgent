@@ -62,6 +62,8 @@ type MemoryStore struct {
 	cloudFiles           map[string]CloudFile
 	cloudSpace           map[int64]map[string]CloudSpaceMetadata
 	cloudSpaceLimits     map[int64]int64
+	cloudSpacePolicies   map[int64]CloudSpaceLimits
+	cloudSites           *cloudSiteMemoryState
 	cloudBranches        map[string]cloudBranchReceipt
 	cloudTools           *cloudToolMemoryState
 	cloudArtifacts       *cloudArtifactMemoryState

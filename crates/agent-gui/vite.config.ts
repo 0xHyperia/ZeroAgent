@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resourcePreviewAssets } from "../../scripts/vite-resource-preview-assets.mjs";
 
 const packageJson = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
@@ -21,7 +22,7 @@ if (!Number.isInteger(desktopDevPort) || desktopDevPort < 1 || desktopDevPort > 
 // https://vite.dev/config/
 export default defineConfig(async () => {
   return {
-  plugins: [react(), Icons({ compiler: "jsx", jsx: "react" })],
+  plugins: [react(), Icons({ compiler: "jsx", jsx: "react" }), resourcePreviewAssets()],
   resolve: {
     dedupe: [
       "react",

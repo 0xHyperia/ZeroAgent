@@ -18,6 +18,7 @@ import (
 func (h *HTTPHandler) registerCloudFiles(mux *http.ServeMux) {
 	h.registerCloudArtifacts(mux)
 	h.registerCloudSpace(mux)
+	h.registerCloudSites(mux)
 	mux.HandleFunc("POST /api/web-chat/files", h.withSession(h.uploadCloudFile))
 	mux.HandleFunc("GET /api/web-chat/files", h.withSession(h.listCloudFiles))
 	mux.HandleFunc("GET /api/web-chat/files/{id}", h.withSession(h.getCloudFile))
@@ -311,6 +312,7 @@ func (h *HTTPHandler) downloadCloudFile(w http.ResponseWriter, r *http.Request, 
 	}
 	cloudFileResponseHeaders(w, file)
 	w.Header().Set("Content-Type", file.MIME)
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": file.Name}))
 	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")

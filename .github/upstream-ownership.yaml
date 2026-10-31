@@ -37,10 +37,40 @@
       "checks": ["只向宿主建议草稿，不发送请求或启用工具", "Cloud/桌面同源卡片、键盘与窄屏"]
     },
     {
+      "glob": "{crates/agent-gateway/internal/account/cloud_run_site*.go,crates/agent-gateway/internal/cloudexecutor/site_bundle*.go,crates/cloud-executor/sandbox/site_bundle.py}",
+      "ownership": "zeroagent_owned", "risk": "critical",
+      "checks": ["选定目录和服务端派生输出绑定原操作，Linux 描述符检查与原子无覆盖打包", "站点清单在 canonical ready 前落库，未知结果保留同标识且不重复执行", "AI 不创建分享，Memory/PostgreSQL、实际打包和真实 S3 验证分别记录"]
+    },
+    {
+      "glob": "{crates/agent-gateway/internal/cloudsite/**,crates/agent-gateway/internal/account/cloud_site*.go}",
+      "ownership": "zeroagent_owned", "risk": "critical",
+      "checks": ["不可变成果清单与有界 ZIP 校验，不复制正文或执行用户后端", "独立站点来源、按版本授权、私人会话失效、显式分享与 CAS 撤销", "缓存命中仍检查授权和原件，数据库并发及备份恢复范围"]
+    },
+    {
+      "glob": "{crates/agent-gateway/web/src/lib/cloudChatSites.ts,crates/agent-gateway/web/src/components/cloudchat/CloudChatSiteView.tsx,crates/agent-gateway/web/src/cloud-site.css}",
+      "ownership": "zeroagent_owned", "risk": "critical",
+      "checks": ["只接受绑定版本的服务端地址，跨账户迟到结果不能装入 iframe", "分享只能明确创建，未确认写入保留同请求标识，撤销后核对", "公共弹窗/提示/按钮规范、触控及实际浏览器站点闭环"]
+    },
+    {
       "glob": "crates/agent-gateway/internal/account/cloud_space*.go",
       "ownership": "zeroagent_owned",
       "risk": "critical",
-      "checks": ["账户范围的原件/成果只读投影，元数据CAS和回收站不复活原件", "Memory/PostgreSQL隔离与并发、真实额度统计/双类预留、独立上传及备份范围"]
+      "checks": ["账户范围的原件/成果只读投影，元数据CAS和回收站不复活原件", "Memory/PostgreSQL隔离与并发、真实额度统计/双类预留、独立上传及备份范围", "数据库有界投影与账户/查询/代次绑定游标，额度不由浏览器或模型修改"]
+    },
+    {
+      "glob": "{crates/agent-gateway/cmd/cloud-space-*/**,scripts/cloud-space/**,deploy/cloudchat/seaweedfs.compose.yaml}",
+      "ownership": "zeroagent_owned", "risk": "critical",
+      "checks": ["默认只读，显式初始化/额度修改，不打印密钥或重定向现有数据", "真实签名、条件写、持久化、隔离恢复及测试资源所有权"]
+    },
+    {
+      "glob": "crates/agent-ui/src/components/resource-preview/**",
+      "ownership": "zeroagent_owned", "risk": "critical",
+      "checks": ["纯公共预览契约，宿主授权读取与账户/版本/取消边界", "摘要、大小、解压与像素限制，隔离活动内容，不自动加载外部资源"]
+    },
+    {
+      "glob": "scripts/vite-resource-preview-assets.{mjs,d.mts}",
+      "ownership": "zeroagent_owned", "risk": "medium",
+      "checks": ["各构建使用相同的本地版本化 PDF 资源", "固定目录白名单，无运行时 CDN 或任意路径读取"]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ReasoningSlider.tsx",

@@ -54,9 +54,8 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { copyTextToClipboard as copySharedTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import { renderAsync } from "docx-preview";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { read, utils } from "xlsx";
+import { ResourcePreview } from "../resource-preview/ResourcePreview";
 
 export type WorkspaceFilePreviewOpenRequest = {
   id: number;
@@ -88,23 +87,10 @@ type LoadedPreview = ReadWorkspacePreviewResponse & {
   bytes: Uint8Array;
   kind: WorkspacePreviewKind;
   text: string | null;
-};
-
-type SpreadsheetTable = {
-  sheetNames: string[];
-  rows: Array<{
-    id: string;
-    cells: Array<{ id: string; value: string }>;
-  }>;
-  activeSheetName: string;
-  truncatedRows: boolean;
-  truncatedColumns: boolean;
-  error: string | null;
+  sha256: string;
 };
 
 const FILE_PREVIEW_OVERLAY_ANIMATION_MS = 180;
-const SPREADSHEET_MAX_ROWS = 250;
-const SPREADSHEET_MAX_COLUMNS = 80;
 type ImagePreviewTransitionDirection = -1 | 0 | 1;
 
 function basename(path: string) {
@@ -189,14 +175,6 @@ function normalizeImagePaths(paths: string[] | undefined, activePath: string) {
   return normalized;
 }
 
-function hashString(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash).toString(36);
-}
-
 const SANDBOXED_HTML_PREVIEW_BOOTSTRAP = [
   "<script data-liveagent-html-preview-bootstrap>",
   "(() => {",
@@ -258,6 +236,10 @@ function getPreviewIcon(kind: WorkspacePreviewKind): FileTypeIconComponent {
       return getFileTypeIcon("preview.mp3", "file");
     case "document":
       return getFileTypeIcon("preview.docx", "file");
+    case "presentation":
+      return getFileTypeIcon("preview.pptx", "file");
+    case "archive":
+      return getFileTypeIcon("preview.zip", "file");
     case "html":
       return getFileTypeIcon("preview.html", "file");
     case "image":
@@ -275,71 +257,6 @@ function getPreviewIcon(kind: WorkspacePreviewKind): FileTypeIconComponent {
   }
 }
 
-function buildSpreadsheetTable(
-  preview: LoadedPreview | null,
-  activeSheetName: string,
-  fallbackError: string,
-): SpreadsheetTable | null {
-  if (!preview || preview.kind !== "spreadsheet") return null;
-  try {
-    const workbook = read(preview.bytes, { type: "array", cellDates: true });
-    const sheetNames = workbook.SheetNames;
-    const selectedSheetName =
-      sheetNames.find((name) => name === activeSheetName) ?? sheetNames[0] ?? "";
-    const sheet = selectedSheetName ? workbook.Sheets[selectedSheetName] : null;
-    if (!sheet) {
-      return {
-        sheetNames,
-        rows: [],
-        activeSheetName: selectedSheetName,
-        truncatedRows: false,
-        truncatedColumns: false,
-        error: null,
-      };
-    }
-    const rawRows = utils.sheet_to_json<unknown[]>(sheet, {
-      header: 1,
-      blankrows: false,
-      defval: "",
-      raw: false,
-    });
-    const maxColumns = rawRows.reduce(
-      (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
-      0,
-    );
-    const rows = rawRows.slice(0, SPREADSHEET_MAX_ROWS).map((row, rowIndex) => {
-      const cells = Array.from(
-        { length: Math.min(maxColumns, SPREADSHEET_MAX_COLUMNS) },
-        (_, index) => ({
-          id: `c${index}`,
-          value: String(Array.isArray(row) ? (row[index] ?? "") : ""),
-        }),
-      );
-      return {
-        id: `r${rowIndex}-${hashString(cells.map((cell) => cell.value).join("\u0000"))}`,
-        cells,
-      };
-    });
-    return {
-      sheetNames,
-      rows,
-      activeSheetName: selectedSheetName,
-      truncatedRows: rawRows.length > SPREADSHEET_MAX_ROWS,
-      truncatedColumns: maxColumns > SPREADSHEET_MAX_COLUMNS,
-      error: null,
-    };
-  } catch (error) {
-    return {
-      sheetNames: [],
-      rows: [],
-      activeSheetName: "",
-      truncatedRows: false,
-      truncatedColumns: false,
-      error: toMessage(error, fallbackError),
-    };
-  }
-}
-
 export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayProps) {
   const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose } = props;
   const { t } = useLocale();
@@ -347,14 +264,14 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const loadSequenceRef = useRef(0);
   const previewBlobUrlRef = useRef<string | null>(null);
   const previewRef = useRef<LoadedPreview | null>(null);
+  const currentProps = useRef(props);
+  currentProps.current = props;
   const [preview, setPreview] = useState<LoadedPreview | null>(null);
   const [activeRequest, setActiveRequest] = useState<WorkspaceFilePreviewOpenRequest | null>(null);
   const [imageTransitionDirection, setImageTransitionDirection] =
     useState<ImagePreviewTransitionDirection>(0);
-  const [activeSheetName, setActiveSheetName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   const replacePreview = useCallback((next: LoadedPreview | null) => {
@@ -363,7 +280,6 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     }
     previewBlobUrlRef.current = next?.blobUrl ?? null;
     previewRef.current = next;
-    setActiveSheetName("");
     setPreview(next);
   }, []);
 
@@ -374,6 +290,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         previewBlobUrlRef.current = null;
       }
       previewRef.current = null;
+      loadSequenceRef.current++;
     },
     [],
   );
@@ -418,7 +335,6 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       setImageTransitionDirection(transitionDirection);
       setLoading(true);
       setError(null);
-      setRenderError(null);
       setActiveRequest(request);
       if (!keepCurrentImagePreview) {
         replacePreview(null);
@@ -428,8 +344,14 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           workdir: request.workdir,
           path: request.path,
         });
-        if (loadSequenceRef.current !== sequence) return;
+        if (loadSequenceRef.current !== sequence || !currentProps.current.isOpen) return;
         const bytes = base64ToBytes(response.data);
+        // Native contentHash is a cache/version fingerprint, not SHA-256. Bind the
+        // shared reader to exactly the bytes returned by the authorized FS bridge.
+        const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+          .map((part) => part.toString(16).padStart(2, "0"))
+          .join("");
+        if (loadSequenceRef.current !== sequence || !currentProps.current.isOpen) return;
         const kind = resolvePreviewKind(response.path || request.path, response.mimeType);
         const text = isTextPreviewKind(kind) ? decodePreviewText(bytes) : null;
         const blobBytes =
@@ -443,6 +365,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           bytes,
           kind,
           text,
+          sha256,
         };
         replacePreview(loaded);
       } catch (loadError) {
@@ -466,17 +389,10 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       return;
     }
     void loadPreview(openRequest, 0);
+    return () => {
+      loadSequenceRef.current++;
+    };
   }, [loadPreview, openRequest]);
-
-  const spreadsheet = useMemo(
-    () => buildSpreadsheetTable(preview, activeSheetName, t("workspaceFilePreview.renderFailed")),
-    [activeSheetName, preview, t],
-  );
-
-  useEffect(() => {
-    if (!spreadsheet?.activeSheetName) return;
-    setActiveSheetName((current) => current || spreadsheet.activeSheetName);
-  }, [spreadsheet?.activeSheetName]);
 
   const activePreviewRequest = activeRequest ?? openRequest;
   // The request comes from the workspace file tree and retains its full logical path.
@@ -608,7 +524,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         </div>
       </div>
 
-      {error || renderError || spreadsheet?.error ? (
+      {error ? (
         <div
           className={cn(
             "flex shrink-0 items-center gap-2",
@@ -616,9 +532,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           )}
         >
           <AlertTriangle className="size-4 shrink-0" />
-          <div className="min-w-0 flex-1 truncate">
-            {error ?? renderError ?? spreadsheet?.error}
-          </div>
+          <div className="min-w-0 flex-1 truncate">{error}</div>
         </div>
       ) : null}
 
@@ -632,13 +546,17 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
             imageTransitionDirection={imageTransitionDirection}
             isSwitchingImage={loading && preview.kind === "image"}
             canOpenImageInSystemViewer={canOpenExternal}
-            spreadsheet={spreadsheet}
-            activeSheetName={activeSheetName}
             onOpenImageInSystemViewer={() => void openExternal()}
             onOpenImagePath={openImagePath}
-            onActiveSheetNameChange={setActiveSheetName}
             onActionError={setError}
-            onRenderError={setRenderError}
+            assertCurrent={() => {
+              if (
+                !currentProps.current.isOpen ||
+                previewRef.current !== preview ||
+                currentProps.current.openRequest !== openRequest
+              )
+                throw new DOMException("预览目标已切换", "AbortError");
+            }}
           />
         ) : loading ? (
           <div className="flex h-full items-center justify-center">
@@ -682,13 +600,10 @@ function PreviewBody(props: {
   imageTransitionDirection: ImagePreviewTransitionDirection;
   isSwitchingImage: boolean;
   canOpenImageInSystemViewer: boolean;
-  spreadsheet: SpreadsheetTable | null;
-  activeSheetName: string;
   onOpenImageInSystemViewer: () => void;
   onOpenImagePath: (path: string, direction?: ImagePreviewTransitionDirection) => void;
-  onActiveSheetNameChange: (sheetName: string) => void;
   onActionError: (message: string | null) => void;
-  onRenderError: (message: string | null) => void;
+  assertCurrent: () => void;
 }) {
   const {
     preview,
@@ -698,40 +613,61 @@ function PreviewBody(props: {
     imageTransitionDirection,
     isSwitchingImage,
     canOpenImageInSystemViewer,
-    spreadsheet,
-    activeSheetName,
     onOpenImageInSystemViewer,
     onOpenImagePath,
-    onActiveSheetNameChange,
     onActionError,
-    onRenderError,
   } = props;
   const { t } = useLocale();
-  const docxContainerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (preview.kind !== "document") return;
-    const container = docxContainerRef.current;
-    if (!container) return;
-    let cancelled = false;
-    container.innerHTML = "";
-    onRenderError(null);
-    void renderAsync(bytesToArrayBuffer(preview.bytes), container, undefined, {
-      className: "workspace-docx-preview",
-      inWrapper: true,
-      ignoreFonts: false,
-      breakPages: true,
-      useBase64URL: true,
-    }).catch((docxError) => {
-      if (!cancelled) {
-        onRenderError(toMessage(docxError, t("workspaceFilePreview.renderFailed")));
-      }
-    });
-    return () => {
-      cancelled = true;
-      container.innerHTML = "";
-    };
-  }, [onRenderError, preview, t]);
+  if (
+    ["document", "presentation", "pdf", "archive", "spreadsheet", "audio", "video"].includes(
+      preview.kind,
+    )
+  ) {
+    return (
+      <div className="h-full overflow-auto bg-background px-3 pb-3">
+        <ResourcePreview
+          key={`${workdir}:${preview.path}:${preview.contentHash}`}
+          resource={{
+            identity: `${workdir}:${preview.path}:${preview.contentHash}`,
+            name: basename(preview.path),
+            mime: preview.mimeType,
+            size: preview.bytes.byteLength,
+            sha256: preview.sha256,
+          }}
+          load={async (signal) => {
+            const assertCurrent = () => {
+              signal.throwIfAborted();
+              props.assertCurrent();
+            };
+            assertCurrent();
+            return {
+              blob: new Blob([bytesToArrayBuffer(preview.bytes)], { type: preview.mimeType }),
+              assertCurrent,
+            };
+          }}
+          onDownload={() => {
+            try {
+              props.assertCurrent();
+              void saveWorkspacePreviewImage({
+                data: preview.data,
+                fileName: basename(preview.path),
+                mimeType: preview.mimeType,
+              }).catch((cause) => {
+                try {
+                  props.assertCurrent();
+                } catch {
+                  return;
+                }
+                onActionError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
+              });
+            } catch (cause) {
+              onActionError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
+            }
+          }}
+        />
+      </div>
+    );
+  }
 
   if (preview.kind === "image") {
     return (
@@ -747,16 +683,6 @@ function PreviewBody(props: {
         onOpenInSystemViewer={onOpenImageInSystemViewer}
         onOpenImagePath={onOpenImagePath}
         onActionError={onActionError}
-      />
-    );
-  }
-
-  if (preview.kind === "pdf") {
-    return (
-      <iframe
-        className="size-full border-0 bg-background"
-        src={preview.blobUrl}
-        title={basename(preview.path)}
       />
     );
   }
@@ -782,100 +708,6 @@ function PreviewBody(props: {
           className="text-sm leading-6"
           onOpenWorkspacePath={(path) => onOpenImagePath(path, 0)}
         />
-      </div>
-    );
-  }
-
-  if (preview.kind === "document") {
-    return (
-      <div className="h-full overflow-auto bg-neutral-200 p-4 dark:bg-neutral-950">
-        <div ref={docxContainerRef} className="workspace-file-preview-docx min-h-full" />
-      </div>
-    );
-  }
-
-  if (preview.kind === "spreadsheet") {
-    return (
-      <div className="flex h-full min-h-0 flex-col bg-background">
-        {spreadsheet && spreadsheet.sheetNames.length > 1 ? (
-          <div
-            className={cn(
-              "flex h-10 shrink-0 items-center gap-1 overflow-x-auto",
-              "border-b border-border bg-muted/35 px-2",
-            )}
-          >
-            {spreadsheet.sheetNames.map((sheetName) => (
-              <button
-                key={sheetName}
-                type="button"
-                className={cn(
-                  "h-7 max-w-48 shrink-0 truncate rounded-md px-2.5 text-xs transition-colors",
-                  (activeSheetName || spreadsheet.activeSheetName) === sheetName
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-                title={sheetName}
-                onClick={() => onActiveSheetNameChange(sheetName)}
-              >
-                {sheetName}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <div className="min-h-0 flex-1 overflow-auto">
-          {spreadsheet?.rows.length ? (
-            <table className="min-w-full border-separate border-spacing-0 text-xs">
-              <tbody>
-                {spreadsheet.rows.map((row, rowIndex) => (
-                  <tr key={row.id} className={rowIndex === 0 ? "bg-muted/60" : ""}>
-                    {row.cells.map((cell) => (
-                      <td
-                        key={cell.id}
-                        className={cn(
-                          "max-w-80 whitespace-pre-wrap border-b border-r border-border px-2 py-1.5 align-top",
-                          rowIndex === 0 && "font-semibold text-foreground",
-                        )}
-                      >
-                        {cell.value}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              {t("workspaceFilePreview.emptySheet")}
-            </div>
-          )}
-        </div>
-        {spreadsheet?.truncatedRows || spreadsheet?.truncatedColumns ? (
-          <div className="shrink-0 border-t border-border bg-muted/35 px-3 py-1.5 text-xs text-muted-foreground">
-            {t("workspaceFilePreview.truncated")}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (preview.kind === "audio") {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        {/* biome-ignore lint/a11y/useMediaCaption: Workspace media previews do not have a separate caption track available. */}
-        <audio className="w-full max-w-2xl" controls src={preview.blobUrl}>
-          {basename(preview.path)}
-        </audio>
-      </div>
-    );
-  }
-
-  if (preview.kind === "video") {
-    return (
-      <div className="flex h-full items-center justify-center overflow-auto p-4 sm:p-6">
-        {/* biome-ignore lint/a11y/useMediaCaption: Workspace media previews do not have a separate caption track available. */}
-        <video className="max-h-full max-w-full bg-black" controls src={preview.blobUrl}>
-          {basename(preview.path)}
-        </video>
       </div>
     );
   }

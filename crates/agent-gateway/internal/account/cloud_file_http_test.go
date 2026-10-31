@@ -284,7 +284,7 @@ func TestCloudFileHTTPFormatsRemainHonest(t *testing.T) {
 		t.Fatal("extraction failure lost original")
 	}
 	large := f.upload(t, "large.txt", bytes.Repeat([]byte("a"), CloudFileMaxTextBytes+1))
-	if large.State != CloudFileUploaded || large.ProcessingStage != "awaiting_isolated_parser" {
+	if large.State != CloudFileUploaded || large.ProcessingStage != "workspace_only" || large.TextBytes != 0 {
 		t.Fatal("large text parsed without bounded extraction")
 	}
 	f.mu.Lock()

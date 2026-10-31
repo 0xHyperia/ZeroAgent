@@ -201,12 +201,17 @@ test("provider envd capability is checked before initialization and existing VM 
   await provider(async (stub, adapter) => {
     for (const version of [undefined, "", "0.4.99", "0.5.1", "0.5.2-rc.1", "invalid"]) {
       stub.info.envdVersion = version;
-      await assert.rejects(adapter.execute(op("sandbox.create"), context()), /sandbox_initialization_failed/);
+      await assert.rejects(
+        adapter.execute(op("sandbox.create"), context()),
+        /sandbox_initialization_failed/,
+      );
       await assert.rejects(
         adapter.execute(op("command.run", { command: "true" }), context()),
         /unsafe_envd_version/,
       );
-      assert(!stub.calls.some((call) => call.action === "commands.run" || call.action === "connect"));
+      assert(
+        !stub.calls.some((call) => call.action === "commands.run" || call.action === "connect"),
+      );
     }
     await adapter.execute(op("sandbox.kill"), context());
     assert(stub.calls.some((call) => call.action === "kill"));
@@ -317,7 +322,10 @@ test("reconciliation can discover unsafe owned VMs only for cleanup and verifies
     stub.info.envdVersion = "0.1.0";
     stub.info.network = { allowPublicTraffic: true, allowOut: ["0.0.0.0/0"] };
     stub.info.lifecycle.autoResume = true;
-    const result = await adapter.execute(op("sandbox.reconcile", { create_operation_id: "original" }), context());
+    const result = await adapter.execute(
+      op("sandbox.reconcile", { create_operation_id: "original" }),
+      context(),
+    );
     assert.equal(result.cleanup_only, true);
     assert.equal(result.automatic_retry_safe, false);
     assert.equal((result.candidates as any[])[0].network.outbound, "unconfirmed");
@@ -327,7 +335,9 @@ test("reconciliation can discover unsafe owned VMs only for cleanup and verifies
     const expected = { ...stub.info.metadata };
     for (const key of ["zeroagent_create", "zeroagent_scope", "zeroagent_namespace"]) {
       stub.info.metadata = { ...expected, [key]: "foreign" };
-      Object.assign(Sandbox, { list: () => ({ hasNext: false, nextItems: async () => [stub.info] }) });
+      Object.assign(Sandbox, {
+        list: () => ({ hasNext: false, nextItems: async () => [stub.info] }),
+      });
       await assert.rejects(
         adapter.execute(op("sandbox.reconcile", { create_operation_id: "original" }), context()),
         /sandbox_not_found/,
@@ -377,37 +387,199 @@ test("archive extraction uses the owned denied-network VM and fixed guest source
       return {
         pid: 321,
         wait: async () => ({ exitCode: 0 }),
-        sendStdin: async (data: Uint8Array) => { assert(data.byteLength <= 32 * 1024); chunks.push(data); },
+        sendStdin: async (data: Uint8Array) => {
+          assert(data.byteLength <= 32 * 1024);
+          chunks.push(data);
+        },
         closeStdin: async () => {
           const payload = JSON.parse(Buffer.concat(chunks).toString());
-          assert.deepEqual(payload, { path: "uploads/code-task.zip", destination: "source", source_sha256: "a".repeat(64), root: "/home/user/zeroagent-workspace" });
-          opts.onStdout(JSON.stringify({ source_sha256: payload.source_sha256, destination: payload.destination, files: [], file_count: 0, total_bytes: 0 }));
+          assert.deepEqual(payload, {
+            path: "uploads/code-task.zip",
+            destination: "source",
+            source_sha256: "a".repeat(64),
+            root: "/home/user/zeroagent-workspace",
+          });
+          opts.onStdout(
+            JSON.stringify({
+              source_sha256: payload.source_sha256,
+              destination: payload.destination,
+              files: [],
+              file_count: 0,
+              total_bytes: 0,
+            }),
+          );
         },
       };
     });
-    const result = await adapter.execute(op("archive.extract", { path: "uploads/code-task.zip", destination: "source", source_sha256: "a".repeat(64) }), context());
+    const result = await adapter.execute(
+      op("archive.extract", {
+        path: "uploads/code-task.zip",
+        destination: "source",
+        source_sha256: "a".repeat(64),
+      }),
+      context(),
+    );
     assert.equal(result.sandbox_id, "sandbox-one");
     assert.equal(result.destination, "source");
     stub.info.metadata.zeroagent_scope = "foreign";
-    await assert.rejects(adapter.execute(op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }), context()), /sandbox_not_found/);
+    await assert.rejects(
+      adapter.execute(
+        op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }),
+        context(),
+      ),
+      /sandbox_not_found/,
+    );
+  });
+});
+
+test("site bundling invokes fixed guest source as an unprivileged owned VM command with stdin only", async () => {
+  await provider(async (stub, adapter) => {
+    const input = {
+      path: "project/dist",
+      output_path: `site-bundles/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.zip`,
+    };
+    stub.setRun(async (cmd, opts) => {
+      assert(cmd.startsWith("python3 -I -c"));
+      assert(!cmd.includes(input.path));
+      assert.equal(opts.timeoutMs, 40_000);
+      assert.equal(opts.user, "user");
+      assert.equal(opts.cwd, "/home/user/zeroagent-workspace");
+      const chunks: Uint8Array[] = [];
+      return {
+        pid: 450,
+        wait: async () => ({ exitCode: 0 }),
+        sendStdin: async (data: Uint8Array) => {
+          chunks.push(data);
+        },
+        closeStdin: async () => {
+          const payload = JSON.parse(Buffer.concat(chunks).toString());
+          assert.deepEqual(payload, { ...input, root: "/home/user/zeroagent-workspace" });
+          opts.onStdout(
+            JSON.stringify({
+              source_path: input.path,
+              path: input.output_path,
+              entry_point: "index.html",
+              size: 100,
+              sha256: "c".repeat(64),
+              file_count: 1,
+              expanded_bytes: 30,
+            }),
+          );
+        },
+      };
+    });
+    const result = await adapter.execute(op("site.bundle", input), context());
+    assert.equal(result.sandbox_id, "sandbox-one");
+    assert.equal(result.source_path, input.path);
+    assert(!stub.calls.some((call) => call.action === "create"));
+    const before = stub.calls.filter((call) => call.action === "commands.run").length;
+    stub.info.metadata.zeroagent_scope = "foreign";
+    await assert.rejects(adapter.execute(op("site.bundle", input), context()), /sandbox_not_found/);
+    assert.equal(stub.calls.filter((call) => call.action === "commands.run").length, before);
+  });
+});
+
+test("site bundling distinguishes rejected input from unknown guest termination and never reruns", async () => {
+  await provider(async (stub, adapter) => {
+    const input = {
+      path: "project/dist",
+      output_path: `site-bundles/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.zip`,
+    };
+    for (const [error, uncertain] of [
+      ["unsafe_site_entry", false],
+      ["site_bundle_failed", true],
+    ] as const) {
+      stub.setRun(async (_cmd, opts) => ({
+        pid: 451,
+        wait: async () => ({ exitCode: 0 }),
+        sendStdin: async () => {},
+        closeStdin: async () => {
+          opts.onStdout(JSON.stringify({ error, uncertain }));
+        },
+      }));
+      await assert.rejects(
+        adapter.execute(op("site.bundle", input), context()),
+        (value: unknown) =>
+          value instanceof Fault && value.code === error && value.uncertain === uncertain,
+      );
+    }
+    stub.setRun(async () => ({
+      pid: 452,
+      wait: async () => ({ exitCode: 137 }),
+      sendStdin: async () => {},
+      closeStdin: async () => {},
+    }));
+    await assert.rejects(
+      adapter.execute(op("site.bundle", input), context()),
+      (value: unknown) =>
+        value instanceof Fault && value.code === "site_bundle_failed" && value.uncertain,
+    );
+    assert.equal(stub.calls.filter((call) => call.action === "commands.run").length, 3);
   });
 });
 
 test("archive cancellation stops the owned VM and uncertain guest cleanup remains unknown", async () => {
   await provider(async (stub, adapter) => {
     let began!: () => void;
-    const started = new Promise<void>((resolve) => { began = resolve; });
-    stub.setRun(async () => { began(); return { pid: 123, wait: () => new Promise(() => {}), sendStdin: async () => {}, closeStdin: async () => {} }; });
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    stub.setRun(async () => {
+      began();
+      return {
+        pid: 123,
+        wait: () => new Promise(() => {}),
+        sendStdin: async () => {},
+        closeStdin: async () => {},
+      };
+    });
     const controller = new AbortController();
-    const pending = adapter.execute(op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }), { ...context(), signal: controller.signal });
+    const pending = adapter.execute(
+      op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }),
+      { ...context(), signal: controller.signal },
+    );
     await started;
     controller.abort();
-    await assert.rejects(pending, (error: unknown) => error instanceof Fault && error.code === "cancelled" && error.detail?.sandbox_terminated === true);
+    await assert.rejects(
+      pending,
+      (error: unknown) =>
+        error instanceof Fault &&
+        error.code === "cancelled" &&
+        error.detail?.sandbox_terminated === true,
+    );
     assert(stub.calls.some((call) => call.action === "kill"));
-    stub.setRun(async (_cmd, opts) => ({ pid: 124, wait: async () => ({ exitCode: 0 }), sendStdin: async () => {}, closeStdin: async () => { opts.onStdout('{"error":"archive_cleanup_unknown","uncertain":true}'); } }));
-    await assert.rejects(adapter.execute(op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }), context()), (error: unknown) => error instanceof Fault && error.code === "archive_cleanup_unknown" && error.uncertain);
-    stub.setRun(async (_cmd, opts) => ({ pid: 125, wait: async () => ({ exitCode: 0 }), sendStdin: async () => {}, closeStdin: async () => { opts.onStdout('{"error":"archive_timeout","uncertain":true}'); } }));
-    await assert.rejects(adapter.execute(op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }), context()), (error: unknown) => error instanceof Fault && error.code === "archive_timeout" && error.uncertain);
+    stub.setRun(async (_cmd, opts) => ({
+      pid: 124,
+      wait: async () => ({ exitCode: 0 }),
+      sendStdin: async () => {},
+      closeStdin: async () => {
+        opts.onStdout('{"error":"archive_cleanup_unknown","uncertain":true}');
+      },
+    }));
+    await assert.rejects(
+      adapter.execute(
+        op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }),
+        context(),
+      ),
+      (error: unknown) =>
+        error instanceof Fault && error.code === "archive_cleanup_unknown" && error.uncertain,
+    );
+    stub.setRun(async (_cmd, opts) => ({
+      pid: 125,
+      wait: async () => ({ exitCode: 0 }),
+      sendStdin: async () => {},
+      closeStdin: async () => {
+        opts.onStdout('{"error":"archive_timeout","uncertain":true}');
+      },
+    }));
+    await assert.rejects(
+      adapter.execute(
+        op("archive.extract", { path: "a.zip", destination: "b", source_sha256: "a".repeat(64) }),
+        context(),
+      ),
+      (error: unknown) =>
+        error instanceof Fault && error.code === "archive_timeout" && error.uncertain,
+    );
   });
 });
 test("one MiB file input uses bounded SDK stdin chunks without Linux argument size overflow", async () => {

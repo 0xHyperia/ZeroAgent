@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM --platform=$BUILDPLATFORM node:22.17.1-bookworm-slim AS webui
+FROM --platform=$BUILDPLATFORM node:24.14.1-bookworm-slim AS webui
 
 WORKDIR /src
 RUN npm install -g pnpm@10.32.1
@@ -17,6 +17,7 @@ RUN pnpm install --frozen-lockfile --filter @liveagent/gateway-webui...
 COPY crates/virtual-core crates/virtual-core
 COPY crates/agent-ui crates/agent-ui
 COPY crates/agent-gateway/web crates/agent-gateway/web
+COPY scripts/vite-resource-preview-assets.mjs scripts/vite-resource-preview-assets.d.mts scripts/
 ARG ZEROAGENT_APP_VERSION
 RUN ZEROAGENT_APP_VERSION="$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
 
@@ -36,6 +37,10 @@ COPY --from=webui /src/crates/agent-gateway/web/dist ./web/dist
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/liveagent-gateway ./cmd/gateway
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/cloud-space-storage ./cmd/cloud-space-storage
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/cloud-space-quota ./cmd/cloud-space-quota
 
 FROM debian:bookworm-slim AS runtime
 
@@ -47,6 +52,8 @@ RUN useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /u
     && install -d -o zeroagent -g zeroagent -m 0700 /var/lib/zeroagent
 
 COPY --from=gateway-builder /out/liveagent-gateway /usr/local/bin/liveagent-gateway
+COPY --from=gateway-builder /out/cloud-space-storage /usr/local/bin/cloud-space-storage
+COPY --from=gateway-builder /out/cloud-space-quota /usr/local/bin/cloud-space-quota
 
 USER zeroagent
 

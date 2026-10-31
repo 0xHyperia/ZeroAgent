@@ -94,6 +94,18 @@ func acquireCloudFileSlot(ctx context.Context, gate chan struct{}) error {
 
 func cloudFileFormat(name string, header []byte) (string, bool, error) {
 	ext := strings.ToLower(path.Ext(name))
+	if media, ok := cloudMediaFormat(ext, header); ok {
+		return media, false, nil
+	}
+	if ext == ".tsv" {
+		return "text/tab-separated-values", true, nil
+	}
+	if ext == ".markdown" {
+		return "text/markdown", true, nil
+	}
+	if ext == ".rst" || ext == ".toml" || ext == ".ini" || ext == ".conf" {
+		return "text/plain", true, nil
+	}
 	textTypes := map[string]string{".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv", ".json": "application/json", ".yaml": "text/yaml", ".yml": "text/yaml", ".xml": "application/xml", ".html": "text/html", ".htm": "text/html", ".css": "text/css", ".js": "text/javascript", ".jsx": "text/javascript", ".ts": "text/plain", ".tsx": "text/plain", ".py": "text/plain", ".go": "text/plain", ".rs": "text/plain", ".java": "text/plain", ".c": "text/plain", ".cpp": "text/plain", ".h": "text/plain", ".sh": "text/plain", ".sql": "text/plain", ".log": "text/plain"}
 	if mime, ok := textTypes[ext]; ok {
 		return mime, true, nil
@@ -108,9 +120,13 @@ func cloudFileFormat(name string, header []byte) (string, bool, error) {
 		if bytes.HasPrefix(header, []byte{'P', 'K', 3, 4}) || bytes.HasPrefix(header, []byte{'P', 'K', 5, 6}) {
 			return "application/zip", false, nil
 		}
-	case ".docx", ".xlsx", ".pptx":
-		if bytes.HasPrefix(header, []byte{'P', 'K', 3, 4}) {
-			return map[string]string{".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}[ext], false, nil
+	case ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp":
+		// Password-protected OOXML uses an OLE container. Preserve it as an
+		// opaque original; neither this header check nor upload marks it parsed.
+		encryptedOffice := (ext == ".docx" || ext == ".xlsx" || ext == ".pptx") &&
+			bytes.HasPrefix(header, []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
+		if bytes.HasPrefix(header, []byte{'P', 'K', 3, 4}) || encryptedOffice {
+			return map[string]string{".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".odt": "application/vnd.oasis.opendocument.text", ".ods": "application/vnd.oasis.opendocument.spreadsheet", ".odp": "application/vnd.oasis.opendocument.presentation"}[ext], false, nil
 		}
 	case ".doc", ".xls", ".ppt":
 		if bytes.HasPrefix(header, []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}) {
@@ -173,7 +189,7 @@ func (p *cloudFileService) upload(ctx context.Context, userID int64, conversatio
 		return file, err
 	}
 	stage := "awaiting_isolated_parser"
-	if mime == "application/zip" {
+	if cloudFileWorkspaceOnly(mime) || (!isText && cloudFileParserFormat(CloudFile{Name: name}) == "") || (isText && size > CloudFileMaxTextBytes) {
 		stage = "workspace_only"
 	}
 	file, err = p.metadata.UpdateCloudFile(ctx, userID, file.ID, file.Version, CloudFileUpdate{State: CloudFileUploaded, MarkUploaded: true, ProcessingStage: stage})

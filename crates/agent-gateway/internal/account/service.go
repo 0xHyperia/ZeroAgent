@@ -45,6 +45,8 @@ type Service struct {
 	cloudFileParser    *cloudFileParser
 	cloudResearchMu    sync.RWMutex
 	cloudResearch      *cloudResearchService
+	cloudSiteMu        sync.RWMutex
+	cloudSites         *cloudSiteService
 }
 
 func (s *Service) SetDeviceRevoker(revoker func(userID int64, deviceID string)) {

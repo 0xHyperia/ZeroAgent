@@ -15,6 +15,7 @@ import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import { FileDropBoundary } from "@liveagent/ui/components/files/FileDropBoundary";
 import { BookOpen, Globe, PanelLeft, SquarePen, X } from "@liveagent/ui/components/IconSet";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -67,6 +68,7 @@ import {
   CloudChatResourcePanel,
   CloudChatResourcePresentation,
 } from "@/components/cloudchat/CloudChatResourcePanel";
+import { CloudChatResourceWorkbench } from "@/components/cloudchat/CloudChatResourceWorkbench";
 import { CloudChatSourcesPanel } from "@/components/cloudchat/CloudChatSourcesPanel";
 import { CloudContextSidebar } from "@/components/cloudchat/CloudContextSidebar";
 import { CloudConversationTitle } from "@/components/cloudchat/CloudConversationTitle";
@@ -108,8 +110,10 @@ import {
   createCloudChatBranchesClient,
 } from "@/lib/cloudChatBranches";
 import {
+  CLOUD_FILE_ACCEPT,
   type CloudChatFile,
   CloudChatFileError,
+  CloudFileUploadUnconfirmedError,
   cloudFileCanReference,
   cloudFileReferences,
   cloudFileStatus,
@@ -170,6 +174,8 @@ import {
   createCloudChatSourcesClient,
   linkCloudSourceCitations,
 } from "@/lib/cloudChatSources";
+import { prepareCloudFileBatch } from "@/lib/cloudFileDrop";
+import { CLOUD_RESOURCE_DRAG_MIME, readCloudResourceDragPayload } from "@/lib/cloudResourceDrag";
 import type {
   ExecutionEnvironment,
   ExecutionSelection,
@@ -371,9 +377,19 @@ export function CloudChatPage({
   const [attachments, setAttachments] = useState<CloudChatFile[]>([]);
   const [artifactAttachments, setArtifactAttachments] = useState<CloudChatArtifactVersion[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [resolvingResources, setResolvingResources] = useState(false);
+  const [uploadUnconfirmed, setUploadUnconfirmed] = useState(false);
+  const [checkingUploads, setCheckingUploads] = useState(false);
+  const uploadUnconfirmedRef = useRef(false);
+  const uploadBatchRef = useRef<symbol | null>(null);
+  const resourceDropRef = useRef<symbol | null>(null);
+  const draftResourcesRef = useRef({ files: attachments, artifacts: artifactAttachments });
+  draftResourcesRef.current = { files: attachments, artifacts: artifactAttachments };
   const [filePanel, setFilePanel] = useState<FilePanel | null>(null);
   const [sourcePanel, setSourcePanel] = useState<SourcePanel | null>(null);
-  const [artifactPanel, setArtifactPanel] = useState<{ versionId?: string } | null>(null);
+  const [artifactPanel, setArtifactPanel] = useState<{ versionId?: string; site?: boolean } | null>(
+    null,
+  );
   const [workPanel, setWorkPanel] = useState<"projects" | "memory" | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"chat" | "library" | "projects">("chat");
   const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(CLOUD_SPACE_HOME);
@@ -617,7 +633,11 @@ export function CloudChatPage({
     setFollowingTranscript(true);
   }, []);
 
-  function selectConversationView(id: string) {
+  function selectConversationView(id: string, preserveAttachmentBatch = false) {
+    if (!preserveAttachmentBatch) uploadBatchRef.current = null;
+    resourceDropRef.current = null;
+    setResolvingResources(false);
+    setCheckingUploads(false);
     setComposerMenu(null);
     setWorkspaceView("chat");
     detachRun();
@@ -665,6 +685,12 @@ export function CloudChatPage({
     setConversationsLoadingMore(false);
     setConversationsError("");
     if (viewRef.current.userId !== user.id) {
+      uploadUnconfirmedRef.current = false;
+      uploadBatchRef.current = null;
+      setUploadUnconfirmed(false);
+      setCheckingUploads(false);
+      resourceDropRef.current = null;
+      setResolvingResources(false);
       setWorkspaceView("chat");
       setInitialProjectId(undefined);
       setRuntimeControls((current) => ({ ...current, nativeWebSearchEnabled: false }));
@@ -703,6 +729,8 @@ export function CloudChatPage({
     const invalidate = () => {
       if (ownerRef.current !== owner) return;
       accountInvalidatedRef.current = true;
+      resourceDropRef.current = null;
+      setResolvingResources(false);
       detachRun();
       conversationsAbortRef.current?.abort();
       conversationsAbortRef.current = null;
@@ -1271,7 +1299,7 @@ export function CloudChatPage({
     );
     if (!isCurrentView(previousView)) return "";
     setConversations((current) => [response.conversation, ...current]);
-    selectConversationView(response.conversation.id);
+    selectConversationView(response.conversation.id, true);
     if (savedDraft) {
       draftRestoreRef.current = { view: viewRef.current, draft: savedDraft };
       composerRef.current?.setDraft(savedDraft);
@@ -1685,40 +1713,39 @@ export function CloudChatPage({
     }
   }
 
-  async function attachFileList(files: File[]) {
-    if (
-      !files.length ||
-      uploadAbortRef.current ||
-      modelPreparationAbortRef.current ||
-      streaming ||
-      submissionUnconfirmed ||
-      submissionQueueFull ||
-      accountInvalidatedRef.current
-    )
-      return;
-    if (!isCurrentView(viewRef.current)) return;
-    const resourceCount = attachments.length + artifactAttachments.length;
-    if (resourceCount >= 8) {
-      setError("每条消息最多引用 8 个文件或成果，请先移除附件。");
+  async function attachFileList(files: File[], directories = 0) {
+    if (!files.length && !directories) return;
+    const blocked = cloudAttachmentBlockedReason();
+    if (blocked) {
+      setError(blocked);
       return;
     }
+    const resourceCount = attachments.length + artifactAttachments.length;
+    const batch = prepareCloudFileBatch(files, 8 - resourceCount, directories);
+    if (!batch.files.length) {
+      setError(batch.message);
+      return;
+    }
+    // Claim the batch before creating a conversation or causing a React render.
+    const token = Symbol("attachment upload");
+    uploadBatchRef.current = token;
     const guard = captureAccountRequestGuard();
     let view = viewRef.current;
     setUploadingFiles(true);
     try {
       if (!view.conversationId) {
-        const id = await createConversation();
+        const id = await createConversation(true);
         guard();
-        if (!id) return;
+        if (!id || uploadBatchRef.current !== token) return;
         view = viewRef.current;
       }
-      if (!isCurrentView(view) || uploadAbortRef.current) return;
+      if (!isCurrentView(view) || uploadBatchRef.current !== token) return;
       const controller = new AbortController();
       uploadAbortRef.current = controller;
       setUploadingFiles(true);
       setError("");
       try {
-        for (const file of files.slice(0, 8 - resourceCount)) {
+        for (const file of batch.files) {
           if (!isCurrentView(view) || controller.signal.aborted) return;
           const uploaded = await filesClient.upload(file, view.conversationId, controller.signal);
           guard();
@@ -1727,20 +1754,48 @@ export function CloudChatPage({
             current.some((item) => item.id === uploaded.id) ? current : [...current, uploaded],
           );
         }
-        if (files.length > 8 - resourceCount)
-          setError("每条消息最多引用 8 个文件或成果，其余文件尚未上传。");
+        if (batch.message) setError(batch.message);
       } finally {
-        if (uploadAbortRef.current === controller) {
-          uploadAbortRef.current = null;
-          if (isCurrentView(view)) setUploadingFiles(false);
-        }
+        if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
       }
     } catch (cause) {
       if (!isCurrentView(view)) return;
       if (cause instanceof CloudChatFileError && cause.status === 401) notifyRelaySessionExpired();
+      if (cause instanceof CloudFileUploadUnconfirmedError) {
+        uploadUnconfirmedRef.current = true;
+        setUploadUnconfirmed(true);
+      }
       setError(cause instanceof Error ? cause.message : "附件上传失败，请在文件库中核对。");
     } finally {
-      if (isCurrentView(view) && !uploadAbortRef.current) setUploadingFiles(false);
+      if (uploadBatchRef.current === token) {
+        uploadBatchRef.current = null;
+        if (isCurrentView(view)) setUploadingFiles(false);
+      }
+    }
+  }
+
+  async function reconcileUploads() {
+    if (checkingUploads || !isCurrentView(viewRef.current)) return;
+    const view = viewRef.current,
+      guard = captureAccountRequestGuard();
+    setCheckingUploads(true);
+    try {
+      await filesClient.list();
+      guard();
+      if (!isCurrentView(view)) return;
+      uploadUnconfirmedRef.current = false;
+      setUploadUnconfirmed(false);
+      setError("");
+      setContextNotice("文件库已刷新，请核对已保存的原件后再添加；本次没有重新上传。");
+      openResource("files");
+    } catch (cause) {
+      if (isCurrentView(view)) {
+        if (cause instanceof CloudChatFileError && cause.status === 401)
+          notifyRelaySessionExpired();
+        setError(cause instanceof Error ? cause.message : "文件库核对失败，请稍后再次核对。");
+      }
+    } finally {
+      if (isCurrentView(view)) setCheckingUploads(false);
     }
   }
 
@@ -1886,6 +1941,8 @@ export function CloudChatPage({
       streaming ||
       uploadingFiles ||
       uploadAbortRef.current ||
+      uploadBatchRef.current ||
+      resourceDropRef.current ||
       modelsLoading ||
       !webSettingsLoaded ||
       modelOptions.length === 0 ||
@@ -2281,10 +2338,69 @@ export function CloudChatPage({
     preparingExecution ||
     historyLoading ||
     uploadingFiles ||
+    resolvingResources ||
+    uploadUnconfirmed ||
     submissionUnconfirmed ||
     submissionQueueFull ||
     branchBusy ||
     branchUnconfirmed;
+  function cloudAttachmentBlockedReason(resources = false) {
+    if (!isCurrentView(viewRef.current) || accountInvalidatedRef.current)
+      return "登录状态已更新，请刷新页面后继续。";
+    if (uploadUnconfirmedRef.current) return "上传结果尚未确认，请先刷新文件库核对。";
+    if (resourceDropRef.current) return "正在核对资料，请稍候。";
+    if (uploadBatchRef.current || uploadingFiles) return "正在上传附件，请等待当前上传完成。";
+    if (
+      composerLocked ||
+      streaming ||
+      modelPreparationAbortRef.current ||
+      researchConfirmationRef.current
+    )
+      return "请等待当前操作完成后再添加资料。";
+    if (!resources && attachments.length + artifactAttachments.length >= 8)
+      return "每条消息最多引用 8 个文件或成果，请先移除附件。";
+    return "";
+  }
+  async function dropCloudResources(transfer: DataTransfer) {
+    const items = readCloudResourceDragPayload(transfer);
+    if (!items) {
+      setError("拖入的资料身份无效，请从资料空间重新选择。");
+      return;
+    }
+    if (resourceDropRef.current) {
+      setError("正在核对资料，请稍候。");
+      return;
+    }
+    const view = viewRef.current;
+    try {
+      await referenceSpaceItems(items);
+    } catch (cause) {
+      if (isCurrentView(view)) {
+        if (
+          (cause instanceof CloudChatFileError || cause instanceof CloudChatArtifactError) &&
+          cause.status === 401
+        )
+          notifyRelaySessionExpired();
+        setError(cause instanceof Error ? cause.message : "资料引用失败，请重新选择。");
+      }
+    }
+  }
+  const readerOpen = Boolean(
+    (filePanel && (workspaceView !== "library" || filePanel.fileId)) ||
+      (artifactPanel && (workspaceView !== "library" || artifactPanel.versionId)),
+  );
+  function showFileResource(target: NonNullable<typeof filePanel>) {
+    setFilePanel(target);
+    setArtifactPanel(null);
+    setSourcePanel(null);
+    setWorkPanel(null);
+  }
+  function showArtifactResource(target: NonNullable<typeof artifactPanel>) {
+    setArtifactPanel(target);
+    setFilePanel(null);
+    setSourcePanel(null);
+    setWorkPanel(null);
+  }
   function clearResources() {
     setAccountSettingsOpen(false);
     sidebarPreview.dismiss();
@@ -2320,7 +2436,9 @@ export function CloudChatPage({
           setArtifactPanel(null);
           setSourcePanel(null);
           setWorkPanel(null);
-          setWorkspaceView("chat");
+          if (!(workspaceView === "library" && (filePanel?.fileId || artifactPanel?.versionId))) {
+            setWorkspaceView("chat");
+          }
         });
       } else {
         return;
@@ -2398,7 +2516,14 @@ export function CloudChatPage({
     projectNavigation.request(() => {
       setSpaceVisited(true);
       setFilePanel(item.kind === "file" ? { fileId: item.target_id } : null);
-      setArtifactPanel(item.kind === "artifact" ? { versionId: item.target_id } : null);
+      setArtifactPanel(
+        item.kind === "artifact"
+          ? {
+              versionId: item.site_version_id ?? item.target_id,
+              site: Boolean(item.site_version_id),
+            }
+          : null,
+      );
       setSourcePanel(null);
       setWorkPanel(null);
       setWorkspaceView("library");
@@ -2406,40 +2531,69 @@ export function CloudChatPage({
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
-  async function referenceSpaceItems(items: CloudSpaceItem[]) {
+  async function referenceSpaceItems(
+    items: readonly Pick<CloudSpaceItem, "kind" | "id" | "target_id" | "site_version_id">[],
+  ) {
     if (composerLocked || streaming || modelPreparationAbortRef.current)
       throw new Error("请等待当前操作完成后再引用资料。");
+    if (resourceDropRef.current) throw new Error("正在核对资料，请稍候。");
+    const token = Symbol("resource reference");
+    resourceDropRef.current = token;
+    setResolvingResources(true);
     const view = viewRef.current,
       guard = captureWorkGuard();
-    const files: CloudChatFile[] = [],
-      versions: CloudChatArtifactVersion[] = [];
-    for (const item of items) {
+    try {
+      const files: CloudChatFile[] = [],
+        versions: CloudChatArtifactVersion[] = [];
+      for (const item of items) {
+        guard();
+        if (item.kind === "file") {
+          const file = await filesClient.get(item.target_id);
+          guard();
+          if (file.id !== item.id) throw new Error("资料身份已变化，请刷新后再引用。");
+          if (!cloudFileCanReference(file))
+            throw new Error(`${file.name}暂不能引用，请打开预览查看处理状态。`);
+          if (!files.some((old) => old.id === file.id)) files.push(file);
+        } else if (item.kind === "artifact") {
+          const version = await artifactsClient.get(item.site_version_id ?? item.target_id);
+          guard();
+          if (version.family_id !== item.id) throw new Error("成果身份已变化，请刷新后再引用。");
+          if (version.state !== "ready") throw new Error(`${version.name}尚未保存完成。`);
+          if (!versions.some((old) => old.id === version.id)) versions.push(version);
+        }
+      }
       guard();
-      if (item.kind === "file") {
-        const file = await filesClient.get(item.target_id);
-        guard();
-        if (!cloudFileCanReference(file))
-          throw new Error(`${item.name}暂不能引用，请打开预览查看处理状态。`);
-        files.push(file);
-      } else if (item.kind === "artifact") {
-        const version = await artifactsClient.get(item.target_id);
-        guard();
-        if (version.state !== "ready") throw new Error(`${item.name}尚未保存完成。`);
-        versions.push(version);
+      if (!isCurrentView(view)) return;
+      if (
+        composerLocked ||
+        streaming ||
+        modelPreparationAbortRef.current ||
+        uploadBatchRef.current ||
+        pendingSubmissionRef.current ||
+        (latestRunRef.current && !isCloudChatRunTerminal(latestRunRef.current))
+      )
+        throw new Error("请等待当前操作完成后再引用资料。");
+      const current = draftResourcesRef.current;
+      const newFiles = files.filter((file) => !current.files.some((old) => old.id === file.id)),
+        newVersions = versions.filter(
+          (version) => !current.artifacts.some((old) => old.id === version.id),
+        );
+      if (
+        current.files.length + current.artifacts.length + newFiles.length + newVersions.length >
+        8
+      )
+        throw new Error("每条消息最多引用 8 个文件或成果。");
+      setAttachments((old) => [...old, ...newFiles]);
+      setArtifactAttachments((old) => [...old, ...newVersions]);
+      setError("");
+      clearResources();
+      requestAnimationFrame(() => composerRef.current?.focus());
+    } finally {
+      if (resourceDropRef.current === token) {
+        resourceDropRef.current = null;
+        if (isCurrentView(view)) setResolvingResources(false);
       }
     }
-    guard();
-    if (!isCurrentView(view)) return;
-    const newFiles = files.filter((file) => !attachments.some((old) => old.id === file.id)),
-      newVersions = versions.filter(
-        (version) => !artifactAttachments.some((old) => old.id === version.id),
-      );
-    if (attachments.length + artifactAttachments.length + newFiles.length + newVersions.length > 8)
-      throw new Error("每条消息最多引用 8 个文件或成果。");
-    setAttachments((old) => [...old, ...newFiles]);
-    setArtifactAttachments((old) => [...old, ...newVersions]);
-    clearResources();
-    requestAnimationFrame(() => composerRef.current?.focus());
   }
   function pinSidebarPreview() {
     if (shownSidebarDestination === "library") {
@@ -2491,6 +2645,7 @@ export function CloudChatPage({
   function attachLibraryFile(file: CloudChatFile) {
     if (
       !isCurrentView(viewRef.current) ||
+      resourceDropRef.current ||
       composerLocked ||
       streaming ||
       !cloudFileCanReference(file)
@@ -2587,6 +2742,7 @@ export function CloudChatPage({
     branchBusy && "正在保存分支…",
     exporting && "正在导出…",
     uploadingFiles && "正在保存并校验附件…",
+    resolvingResources && "正在核对资料…",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -2598,9 +2754,26 @@ export function CloudChatPage({
     contextNotice ||
     submissionUnconfirmed ||
     submissionQueueFull ||
-    branchUnconfirmed ? (
+    branchUnconfirmed ||
+    uploadUnconfirmed ? (
       <div className="app-status-stack" data-cloud-composer-feedback="">
         {error ? <CloudChatFeedback tone="error" message={error} /> : null}
+        {uploadUnconfirmed ? (
+          <CloudChatFeedback
+            tone="warning"
+            message="上传结果尚未确认，继续添加前请核对文件库。"
+            actions={
+              <button
+                type="button"
+                className="app-status-action"
+                disabled={checkingUploads}
+                onClick={() => void reconcileUploads()}
+              >
+                {checkingUploads ? "正在核对…" : "刷新文件库核对"}
+              </button>
+            }
+          />
+        ) : null}
         {historyError && historyError !== error ? (
           <CloudChatFeedback
             tone="error"
@@ -2775,7 +2948,7 @@ export function CloudChatPage({
           ref={fileRef}
           type="file"
           multiple
-          accept=".txt,.md,.csv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.go,.rs,.java,.c,.cpp,.h,.sh,.sql,.log,.pdf,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.png,.jpg,.jpeg,.gif,.webp,.zip,application/zip"
+          accept={CLOUD_FILE_ACCEPT}
           className="gateway-hidden-file-input hidden"
           aria-label="选择附件"
           onChange={(event) => void attachFiles(event)}
@@ -2848,7 +3021,7 @@ export function CloudChatPage({
                         />
                       </>
                     }
-                    onOpenResourceHub={() => setFilePanel({})}
+                    onOpenResourceHub={() => showFileResource({})}
                     items={sidebarItems}
                     currentConversationId={workspaceView === "chat" ? conversationId : ""}
                     busyConversationIds={EMPTY_MUTATIONS}
@@ -2968,8 +3141,7 @@ export function CloudChatPage({
             <main
               className={`${GATEWAY_MAIN_SHELL_CLASS} gateway-cloud-main`}
               data-resource-panel-open={
-                workspaceView === "chat" &&
-                Boolean(filePanel || artifactPanel || sourcePanel || workPanel)
+                workspaceView === "chat" && Boolean(sourcePanel || workPanel)
               }
             >
               <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
@@ -3078,644 +3250,731 @@ export function CloudChatPage({
                   ) : null
                 }
               />
-              <ApplicationView
-                activeView="chat"
-                settings={settings}
-                setSettings={setSettings}
-                isAgentMode={false}
-                className={workspaceView === "chat" ? "contents" : "hidden"}
-                chat={{
-                  containerProps: {
-                    className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
-                    style: {
-                      "--zone-font-scale": settings.customSettings.fontScale.chat,
-                    } as CSSProperties,
-                  },
-                  content: (
-                    <>
-                      <div className="cloud-conversation-resources">
-                        {conversationFiles.length ? (
-                          <details className="min-w-0">
-                            <summary className="cursor-pointer text-muted-foreground">
-                              本会话附件 ({conversationFiles.length})
-                            </summary>
-                            <div className="flex flex-wrap gap-8px py-8px">
-                              {conversationFiles.map((file) => (
-                                <button
-                                  key={file.file_id}
-                                  type="button"
-                                  className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
-                                  onClick={() => setFilePanel({ fileId: file.file_id })}
-                                >
-                                  {file.name || "附件"}
-                                </button>
-                              ))}
+              <CloudChatResourceWorkbench
+                readingScope={`${user.id}:${accountInvalidatedRef.current ? "retired" : "current"}`}
+                open={readerOpen}
+                primaryVisible={
+                  workspaceView === "chat" ||
+                  (workspaceView === "library" && !sourcePanel && !workPanel)
+                }
+                primary={(readingOnly) => (
+                  <>
+                    <ApplicationView
+                      activeView="chat"
+                      settings={settings}
+                      setSettings={setSettings}
+                      isAgentMode={false}
+                      className={workspaceView === "chat" ? "contents" : "hidden"}
+                      chat={{
+                        containerProps: {
+                          className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
+                          style: {
+                            "--zone-font-scale": settings.customSettings.fontScale.chat,
+                          } as CSSProperties,
+                        },
+                        content: (
+                          <>
+                            <div className="cloud-conversation-resources">
+                              {conversationFiles.length ? (
+                                <details className="min-w-0">
+                                  <summary className="cursor-pointer text-muted-foreground">
+                                    本会话附件 ({conversationFiles.length})
+                                  </summary>
+                                  <div className="flex flex-wrap gap-8px py-8px">
+                                    {conversationFiles.map((file) => (
+                                      <button
+                                        key={file.file_id}
+                                        type="button"
+                                        className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
+                                        onClick={() => showFileResource({ fileId: file.file_id })}
+                                      >
+                                        {file.name || "附件"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : null}
+                              {conversationArtifacts.length ? (
+                                <details className="min-w-0">
+                                  <summary className="cursor-pointer text-muted-foreground">
+                                    本会话成果 ({conversationArtifacts.length})
+                                  </summary>
+                                  <div className="flex flex-wrap gap-8px py-8px">
+                                    {conversationArtifacts.map((version) => (
+                                      <button
+                                        key={version.version_id}
+                                        type="button"
+                                        className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
+                                        onClick={() =>
+                                          showArtifactResource({ versionId: version.version_id })
+                                        }
+                                      >
+                                        {version.name || "成果"}
+                                        {version.number ? ` · v${version.number}` : ""}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : null}
                             </div>
-                          </details>
-                        ) : null}
-                        {conversationArtifacts.length ? (
-                          <details className="min-w-0">
-                            <summary className="cursor-pointer text-muted-foreground">
-                              本会话成果 ({conversationArtifacts.length})
-                            </summary>
-                            <div className="flex flex-wrap gap-8px py-8px">
-                              {conversationArtifacts.map((version) => (
-                                <button
-                                  key={version.version_id}
-                                  type="button"
-                                  className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
-                                  onClick={() =>
-                                    setArtifactPanel({ versionId: version.version_id })
-                                  }
-                                >
-                                  {version.name || "成果"}
-                                  {version.number ? ` · v${version.number}` : ""}
-                                </button>
-                              ))}
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
-                      <section
-                        className="gateway-transcript-stage cloud-conversation-layout relative min-h-0 flex-1 overflow-hidden @container"
-                        data-layout={landing ? "landing" : "thread"}
-                        data-presentation={presentation}
-                      >
-                        {landing ? <CloudChatEmptyState mode={presentation} /> : null}
-                        <div className="gateway-transcript-scroll-shell relative h-full min-h-0">
-                          <ScrollArea
-                            viewportRef={setTranscriptViewport}
-                            className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
-                          >
-                            <GatewayTranscript
-                              emptyState={null}
-                              hasMoreHistory={historyHasMore}
-                              isLoadingMoreHistory={historyPageLoading}
-                              onLoadEarlierHistory={() => void loadEarlierHistory()}
-                              isViewportFollowing={() => followTranscriptTailRef.current}
-                              viewportFollowing={followingTranscript}
-                              resendCreatesBranch
-                              conversationId={conversationId}
-                              rows={transcriptRows}
-                              editRequest={terminalEditRequest}
-                              onEditRequestHandled={(token) =>
-                                setTerminalEditRequest((current) =>
-                                  current?.token === token ? null : current,
-                                )
+                            <FileDropBoundary
+                              active={
+                                workspaceView === "chat" && !accountSettingsOpen && !readingOnly
                               }
-                              liveStartIndex={
-                                streaming ? Math.max(0, transcriptRows.length - 1) : -1
+                              resetKey={`${user.id}:${conversationId}`}
+                              fileLabel="松开添加到当前草稿"
+                              resourceLabel="松开引用到当前草稿"
+                              hint="单个文件不超过32 MiB；添加到草稿后不会自动发送"
+                              resourceMime={CLOUD_RESOURCE_DRAG_MIME}
+                              disabledReason={cloudAttachmentBlockedReason()}
+                              resourceDisabledReason={cloudAttachmentBlockedReason(true)}
+                              onFiles={(files, directories) =>
+                                void attachFileList(files, directories)
                               }
-                              activeTurnKey={streaming ? messages.at(-1)?.id : null}
-                              footer={terminalFeedback}
-                              toolStatus={
-                                streaming
-                                  ? runConnection === "reconnecting"
-                                    ? "正在重新连接，任务仍在服务端保留"
-                                    : activeRun
-                                      ? cloudChatRunToolStatus(activeRun) ||
-                                        cloudChatRunStatusText(activeRun)
-                                      : "正在保存任务"
-                                  : null
-                              }
-                              isStreaming={streaming}
-                              assistantLiveMode="streaming"
-                              isLoading={historyLoading}
-                              hasModels={modelOptions.length > 0}
-                              onOpenSettings={() => {
-                                setSettingsSection("providers");
-                                setAccountSettingsOpen(true);
-                              }}
-                              onSuggestionSelect={(text) => {
-                                composerRef.current?.setText(text);
-                                composerRef.current?.focus();
-                              }}
-                              onOpenFileLink={(link) => {
-                                const messageMatch =
-                                  /^cloud-messages\/([A-Za-z0-9_-]{1,128})$/.exec(link.path);
-                                if (messageMatch) {
-                                  void readMessageBody(messageMatch[1]);
-                                  return;
-                                }
-                                const artifactId = cloudArtifactVersionFromLink(link.path);
-                                if (artifactId) {
-                                  showResourceDetail(() =>
-                                    setArtifactPanel({ versionId: artifactId }),
-                                  );
-                                  return;
-                                }
-                                const sourceMatch =
-                                  /^cloud-sources\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
-                                    link.path,
-                                  );
-                                if (sourceMatch) {
-                                  showResourceDetail(() =>
-                                    setSourcePanel({
-                                      sourceId: sourceMatch[1],
-                                      fromLine: link.line,
-                                      toLine: link.endLine,
-                                    }),
-                                  );
-                                  return;
-                                }
-                                const match =
-                                  /^cloud-files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
-                                    link.path,
-                                  );
-                                if (!match) {
-                                  setError("云端对话仅支持打开当前账户的文件引用。");
-                                  return;
-                                }
-                                showResourceDetail(() =>
-                                  setFilePanel({
-                                    fileId: match[1],
-                                    fromLine: link.line,
-                                    toLine: link.endLine,
-                                  }),
-                                );
-                              }}
-                              onResendFromEdit={
-                                branchBusy || branchUnconfirmed || streaming
-                                  ? undefined
-                                  : (ref, text, files) => branchConversation(ref, { text, files })
-                              }
-                              onBranchConversation={
-                                branchBusy || branchUnconfirmed || streaming
-                                  ? undefined
-                                  : (ref) => branchConversation(ref)
-                              }
-                              branchPendingMessageId={branchPendingMessageId}
-                            />
-                          </ScrollArea>
-                        </div>
-                        <ChatComposerBar
-                          capabilities={CLOUD_COMPOSER_CAPABILITIES}
-                          feedback={composerFeedback}
-                          layout="inline"
-                          expandedInput={presentation === "work"}
-                          contextBarPosition={sidebar.isMobile ? "above" : "below"}
-                          allowQueueWhileSending={false}
-                          onPickWorkspaceFolder={() => undefined}
-                          onRefreshModels={() => void refreshModels()}
-                          modelsRefreshing={modelsLoading}
-                          presentation="column"
-                          conversationId={conversationId}
-                          composerRef={composerRef}
-                          isSending={streaming}
-                          isUploadingFiles={uploadingFiles}
-                          isInputDisabled={
-                            projectContextBusy ||
-                            preparingExecution ||
-                            historyLoading ||
-                            modelsLoading ||
-                            modelOptions.length === 0 ||
-                            submissionUnconfirmed ||
-                            submissionQueueFull ||
-                            branchBusy ||
-                            branchUnconfirmed ||
-                            Boolean(researchConfirmation)
-                          }
-                          allowUploadsWithoutWorkspace
-                          inputPlaceholder={
-                            presentation === "work" ? "使用 ZeroAgent 工作" : "询问 ZeroAgent"
-                          }
-                          capabilityMenu={
-                            <CloudChatComposerMenu
-                              disabled={composerLocked || streaming}
-                              open={composerMenu === "add"}
-                              onOpenChange={(open) =>
-                                setComposerMenu((old) =>
-                                  open ? "add" : old === "add" ? null : old,
-                                )
-                              }
-                              researchEnabled={runtimeControls.nativeWebSearchEnabled}
-                              onUpload={() => fileRef.current?.click()}
-                              onOpenFiles={(anchor) => openComposerPicker("files", anchor)}
-                              onOpenProjects={(anchor) => openComposerPicker("projects", anchor)}
-                              onToggleResearch={() =>
-                                setRuntimeControls((current) => ({
-                                  ...current,
-                                  nativeWebSearchEnabled: !current.nativeWebSearchEnabled,
-                                }))
-                              }
-                            />
-                          }
-                          leadingControls={
-                            runtimeControls.nativeWebSearchEnabled ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="cloud-active-tool"
-                                title="移除公开联网研究"
-                                aria-label="移除公开联网研究"
-                                disabled={composerLocked}
-                                onClick={() =>
-                                  setRuntimeControls((current) => ({
-                                    ...current,
-                                    nativeWebSearchEnabled: false,
-                                  }))
-                                }
-                              >
-                                <Globe className="size-3.5" />
-                                <span>联网研究</span>
-                                <X className="size-3" />
-                              </Button>
-                            ) : undefined
-                          }
-                          contextBar={
-                            <div
-                              className="cloud-context-motion"
-                              data-open={presentation === "work"}
-                              inert={presentation !== "work"}
-                              aria-hidden={presentation !== "work"}
+                              onResources={(transfer) => void dropCloudResources(transfer)}
+                              onRejected={setError}
+                              className="gateway-transcript-stage cloud-conversation-layout relative min-h-0 flex-1 overflow-hidden @container"
+                              data-layout={landing ? "landing" : "thread"}
+                              data-presentation={presentation}
                             >
-                              <div className="cloud-context-motion-inner">
-                                <CloudChatWorkToolbar
-                                  open={composerMenu}
-                                  busy={projectContextBusy}
-                                  disabled={composerLocked || streaming}
-                                  projectName={
-                                    composerProject.scope === `${user.id}:${conversationId}`
-                                      ? composerProject.project?.name
-                                      : undefined
-                                  }
-                                  onOpen={openComposerPicker}
-                                />
-                              </div>
-                            </div>
-                          }
-                          workdir=""
-                          enabledSkills={[]}
-                          executionMode="text"
-                          hasModels={modelOptions.length > 0}
-                          currentModelLabel={model}
-                          modelOptions={modelOptions}
-                          selectedValue={selectedModelValue}
-                          chatRuntimeControls={runtimeControls}
-                          reasoningOptions={CLOUD_CHAT_REASONING_OPTIONS}
-                          thinkingAlwaysOn={false}
-                          onSend={() => void send()}
-                          onStop={() => void stopRun()}
-                          onComposerBusyChange={() => undefined}
-                          onSelectModel={(next) => {
-                            const nextProviderKeyId = relayProviderKeyId(next.customProviderId);
-                            setModel(next.model);
-                            setProviderKeyId(nextProviderKeyId);
-                            setSettings((current) => ({ ...current, selectedModel: next }));
-                            void saveWebSettings(next.model, reasoning, nextProviderKeyId).catch(
-                              (cause) => setError(String(cause)),
-                            );
-                          }}
-                          onSelectExecutionMode={() => undefined}
-                          onOpenSettings={(section) => {
-                            if (section) setSettingsSection(section);
-                            setAccountSettingsOpen(true);
-                          }}
-                          onChatRuntimeControlsChange={(patch) => {
-                            const next = patchCloudChatRuntimeControls(runtimeControls, patch);
-                            setRuntimeControls(next);
-                            if (
-                              patch.nativeWebSearchEnabled === false &&
-                              researchConfirmationRef.current
-                            )
-                              settleResearchConfirmation(researchConfirmationRef.current);
-                            if (next.reasoning !== reasoning) {
-                              setReasoning(next.reasoning);
-                              void saveWebSettings(model, next.reasoning).catch((cause) =>
-                                setError(String(cause)),
-                              );
-                            }
-                          }}
-                          onPickReadableFiles={() => fileRef.current?.click()}
-                          onPasteFiles={(files) => void attachFileList(files)}
-                          loadHistoryPrompts={() =>
-                            messages
-                              .filter((message) => message.role === "user")
-                              .map((message) => messageText(message.content))
-                              .filter(Boolean)
-                          }
-                          pendingUploadedFiles={pendingUploadedFiles}
-                          onOpenPendingUpload={(path) => {
-                            const versionId = cloudArtifactVersionFromLink(path);
-                            showResourceDetail(() => {
-                              if (versionId) setArtifactPanel({ versionId });
-                              else setFilePanel({ fileId: path });
-                            });
-                          }}
-                          onRemovePendingUpload={(id) => {
-                            const versionId = cloudArtifactVersionFromLink(id);
-                            if (versionId)
-                              setArtifactAttachments((current) =>
-                                current.filter((item) => item.id !== versionId),
-                              );
-                            else
-                              setAttachments((current) => current.filter((item) => item.id !== id));
-                          }}
-                          queuedTurns={[]}
-                          onRunQueuedTurnNow={() => undefined}
-                          onMoveQueuedTurnUp={() => undefined}
-                          onEditQueuedTurn={() => undefined}
-                          onRemoveQueuedTurn={() => undefined}
-                        />
-                        {landing ? (
-                          <CloudChatStarters mode={presentation} onSelect={fillStarter} />
-                        ) : null}
-                      </section>
-                    </>
-                  ),
-                }}
-              />
-              <CloudChatContextPicker
-                key={user.id}
-                kind={composerMenu && composerMenu !== "add" ? composerMenu : null}
-                anchor={composerMenuAnchor}
-                mobile={sidebar.isMobile}
-                scope={`${user.id}:${conversationId}`}
-                revision={navigationRevision}
-                projectsClient={projectsClient}
-                filesClient={filesClient}
-                captureGuard={captureWorkGuard}
-                attachedIds={attachments.map((file) => file.id)}
-                selectedProjectId={
-                  composerProject.scope === `${user.id}:${conversationId}`
-                    ? composerProject.project?.id
-                    : undefined
-                }
-                disabled={composerLocked || streaming}
-                researchEnabled={runtimeControls.nativeWebSearchEnabled}
-                onClose={() => setComposerMenu(null)}
-                onSelectProject={selectComposerProject}
-                onAttach={attachLibraryFile}
-                onBrowse={(kind) => openResource(kind, true)}
-                onToggleResearch={() =>
-                  setRuntimeControls((current) => ({
-                    ...current,
-                    nativeWebSearchEnabled: !current.nativeWebSearchEnabled,
-                  }))
-                }
-                onFillDraft={fillStarter}
-                onFocusComposer={() => {
-                  if (isCurrentView(viewRef.current)) composerRef.current?.focus();
-                }}
-              />
-              <CloudChatResourcePresentation.Provider
-                value={
-                  workspaceView === "chat" || (workspaceView === "library" && !sourcePanel)
-                    ? "panel"
-                    : "page"
-                }
-              >
-                <div className={workspaceView === "chat" ? "contents" : "cloud-workspace-content"}>
-                  {spaceVisited &&
-                  !accountInvalidatedRef.current &&
-                  viewRef.current.userId === user.id ? (
-                    <div
-                      className={
-                        workspaceView === "library" && !sourcePanel ? "contents" : "hidden"
-                      }
-                      inert={workspaceView !== "library" || Boolean(sourcePanel)}
-                    >
-                      <CloudSpacePage
-                        key={user.id}
-                        client={spaceClient}
-                        files={filesClient}
-                        artifacts={artifactsClient}
-                        revision={spaceRevision}
-                        active={workspaceView === "library" && !sourcePanel}
-                        storageOpen={spaceStorageOpen}
-                        onStorageOpenChange={setSpaceStorageOpen}
-                        location={spaceLocation}
-                        onNavigate={navigateSpace}
-                        onOpen={openSpaceItem}
-                        onReference={referenceSpaceItems}
-                        onCreateWork={(text) => {
-                          if (composerLocked || streaming) return;
-                          clearResources();
-                          if (landing) setPresentation("work");
-                          fillStarter(text);
-                        }}
-                        canReference={!composerLocked && !streaming}
-                        captureGuard={captureAccountRequestGuard}
-                        onChanged={() => setSpaceRevision((old) => old + 1)}
-                        onError={(cause) => {
-                          if (cause instanceof CloudSpaceError && cause.status === 401)
-                            notifyRelaySessionExpired();
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  {filePanel &&
-                  (workspaceView !== "library" || filePanel.fileId) &&
-                  viewRef.current.userId === user.id &&
-                  !accountInvalidatedRef.current
-                    ? (() => {
-                        const view = viewRef.current;
-                        return (
-                          <CloudChatFilePanel
-                            key={`${user.id}:${conversationId}:${filePanel.fileId ?? "library"}`}
-                            client={filesClient}
-                            onBrowseLibrary={
-                              workspaceView === "library" ? () => setFilePanel(null) : undefined
-                            }
-                            onUpload={
-                              workspaceView === "library"
-                                ? undefined
-                                : () => {
-                                    closeResources();
-                                    fileRef.current?.click();
-                                  }
-                            }
-                            initialFileId={filePanel.fileId}
-                            fromLine={filePanel.fromLine}
-                            toLine={filePanel.toLine}
-                            canAttach={
-                              !preparingExecution &&
-                              !streaming &&
-                              !uploadingFiles &&
-                              !submissionUnconfirmed &&
-                              !submissionQueueFull
-                            }
-                            isCurrent={() => isCurrentView(view)}
-                            onClose={
-                              workspaceView === "library"
-                                ? () => {
-                                    setFilePanel(null);
-                                    setSpaceRevision((old) => old + 1);
-                                  }
-                                : closeResources
-                            }
-                            onAttach={(file) => {
-                              if (!isCurrentView(view) || modelPreparationAbortRef.current) return;
-                              if (attachments.length + artifactAttachments.length >= 8) {
-                                setError("每条消息最多引用 8 个文件或成果。");
-                                return;
-                              }
-                              setAttachments((current) =>
-                                current.some((item) => item.id === file.id)
-                                  ? current
-                                  : [...current, file],
-                              );
-                              if (workspaceView !== "chat") closeResources();
-                            }}
-                            onDeleted={(id) => {
-                              if (isCurrentView(view))
-                                setAttachments((current) =>
-                                  current.filter((file) => file.id !== id),
-                                );
-                            }}
-                            onError={(cause) => {
-                              if (cause instanceof CloudChatFileError && cause.status === 401)
-                                notifyRelaySessionExpired();
-                            }}
-                          />
-                        );
-                      })()
-                    : null}
-                  {artifactPanel &&
-                  (workspaceView !== "library" || artifactPanel.versionId) &&
-                  viewRef.current.userId === user.id &&
-                  !accountInvalidatedRef.current
-                    ? (() => {
-                        const view = viewRef.current;
-                        const canContinue =
-                          !preparingExecution &&
-                          !streaming &&
-                          !uploadingFiles &&
-                          !submissionUnconfirmed &&
-                          !submissionQueueFull &&
-                          !branchBusy &&
-                          !branchUnconfirmed;
-                        return (
-                          <CloudChatArtifactsPanel
-                            key={`${user.id}:${conversationId}:${artifactPanel.versionId ?? "library"}`}
-                            client={artifactsClient}
-                            conversationId={conversationId || undefined}
-                            initialVersionId={artifactPanel.versionId}
-                            isCurrent={() => isCurrentView(view)}
-                            onClose={
-                              workspaceView === "library"
-                                ? () => {
-                                    setArtifactPanel(null);
-                                    setSpaceRevision((old) => old + 1);
-                                  }
-                                : closeResources
-                            }
-                            onContinue={
-                              canContinue
-                                ? (version) => {
-                                    if (!isCurrentView(view) || version.state !== "ready") return;
-                                    if (
-                                      artifactAttachments.some((item) => item.id === version.id)
-                                    ) {
-                                      setArtifactPanel(null);
+                              {landing ? <CloudChatEmptyState mode={presentation} /> : null}
+                              <div className="gateway-transcript-scroll-shell relative h-full min-h-0">
+                                <ScrollArea
+                                  viewportRef={setTranscriptViewport}
+                                  className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
+                                >
+                                  <GatewayTranscript
+                                    emptyState={null}
+                                    hasMoreHistory={historyHasMore}
+                                    isLoadingMoreHistory={historyPageLoading}
+                                    onLoadEarlierHistory={() => void loadEarlierHistory()}
+                                    isViewportFollowing={() => followTranscriptTailRef.current}
+                                    viewportFollowing={followingTranscript}
+                                    resendCreatesBranch
+                                    conversationId={conversationId}
+                                    rows={transcriptRows}
+                                    editRequest={terminalEditRequest}
+                                    onEditRequestHandled={(token) =>
+                                      setTerminalEditRequest((current) =>
+                                        current?.token === token ? null : current,
+                                      )
+                                    }
+                                    liveStartIndex={
+                                      streaming ? Math.max(0, transcriptRows.length - 1) : -1
+                                    }
+                                    activeTurnKey={streaming ? messages.at(-1)?.id : null}
+                                    footer={terminalFeedback}
+                                    toolStatus={
+                                      streaming
+                                        ? runConnection === "reconnecting"
+                                          ? "正在重新连接，任务仍在服务端保留"
+                                          : activeRun
+                                            ? cloudChatRunToolStatus(activeRun) ||
+                                              cloudChatRunStatusText(activeRun)
+                                            : "正在保存任务"
+                                        : null
+                                    }
+                                    isStreaming={streaming}
+                                    assistantLiveMode="streaming"
+                                    isLoading={historyLoading}
+                                    hasModels={modelOptions.length > 0}
+                                    onOpenSettings={() => {
+                                      setSettingsSection("providers");
+                                      setAccountSettingsOpen(true);
+                                    }}
+                                    onSuggestionSelect={(text) => {
+                                      composerRef.current?.setText(text);
                                       composerRef.current?.focus();
-                                      return;
+                                    }}
+                                    onOpenFileLink={(link) => {
+                                      const messageMatch =
+                                        /^cloud-messages\/([A-Za-z0-9_-]{1,128})$/.exec(link.path);
+                                      if (messageMatch) {
+                                        void readMessageBody(messageMatch[1]);
+                                        return;
+                                      }
+                                      const artifactId = cloudArtifactVersionFromLink(link.path);
+                                      if (artifactId) {
+                                        showResourceDetail(() =>
+                                          showArtifactResource({ versionId: artifactId }),
+                                        );
+                                        return;
+                                      }
+                                      const sourceMatch =
+                                        /^cloud-sources\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+                                          link.path,
+                                        );
+                                      if (sourceMatch) {
+                                        showResourceDetail(() =>
+                                          setSourcePanel({
+                                            sourceId: sourceMatch[1],
+                                            fromLine: link.line,
+                                            toLine: link.endLine,
+                                          }),
+                                        );
+                                        return;
+                                      }
+                                      const match =
+                                        /^cloud-files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+                                          link.path,
+                                        );
+                                      if (!match) {
+                                        setError("云端对话仅支持打开当前账户的文件引用。");
+                                        return;
+                                      }
+                                      showResourceDetail(() =>
+                                        showFileResource({
+                                          fileId: match[1],
+                                          fromLine: link.line,
+                                          toLine: link.endLine,
+                                        }),
+                                      );
+                                    }}
+                                    onResendFromEdit={
+                                      branchBusy || branchUnconfirmed || streaming
+                                        ? undefined
+                                        : (ref, text, files) =>
+                                            branchConversation(ref, { text, files })
                                     }
-                                    if (attachments.length + artifactAttachments.length >= 8) {
-                                      setError("每条消息最多引用 8 个文件或成果。");
-                                      return;
+                                    onBranchConversation={
+                                      branchBusy || branchUnconfirmed || streaming
+                                        ? undefined
+                                        : (ref) => branchConversation(ref)
                                     }
-                                    setArtifactAttachments((current) =>
-                                      current.some((item) => item.id === version.id)
-                                        ? current
-                                        : [...current, version],
+                                    branchPendingMessageId={branchPendingMessageId}
+                                  />
+                                </ScrollArea>
+                              </div>
+                              <ChatComposerBar
+                                capabilities={CLOUD_COMPOSER_CAPABILITIES}
+                                feedback={composerFeedback}
+                                layout="inline"
+                                expandedInput={presentation === "work"}
+                                contextBarPosition={sidebar.isMobile ? "above" : "below"}
+                                allowQueueWhileSending={false}
+                                onPickWorkspaceFolder={() => undefined}
+                                onRefreshModels={() => void refreshModels()}
+                                modelsRefreshing={modelsLoading}
+                                presentation="column"
+                                conversationId={conversationId}
+                                composerRef={composerRef}
+                                isSending={streaming}
+                                isUploadingFiles={uploadingFiles}
+                                isInputDisabled={
+                                  projectContextBusy ||
+                                  resolvingResources ||
+                                  preparingExecution ||
+                                  historyLoading ||
+                                  modelsLoading ||
+                                  modelOptions.length === 0 ||
+                                  submissionUnconfirmed ||
+                                  submissionQueueFull ||
+                                  branchBusy ||
+                                  branchUnconfirmed ||
+                                  Boolean(researchConfirmation)
+                                }
+                                allowUploadsWithoutWorkspace
+                                inputPlaceholder={
+                                  presentation === "work" ? "使用 ZeroAgent 工作" : "询问 ZeroAgent"
+                                }
+                                capabilityMenu={
+                                  <CloudChatComposerMenu
+                                    disabled={composerLocked || streaming}
+                                    open={composerMenu === "add"}
+                                    onOpenChange={(open) =>
+                                      setComposerMenu((old) =>
+                                        open ? "add" : old === "add" ? null : old,
+                                      )
+                                    }
+                                    researchEnabled={runtimeControls.nativeWebSearchEnabled}
+                                    onUpload={() => fileRef.current?.click()}
+                                    onOpenFiles={(anchor) => openComposerPicker("files", anchor)}
+                                    onOpenProjects={(anchor) =>
+                                      openComposerPicker("projects", anchor)
+                                    }
+                                    onToggleResearch={() =>
+                                      setRuntimeControls((current) => ({
+                                        ...current,
+                                        nativeWebSearchEnabled: !current.nativeWebSearchEnabled,
+                                      }))
+                                    }
+                                  />
+                                }
+                                leadingControls={
+                                  runtimeControls.nativeWebSearchEnabled ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="cloud-active-tool"
+                                      title="移除公开联网研究"
+                                      aria-label="移除公开联网研究"
+                                      disabled={composerLocked}
+                                      onClick={() =>
+                                        setRuntimeControls((current) => ({
+                                          ...current,
+                                          nativeWebSearchEnabled: false,
+                                        }))
+                                      }
+                                    >
+                                      <Globe className="size-3.5" />
+                                      <span>联网研究</span>
+                                      <X className="size-3" />
+                                    </Button>
+                                  ) : undefined
+                                }
+                                contextBar={
+                                  <div
+                                    className="cloud-context-motion"
+                                    data-open={presentation === "work"}
+                                    inert={presentation !== "work"}
+                                    aria-hidden={presentation !== "work"}
+                                  >
+                                    <div className="cloud-context-motion-inner">
+                                      <CloudChatWorkToolbar
+                                        open={composerMenu}
+                                        busy={projectContextBusy}
+                                        disabled={composerLocked || streaming}
+                                        projectName={
+                                          composerProject.scope === `${user.id}:${conversationId}`
+                                            ? composerProject.project?.name
+                                            : undefined
+                                        }
+                                        onOpen={openComposerPicker}
+                                      />
+                                    </div>
+                                  </div>
+                                }
+                                workdir=""
+                                enabledSkills={[]}
+                                executionMode="text"
+                                hasModels={modelOptions.length > 0}
+                                currentModelLabel={model}
+                                modelOptions={modelOptions}
+                                selectedValue={selectedModelValue}
+                                chatRuntimeControls={runtimeControls}
+                                reasoningOptions={CLOUD_CHAT_REASONING_OPTIONS}
+                                thinkingAlwaysOn={false}
+                                onSend={() => void send()}
+                                onStop={() => void stopRun()}
+                                onComposerBusyChange={() => undefined}
+                                onSelectModel={(next) => {
+                                  const nextProviderKeyId = relayProviderKeyId(
+                                    next.customProviderId,
+                                  );
+                                  setModel(next.model);
+                                  setProviderKeyId(nextProviderKeyId);
+                                  setSettings((current) => ({ ...current, selectedModel: next }));
+                                  void saveWebSettings(
+                                    next.model,
+                                    reasoning,
+                                    nextProviderKeyId,
+                                  ).catch((cause) => setError(String(cause)));
+                                }}
+                                onSelectExecutionMode={() => undefined}
+                                onOpenSettings={(section) => {
+                                  if (section) setSettingsSection(section);
+                                  setAccountSettingsOpen(true);
+                                }}
+                                onChatRuntimeControlsChange={(patch) => {
+                                  const next = patchCloudChatRuntimeControls(
+                                    runtimeControls,
+                                    patch,
+                                  );
+                                  setRuntimeControls(next);
+                                  if (
+                                    patch.nativeWebSearchEnabled === false &&
+                                    researchConfirmationRef.current
+                                  )
+                                    settleResearchConfirmation(researchConfirmationRef.current);
+                                  if (next.reasoning !== reasoning) {
+                                    setReasoning(next.reasoning);
+                                    void saveWebSettings(model, next.reasoning).catch((cause) =>
+                                      setError(String(cause)),
                                     );
-                                    closeResources();
-                                    composerRef.current?.focus();
                                   }
-                                : undefined
-                            }
-                            onDeleted={(familyId) => {
-                              if (!isCurrentView(view)) return;
-                              setArtifactAttachments((current) =>
-                                current.filter((version) => version.family_id !== familyId),
-                              );
-                              setContextNotice("成果已停止访问，已有版本引用将不可用。");
-                            }}
-                            onOpenSourceRun={(_runId, sourceConversationId) => {
-                              if (!isCurrentView(view)) return;
-                              if (!conversations.some((item) => item.id === sourceConversationId)) {
-                                setError("来源对话已删除或暂不可用，仍可使用已保存的成果版本。");
-                                return;
-                              }
-                              selectConversationView(sourceConversationId);
-                            }}
-                            onError={(cause) => {
-                              if (cause instanceof CloudChatArtifactError && cause.status === 401)
-                                notifyRelaySessionExpired();
-                            }}
-                          />
-                        );
-                      })()
-                    : null}
-                  {sourcePanel &&
-                  viewRef.current.userId === user.id &&
-                  !accountInvalidatedRef.current
-                    ? (() => {
-                        const view = viewRef.current;
-                        return (
-                          <CloudChatSourcesPanel
-                            key={`${user.id}:${conversationId}:${sourcePanel.sourceId ?? "library"}`}
-                            client={sourcesClient}
-                            initialSourceId={sourcePanel.sourceId}
-                            fromLine={sourcePanel.fromLine}
-                            toLine={sourcePanel.toLine}
-                            isCurrent={() => isCurrentView(view)}
-                            onClose={closeResources}
-                            onDeleted={() => {
-                              if (isCurrentView(view))
-                                setContextNotice("来源资料已删除，原引用将不可用。");
-                            }}
-                            onError={(cause) => {
-                              if (cause instanceof CloudChatSourceError && cause.status === 401)
-                                notifyRelaySessionExpired();
-                            }}
-                          />
-                        );
-                      })()
-                    : null}
-                  {workPanel &&
-                  viewRef.current.userId === user.id &&
-                  !accountInvalidatedRef.current ? (
-                    <CloudChatResourcePanel
-                      title={workPanel === "projects" ? "项目" : "记忆"}
-                      description="管理后续对话使用的资料和偏好。"
-                      onClose={closeResources}
-                    >
-                      <div className="min-h-0 flex-1 overflow-auto">
-                        {workPanel === "projects" ? (
-                          <CloudChatProjectsPanel
-                            key={`${user.id}:${conversationId}:${initialProjectId ?? "associated"}`}
-                            initialProjectId={initialProjectId}
-                            onDirtyChange={projectNavigation.setDirty}
-                            onRequestNavigation={projectNavigation.request}
-                            client={projectsClient}
-                            filesClient={filesClient}
-                            conversationId={conversationId || null}
-                            captureGuard={captureWorkGuard}
-                            onProjectChange={() => setContextNotice("已更新当前对话的项目。")}
-                            onOpenConversation={(id) => navigateConversation(id)}
-                            onContextChanged={() => {
-                              setNavigationRevision((old) => old + 1);
-                              setContextNotice("已保存，将用于后续消息。");
-                            }}
-                          />
-                        ) : (
-                          <CloudChatMemoryPanel
-                            key={user.id}
-                            client={projectsClient}
-                            captureGuard={captureWorkGuard}
-                            onContextChanged={() => {
-                              setNavigationRevision((old) => old + 1);
-                              setContextNotice("已保存，将用于后续消息。");
-                            }}
-                          />
-                        )}
+                                }}
+                                onPickReadableFiles={() => fileRef.current?.click()}
+                                onPasteFiles={(files) => void attachFileList(files)}
+                                loadHistoryPrompts={() =>
+                                  messages
+                                    .filter((message) => message.role === "user")
+                                    .map((message) => messageText(message.content))
+                                    .filter(Boolean)
+                                }
+                                pendingUploadedFiles={pendingUploadedFiles}
+                                onOpenPendingUpload={(path) => {
+                                  const versionId = cloudArtifactVersionFromLink(path);
+                                  showResourceDetail(() => {
+                                    if (versionId) showArtifactResource({ versionId });
+                                    else showFileResource({ fileId: path });
+                                  });
+                                }}
+                                onRemovePendingUpload={(id) => {
+                                  const versionId = cloudArtifactVersionFromLink(id);
+                                  if (versionId)
+                                    setArtifactAttachments((current) =>
+                                      current.filter((item) => item.id !== versionId),
+                                    );
+                                  else
+                                    setAttachments((current) =>
+                                      current.filter((item) => item.id !== id),
+                                    );
+                                }}
+                                queuedTurns={[]}
+                                onRunQueuedTurnNow={() => undefined}
+                                onMoveQueuedTurnUp={() => undefined}
+                                onEditQueuedTurn={() => undefined}
+                                onRemoveQueuedTurn={() => undefined}
+                              />
+                              {landing ? (
+                                <CloudChatStarters mode={presentation} onSelect={fillStarter} />
+                              ) : null}
+                            </FileDropBoundary>
+                          </>
+                        ),
+                      }}
+                    />
+                    <CloudChatContextPicker
+                      key={user.id}
+                      kind={composerMenu && composerMenu !== "add" ? composerMenu : null}
+                      anchor={composerMenuAnchor}
+                      mobile={sidebar.isMobile}
+                      scope={`${user.id}:${conversationId}`}
+                      revision={navigationRevision}
+                      projectsClient={projectsClient}
+                      filesClient={filesClient}
+                      captureGuard={captureWorkGuard}
+                      attachedIds={attachments.map((file) => file.id)}
+                      selectedProjectId={
+                        composerProject.scope === `${user.id}:${conversationId}`
+                          ? composerProject.project?.id
+                          : undefined
+                      }
+                      disabled={composerLocked || streaming}
+                      researchEnabled={runtimeControls.nativeWebSearchEnabled}
+                      onClose={() => setComposerMenu(null)}
+                      onSelectProject={selectComposerProject}
+                      onAttach={attachLibraryFile}
+                      onBrowse={(kind) => openResource(kind, true)}
+                      onToggleResearch={() =>
+                        setRuntimeControls((current) => ({
+                          ...current,
+                          nativeWebSearchEnabled: !current.nativeWebSearchEnabled,
+                        }))
+                      }
+                      onFillDraft={fillStarter}
+                      onFocusComposer={() => {
+                        if (isCurrentView(viewRef.current)) composerRef.current?.focus();
+                      }}
+                    />
+                    {spaceVisited &&
+                    !accountInvalidatedRef.current &&
+                    viewRef.current.userId === user.id ? (
+                      <div
+                        className={
+                          workspaceView === "library" && !sourcePanel && !workPanel
+                            ? "contents"
+                            : "hidden"
+                        }
+                        inert={workspaceView !== "library" || Boolean(sourcePanel || workPanel)}
+                      >
+                        <CloudSpacePage
+                          key={user.id}
+                          client={spaceClient}
+                          files={filesClient}
+                          artifacts={artifactsClient}
+                          revision={spaceRevision}
+                          active={
+                            workspaceView === "library" &&
+                            !sourcePanel &&
+                            !workPanel &&
+                            !readingOnly
+                          }
+                          storageOpen={spaceStorageOpen}
+                          onStorageOpenChange={setSpaceStorageOpen}
+                          location={spaceLocation}
+                          onNavigate={navigateSpace}
+                          onOpen={openSpaceItem}
+                          onReference={referenceSpaceItems}
+                          onCreateWork={(text) => {
+                            if (composerLocked || streaming) return;
+                            clearResources();
+                            if (landing) setPresentation("work");
+                            fillStarter(text);
+                          }}
+                          canReference={!composerLocked && !streaming}
+                          captureGuard={captureAccountRequestGuard}
+                          onChanged={() => setSpaceRevision((old) => old + 1)}
+                          onError={(cause) => {
+                            if (
+                              (cause instanceof CloudSpaceError ||
+                                cause instanceof CloudChatFileError) &&
+                              cause.status === 401
+                            )
+                              notifyRelaySessionExpired();
+                          }}
+                        />
                       </div>
-                    </CloudChatResourcePanel>
-                  ) : null}
-                </div>
-              </CloudChatResourcePresentation.Provider>
+                    ) : null}
+                  </>
+                )}
+              >
+                <CloudChatResourcePresentation.Provider
+                  value={
+                    filePanel || artifactPanel
+                      ? "inline"
+                      : workspaceView === "chat"
+                        ? "panel"
+                        : "page"
+                  }
+                >
+                  <div
+                    className={
+                      filePanel ||
+                      artifactPanel ||
+                      workspaceView === "chat" ||
+                      (workspaceView === "library" && !sourcePanel && !workPanel)
+                        ? "contents"
+                        : "cloud-workspace-content"
+                    }
+                  >
+                    {filePanel &&
+                    (workspaceView !== "library" || filePanel.fileId) &&
+                    viewRef.current.userId === user.id &&
+                    !accountInvalidatedRef.current
+                      ? (() => {
+                          const view = viewRef.current;
+                          return (
+                            <CloudChatFilePanel
+                              key={`${user.id}:${conversationId}:${filePanel.fileId ?? "library"}`}
+                              client={filesClient}
+                              onBrowseLibrary={
+                                workspaceView === "library" ? () => setFilePanel(null) : undefined
+                              }
+                              onUpload={
+                                workspaceView === "library"
+                                  ? undefined
+                                  : () => {
+                                      closeResources();
+                                      fileRef.current?.click();
+                                    }
+                              }
+                              initialFileId={filePanel.fileId}
+                              fromLine={filePanel.fromLine}
+                              toLine={filePanel.toLine}
+                              canAttach={
+                                !preparingExecution &&
+                                !streaming &&
+                                !uploadingFiles &&
+                                !resolvingResources &&
+                                !submissionUnconfirmed &&
+                                !submissionQueueFull
+                              }
+                              isCurrent={() => isCurrentView(view)}
+                              onClose={
+                                workspaceView === "library"
+                                  ? () => {
+                                      setFilePanel(null);
+                                      setSpaceRevision((old) => old + 1);
+                                    }
+                                  : closeResources
+                              }
+                              onAttach={(file) => {
+                                if (
+                                  !isCurrentView(view) ||
+                                  modelPreparationAbortRef.current ||
+                                  resourceDropRef.current
+                                )
+                                  return false;
+                                if (
+                                  !attachments.some((item) => item.id === file.id) &&
+                                  attachments.length + artifactAttachments.length >= 8
+                                ) {
+                                  return false;
+                                }
+                                setAttachments((current) =>
+                                  current.some((item) => item.id === file.id)
+                                    ? current
+                                    : [...current, file],
+                                );
+                                closeResources();
+                                requestAnimationFrame(() => composerRef.current?.focus());
+                                return true;
+                              }}
+                              onDeleted={(id) => {
+                                if (isCurrentView(view))
+                                  setAttachments((current) =>
+                                    current.filter((file) => file.id !== id),
+                                  );
+                              }}
+                              onError={(cause) => {
+                                if (cause instanceof CloudChatFileError && cause.status === 401)
+                                  notifyRelaySessionExpired();
+                              }}
+                            />
+                          );
+                        })()
+                      : null}
+                    {artifactPanel &&
+                    (workspaceView !== "library" || artifactPanel.versionId) &&
+                    viewRef.current.userId === user.id &&
+                    !accountInvalidatedRef.current
+                      ? (() => {
+                          const view = viewRef.current;
+                          const canContinue =
+                            !preparingExecution &&
+                            !streaming &&
+                            !uploadingFiles &&
+                            !resolvingResources &&
+                            !submissionUnconfirmed &&
+                            !submissionQueueFull &&
+                            !branchBusy &&
+                            !branchUnconfirmed;
+                          return (
+                            <CloudChatArtifactsPanel
+                              key={JSON.stringify([
+                                user.id,
+                                conversationId,
+                                artifactPanel.versionId ?? "library",
+                                artifactPanel.site === true,
+                              ])}
+                              client={artifactsClient}
+                              conversationId={conversationId || undefined}
+                              initialVersionId={artifactPanel.versionId}
+                              initialSite={artifactPanel.site}
+                              isCurrent={() => isCurrentView(view)}
+                              onClose={
+                                workspaceView === "library"
+                                  ? () => {
+                                      setArtifactPanel(null);
+                                      setSpaceRevision((old) => old + 1);
+                                    }
+                                  : closeResources
+                              }
+                              onContinue={
+                                canContinue
+                                  ? (version) => {
+                                      if (
+                                        !isCurrentView(view) ||
+                                        version.state !== "ready" ||
+                                        resourceDropRef.current
+                                      )
+                                        return false;
+                                      if (
+                                        artifactAttachments.some((item) => item.id === version.id)
+                                      ) {
+                                        closeResources();
+                                        requestAnimationFrame(() => composerRef.current?.focus());
+                                        return true;
+                                      }
+                                      if (attachments.length + artifactAttachments.length >= 8) {
+                                        return false;
+                                      }
+                                      setArtifactAttachments((current) =>
+                                        current.some((item) => item.id === version.id)
+                                          ? current
+                                          : [...current, version],
+                                      );
+                                      closeResources();
+                                      requestAnimationFrame(() => composerRef.current?.focus());
+                                      return true;
+                                    }
+                                  : undefined
+                              }
+                              onDeleted={(familyId) => {
+                                if (!isCurrentView(view)) return;
+                                setArtifactAttachments((current) =>
+                                  current.filter((version) => version.family_id !== familyId),
+                                );
+                                setContextNotice("成果已停止访问，已有版本引用将不可用。");
+                              }}
+                              onOpenSourceRun={(_runId, sourceConversationId) => {
+                                if (!isCurrentView(view)) return;
+                                if (
+                                  !conversations.some((item) => item.id === sourceConversationId)
+                                ) {
+                                  setError("来源对话已删除或暂不可用，仍可使用已保存的成果版本。");
+                                  return;
+                                }
+                                selectConversationView(sourceConversationId);
+                              }}
+                              onError={(cause) => {
+                                if (cause instanceof CloudChatArtifactError && cause.status === 401)
+                                  notifyRelaySessionExpired();
+                              }}
+                            />
+                          );
+                        })()
+                      : null}
+                    {sourcePanel &&
+                    viewRef.current.userId === user.id &&
+                    !accountInvalidatedRef.current
+                      ? (() => {
+                          const view = viewRef.current;
+                          return (
+                            <CloudChatSourcesPanel
+                              key={`${user.id}:${conversationId}:${sourcePanel.sourceId ?? "library"}`}
+                              client={sourcesClient}
+                              initialSourceId={sourcePanel.sourceId}
+                              fromLine={sourcePanel.fromLine}
+                              toLine={sourcePanel.toLine}
+                              isCurrent={() => isCurrentView(view)}
+                              onClose={closeResources}
+                              onDeleted={() => {
+                                if (isCurrentView(view))
+                                  setContextNotice("来源资料已删除，原引用将不可用。");
+                              }}
+                              onError={(cause) => {
+                                if (cause instanceof CloudChatSourceError && cause.status === 401)
+                                  notifyRelaySessionExpired();
+                              }}
+                            />
+                          );
+                        })()
+                      : null}
+                    {workPanel &&
+                    viewRef.current.userId === user.id &&
+                    !accountInvalidatedRef.current ? (
+                      <CloudChatResourcePanel
+                        title={workPanel === "projects" ? "项目" : "记忆"}
+                        description="管理后续对话使用的资料和偏好。"
+                        onClose={closeResources}
+                      >
+                        <div className="min-h-0 flex-1 overflow-auto">
+                          {workPanel === "projects" ? (
+                            <CloudChatProjectsPanel
+                              key={`${user.id}:${conversationId}:${initialProjectId ?? "associated"}`}
+                              initialProjectId={initialProjectId}
+                              onDirtyChange={projectNavigation.setDirty}
+                              onRequestNavigation={projectNavigation.request}
+                              client={projectsClient}
+                              filesClient={filesClient}
+                              conversationId={conversationId || null}
+                              captureGuard={captureWorkGuard}
+                              onProjectChange={() => setContextNotice("已更新当前对话的项目。")}
+                              onOpenConversation={(id) => navigateConversation(id)}
+                              onContextChanged={() => {
+                                setNavigationRevision((old) => old + 1);
+                                setContextNotice("已保存，将用于后续消息。");
+                              }}
+                            />
+                          ) : (
+                            <CloudChatMemoryPanel
+                              key={user.id}
+                              client={projectsClient}
+                              captureGuard={captureWorkGuard}
+                              onContextChanged={() => {
+                                setNavigationRevision((old) => old + 1);
+                                setContextNotice("已保存，将用于后续消息。");
+                              }}
+                            />
+                          )}
+                        </div>
+                      </CloudChatResourcePanel>
+                    ) : null}
+                  </div>
+                </CloudChatResourcePresentation.Provider>
+              </CloudChatResourceWorkbench>
             </main>
           </WorkbenchCanvas>
 
@@ -3808,11 +4067,11 @@ export function CloudChatPage({
             }}
             onOpenFile={(fileId) => {
               closeMessageReader();
-              setFilePanel({ fileId });
+              showFileResource({ fileId });
             }}
             onOpenArtifact={(versionId) => {
               closeMessageReader();
-              setArtifactPanel({ versionId });
+              showArtifactResource({ versionId });
             }}
           />
         ) : null}

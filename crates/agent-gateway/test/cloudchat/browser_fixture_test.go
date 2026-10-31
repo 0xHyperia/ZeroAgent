@@ -107,7 +107,8 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	}
 	accounts := account.NewService(store, account.NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
 	defer accounts.CloseCloudRuns()
-	if err := accounts.SetCloudObjectStore(newBrowserFixtureS3(t, evidence)); err != nil {
+	previewStorage := browserPreviewStorage(t, evidence)
+	if err := accounts.SetCloudObjectStore(previewStorage); err != nil {
 		t.Fatal("configure local S3 protocol peer")
 	}
 	if err := accounts.SetCloudExecutor(workflow.client); err != nil {
@@ -176,6 +177,8 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(output), 0700); err != nil {
 		t.Fatal(err)
 	}
+	seedBrowserSite(t, web, accounts, store, browserSession, previewStorage, output)
+	seedBrowserPreviewFiles(t, web, browserSession.ID, output)
 	// Known synthetic bytes only, alongside the explicitly requested artifact.
 	// Never overwrite another local file when reusing the fixture directory.
 	samplePath := filepath.Join(filepath.Dir(output), "cloudchat-source.txt")

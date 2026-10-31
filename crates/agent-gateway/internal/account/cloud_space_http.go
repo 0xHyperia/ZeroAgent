@@ -12,6 +12,9 @@ func (h *HTTPHandler) registerCloudSpace(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/web-chat/space/{kind}/{id}", h.withSession(h.putCloudSpaceMetadata))
 }
 func cloudSpaceAPIError(err error) error {
+	if errors.Is(err, ErrCloudSpacePageChanged) {
+		return &APIError{Status: 409, Message: "资料已更新，请刷新列表后继续浏览。"}
+	}
 	if errors.Is(err, ErrCloudSpaceConflict) {
 		return &APIError{Status: 409, Message: "资料已变更，或文件夹仍有内容，请刷新后重试。"}
 	}
@@ -27,7 +30,7 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 	q := r.URL.Query()
 	offset := 0
 	for key, values := range q {
-		if len(values) != 1 || !strings.Contains("|q|category|scope|folder|sort|offset|", "|"+key+"|") {
+		if len(values) != 1 || !strings.Contains("|q|category|scope|folder|sort|offset|cursor|", "|"+key+"|") {
 			writeError(w, cloudSpaceAPIError(ErrCloudFileInvalid))
 			return
 		}
@@ -50,7 +53,7 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 	if order == "" {
 		order = "updated"
 	}
-	if len(q.Get("q")) > 200 || !strings.Contains("|all|uploads|outputs|images|documents|", "|"+category+"|") || !strings.Contains("|all|starred|trash|", "|"+scope+"|") || !strings.Contains("|updated|name|size|", "|"+order+"|") {
+	if len(q.Get("q")) > 200 || !strings.Contains("|all|uploads|outputs|images|documents|sites|", "|"+category+"|") || !strings.Contains("|all|starred|trash|", "|"+scope+"|") || !strings.Contains("|updated|name|size|", "|"+order+"|") {
 		writeError(w, cloudSpaceAPIError(ErrCloudFileInvalid))
 		return
 	}
@@ -60,28 +63,12 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 			return
 		}
 	}
-	snapshot, err := store.ReadCloudSpace(r.Context(), session.UserID)
+	page, err := store.QueryCloudSpace(r.Context(), session.UserID, CloudSpaceQuery{Query: q.Get("q"), Category: category, Scope: scope, Folder: q.Get("folder"), Sort: order, Cursor: q.Get("cursor"), Offset: offset})
 	if err != nil {
 		writeError(w, cloudSpaceAPIError(err))
 		return
 	}
-	items, total := filterCloudSpace(snapshot, strings.TrimSpace(q.Get("q")), category, scope, q.Get("folder"), order, offset)
-	folders := []CloudSpaceItem{}
-	recent := []CloudSpaceItem{}
-	for _, item := range snapshot.Items {
-		if item.Kind == "folder" && !item.Trashed {
-			folders = append(folders, item)
-		}
-	}
-	recent, _ = filterCloudSpace(snapshot, "", "all", "starred", "", "updated", 0)
-	if len(recent) > 6 {
-		recent = recent[:6]
-	}
-	next := -1
-	if offset+len(items) < total {
-		next = offset + len(items)
-	}
-	writeJSON(w, 200, map[string]any{"items": items, "total": total, "next_offset": next, "usage": snapshot.Usage, "folders": folders, "pinned": recent})
+	writeJSON(w, 200, page)
 }
 func (h *HTTPHandler) putCloudSpaceMetadata(w http.ResponseWriter, r *http.Request, session *Session) {
 	w.Header().Set("Cache-Control", "private, no-store")

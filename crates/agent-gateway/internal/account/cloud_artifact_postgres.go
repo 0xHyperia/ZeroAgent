@@ -74,6 +74,9 @@ func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64
 		return nil, false, err
 	}
 	defer tx.Rollback()
+	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
+		return nil, false, err
+	}
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_artifacts:'||$1::text,0))`, userID); err != nil {
 		return nil, false, err
 	}
@@ -87,7 +90,8 @@ func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64
 	if !errors.Is(err, ErrNotFound) {
 		return nil, false, err
 	}
-	if err = cloudSpaceQuotaTx(ctx, tx, userID, a.Size); err != nil {
+	limits, err := cloudSpaceQuotaTx(ctx, tx, userID, a.Size)
+	if err != nil {
 		if errors.Is(err, ErrCloudFileQuota) {
 			err = ErrCloudArtifactQuota
 		}
@@ -105,7 +109,7 @@ func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(size),0) FROM zeroagent_cloud_artifact_versions WHERE user_id=$1 AND state<>'deleted'`, userID).Scan(&count, &used); err != nil {
 		return nil, false, err
 	}
-	if count >= CloudArtifactMaxAccountVersions || used+a.Size > CloudArtifactMaxAccountBytes {
+	if count >= limits.MaxArtifactVersions || a.Size > limits.ArtifactBytes-used {
 		return nil, false, ErrCloudArtifactQuota
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_artifact_families(id,user_id,conversation_id,created_at)VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING`, a.FamilyID, userID, a.ConversationID, a.CreatedAt); err != nil {
@@ -186,6 +190,9 @@ func (s *PersistentStore) UpdateCloudArtifact(ctx context.Context, userID int64,
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
+		return nil, err
+	}
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_artifacts:'||$1::text,0))`, userID); err != nil {
 		return nil, err
 	}
@@ -229,6 +236,9 @@ func (s *PersistentStore) DeleteCloudArtifactFamily(ctx context.Context, userID 
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
+		return nil, err
+	}
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_artifacts:'||$1::text,0))`, userID); err != nil {
 		return nil, err
 	}
