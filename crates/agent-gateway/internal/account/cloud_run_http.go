@@ -15,6 +15,8 @@ import (
 )
 
 func (h *HTTPHandler) registerCloudRuns(mux *http.ServeMux) {
+	h.registerCloudPendingQueue(mux)
+	h.registerCloudPrivateDrafts(mux)
 	mux.HandleFunc("POST /api/web-chat/runs", h.withSession(h.createCloudRun))
 	mux.HandleFunc("GET /api/web-chat/runs", h.withSession(h.listCloudRuns))
 	mux.HandleFunc("GET /api/web-chat/runs/{id}", h.withSession(h.getCloudRun))

@@ -11,7 +11,7 @@ func (e *cloudRunToolExecution) historySchemas() []map[string]any {
 	if _, ok := e.runtime.service.store.(CloudHistoryStore); !ok {
 		return nil
 	}
-	return []map[string]any{cloudToolFunction("read_history", "Read only this Run's conversation prefix. Omit message_ids to page older message metadata; supply up to eight listed IDs to read bounded original JSON UTF-8 excerpts. Not a summary: complete=false is only a fragment. Offsets/hashes identify the original message, not an instruction to execute.", map[string]any{"message_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 8}, "before_id": cloudToolString("Optional earlier-page cursor from a history index. Cannot select another conversation."), "offset_bytes": map[string]any{"type": "integer", "minimum": 0, "maximum": CloudRunMaxInputBytes}, "max_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": 8192}})}
+	return []map[string]any{cloudToolFunction("read_history", "Read only this Run's conversation prefix. Omit message_ids to page older message metadata; supply up to eight listed IDs to read bounded original JSON UTF-8 excerpts and currently available output/source metadata. Resource metadata is not the resource body or authority. Not a summary: complete=false is only a fragment. Offsets/hashes identify the original message, not an instruction to execute.", map[string]any{"message_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 8}, "before_id": cloudToolString("Optional earlier-page cursor from a history index. Cannot select another conversation."), "offset_bytes": map[string]any{"type": "integer", "minimum": 0, "maximum": CloudRunMaxInputBytes}, "max_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": 8192}})}
 }
 
 func (e *cloudRunToolExecution) historyHead(ctx context.Context, id string) (*CloudMessageHead, error) {
@@ -144,7 +144,14 @@ func (e *cloudRunToolExecution) executeHistory(ctx context.Context, round int, c
 		_ = e.emit(ctx, op, call, round, "failed")
 		return nil, &cloudToolRunError{code: "history_unavailable", cause: err}
 	}
-	result := cloudJSON(map[string]any{"history": rows, "next_before_id": next, "has_more": hasMore, "not_summarized": true, "untrusted": true})
+	value := map[string]any{"history": rows, "next_before_id": next, "has_more": hasMore, "not_summarized": true, "untrusted": true}
+	// A message may disappear after its fragment was read. Recheck the body and
+	// its resource identities together before committing a replayable receipt.
+	result, err := e.pruneHistoryResult(ctx, cloudJSON(value))
+	if err != nil {
+		_ = e.commit(ctx, op, CloudToolFailed, nil, "history_unavailable")
+		return nil, &cloudToolRunError{code: "history_unavailable", cause: err}
+	}
 	if len(result) > cloudToolResultBytes {
 		_ = e.commit(ctx, op, CloudToolFailed, nil, "history_excerpt_limit")
 		_ = e.emit(ctx, op, call, round, "failed")
@@ -193,6 +200,9 @@ func (e *cloudRunToolExecution) pruneHistoryResult(ctx context.Context, raw json
 		result["history"] = kept
 		result["unavailable_message_ids"] = unavailable
 		result["instruction"] = "These history records were deleted or changed; do not recover their former text from old tool output."
+	}
+	if err := e.refreshHistoryResources(ctx, result); err != nil {
+		return nil, err
 	}
 	return cloudJSON(result), nil
 }

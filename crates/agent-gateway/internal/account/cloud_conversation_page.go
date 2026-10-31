@@ -84,7 +84,7 @@ func (s *PersistentStore) ListCloudConversationPage(ctx context.Context, userID 
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id::text,user_id,title,model,created_at,updated_at FROM zerobox_cloud_conversations WHERE user_id=$1`
+	query := `SELECT id::text,user_id,title,model,created_at,updated_at,pinned,archived,management_version FROM zerobox_cloud_conversations WHERE user_id=$1`
 	args := []any{userID, limit}
 	if value != "" {
 		query += ` AND (updated_at,id)<($3,$4::uuid)`
@@ -98,7 +98,7 @@ func (s *PersistentStore) ListCloudConversationPage(ctx context.Context, userID 
 	items := make([]CloudConversation, 0)
 	for rows.Next() {
 		var item CloudConversation
-		if err := rows.Scan(&item.ID, &item.UserID, &item.Title, &item.Model, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.UserID, &item.Title, &item.Model, &item.CreatedAt, &item.UpdatedAt, &item.Pinned, &item.Archived, &item.ManagementVersion); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

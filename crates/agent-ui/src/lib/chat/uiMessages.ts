@@ -47,6 +47,13 @@ const GLOBAL_BASH_MAX_TIMEOUT_MS = 600_000;
 export type ToolTraceItem = {
   toolCall: ToolCall;
   toolResult?: ToolResultMessage;
+  /** Public activity supplied by a host, without executable arguments or raw results. */
+  publicStatus?: {
+    label: string;
+    state: "prepared" | "executing" | "succeeded" | "failed" | "cancelled" | "unknown";
+    durationMs?: number;
+    resources?: import("./assistantResources").AssistantResource[];
+  };
 };
 
 export type UiRoundContentBlock =
@@ -58,6 +65,7 @@ export type UiRoundContentBlock =
       text: string;
       // OpenAI Responses 重放的 reasoning item 估算；UI 仍只渲染 text 摘要。
       replayTokenUnits?: number;
+      durationMs?: number;
     }
   | {
       kind: "tool";
@@ -82,6 +90,12 @@ export type UiRound = {
     api?: string;
     stopReason?: string;
     usage?: Usage;
+    tokenUsage?: Partial<
+      Pick<Usage, "input" | "output" | "cacheRead" | "cacheWrite" | "totalTokens">
+    >;
+    reasoningEffort?: string;
+    outcome?: string;
+    durationMs?: number;
     contextRelevant?: boolean;
   };
 };

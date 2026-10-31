@@ -5,11 +5,16 @@ export type CloudProject = {
   name: string;
   description: string;
   instructions: string;
+  icon?: string;
+  color?: string;
   version: number;
   created_at: string;
   updated_at: string;
 };
-export type CloudProjectDraft = Pick<CloudProject, "name" | "description" | "instructions">;
+export type CloudProjectDraft = Pick<
+  CloudProject,
+  "name" | "description" | "instructions" | "icon" | "color"
+>;
 export type CloudProjectConversation = {
   conversation_id: string;
   project_id: string;
@@ -21,6 +26,8 @@ export type CloudProjectConversation = {
     model: string;
     created_at: string;
     updated_at: string;
+    archived?: boolean;
+    pinned?: boolean;
   };
 };
 export type CloudMemory = {
@@ -232,6 +239,8 @@ export function createCloudChatProjectsClient(request: Request, captureGuard: Cl
       name: value.name.trim(),
       description: value.description,
       instructions: value.instructions,
+      ...(value.icon !== undefined ? { icon: value.icon } : {}),
+      ...(value.color !== undefined ? { color: value.color } : {}),
     };
   }
   async function create<T>(path: string, body: unknown, parse: (value: unknown) => T): Promise<T> {

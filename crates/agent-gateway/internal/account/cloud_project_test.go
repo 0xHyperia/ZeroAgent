@@ -112,7 +112,7 @@ func testCloudProjectContract(t *testing.T, factory func(*testing.T) cloudProjec
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if _, err := f.projects.UpdateCloudProject(ctx, 7, p.ID, 1, CloudProjectUpdate{"edited", "", "instructions"}); err == nil {
+				if _, err := f.projects.UpdateCloudProject(ctx, 7, p.ID, 1, CloudProjectUpdate{Name: "edited", Instructions: "instructions"}); err == nil {
 					success.Add(1)
 				} else if !errors.Is(err, ErrCloudProjectConflict) {
 					t.Error(err)
@@ -404,4 +404,117 @@ func TestCloudProjectMemoryHTTPAccountAndCAS(t *testing.T) {
 	if w.Code != 400 {
 		t.Fatal("HTTP allowed an unbounded project page")
 	}
+}
+
+func runCloudProjectSidebarContract(t *testing.T, f cloudProjectFixture) {
+	t.Helper()
+	ctx := context.Background()
+	catalog := f.store.(cloudConversationManagementStore)
+	project, err := f.projects.CreateCloudProject(ctx, &CloudProject{UserID: 7, Name: "Project sidebar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second, member := projectConversation(t, f, 7), projectConversation(t, f, 7), projectConversation(t, f, 7)
+	foreign := projectConversation(t, f, 8)
+	binding, err := f.projects.SetCloudConversationProject(ctx, 7, member, project.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	cursor := ""
+	for {
+		page, err := catalog.CloudConversationCatalog(ctx, 7, "unassigned", cursor, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range page.Conversations {
+			if c.ID == member || c.ID == foreign || seen[c.ID] {
+				t.Fatal("project/foreign member leaked into recent pagination")
+			}
+			seen[c.ID] = true
+		}
+		if !page.HasMore {
+			break
+		}
+		if page.NextCursor == cursor || page.NextCursor == "" {
+			t.Fatal("cursor did not advance")
+		}
+		if _, err := catalog.CloudConversationCatalog(ctx, 7, "active", page.NextCursor, 1); !errors.Is(err, ErrCloudRunInvalid) {
+			t.Fatal("scope cursor replay accepted")
+		}
+		cursor = page.NextCursor
+	}
+	if !seen[first] || !seen[second] || len(seen) != 2 {
+		t.Fatal("unassigned pagination omitted rows")
+	}
+	page, err := catalog.CloudConversationCatalog(ctx, 7, "active", "", 10)
+	if err != nil || len(page.Conversations) != 3 {
+		t.Fatal("existing active scope changed", err)
+	}
+	yes := true
+	zero := int64(0)
+	if _, err := catalog.ManageCloudConversation(ctx, 7, member, CloudConversationManagementPatch{ExpectedVersion: &zero, Pinned: &yes, Archived: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	members, err := f.projects.ListCloudProjectConversations(ctx, 7, project.ID, "", 10)
+	if err != nil || len(members) != 1 || !members[0].Conversation.Archived || !members[0].Conversation.Pinned {
+		t.Fatal("project membership lost canonical conversation flags", err)
+	}
+	if _, err = f.projects.SetCloudConversationProject(ctx, 7, member, "", binding.Version); err != nil {
+		t.Fatal(err)
+	}
+	page, err = catalog.CloudConversationCatalog(ctx, 7, "unassigned", "", 10)
+	if err != nil || len(page.Conversations) != 2 {
+		t.Fatal("archived move-out surfaced in recent", err)
+	}
+	no := false
+	one := int64(1)
+	if _, err := catalog.ManageCloudConversation(ctx, 7, member, CloudConversationManagementPatch{ExpectedVersion: &one, Archived: &no}); err != nil {
+		t.Fatal(err)
+	}
+	page, err = catalog.CloudConversationCatalog(ctx, 7, "unassigned", "", 10)
+	if err != nil || len(page.Conversations) != 3 {
+		t.Fatal("move-out did not return to recent", err)
+	}
+}
+
+func TestCloudProjectSidebarMemory(t *testing.T) {
+	runCloudProjectSidebarContract(t, memoryCloudProjectFixture(t))
+}
+func TestCloudProjectSidebarPostgres(t *testing.T) {
+	runCloudProjectSidebarContract(t, postgresCloudProjectFixture(t))
+}
+
+func testCloudProjectAppearance(t *testing.T, f cloudProjectFixture) {
+	ctx := context.Background()
+	p, err := f.projects.CreateCloudProject(ctx, &CloudProject{UserID: 7, Name: "appearance", Icon: "palette", Color: "violet"})
+	if err != nil || p.Icon != "palette" || p.Color != "violet" {
+		t.Fatal("create appearance", err)
+	}
+	icon, color := "code", "blue"
+	p, err = f.projects.UpdateCloudProject(ctx, 7, p.ID, p.Version, CloudProjectUpdate{Name: p.Name, Icon: &icon, Color: &color})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = f.projects.UpdateCloudProject(ctx, 7, p.ID, p.Version, CloudProjectUpdate{Name: "legacy edit", Instructions: "keep context"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := f.projects.GetCloudProject(ctx, 7, p.ID)
+	if err != nil || read.Icon != icon || read.Color != color {
+		t.Fatal("omitted appearance changed canonical state", err)
+	}
+	invalid := "folder|book"
+	if _, err = f.projects.UpdateCloudProject(ctx, 7, p.ID, p.Version, CloudProjectUpdate{Name: p.Name, Icon: &invalid}); !errors.Is(err, ErrCloudProjectInvalid) {
+		t.Fatal("non-allowlisted icon accepted")
+	}
+	if _, err = f.projects.GetCloudProject(ctx, 8, p.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatal("foreign appearance leaked")
+	}
+}
+func TestCloudProjectAppearanceMemory(t *testing.T) {
+	testCloudProjectAppearance(t, memoryCloudProjectFixture(t))
+}
+func TestCloudProjectAppearancePostgres(t *testing.T) {
+	testCloudProjectAppearance(t, postgresCloudProjectFixture(t))
 }

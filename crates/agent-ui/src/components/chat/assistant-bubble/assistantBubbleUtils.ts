@@ -54,18 +54,30 @@ export function getToolActivityCategory(name: string): ToolActivityCategory {
   if (isTaskToolName(name)) return "other";
   switch (name) {
     case "Read":
+    case "read_file":
+    case "load_uploaded_file":
+    case "read_source":
+    case "read_history":
     case "Image":
     case "SkillsManager":
       return "read";
     case "Glob":
+    case "web_search":
+    case "fetch_page":
     case "Grep":
     case "ToolSearch":
       return "search";
     case "Write":
+    case "write_file":
+    case "publish_artifact":
+    case "publish_site":
     case "Edit":
     case "Delete":
       return "edit";
     case "Bash":
+    case "execute_code":
+    case "execute_command":
+    case "extract_archive":
     case "ManagedProcess":
     case "ProcessWait":
     case "ProcessStop":
@@ -237,6 +249,7 @@ export type GroupedRoundBlock =
       kind: "thinking";
       key: string;
       text: string;
+      durationMs?: number;
     }
   | {
       kind: "text";
@@ -885,7 +898,12 @@ export function groupRoundBlocks(blocks: UiRound["blocks"]): GroupedRoundBlock[]
     }
     flushPendingSearches();
     if (block.kind === "thinking") {
-      groupedBlocks.push({ kind: "thinking", key: block.id, text: block.text });
+      groupedBlocks.push({
+        kind: "thinking",
+        key: block.id,
+        text: block.text,
+        durationMs: block.durationMs,
+      });
       return;
     }
     groupedBlocks.push({ kind: "text", key: block.id, text: block.text });

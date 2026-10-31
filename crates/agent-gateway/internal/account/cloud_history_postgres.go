@@ -10,11 +10,11 @@ import (
 	"github.com/lib/pq"
 )
 
-const cloudHistoryHeadColumns = `m.id::text,m.conversation_id::text,m.role,m.created_at,octet_length(m.content::text),encode(sha256(convert_to(m.content::text,'UTF8')),'hex'),octet_length(COALESCE(m.usage::text,''))`
+const cloudHistoryHeadColumns = `m.id::text,m.conversation_id::text,m.role,m.created_at,octet_length(m.content::text),encode(sha256(convert_to(m.content::text,'UTF8')),'hex'),octet_length(COALESCE(m.usage::text,'')),octet_length(COALESCE(m.presentation::text,''))`
 
 func scanCloudMessageHead(row cloudRunScanner) (CloudMessageHead, error) {
 	var head CloudMessageHead
-	err := row.Scan(&head.ID, &head.ConversationID, &head.Role, &head.CreatedAt, &head.ContentBytes, &head.ContentSHA256, &head.UsageBytes)
+	err := row.Scan(&head.ID, &head.ConversationID, &head.Role, &head.CreatedAt, &head.ContentBytes, &head.ContentSHA256, &head.UsageBytes, &head.PresentationBytes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return head, ErrNotFound
 	}
@@ -138,6 +138,21 @@ func (s *PersistentStore) GetCloudHistoryMessages(ctx context.Context, uid int64
 		}
 		result = append(result, message)
 	}
+	// Allocate presentation only after every body has its existing budget.
+	for index, head := range heads {
+		if head.PresentationBytes > remaining {
+			result[index].PresentationOmitted = head.PresentationBytes > 0
+			continue
+		}
+		if head.PresentationBytes > 0 {
+			var raw []byte
+			if err = tx.QueryRowContext(ctx, `SELECT presentation FROM zerobox_cloud_messages WHERE user_id=$1 AND conversation_id=$2 AND id=$3`, uid, conversationID, head.ID).Scan(&raw); err != nil {
+				return nil, err
+			}
+			result[index].Presentation = json.RawMessage(raw)
+			remaining -= head.PresentationBytes
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -157,7 +172,7 @@ func (s *PersistentStore) ReadCloudHistoryFragment(ctx context.Context, uid int6
 	defer cancel()
 	var head CloudMessageHead
 	var data []byte
-	err = s.db.QueryRowContext(ctx, `SELECT `+cloudHistoryHeadColumns+`,substring(convert_to(m.content::text,'UTF8') FROM $4::integer+1 FOR $5::integer) FROM zerobox_cloud_messages m JOIN zerobox_cloud_conversations c ON c.id=m.conversation_id AND c.user_id=m.user_id WHERE m.user_id=$1 AND m.conversation_id=$2 AND m.id=$3`, uid, conversationID, ids[0], offset, limit).Scan(&head.ID, &head.ConversationID, &head.Role, &head.CreatedAt, &head.ContentBytes, &head.ContentSHA256, &head.UsageBytes, &data)
+	err = s.db.QueryRowContext(ctx, `SELECT `+cloudHistoryHeadColumns+`,substring(convert_to(m.content::text,'UTF8') FROM $4::integer+1 FOR $5::integer) FROM zerobox_cloud_messages m JOIN zerobox_cloud_conversations c ON c.id=m.conversation_id AND c.user_id=m.user_id WHERE m.user_id=$1 AND m.conversation_id=$2 AND m.id=$3`, uid, conversationID, ids[0], offset, limit).Scan(&head.ID, &head.ConversationID, &head.Role, &head.CreatedAt, &head.ContentBytes, &head.ContentSHA256, &head.UsageBytes, &head.PresentationBytes, &data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

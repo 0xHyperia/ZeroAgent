@@ -174,10 +174,18 @@ All existing sandbox operations fetch provider metadata and verify deployment,
 owner and workspace before proceeding. Execution requires the recorded network
 policy: deny all egress, empty outbound allowance, public traffic disabled and
 automatic resume disabled. No caller network policies, credentials, custom
-templates, root user, E2B URLs or traffic/access tokens are returned. The SDK
-connect API itself resumes paused VMs, so the adapter checks state first and only
-allows explicit `sandbox.resume` for an observed paused VM. A provider state
-transition between inspection and connect remains a provider-level race.
+templates, root user, E2B URLs or traffic/access tokens are returned. The pinned
+SDK's connect API can resume paused VMs and extends TTL by 300 seconds when its
+timeout is omitted. Ordinary commands, file operations and code workers therefore
+reuse the private capability from an explicit create/resume, without calling
+connect. Every operation still checks current ownership, isolation and running
+state; a changed start time or extended expiry invalidates the cached capability.
+Only explicit `sandbox.resume` calls the SDK lifecycle API with the configured
+timeout. Capabilities remain in memory and are discarded on pause/kill/expiry.
+After an adapter restart, existing VMs remain inspectable and cleanable, but
+execution fails with `sandbox_connection_unavailable`; it never silently resumes
+or extends a VM to reconstruct access. Durable operation receipts retain their
+existing replay/unknown semantics and never contain the private capability.
 
 There are four active operations globally and one per owner/workspace, 64 HTTP
 connections, 15-second HTTP body timeout and 8 KiB request headers. Commands/code

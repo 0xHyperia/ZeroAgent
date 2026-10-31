@@ -37,10 +37,13 @@ func (s *MemoryStore) CreateCloudProject(ctx context.Context, input *CloudProjec
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if input == nil || input.UserID <= 0 || !validCloudProject(CloudProjectUpdate{input.Name, input.Description, input.Instructions}) {
+	if input == nil || input.UserID <= 0 || !validCloudProject(CloudProjectUpdate{Name: input.Name, Description: input.Description, Instructions: input.Instructions}) {
 		return nil, ErrCloudProjectInvalid
 	}
 	project := *input
+	if !normalizeCloudProjectAppearance(&project) {
+		return nil, ErrCloudProjectInvalid
+	}
 	var err error
 	if project.ID == "" {
 		project.ID = uuid.NewString()
@@ -132,6 +135,12 @@ func (s *MemoryStore) UpdateCloudProject(ctx context.Context, userID int64, id s
 		return nil, ErrCloudProjectConflict
 	}
 	project.Name, project.Description, project.Instructions = update.Name, update.Description, update.Instructions
+	if update.Icon != nil {
+		project.Icon = *update.Icon
+	}
+	if update.Color != nil {
+		project.Color = *update.Color
+	}
 	project.Version++
 	project.UpdatedAt = s.now().UTC()
 	s.cloudProjects.projects[project.ID] = *project

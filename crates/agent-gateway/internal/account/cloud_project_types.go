@@ -26,15 +26,19 @@ type CloudProject struct {
 	Name         string    `json:"name"`
 	Description  string    `json:"description"`
 	Instructions string    `json:"instructions"`
+	Icon         string    `json:"icon"`
+	Color        string    `json:"color"`
 	Version      int64     `json:"version"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type CloudProjectUpdate struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Instructions string `json:"instructions"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	Instructions string  `json:"instructions"`
+	Icon         *string `json:"icon,omitempty"`
+	Color        *string `json:"color,omitempty"`
 }
 
 // The association has its own CAS version, independent of streaming history.

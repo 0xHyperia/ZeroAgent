@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 export function CloudConversationTitle({
   title,
   onRename,
+  renameRequest = 0,
 }: {
   title: string;
   onRename: (title: string) => Promise<void>;
+  renameRequest?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -18,6 +20,16 @@ export function CloudConversationTitle({
   const mounted = useRef(true);
   const cancelled = useRef(false);
   const wasEditing = useRef(false);
+  const lastRenameRequest = useRef(renameRequest);
+  useEffect(() => {
+    if (lastRenameRequest.current === renameRequest) return;
+    lastRenameRequest.current = renameRequest;
+    if (pending.current) return;
+    cancelled.current = false;
+    setDraft(title);
+    setError("");
+    setEditing(true);
+  }, [renameRequest, title]);
   useEffect(() => {
     mounted.current = true;
     return () => {

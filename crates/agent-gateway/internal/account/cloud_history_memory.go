@@ -22,7 +22,7 @@ func (h *cloudHistoryHeap) Pop() any     { n := len(*h); v := (*h)[n-1]; *h = (*
 
 func cloudMessageHead(message CloudMessage) CloudMessageHead {
 	digest := sha256.Sum256(message.Content)
-	return CloudMessageHead{ID: message.ID, ConversationID: message.ConversationID, Role: message.Role, CreatedAt: message.CreatedAt, ContentBytes: int64(len(message.Content)), ContentSHA256: hex.EncodeToString(digest[:]), UsageBytes: int64(len(message.Usage))}
+	return CloudMessageHead{ID: message.ID, ConversationID: message.ConversationID, Role: message.Role, CreatedAt: message.CreatedAt, ContentBytes: int64(len(message.Content)), ContentSHA256: hex.EncodeToString(digest[:]), UsageBytes: int64(len(message.Usage)), PresentationBytes: int64(len(message.Presentation))}
 }
 
 func validateCloudHistoryPage(conversationID, beforeID string, limit int) (string, string, error) {
@@ -112,7 +112,7 @@ func cloudHistoryIDs(ids []string, maxBytes int64) ([]string, error) {
 func boundedCloudHistoryMessage(message CloudMessage, remaining *int64) CloudHistoryMessage {
 	head := cloudMessageHead(message)
 	result := CloudHistoryMessage{CloudMessage: message, ContentBytes: head.ContentBytes, ContentSHA256: head.ContentSHA256}
-	result.Content, result.Usage = nil, nil
+	result.Content, result.Usage, result.Presentation = nil, nil, nil
 	if head.ContentBytes > *remaining {
 		result.ContentOmitted = true
 	} else {
@@ -166,6 +166,17 @@ func (s *MemoryStore) GetCloudHistoryMessages(ctx context.Context, uid int64, co
 	remaining := maxBytes
 	for _, id := range ids {
 		result = append(result, boundedCloudHistoryMessage(matches[id], &remaining))
+	}
+	// Preserve the existing content budget first; presentation never displaces
+	// another message body or changes the model context window.
+	for index := range result {
+		raw := matches[result[index].ID].Presentation
+		if int64(len(raw)) <= remaining {
+			result[index].Presentation = append(json.RawMessage(nil), raw...)
+			remaining -= int64(len(raw))
+		} else {
+			result[index].PresentationOmitted = len(raw) > 0
+		}
 	}
 	return result, nil
 }

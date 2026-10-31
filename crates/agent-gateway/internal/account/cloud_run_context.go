@@ -17,10 +17,11 @@ type cloudContextFile struct {
 	Reason   string `json:"reason,omitempty"`
 }
 type cloudContextProvenance struct {
-	Project         *cloudContextVersion  `json:"project,omitempty"`
-	Memories        []cloudContextVersion `json:"memories,omitempty"`
-	MemoryTruncated bool                  `json:"memory_truncated,omitempty"`
-	Files           []cloudContextFile    `json:"files,omitempty"`
+	Project          *cloudContextVersion  `json:"project,omitempty"`
+	Memories         []cloudContextVersion `json:"memories,omitempty"`
+	MemoryTruncated  bool                  `json:"memory_truncated,omitempty"`
+	Files            []cloudContextFile    `json:"files,omitempty"`
+	historyResources *cloudHistoryResources
 }
 
 // Preferences are an explicit user feature, never authority for a tool or
@@ -103,6 +104,14 @@ func (s *Service) prepareCloudContext(ctx context.Context, userID int64, convers
 	modelMessages, code := s.cloudModelMessages(ctx, userID, messages)
 	if code != "" {
 		return nil, provenance, code
+	}
+	resources, err := s.cloudHistoryResourceContext(ctx, userID, conversationID, messages)
+	if err != nil {
+		return nil, provenance, "history_context_unavailable"
+	}
+	provenance.historyResources = resources
+	if resources != nil && (len(resources.Items) > 0 || resources.Truncated) {
+		systems = append(systems, cloudHistoryResourceInstruction+string(cloudJSON(resources)))
 	}
 	for i := len(systems) - 1; i >= 0; i-- {
 		modelMessages = append([]map[string]any{{"role": "system", "content": systems[i]}}, modelMessages...)

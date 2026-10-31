@@ -539,18 +539,18 @@ func (s *PersistentStore) GetSelectionLease(ctx context.Context, id string) (*Se
 
 func (s *PersistentStore) PutCloudConversation(ctx context.Context, conversation *CloudConversation) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO zerobox_cloud_conversations (id,user_id,title,model,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6)
+INSERT INTO zerobox_cloud_conversations (id,user_id,title,model,created_at,updated_at,pinned,archived,management_version)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,model=EXCLUDED.model,updated_at=EXCLUDED.updated_at
 WHERE zerobox_cloud_conversations.user_id=EXCLUDED.user_id`,
-		conversation.ID, conversation.UserID, conversation.Title, conversation.Model, conversation.CreatedAt, conversation.UpdatedAt)
+		conversation.ID, conversation.UserID, conversation.Title, conversation.Model, conversation.CreatedAt, conversation.UpdatedAt, conversation.Pinned, conversation.Archived, conversation.ManagementVersion)
 	return err
 }
 
 func (s *PersistentStore) GetCloudConversation(ctx context.Context, userID int64, id string) (*CloudConversation, error) {
 	var conversation CloudConversation
-	err := s.db.QueryRowContext(ctx, `SELECT id::text,user_id,title,model,created_at,updated_at FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2`, id, userID).Scan(
-		&conversation.ID, &conversation.UserID, &conversation.Title, &conversation.Model, &conversation.CreatedAt, &conversation.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id::text,user_id,title,model,created_at,updated_at,pinned,archived,management_version FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2`, id, userID).Scan(
+		&conversation.ID, &conversation.UserID, &conversation.Title, &conversation.Model, &conversation.CreatedAt, &conversation.UpdatedAt, &conversation.Pinned, &conversation.Archived, &conversation.ManagementVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -558,7 +558,7 @@ func (s *PersistentStore) GetCloudConversation(ctx context.Context, userID int64
 }
 
 func (s *PersistentStore) ListCloudConversations(ctx context.Context, userID int64) ([]CloudConversation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id::text,user_id,title,model,created_at,updated_at FROM zerobox_cloud_conversations WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 500`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id::text,user_id,title,model,created_at,updated_at,pinned,archived,management_version FROM zerobox_cloud_conversations WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 500`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +566,7 @@ func (s *PersistentStore) ListCloudConversations(ctx context.Context, userID int
 	items := make([]CloudConversation, 0)
 	for rows.Next() {
 		var conversation CloudConversation
-		if err := rows.Scan(&conversation.ID, &conversation.UserID, &conversation.Title, &conversation.Model, &conversation.CreatedAt, &conversation.UpdatedAt); err != nil {
+		if err := rows.Scan(&conversation.ID, &conversation.UserID, &conversation.Title, &conversation.Model, &conversation.CreatedAt, &conversation.UpdatedAt, &conversation.Pinned, &conversation.Archived, &conversation.ManagementVersion); err != nil {
 			return nil, err
 		}
 		items = append(items, conversation)
@@ -614,8 +614,8 @@ func (s *PersistentStore) AddCloudMessage(ctx context.Context, message *CloudMes
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages (id,conversation_id,user_id,role,content,usage,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		message.ID, message.ConversationID, message.UserID, message.Role, message.Content, nullableJSON(message.Usage), message.CreatedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages (id,conversation_id,user_id,role,content,usage,created_at,presentation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		message.ID, message.ConversationID, message.UserID, message.Role, message.Content, nullableJSON(message.Usage), message.CreatedAt, nullableJSON(message.Presentation))
 	if err != nil {
 		return err
 	}

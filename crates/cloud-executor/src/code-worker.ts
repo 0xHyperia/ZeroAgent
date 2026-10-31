@@ -1,14 +1,15 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { Sandbox } from "@e2b/code-interpreter";
 import { boundedFetch } from "./bounded-fetch.ts";
-import { sanitizeSdkEnvironment, sdkOptions } from "./sdk-options.ts";
+import { codeSession } from "./code-session.ts";
+import type { SandboxAccess } from "./sandbox-access.ts";
+import { sanitizeSdkEnvironment } from "./sdk-options.ts";
 
 // The code SDK buffers execution logs and NDJSON lines internally. Bound the raw
 // response BEFORE its parser, in a dedicated memory-limited worker, too.
 sanitizeSdkEnvironment();
 const data = workerData as {
   apiKey: string;
-  sandboxId: string;
+  access: SandboxAccess;
   code: string;
   language: string;
   root: string;
@@ -22,7 +23,7 @@ function bounded(value: unknown) {
   if (outputBytes > data.maxBytes) throw new Error("output_limit");
 }
 try {
-  const sandbox = await Sandbox.connect(data.sandboxId, sdkOptions(data.apiKey));
+  const sandbox = codeSession(data.access, data.apiKey);
   const context = await sandbox.createCodeContext({
     cwd: data.root,
     language: data.language,

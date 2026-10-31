@@ -145,6 +145,7 @@ type HistoryRowProps = {
   onCommitRename: () => void;
   onCancelRename: () => void;
   onSetPinned: (id: string, isPinned: boolean) => void;
+  onSetArchived?: (id: string, archived: boolean) => void;
   onMoveToWorkspace: (id: string, cwd: string) => void;
   moveWorkspaces: readonly WorkspaceProject[];
   onShareConversation: (item: SidebarConversation) => void;
@@ -181,6 +182,7 @@ function areRenderedHistoryItemsEqual(previous: SidebarConversation, next: Sideb
     previous.model === next.model &&
     previous.cwd === next.cwd &&
     previous.isPinned === next.isPinned &&
+    previous.isArchived === next.isArchived &&
     previous.isShared === next.isShared &&
     previous.forkedFromSessionId === next.forkedFromSessionId &&
     previous.isPending === next.isPending
@@ -220,6 +222,7 @@ function areHistoryRowPropsEqual(previous: HistoryRowProps, next: HistoryRowProp
     previous.onCommitRename === next.onCommitRename &&
     previous.onCancelRename === next.onCancelRename &&
     previous.onSetPinned === next.onSetPinned &&
+    previous.onSetArchived === next.onSetArchived &&
     previous.onMoveToWorkspace === next.onMoveToWorkspace &&
     previous.moveWorkspaces === next.moveWorkspaces &&
     previous.onShareConversation === next.onShareConversation &&
@@ -258,6 +261,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
     onCommitRename,
     onCancelRename,
     onSetPinned,
+    onSetArchived,
     onMoveToWorkspace,
     moveWorkspaces,
     onShareConversation,
@@ -713,6 +717,20 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
             <Pin className={CONVERSATION_MENU_ICON_CLASS} />
           )}
           {item.isPinned ? t("chat.conversationUnpin") : t("chat.conversationPin")}
+        </DropdownMenuItem>
+      ) : null}
+      {onSetArchived && !item.isPending ? (
+        <DropdownMenuItem
+          disabled={isInteractionDisabled || isBusy}
+          onSelect={() => onSetArchived(item.id, !item.isArchived)}
+          className={CONVERSATION_MENU_ITEM_CLASS}
+        >
+          {item.isArchived ? (
+            <ArchiveRestore className={CONVERSATION_MENU_ICON_CLASS} />
+          ) : (
+            <Archive className={CONVERSATION_MENU_ICON_CLASS} />
+          )}
+          {item.isArchived ? t("chat.workspaceUnarchive") : t("chat.workspaceArchive")}
         </DropdownMenuItem>
       ) : null}
       <DropdownMenuItem

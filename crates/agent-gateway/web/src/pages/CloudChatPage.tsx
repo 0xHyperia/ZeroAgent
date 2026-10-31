@@ -11,17 +11,24 @@ import {
   ChatHistorySidebar,
   type ChatHistorySidebarMutationKind,
 } from "@liveagent/ui/components/chat/ChatHistorySidebar";
-import type {
-  MentionComposerDraft,
-  MentionComposerHandle,
-} from "@liveagent/ui/components/chat/MentionComposer";
+import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { FileDropBoundary } from "@liveagent/ui/components/files/FileDropBoundary";
-import { BookOpen, Globe, PanelLeft, SquarePen, X } from "@liveagent/ui/components/IconSet";
+import {
+  BookOpen,
+  ChevronDown,
+  Globe,
+  PanelLeft,
+  SquarePen,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
+import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
+import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
   deleteSidebarConversations,
@@ -30,6 +37,7 @@ import {
 import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
+import { FloorNavRail } from "@liveagent/ui/pages/chat/transcript/FloorNavRail";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type ChangeEvent,
@@ -60,9 +68,7 @@ import { CloudChatFeedback } from "@/components/cloudchat/CloudChatFeedback";
 import { CloudChatHeaderActions } from "@/components/cloudchat/CloudChatHeaderActions";
 import { CloudChatMemoryPanel } from "@/components/cloudchat/CloudChatMemoryPanel";
 import { CloudChatMessageReader } from "@/components/cloudchat/CloudChatMessageReader";
-import { CloudChatModelLimitsPanel } from "@/components/cloudchat/CloudChatModelLimitsPanel";
 import { CloudChatProjectNavigation } from "@/components/cloudchat/CloudChatProjectNavigation";
-import { CloudChatProjectsPanel } from "@/components/cloudchat/CloudChatProjectsPanel";
 import { CloudChatResearchConfirmation } from "@/components/cloudchat/CloudChatResearchConfirmation";
 import {
   CloudChatResourcePanel,
@@ -71,12 +77,18 @@ import {
 import { CloudChatResourceWorkbench } from "@/components/cloudchat/CloudChatResourceWorkbench";
 import { CloudChatSourcesPanel } from "@/components/cloudchat/CloudChatSourcesPanel";
 import { CloudContextSidebar } from "@/components/cloudchat/CloudContextSidebar";
+import { CloudConversationBranches } from "@/components/cloudchat/CloudConversationBranches";
 import { CloudConversationTitle } from "@/components/cloudchat/CloudConversationTitle";
+import { CloudDraftConflictDialog } from "@/components/cloudchat/CloudDraftConflictDialog";
+import { CloudProjectCreateDialog } from "@/components/cloudchat/CloudProjectCreateDialog";
+import { CloudProjectSettingsDialog } from "@/components/cloudchat/CloudProjectSettingsDialog";
 import { CloudSpacePage } from "@/components/cloudchat/CloudSpacePage";
+import { useCloudChatQueueController } from "@/components/cloudchat/useCloudChatQueueController";
+import { useCloudSavedDraft } from "@/components/cloudchat/useCloudSavedDraft";
 import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPreview";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
-import { GatewayTranscript } from "@/components/GatewayTranscript";
+import { GatewayTranscript, type GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
 import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import {
@@ -109,6 +121,18 @@ import {
   CloudBranchUnconfirmedError,
   createCloudChatBranchesClient,
 } from "@/lib/cloudChatBranches";
+import {
+  createCloudChatConversationsClient,
+  createCloudConversationSearchAdapter,
+} from "@/lib/cloudChatConversations";
+import {
+  type CloudChatDraft,
+  CloudChatDraftStore,
+  cloneCloudChatDraft,
+  cloudChatCanonicalJSON,
+  cloudChatDraftContentMatches,
+  emptyCloudChatDraft,
+} from "@/lib/cloudChatDrafts";
 import {
   CLOUD_FILE_ACCEPT,
   type CloudChatFile,
@@ -151,6 +175,7 @@ import {
   cloudChatReasoningLevel,
 } from "@/lib/cloudChatModelParameters";
 import { type CloudProject, createCloudChatProjectsClient } from "@/lib/cloudChatProjects";
+import { type CloudChatPendingInput, createCloudChatQueueClient } from "@/lib/cloudChatQueue";
 import {
   type CloudChatPublicResearch,
   initialCloudResearchTopic,
@@ -168,12 +193,20 @@ import {
   isCloudChatRunTerminal,
 } from "@/lib/cloudChatRuns";
 import { patchCloudChatRuntimeControls } from "@/lib/cloudChatRuntimeControls";
-import { cloudChatScrollFollowing } from "@/lib/cloudChatScrollFollow";
+import {
+  type CloudChatSavedDraft,
+  createCloudChatSavedDraftsClient,
+} from "@/lib/cloudChatSavedDrafts";
 import {
   CloudChatSourceError,
   createCloudChatSourcesClient,
   linkCloudSourceCitations,
 } from "@/lib/cloudChatSources";
+import {
+  cloudChatAssistantDeliverables,
+  cloudChatAssistantRounds,
+  cloudChatMessageTimestamp,
+} from "@/lib/cloudChatTranscript";
 import { prepareCloudFileBatch } from "@/lib/cloudFileDrop";
 import { CLOUD_RESOURCE_DRAG_MIME, readCloudResourceDragPayload } from "@/lib/cloudResourceDrag";
 import type {
@@ -228,18 +261,24 @@ type WebSettings = {
 };
 type ConversationView = { userId: number; conversationId: string };
 type PendingRunSubmission = {
+  submittedSavedDraft?: CloudChatSavedDraft;
+  submittedDraftScope?: string;
   request: CloudChatRunRequest;
   optimisticUserId: string;
   optimisticAssistantId: string;
   optimisticContent: unknown;
   preserveDraft?: boolean;
+  submittedDraft?: CloudChatDraft;
+};
+type RetainedRunSubmission = {
+  pending: PendingRunSubmission;
+  status: "unknown" | "queue-full";
+  cancelRequested: boolean;
 };
 type PendingBranchSubmission = {
   view: ConversationView;
   request: CloudBranchRequest;
-  draftText: string;
-  draftFiles: CloudChatFile[];
-  draftArtifacts: CloudChatArtifactVersion[];
+  draft: CloudChatDraft;
   execution: {
     model: string;
     reasoning: CloudChatReasoningEffort;
@@ -267,7 +306,6 @@ type Props = {
   onLogout: () => void;
 };
 
-const EMPTY_MUTATIONS = new Map<string, ChatHistorySidebarMutationKind>();
 const EMPTY_PATHS = new Set<string>();
 const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
 
@@ -355,10 +393,19 @@ export function CloudChatPage({
       : "account";
   const [accountStats, setAccountStats] = useState<RelayDashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [conversationsLoadingMore, setConversationsLoadingMore] = useState(false);
   const [conversationsHasMore, setConversationsHasMore] = useState(false);
   const [conversationsError, setConversationsError] = useState("");
+  const [conversationSearchRequest, setConversationSearchRequest] = useState(0);
+  const [headerRenameRequest, setHeaderRenameRequest] = useState(0);
+  const [recentSection, setRecentSection] = useState({ owner: user.id, collapsed: false });
+  const navigateConversationRef = useRef(navigateConversation);
+  navigateConversationRef.current = navigateConversation;
+  const [conversationMutations, setConversationMutations] = useState<
+    ReadonlyMap<string, ChatHistorySidebarMutationKind>
+  >(() => new Map());
   const [conversationId, setConversationId] = useState(
     () => new URLSearchParams(window.location.search).get("conversation")?.trim() ?? "",
   );
@@ -390,28 +437,47 @@ export function CloudChatPage({
   const [artifactPanel, setArtifactPanel] = useState<{ versionId?: string; site?: boolean } | null>(
     null,
   );
-  const [workPanel, setWorkPanel] = useState<"projects" | "memory" | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<"chat" | "library" | "projects">("chat");
+  const [workPanel, setWorkPanel] = useState<"memory" | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<"chat" | "library">("chat");
   const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(CLOUD_SPACE_HOME);
   const [spaceRevision, setSpaceRevision] = useState(0);
   const [spaceVisited, setSpaceVisited] = useState(false);
   const [spaceStorageOpen, setSpaceStorageOpen] = useState(false);
   const [presentation, setPresentation] = useState<CloudChatPresentation>("work");
+  const draftPresentationRef = useRef({
+    presentation,
+    researchEnabled: runtimeControls.nativeWebSearchEnabled,
+  });
+  draftPresentationRef.current = {
+    presentation,
+    researchEnabled: runtimeControls.nativeWebSearchEnabled,
+  };
   const [composerMenu, setComposerMenu] = useState<CloudComposerMenu>(null);
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLElement | null>(null);
   const [projectContextBusy, setProjectContextBusy] = useState(false);
   const projectContextMutation = useRef(false);
+  const draftProjectIdRef = useRef<string | undefined>(undefined);
   const [composerProject, setComposerProject] = useState<{
     scope: string;
     project: CloudProject | null;
   }>({ scope: "", project: null });
   const [navigationRevision, setNavigationRevision] = useState(0);
-  const [initialProjectId, setInitialProjectId] = useState<string | undefined>();
+  const [projectCreate, setProjectCreate] = useState({ owner: user.id, open: false });
+  const [floorAnchor, setFloorAnchor] = useState<{ scope: string; rowKey: string | null }>({
+    scope: "",
+    rowKey: null,
+  });
+  const [projectSettings, setProjectSettings] = useState<{
+    owner: number;
+    id?: string;
+    open: boolean;
+  }>({ owner: user.id, open: false });
   const [contextNotice, setContextNotice] = useState("");
+  const [draftConflictOpen, setDraftConflictOpen] = useState(false);
+  const [draftConflictLocal, setDraftConflictLocal] = useState<CloudChatSavedDraft | null>(null);
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchUnconfirmed, setBranchUnconfirmed] = useState(false);
   const [branchPendingMessageId, setBranchPendingMessageId] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [activeRun, setActiveRun] = useState<CloudChatRun | null>(null);
   const [restoredTerminalRun, setRestoredTerminalRun] = useState<CloudChatRunHead | null>(null);
@@ -419,7 +485,6 @@ export function CloudChatPage({
     token: string;
     messageId: string;
   } | null>(null);
-  const [modelLimitsOpen, setModelLimitsOpen] = useState(false);
   const [preparingExecution, setPreparingExecution] = useState(false);
   const [runConnection, setRunConnection] = useState<
     "connecting" | "connected" | "reconnecting" | null
@@ -429,10 +494,24 @@ export function CloudChatPage({
   const [streamNotice, setStreamNotice] = useState("");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyBefore, setHistoryBefore] = useState("");
+  const [historyAfter, setHistoryAfter] = useState("");
+  const [historyHasAfter, setHistoryHasAfter] = useState(false);
+  const [historySelection, setHistorySelection] = useState<{
+    conversationId: string;
+    messageId: string;
+    token: string;
+  } | null>(null);
+  const historyJumpedToken = useRef("");
+  const transcriptNavigation = useRef<GatewayTranscriptNavHandle | null>(null);
+  const cloudChatFrameRef = useRef<HTMLDivElement | null>(null);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyPageLoading, setHistoryPageLoading] = useState(false);
-  const [followingTranscript, setFollowingTranscript] = useState(true);
   const [historyError, setHistoryError] = useState("");
+  const [historyReloadRevision, setHistoryReloadRevision] = useState(0);
+  const [historyRetryKind, setHistoryRetryKind] = useState<"restore" | "earlier" | "later">(
+    "restore",
+  );
+  const historyRestoreFailed = historyRetryKind === "restore" && Boolean(historyError);
   const [messageReader, setMessageReader] = useState<{
     id: string;
     message?: Message;
@@ -480,13 +559,49 @@ export function CloudChatPage({
   }, []);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const [pinnedConversationIds, setPinnedConversationIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
+  const { handle: transcriptFollow, following: followingTranscript } = useScrollFollow({
+    viewport: transcriptViewport,
+    listenerRoot: transcriptViewport?.parentElement,
+    trackKeys: true,
+  });
   const abortRef = useRef<AbortController | null>(null);
   const submissionAbortRef = useRef<AbortController | null>(null);
   const pendingSubmissionRef = useRef<PendingRunSubmission | null>(null);
+  const retainedSubmissionsRef = useRef(new Map<string, RetainedRunSubmission>());
+  const queueDraftsRef = useRef(
+    new Map<
+      string,
+      {
+        view: ConversationView;
+        draft: CloudChatDraft;
+        input: CloudChatPendingInput;
+        saved?: CloudChatSavedDraft;
+        scope?: string;
+      }
+    >(),
+  );
+  const queueEditPreferences = useRef(
+    new Map<
+      string,
+      {
+        model: string;
+        providerKeyId: number;
+        reasoning: ReasoningLevel;
+        runtimeControls: ChatRuntimeControls;
+      }
+    >(),
+  );
+  const queueEditingItemId = useRef<string | null>(null);
+  const draftsRef = useRef(new CloudChatDraftStore(user.id));
+  const savedDraftSyncRef = useRef<ReturnType<typeof useCloudSavedDraft> | null>(null);
+  const savedModelsRef = useRef(
+    new Map<string, NonNullable<CloudChatSavedDraft["modelSelection"]>>(),
+  );
+  const savedModelRestoreRef = useRef<{
+    scope: string;
+    model: NonNullable<CloudChatSavedDraft["modelSelection"]>;
+  } | null>(null);
   const cancelSubmissionRef = useRef(false);
   const mountedRef = useRef(true);
   const accountInvalidatedRef = useRef(false);
@@ -502,12 +617,31 @@ export function CloudChatPage({
     () => createCloudChatMetadataClient(accountFetch, captureAccountRequestGuard),
     [],
   );
+  const conversationClient = useMemo(
+    () => createCloudChatConversationsClient(accountFetch, captureAccountRequestGuard),
+    [],
+  );
+  const conversationSearchAdapter = useMemo(
+    () =>
+      createCloudConversationSearchAdapter(conversationClient, (item) =>
+        navigateConversationRef.current(item.id, item.messageId),
+      ),
+    [conversationClient],
+  );
   const modelLimitsClient = useMemo(
     () => createCloudChatModelLimitsClient(accountFetch, captureAccountRequestGuard),
     [],
   );
   const modelPreparationAbortRef = useRef<AbortController | null>(null);
   const runsClient = useMemo(() => createCloudChatRunsClient(accountFetch), []);
+  const queueClient = useMemo(
+    () => createCloudChatQueueClient(accountFetch, captureAccountRequestGuard),
+    [],
+  );
+  const savedDraftClient = useMemo(
+    () => createCloudChatSavedDraftsClient(accountFetch, captureAccountRequestGuard),
+    [],
+  );
   const filesClient = useMemo(
     () => createCloudChatFilesClient(accountFetch, captureAccountRequestGuard),
     [],
@@ -535,17 +669,15 @@ export function CloudChatPage({
   const branchAbortRef = useRef<AbortController | null>(null);
   const pendingBranchRef = useRef<PendingBranchSubmission | null>(null);
   const researchConfirmationRef = useRef<PendingResearchConfirmation | null>(null);
-  const exportAbortRef = useRef<AbortController | null>(null);
   const draftRestoreRef = useRef<{
     view: ConversationView;
-    text?: string;
-    draft?: MentionComposerDraft;
+    draft: CloudChatDraft;
   } | null>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
   const historyPageAbortRef = useRef<AbortController | null>(null);
   const messageReadAbortRef = useRef<AbortController | null>(null);
-  const followTranscriptTailRef = useRef(true);
   const conversationCreationRef = useRef<Promise<string> | null>(null);
+  const dispatchPreparationRef = useRef(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const settingsRef = useRef(settings);
@@ -581,10 +713,12 @@ export function CloudChatPage({
     const scope = `${user.id}:${conversationId}`;
     let current = true;
     setComposerProject({ scope, project: null });
-    if (!conversationId) return;
     const guard = captureWorkGuard();
-    void projectsClient
-      .getAssociation(conversationId)
+    void (
+      conversationId
+        ? projectsClient.getAssociation(conversationId)
+        : Promise.resolve({ project_id: draftProjectIdRef.current ?? "" })
+    )
       .then(async (binding) => {
         guard();
         const project = binding.project_id
@@ -606,7 +740,6 @@ export function CloudChatPage({
     modelPreparationAbortRef.current?.abort();
     modelPreparationAbortRef.current = null;
     setPreparingExecution(false);
-    setModelLimitsOpen(false);
     abortRef.current?.abort();
     abortRef.current = null;
     submissionAbortRef.current?.abort();
@@ -622,18 +755,64 @@ export function CloudChatPage({
     pendingBranchRef.current = null;
     researchConfirmationRef.current = null;
     setResearchConfirmation(null);
-    exportAbortRef.current?.abort();
-    exportAbortRef.current = null;
     draftRestoreRef.current = null;
     historyPageAbortRef.current?.abort();
     historyPageAbortRef.current = null;
     messageReadAbortRef.current?.abort();
     messageReadAbortRef.current = null;
-    followTranscriptTailRef.current = true;
-    setFollowingTranscript(true);
-  }, []);
+    transcriptFollow.stickToBottom();
+  }, [transcriptFollow]);
 
-  function selectConversationView(id: string, preserveAttachmentBatch = false) {
+  function captureComposerDraft(): CloudChatDraft {
+    return cloneCloudChatDraft({
+      composer: composerRef.current?.getDraft() ?? draftRestoreRef.current?.draft.composer ?? null,
+      ...draftResourcesRef.current,
+      ...draftPresentationRef.current,
+      ...(draftProjectIdRef.current ? { projectId: draftProjectIdRef.current } : {}),
+    });
+  }
+
+  function restoreComposerDraft(draft: CloudChatDraft, view: ConversationView) {
+    const snapshot = cloneCloudChatDraft(draft);
+    if (draftProjectIdRef.current !== snapshot.projectId) {
+      draftProjectIdRef.current = snapshot.projectId;
+      setNavigationRevision((current) => current + 1);
+    }
+    draftsRef.current.write(view, snapshot);
+    draftResourcesRef.current = { files: snapshot.files, artifacts: snapshot.artifacts };
+    draftPresentationRef.current = {
+      presentation: snapshot.presentation,
+      researchEnabled: snapshot.researchEnabled,
+    };
+    setAttachments(snapshot.files);
+    setArtifactAttachments(snapshot.artifacts);
+    setPresentation(snapshot.presentation);
+    setRuntimeControls((current) => ({
+      ...current,
+      nativeWebSearchEnabled: snapshot.researchEnabled,
+    }));
+    if (composerRef.current) {
+      if (snapshot.composer) composerRef.current.setDraft(snapshot.composer);
+      else composerRef.current.clear();
+      draftRestoreRef.current = null;
+    } else draftRestoreRef.current = { view, draft: snapshot };
+  }
+
+  function selectConversationView(
+    id: string,
+    preserveAttachmentBatch = false,
+    nextDraft?: CloudChatDraft,
+    resetBlank = false,
+  ) {
+    if (!isCurrentView(viewRef.current)) return viewRef.current;
+    const discardBlank = resetBlank && !viewRef.current.conversationId;
+    if (!discardBlank && !queueEditPreferences.current.has(viewRef.current.conversationId)) {
+      const captured = captureSavedSnapshot(viewRef.current.conversationId || "blank");
+      if (captured) savedDraftSyncRef.current?.markDirty(captured);
+      void savedDraftSyncRef.current?.flush();
+    }
+    if (!discardBlank) draftsRef.current.write(viewRef.current, captureComposerDraft());
+    else draftsRef.current.remove(viewRef.current);
     if (!preserveAttachmentBatch) uploadBatchRef.current = null;
     resourceDropRef.current = null;
     setResolvingResources(false);
@@ -642,11 +821,21 @@ export function CloudChatPage({
     setWorkspaceView("chat");
     detachRun();
     viewRef.current = { userId: user.id, conversationId: id };
+    restoreComposerDraft(
+      nextDraft ?? draftsRef.current.read(viewRef.current) ?? emptyCloudChatDraft(),
+      viewRef.current,
+    );
+    const retained = retainedSubmissionsRef.current.get(id);
+    pendingSubmissionRef.current = retained?.pending ?? null;
+    cancelSubmissionRef.current = retained?.cancelRequested ?? false;
     setConversationId(id);
     setMessages([]);
     setHistoryLoading(Boolean(id));
     setHistoryBefore("");
     setHistoryHasMore(false);
+    setHistoryAfter("");
+    setHistoryHasAfter(false);
+    setHistorySelection(null);
     setHistoryPageLoading(false);
     setHistoryError("");
     setMessageReader(null);
@@ -654,11 +843,9 @@ export function CloudChatPage({
     setRestoredTerminalRun(null);
     setStreaming(false);
     setRunConnection(null);
-    setSubmissionUnconfirmed(false);
-    setSubmissionQueueFull(false);
+    setSubmissionUnconfirmed(retained?.status === "unknown");
+    setSubmissionQueueFull(retained?.status === "queue-full");
     setStreamNotice("");
-    setAttachments([]);
-    setArtifactAttachments([]);
     setUploadingFiles(false);
     setFilePanel(null);
     setSourcePanel(null);
@@ -668,7 +855,6 @@ export function CloudChatPage({
     setBranchBusy(false);
     setBranchUnconfirmed(false);
     setBranchPendingMessageId(null);
-    setExporting(false);
     setError("");
     return viewRef.current;
   }
@@ -676,6 +862,16 @@ export function CloudChatPage({
   useEffect(() => {
     mountedRef.current = true;
     accountInvalidatedRef.current = false;
+    draftsRef.current.reset(user.id);
+    retainedSubmissionsRef.current.clear();
+    queueDraftsRef.current.clear();
+    queueEditPreferences.current.clear();
+    savedModelsRef.current.clear();
+    draftProjectIdRef.current = undefined;
+    savedModelRestoreRef.current = null;
+    setDraftConflictLocal(null);
+    setDraftConflictOpen(false);
+    setSelectedConversation(null);
     conversationsAbortRef.current?.abort();
     conversationsAbortRef.current = null;
     conversationsEpochRef.current++;
@@ -685,6 +881,9 @@ export function CloudChatPage({
     setConversationsLoadingMore(false);
     setConversationsError("");
     if (viewRef.current.userId !== user.id) {
+      composerRef.current?.clear();
+      draftResourcesRef.current = { files: [], artifacts: [] };
+      setPresentation("work");
       uploadUnconfirmedRef.current = false;
       uploadBatchRef.current = null;
       setUploadUnconfirmed(false);
@@ -692,7 +891,7 @@ export function CloudChatPage({
       resourceDropRef.current = null;
       setResolvingResources(false);
       setWorkspaceView("chat");
-      setInitialProjectId(undefined);
+      setProjectSettings({ owner: user.id, open: false });
       setRuntimeControls((current) => ({ ...current, nativeWebSearchEnabled: false }));
       viewRef.current = { userId: user.id, conversationId: "" };
       setConversationId("");
@@ -703,6 +902,7 @@ export function CloudChatPage({
       setHistoryError("");
       setMessageReader(null);
       setConversations([]);
+      setProjectSettings({ owner: user.id, open: false });
       setAttachments([]);
       setArtifactAttachments([]);
       setFilePanel(null);
@@ -713,7 +913,6 @@ export function CloudChatPage({
       setBranchBusy(false);
       setBranchUnconfirmed(false);
       setBranchPendingMessageId(null);
-      setExporting(false);
       setUploadingFiles(false);
       setAccountStats(null);
       setActiveRun(null);
@@ -729,6 +928,18 @@ export function CloudChatPage({
     const invalidate = () => {
       if (ownerRef.current !== owner) return;
       accountInvalidatedRef.current = true;
+      draftsRef.current.reset(0);
+      retainedSubmissionsRef.current.clear();
+      queueDraftsRef.current.clear();
+      queueEditPreferences.current.clear();
+      savedModelsRef.current.clear();
+      draftProjectIdRef.current = undefined;
+      savedModelRestoreRef.current = null;
+      setDraftConflictLocal(null);
+      setDraftConflictOpen(false);
+      setSelectedConversation(null);
+      composerRef.current?.clear();
+      draftResourcesRef.current = { files: [], artifacts: [] };
       resourceDropRef.current = null;
       setResolvingResources(false);
       detachRun();
@@ -755,6 +966,7 @@ export function CloudChatPage({
       setHistoryError("");
       setMessageReader(null);
       setConversations([]);
+      setProjectSettings({ owner: user.id, open: false });
       setAttachments([]);
       setArtifactAttachments([]);
       setUploadingFiles(false);
@@ -766,7 +978,6 @@ export function CloudChatPage({
       setBranchBusy(false);
       setBranchUnconfirmed(false);
       setBranchPendingMessageId(null);
-      setExporting(false);
       setAccountStats(null);
       setError("登录状态已更新，请刷新页面后继续。");
     };
@@ -779,6 +990,13 @@ export function CloudChatPage({
     }
     return () => {
       mountedRef.current = false;
+      draftsRef.current.reset(0);
+      retainedSubmissionsRef.current.clear();
+      queueDraftsRef.current.clear();
+      queueEditPreferences.current.clear();
+      savedModelsRef.current.clear();
+      draftProjectIdRef.current = undefined;
+      savedModelRestoreRef.current = null;
       detachRun();
       conversationsAbortRef.current?.abort();
       conversationsAbortRef.current = null;
@@ -805,54 +1023,98 @@ export function CloudChatPage({
   }, [accountSettingsOpen, conversationId, settingsSection]);
   useEffect(() => {
     const restore = draftRestoreRef.current;
-    if (restore && restore.view.conversationId === conversationId && isCurrentView(restore.view)) {
-      if (restore.draft) composerRef.current?.setDraft(restore.draft);
-      else composerRef.current?.setText(restore.text ?? "");
+    if (restore && isCurrentView(restore.view) && composerRef.current) {
+      if (restore.draft.composer) composerRef.current.setDraft(restore.draft.composer);
+      else composerRef.current.clear();
       draftRestoreRef.current = null;
     }
-  }, [conversationId, isCurrentView]);
+  });
 
-  const refreshConversations = useCallback(async () => {
-    const owner = ownerRef.current;
-    conversationsAbortRef.current?.abort();
-    const controller = new AbortController();
-    conversationsAbortRef.current = controller;
-    const epoch = ++conversationsEpochRef.current;
-    const current = () =>
-      mountedRef.current &&
-      !accountInvalidatedRef.current &&
-      ownerRef.current === owner &&
-      conversationsEpochRef.current === epoch;
-    setConversationsLoading(true);
-    setConversationsLoadingMore(false);
-    try {
-      const page = await metadataClient.listConversations({ signal: controller.signal });
-      if (current()) {
-        const wasInitialized = conversationsInitializedRef.current;
-        setConversations((previous) =>
-          wasInitialized
-            ? mergeCloudChatConversations(previous, page.conversations)
-            : page.conversations,
-        );
-        if (!conversationsInitializedRef.current) {
-          conversationsCursorRef.current = page.nextCursor;
-          setConversationsHasMore(page.hasMore);
+  const refreshConversations = useCallback(
+    async (reset = false) => {
+      const owner = ownerRef.current;
+      conversationsAbortRef.current?.abort();
+      const controller = new AbortController();
+      conversationsAbortRef.current = controller;
+      const epoch = ++conversationsEpochRef.current;
+      const current = () =>
+        mountedRef.current &&
+        !accountInvalidatedRef.current &&
+        ownerRef.current === owner &&
+        conversationsEpochRef.current === epoch;
+      setConversationsLoading(true);
+      setConversationsLoadingMore(false);
+      try {
+        const page = await conversationClient.list({
+          scope: "unassigned",
+          signal: controller.signal,
+        });
+        if (current()) {
+          const wasInitialized = conversationsInitializedRef.current && !reset;
+          setConversations((previous) =>
+            wasInitialized
+              ? mergeCloudChatConversations(previous, page.conversations).filter(
+                  (item) => !item.archived,
+                )
+              : page.conversations,
+          );
+          if (!wasInitialized) {
+            conversationsCursorRef.current = page.nextCursor;
+            setConversationsHasMore(page.hasMore);
+          }
+          conversationsInitializedRef.current = true;
+          setConversationsError("");
         }
-        conversationsInitializedRef.current = true;
-        setConversationsError("");
+        return page.conversations;
+      } catch (cause) {
+        if (current() && !controller.signal.aborted)
+          setConversationsError(cause instanceof Error ? cause.message : "会话列表读取失败");
+        throw cause;
+      } finally {
+        if (current()) {
+          conversationsAbortRef.current = null;
+          setConversationsLoading(false);
+        }
       }
-      return page.conversations;
+    },
+    [conversationClient],
+  );
+
+  async function manageConversation(id: string, update: { pinned?: boolean; archived?: boolean }) {
+    if (conversationMutations.has(id)) return;
+    const guard = captureAccountRequestGuard();
+    const owner = ownerRef.current;
+    setConversationMutations((current) => new Map(current).set(id, "pin"));
+    try {
+      const conversation = await conversationClient.get(id);
+      guard();
+      const updated = await conversationClient.manage(conversation, update);
+      guard();
+      if (!mountedRef.current || ownerRef.current !== owner || accountInvalidatedRef.current)
+        return;
+      setConversations((current) =>
+        current.map((item) => (item.id === id ? updated : item)).filter((item) => !item.archived),
+      );
+      if (viewRef.current.conversationId === id) setSelectedConversation(updated);
+      setNavigationRevision((revision) => revision + 1);
+      void refreshConversations().catch(() => undefined);
     } catch (cause) {
-      if (current() && !controller.signal.aborted)
-        setConversationsError(cause instanceof Error ? cause.message : "会话列表读取失败");
-      throw cause;
-    } finally {
-      if (current()) {
-        conversationsAbortRef.current = null;
-        setConversationsLoading(false);
+      try {
+        guard();
+        if (mountedRef.current && ownerRef.current === owner)
+          setError(cause instanceof Error ? cause.message : "对话更新失败，请刷新后重试。");
+      } catch {
+        /* Retired account. */
       }
+    } finally {
+      if (ownerRef.current === owner)
+        setConversationMutations((current) => {
+          const next = new Map(current);
+          next.delete(id);
+          return next;
+        });
     }
-  }, [metadataClient]);
+  }
 
   async function loadMoreConversations() {
     if (!conversationsHasMore || !conversationsCursorRef.current || conversationsAbortRef.current)
@@ -868,7 +1130,8 @@ export function CloudChatPage({
       ownerRef.current === owner &&
       conversationsEpochRef.current === epoch;
     try {
-      const page = await metadataClient.listConversations({
+      const page = await conversationClient.list({
+        scope: "unassigned",
         cursor: conversationsCursorRef.current,
         signal: controller.signal,
       });
@@ -929,7 +1192,6 @@ export function CloudChatPage({
       !accountInvalidatedRef.current &&
       ownerRef.current === user.id;
     void Promise.all([
-      refreshConversations(),
       getRelayDashboardStats().then((stats) => {
         if (current()) setAccountStats(stats);
       }),
@@ -951,7 +1213,31 @@ export function CloudChatPage({
     return () => {
       cancelled = true;
     };
+  }, [user.id]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes reload the catalog without replacing the run subscriber callback.
+  useEffect(() => {
+    void refreshConversations().catch(() => undefined);
   }, [refreshConversations, user.id]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly refreshes canonical metadata without navigating or creating a record.
+  useEffect(() => {
+    const view = viewRef.current;
+    const controller = new AbortController();
+    setSelectedConversation(null);
+    if (conversationId)
+      void conversationClient
+        .get(conversationId, controller.signal)
+        .then((conversation) => {
+          if (!controller.signal.aborted && isCurrentView(view))
+            setSelectedConversation(conversation);
+        })
+        .catch((cause) => {
+          if (!controller.signal.aborted && isCurrentView(view))
+            setError(cause instanceof Error ? cause.message : "无法读取对话信息。");
+        });
+    return () => controller.abort();
+  }, [conversationId, conversationClient, isCurrentView, historyReloadRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -982,38 +1268,6 @@ export function CloudChatPage({
     setAccountStats(stats);
   }, [onUserChange]);
 
-  useEffect(() => {
-    if (!transcriptViewport) return;
-    let previousTop = transcriptViewport.scrollTop;
-    const follow = () => {
-      const top = transcriptViewport.scrollTop;
-      const distance = transcriptViewport.scrollHeight - transcriptViewport.clientHeight - top;
-      followTranscriptTailRef.current = cloudChatScrollFollowing(
-        followTranscriptTailRef.current,
-        previousTop,
-        top,
-        distance,
-      );
-      previousTop = top;
-      setFollowingTranscript(followTranscriptTailRef.current);
-    };
-    transcriptViewport.addEventListener("scroll", follow, { passive: true });
-    return () => transcriptViewport.removeEventListener("scroll", follow);
-  }, [transcriptViewport]);
-
-  useEffect(() => {
-    if (!transcriptViewport) return;
-    if (messages.length === 0) {
-      transcriptViewport.scrollTop = 0;
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      if (followTranscriptTailRef.current)
-        transcriptViewport.scrollTop = transcriptViewport.scrollHeight;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages, transcriptViewport]);
-
   const displayRun = useCallback(
     (run: CloudChatRun, view: ConversationView) => {
       if (!isCurrentView(view) || attachedRunIdRef.current !== run.id) return;
@@ -1034,6 +1288,9 @@ export function CloudChatPage({
           id: run.assistant_message_id,
           role: "assistant",
           content: run.output,
+          presentation: run.presentation,
+          created_at:
+            run.presentation?.completed_at || run.presentation?.started_at || run.created_at,
         };
         return current.some((item) => item.id === message.id)
           ? current.map((item) => (item.id === message.id ? message : item))
@@ -1104,6 +1361,233 @@ export function CloudChatPage({
     [displayRun, isCurrentView, refreshConversations, runsClient, historyClient],
   );
 
+  const pendingQueue = useCloudChatQueueController({
+    userId: accountInvalidatedRef.current ? 0 : user.id,
+    conversationId,
+    client: queueClient,
+    activeRun,
+    blocked:
+      accountInvalidatedRef.current ||
+      historyLoading ||
+      historyRestoreFailed ||
+      !!historySelection ||
+      submissionUnconfirmed ||
+      submissionQueueFull ||
+      branchBusy ||
+      branchUnconfirmed ||
+      !!pendingSubmissionRef.current ||
+      preparingExecution ||
+      uploadingFiles ||
+      uploadUnconfirmed,
+    captureDraft: captureComposerDraft,
+    restoreDraft: (draft) => {
+      const view = viewRef.current;
+      restoreComposerDraft(draft, view);
+      const preferences = queueEditPreferences.current.get(view.conversationId);
+      if (preferences) {
+        setModel(preferences.model);
+        setProviderKeyId(preferences.providerKeyId);
+        setReasoning(preferences.reasoning);
+        setRuntimeControls(preferences.runtimeControls);
+        queueEditPreferences.current.delete(view.conversationId);
+      }
+    },
+    onEdit: async (item) => {
+      const view = viewRef.current;
+      const guard = captureAccountRequestGuard();
+      const [files, artifacts] = await Promise.all([
+        Promise.all(cloudFileReferences(item.content).map((file) => filesClient.get(file.file_id))),
+        Promise.all(
+          cloudArtifactReferences(item.content).map((version) =>
+            artifactsClient.get(version.version_id),
+          ),
+        ),
+      ]);
+      guard();
+      if (!isCurrentView(view)) return;
+      queueEditPreferences.current.set(view.conversationId, {
+        model,
+        providerKeyId,
+        reasoning,
+        runtimeControls,
+      });
+      restoreComposerDraft(
+        {
+          composer: item.composer ?? null,
+          files,
+          artifacts,
+          presentation: item.presentation,
+          researchEnabled: Boolean(item.public_research),
+        },
+        view,
+      );
+      if (!item.composer) composerRef.current?.setText(messageText(item.content));
+      setModel(item.model);
+      setProviderKeyId(item.provider_key_id ?? 0);
+      setReasoning(cloudChatReasoningLevel(item.reasoning_effort ?? "none"));
+      setRuntimeControls((current) => ({
+        ...current,
+        reasoning: cloudChatReasoningLevel(item.reasoning_effort ?? "none"),
+        thinkingEnabled: item.reasoning_effort !== "none",
+        nativeWebSearchEnabled: Boolean(item.public_research),
+      }));
+      composerRef.current?.focus();
+    },
+    onAccepted: async (run, item) => {
+      const view = viewRef.current;
+      if (!isCurrentView(view) || view.conversationId !== run.conversation_id) return;
+      const guard = captureAccountRequestGuard();
+      try {
+        const page = await historyClient.list(view.conversationId);
+        guard();
+        if (!isCurrentView(view)) return;
+        setMessages((current) => mergeCloudChatHistory(current, page.messages));
+      } catch (cause) {
+        guard();
+        if (!isCurrentView(view)) return;
+        if (!item) throw cause;
+        setMessages((current) =>
+          current.some((message) => message.id === run.user_message_id)
+            ? current
+            : [
+                ...current,
+                {
+                  id: run.user_message_id,
+                  role: "user",
+                  content: item.content,
+                  created_at: run.created_at,
+                },
+              ],
+        );
+      }
+      if (!isCurrentView(view)) return;
+      setHistorySelection(null);
+      attachRun(run, view);
+      void refreshConversations().catch(() => undefined);
+    },
+  });
+  queueEditingItemId.current = pendingQueue.editingItem?.client_item_id ?? null;
+
+  async function reconcileQueuedWrite() {
+    const result = await pendingQueue.reconcileUnknown();
+    if (!result || !("client_item_id" in result)) return;
+    const retained = queueDraftsRef.current.get(result.client_item_id);
+    if (
+      !retained ||
+      retained.view.userId !== ownerRef.current ||
+      cloudChatCanonicalJSON(retained.input.content) !== cloudChatCanonicalJSON(result.content)
+    )
+      return;
+    if (
+      isCurrentView(retained.view) &&
+      cloudChatDraftContentMatches(captureComposerDraft(), retained.draft)
+    ) {
+      if (retained.saved)
+        void savedDraftSyncRef.current?.clearIfUnchanged(retained.saved, retained.scope);
+      restoreComposerDraft(
+        { ...retained.draft, composer: null, files: [], artifacts: [] },
+        retained.view,
+      );
+    }
+    queueDraftsRef.current.delete(result.client_item_id);
+  }
+
+  function captureSavedSnapshot(scope: string): CloudChatSavedDraft | null {
+    const id = scope === "blank" ? "" : scope;
+    const view = viewRef.current;
+    if (
+      accountInvalidatedRef.current ||
+      ownerRef.current !== user.id ||
+      queueEditPreferences.current.has(id)
+    )
+      return null;
+    const current = view.conversationId === id;
+    const draft = current
+      ? captureComposerDraft()
+      : draftsRef.current.read({ userId: user.id, conversationId: id });
+    if (!draft) return null;
+    const selection = current
+      ? { model, providerKeyId, reasoningEffort: cloudChatReasoningEffort(reasoning) }
+      : savedModelsRef.current.get(scope);
+    if (selection) savedModelsRef.current.set(scope, selection);
+    return { version: 1, draft, ...(selection ? { modelSelection: selection } : {}) };
+  }
+
+  const savedDraft = useCloudSavedDraft({
+    ownerId: accountInvalidatedRef.current ? null : user.id,
+    scope: conversationId,
+    client: savedDraftClient,
+    captureSnapshot: captureSavedSnapshot,
+    applySnapshot: (snapshot, scope) => {
+      const view = viewRef.current;
+      if (
+        !isCurrentView(view) ||
+        (view.conversationId || "blank") !== scope ||
+        pendingQueue.editingItem
+      )
+        return;
+      const draft = snapshot?.draft ?? emptyCloudChatDraft();
+      draftsRef.current.write(view, draft);
+      restoreComposerDraft(draft, view);
+      if (snapshot?.modelSelection) {
+        savedModelsRef.current.set(scope, snapshot.modelSelection);
+        savedModelRestoreRef.current = { scope, model: snapshot.modelSelection };
+      }
+    },
+  });
+  savedDraftSyncRef.current = savedDraft;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these host-owned fields trigger a fresh editor snapshot; the callback reads their current values.
+  useEffect(() => {
+    if (
+      !webSettingsLoaded ||
+      modelsLoading ||
+      pendingQueue.editingItem ||
+      savedModelRestoreRef.current ||
+      accountInvalidatedRef.current
+    )
+      return;
+    savedDraft.markDirty();
+  }, [
+    attachments,
+    artifactAttachments,
+    presentation,
+    model,
+    providerKeyId,
+    reasoning,
+    runtimeControls.nativeWebSearchEnabled,
+    modelsLoading,
+    webSettingsLoaded,
+    pendingQueue.editingItem,
+    savedDraft.markDirty,
+  ]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: async draft restoration publishes state after assigning the matching model restore ref.
+  useEffect(() => {
+    if (!webSettingsLoaded || modelsLoading || pendingQueue.editingItem) return;
+    const restore = savedModelRestoreRef.current;
+    if (!restore || restore.scope !== (conversationId || "blank")) return;
+    savedModelRestoreRef.current = null;
+    setModel(restore.model.model);
+    setProviderKeyId(restore.model.providerKeyId ?? 0);
+    if (restore.model.reasoningEffort) {
+      const nextReasoning = cloudChatReasoningLevel(restore.model.reasoningEffort);
+      setReasoning(nextReasoning);
+      setRuntimeControls((current) => ({
+        ...current,
+        reasoning: nextReasoning,
+        thinkingEnabled: restore.model.reasoningEffort !== "none",
+      }));
+    }
+  }, [
+    conversationId,
+    webSettingsLoaded,
+    modelsLoading,
+    pendingQueue.editingItem,
+    savedDraft.state.status,
+  ]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry revision starts a read-only restoration without changing conversation identity.
   useEffect(() => {
     if (viewRef.current.userId !== user.id || viewRef.current.conversationId !== conversationId) {
       viewRef.current = { userId: user.id, conversationId };
@@ -1111,25 +1595,54 @@ export function CloudChatPage({
     const view = viewRef.current;
     const controller = new AbortController();
     const attachedAtStart = attachedRunIdRef.current;
+    const anchor =
+      historySelection?.conversationId === conversationId ? historySelection.messageId : "";
     setHistoryLoading(Boolean(conversationId));
+    setHistoryError("");
     if (conversationId) {
       void Promise.all([
-        historyClient.list(conversationId, { signal: controller.signal }),
+        anchor
+          ? conversationClient
+              .window(conversationId, anchor, { signal: controller.signal })
+              .then((page) => ({
+                messages: page.messages,
+                nextBeforeId: page.nextBeforeId,
+                hasMore: page.hasBefore,
+                afterId: page.nextAfterId,
+                hasAfter: page.hasAfter,
+              }))
+          : historyClient
+              .list(conversationId, { signal: controller.signal })
+              .then((page) => ({ ...page, afterId: "", hasAfter: false })),
         runsClient.listRuns(conversationId, true, controller.signal),
       ])
         .then(async ([response, runs]) => {
           if (
+            controller.signal.aborted ||
             !isCurrentView(view) ||
-            pendingSubmissionRef.current ||
             attachedRunIdRef.current !== attachedAtStart
           )
             return;
+          setHistoryAfter(response.afterId);
+          setHistoryHasAfter(response.hasAfter);
+          if (pendingSubmissionRef.current) {
+            // Returning to an uncertain submission restores reading, not a second send.
+            setMessages(response.messages);
+            setHistoryBefore(response.nextBeforeId);
+            setHistoryHasMore(response.hasMore);
+            setHistoryError("");
+            return;
+          }
           const run = runs.find((item) => !isCloudChatRunTerminal(item));
           let page = response;
           let history = page.messages;
-          if (run && !history.some((message) => message.id === run.user_message_id)) {
+          if (run && !anchor && !history.some((message) => message.id === run.user_message_id)) {
             // A run may have been accepted between the concurrent history and status reads.
-            page = await historyClient.list(conversationId, { signal: controller.signal });
+            page = {
+              ...(await historyClient.list(conversationId, { signal: controller.signal })),
+              afterId: "",
+              hasAfter: false,
+            };
             history = page.messages;
           }
           if (
@@ -1142,8 +1655,8 @@ export function CloudChatPage({
           setHistoryBefore(page.nextBeforeId);
           setHistoryHasMore(page.hasMore);
           setHistoryError("");
-          if (run) attachRun(run, view);
-          else {
+          if (run && !anchor) attachRun(run, view);
+          else if (!anchor) {
             const lastUser = [...history].reverse().find((message) => message.role === "user");
             const tail = history.at(-1);
             if (lastUser) {
@@ -1177,10 +1690,11 @@ export function CloudChatPage({
             cause.status === 401
           )
             notifyRelaySessionExpired();
-          setError(cause instanceof Error ? cause.message : "会话恢复失败");
+          setHistoryRetryKind("restore");
+          setHistoryError(cause instanceof Error ? cause.message : "会话恢复失败");
         })
         .finally(() => {
-          if (isCurrentView(view)) setHistoryLoading(false);
+          if (!controller.signal.aborted && isCurrentView(view)) setHistoryLoading(false);
         });
     }
     return () => {
@@ -1198,7 +1712,57 @@ export function CloudChatPage({
     user.id,
     historyClient,
     metadataClient,
+    conversationClient,
+    historySelection,
+    historyReloadRevision,
   ]);
+
+  useEffect(() => {
+    if (
+      !historySelection ||
+      historyLoading ||
+      historySelection.conversationId !== conversationId ||
+      historyJumpedToken.current === historySelection.token ||
+      !messages.some((item) => item.id === historySelection.messageId)
+    )
+      return;
+    transcriptFollow.restoreFollowing(false);
+    const frame = requestAnimationFrame(() => {
+      transcriptNavigation.current?.scrollToRowKey(historySelection.messageId);
+      historyJumpedToken.current = historySelection.token;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [historySelection, historyLoading, conversationId, messages, transcriptFollow]);
+
+  async function loadLaterHistory() {
+    const view = viewRef.current;
+    if (!isCurrentView(view) || !historyHasAfter || !historyAfter || historyPageAbortRef.current)
+      return;
+    const controller = new AbortController();
+    historyPageAbortRef.current = controller;
+    setHistoryPageLoading(true);
+    try {
+      const page = await conversationClient.window(view.conversationId, historyAfter, {
+        before: 0,
+        after: 49,
+        signal: controller.signal,
+      });
+      if (!isCurrentView(view) || controller.signal.aborted) return;
+      setMessages((current) => mergeCloudChatHistory(current, page.messages));
+      setHistoryAfter(page.nextAfterId);
+      setHistoryHasAfter(page.hasAfter);
+      setHistoryError("");
+    } catch (cause) {
+      if (isCurrentView(view) && !controller.signal.aborted) setHistoryRetryKind("later");
+      if (isCurrentView(view) && !controller.signal.aborted)
+        setHistoryError(cause instanceof Error ? cause.message : "无法读取后续消息。");
+    } finally {
+      if (historyPageAbortRef.current === controller) {
+        historyPageAbortRef.current = null;
+        if (isCurrentView(view)) setHistoryPageLoading(false);
+      }
+    }
+  }
 
   async function loadEarlierHistory() {
     const view = viewRef.current;
@@ -1207,8 +1771,7 @@ export function CloudChatPage({
     const controller = new AbortController();
     historyPageAbortRef.current = controller;
     setHistoryPageLoading(true);
-    followTranscriptTailRef.current = false;
-    setFollowingTranscript(false);
+    transcriptFollow.restoreFollowing(false);
     setHistoryError("");
     try {
       const page = await historyClient.list(view.conversationId, {
@@ -1223,6 +1786,7 @@ export function CloudChatPage({
       if (isCurrentView(view) && !controller.signal.aborted) {
         if (cause instanceof CloudChatHistoryError && cause.status === 401)
           notifyRelaySessionExpired();
+        setHistoryRetryKind("earlier");
         setHistoryError(cause instanceof Error ? cause.message : "加载更早消息失败，请重试。");
       }
     } finally {
@@ -1237,7 +1801,9 @@ export function CloudChatPage({
     if (!isCurrentView(view)) return;
     messageReadAbortRef.current?.abort();
     messageReadAbortRef.current = null;
-    const cached = messages.find((message) => message.id === id && !message.content_omitted);
+    const cached = messages.find(
+      (message) => message.id === id && !message.content_omitted && !message.presentation_omitted,
+    );
     if (cached) {
       setMessageReader({ id, message: cached });
       return;
@@ -1277,9 +1843,44 @@ export function CloudChatPage({
     setMessageReader(null);
   }
 
-  async function createConversation(preserveDraft = false) {
+  function openCloudMessageLink(link: ChatFileLink) {
+    if (!isCurrentView(viewRef.current)) return;
+    const message = /^cloud-messages\/([A-Za-z0-9_-]{1,128})$/.exec(link.path);
+    if (message) {
+      void readMessageBody(message[1]);
+      return;
+    }
+    const uuid = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+    const site = new RegExp(`^cloud-sites/${uuid}$`, "i").exec(link.path);
+    if (site) {
+      showResourceDetail(() => showArtifactResource({ versionId: site[1], site: true }));
+      return;
+    }
+    const artifactId = cloudArtifactVersionFromLink(link.path);
+    if (artifactId) {
+      showResourceDetail(() => showArtifactResource({ versionId: artifactId }));
+      return;
+    }
+    const source = new RegExp(`^cloud-sources/${uuid}$`, "i").exec(link.path);
+    if (source) {
+      showResourceDetail(() =>
+        setSourcePanel({ sourceId: source[1], fromLine: link.line, toLine: link.endLine }),
+      );
+      return;
+    }
+    const file = new RegExp(`^cloud-files/${uuid}$`, "i").exec(link.path);
+    if (file) {
+      showResourceDetail(() =>
+        showFileResource({ fileId: file[1], fromLine: link.line, toLine: link.endLine }),
+      );
+      return;
+    }
+    setError("云端对话仅支持打开当前账户的资料引用。");
+  }
+
+  async function createConversation() {
     if (conversationCreationRef.current) return conversationCreationRef.current;
-    const operation = createConversationOnce(preserveDraft);
+    const operation = createConversationOnce();
     conversationCreationRef.current = operation;
     try {
       return await operation;
@@ -1288,24 +1889,18 @@ export function CloudChatPage({
     }
   }
 
-  async function createConversationOnce(preserveDraft = false) {
+  async function createConversationOnce() {
     const previousView = viewRef.current;
-    const savedDraft = preserveDraft ? composerRef.current?.getDraft() : undefined;
-    const savedFiles = preserveDraft ? attachments : [];
-    const savedArtifacts = preserveDraft ? artifactAttachments : [];
     const response = await webChatRequest<{ conversation: Conversation }>(
       "/api/web-chat/conversations",
       { method: "POST", body: JSON.stringify({ model }) },
     );
     if (!isCurrentView(previousView)) return "";
+    // Creation assigns an identity to this draft; edits made while awaiting it still belong here.
+    const savedDraft = captureComposerDraft();
     setConversations((current) => [response.conversation, ...current]);
-    selectConversationView(response.conversation.id, true);
-    if (savedDraft) {
-      draftRestoreRef.current = { view: viewRef.current, draft: savedDraft };
-      composerRef.current?.setDraft(savedDraft);
-      setAttachments(savedFiles);
-      setArtifactAttachments(savedArtifacts);
-    }
+    selectConversationView(response.conversation.id, true, savedDraft);
+    draftsRef.current.remove(previousView);
     setSidebarOpen(window.matchMedia("(min-width: 821px)").matches);
     return response.conversation.id;
   }
@@ -1322,9 +1917,12 @@ export function CloudChatPage({
     }
     await webChatRequest<void>(`/api/web-chat/conversations/${id}`, { method: "DELETE" });
     setConversations((current) => current.filter((item) => item.id !== id));
+    setNavigationRevision((revision) => revision + 1);
     if (conversationId === id) {
       selectConversationView("");
     }
+    draftsRef.current.remove({ userId: user.id, conversationId: id });
+    retainedSubmissionsRef.current.delete(id);
   }
 
   async function removeConversations(ids: readonly string[], options?: SidebarBatchDeleteOptions) {
@@ -1347,6 +1945,8 @@ export function CloudChatPage({
     setConversations((current) =>
       current.map((item) => (item.id === id ? response.conversation : item)),
     );
+    if (viewRef.current.conversationId === id) setSelectedConversation(response.conversation);
+    setNavigationRevision((revision) => revision + 1);
   }
   async function renameConversation() {
     const id = renamingId;
@@ -1401,7 +2001,7 @@ export function CloudChatPage({
         !Array.isArray(branch.draft_content)
       )
         throw new Error("分支草稿不可用，请核对后重试。");
-      const newView = selectConversationView(branch.conversation.id);
+      const newView = selectConversationView(branch.conversation.id, false, pending.draft);
       setConversations((current) => [
         branch.conversation,
         ...current.filter((item) => item.id !== branch.conversation.id),
@@ -1410,10 +2010,6 @@ export function CloudChatPage({
       setHistoryBefore(history.nextBeforeId);
       setHistoryHasMore(history.hasMore);
       setHistoryLoading(false);
-      setAttachments(pending.draftFiles);
-      setArtifactAttachments(pending.draftArtifacts);
-      draftRestoreRef.current = { view: newView, text: pending.draftText };
-      composerRef.current?.setText(pending.draftText);
       if (branch.action === "fork") return;
       const userMessage: Message = {
         id: createUuid(),
@@ -1556,7 +2152,7 @@ export function CloudChatPage({
       setError("请选择可用的模型分组后重试。");
       return;
     }
-    const draft = composerRef.current?.getDraft();
+    const draft = captureComposerDraft();
     let parameters: CloudChatModelParameters;
     try {
       parameters =
@@ -1585,9 +2181,7 @@ export function CloudChatPage({
         action,
         ...(action === "edit" ? { content } : {}),
       },
-      draftText: draft ? buildTextFromComposerDraft(draft) : "",
-      draftFiles: [...attachments],
-      draftArtifacts: [...artifactAttachments],
+      draft,
       execution: {
         model,
         reasoning: cloudChatReasoningEffort(reasoning),
@@ -1667,52 +2261,6 @@ export function CloudChatPage({
     }
   }
 
-  async function exportConversation(format: "markdown" | "json") {
-    const view = viewRef.current;
-    if (!view.conversationId || !isCurrentView(view) || exportAbortRef.current) return;
-    const controller = new AbortController();
-    exportAbortRef.current = controller;
-    setExporting(true);
-    setError("");
-    const guard = captureAccountRequestGuard();
-    try {
-      const result = await branchesClient.exportConversation(
-        view.conversationId,
-        format,
-        controller.signal,
-      );
-      guard();
-      result.guard();
-      if (!isCurrentView(view)) return;
-      const url = URL.createObjectURL(result.blob);
-      try {
-        guard();
-        result.guard();
-        if (!isCurrentView(view)) return;
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = result.filename;
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } finally {
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      }
-    } catch (cause) {
-      if (!controller.signal.aborted && isCurrentView(view)) {
-        if (cause instanceof CloudBranchRequestError && cause.status === 401)
-          notifyRelaySessionExpired();
-        setError(cause instanceof Error ? cause.message : "导出失败，请重试。");
-      }
-    } finally {
-      if (exportAbortRef.current === controller) {
-        exportAbortRef.current = null;
-        if (isCurrentView(view)) setExporting(false);
-      }
-    }
-  }
-
   async function attachFileList(files: File[], directories = 0) {
     if (!files.length && !directories) return;
     const blocked = cloudAttachmentBlockedReason();
@@ -1730,15 +2278,9 @@ export function CloudChatPage({
     const token = Symbol("attachment upload");
     uploadBatchRef.current = token;
     const guard = captureAccountRequestGuard();
-    let view = viewRef.current;
+    const view = viewRef.current;
     setUploadingFiles(true);
     try {
-      if (!view.conversationId) {
-        const id = await createConversation(true);
-        guard();
-        if (!id || uploadBatchRef.current !== token) return;
-        view = viewRef.current;
-      }
       if (!isCurrentView(view) || uploadBatchRef.current !== token) return;
       const controller = new AbortController();
       uploadAbortRef.current = controller;
@@ -1810,6 +2352,11 @@ export function CloudChatPage({
     const controller = new AbortController();
     submissionAbortRef.current = controller;
     pendingSubmissionRef.current = pending;
+    retainedSubmissionsRef.current.set(view.conversationId, {
+      pending,
+      status: "unknown",
+      cancelRequested: cancelSubmissionRef.current,
+    });
     attachedRunIdRef.current = `pending:${pending.request.client_request_id}`;
     setRestoredTerminalRun(null);
     setSubmissionQueueFull(false);
@@ -1827,14 +2374,33 @@ export function CloudChatPage({
     setRunConnection("connecting");
     try {
       const run = await runsClient.createRun(pending.request, controller.signal);
+      if (!mountedRef.current || accountInvalidatedRef.current || ownerRef.current !== view.userId)
+        return;
+      retainedSubmissionsRef.current.delete(view.conversationId);
+      if (!pending.preserveDraft && pending.submittedSavedDraft) {
+        void savedDraftSyncRef.current?.clearIfUnchanged(
+          pending.submittedSavedDraft,
+          pending.submittedDraftScope ?? view.conversationId,
+        );
+        if (pending.submittedDraftScope === "blank" && view.conversationId)
+          void savedDraftSyncRef.current?.clearIfUnchanged(
+            pending.submittedSavedDraft,
+            view.conversationId,
+          );
+      }
+      if (!pending.preserveDraft && pending.submittedDraft) {
+        const currentDraft = isCurrentView(view)
+          ? captureComposerDraft()
+          : draftsRef.current.read(view);
+        if (currentDraft && cloudChatDraftContentMatches(currentDraft, pending.submittedDraft)) {
+          const cleared = { ...currentDraft, composer: null, files: [], artifacts: [] };
+          draftsRef.current.write(view, cleared);
+          if (isCurrentView(view)) restoreComposerDraft(cleared, view);
+        }
+      }
       if (!isCurrentView(view)) return;
       pendingSubmissionRef.current = null;
       setSubmissionUnconfirmed(false);
-      if (!pending.preserveDraft) {
-        composerRef.current?.clear();
-        setAttachments([]);
-        setArtifactAttachments([]);
-      }
       setMessages((current) => {
         const rebound = current.map((message) => {
           if (message.id === pending.optimisticUserId)
@@ -1864,6 +2430,11 @@ export function CloudChatPage({
       if (cause instanceof CloudChatRunRequestError && cause.status === 401)
         notifyRelaySessionExpired();
       if (cause instanceof CloudChatAccountQueueFullError) {
+        retainedSubmissionsRef.current.set(view.conversationId, {
+          pending,
+          status: "queue-full",
+          cancelRequested: false,
+        });
         setSubmissionQueueFull(true);
         setSubmissionUnconfirmed(false);
         cancelSubmissionRef.current = false;
@@ -1879,6 +2450,7 @@ export function CloudChatPage({
         setSubmissionUnconfirmed(true);
       } else {
         pendingSubmissionRef.current = null;
+        retainedSubmissionsRef.current.delete(view.conversationId);
         setSubmissionUnconfirmed(false);
         setMessages((current) =>
           current.filter(
@@ -1907,6 +2479,8 @@ export function CloudChatPage({
     const run = activeRun;
     if (pendingSubmissionRef.current && submissionAbortRef.current) {
       cancelSubmissionRef.current = true;
+      const retained = retainedSubmissionsRef.current.get(view.conversationId);
+      if (retained) retained.cancelRequested = true;
       setError("正在确认任务后停止，请稍候");
       return;
     }
@@ -1925,20 +2499,37 @@ export function CloudChatPage({
   }
 
   async function send() {
+    if (historyRestoreFailed) return;
+    if (dispatchPreparationRef.current) return;
+    if (historySelection) {
+      setHistorySelection(null);
+      setContextNotice("已返回最新消息，草稿已保留，请确认后发送。");
+      transcriptFollow.stickToBottom();
+      return;
+    }
     if (projectContextMutation.current) return;
     if (modelPreparationAbortRef.current) return;
     if (!isCurrentView(viewRef.current)) return;
     if (researchConfirmationRef.current) return;
+    if (pendingQueue.busy || pendingQueue.loading || pendingQueue.unknown) return;
     if (branchBusy || branchUnconfirmed || branchAbortRef.current || pendingBranchRef.current)
       return;
     if (pendingSubmissionRef.current) {
       await submitRun(pendingSubmissionRef.current, viewRef.current);
       return;
     }
-    const draft = composerRef.current?.getDraft();
+    const submittedDraft = captureComposerDraft();
+    const submittedDraftScope = viewRef.current.conversationId || "blank";
+    const submittedSavedDraft = captureSavedSnapshot(submittedDraftScope) ?? undefined;
+    if (submittedSavedDraft && !pendingQueue.editingItem)
+      savedDraftSyncRef.current?.markDirty(submittedSavedDraft);
+    const draft = submittedDraft.composer;
+    const submittedFiles = submittedDraft.files;
+    const submittedArtifacts = submittedDraft.artifacts;
     const text = draft ? buildTextFromComposerDraft(draft).trim() : "";
+    const editingItem = pendingQueue.editingItem;
+    const queueInstead = streaming || Boolean(editingItem);
     if (
-      streaming ||
       uploadingFiles ||
       uploadAbortRef.current ||
       uploadBatchRef.current ||
@@ -1966,12 +2557,19 @@ export function CloudChatPage({
     let parameters: CloudChatModelParameters;
     const preparedView = viewRef.current;
     try {
-      parameters = await prepareModelParameters(
-        preparedView,
-        selectedModelOption.providerId,
-        executionProviderKeyId,
-        model,
-      );
+      // Editing text keeps the accepted queue snapshot. A deliberate model/group change
+      // prepares a new snapshot; merely opening the editor must not change execution settings.
+      parameters =
+        editingItem &&
+        editingItem.model === model &&
+        editingItem.provider_key_id === executionProviderKeyId
+          ? structuredClone(editingItem.model_parameters ?? {})
+          : await prepareModelParameters(
+              preparedView,
+              selectedModelOption.providerId,
+              executionProviderKeyId,
+              model,
+            );
       if (!isCurrentView(preparedView)) return;
       if (
         parameters.input_modalities?.length === 1 &&
@@ -1983,92 +2581,171 @@ export function CloudChatPage({
         setError(cause instanceof Error ? cause.message : "请检查模型参数。");
       return;
     }
+    let proceedingView = preparedView;
     const proceed = async (publicResearch?: CloudChatPublicResearch) => {
       if (!isCurrentView(preparedView)) return;
-      if (latestRunRef.current && !isCloudChatRunTerminal(latestRunRef.current)) {
+      if (dispatchPreparationRef.current) return;
+      if (editingItem && queueEditingItemId.current !== editingItem.client_item_id) return;
+      if (!queueInstead && latestRunRef.current && !isCloudChatRunTerminal(latestRunRef.current)) {
         setError("请等待当前任务完成，或停止后再发送。");
         return;
       }
-      setError("");
-      setContextNotice("");
-      const id = conversationId || (await createConversation());
-      if (!id) return;
-      const hasResources = attachments.length + artifactAttachments.length > 0;
-      const content: unknown = hasResources
-        ? [
-            ...(text ? [{ type: "text", text }] : []),
-            ...attachments.map((attachment) => ({
-              type: "file_reference",
-              file_id: attachment.id,
-            })),
-            ...artifactAttachments.map((version) => ({
-              type: "artifact_reference",
-              version_id: version.id,
-            })),
-          ]
-        : text;
-      const view = viewRef.current;
-      const optimisticContent = hasResources
-        ? [
-            ...(text ? [{ type: "text", text }] : []),
-            ...attachments.map((file) => ({
-              type: "file_reference",
-              file_id: file.id,
-              name: file.name,
-              mime: file.mime,
-              size: file.size,
-            })),
-            ...artifactAttachments.map((version) => ({
-              type: "artifact_reference",
-              version_id: version.id,
-              name: version.name,
-              mime: version.mime,
-              size: version.size,
-              family_id: version.family_id,
-              number: version.number,
-              sha256: version.sha256,
-            })),
-          ]
-        : content;
-      const optimisticUser: Message = {
-        id: createUuid(),
-        role: "user",
-        content: optimisticContent,
-      };
-      const assistantId = createUuid();
-      setMessages((current) => [
-        ...current,
-        optimisticUser,
-        { id: assistantId, role: "assistant", content: "" },
-      ]);
-      cancelSubmissionRef.current = false;
-      await submitRun(
-        {
-          request: {
-            conversation_id: id,
-            client_request_id: createUuid(),
+      dispatchPreparationRef.current = true;
+      setPreparingExecution(true);
+      try {
+        setError("");
+        setContextNotice("");
+        const id = conversationId || (await createConversation());
+        if (!id) return;
+        proceedingView = viewRef.current;
+        if (submittedDraft.projectId) {
+          const bindingView = viewRef.current;
+          const guard = captureWorkGuard();
+          // A blank draft can select a project without creating a conversation record.
+          // Apply that selection only when the user actually sends the first message.
+          const project = await projectsClient.getProject(submittedDraft.projectId);
+          guard();
+          const binding = await projectsClient.getAssociation(id);
+          guard();
+          if (binding.project_id !== project.id) {
+            await projectsClient.setAssociation(id, project.id, binding.version);
+            guard();
+          }
+          if (!isCurrentView(bindingView)) return;
+          setComposerProject({ scope: `${user.id}:${id}`, project });
+          setNavigationRevision((current) => current + 1);
+          setConversations((current) => current.filter((item) => item.id !== id));
+        }
+        const hasResources = submittedFiles.length + submittedArtifacts.length > 0;
+        const content: unknown = hasResources
+          ? [
+              ...(text ? [{ type: "text", text }] : []),
+              ...submittedFiles.map((attachment) => ({
+                type: "file_reference",
+                file_id: attachment.id,
+              })),
+              ...submittedArtifacts.map((version) => ({
+                type: "artifact_reference",
+                version_id: version.id,
+              })),
+            ]
+          : text;
+        const view = viewRef.current;
+        const optimisticContent = hasResources
+          ? [
+              ...(text ? [{ type: "text", text }] : []),
+              ...submittedFiles.map((file) => ({
+                type: "file_reference",
+                file_id: file.id,
+                name: file.name,
+                mime: file.mime,
+                size: file.size,
+              })),
+              ...submittedArtifacts.map((version) => ({
+                type: "artifact_reference",
+                version_id: version.id,
+                name: version.name,
+                mime: version.mime,
+                size: version.size,
+                family_id: version.family_id,
+                number: version.number,
+                sha256: version.sha256,
+              })),
+            ]
+          : content;
+        if (queueInstead) {
+          const input: CloudChatPendingInput = {
+            client_item_id: editingItem?.client_item_id ?? createUuid(),
             model,
+            provider_key_id: executionProviderKeyId,
             reasoning_effort: cloudChatReasoningEffort(reasoning),
             model_parameters: parameters,
-            ...(publicResearch ? { public_research: publicResearch } : {}),
-            provider_key_id: executionProviderKeyId,
+            presentation: submittedDraft.presentation,
             content,
+            ...(draft ? { composer: draft } : {}),
+            ...(publicResearch ? { public_research: publicResearch } : {}),
+          };
+          const queueView = viewRef.current;
+          const editing = Boolean(editingItem);
+          if (!editing)
+            queueDraftsRef.current.set(input.client_item_id, {
+              view: queueView,
+              draft: submittedDraft,
+              input,
+              saved: submittedSavedDraft,
+              scope: submittedDraftScope,
+            });
+          const saved = editing
+            ? await pendingQueue.saveEdit(input)
+            : await pendingQueue.enqueue(input);
+          if (saved && !editing) {
+            if (submittedSavedDraft)
+              void savedDraftSyncRef.current?.clearIfUnchanged(
+                submittedSavedDraft,
+                submittedDraftScope,
+              );
+            const currentDraft = isCurrentView(queueView)
+              ? captureComposerDraft()
+              : draftsRef.current.read(queueView);
+            if (currentDraft && cloudChatDraftContentMatches(currentDraft, submittedDraft)) {
+              const cleared = { ...currentDraft, composer: null, files: [], artifacts: [] };
+              draftsRef.current.write(queueView, cleared);
+              if (isCurrentView(queueView)) restoreComposerDraft(cleared, queueView);
+            }
+            queueDraftsRef.current.delete(input.client_item_id);
+          }
+          return;
+        }
+        const optimisticUser: Message = {
+          id: createUuid(),
+          role: "user",
+          content: optimisticContent,
+        };
+        const assistantId = createUuid();
+        setMessages((current) => [
+          ...current,
+          optimisticUser,
+          { id: assistantId, role: "assistant", content: "" },
+        ]);
+        cancelSubmissionRef.current = false;
+        await submitRun(
+          {
+            request: {
+              conversation_id: id,
+              client_request_id: createUuid(),
+              model,
+              reasoning_effort: cloudChatReasoningEffort(reasoning),
+              model_parameters: parameters,
+              ...(publicResearch ? { public_research: publicResearch } : {}),
+              provider_key_id: executionProviderKeyId,
+              content,
+            },
+            optimisticUserId: optimisticUser.id,
+            optimisticAssistantId: assistantId,
+            optimisticContent: optimisticContent,
+            submittedDraft,
+            submittedSavedDraft,
+            submittedDraftScope,
           },
-          optimisticUserId: optimisticUser.id,
-          optimisticAssistantId: assistantId,
-          optimisticContent: optimisticContent,
-        },
-        view,
-      );
+          view,
+        );
+      } finally {
+        dispatchPreparationRef.current = false;
+        if (isCurrentView(proceedingView)) setPreparingExecution(false);
+      }
     };
     if (runtimeControls.nativeWebSearchEnabled) {
       requestResearchConfirmation(text, preparedView, (research) => {
         void proceed(research).catch((cause) => {
-          if (isCurrentView(preparedView))
+          if (isCurrentView(proceedingView))
             setError(cause instanceof Error ? cause.message : "发送失败，请重试。");
         });
       });
-    } else await proceed();
+    } else
+      await proceed().catch((cause) => {
+        if (isCurrentView(proceedingView))
+          setError(cause instanceof Error ? cause.message : "发送失败，请重试。");
+      });
   }
 
   const copyMessageText = useCallback(
@@ -2108,6 +2785,7 @@ export function CloudChatPage({
             key: message.id,
             origin: "history",
             kind: "user",
+            timestamp: cloudChatMessageTimestamp(message),
             text: preview.truncated ? `${text}\n\n${preview.notice}` : text,
             contentOmitted: message.content_omitted,
             contentPreview: preview.truncated,
@@ -2146,10 +2824,19 @@ export function CloudChatPage({
               : undefined,
           };
         }
+        const mapText = (value: string) =>
+          linkCloudArtifactCitations(linkCloudSourceCitations(linkCloudFileCitations(value)));
+        const fallbackText = message.content_omitted
+          ? `正文按需加载。[查看消息正文](cloud-messages/${message.id})`
+          : preview.truncated
+            ? `${mapText(text)}\n\n${preview.notice} [分段查看完整正文](cloud-messages/${message.id})`
+            : `${mapText(text)}${message.presentation_omitted ? `\n\n[查看完整工作过程](cloud-messages/${message.id})` : ""}`;
         return {
           key: message.id,
           origin: streaming && message.id === messages.at(-1)?.id ? "stream" : "history",
           kind: "assistant",
+          deliverables: cloudChatAssistantDeliverables(message),
+          timestamp: cloudChatMessageTimestamp(message),
           turnKey: message.id,
           contentOmitted: message.content_omitted,
           contentPreview: preview.truncated,
@@ -2160,28 +2847,12 @@ export function CloudChatPage({
             cloudMessageFitsTextBudget(fullText, CLOUD_MESSAGE_INLINE_EDIT_BYTES)
               ? fullText
               : undefined,
-          rounds: [
-            {
-              key: `${message.id}:round:1`,
-              round: 1,
-              runningToolCallIds: [],
-              blocks: text
-                ? [
-                    {
-                      kind: "text",
-                      id: `${message.id}:text`,
-                      text: message.content_omitted
-                        ? `正文按需加载。[查看消息正文](cloud-messages/${message.id})`
-                        : preview.truncated
-                          ? `${linkCloudArtifactCitations(linkCloudSourceCitations(linkCloudFileCitations(text)))}\n\n${preview.notice} [分段查看完整正文](cloud-messages/${message.id})`
-                          : linkCloudArtifactCitations(
-                              linkCloudSourceCitations(linkCloudFileCitations(text)),
-                            ),
-                    },
-                  ]
-                : [],
-            },
-          ],
+          rounds: cloudChatAssistantRounds(message, {
+            live: streaming && message.id === messages.at(-1)?.id,
+            fallbackText,
+            mapText,
+            processVisible: !message.content_omitted && !preview.truncated,
+          }),
         };
       }),
     [messages, streaming, conversationId, copyMessageText],
@@ -2195,14 +2866,19 @@ export function CloudChatPage({
       model: conversation.model,
       createdAt: toEpoch(conversation.created_at),
       updatedAt: toEpoch(conversation.updated_at),
-      isPinned: pinnedConversationIds.has(conversation.id),
+      isPinned: conversation.pinned === true,
+      isArchived: conversation.archived === true,
     }));
     return cloud.sort(
       (left, right) =>
         Number(right.isPinned === true) - Number(left.isPinned === true) ||
         right.updatedAt - left.updatedAt,
     );
-  }, [conversations, pinnedConversationIds]);
+  }, [conversations]);
+  const currentConversation = accountInvalidatedRef.current
+    ? null
+    : (conversations.find((item) => item.id === conversationId) ??
+      (selectedConversation?.id === conversationId ? selectedConversation : null));
 
   const runningConversationIds = useMemo(
     () => (streaming && conversationId ? new Set([conversationId]) : new Set<string>()),
@@ -2225,23 +2901,6 @@ export function CloudChatPage({
     ],
     [attachments, artifactAttachments],
   );
-  const conversationFiles = useMemo(() => {
-    const refs = messages.flatMap((message) =>
-      message.role === "user" ? cloudFileReferences(message.content) : [],
-    );
-    return refs.filter(
-      (file, index) => refs.findIndex((item) => item.file_id === file.file_id) === index,
-    );
-  }, [messages]);
-  const conversationArtifacts = useMemo(() => {
-    const refs = messages.flatMap((message) =>
-      message.role === "user" ? cloudArtifactReferences(message.content) : [],
-    );
-    return refs.filter(
-      (version, index) =>
-        refs.findIndex((item) => item.version_id === version.version_id) === index,
-    );
-  }, [messages]);
   const modelOptions = useMemo(
     () =>
       buildModelOptions(settings, { floatSelectedFirst: false }).map((option) => ({
@@ -2331,12 +2990,17 @@ export function CloudChatPage({
     setTerminalEditRequest({ token: createUuid(), messageId: lastUserMessage.id });
   }
 
-  const landing = !historyLoading && transcriptRows.length === 0 && !streaming;
+  const landing =
+    !historyLoading && !historyRestoreFailed && transcriptRows.length === 0 && !streaming;
   const canSwitchPresentation = landing && !preparingExecution;
   const composerLocked =
+    pendingQueue.busy ||
+    pendingQueue.loading ||
+    Boolean(pendingQueue.unknown) ||
     projectContextBusy ||
     preparingExecution ||
     historyLoading ||
+    historyRestoreFailed ||
     uploadingFiles ||
     resolvingResources ||
     uploadUnconfirmed ||
@@ -2352,7 +3016,9 @@ export function CloudChatPage({
     if (uploadBatchRef.current || uploadingFiles) return "正在上传附件，请等待当前上传完成。";
     if (
       composerLocked ||
-      streaming ||
+      pendingQueue.busy ||
+      pendingQueue.loading ||
+      pendingQueue.unknown ||
       modelPreparationAbortRef.current ||
       researchConfirmationRef.current
     )
@@ -2422,6 +3088,7 @@ export function CloudChatPage({
     const handleBack = (event: Event) => {
       // Settings owns its native Back handler, including the mobile list/detail step.
       if (event.defaultPrevented || accountSettingsOpen) return;
+      if (projectSettings.open && projectSettings.owner === user.id) return;
       if (composerMenu) {
         setComposerMenu(null);
       } else if (
@@ -2453,22 +3120,53 @@ export function CloudChatPage({
     composerMenu,
     filePanel,
     projectNavigation.request,
+    projectSettings.open,
+    projectSettings.owner,
+    user.id,
     sourcePanel,
     workPanel,
     workspaceView,
   ]);
-  function navigateConversation(id?: string) {
+  function navigateConversation(id?: string, messageId?: string) {
     projectNavigation.request(() => {
       clearResources();
-      if (id !== undefined) void openConversation(id);
-      else {
-        selectConversationView("");
-        composerRef.current?.clear();
+      if (id !== undefined) {
+        if (messageId) {
+          pendingQueue.pause();
+          selectConversationView(id);
+        } else void openConversation(id);
+      } else {
+        void savedDraftSyncRef.current?.resetBlank();
+        selectConversationView("", false, emptyCloudChatDraft(), true);
         composerRef.current?.focus();
       }
+      setHistorySelection(
+        id && messageId ? { conversationId: id, messageId, token: createUuid() } : null,
+      );
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        accountInvalidatedRef.current ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey
+      )
+        return;
+      if (event.shiftKey && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        navigateConversationRef.current();
+      } else if (!event.shiftKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setConversationSearchRequest((current) => current + 1);
+      }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, []);
   function openResource(
     resource: "files" | "artifacts" | "sources" | "projects" | "memory",
     page = false,
@@ -2476,6 +3174,10 @@ export function CloudChatPage({
     fileId?: string,
     pinSidebar = false,
   ) {
+    if (resource === "projects") {
+      openProject(projectId);
+      return;
+    }
     projectNavigation.request(() => {
       setAccountSettingsOpen(false);
       sidebarPreview.dismiss();
@@ -2483,9 +3185,8 @@ export function CloudChatPage({
       setFilePanel(resource === "files" ? { fileId } : null);
       setArtifactPanel(resource === "artifacts" ? {} : null);
       setSourcePanel(resource === "sources" ? {} : null);
-      setWorkPanel(resource === "projects" || resource === "memory" ? resource : null);
-      setInitialProjectId(projectId);
-      setWorkspaceView(page ? (resource === "projects" ? "projects" : "library") : "chat");
+      setWorkPanel(resource === "memory" ? resource : null);
+      setWorkspaceView(page ? "library" : "chat");
       if (page && (resource === "files" || resource === "artifacts")) {
         setSpaceVisited(true);
         setSpaceLocation({
@@ -2496,8 +3197,22 @@ export function CloudChatPage({
       if (page && sidebar.isMobile) setSidebarOpen(false);
     });
   }
-  function openProject(id = "") {
-    openResource("projects", true, id);
+  function openProject(id?: string) {
+    projectNavigation.request(() => {
+      sidebarPreview.dismiss();
+      setProjectSettings({ owner: user.id, id: id || undefined, open: true });
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
+  }
+  function newProjectConversation(project: CloudProject) {
+    projectNavigation.request(() => {
+      clearResources();
+      const draft = { ...emptyCloudChatDraft(), projectId: project.id };
+      void savedDraftSyncRef.current?.resetBlank({ version: 1, draft });
+      selectConversationView("", false, draft, true);
+      composerRef.current?.focus();
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
   }
   function navigateSpace(location: CloudSpaceLocation) {
     projectNavigation.request(() => {
@@ -2534,7 +3249,13 @@ export function CloudChatPage({
   async function referenceSpaceItems(
     items: readonly Pick<CloudSpaceItem, "kind" | "id" | "target_id" | "site_version_id">[],
   ) {
-    if (composerLocked || streaming || modelPreparationAbortRef.current)
+    if (
+      composerLocked ||
+      pendingQueue.busy ||
+      pendingQueue.loading ||
+      pendingQueue.unknown ||
+      modelPreparationAbortRef.current
+    )
       throw new Error("请等待当前操作完成后再引用资料。");
     if (resourceDropRef.current) throw new Error("正在核对资料，请稍候。");
     const token = Symbol("resource reference");
@@ -2566,11 +3287,11 @@ export function CloudChatPage({
       if (!isCurrentView(view)) return;
       if (
         composerLocked ||
-        streaming ||
+        pendingQueue.busy ||
+        pendingQueue.unknown ||
         modelPreparationAbortRef.current ||
         uploadBatchRef.current ||
-        pendingSubmissionRef.current ||
-        (latestRunRef.current && !isCloudChatRunTerminal(latestRunRef.current))
+        pendingSubmissionRef.current
       )
         throw new Error("请等待当前操作完成后再引用资料。");
       const current = draftResourcesRef.current;
@@ -2616,13 +3337,7 @@ export function CloudChatPage({
     });
   }
   function fillStarter(text: string) {
-    if (
-      !isCurrentView(viewRef.current) ||
-      streaming ||
-      pendingSubmissionRef.current ||
-      composerLocked
-    )
-      return;
+    if (!isCurrentView(viewRef.current) || pendingSubmissionRef.current || composerLocked) return;
     const draft = composerRef.current?.getDraft();
     if (draft && !draft.isEmpty) {
       const suffix = `\n\n${text}`;
@@ -2635,10 +3350,11 @@ export function CloudChatPage({
       });
       setContextNotice("已添加到现有草稿，发送前可继续编辑。");
     } else composerRef.current?.setText(text);
+    savedDraft.scheduleCapture();
     composerRef.current?.focus();
   }
   function openComposerPicker(kind: CloudComposerPicker, anchor: HTMLElement | null) {
-    if (composerLocked || streaming) return;
+    if (composerLocked || (kind === "projects" && streaming)) return;
     setComposerMenuAnchor(anchor);
     setComposerMenu((old) => (old === kind ? null : kind));
   }
@@ -2647,7 +3363,6 @@ export function CloudChatPage({
       !isCurrentView(viewRef.current) ||
       resourceDropRef.current ||
       composerLocked ||
-      streaming ||
       !cloudFileCanReference(file)
     )
       return;
@@ -2664,11 +3379,18 @@ export function CloudChatPage({
       !isCurrentView(viewRef.current)
     )
       return;
+    if (!conversationId) {
+      draftProjectIdRef.current = project?.id;
+      setComposerProject({ scope: `${user.id}:`, project });
+      savedDraft.scheduleCapture();
+      setContextNotice(project ? `已选择项目：${project.name}` : "已移出项目。");
+      return;
+    }
     projectContextMutation.current = true;
     setProjectContextBusy(true);
     let actionView = viewRef.current;
     try {
-      const id = conversationId || (await createConversation(true));
+      const id = conversationId || (await createConversation());
       if (!id || viewRef.current.conversationId !== id || !isCurrentView(viewRef.current)) return;
       actionView = viewRef.current;
       setContextNotice("正在更新项目上下文…");
@@ -2680,7 +3402,10 @@ export function CloudChatPage({
         guard();
       }
       setComposerProject({ scope: `${user.id}:${id}`, project });
+      draftProjectIdRef.current = undefined;
       setNavigationRevision((old) => old + 1);
+      if (project) setConversations((current) => current.filter((item) => item.id !== id));
+      void refreshConversations(true).catch(() => undefined);
       setContextNotice(project ? `已选择项目：${project.name}` : "已移出项目。");
     } catch (cause) {
       if (isCurrentView(actionView)) {
@@ -2740,7 +3465,6 @@ export function CloudChatPage({
   const preparationNotice = [
     preparingExecution && "正在读取账户模型参数…",
     branchBusy && "正在保存分支…",
-    exporting && "正在导出…",
     uploadingFiles && "正在保存并校验附件…",
     resolvingResources && "正在核对资料…",
   ]
@@ -2755,8 +3479,89 @@ export function CloudChatPage({
     submissionUnconfirmed ||
     submissionQueueFull ||
     branchUnconfirmed ||
+    pendingQueue.error ||
+    pendingQueue.unknown ||
+    pendingQueue.editingItem ||
+    ["error", "unknown", "conflict"].includes(savedDraft.state.status) ||
     uploadUnconfirmed ? (
       <div className="app-status-stack" data-cloud-composer-feedback="">
+        {["error", "unknown", "conflict"].includes(savedDraft.state.status) ? (
+          <CloudChatFeedback
+            tone="warning"
+            compact
+            message={
+              savedDraft.state.status === "conflict"
+                ? "草稿已在其他页面修改，当前输入已保留。"
+                : savedDraft.state.error || "草稿尚未保存到云端，当前输入已保留。"
+            }
+            actions={
+              <button
+                type="button"
+                className="app-status-action"
+                onClick={() => {
+                  if (savedDraft.state.status === "conflict") {
+                    setDraftConflictLocal(captureSavedSnapshot(conversationId || "blank"));
+                    setDraftConflictOpen(true);
+                  } else void savedDraft.retry();
+                }}
+              >
+                {savedDraft.state.status === "conflict"
+                  ? "比较草稿"
+                  : savedDraft.state.status === "unknown"
+                    ? "核对保存结果"
+                    : "重试保存"}
+              </button>
+            }
+          />
+        ) : null}
+        {pendingQueue.error || pendingQueue.unknown ? (
+          <CloudChatFeedback
+            tone={pendingQueue.unknown ? "warning" : "error"}
+            message={pendingQueue.error || "队列更新结果待确认，输入已保留。"}
+            actions={
+              <button
+                type="button"
+                className="app-status-action"
+                disabled={pendingQueue.busy || pendingQueue.loading}
+                onClick={() =>
+                  void (pendingQueue.unknown ? reconcileQueuedWrite() : pendingQueue.refresh())
+                }
+              >
+                {pendingQueue.busy || pendingQueue.loading
+                  ? "正在读取…"
+                  : pendingQueue.unknown
+                    ? "核对原请求"
+                    : "刷新待发送列表"}
+              </button>
+            }
+          />
+        ) : null}
+        {pendingQueue.editingItem ? (
+          <CloudChatFeedback
+            compact
+            message={`正在修改待发送消息 · ${pendingQueue.editingItem.model}`}
+            actions={
+              <>
+                <button
+                  type="button"
+                  className="app-status-action"
+                  disabled={pendingQueue.busy || Boolean(pendingQueue.unknown)}
+                  onClick={() => void send()}
+                >
+                  保存修改
+                </button>
+                <button
+                  type="button"
+                  className="app-status-action"
+                  disabled={pendingQueue.busy || Boolean(pendingQueue.unknown)}
+                  onClick={() => void pendingQueue.cancelEdit()}
+                >
+                  取消修改
+                </button>
+              </>
+            }
+          />
+        ) : null}
         {error ? <CloudChatFeedback tone="error" message={error} /> : null}
         {uploadUnconfirmed ? (
           <CloudChatFeedback
@@ -2782,8 +3587,14 @@ export function CloudChatPage({
               <button
                 type="button"
                 className="app-status-action"
-                disabled={historyPageLoading}
-                onClick={() => void loadEarlierHistory()}
+                disabled={historyLoading || historyPageLoading}
+                onClick={() => {
+                  if (historyRetryKind === "restore") {
+                    setError("");
+                    setHistoryReloadRevision((current) => current + 1);
+                  } else if (historyRetryKind === "later") void loadLaterHistory();
+                  else void loadEarlierHistory();
+                }}
               >
                 重试加载历史
               </button>
@@ -2827,6 +3638,7 @@ export function CloudChatPage({
                   disabled={streaming}
                   onClick={() => {
                     pendingSubmissionRef.current = null;
+                    retainedSubmissionsRef.current.delete(viewRef.current.conversationId);
                     cancelSubmissionRef.current = false;
                     attachedRunIdRef.current = null;
                     setSubmissionQueueFull(false);
@@ -2917,9 +3729,7 @@ export function CloudChatPage({
           <BrandMark />
         )
       }
-      activeId={
-        accountSettingsOpen ? "settings" : workspaceView === "projects" ? "chat" : workspaceView
-      }
+      activeId={accountSettingsOpen ? "settings" : workspaceView}
       items={[
         createWorkbenchNavigationItem("chat", "对话", closeResources),
         createWorkbenchNavigationItem("library", "资料空间", () => openResource("files", true)),
@@ -2940,6 +3750,19 @@ export function CloudChatPage({
 
   return (
     <AppErrorBoundary>
+      <CloudDraftConflictDialog
+        open={
+          draftConflictOpen &&
+          !accountInvalidatedRef.current &&
+          savedDraft.state.status === "conflict"
+        }
+        local={draftConflictLocal}
+        server={savedDraft.state.conflict?.server?.draft ?? null}
+        onClose={() => setDraftConflictOpen(false)}
+        onChoose={(choice) => {
+          void savedDraft.resolveConflict(choice).then(() => setDraftConflictOpen(false));
+        }}
+      />
       <div
         className={`${GATEWAY_SHELL_CLASS} cloud-chat-shell`}
         data-workspace-view={workspaceView}
@@ -3018,19 +3841,35 @@ export function CloudChatPage({
                           captureGuard={captureAccountRequestGuard}
                           revision={navigationRevision}
                           onOpen={openProject}
+                          onCreate={() => setProjectCreate({ owner: user.id, open: true })}
+                          onOpenConversation={(id) => navigateConversation(id)}
+                          onNewConversation={newProjectConversation}
+                          currentConversationId={workspaceView === "chat" ? conversationId : ""}
+                          activeProjectId={
+                            composerProject.scope === `${user.id}:${conversationId}`
+                              ? composerProject.project?.id
+                              : undefined
+                          }
+                          isOpen={
+                            shownSidebarDestination === "chat" &&
+                            (sidebarOpen || sidebarPreview.open)
+                          }
                         />
                       </>
                     }
                     onOpenResourceHub={() => showFileResource({})}
                     items={sidebarItems}
                     currentConversationId={workspaceView === "chat" ? conversationId : ""}
-                    busyConversationIds={EMPTY_MUTATIONS}
+                    busyConversationIds={conversationMutations}
+                    conversationSearchAdapter={conversationSearchAdapter}
+                    conversationSearchRequestKey={conversationSearchRequest}
                     runningConversationIds={runningConversationIds}
                     listStatus={conversationsLoading ? "loading" : "ready"}
-                    scopeKey="web-chat"
+                    scopeKey={`${user.id}:web-chat`}
                     totalItems={sidebarItems.length}
                     hasMore={conversationsHasMore}
                     isLoadingMore={conversationsLoadingMore}
+                    loadMoreMode="scroll"
                     errorMessage={conversationsError || null}
                     actionErrorMessage={error || null}
                     renamingId={renamingId}
@@ -3041,6 +3880,10 @@ export function CloudChatPage({
                     fontScale={settings.customSettings.fontScale.sidebar}
                     activeView="chat"
                     showProjects={false}
+                    recentCollapsed={recentSection.owner === user.id && recentSection.collapsed}
+                    onRecentCollapsedChange={(collapsed) =>
+                      setRecentSection({ owner: user.id, collapsed })
+                    }
                     showAgentHubs={false}
                     missingProjectPathKeys={EMPTY_PATHS}
                     runningProjectPathKeys={EMPTY_PATHS}
@@ -3056,14 +3899,8 @@ export function CloudChatPage({
                       setRenamingId(null);
                       setRenameDraft("");
                     }}
-                    onSetPinned={(id, pinned) =>
-                      setPinnedConversationIds((current) => {
-                        const next = new Set(current);
-                        if (pinned) next.add(id);
-                        else next.delete(id);
-                        return next;
-                      })
-                    }
+                    onSetPinned={(id, pinned) => void manageConversation(id, { pinned })}
+                    onSetArchived={(id, archived) => void manageConversation(id, { archived })}
                     onMoveToWorkspace={() => undefined}
                     onMoveConversationsToWorkspace={async (ids) => ids}
                     canShareConversations={false}
@@ -3159,6 +3996,7 @@ export function CloudChatPage({
                       size="icon-sm"
                       title="新对话"
                       aria-label="新对话"
+                      tooltipShortcut="Ctrl+Shift+O"
                       onClick={() => navigateConversation()}
                       className="cloud-header-new-chat rounded-lg"
                     >
@@ -3183,10 +4021,8 @@ export function CloudChatPage({
                     {workspaceView === "chat" && conversationId && !canSwitchPresentation ? (
                       <CloudConversationTitle
                         key={`${user.id}:${conversationId}`}
-                        title={
-                          conversations.find((item) => item.id === conversationId)?.title ||
-                          "新对话"
-                        }
+                        title={currentConversation?.title || "新对话"}
+                        renameRequest={headerRenameRequest}
                         onRename={(title) => saveConversationTitle(conversationId, title)}
                       />
                     ) : (
@@ -3195,10 +4031,7 @@ export function CloudChatPage({
                       >
                         {workspaceView === "library"
                           ? "资料空间"
-                          : workspaceView === "projects"
-                            ? "项目"
-                            : conversations.find((item) => item.id === conversationId)?.title ||
-                              "新对话"}
+                          : currentConversation?.title || "新对话"}
                       </span>
                     )}
                     {workspaceView === "chat" && canSwitchPresentation ? (
@@ -3214,15 +4047,50 @@ export function CloudChatPage({
                 }
                 trailingActions={
                   workspaceView === "chat" ? (
-                    <CloudChatHeaderActions
-                      modelLimitsDisabled={!selectedModelOption || preparingExecution || streaming}
-                      exportDisabled={
-                        !conversationId || historyLoading || streaming || branchBusy || exporting
-                      }
-                      onOpenModelLimits={() => setModelLimitsOpen(true)}
-                      onExport={(format) => void exportConversation(format)}
-                      onOpenResource={(resource) => openResource(resource)}
-                    />
+                    <>
+                      {conversationId ? (
+                        <CloudConversationBranches
+                          key={`branches:${user.id}:${conversationId}`}
+                          conversationId={conversationId}
+                          client={conversationClient}
+                          onNavigate={navigateConversation}
+                        />
+                      ) : null}
+                      {conversationId ? (
+                        <CloudChatHeaderActions
+                          key={`actions:${user.id}:${conversationId}`}
+                          title={currentConversation?.title || "新对话"}
+                          pinned={!!currentConversation?.pinned}
+                          archived={!!currentConversation?.archived}
+                          disabled={
+                            !currentConversation || conversationMutations.has(conversationId)
+                          }
+                          deleteDisabled={streaming || historyLoading || branchBusy}
+                          moveDisabled={composerLocked || streaming || projectContextBusy}
+                          projectId={
+                            composerProject.scope === `${user.id}:${conversationId}`
+                              ? composerProject.project?.id
+                              : undefined
+                          }
+                          projectsClient={projectsClient}
+                          captureGuard={captureWorkGuard}
+                          onRename={() => setHeaderRenameRequest((request) => request + 1)}
+                          onTogglePinned={() =>
+                            void manageConversation(conversationId, {
+                              pinned: !currentConversation?.pinned,
+                            })
+                          }
+                          onToggleArchived={() =>
+                            void manageConversation(conversationId, {
+                              archived: !currentConversation?.archived,
+                            })
+                          }
+                          onDelete={() => removeConversation(conversationId)}
+                          onError={setError}
+                          onMoveToProject={selectComposerProject}
+                        />
+                      ) : null}
+                    </>
                   ) : (
                     <Button variant="ghost" size="sm" onClick={closeResources}>
                       返回对话
@@ -3266,6 +4134,7 @@ export function CloudChatPage({
                       isAgentMode={false}
                       className={workspaceView === "chat" ? "contents" : "hidden"}
                       chat={{
+                        containerRef: cloudChatFrameRef,
                         containerProps: {
                           className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
                           style: {
@@ -3274,50 +4143,11 @@ export function CloudChatPage({
                         },
                         content: (
                           <>
-                            <div className="cloud-conversation-resources">
-                              {conversationFiles.length ? (
-                                <details className="min-w-0">
-                                  <summary className="cursor-pointer text-muted-foreground">
-                                    本会话附件 ({conversationFiles.length})
-                                  </summary>
-                                  <div className="flex flex-wrap gap-8px py-8px">
-                                    {conversationFiles.map((file) => (
-                                      <button
-                                        key={file.file_id}
-                                        type="button"
-                                        className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
-                                        onClick={() => showFileResource({ fileId: file.file_id })}
-                                      >
-                                        {file.name || "附件"}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </details>
-                              ) : null}
-                              {conversationArtifacts.length ? (
-                                <details className="min-w-0">
-                                  <summary className="cursor-pointer text-muted-foreground">
-                                    本会话成果 ({conversationArtifacts.length})
-                                  </summary>
-                                  <div className="flex flex-wrap gap-8px py-8px">
-                                    {conversationArtifacts.map((version) => (
-                                      <button
-                                        key={version.version_id}
-                                        type="button"
-                                        className="max-w-240px truncate rounded-lg border border-border px-8px py-4px"
-                                        onClick={() =>
-                                          showArtifactResource({ versionId: version.version_id })
-                                        }
-                                      >
-                                        {version.name || "成果"}
-                                        {version.number ? ` · v${version.number}` : ""}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </details>
-                              ) : null}
-                            </div>
                             <FileDropBoundary
+                              onInputCapture={() => {
+                                if (!pendingQueue.editingItem && !accountInvalidatedRef.current)
+                                  savedDraft.scheduleCapture();
+                              }}
                               active={
                                 workspaceView === "chat" && !accountSettingsOpen && !readingOnly
                               }
@@ -3344,11 +4174,21 @@ export function CloudChatPage({
                                   className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
                                 >
                                   <GatewayTranscript
+                                    navRef={transcriptNavigation}
+                                    onAnchorUserRowChange={(rowKey) => {
+                                      const scope = `${user.id}:${conversationId}`;
+                                      setFloorAnchor((previous) =>
+                                        previous.scope === scope && previous.rowKey === rowKey
+                                          ? previous
+                                          : { scope, rowKey },
+                                      );
+                                    }}
+                                    showUsage
                                     emptyState={null}
                                     hasMoreHistory={historyHasMore}
                                     isLoadingMoreHistory={historyPageLoading}
                                     onLoadEarlierHistory={() => void loadEarlierHistory()}
-                                    isViewportFollowing={() => followTranscriptTailRef.current}
+                                    isViewportFollowing={transcriptFollow.isFollowing}
                                     viewportFollowing={followingTranscript}
                                     resendCreatesBranch
                                     conversationId={conversationId}
@@ -3363,7 +4203,41 @@ export function CloudChatPage({
                                       streaming ? Math.max(0, transcriptRows.length - 1) : -1
                                     }
                                     activeTurnKey={streaming ? messages.at(-1)?.id : null}
-                                    footer={terminalFeedback}
+                                    footer={
+                                      <>
+                                        {historySelection ? (
+                                          <div
+                                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
+                                            role="status"
+                                          >
+                                            <span>正在查看历史消息附近</span>
+                                            <div className="flex gap-1">
+                                              {historyHasAfter ? (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  disabled={historyPageLoading}
+                                                  onClick={() => void loadLaterHistory()}
+                                                >
+                                                  {historyPageLoading ? "正在读取…" : "后续消息"}
+                                                </Button>
+                                              ) : null}
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                  setHistorySelection(null);
+                                                  transcriptFollow.stickToBottom();
+                                                }}
+                                              >
+                                                返回最新消息
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        ) : null}
+                                        {terminalFeedback}
+                                      </>
+                                    }
                                     toolStatus={
                                       streaming
                                         ? runConnection === "reconnecting"
@@ -3384,52 +4258,10 @@ export function CloudChatPage({
                                     }}
                                     onSuggestionSelect={(text) => {
                                       composerRef.current?.setText(text);
+                                      savedDraft.scheduleCapture();
                                       composerRef.current?.focus();
                                     }}
-                                    onOpenFileLink={(link) => {
-                                      const messageMatch =
-                                        /^cloud-messages\/([A-Za-z0-9_-]{1,128})$/.exec(link.path);
-                                      if (messageMatch) {
-                                        void readMessageBody(messageMatch[1]);
-                                        return;
-                                      }
-                                      const artifactId = cloudArtifactVersionFromLink(link.path);
-                                      if (artifactId) {
-                                        showResourceDetail(() =>
-                                          showArtifactResource({ versionId: artifactId }),
-                                        );
-                                        return;
-                                      }
-                                      const sourceMatch =
-                                        /^cloud-sources\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
-                                          link.path,
-                                        );
-                                      if (sourceMatch) {
-                                        showResourceDetail(() =>
-                                          setSourcePanel({
-                                            sourceId: sourceMatch[1],
-                                            fromLine: link.line,
-                                            toLine: link.endLine,
-                                          }),
-                                        );
-                                        return;
-                                      }
-                                      const match =
-                                        /^cloud-files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
-                                          link.path,
-                                        );
-                                      if (!match) {
-                                        setError("云端对话仅支持打开当前账户的文件引用。");
-                                        return;
-                                      }
-                                      showResourceDetail(() =>
-                                        showFileResource({
-                                          fileId: match[1],
-                                          fromLine: link.line,
-                                          toLine: link.endLine,
-                                        }),
-                                      );
-                                    }}
+                                    onOpenFileLink={openCloudMessageLink}
                                     onResendFromEdit={
                                       branchBusy || branchUnconfirmed || streaming
                                         ? undefined
@@ -3444,14 +4276,57 @@ export function CloudChatPage({
                                     branchPendingMessageId={branchPendingMessageId}
                                   />
                                 </ScrollArea>
+                                {conversationId && !readingOnly ? (
+                                  <FloorNavRail
+                                    key={`floors:${user.id}:${conversationId}`}
+                                    conversationId={`cloud:${user.id}:${conversationId}`}
+                                    floors={buildFloorEntries(transcriptRows)}
+                                    activeRowKey={
+                                      floorAnchor.scope === `${user.id}:${conversationId}`
+                                        ? floorAnchor.rowKey
+                                        : null
+                                    }
+                                    bottomOffset="calc(var(--gateway-chat-composer-overlay-height) + var(--gateway-chat-composer-bottom) + 8px)"
+                                    scrollViewport={transcriptViewport}
+                                    onJump={(rowKey) => {
+                                      transcriptFollow.restoreFollowing(false);
+                                      transcriptNavigation.current?.scrollToRowKey(rowKey);
+                                    }}
+                                  />
+                                ) : null}
+                                {!followingTranscript && messages.length > 0 ? (
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    title="回到最新消息"
+                                    aria-label="回到最新消息"
+                                    className="absolute bottom-4 left-1/2 z-10 size-9 -translate-x-1/2 rounded-full border-border/60 bg-background shadow-md transition-transform hover:scale-105 active:scale-95"
+                                    style={{
+                                      bottom:
+                                        "calc(var(--gateway-chat-composer-overlay-height) + var(--gateway-chat-composer-bottom) + 12px)",
+                                    }}
+                                    onClick={() => {
+                                      if (historySelection) {
+                                        setHistorySelection(null);
+                                        transcriptFollow.stickToBottom();
+                                      } else transcriptFollow.jumpToBottom();
+                                    }}
+                                  >
+                                    <ChevronDown className="size-4" />
+                                  </Button>
+                                ) : null}
                               </div>
                               <ChatComposerBar
+                                overlayHeightOwnerRef={cloudChatFrameRef}
                                 capabilities={CLOUD_COMPOSER_CAPABILITIES}
                                 feedback={composerFeedback}
                                 layout="inline"
                                 expandedInput={presentation === "work"}
                                 contextBarPosition={sidebar.isMobile ? "above" : "below"}
-                                allowQueueWhileSending={false}
+                                allowQueueWhileSending
+                                submitLabel={
+                                  pendingQueue.editingItem ? "保存待发送消息" : undefined
+                                }
                                 onPickWorkspaceFolder={() => undefined}
                                 onRefreshModels={() => void refreshModels()}
                                 modelsRefreshing={modelsLoading}
@@ -3465,13 +4340,17 @@ export function CloudChatPage({
                                   resolvingResources ||
                                   preparingExecution ||
                                   historyLoading ||
+                                  historyRestoreFailed ||
                                   modelsLoading ||
                                   modelOptions.length === 0 ||
                                   submissionUnconfirmed ||
                                   submissionQueueFull ||
                                   branchBusy ||
                                   branchUnconfirmed ||
-                                  Boolean(researchConfirmation)
+                                  Boolean(researchConfirmation) ||
+                                  pendingQueue.busy ||
+                                  pendingQueue.loading ||
+                                  Boolean(pendingQueue.unknown)
                                 }
                                 allowUploadsWithoutWorkspace
                                 inputPlaceholder={
@@ -3479,7 +4358,8 @@ export function CloudChatPage({
                                 }
                                 capabilityMenu={
                                   <CloudChatComposerMenu
-                                    disabled={composerLocked || streaming}
+                                    disabled={composerLocked}
+                                    projectDisabled={streaming}
                                     open={composerMenu === "add"}
                                     onOpenChange={(open) =>
                                       setComposerMenu((old) =>
@@ -3533,7 +4413,8 @@ export function CloudChatPage({
                                       <CloudChatWorkToolbar
                                         open={composerMenu}
                                         busy={projectContextBusy}
-                                        disabled={composerLocked || streaming}
+                                        disabled={composerLocked}
+                                        projectDisabled={streaming}
                                         projectName={
                                           composerProject.scope === `${user.id}:${conversationId}`
                                             ? composerProject.project?.name
@@ -3620,11 +4501,26 @@ export function CloudChatPage({
                                       current.filter((item) => item.id !== id),
                                     );
                                 }}
-                                queuedTurns={[]}
-                                onRunQueuedTurnNow={() => undefined}
-                                onMoveQueuedTurnUp={() => undefined}
-                                onEditQueuedTurn={() => undefined}
-                                onRemoveQueuedTurn={() => undefined}
+                                queuedTurns={pendingQueue.queuedPreviews}
+                                queuePaused={
+                                  pendingQueue.items.length > 0 ? pendingQueue.paused : undefined
+                                }
+                                queueControlPending={
+                                  pendingQueue.busy ||
+                                  pendingQueue.loading ||
+                                  Boolean(pendingQueue.unknown)
+                                }
+                                queueRunDisabled={streaming || Boolean(historySelection)}
+                                queueRunLabel="发送这条消息"
+                                queueNotice="尚未发送。正常完成后依次发送；停止、失败或重新打开页面后需点击继续。"
+                                onQueuePausedChange={(paused) => {
+                                  if (paused) pendingQueue.pause();
+                                  else void pendingQueue.resume();
+                                }}
+                                onRunQueuedTurnNow={(id) => void pendingQueue.runNow(id)}
+                                onMoveQueuedTurnUp={(id) => void pendingQueue.moveUp(id)}
+                                onEditQueuedTurn={(id) => void pendingQueue.beginEdit(id)}
+                                onRemoveQueuedTurn={(id) => void pendingQueue.remove(id)}
                               />
                               {landing ? (
                                 <CloudChatStarters mode={presentation} onSelect={fillStarter} />
@@ -3650,12 +4546,13 @@ export function CloudChatPage({
                           ? composerProject.project?.id
                           : undefined
                       }
-                      disabled={composerLocked || streaming}
+                      disabled={composerLocked || (composerMenu === "projects" && streaming)}
                       researchEnabled={runtimeControls.nativeWebSearchEnabled}
                       onClose={() => setComposerMenu(null)}
                       onSelectProject={selectComposerProject}
                       onAttach={attachLibraryFile}
                       onBrowse={(kind) => openResource(kind, true)}
+                      onCreateProject={() => setProjectCreate({ owner: user.id, open: true })}
                       onToggleResearch={() =>
                         setRuntimeControls((current) => ({
                           ...current,
@@ -3697,12 +4594,12 @@ export function CloudChatPage({
                           onOpen={openSpaceItem}
                           onReference={referenceSpaceItems}
                           onCreateWork={(text) => {
-                            if (composerLocked || streaming) return;
+                            if (composerLocked) return;
                             clearResources();
                             if (landing) setPresentation("work");
                             fillStarter(text);
                           }}
-                          canReference={!composerLocked && !streaming}
+                          canReference={!composerLocked}
                           captureGuard={captureAccountRequestGuard}
                           onChanged={() => setSpaceRevision((old) => old + 1)}
                           onError={(cause) => {
@@ -3764,7 +4661,6 @@ export function CloudChatPage({
                               toLine={filePanel.toLine}
                               canAttach={
                                 !preparingExecution &&
-                                !streaming &&
                                 !uploadingFiles &&
                                 !resolvingResources &&
                                 !submissionUnconfirmed &&
@@ -3823,7 +4719,6 @@ export function CloudChatPage({
                           const view = viewRef.current;
                           const canContinue =
                             !preparingExecution &&
-                            !streaming &&
                             !uploadingFiles &&
                             !resolvingResources &&
                             !submissionUnconfirmed &&
@@ -3890,13 +4785,7 @@ export function CloudChatPage({
                               }}
                               onOpenSourceRun={(_runId, sourceConversationId) => {
                                 if (!isCurrentView(view)) return;
-                                if (
-                                  !conversations.some((item) => item.id === sourceConversationId)
-                                ) {
-                                  setError("来源对话已删除或暂不可用，仍可使用已保存的成果版本。");
-                                  return;
-                                }
-                                selectConversationView(sourceConversationId);
+                                navigateConversation(sourceConversationId);
                               }}
                               onError={(cause) => {
                                 if (cause instanceof CloudChatArtifactError && cause.status === 401)
@@ -3936,39 +4825,20 @@ export function CloudChatPage({
                     viewRef.current.userId === user.id &&
                     !accountInvalidatedRef.current ? (
                       <CloudChatResourcePanel
-                        title={workPanel === "projects" ? "项目" : "记忆"}
+                        title="记忆"
                         description="管理后续对话使用的资料和偏好。"
                         onClose={closeResources}
                       >
                         <div className="min-h-0 flex-1 overflow-auto">
-                          {workPanel === "projects" ? (
-                            <CloudChatProjectsPanel
-                              key={`${user.id}:${conversationId}:${initialProjectId ?? "associated"}`}
-                              initialProjectId={initialProjectId}
-                              onDirtyChange={projectNavigation.setDirty}
-                              onRequestNavigation={projectNavigation.request}
-                              client={projectsClient}
-                              filesClient={filesClient}
-                              conversationId={conversationId || null}
-                              captureGuard={captureWorkGuard}
-                              onProjectChange={() => setContextNotice("已更新当前对话的项目。")}
-                              onOpenConversation={(id) => navigateConversation(id)}
-                              onContextChanged={() => {
-                                setNavigationRevision((old) => old + 1);
-                                setContextNotice("已保存，将用于后续消息。");
-                              }}
-                            />
-                          ) : (
-                            <CloudChatMemoryPanel
-                              key={user.id}
-                              client={projectsClient}
-                              captureGuard={captureWorkGuard}
-                              onContextChanged={() => {
-                                setNavigationRevision((old) => old + 1);
-                                setContextNotice("已保存，将用于后续消息。");
-                              }}
-                            />
-                          )}
+                          <CloudChatMemoryPanel
+                            key={user.id}
+                            client={projectsClient}
+                            captureGuard={captureWorkGuard}
+                            onContextChanged={() => {
+                              setNavigationRevision((old) => old + 1);
+                              setContextNotice("已保存，将用于后续消息。");
+                            }}
+                          />
                         </div>
                       </CloudChatResourcePanel>
                     ) : null}
@@ -4019,29 +4889,6 @@ export function CloudChatPage({
             </SettingsWorkspace>
           ) : null}
         </WorkbenchShell>
-        {modelLimitsOpen &&
-        selectedModelOption &&
-        viewRef.current.userId === user.id &&
-        !accountInvalidatedRef.current ? (
-          <CloudChatModelLimitsPanel
-            key={`${user.id}:${selectedModelOption.providerId}:${model}`}
-            client={modelLimitsClient}
-            providerKeyId={relayProviderKeyId(selectedModelOption.providerId)}
-            model={model}
-            localContext={
-              settings.customProviders
-                ?.find((provider) => provider.id === selectedModelOption.providerId)
-                ?.models.find((item) => item.id === model)?.contextWindow
-            }
-            localOutput={
-              settings.customProviders
-                ?.find((provider) => provider.id === selectedModelOption.providerId)
-                ?.models.find((item) => item.id === model)?.maxOutputToken
-            }
-            captureGuard={captureWorkGuard}
-            onClose={() => setModelLimitsOpen(false)}
-          />
-        ) : null}
         {researchConfirmation && isCurrentView(researchConfirmation.view) ? (
           <CloudChatResearchConfirmation
             key={researchConfirmation.id}
@@ -4050,6 +4897,38 @@ export function CloudChatPage({
             onConfirm={(research) => settleResearchConfirmation(researchConfirmation, research)}
           />
         ) : null}
+        {projectSettings.open &&
+        projectSettings.owner === user.id &&
+        !accountInvalidatedRef.current ? (
+          <CloudProjectSettingsDialog
+            key={`project-settings:${user.id}:${projectSettings.id || "catalog"}`}
+            projectId={projectSettings.id}
+            client={projectsClient}
+            filesClient={filesClient}
+            captureGuard={captureAccountRequestGuard}
+            onClose={() => setProjectSettings({ owner: user.id, open: false })}
+            onSelect={(id) => setProjectSettings({ owner: user.id, id, open: true })}
+            onCreate={() => {
+              setProjectSettings({ owner: user.id, open: false });
+              setProjectCreate({ owner: user.id, open: true });
+            }}
+            onChanged={() => {
+              setNavigationRevision((revision) => revision + 1);
+              void refreshConversations(true).catch(() => undefined);
+            }}
+            onPreviewFile={(fileId) => showFileResource({ fileId })}
+          />
+        ) : null}
+        <CloudProjectCreateDialog
+          key={`create-project:${user.id}`}
+          open={
+            projectCreate.owner === user.id && projectCreate.open && !accountInvalidatedRef.current
+          }
+          onOpenChange={(open) => setProjectCreate({ owner: user.id, open })}
+          client={projectsClient}
+          captureGuard={captureAccountRequestGuard}
+          onCreated={() => setNavigationRevision((revision) => revision + 1)}
+        />
         {messageReader && viewRef.current.userId === user.id && !accountInvalidatedRef.current ? (
           <CloudChatMessageReader
             key={`${messageReader.id}:${messageReader.message?.content_sha256 ?? "loading"}`}
@@ -4072,6 +4951,10 @@ export function CloudChatPage({
             onOpenArtifact={(versionId) => {
               closeMessageReader();
               showArtifactResource({ versionId });
+            }}
+            onOpenFileLink={(link) => {
+              closeMessageReader();
+              openCloudMessageLink(link);
             }}
           />
         ) : null}

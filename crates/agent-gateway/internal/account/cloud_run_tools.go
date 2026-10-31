@@ -41,6 +41,7 @@ type cloudRunToolExecution struct {
 	executorEnabled bool
 	calls           int
 	historyBoundary CloudMessageHead
+	historySources  map[string]string // source ID -> selected canonical message ID
 	researchScope   *cloudRunResearchScope
 }
 
@@ -369,6 +370,12 @@ func parseCloudToolInvocation(call cloudModelToolCall) (cloudToolInvocation, err
 }
 
 func (e *cloudRunToolExecution) emit(ctx context.Context, operation *CloudToolOperation, call cloudModelToolCall, round int, state string) error {
+	// CommitCloudTool writes public terminal facts atomically with its receipt.
+	// Emitting them afterwards would reintroduce a crash window and duplicate
+	// events. Preparation/execution still have their separate progress events.
+	if _, public := cloudPublicToolRound(operation); public && (state == "completed" || state == "failed" || state == "unknown" || state == "cancelled") {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	canonical, status := state, "准备执行"

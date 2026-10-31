@@ -42,6 +42,8 @@ SDK 只监听共享网络命名空间中的 127.0.0.1:17843，不公开端口；
 
 ## 持久性与恢复
 
+`ZEROAGENT_CLOUD_FILE_PARSER_ENABLED` 默认 `true`；设为 `false` 仅停止启动后台 Office/PDF 文件解析 worker，保留 Executor 连接和用户主动发起的工作区工具，非法布尔值拒绝启动。
+
 Gateway 的执行并发、总任务时限、模型轮数与工具调用数可通过独立 Cloud 环境变量调整，
 见 `gateway.env.example`。当前初始值为 2 个 worker、15 分钟总时限、12 轮模型调用和
 32 次工具调用；部署时需要按真实任务耗时与预算校准，不作为容量承诺。配置只在启动时

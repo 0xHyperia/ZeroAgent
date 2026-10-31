@@ -65,6 +65,7 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     content = redactToolContent ? null : (
       <ThinkingDisclosure
         text={block.text}
+        durationMs={block.durationMs}
         trackKey={traceKey ?? block.key}
         active={Boolean(isLive && thinkingOpen && isLatestThinking)}
         renderMode={renderMode}

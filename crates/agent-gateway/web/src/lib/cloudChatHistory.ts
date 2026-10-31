@@ -1,3 +1,5 @@
+import { type CloudChatPresentation, parseCloudChatPresentation } from "./cloudChatPresentation";
+
 export type CloudChatMessage = {
   id: string;
   conversation_id?: string;
@@ -7,6 +9,8 @@ export type CloudChatMessage = {
   content_omitted?: boolean;
   content_bytes?: number;
   content_sha256?: string;
+  presentation?: CloudChatPresentation;
+  presentation_omitted?: boolean;
 };
 export type CloudChatHistoryPage = {
   messages: CloudChatMessage[];
@@ -35,7 +39,10 @@ export class CloudChatHistoryError extends Error {
     );
   }
 }
-function message(value: unknown, conversationId: string): CloudChatMessage {
+export function parseCloudChatHistoryMessage(
+  value: unknown,
+  conversationId: string,
+): CloudChatMessage {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("消息响应无效");
   const item = value as CloudChatMessage;
   opaqueId(item.id);
@@ -43,6 +50,7 @@ function message(value: unknown, conversationId: string): CloudChatMessage {
     !["user", "assistant"].includes(item.role) ||
     (item.conversation_id !== undefined && item.conversation_id !== conversationId) ||
     (item.content_omitted !== undefined && typeof item.content_omitted !== "boolean") ||
+    (item.presentation_omitted !== undefined && typeof item.presentation_omitted !== "boolean") ||
     (item.content_bytes !== undefined &&
       (!Number.isSafeInteger(item.content_bytes) || item.content_bytes < 0)) ||
     (item.content_sha256 !== undefined && !/^[a-f0-9]{64}$/.test(item.content_sha256))
@@ -54,7 +62,11 @@ function message(value: unknown, conversationId: string): CloudChatMessage {
       : typeof item.content !== "string" && !Array.isArray(item.content)
   )
     throw new Error("消息正文响应无效");
-  return item;
+  if (item.presentation !== undefined && item.presentation !== null) {
+    if (item.role !== "assistant" || item.presentation_omitted) throw new Error("消息过程响应无效");
+    return { ...item, presentation: parseCloudChatPresentation(item.presentation) };
+  }
+  return { ...item, presentation: undefined };
 }
 async function json(response: Response, maximum: number, guard: () => void) {
   guard();
@@ -127,7 +139,9 @@ export function createCloudChatHistoryClient(request: Request, captureGuard: Cap
         typeof data.next_before_id !== "string"
       )
         throw new Error("消息分页响应无效");
-      const messages = data.messages.map((item) => message(item, conversationId));
+      const messages = data.messages.map((item) =>
+        parseCloudChatHistoryMessage(item, conversationId),
+      );
       if (
         new Set(messages.map((item) => item.id)).size !== messages.length ||
         data.has_more !== Boolean(data.next_before_id) ||
@@ -143,8 +157,9 @@ export function createCloudChatHistoryClient(request: Request, captureGuard: Cap
         MESSAGE_BYTES,
         signal,
       );
-      const item = message(data.message, conversationId);
-      if (item.id !== messageId || item.content_omitted) throw new Error("消息正文尚未完整读取");
+      const item = parseCloudChatHistoryMessage(data.message, conversationId);
+      if (item.id !== messageId || item.content_omitted || item.presentation_omitted)
+        throw new Error("消息正文或过程尚未完整读取");
       return item;
     },
   };
@@ -162,7 +177,22 @@ export function mergeCloudChatHistory(
   const merged = current.map((item) => {
     const next = updates.get(item.id);
     updates.delete(item.id);
-    return next && (!next.content_omitted || item.content_omitted) ? next : item;
+    if (!next) return item;
+    const merged =
+      next.content_omitted && !item.content_omitted
+        ? {
+            ...next,
+            content: item.content,
+            content_omitted: item.content_omitted,
+            content_bytes: item.content_bytes,
+            content_sha256: item.content_sha256,
+          }
+        : next;
+    // A bounded history page must not erase a process already loaded from a Run or full message.
+    // Keep the omission marker so a partial live projection can still be refreshed explicitly.
+    return !next.presentation && item.presentation
+      ? { ...merged, presentation: item.presentation }
+      : merged;
   });
   return [...merged, ...updates.values()];
 }

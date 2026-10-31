@@ -34,6 +34,8 @@ func (s *MemoryStore) cloudRunStateLocked() *cloudRunMemoryState {
 // deleteCloudRunsLocked mirrors PostgreSQL's conversation cascade. The caller
 // must own s.mu and must have checked the conversation's authenticated owner.
 func (s *MemoryStore) deleteCloudRunsLocked(conversationID string) {
+	delete(s.cloudPending, conversationID)
+	s.deleteCloudPrivateDraftLocked(conversationID)
 	if s.cloudRuns == nil {
 		return
 	}
@@ -70,6 +72,9 @@ func (s *MemoryStore) cloudRunLocked(userID int64, id string) (*CloudRun, error)
 }
 
 func (s *MemoryStore) appendCloudRunEventLocked(run *CloudRun, kind string, payload json.RawMessage, now time.Time) {
+	if kind == "run."+run.State {
+		payload = cloudPresentationTerminalPayload(run, payload, now)
+	}
 	run.LastSeq++
 	run.UpdatedAt = now.UTC()
 	s.cloudRuns.events[run.ID] = append(s.cloudRuns.events[run.ID], CloudRunEvent{
@@ -79,21 +84,26 @@ func (s *MemoryStore) appendCloudRunEventLocked(run *CloudRun, kind string, payl
 	s.cloudRuns.runs[run.ID] = cloneCloudRun(*run)
 }
 
-func (s *MemoryStore) finishCloudRunLocked(run *CloudRun, now time.Time) {
+func (s *MemoryStore) finishCloudRunLocked(run *CloudRun, now time.Time) error {
+	if err := s.reconcileCloudToolsLocked(run, now); err != nil {
+		return err
+	}
+	finishCloudPresentation(run, now)
 	updatedAt := now.UTC()
-	if run.Output != "" {
+	if run.Output != "" || cloudPresentationHasContent(run.Presentation) {
 		messageAt := s.nextCloudMessageTimeLocked(run.ConversationID, now)
 		updatedAt = messageAt
 		content, _ := json.Marshal(run.Output)
 		s.cloudMessages[run.ConversationID] = append(s.cloudMessages[run.ConversationID], CloudMessage{
 			ID: run.AssistantMessageID, ConversationID: run.ConversationID, UserID: run.UserID,
-			Role: "assistant", Content: content, Usage: append(json.RawMessage(nil), run.Usage...), CreatedAt: messageAt,
+			Role: "assistant", Presentation: append(json.RawMessage(nil), run.Presentation...), Content: content, Usage: append(json.RawMessage(nil), run.Usage...), CreatedAt: messageAt,
 		})
 	}
 	conversation := s.cloudConversations[run.ConversationID]
 	conversation.UpdatedAt = updatedAt
 	s.cloudConversations[run.ConversationID] = conversation
 	run.LeaseOwner, run.LeaseUntil = "", time.Time{}
+	return nil
 }
 
 func (s *MemoryStore) CreateCloudRun(ctx context.Context, input *CloudRun) (*CloudRun, bool, error) {
@@ -143,6 +153,9 @@ func (s *MemoryStore) CreateCloudRun(ctx context.Context, input *CloudRun) (*Clo
 		if message.ID == run.UserMessageID || message.ID == run.AssistantMessageID {
 			return nil, false, ErrCloudRunConflict
 		}
+	}
+	if err := s.consumeCloudPendingLocked(run); err != nil {
+		return nil, false, err
 	}
 	messageAt := s.nextCloudMessageTimeLocked(run.ConversationID, run.CreatedAt)
 	s.cloudMessages[run.ConversationID] = append(s.cloudMessages[run.ConversationID], CloudMessage{
@@ -307,8 +320,13 @@ func (s *MemoryStore) CommitCloudRun(ctx context.Context, userID int64, id, owne
 		run.State = commit.State
 	}
 	run.ErrorCode = commit.ErrorCode
+	if err := applyCloudPresentation(run, &commit, now); err != nil {
+		return nil, err
+	}
 	if run.Terminal() {
-		s.finishCloudRunLocked(run, now)
+		if err := s.finishCloudRunLocked(run, now); err != nil {
+			return nil, err
+		}
 	}
 	s.cloudRuns.operations[id][commit.OperationID] = hash
 	s.appendCloudRunEventLocked(run, commit.EventType, commit.Payload, now)
@@ -330,7 +348,9 @@ func (s *MemoryStore) CancelCloudRun(ctx context.Context, userID int64, id strin
 	}
 	if run.State == CloudRunQueued {
 		run.State = CloudRunCancelled
-		s.finishCloudRunLocked(run, s.now())
+		if err := s.finishCloudRunLocked(run, s.now()); err != nil {
+			return nil, err
+		}
 	} else {
 		run.State = CloudRunCancelling
 	}
@@ -385,7 +405,9 @@ func (s *MemoryStore) InterruptExpiredCloudRuns(ctx context.Context) (int, error
 		}
 		run := cloneCloudRun(current)
 		run.State, run.ErrorCode = CloudRunInterrupted, "lease_expired"
-		s.finishCloudRunLocked(&run, now)
+		if err := s.finishCloudRunLocked(&run, now); err != nil {
+			return count, err
+		}
 		s.appendCloudRunEventLocked(&run, "run.interrupted", cloudRunEventPayload(run.State, "", run.ErrorCode), now)
 		count++
 	}

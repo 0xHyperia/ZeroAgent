@@ -37,6 +37,7 @@ export type CloudComposerMenu = CloudComposerPicker | "add" | null;
 export function CloudChatWorkToolbar(props: {
   open: CloudComposerMenu;
   disabled: boolean;
+  projectDisabled?: boolean;
   busy?: boolean;
   projectName?: string;
   onOpen: (kind: CloudComposerPicker, anchor: HTMLElement) => void;
@@ -58,7 +59,7 @@ export function CloudChatWorkToolbar(props: {
           key={id}
           variant="ghost"
           size="sm"
-          disabled={props.disabled}
+          disabled={props.disabled || (id === "projects" && props.projectDisabled)}
           aria-label={
             id === "projects" && props.projectName && !props.busy
               ? `当前项目：${props.projectName}`
@@ -95,6 +96,7 @@ export function CloudChatContextPicker(props: {
   onSelectProject: (project: CloudProject | null) => Promise<void>;
   onAttach: (file: CloudChatFile) => void;
   onBrowse: (kind: "projects" | "files") => void;
+  onCreateProject: () => void;
   onToggleResearch: () => void;
   onFillDraft: (text: string) => void;
   onFocusComposer: () => void;
@@ -275,10 +277,10 @@ export function CloudChatContextPicker(props: {
               type="button"
               className="cloud-picker-row"
               disabled={busy || props.disabled}
-              onClick={() => closeFor(() => props.onBrowse("projects"))}
+              onClick={() => closeFor(props.onCreateProject)}
             >
               <Plus className="size-4" />
-              新建或管理项目
+              新建项目
             </button>
           ) : null}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: Delegates arrow keys from resource buttons without introducing a container tab stop. */}

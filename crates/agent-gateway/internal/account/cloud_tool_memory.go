@@ -192,7 +192,8 @@ func (s *MemoryStore) CommitCloudTool(ctx context.Context, userID int64, id, own
 	if err != nil {
 		return nil, err
 	}
-	if _, err = s.cloudToolRunLocked(userID, op.RunID, owner, attempt, true); err != nil {
+	run, err := s.cloudToolRunLocked(userID, op.RunID, owner, attempt, true)
+	if err != nil {
 		return nil, err
 	}
 	if op.ExecutionAttempt != attempt {
@@ -201,6 +202,20 @@ func (s *MemoryStore) CommitCloudTool(ctx context.Context, userID int64, id, own
 	op, err = commitCloudTool(*op, state, result, errorCode, s.now())
 	if err != nil {
 		return nil, err
+	}
+	// A committed tool result and its public display facts share the same
+	// atomic write, including cancellation that races external completion.
+	if _, public := cloudPublicToolRound(op); public {
+		if _, recorded := s.cloudRuns.operations[run.ID][cloudToolPresentationOperationID(op)]; !recorded {
+			commit, hash, projectErr := prepareCloudToolPresentation(run, op, s.cloudToolResourcesLocked(op), op.UpdatedAt)
+			if projectErr != nil {
+				return nil, projectErr
+			}
+			if commit != nil {
+				s.cloudRuns.operations[run.ID][commit.OperationID] = hash
+				s.appendCloudRunEventLocked(run, commit.EventType, commit.Payload, s.now())
+			}
+		}
 	}
 	s.cloudTools.operations[op.ID] = *op
 	return op, nil

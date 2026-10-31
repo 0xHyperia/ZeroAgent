@@ -253,6 +253,21 @@ func TestDefinitiveRejectionsDoNotCancelOrRetry(t *testing.T) {
 	}
 }
 
+func TestMissingSandboxConnectionIsKnownFailureWithoutResubmission(t *testing.T) {
+	var calls atomic.Int32
+	client := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		receipt := testReceipt(StateFailed)
+		receipt.Error = &ReceiptError{Code: "sandbox_connection_unavailable", Message: "private-sdk-capability=" + testToken}
+		_ = json.NewEncoder(w).Encode(receipt)
+	})
+	receipt, err := client.Execute(context.Background(), testOperation())
+	if err != nil || receipt.State != StateFailed || calls.Load() != 1 || receipt.Error == nil || receipt.Error.Code != "sandbox_connection_unavailable" || receipt.Error.Message != "sandbox_connection_unavailable" {
+		t.Fatal("missing connection was retried, lost its safe code, or disclosed SDK capability details")
+	}
+}
+
 func TestRedirectIsNeverFollowedAndTokenCannotLeaveLoopbackService(t *testing.T) {
 	var destination atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { destination.Add(1); respond(t, w, StateSucceeded) }))

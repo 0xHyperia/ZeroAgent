@@ -112,15 +112,19 @@ type LoginResult struct {
 }
 
 type CloudConversation struct {
-	ID        string    `json:"id"`
-	UserID    int64     `json:"-"`
-	Title     string    `json:"title"`
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Pinned            bool      `json:"pinned"`
+	Archived          bool      `json:"archived"`
+	ManagementVersion int64     `json:"management_version"`
+	ID                string    `json:"id"`
+	UserID            int64     `json:"-"`
+	Title             string    `json:"title"`
+	Model             string    `json:"model"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type CloudMessage struct {
+	Presentation   json.RawMessage `json:"presentation,omitempty"`
 	ID             string          `json:"id"`
 	ConversationID string          `json:"conversation_id"`
 	UserID         int64           `json:"-"`

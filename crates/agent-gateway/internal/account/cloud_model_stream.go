@@ -23,14 +23,16 @@ type cloudModelToolCall struct {
 	ID, Name, Arguments string
 }
 type cloudModelRound struct {
+	Reasoning    string
 	Text         string
 	ToolCalls    []cloudModelToolCall
 	FinishReason string
 	Usage        json.RawMessage
 }
 type cloudModelStreamUpdate struct {
-	Delta string
-	Usage json.RawMessage
+	ReasoningDelta string
+	Delta          string
+	Usage          json.RawMessage
 }
 type cloudModelPendingCall struct {
 	cloudModelToolCall
@@ -41,15 +43,18 @@ type cloudModelPendingCall struct {
 // This parser never executes or publishes partial tool calls. IDs are stable
 // complete fields in normalized CC; only names and arguments are fragments.
 type cloudModelStream struct {
-	filter          *cloudSecretFilter
-	secrets         []string
-	text            strings.Builder
-	rawTextBytes    int
-	calls           map[int]*cloudModelPendingCall
-	usage           map[string]int64
-	finish          string
-	done, finalized bool
-	sticky          *cloudModelStreamError
+	reasoningFilter   *cloudSecretFilter
+	reasoning         strings.Builder
+	rawReasoningBytes int
+	filter            *cloudSecretFilter
+	secrets           []string
+	text              strings.Builder
+	rawTextBytes      int
+	calls             map[int]*cloudModelPendingCall
+	usage             map[string]int64
+	finish            string
+	done, finalized   bool
+	sticky            *cloudModelStreamError
 }
 
 func (s *cloudModelStream) String() string   { return "cloudModelStream(redacted)" }
@@ -69,7 +74,7 @@ func newCloudModelStream(secrets []string) *cloudModelStream {
 			}
 		}
 	}
-	return &cloudModelStream{filter: newCloudSecretFilter(private...), secrets: private, calls: make(map[int]*cloudModelPendingCall), usage: make(map[string]int64)}
+	return &cloudModelStream{reasoningFilter: newCloudSecretFilter(private...), filter: newCloudSecretFilter(private...), secrets: private, calls: make(map[int]*cloudModelPendingCall), usage: make(map[string]int64)}
 }
 
 func (s *cloudModelStream) fail(code string) error {
@@ -114,15 +119,20 @@ func (s *cloudModelStream) FeedSSE(data []byte) (cloudModelStreamUpdate, error) 
 		s.done = true
 		var err error
 		update.Delta, err = s.finishText()
+		if err == nil {
+			update.ReasoningDelta, err = s.finishReasoning()
+		}
 		return update, err
 	}
 	var chunk struct {
 		Choices []struct {
 			Index *int `json:"index"`
 			Delta struct {
-				Content      *string         `json:"content"`
-				ToolCalls    json.RawMessage `json:"tool_calls"`
-				FunctionCall json.RawMessage `json:"function_call"`
+				Content          *string         `json:"content"`
+				ReasoningContent json.RawMessage `json:"reasoning_content"`
+				Reasoning        json.RawMessage `json:"reasoning"`
+				ToolCalls        json.RawMessage `json:"tool_calls"`
+				FunctionCall     json.RawMessage `json:"function_call"`
 			} `json:"delta"`
 			FinishReason *string `json:"finish_reason"`
 		} `json:"choices"`
@@ -170,7 +180,18 @@ func (s *cloudModelStream) FeedSSE(data []byte) (cloudModelStreamUpdate, error) 
 		if hasLegacy {
 			return update, s.fail("model_tool_invalid")
 		}
-		if s.finish != "" && (choice.Delta.Content != nil && *choice.Delta.Content != "" || hasTools || choice.FinishReason != nil && *choice.FinishReason != "") {
+		// Only explicit text is a public display field. Providers may also send
+		// structured reasoning metadata; ignore that without breaking content.
+		rawReasoning := choice.Delta.ReasoningContent
+		if len(rawReasoning) == 0 || string(rawReasoning) == "null" {
+			rawReasoning = choice.Delta.Reasoning
+		}
+		var reasoning *string
+		var reasoningText string
+		if len(rawReasoning) > 0 && string(rawReasoning) != "null" && json.Unmarshal(rawReasoning, &reasoningText) == nil {
+			reasoning = &reasoningText
+		}
+		if s.finish != "" && (reasoning != nil && *reasoning != "" || choice.Delta.Content != nil && *choice.Delta.Content != "" || hasTools || choice.FinishReason != nil && *choice.FinishReason != "") {
 			return update, s.fail("invalid_model_stream")
 		}
 		if choice.Delta.Content != nil {
@@ -181,6 +202,17 @@ func (s *cloudModelStream) FeedSSE(data []byte) (cloudModelStreamUpdate, error) 
 			s.rawTextBytes += len(text)
 			delta, err := s.appendSafe(s.filter.write(text))
 			update.Delta += delta
+			if err != nil {
+				return update, err
+			}
+		}
+		if reasoning != nil {
+			if !utf8.ValidString(*reasoning) || s.rawReasoningBytes+len(*reasoning) > cloudModelMaxReasoningBytes {
+				return update, s.fail("model_output_limit")
+			}
+			s.rawReasoningBytes += len(*reasoning)
+			delta, err := s.appendReasoning(s.reasoningFilter.write(*reasoning))
+			update.ReasoningDelta += delta
 			if err != nil {
 				return update, err
 			}
@@ -199,6 +231,11 @@ func (s *cloudModelStream) FeedSSE(data []byte) (cloudModelStreamUpdate, error) 
 			}
 			delta, err := s.finishText()
 			update.Delta += delta
+			if err != nil {
+				return update, err
+			}
+			reasoningDelta, err := s.finishReasoning()
+			update.ReasoningDelta += reasoningDelta
 			if err != nil {
 				return update, err
 			}
@@ -280,6 +317,9 @@ func (s *cloudModelStream) Finish() (*cloudModelRound, error) {
 		if _, err := s.finishText(); err != nil {
 			return s.safeRound(), err
 		}
+		if _, err := s.finishReasoning(); err != nil {
+			return s.safeRound(), err
+		}
 	}
 	round := s.safeRound()
 	if s.sticky != nil {
@@ -336,7 +376,7 @@ func (s *cloudModelStream) safeRound() *cloudModelRound {
 	if len(s.usage) > 0 {
 		usage, _ = json.Marshal(s.usage)
 	}
-	return &cloudModelRound{Text: s.text.String(), FinishReason: s.finish, Usage: usage}
+	return &cloudModelRound{Reasoning: s.reasoning.String(), Text: s.text.String(), FinishReason: s.finish, Usage: usage}
 }
 func cloudModelIdentifier(value string, max int, id bool) bool {
 	if value == "" || len(value) > max || !utf8.ValidString(value) {
@@ -456,4 +496,15 @@ func validCloudModelSurrogates(raw []byte) bool {
 		index += 6
 	}
 	return true
+}
+
+func (s *cloudModelStream) appendReasoning(value string) (string, error) {
+	if s.reasoning.Len()+len(value) > cloudModelMaxReasoningBytes {
+		return "", s.fail("model_output_limit")
+	}
+	s.reasoning.WriteString(value)
+	return value, nil
+}
+func (s *cloudModelStream) finishReasoning() (string, error) {
+	return s.appendReasoning(s.reasoningFilter.finish())
 }

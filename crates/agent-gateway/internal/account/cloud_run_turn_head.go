@@ -2,7 +2,6 @@ package account
 
 import (
 	"context"
-	"strings"
 	"time"
 )
 
@@ -52,6 +51,7 @@ func (s *MemoryStore) GetCloudRunForUserMessage(ctx context.Context, userID int6
 			if item.UserID == userID && item.ConversationID == conversationID && item.UserMessageID == messageID {
 				run := cloudPublicRun(item)
 				run.Output = ""
+				run.Presentation = nil
 				return run, nil
 			}
 		}
@@ -67,6 +67,6 @@ func (s *PersistentStore) GetCloudRunForUserMessage(ctx context.Context, userID 
 	if messageID, err = canonicalCloudRunID(messageID); err != nil {
 		return nil, err
 	}
-	columns := strings.Replace(cloudRunPublicColumns, "OUTPUT_COLUMN", "''", 1)
+	columns := cloudRunProjectionColumns("''")
 	return scanCloudRunView(s.db.QueryRowContext(ctx, "SELECT "+columns+` FROM zeroagent_cloud_runs r JOIN zerobox_cloud_conversations c ON c.id=r.conversation_id AND c.user_id=r.user_id WHERE r.user_id=$1 AND r.conversation_id=$2 AND r.user_message_id=$3 LIMIT 1`, userID, conversationID, messageID))
 }

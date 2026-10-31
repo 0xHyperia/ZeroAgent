@@ -70,23 +70,25 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_run_events (
   CONSTRAINT zeroagent_cloud_run_events_operation_key UNIQUE (run_id,operation_id)
 );
 ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS model_parameters JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS public_research JSONB NOT NULL DEFAULT 'null'::jsonb;` + cloudRunAdmissionSchema
+ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS public_research JSONB NOT NULL DEFAULT 'null'::jsonb;
+ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS presentation JSONB NULL;
+ALTER TABLE zerobox_cloud_messages ADD COLUMN IF NOT EXISTS presentation JSONB NULL;` + cloudRunAdmissionSchema + CloudPendingQueueSchema + CloudConversationManagementSchema + CloudPrivateDraftSchema
 
 const cloudRunColumns = `r.id::text,r.conversation_id::text,r.user_id,r.session_ref,r.client_request_id,
 r.request_hash,r.model,r.reasoning_effort,r.provider_key_id,r.model_parameters,r.public_research,r.request_content,r.user_message_id::text,
 r.assistant_message_id::text,r.state,r.output,r.usage,r.error_code,r.lease_owner,r.attempt,r.lease_until,
-r.last_seq,r.created_at,r.updated_at`
+r.last_seq,r.created_at,r.updated_at,r.presentation`
 
 type cloudRunScanner interface{ Scan(...any) error }
 
 func scanCloudRun(row cloudRunScanner) (*CloudRun, error) {
 	var run CloudRun
 	var lease sql.NullTime
-	var content, usage, parameters, publicResearch []byte
+	var content, usage, parameters, publicResearch, presentation []byte
 	err := row.Scan(&run.ID, &run.ConversationID, &run.UserID, &run.SessionRef, &run.ClientRequestID,
 		&run.RequestHash, &run.Model, &run.ReasoningEffort, &run.ProviderKeyID, &parameters, &publicResearch, &content, &run.UserMessageID,
 		&run.AssistantMessageID, &run.State, &run.Output, &usage, &run.ErrorCode, &run.LeaseOwner, &run.Attempt, &lease,
-		&run.LastSeq, &run.CreatedAt, &run.UpdatedAt)
+		&run.LastSeq, &run.CreatedAt, &run.UpdatedAt, &presentation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -108,6 +110,7 @@ func scanCloudRun(row cloudRunScanner) (*CloudRun, error) {
 	if lease.Valid {
 		run.LeaseUntil = lease.Time
 	}
+	run.Presentation = append(json.RawMessage(nil), presentation...)
 	run.RequestContent = append(json.RawMessage(nil), content...)
 	run.Usage = append(json.RawMessage(nil), usage...)
 	return &run, nil
@@ -166,13 +169,16 @@ WHERE r.id=$1 AND r.user_id=$2 AND c.user_id=$2 FOR UPDATE OF c`, id, userID).Sc
 
 func persistCloudRun(ctx context.Context, tx *sql.Tx, run *CloudRun) error {
 	_, err := tx.ExecContext(ctx, `UPDATE zeroagent_cloud_runs SET state=$3,output=$4,usage=$5,error_code=$6,
-lease_owner=$7,attempt=$8,lease_until=$9,last_seq=$10,updated_at=$11 WHERE id=$1 AND user_id=$2`,
+lease_owner=$7,attempt=$8,lease_until=$9,last_seq=$10,updated_at=$11,presentation=$12 WHERE id=$1 AND user_id=$2`,
 		run.ID, run.UserID, run.State, run.Output, cloudRunNullableJSON(run.Usage), run.ErrorCode, run.LeaseOwner,
-		run.Attempt, cloudRunNullableTime(run.LeaseUntil), run.LastSeq, run.UpdatedAt)
+		run.Attempt, cloudRunNullableTime(run.LeaseUntil), run.LastSeq, run.UpdatedAt, cloudRunNullableJSON(run.Presentation))
 	return err
 }
 
 func appendCloudRunDBEvent(ctx context.Context, tx *sql.Tx, run *CloudRun, kind string, payload json.RawMessage, operationID, operationHash string, now time.Time) error {
+	if kind == "run."+run.State {
+		payload = cloudPresentationTerminalPayload(run, payload, now)
+	}
 	run.LastSeq++
 	run.UpdatedAt = now
 	var operation any
@@ -189,14 +195,18 @@ func appendCloudRunDBEvent(ctx context.Context, tx *sql.Tx, run *CloudRun, kind 
 }
 
 func finishCloudRunDB(ctx context.Context, tx *sql.Tx, run *CloudRun, now time.Time) error {
-	if run.Output != "" {
+	if err := reconcileCloudToolsTx(ctx, tx, run, now); err != nil {
+		return err
+	}
+	finishCloudPresentation(run, now)
+	if run.Output != "" || cloudPresentationHasContent(run.Presentation) {
 		messageAt, err := nextCloudMessageTimeTx(ctx, tx, run.UserID, run.ConversationID, now)
 		if err != nil {
 			return err
 		}
 		content, _ := json.Marshal(run.Output)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages (id,conversation_id,user_id,role,content,usage,created_at)
-VALUES ($1,$2,$3,'assistant',$4,$5,$6)`, run.AssistantMessageID, run.ConversationID, run.UserID, content, cloudRunNullableJSON(run.Usage), messageAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages (id,conversation_id,user_id,role,content,usage,created_at,presentation)
+VALUES ($1,$2,$3,'assistant',$4,$5,$6,$7)`, run.AssistantMessageID, run.ConversationID, run.UserID, content, cloudRunNullableJSON(run.Usage), messageAt, cloudRunNullableJSON(run.Presentation)); err != nil {
 			return err
 		}
 		now = messageAt
@@ -274,6 +284,9 @@ WHERE r.user_id=$1 AND r.client_request_id=$2`, run.UserID, run.ClientRequestID)
 		return nil, false, err
 	}
 	run.CreatedAt, run.UpdatedAt = now, now
+	if err = consumeCloudPendingTx(ctx, tx, run); err != nil {
+		return nil, false, err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_runs
 (id,conversation_id,user_id,session_ref,client_request_id,request_hash,model,reasoning_effort,provider_key_id,model_parameters,public_research,
 request_content,user_message_id,assistant_message_id,state,created_at,updated_at)
@@ -501,6 +514,9 @@ func (s *PersistentStore) CommitCloudRun(ctx context.Context, userID int64, id, 
 		run.State = commit.State
 	}
 	run.ErrorCode = commit.ErrorCode
+	if err = applyCloudPresentation(run, &commit, now); err != nil {
+		return nil, err
+	}
 	if run.Terminal() {
 		if err = finishCloudRunDB(ctx, tx, run, now); err != nil {
 			return nil, err

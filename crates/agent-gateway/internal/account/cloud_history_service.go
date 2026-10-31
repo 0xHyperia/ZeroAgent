@@ -55,7 +55,7 @@ func (s *Service) CloudHistoryMessage(ctx context.Context, uid int64, conversati
 	if len(items) != 1 {
 		return nil, ErrNotFound
 	}
-	if items[0].ContentOmitted {
+	if items[0].ContentOmitted || items[0].PresentationOmitted {
 		return nil, ErrCloudRunLimit
 	}
 	return &items[0], nil
@@ -73,7 +73,7 @@ func boundedLegacyCloudMessages(ctx context.Context, store CloudHistoryStore, ui
 			return nil, err
 		}
 		for _, head := range page.Items {
-			total += head.ContentBytes + head.UsageBytes
+			total += head.ContentBytes + head.UsageBytes + head.PresentationBytes
 			if total > CloudRunMaxInputBytes || head.UsageBytes > CloudHistoryMaxUsageBytes || len(heads) >= 10000 {
 				return nil, ErrCloudRunLimit
 			}
@@ -100,10 +100,10 @@ func boundedLegacyCloudMessages(ctx context.Context, store CloudHistoryStore, ui
 			return nil, err
 		}
 		for _, item := range items {
-			if item.ContentOmitted || item.UsageOmitted {
+			if item.ContentOmitted || item.UsageOmitted || item.PresentationOmitted {
 				return nil, ErrCloudRunLimit
 			}
-			remaining -= int64(len(item.Content) + len(item.Usage))
+			remaining -= int64(len(item.Content) + len(item.Usage) + len(item.Presentation))
 			result = append(result, item.CloudMessage)
 		}
 	}

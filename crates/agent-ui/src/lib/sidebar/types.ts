@@ -12,6 +12,7 @@ export type SidebarConversation = {
   createdAt: number;
   updatedAt: number;
   isPinned?: boolean;
+  isArchived?: boolean;
   pinnedAt?: number | null;
   isShared?: boolean;
   selectedModelJson?: string;

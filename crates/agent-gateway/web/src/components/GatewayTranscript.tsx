@@ -2,6 +2,7 @@ import {
   AssistantBubble,
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
+import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
@@ -465,7 +466,18 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
     () =>
       showUsage
         ? row.rounds.flatMap((round) =>
-            round.meta?.usage ? [{ key: `round-${round.round}`, usage: round.meta.usage }] : [],
+            round.meta?.usage || round.meta?.tokenUsage || round.meta?.model
+              ? [
+                  {
+                    key: `round-${round.round}`,
+                    usage: round.meta.tokenUsage ?? round.meta.usage,
+                    model: round.meta.model,
+                    reasoningEffort: round.meta.reasoningEffort,
+                    outcome: round.meta.outcome,
+                    durationMs: round.meta.durationMs,
+                  },
+                ]
+              : [],
           )
         : undefined,
     [row.rounds, showUsage],
@@ -605,13 +617,15 @@ function estimateRowHeight(row: TranscriptRow): number {
         }
       }
     }
-    estimate = estimateAssistantRowHeight({
-      proseChars,
-      codeLines,
-      codeFences,
-      toolCount,
-      thinkingCount,
-    });
+    estimate =
+      estimateAssistantRowHeight({
+        proseChars,
+        codeLines,
+        codeFences,
+        toolCount,
+        thinkingCount,
+      }) +
+      Math.min(row.deliverables?.length ?? 0, 4) * 88;
   } else if (row.kind === "checkpoint") {
     estimate = CHECKPOINT_ROW_ESTIMATE_PX;
   } else {
@@ -1150,6 +1164,9 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                   workdir={workspaceRoot}
                   onOpenFileLink={onOpenFileLink}
                 />
+                {row.deliverables?.length ? (
+                  <AssistantDeliverables items={row.deliverables} onOpenFileLink={onOpenFileLink} />
+                ) : null}
                 {isLatestLiveStreaming &&
                 !shouldShowPendingLiveBubble &&
                 retryAttempts &&

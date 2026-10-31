@@ -198,6 +198,7 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			if contextCode != "" {
 				return CloudRunFailed, contextCode
 			}
+			execution.rememberHistoryResources(provenance.historyResources)
 			if notice := cloudHistorySelectionNotice(historySelection); notice != "" {
 				upstreamMessages = append([]map[string]any{{"role": "system", "content": notice}}, upstreamMessages...)
 			}
@@ -260,6 +261,9 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 		}
 		if _, err = execution.authorize(ctx); err != nil {
 			return CloudRunInterrupted, "authorization_unavailable"
+		}
+		if _, err = r.store.CommitCloudRun(ctx, run.UserID, run.ID, owner, run.Attempt, CloudRunCommit{OperationID: fmt.Sprintf("model:%d:started", round), EventType: "model.started", Payload: cloudJSON(map[string]any{"round": round})}); err != nil {
+			return CloudRunInterrupted, "output_persistence_failed"
 		}
 		upstream, err := r.service.usa.StreamChatCompletion(roundCtx, apiKey, cloudJSON(payload))
 		if err != nil {
@@ -421,19 +425,26 @@ func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, 
 	go readCloudStream(readCtx, upstream.Body, frames)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var pendingReasoning, emittedReasoning strings.Builder
 	var pending strings.Builder
 	var emitted strings.Builder
 	var latestUsage json.RawMessage
 	usageDirty := false
 	first := true
 	started := false
-	appendDelta := func(delta string) {
+	var flush func() error
+	appendDelta := func(delta string) error {
 		if delta == "" {
-			return
+			return nil
 		}
 		if !publishOutput {
 			emitted.WriteString(delta)
-			return
+			return nil
+		}
+		if pendingReasoning.Len() > 0 {
+			if err := flush(); err != nil {
+				return err
+			}
 		}
 		if !started {
 			if *hasOutput {
@@ -444,13 +455,37 @@ func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, 
 		pending.WriteString(delta)
 		emitted.WriteString(delta)
 		*hasOutput = true
+		return nil
 	}
-	flush := func() error {
+	appendReasoning := func(delta string) error {
+		if delta == "" {
+			return nil
+		}
+		if publishOutput && pending.Len() > 0 {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		emittedReasoning.WriteString(delta)
+		if publishOutput {
+			pendingReasoning.WriteString(delta)
+		}
+		return nil
+	}
+	flush = func() error {
+		if pendingReasoning.Len() > 0 {
+			_, err := r.store.CommitCloudRun(ctx, run.UserID, run.ID, owner, run.Attempt, CloudRunCommit{OperationID: uuid.NewString(), EventType: "reasoning.delta", Payload: cloudJSON(map[string]any{"delta": pendingReasoning.String(), "round": round})})
+			if err != nil {
+				return err
+			}
+			pendingReasoning.Reset()
+			first = false
+		}
 		if pending.Len() == 0 && !usageDirty {
 			return nil
 		}
 		delta := pending.String()
-		eventType, payload := "message.delta", cloudJSON(map[string]any{"delta": delta})
+		eventType, payload := "message.delta", cloudJSON(map[string]any{"delta": delta, "round": round})
 		if !publishOutput {
 			eventType, payload = "usage.updated", cloudJSON(map[string]any{"phase": "public_research"})
 		}
@@ -465,8 +500,15 @@ func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, 
 	finish := func(streamErr error) (*cloudModelRound, error) {
 		result, decodeErr := decoder.Finish()
 		if result != nil {
+			if strings.HasPrefix(result.Reasoning, emittedReasoning.String()) {
+				if err := appendReasoning(result.Reasoning[emittedReasoning.Len():]); err != nil {
+					return result, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
+				}
+			}
 			if strings.HasPrefix(result.Text, emitted.String()) {
-				appendDelta(result.Text[emitted.Len():])
+				if err := appendDelta(result.Text[emitted.Len():]); err != nil {
+					return result, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
+				}
 			}
 			if string(latestUsage) != string(result.Usage) {
 				usageDirty = true
@@ -474,6 +516,9 @@ func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, 
 			latestUsage = result.Usage
 		}
 		if err := flush(); err != nil {
+			return result, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
+		}
+		if _, err := r.store.CommitCloudRun(ctx, run.UserID, run.ID, owner, run.Attempt, CloudRunCommit{OperationID: fmt.Sprintf("model:%d:completed", round), EventType: "model.completed", Payload: cloudJSON(map[string]any{"round": round, "usage": latestUsage})}); err != nil {
 			return result, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
 		}
 		if streamErr != nil {
@@ -500,12 +545,17 @@ func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, 
 				return finish(frame.err)
 			}
 			update, err := decoder.FeedSSE([]byte(frame.data))
-			appendDelta(update.Delta)
+			if appendErr := appendReasoning(update.ReasoningDelta); appendErr != nil {
+				return nil, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
+			}
+			if appendErr := appendDelta(update.Delta); appendErr != nil {
+				return nil, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
+			}
 			if len(update.Usage) > 0 {
 				latestUsage = update.Usage
 				usageDirty = true
 			}
-			if first || pending.Len() >= 4096 {
+			if first || pending.Len()+pendingReasoning.Len() >= 4096 {
 				if flushErr := flush(); flushErr != nil {
 					return nil, &cloudToolRunError{code: "output_persistence_failed", unknown: true}
 				}

@@ -10,6 +10,7 @@ import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
 import type { WorkspaceHistoryState } from "../../lib/sidebar/store";
 import type { SidebarConversation } from "../../lib/sidebar/types";
 import type { WorkspaceProjectGroup } from "../../lib/workspaceProjectTypes";
+import type { ConversationSearchAdapter } from "./ConversationSearchDialog";
 
 export type ChatHistorySidebarListStatus = "initial" | "loading" | "syncing" | "ready";
 
@@ -51,6 +52,8 @@ export type ChatHistorySidebarProps = {
   totalItems: number;
   hasMore: boolean;
   isLoadingMore: boolean;
+  /** Cloud lists append near the scroll boundary; native hosts keep manual loading by default. */
+  loadMoreMode?: "manual" | "scroll";
   // Only the current recent-conversation list read state drives the count Tag.
   errorMessage: string | null;
   // Mutation/project-operation failures have a separate surface so they are
@@ -67,6 +70,7 @@ export type ChatHistorySidebarProps = {
   fontScale?: number;
   /** Incremented by the desktop host when its configured search shortcut fires. */
   conversationSearchRequestKey?: number;
+  conversationSearchAdapter?: ConversationSearchAdapter;
   activeView?: ApplicationViewId;
   showProjects?: boolean;
   workspaceSectionLabel?: string;
@@ -136,6 +140,7 @@ export type ChatHistorySidebarProps = {
   onCommitRename: () => void;
   onCancelRename: () => void;
   onSetPinned: (id: string, isPinned: boolean) => void;
+  onSetArchived?: (id: string, archived: boolean) => void;
   onMoveToWorkspace: (id: string, cwd: string) => void;
   onMoveConversationsToWorkspace: (
     ids: readonly string[],

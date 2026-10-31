@@ -434,6 +434,8 @@ func safeCode(code string) string {
 	switch code {
 	case "operation_result_retired", "operation_not_terminal":
 		return code
+	case "sandbox_connection_unavailable":
+		return code
 	case "archive_destination_exists", "archive_atomic_publish_unavailable", "archive_cleanup_unknown", "archive_invalid", "archive_failed", "archive_timeout":
 		return code
 	case "invalid_transfer", "invalid_digest", "invalid_offset", "template_stdin_unsupported", "transfer_conflict", "transfer_capacity", "transfer_not_found", "transfer_finalized", "transfer_expired", "transfer_out_of_order", "transfer_incomplete", "digest_mismatch", "file_changed", "source_changed", "source_limit", "unsupported_format", "xml_limit", "zip_entries_limit", "unsafe_archive", "zip_expansion_limit", "unsafe_relationship", "encrypted_pdf", "page_limit", "pdf_stream_limit", "paragraph_limit", "cell_limit", "sheet_limit", "invalid_workbook", "invalid_cell", "invalid_shared_string", "invalid_presentation", "parse_timeout", "parser_dependency_missing", "parse_failed":

@@ -41,6 +41,20 @@ func validateManagedDesktop(cfg *config.Config) error {
 	return nil
 }
 
+func cloudFileParserEnabled(getenv func(string) string) (bool, error) {
+	const name = "ZEROAGENT_CLOUD_FILE_PARSER_ENABLED"
+	value := strings.TrimSpace(getenv(name))
+	if value == "" {
+		return true, nil
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		// Configuration values may contain accidentally pasted credentials.
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return enabled, nil
+}
+
 func main() {
 	observability.SetupLogging()
 	cfg := config.Load()
@@ -91,6 +105,10 @@ func main() {
 		if err := accountService.SetCloudRuntimeConfig(runtimeConfig); err != nil {
 			fatal("cloud runtime configuration failed", "err", err)
 		}
+		fileParserEnabled, parserConfigErr := cloudFileParserEnabled(os.Getenv)
+		if parserConfigErr != nil {
+			fatal("invalid cloud file parser configuration", "err", parserConfigErr)
+		}
 		objectConfig, configErr := objectstore.ConfigFromEnv(os.Getenv)
 		if configErr != nil {
 			fatal("invalid cloud object storage configuration", "err", configErr)
@@ -138,10 +156,14 @@ func main() {
 			if err := accountService.SetCloudExecutor(executor); err != nil {
 				fatal("cloud executor service startup failed", "err", err)
 			}
-			if err := accountService.StartCloudFileParser(runContext); err != nil {
-				fatal("cloud file parser startup failed", "err", err)
+			if fileParserEnabled {
+				if err := accountService.StartCloudFileParser(runContext); err != nil {
+					fatal("cloud file parser startup failed", "err", err)
+				}
+				defer accountService.CloseCloudFileParser()
+			} else {
+				slog.Info("background cloud file parser disabled")
 			}
-			defer accountService.CloseCloudFileParser()
 			previousCheck := readinessCheck
 			readinessCheck = func(ctx context.Context) error {
 				if previousCheck != nil {

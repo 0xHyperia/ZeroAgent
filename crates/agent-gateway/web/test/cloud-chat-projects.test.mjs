@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWebModuleLoader } from "../../test/helpers/load-web-module.mjs";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
@@ -64,7 +65,8 @@ async function click(env, text) { await env.act(async () => button(text).click()
 async function text(env, label, value) { const element = document.querySelector(`[aria-label="${label}"]`); assert.ok(element, label); const setter = Object.getOwnPropertyDescriptor(element.constructor.prototype, "value").set; await env.act(async () => { setter.call(element, value); element.dispatchEvent(new window.Event("input", { bubbles: true })); element.dispatchEvent(new window.Event("change", { bubbles: true })); }); return element; }
 async function submit(env, element) { await env.act(async () => element.closest("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }))); }
 async function mountPanel(t, name, props, { strict = false } = {}) {
-  const env = await createWebDomTestEnv();
+  const icons = new Proxy({}, { get: () => () => null });
+  const env = await createWebDomTestEnv({mocks:{"@liveagent/ui/components/IconSet":icons,[fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons}});
   const component = env.loadModule(`src/components/cloudchat/${name}.tsx`)[name];
   const root = env.createRoot(document.body.appendChild(document.createElement("div")));
   t.after(async () => { await env.act(async () => root.unmount()); env.cleanup(); });
@@ -100,44 +102,46 @@ test("unknown memory creation retains draft and disables blind resubmission unti
   await click(env, "刷新列表"); assert.equal(button("保存记忆").disabled, false); assert.equal(draft.value, "explicit new memory");
 });
 
-test("Project DOM associates current conversation and adds owned file refs with CAS", async (t) => {
-  let current = project(); let association = binding(); let refs = [file()]; const mutations = [];
-  const client = { listProjects: async () => page([current]), getProject: async () => current, getAssociation: async () => association, listConversations: async () => page(association.project_id ? [association] : []), listFiles: async () => page(refs), setAssociation: async (conversation, project, version) => { mutations.push({ conversation, project, version }); association = { ...association, project_id: project, version: version + 1 }; return association; }, setFile: async (previous, id, attached) => { mutations.push({ id, attached, version: previous.version }); current = { ...previous, version: previous.version + 1 }; refs = attached ? [...refs, file(id)] : refs.filter((item) => item.id !== id); return current; } };
-  const filesClient = { list: async () => ({ files: [file(), file(secondFileId)], nextCursor: "" }) };
-  const env = await mountPanel(t, "CloudChatProjectsPanel", { client, filesClient, conversationId, captureGuard: () => () => {} });
-  await text(env, "选择项目", projectId);
-  assert.equal(document.querySelector('[aria-label="项目指令"]').value, "project instructions");
-  await click(env, "归入此项目"); assert.deepEqual(mutations[0], { conversation: conversationId, project: projectId, version: 0 });
-  await text(env, "选择项目资料", secondFileId); await click(env, "关联资料"); assert.deepEqual(mutations[1], { id: secondFileId, attached: true, version: 1 });
-  assert.match(document.body.textContent, /5.txt/);
+
+const settingsProps = extra => ({projectId, filesClient:{list:async()=>({files:[file(),file(secondFileId)],nextCursor:""})},captureGuard:()=>()=>{},onClose(){},onSelect(){},onCreate(){},onChanged(){},onPreviewFile(){},...extra});
+
+test("project settings keep unsaved fields, use canonical CAS and save the selected appearance",async t=>{
+ let current=project(),saved,closed=0;let conflict=true;
+ const client={getProject:async()=>current,updateProject:async(previous,draft)=>{saved={previous,draft};if(conflict){conflict=false;current={...current,version:2};throw Error("已在其他页面修改，请重新读取");}return{...current,...draft,version:3};}};
+ const env=await mountPanel(t,"CloudProjectSettingsDialog",settingsProps({client,onClose:()=>closed++}),{strict:true});
+ assert.ok(document.querySelector('[role="dialog"]'));assert.equal(document.querySelector('[aria-label="选择项目"]'),null);
+ const editor=await text(env,"项目指令","简洁回复");await submit(env,editor);assert.equal(editor.value,"简洁回复");assert.equal(closed,0);
+ await env.act(async()=>document.querySelector('[aria-label="重新读取项目"]').click());assert.equal(editor.value,"简洁回复");
+ await submit(env,editor);assert.equal(saved.previous.version,2);assert.equal(saved.draft.instructions,"简洁回复");assert.equal(saved.draft.icon,"folder");assert.equal(closed,1);
 });
 
-test("retired account downloads never create a browser download", async (t) => {
-  let epoch = 0; let finish; const pending = new Promise((resolve) => { finish = resolve; });
-  const client = { listProjects: async () => page([project()]), getProject: async () => project(), listConversations: async () => page([]), listFiles: async () => page([file()]) };
-  const filesClient = { list: async () => ({ files: [], nextCursor: "" }), download: () => pending };
-  const captureGuard = () => { const start = epoch; return () => { if (start !== epoch) throw new Error("Account changed"); }; };
-  const env = await mountPanel(t, "CloudChatProjectsPanel", { client, filesClient, captureGuard });
-  let downloads = 0; const anchorPrototype = window.HTMLAnchorElement.prototype; const original = anchorPrototype.click; anchorPrototype.click = () => { downloads++; }; t.after(() => { anchorPrototype.click = original; });
-  await text(env, "选择项目", projectId); await click(env, "下载原件"); epoch++;
-  await env.act(async () => { finish({ blob: new Blob(["old"]), guard: () => { if (epoch) throw new Error("Account changed"); } }); await pending; });
-  assert.equal(downloads, 0);
+test("project settings close requires an explicit discard and deletion keeps a separate confirmation",async t=>{
+ let closed=0,deleted=0;const client={getProject:async()=>project(),removeProject:async()=>deleted++};
+ const env=await mountPanel(t,"CloudProjectSettingsDialog",settingsProps({client,onClose:()=>closed++}));
+ await text(env,"项目名称","新名称");await click(env,"关闭");assert.equal(closed,0);assert.match(document.querySelector('[role="alertdialog"]').textContent,/未保存/);
+ await click(env,"继续编辑");await click(env,"删除项目");assert.equal(deleted,0);await click(env,"取消");assert.equal(deleted,0);
+ await click(env,"关闭");await click(env,"放弃修改并关闭");assert.equal(closed,1);
 });
 
-test("Project DOM opens the current conversation's project even outside the first page without overriding New", async (t) => {
-  const current = project();
-  const client = {
-    listProjects: async () => page([]),
-    getProject: async (id) => { assert.equal(id, projectId); return current; },
-    getAssociation: async () => ({ ...binding(), project_id: projectId, version: 1 }),
-    listConversations: async () => page([]),
-    listFiles: async () => page([]),
-  };
-  const env = await mountPanel(t, "CloudChatProjectsPanel", { client, conversationId, captureGuard: () => () => {} }, { strict: true });
-  assert.equal(document.querySelector('[aria-label="选择项目"]').value, projectId);
-  assert.equal(document.querySelector('[aria-label="项目指令"]').value, current.instructions);
-  assert.match(document.body.textContent, /当前会话已归入此项目/);
-  await text(env, "选择项目", "");
-  assert.equal(document.querySelector('[aria-label="选择项目"]').value, "");
-  assert.equal(document.querySelector('[aria-label="项目名称"]').value, "");
+test("project files are associated with their CAS, previewed through the shared reader and never removed as originals",async t=>{
+ let current=project(),refs=[file()],preview,removed=0;
+ const client={getProject:async()=>current,listFiles:async()=>page(refs),setFile:async(previous,id,attached)=>{assert.equal(previous.version,current.version);refs=attached?[...refs,file(id)]:refs.filter(item=>item.id!==id);current={...current,version:current.version+1};return current;}};
+ const env=await mountPanel(t,"CloudProjectSettingsDialog",settingsProps({client,onPreviewFile:id=>preview=id}));
+ await click(env,"项目资料");await click(env,file().name);assert.equal(preview,fileId);
+ await click(env,"添加资料");await click(env,file(secondFileId).name);assert.equal(current.version,2);assert.equal(refs.length,2);
+ await env.act(async()=>document.querySelector('[aria-label="解除关联：4.txt"]').click());assert.equal(refs.length,1);assert.equal(removed,0);
+});
+
+test("late project settings cannot display another account's instructions",async t=>{
+ let finish,retired=false;const client={getProject:()=>new Promise(resolve=>finish=resolve)};
+ const env=await mountPanel(t,"CloudProjectSettingsDialog",settingsProps({client,captureGuard:()=>()=>{if(retired)throw Error("retired");}}));
+ retired=true;await env.act(async()=>finish({...project(),instructions:"PRIVATE_ACCOUNT_A"}));assert.doesNotMatch(document.body.textContent,/PRIVATE_ACCOUNT_A/);
+});
+
+test("mobile Back closes a clean settings overlay but confirms unsaved edits",async t=>{
+ let closed=0;const client={getProject:async()=>project()};const env=await mountPanel(t,"CloudProjectSettingsDialog",settingsProps({client,onClose:()=>closed++}));
+ await text(env,"项目指令","新的项目要求");
+ const back=new Event('zeroagent:mobile-back',{cancelable:true});await env.act(async()=>window.dispatchEvent(back));
+ assert.equal(back.defaultPrevented,true);assert.equal(closed,0);assert.match(document.querySelector('[role="alertdialog"]').textContent,/未保存/);
+ await click(env,"继续编辑");assert.equal(document.querySelector('[aria-label="项目指令"]').value,"新的项目要求");
 });

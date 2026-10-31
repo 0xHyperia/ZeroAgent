@@ -79,6 +79,7 @@ func prepareCloudRun(input *CloudRun, now time.Time) (*CloudRun, error) {
 	}
 	run.State, run.Output, run.ErrorCode, run.LeaseOwner = CloudRunQueued, "", "", ""
 	run.Usage, run.Attempt, run.LastSeq, run.LeaseUntil = nil, 0, 0, time.Time{}
+	run.Presentation = nil
 	run.CreatedAt, run.UpdatedAt = now.UTC(), now.UTC()
 	return &run, nil
 }
@@ -98,6 +99,7 @@ func cloneCloudRun(run CloudRun) CloudRun {
 		run.PublicResearch = &copy
 	}
 	run.RequestContent = append(json.RawMessage(nil), run.RequestContent...)
+	run.Presentation = append(json.RawMessage(nil), run.Presentation...)
 	run.Usage = append(json.RawMessage(nil), run.Usage...)
 	return run
 }

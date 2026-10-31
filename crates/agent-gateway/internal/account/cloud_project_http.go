@@ -102,7 +102,14 @@ func (h *HTTPHandler) createCloudProject(w http.ResponseWriter, r *http.Request,
 		writeError(w, err)
 		return
 	}
-	project, err := store.CreateCloudProject(r.Context(), &CloudProject{UserID: session.UserID, Name: input.Name, Description: input.Description, Instructions: input.Instructions})
+	project := &CloudProject{UserID: session.UserID, Name: input.Name, Description: input.Description, Instructions: input.Instructions}
+	if input.Icon != nil {
+		project.Icon = *input.Icon
+	}
+	if input.Color != nil {
+		project.Color = *input.Color
+	}
+	project, err = store.CreateCloudProject(r.Context(), project)
 	if err != nil {
 		writeError(w, cloudProjectAPIError(err))
 		return
@@ -150,10 +157,12 @@ func (h *HTTPHandler) updateCloudProject(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var input struct {
-		ExpectedVersion int64  `json:"expected_version"`
-		Name            string `json:"name"`
-		Description     string `json:"description"`
-		Instructions    string `json:"instructions"`
+		ExpectedVersion int64   `json:"expected_version"`
+		Name            string  `json:"name"`
+		Description     string  `json:"description"`
+		Instructions    string  `json:"instructions"`
+		Icon            *string `json:"icon,omitempty"`
+		Color           *string `json:"color,omitempty"`
 	}
 	if !decodeCloudProjectRequest(w, r, &input) {
 		return
@@ -163,7 +172,7 @@ func (h *HTTPHandler) updateCloudProject(w http.ResponseWriter, r *http.Request,
 		writeError(w, err)
 		return
 	}
-	project, err := store.UpdateCloudProject(r.Context(), session.UserID, r.PathValue("id"), input.ExpectedVersion, CloudProjectUpdate{input.Name, input.Description, input.Instructions})
+	project, err := store.UpdateCloudProject(r.Context(), session.UserID, r.PathValue("id"), input.ExpectedVersion, CloudProjectUpdate{Name: input.Name, Description: input.Description, Instructions: input.Instructions, Icon: input.Icon, Color: input.Color})
 	if err != nil {
 		writeError(w, cloudProjectAPIError(err))
 		return

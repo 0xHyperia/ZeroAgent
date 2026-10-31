@@ -2,6 +2,7 @@ package cloudbackup
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"reflect"
 	"strings"
@@ -52,6 +53,7 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 		owner                                       int64
 		userTime, runTime                           time.Time
 		existingAssistant                           bool
+		presentationOnly                            bool
 	}
 	future := now.Add(24 * time.Hour)
 	seeds := []seeded{
@@ -62,6 +64,7 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 		{run: uuid.NewString(), conversation: conversations[1], owner: 9, state: "running", output: "other owner partial", userTime: future.Add(24 * time.Hour), runTime: now},
 		{run: uuid.NewString(), conversation: conversations[2], owner: 7, state: "running", output: "ordinary clock partial", userTime: now.Add(-time.Hour), runTime: now},
 		{run: uuid.NewString(), conversation: conversations[2], owner: 7, state: "completed", output: "terminal must not be republished", userTime: now.Add(-time.Hour + time.Microsecond), runTime: now},
+		{run: uuid.NewString(), conversation: conversations[2], owner: 7, state: "running", presentationOnly: true, userTime: now.Add(-time.Hour + 2*time.Microsecond), runTime: now},
 	}
 	for index := range seeds {
 		s := &seeds[index]
@@ -78,15 +81,27 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		if s.presentationOnly {
+			completed := now.Add(-time.Minute)
+			projection := account.CloudPresentation{Version: 1, State: "running", StartedAt: now.Add(-2 * time.Minute), Blocks: []account.CloudPresentationBlock{
+				{ID: "reasoning:0", Type: "reasoning", Text: "公开思考片段", StartedAt: now.Add(-2 * time.Minute), CompletedAt: &completed},
+				{ID: "tool:done", Type: "tool", Name: "read_file", State: "succeeded", Status: "已完成", StartedAt: now.Add(-time.Minute), CompletedAt: &completed},
+				{ID: "tool:pending", Type: "tool", Name: "execute_command", State: "executing", StartedAt: now.Add(-time.Minute)},
+			}, Rounds: []account.CloudPresentationRound{{Round: 0, Model: "fixture", StartedAt: now.Add(-2 * time.Minute)}}}
+			raw, _ := json.Marshal(projection)
+			if _, err = db.ExecContext(ctx, `UPDATE zeroagent_cloud_runs SET presentation=$2 WHERE id=$1`, s.run, raw); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	type message struct {
-		Conversation, Role, Content, Usage string
-		Owner                              int64
-		Time                               time.Time
+		Conversation, Role, Content, Usage, Presentation string
+		Owner                                            int64
+		Time                                             time.Time
 	}
 	readMessages := func() map[string]message {
 		t.Helper()
-		rows, queryErr := db.QueryContext(ctx, `SELECT id::text,conversation_id::text,user_id,role,content::text,COALESCE(usage::text,'null'),created_at FROM zerobox_cloud_messages`)
+		rows, queryErr := db.QueryContext(ctx, `SELECT id::text,conversation_id::text,user_id,role,content::text,COALESCE(usage::text,'null'),created_at,COALESCE(presentation::text,'null') FROM zerobox_cloud_messages`)
 		if queryErr != nil {
 			t.Fatal(queryErr)
 		}
@@ -95,7 +110,7 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 		for rows.Next() {
 			var id string
 			var value message
-			if scanErr := rows.Scan(&id, &value.Conversation, &value.Owner, &value.Role, &value.Content, &value.Usage, &value.Time); scanErr != nil {
+			if scanErr := rows.Scan(&id, &value.Conversation, &value.Owner, &value.Role, &value.Content, &value.Usage, &value.Time, &value.Presentation); scanErr != nil {
 				t.Fatal(scanErr)
 			}
 			messages[id] = value
@@ -128,11 +143,11 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 			t.Fatalf("canonical history changed: %s", id)
 		}
 	}
-	if len(after) != len(before)+4 {
-		t.Fatal("recovery did not append exactly the four missing partial messages")
+	if len(after) != len(before)+5 {
+		t.Fatal("recovery did not append exactly the five missing public partial messages")
 	}
 	for _, s := range seeds {
-		if s.output == "" || s.state == "completed" {
+		if (s.output == "" && !s.presentationOnly) || s.state == "completed" {
 			if _, exists := after[s.assistant]; exists {
 				t.Fatal("empty or terminal output was republished")
 			}
@@ -146,6 +161,13 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 			t.Fatal("recovered partial lost content/usage or sorted before its user message")
 		}
 	}
+	var projection account.CloudPresentation
+	if json.Unmarshal([]byte(after[seeds[7].assistant].Presentation), &projection) != nil || projection.State != "interrupted" || projection.CompletedAt == nil || len(projection.Blocks) != 3 || len(projection.Rounds) != 1 {
+		t.Fatal("restored public projection missing from canonical history")
+	}
+	if projection.Blocks[0].Text != "公开思考片段" || !projection.Blocks[0].CompletedAt.Equal(now.Add(-time.Minute)) || projection.Blocks[1].State != "succeeded" || projection.Blocks[2].State != "unknown" || projection.Blocks[2].CompletedAt == nil || projection.Rounds[0].CompletedAt == nil {
+		t.Fatal("restore overwrote completed facts or inferred unfinished tool outcome")
+	}
 	if !after[seeds[2].assistant].Time.Equal(future.Add(time.Microsecond)) ||
 		!after[seeds[1].assistant].Time.Equal(future.Add(2*time.Microsecond)) {
 		t.Fatal("same-conversation partials did not receive distinct deterministic timestamps after latest canonical history")
@@ -157,7 +179,7 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 		t.Fatal("normal-clock recovery timestamp is outside its own recovery time")
 	}
 	var events, active int
-	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM zeroagent_cloud_run_events WHERE type='run.interrupted'`).Scan(&events); err != nil || events != 6 {
+	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM zeroagent_cloud_run_events WHERE type='run.interrupted'`).Scan(&events); err != nil || events != 7 {
 		t.Fatal("active run interruption facts were not preserved")
 	}
 	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM zeroagent_cloud_runs WHERE state IN ('queued','running','cancelling')`).Scan(&active); err != nil || active != 0 {
@@ -167,7 +189,7 @@ func TestCloudBackupRestorePartialMessagesMonotonicPostgres(t *testing.T) {
 	if !reflect.DeepEqual(readMessages(), after) {
 		t.Fatal("repeated authentication invalidation changed canonical history")
 	}
-	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM zeroagent_cloud_run_events WHERE type='run.interrupted'`).Scan(&events); err != nil || events != 6 {
+	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM zeroagent_cloud_run_events WHERE type='run.interrupted'`).Scan(&events); err != nil || events != 7 {
 		t.Fatal("repeated invalidation duplicated interruption events")
 	}
 }

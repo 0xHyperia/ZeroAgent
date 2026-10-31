@@ -126,7 +126,7 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 	clones := make([]CloudMessage, 0, cut)
 	total := len(draft)
 	for i, m := range messages[:cut] {
-		total += len(m.Content) + len(m.Usage)
+		total += len(m.Content) + len(m.Usage) + len(m.Presentation)
 		if total > CloudRunMaxInputBytes || i >= 10000 {
 			return nil, nil, ErrCloudRunLimit
 		}
@@ -142,6 +142,7 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 		m.CreatedAt = now.Truncate(time.Microsecond).Add(-time.Duration(cut-i) * time.Microsecond)
 		m.Content = append(json.RawMessage(nil), m.Content...)
 		m.Usage = append(json.RawMessage(nil), m.Usage...)
+		m.Presentation = append(json.RawMessage(nil), m.Presentation...)
 		clones = append(clones, m)
 	}
 	return &CloudBranch{Conversation: conversation, SourceConversationID: source.ID, SourceMessageID: input.MessageID, Action: input.Action, DraftContent: draft}, clones, nil

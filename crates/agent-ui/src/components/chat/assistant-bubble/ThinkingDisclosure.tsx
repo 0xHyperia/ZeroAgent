@@ -18,6 +18,7 @@ import { Brain, ChevronRight } from "../../IconSet";
  */
 export function ThinkingDisclosure(props: {
   text: string;
+  durationMs?: number;
   /** Transcript-stable identity used to time the segment across remounts. */
   trackKey: string;
   /** Whether this segment is the one currently receiving reasoning deltas. */
@@ -69,7 +70,8 @@ export function ThinkingDisclosure(props: {
     config: { reattachZonePx: 0 },
   });
 
-  const durationMs = resolveThinkingDurationMs(trackKey, active);
+  const measuredDurationMs = resolveThinkingDurationMs(trackKey, active);
+  const durationMs = props.durationMs ?? measuredDurationMs;
 
   // 流式中只把尾部窗口交给 Markdown：视口 max-h-320px 本来只看得到尾部，
   // 而全文重排是 O(累计思考长度)/帧。落定（active=false）后展开渲染全文。

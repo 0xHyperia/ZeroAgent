@@ -52,6 +52,9 @@ func (s *Service) cloudModelHistory(ctx context.Context, run *CloudRun, paramete
 			selection.Omitted = append(selection.Omitted, head)
 			continue
 		}
+		// Never feed display reasoning/tool facts to the model. prepareCloudContext
+		// separately rechecks only these selected messages' public resource IDs.
+		item.Presentation = nil
 		selected = append(selected, item.CloudMessage)
 		selection.Selected = append(selection.Selected, head)
 	}

@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_branches (
  request_hash TEXT NOT NULL, destination_conversation_id UUID NOT NULL,
  result JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  PRIMARY KEY(user_id,client_request_id)
-);`
+);
+CREATE INDEX IF NOT EXISTS zeroagent_cloud_branches_destination_idx ON zeroagent_cloud_branches(user_id,destination_conversation_id);
+CREATE INDEX IF NOT EXISTS zeroagent_cloud_branches_source_idx ON zeroagent_cloud_branches(user_id,(result->>'source_conversation_id'));
+`
 
 func (s *PersistentStore) GetCloudBranch(ctx context.Context, userID int64, requestID string) (*CloudBranch, error) {
 	var data []byte
@@ -94,7 +97,7 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 	if active {
 		return nil, false, ErrCloudRunBusy
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id::text,conversation_id::text,user_id,role,content,usage,created_at FROM zerobox_cloud_messages WHERE user_id=$1 AND conversation_id=$2 ORDER BY created_at,id LIMIT 10001`, userID, sourceID)
+	rows, err := tx.QueryContext(ctx, `SELECT id::text,conversation_id::text,user_id,role,content,usage,created_at,presentation FROM zerobox_cloud_messages WHERE user_id=$1 AND conversation_id=$2 ORDER BY created_at,id LIMIT 10001`, userID, sourceID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -102,13 +105,14 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 	total := 0
 	for rows.Next() {
 		var message CloudMessage
-		var usage []byte
-		if err = rows.Scan(&message.ID, &message.ConversationID, &message.UserID, &message.Role, &message.Content, &usage, &message.CreatedAt); err != nil {
+		var usage, presentation []byte
+		if err = rows.Scan(&message.ID, &message.ConversationID, &message.UserID, &message.Role, &message.Content, &usage, &message.CreatedAt, &presentation); err != nil {
 			rows.Close()
 			return nil, false, err
 		}
 		message.Usage = append(json.RawMessage(nil), usage...)
-		total += len(message.Content) + len(usage)
+		message.Presentation = append(json.RawMessage(nil), presentation...)
+		total += len(message.Content) + len(usage) + len(presentation)
 		if total > CloudRunMaxInputBytes || len(messages) >= 10000 {
 			rows.Close()
 			return nil, false, ErrCloudRunLimit
@@ -136,7 +140,7 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 		if len(message.Usage) > 0 {
 			usage = []byte(message.Usage)
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages(id,conversation_id,user_id,role,content,usage,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, message.ID, message.ConversationID, userID, message.Role, []byte(message.Content), usage, message.CreatedAt); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages(id,conversation_id,user_id,role,content,usage,created_at,presentation) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, message.ID, message.ConversationID, userID, message.Role, []byte(message.Content), usage, message.CreatedAt, cloudRunNullableJSON(message.Presentation)); err != nil {
 			return nil, false, err
 		}
 	}

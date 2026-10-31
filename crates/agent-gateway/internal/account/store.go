@@ -59,6 +59,8 @@ type MemoryStore struct {
 	cloudModelLimits     map[cloudModelLimitKey]CloudModelLimits
 	cloudMessages        map[string][]CloudMessage
 	cloudRuns            *cloudRunMemoryState
+	cloudPending         map[string]*CloudPendingQueue
+	cloudPrivateDrafts   map[int64]*cloudPrivateDraftAccount
 	cloudFiles           map[string]CloudFile
 	cloudSpace           map[int64]map[string]CloudSpaceMetadata
 	cloudSpaceLimits     map[int64]int64
@@ -348,6 +350,12 @@ func (s *MemoryStore) GetSelectionLease(_ context.Context, id string) (*Selectio
 func (s *MemoryStore) PutCloudConversation(_ context.Context, conversation *CloudConversation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if current, exists := s.cloudConversations[conversation.ID]; exists {
+		if current.UserID != conversation.UserID {
+			return ErrNotFound
+		}
+		conversation.Pinned, conversation.Archived, conversation.ManagementVersion = current.Pinned, current.Archived, current.ManagementVersion
+	}
 	s.cloudConversations[conversation.ID] = *conversation
 	return nil
 }
@@ -509,6 +517,7 @@ func cloneDevice(device Device) Device {
 }
 
 func cloneCloudMessage(message CloudMessage) CloudMessage {
+	message.Presentation = append([]byte(nil), message.Presentation...)
 	message.Content = append([]byte(nil), message.Content...)
 	message.Usage = append([]byte(nil), message.Usage...)
 	return message

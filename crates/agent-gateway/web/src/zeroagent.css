@@ -610,22 +610,159 @@ html[data-zeroagent-platform="android"]
   outline-offset: 2px;
 }
 .cloud-project-navigation {
-  max-height: 240px;
+  max-height: min(42dvh, 380px);
   flex-shrink: 0;
   overflow-y: auto;
   padding: 4px 12px 16px;
 }
-.cloud-conversation-resources {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  width: min(calc(100% - 32px), 768px);
-  margin: 8px auto 0;
-  font-size: 12px;
+.cloud-project-heading {
+  position: relative;
+  border-radius: 8px;
 }
-.cloud-conversation-resources:empty {
-  display: none;
+.cloud-project-settings-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cloud-project-settings-dialog > [data-slot="dialog-header"] {
+  padding: 0;
+  min-height: 0;
+}
+.cloud-project-settings-tabs {
+  display: flex;
+  gap: 4px;
+}
+.cloud-project-catalog-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 14px;
+  transition: background-color 140ms ease;
+}
+.cloud-project-catalog-row:hover,
+.cloud-project-catalog-row:focus-visible {
+  background: hsl(var(--accent));
+}
+.cloud-project-color {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 36px;
+  border-radius: 50%;
+  transition: transform 140ms ease;
+}
+.cloud-project-color span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cloud-project-color:hover { transform: scale(1.12); }
+.cloud-project-color[aria-pressed="true"] span { outline: 3px solid hsl(var(--muted)); outline-offset: 3px; }
+.cloud-project-color:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .cloud-project-color, .cloud-project-catalog-row { transition: none; }
+}
+.cloud-project-toggle {
+  padding-right: 10px;
+}
+.cloud-project-folder {
+  position: relative;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.cloud-project-folder > :last-child {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: transform 180ms ease, opacity 120ms ease;
+}
+.cloud-project-group[data-expanded="true"] .cloud-project-folder > :last-child {
+  transform: rotate(90deg);
+}
+.cloud-project-heading:hover .cloud-project-folder > :first-child,
+.cloud-project-heading:focus-within .cloud-project-folder > :first-child {
+  opacity: 0;
+}
+.cloud-project-heading:hover .cloud-project-folder > :last-child,
+.cloud-project-heading:focus-within .cloud-project-folder > :last-child {
+  opacity: 1;
+}
+.cloud-project-actions {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  right: 4px;
+  top: 4px;
+  background: hsl(var(--background));
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.cloud-project-heading:hover .cloud-project-actions,
+.cloud-project-heading:focus-within .cloud-project-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cloud-project-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1), opacity 150ms ease;
+}
+.cloud-project-disclosure[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.cloud-project-disclosure > div {
+  overflow: hidden;
+  min-height: 0;
+}
+.cloud-project-conversation {
+  padding-left: 36px;
+}
+.cloud-project-list-note {
+  display: block;
+  padding: 8px 10px 8px 36px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.cloud-project-loading {
+  display: grid;
+  gap: 10px;
+  padding: 10px 20px 10px 36px;
+}
+.cloud-project-loading span {
+  height: 10px;
+  width: 85%;
+  border-radius: 5px;
+  background: var(--cloud-control-hover);
+  animation: cloud-project-loading 1.6s ease-in-out infinite;
+}
+.cloud-project-loading span:last-child {
+  width: 60%;
+}
+@media (hover: none), (max-width: 820px) {
+  .cloud-project-actions { opacity: 1; pointer-events: auto; }
+  .cloud-project-actions { top: 6px; }
+  .cloud-project-actions button { width: 32px; height: 32px; }
+  .cloud-project-toggle { min-height: 44px; padding-right: 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-project-disclosure, .cloud-project-folder > :last-child, .cloud-project-actions { transition: none; }
+  .cloud-project-loading span { animation: none; }
+}
+@keyframes cloud-project-loading {
+  50% { opacity: 0.4; }
 }
 .cloud-chat-shell [data-app-workbench-chrome] {
   --app-header-height: 60px;
@@ -1337,7 +1474,7 @@ html[data-zeroagent-platform="android"]
     padding-bottom: 8px;
   }
   .cloud-project-navigation {
-    max-height: 220px;
+    max-height: 40dvh;
   }
   .cloud-resource-page {
     padding: 24px 18px;

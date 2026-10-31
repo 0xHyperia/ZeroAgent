@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "key": "multi-round-delivery",
+      "title": "合成验收数据 · 多轮分析与交付",
+      "turns": [
+        {
+          "user": "合成验收数据：请把一组虚构的季度销售数字整理成清晰的分析。这里只演示对话过程，不执行工具或发布文件。",
+          "state": "completed",
+          "blocks": [
+            { "type": "reasoning", "round": 0, "seconds": 5, "text": "先检查四个季度是否使用相同口径，再计算环比。此处是用于验收折叠、展开和计时的合成过程，不是实际模型的内部推理。" },
+            { "type": "text", "round": 0, "seconds": 2, "text": "我会先核对数据，再整理可读的结论。" },
+            { "type": "tool", "round": 0, "seconds": 3, "name": "read_file", "state": "succeeded", "status": "文件读取已完成" },
+            { "type": "tool", "round": 0, "seconds": 4, "name": "execute_code", "state": "succeeded", "status": "分析与计算已完成" },
+            { "type": "reasoning", "round": 1, "seconds": 4, "text": "计算回执已经到齐。按总量、环比和局限三个部分组织结果，并明确所有数字都是合成数据。" },
+            { "type": "text", "round": 1, "seconds": 3, "text": "## 季度销售简报\n\n> 合成验收数据，单位：万元。工具记录为演示数据。\n\n| 季度 | 销售额 | 环比 |\n| --- | ---: | ---: |\n| Q1 | 120 | — |\n| Q2 | 144 | 20% |\n| Q3 | 180 | 25% |\n| Q4 | 216 | 20% |\n\n全年合计 **660 万元**。第三季度增速最高，第四季度绝对增量最大。\n\n```python\nsales = [120, 144, 180, 216]\nprint(sum(sales))  # 660\n```\n\n可继续要求我缩写、翻译或重组这份简报。" }
+          ]
+        },
+        {
+          "user": "合成验收数据：再压缩成两句话，并说明局限。",
+          "state": "completed",
+          "blocks": [
+            { "type": "reasoning", "round": 0, "seconds": 2, "text": "保留总量和最显著的增速变化，再补上样本范围的限制。" },
+            { "type": "text", "round": 0, "seconds": 2, "text": "这组合成数据全年销售额为 **660 万元**，第三季度环比增长 **25%**，为全年最高。数据只覆盖四个季度，未包含成本、客户构成和季节性因素，不能据此判断利润或预测下一年。" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "failed-operation",
+      "title": "合成验收数据 · 失败后保留内容",
+      "turns": [{
+        "user": "合成验收数据：演示执行失败时保留已生成内容，不要真的运行外部工具。",
+        "state": "failed",
+        "blocks": [
+          { "type": "reasoning", "round": 0, "seconds": 3, "text": "已经读到表头，需要检查缺失字段。接下来的失败状态仅用于界面验收。" },
+          { "type": "text", "round": 0, "seconds": 2, "text": "已确认输入包含日期和金额两列。" },
+          { "type": "tool", "round": 0, "seconds": 2, "name": "execute_code", "state": "failed", "status": "分析与计算未完成" },
+          { "type": "text", "round": 1, "seconds": 1, "text": "**合成失败示例**：分析任务未完成，已生成内容保留。可复制内容或编辑问题后再发送；这份示例没有真实运行记录。" }
+        ]
+      }]
+    },
+    {
+      "key": "cancelled-response",
+      "title": "合成验收数据 · 停止与部分回答",
+      "turns": [{
+        "user": "合成验收数据：演示用户停止生成后的部分回答。",
+        "state": "cancelled",
+        "blocks": [
+          { "type": "reasoning", "round": 0, "seconds": 4, "text": "先列出已经确认的条件。此处模拟用户在回答生成中途停止。" },
+          { "type": "text", "round": 0, "seconds": 3, "text": "## 已完成的部分\n\n1. 明确使用场景和输入资料。\n2. 整理已有事实，保留来源。\n\n合成验收数据：生成在此停止。以上内容仍可复制、导出或用于后续提问。" }
+        ]
+      }]
+    },
+    {
+      "key": "unknown-tool-outcome",
+      "title": "合成验收数据 · 外部结果待确认",
+      "turns": [{
+        "user": "合成验收数据：演示发布站点时结果无法确认。不要实际发布任何内容。",
+        "state": "interrupted",
+        "blocks": [
+          { "type": "reasoning", "round": 0, "seconds": 2, "text": "用待确认回执展示边界，不把未收到结果错误描述为已成功或已取消。" },
+          { "type": "text", "round": 0, "seconds": 2, "text": "这是合成的站点发布过程，仅用于验收，不存在真实站点地址。" },
+          { "type": "tool", "round": 0, "seconds": 6, "name": "publish_site", "state": "unknown", "status": "结果待确认" }
+        ]
+      }]
+    },
+    {
+      "key": "bounded-long-reasoning",
+      "title": "合成验收数据 · 长过程按需阅读",
+      "turns": [{
+        "user": "合成验收数据：验收长过程不会一次挂载到页面，展开全文后可以查找，手机端布局不溢出。",
+        "state": "completed",
+        "blocks": [
+          { "type": "reasoning", "round": 0, "seconds": 8, "repeat": 4000, "text": "合成验收数据第一轮：核对材料的范围、日期、单位和缺失值。此重复段落只用于测试长内容的有界预览与按需读取，不代表实际模型推理或真实工具调用。\n" },
+          { "type": "text", "round": 0, "seconds": 1, "text": "第一轮：已整理材料范围。" },
+          { "type": "reasoning", "round": 1, "seconds": 7, "repeat": 4000, "text": "合成验收数据第二轮：比较不同口径并整理可验证的证据。此重复段落只用于测试长内容的有界预览与按需读取，不代表实际模型推理或真实工具调用。\n" },
+          { "type": "text", "round": 1, "seconds": 1, "text": "第二轮：已列出差异。" },
+          { "type": "reasoning", "round": 2, "seconds": 6, "repeat": 4000, "text": "合成验收数据第三轮：检查结论是否超出已有信息的边界。此重复段落只用于测试长内容的有界预览与按需读取，不代表实际模型推理或真实工具调用。\n" },
+          { "type": "text", "round": 2, "seconds": 1, "text": "第三轮：已标注限制。" },
+          { "type": "reasoning", "round": 3, "seconds": 5, "repeat": 4000, "text": "合成验收数据第四轮：整理最终表达并逐项校对格式要求。此重复段落只用于测试长内容的有界预览与按需读取，不代表实际模型推理或真实工具调用。\n" },
+          { "type": "text", "round": 3, "seconds": 2, "text": "## 长过程验收完成\n\n这是合成验收数据。页面先展示简短正文；较大的过程按需加载，思考区保持折叠和有界预览，完整内容通过阅读面板打开。\n\n检查点：重复进入会话没有重复消息；手机端没有横向撑开；展开与关闭过程后正文及滚动位置仍可用。" }
+        ]
+      }]
+    }
+  ]
+}

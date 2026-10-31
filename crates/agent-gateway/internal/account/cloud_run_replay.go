@@ -93,7 +93,7 @@ func (s *PersistentStore) GetCloudRunByClientRequest(ctx context.Context, uid in
 	if uid <= 0 || strings.TrimSpace(requestID) == "" || len(requestID) > 128 {
 		return nil, ErrCloudRunInvalid
 	}
-	columns := strings.Replace(cloudRunPublicColumns, "OUTPUT_COLUMN", "r.output", 1)
+	columns := cloudRunProjectionColumns("r.output")
 	var hash string
 	run, err := scanCloudRunView(cloudReplayScanner{cloudRunScanner: s.db.QueryRowContext(ctx, `SELECT `+columns+`,r.request_hash FROM zeroagent_cloud_runs r JOIN zerobox_cloud_conversations c ON c.id=r.conversation_id AND c.user_id=r.user_id WHERE r.user_id=$1 AND r.client_request_id=$2`, uid, requestID), hash: &hash})
 	if err != nil {

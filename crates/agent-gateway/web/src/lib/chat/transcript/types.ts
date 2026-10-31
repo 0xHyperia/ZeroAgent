@@ -1,3 +1,4 @@
+import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { RetryAttemptRecord } from "@liveagent/ui/lib/chat/retryAttempts";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
@@ -91,6 +92,7 @@ export type TranscriptRow =
       origin: TranscriptRowOrigin;
       kind: "assistant";
       rounds: GatewayTranscriptRound[];
+      deliverables?: AssistantDeliverable[];
       turnKey?: string;
       contentOmitted?: boolean;
       contentPreview?: boolean;

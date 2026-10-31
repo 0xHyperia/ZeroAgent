@@ -6,6 +6,9 @@ export type CloudChatConversation = {
   model: string;
   created_at?: string;
   updated_at: string;
+  pinned?: boolean;
+  archived?: boolean;
+  management_version?: number;
 };
 export type CloudChatRunHead = {
   id: string;
@@ -50,12 +53,24 @@ function timestamp(value: unknown): string {
 }
 function conversation(value: unknown): CloudChatConversation {
   if (!record(value)) throw new Error("会话列表响应无效");
+  if (
+    (value.pinned !== undefined && typeof value.pinned !== "boolean") ||
+    (value.archived !== undefined && typeof value.archived !== "boolean") ||
+    (value.management_version !== undefined &&
+      (!Number.isSafeInteger(value.management_version) || (value.management_version as number) < 0))
+  )
+    throw new Error("会话管理状态无效");
   return {
     id: identifier(value.id),
     title: text(value.title, 4096),
     model: text(value.model, 512),
     updated_at: timestamp(value.updated_at),
     ...(value.created_at !== undefined ? { created_at: timestamp(value.created_at) } : {}),
+    ...(value.pinned !== undefined ? { pinned: value.pinned as boolean } : {}),
+    ...(value.archived !== undefined ? { archived: value.archived as boolean } : {}),
+    ...(value.management_version !== undefined
+      ? { management_version: value.management_version as number }
+      : {}),
   };
 }
 export class CloudChatMetadataError extends Error {

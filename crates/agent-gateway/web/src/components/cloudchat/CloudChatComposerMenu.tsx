@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 
 export function CloudChatComposerMenu(props: {
   disabled: boolean;
+  projectDisabled?: boolean;
   researchEnabled: boolean;
   onUpload: () => void;
   onOpenFiles: (anchor: HTMLElement | null) => void;
@@ -76,6 +77,7 @@ export function CloudChatComposerMenu(props: {
         </DropdownMenuItem>
         <DropdownMenuItem
           className="gap-3"
+          disabled={props.projectDisabled}
           onClick={() => props.onOpenProjects(triggerRef.current)}
         >
           <FolderOpen className="size-4 shrink-0" />

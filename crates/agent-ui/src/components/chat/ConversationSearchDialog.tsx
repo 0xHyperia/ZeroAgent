@@ -26,12 +26,31 @@ import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useS
 import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
 import type { SidebarConversation } from "../../lib/sidebar/types";
 
+export type ConversationSearchResult = PersistedConversationSearchResult & {
+  matchType?: "title" | "message";
+  archived?: boolean;
+};
+export type ConversationSearchPage = {
+  items: ConversationSearchResult[];
+  nextCursor?: string;
+  hasMore?: boolean;
+};
+/** A host owns its data source and navigation. Cloud search never calls device RPC. */
+export type ConversationSearchAdapter = {
+  search: (
+    query: string,
+    options: { cursor?: string; signal: AbortSignal },
+  ) => Promise<ConversationSearchPage>;
+  onSelectResult: (item: ConversationSearchResult) => void;
+};
+
 type ConversationSearchDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversations: readonly SidebarConversation[];
   currentWorkdir?: string;
   onSelectConversation: (id: string, options?: ConversationOpenOptions) => void;
+  searchAdapter?: ConversationSearchAdapter;
 };
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
@@ -40,11 +59,12 @@ type SearchGroup = {
   id: "pinned" | "recent" | "results";
   label: string;
   icon: typeof Pin;
-  items: readonly PersistedConversationSearchResult[];
+  items: readonly ConversationSearchResult[];
 };
 
 const SEARCH_DEBOUNCE_MS = 180;
 const EMPTY_STATE_RECENT_LIMIT = 12;
+const resultKey = (item: ConversationSearchResult) => `${item.id}:${item.messageId ?? "title"}`;
 
 function toSearchResult(item: SidebarConversation): PersistedConversationSearchResult {
   return {
@@ -82,8 +102,21 @@ function formatUpdatedAt(value: number | undefined, locale: string) {
   }).format(date);
 }
 
-function renderSearchPreview(value: string | undefined): ReactNode {
+function renderSearchPreview(value: string | undefined, plainQuery?: string): ReactNode {
   if (!value) return null;
+  if (plainQuery) {
+    const offset = value.toLocaleLowerCase().indexOf(plainQuery.toLocaleLowerCase());
+    if (offset < 0) return value;
+    return (
+      <>
+        {value.slice(0, offset)}
+        <mark className="rounded-sm bg-primary/10 px-0.5 text-foreground">
+          {value.slice(offset, offset + plainQuery.length)}
+        </mark>
+        {value.slice(offset + plainQuery.length)}
+      </>
+    );
+  }
   const parts = value.split(/(\[[^\]]+\])/g).filter(Boolean);
   return parts.map((part, index) => {
     const highlighted = part.startsWith("[") && part.endsWith("]");
@@ -109,39 +142,65 @@ export function ConversationSearchDialog({
   conversations,
   currentWorkdir,
   onSelectConversation,
+  searchAdapter,
 }: ConversationSearchDialogProps) {
   const { t, locale } = useLocale();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<PersistedConversationSearchResult[]>([]);
+  const [results, setResults] = useState<ConversationSearchResult[]>([]);
+  const [nextCursor, setNextCursor] = useState<string>();
+  const [moreStatus, setMoreStatus] = useState<SearchStatus>("idle");
+  const controllerRef = useRef<AbortController | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const requestSequenceRef = useRef(0);
   const normalizedQuery = query.trim();
 
   const performSearch = useCallback(
-    async (searchQuery: string) => {
+    async (searchQuery: string, cursor?: string) => {
       const requestSequence = ++requestSequenceRef.current;
-      setResults([]);
-      setStatus("loading");
-      try {
-        const nextResults = await searchPersistedConversations({
-          query: searchQuery,
-          currentWorkdir,
-        });
-        if (requestSequence !== requestSequenceRef.current) return;
-        setResults(nextResults);
-        setStatus("ready");
-      } catch {
-        if (requestSequence !== requestSequenceRef.current) return;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      if (cursor) setMoreStatus("loading");
+      else {
         setResults([]);
-        setStatus("error");
+        setNextCursor(undefined);
+        setStatus("loading");
+      }
+      try {
+        const page: ConversationSearchPage = searchAdapter
+          ? await searchAdapter.search(searchQuery, { cursor, signal: controller.signal })
+          : { items: await searchPersistedConversations({ query: searchQuery, currentWorkdir }) };
+        if (requestSequence !== requestSequenceRef.current || controller.signal.aborted) return;
+        setResults((current) =>
+          cursor
+            ? [
+                ...new Map(
+                  [...current, ...page.items].map((item) => [resultKey(item), item]),
+                ).values(),
+              ]
+            : page.items,
+        );
+        setNextCursor(page.hasMore ? page.nextCursor : undefined);
+        setStatus("ready");
+        setMoreStatus("ready");
+      } catch {
+        if (requestSequence !== requestSequenceRef.current || controller.signal.aborted) return;
+        if (cursor) setMoreStatus("error");
+        else {
+          setResults([]);
+          setStatus("error");
+        }
       }
     },
-    [currentWorkdir],
+    [currentWorkdir, searchAdapter],
   );
+
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
   useEffect(() => {
     if (open) return;
     requestSequenceRef.current += 1;
+    controllerRef.current?.abort();
     setQuery("");
     setResults([]);
     setStatus("idle");
@@ -149,6 +208,9 @@ export function ConversationSearchDialog({
 
   useEffect(() => {
     requestSequenceRef.current += 1;
+    controllerRef.current?.abort();
+    setNextCursor(undefined);
+    setMoreStatus("idle");
     if (!open || !normalizedQuery) {
       setResults([]);
       setStatus("idle");
@@ -202,9 +264,13 @@ export function ConversationSearchDialog({
 
   const selectableItems = useMemo(() => groups.flatMap((group) => group.items), [groups]);
 
-  const selectConversation = (item: PersistedConversationSearchResult) => {
+  const selectConversation = (item: ConversationSearchResult) => {
     const { id } = item;
     onOpenChange(false);
+    if (normalizedQuery && searchAdapter) {
+      searchAdapter.onSelectResult(item);
+      return;
+    }
     setSearchJumpTarget(
       normalizedQuery
         ? { conversationId: id, messageId: item.messageId, messageIndex: item.messageIndex }
@@ -309,16 +375,37 @@ export function ConversationSearchDialog({
                         const meta = [item.cwd, updatedAt].filter(Boolean).join(" · ");
                         return (
                           <CommandItem
-                            key={item.id}
+                            key={resultKey(item)}
                             value={item}
                             onClick={() => selectConversation(item)}
                           >
                             <div className="w-full truncate font-medium leading-5">
-                              {item.title}
+                              {searchAdapter && normalizedQuery
+                                ? renderSearchPreview(item.title, normalizedQuery)
+                                : item.title}
                             </div>
+                            {item.matchType ? (
+                              <span className="text-xs text-muted-foreground">
+                                {item.matchType === "message"
+                                  ? locale.startsWith("zh")
+                                    ? "正文匹配"
+                                    : "Message match"
+                                  : locale.startsWith("zh")
+                                    ? "标题匹配"
+                                    : "Title match"}
+                                {item.archived
+                                  ? locale.startsWith("zh")
+                                    ? " · 已归档"
+                                    : " · Archived"
+                                  : ""}
+                              </span>
+                            ) : null}
                             {item.searchPreview ? (
                               <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                {renderSearchPreview(item.searchPreview)}
+                                {renderSearchPreview(
+                                  item.searchPreview,
+                                  searchAdapter ? normalizedQuery : undefined,
+                                )}
                               </div>
                             ) : null}
                             {item.cwd || updatedAt ? (
@@ -337,6 +424,30 @@ export function ConversationSearchDialog({
                   );
                 })}
             </CommandList>
+            {nextCursor && status === "ready" ? (
+              <div className="px-3 pb-3 text-center">
+                {moreStatus === "error" ? (
+                  <p role="alert" className="mb-2 text-xs text-destructive">
+                    {t("chat.conversationSearchFailed")}
+                  </p>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={moreStatus === "loading"}
+                  onClick={() => void performSearch(normalizedQuery, nextCursor)}
+                >
+                  {moreStatus === "loading" ? (
+                    <Loader2 className="mr-2 size-3.5 animate-spin motion-reduce:animate-none" />
+                  ) : null}
+                  {moreStatus === "error"
+                    ? t("chat.retryConversationSearch")
+                    : locale.startsWith("zh")
+                      ? "加载更多"
+                      : "Load more"}
+                </Button>
+              </div>
+            ) : null}
           </CommandPanel>
           <CommandFooter>
             <div className="flex items-center gap-4">

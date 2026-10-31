@@ -274,6 +274,31 @@ func (s *PersistentStore) CommitCloudTool(ctx context.Context, userID int64, id,
 	if err != nil {
 		return nil, err
 	}
+	if _, public := cloudPublicToolRound(op); public {
+		var recorded bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM zeroagent_cloud_run_events WHERE run_id=$1 AND operation_id=$2)`, op.RunID, cloudToolPresentationOperationID(op)).Scan(&recorded); err != nil {
+			return nil, err
+		}
+		if !recorded {
+			run, readErr := scanCloudRun(tx.QueryRowContext(ctx, "SELECT "+cloudRunColumns+" FROM zeroagent_cloud_runs r WHERE r.id=$1 AND r.user_id=$2", op.RunID, userID))
+			if readErr != nil {
+				return nil, readErr
+			}
+			resources, readErr := cloudToolResourcesTx(ctx, tx, op)
+			if readErr != nil {
+				return nil, readErr
+			}
+			commit, hash, projectErr := prepareCloudToolPresentation(run, op, resources, op.UpdatedAt)
+			if projectErr != nil {
+				return nil, projectErr
+			}
+			if commit != nil {
+				if err = appendCloudRunDBEvent(ctx, tx, run, commit.EventType, commit.Payload, commit.OperationID, hash, now); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}

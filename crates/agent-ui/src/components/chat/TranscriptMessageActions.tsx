@@ -293,26 +293,21 @@ export function TranscriptAssistantMessageActions(
           align="start"
           side="top"
           onConfirm={onRetry}
+          triggerLabel={retryTitle}
         >
           {(open) => (
-            <LabelTooltip
-              label={retryTitle}
-              render={
-                <button
-                  type="button"
-                  className={cn(
-                    "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                    "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                  )}
-                  title={retryTitle}
-                  aria-label={retryTitle}
-                  disabled={retryDisabled}
-                  onClick={open}
-                >
-                  <RefreshCw className="size-3.5" />
-                </button>
-              }
-            />
+            <button
+              type="button"
+              className={cn(
+                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
+                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+              aria-label={retryTitle}
+              disabled={retryDisabled}
+              onClick={open}
+            >
+              <RefreshCw className="size-3.5" />
+            </button>
           )}
         </ConfirmActionPopover>
         <ConfirmActionPopover
@@ -323,30 +318,25 @@ export function TranscriptAssistantMessageActions(
           align="start"
           side="top"
           onConfirm={onBranch}
+          triggerLabel={branchTitle}
         >
           {(open) => (
-            <LabelTooltip
-              label={branchTitle}
-              render={
-                <button
-                  type="button"
-                  className={cn(
-                    "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                    "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                  )}
-                  title={branchTitle}
-                  aria-label={branchTitle}
-                  disabled={branchDisabled}
-                  onClick={open}
-                >
-                  {branchPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <GitBranch className="size-3.5" />
-                  )}
-                </button>
-              }
-            />
+            <button
+              type="button"
+              className={cn(
+                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
+                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+              aria-label={branchTitle}
+              disabled={branchDisabled}
+              onClick={open}
+            >
+              {branchPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <GitBranch className="size-3.5" />
+              )}
+            </button>
           )}
         </ConfirmActionPopover>
         <UsageInfoPopover entries={usageEntries} contextWindow={usageContextWindow} />

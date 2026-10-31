@@ -52,6 +52,7 @@ import {
   isBuiltinShareToolName,
   isSubagentCardToolCall,
 } from "./assistantBubbleUtils";
+import { PublicToolActivity } from "./PublicToolActivity";
 import { ShellToolDisplay, ToolArgsDisplay, ToolResultDisplay } from "./ToolResultDisplay";
 
 // 折叠摘要里行内命令的展示上限:远超任何实际窗口一行可容纳的字符数,视觉
@@ -645,13 +646,24 @@ export function areToolTraceItemsEqual(previous: ToolTraceItem, next: ToolTraceI
   return (
     previous.toolCall.id === next.toolCall.id &&
     previous.toolCall.name === next.toolCall.name &&
+    areStableValuesEqual(previous.publicStatus, next.publicStatus) &&
     areStableValuesEqual(previous.toolCall.arguments, next.toolCall.arguments) &&
     areToolResultsEqual(previous.toolResult, next.toolResult)
   );
 }
 
 export const MemoToolCallItem = memo(
-  ToolCallItem,
+  function ToolTraceEntry(props: Parameters<typeof ToolCallItem>[0]) {
+    return props.item.publicStatus ? (
+      <PublicToolActivity
+        item={props.item}
+        isRunning={props.isRunning}
+        onOpenFileLink={props.onOpenFileLink}
+      />
+    ) : (
+      <ToolCallItem {...props} />
+    );
+  },
   (previousProps, nextProps) =>
     previousProps.isRunning === nextProps.isRunning &&
     previousProps.readOnly === nextProps.readOnly &&

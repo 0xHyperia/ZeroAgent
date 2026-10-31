@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -47,7 +48,24 @@ func cloudProjectText(value string, max int, required bool) bool {
 }
 
 func validCloudProject(update CloudProjectUpdate) bool {
-	return cloudProjectText(update.Name, 200, true) && strings.TrimSpace(update.Name) == update.Name && cloudProjectText(update.Description, 4096, false) && cloudProjectText(update.Instructions, CloudProjectMaxInstructions, false)
+	return cloudProjectText(update.Name, 200, true) && strings.TrimSpace(update.Name) == update.Name && cloudProjectText(update.Description, 4096, false) && cloudProjectText(update.Instructions, CloudProjectMaxInstructions, false) &&
+		(update.Icon == nil || validCloudProjectIcon(*update.Icon)) && (update.Color == nil || validCloudProjectColor(*update.Color))
+}
+
+func validCloudProjectIcon(icon string) bool {
+	return slices.Contains(strings.Fields("folder book code terminal chart palette globe brain lightbulb pen star calendar target wrench image"), icon)
+}
+func validCloudProjectColor(color string) bool {
+	return slices.Contains(strings.Fields("default red orange amber green blue violet pink"), color)
+}
+func normalizeCloudProjectAppearance(project *CloudProject) bool {
+	if project.Icon == "" {
+		project.Icon = "folder"
+	}
+	if project.Color == "" {
+		project.Color = "default"
+	}
+	return validCloudProjectIcon(project.Icon) && validCloudProjectColor(project.Color)
 }
 
 func cloudProjectListInput(userID int64, before string, limit int) (string, error) {

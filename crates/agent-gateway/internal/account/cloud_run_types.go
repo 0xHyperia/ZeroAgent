@@ -31,6 +31,7 @@ var (
 // credentials are resolved through the original server-owned session at runtime.
 // SessionRef is SHA-256(session.ID), never the browser's bearer cookie itself.
 type CloudRun struct {
+	pendingVersion     int64
 	ID                 string                  `json:"id"`
 	ConversationID     string                  `json:"conversation_id"`
 	UserID             int64                   `json:"-"`
@@ -47,6 +48,7 @@ type CloudRun struct {
 	AssistantMessageID string                  `json:"assistant_message_id"`
 	State              string                  `json:"state"`
 	Output             string                  `json:"output"`
+	Presentation       json.RawMessage         `json:"presentation,omitempty"`
 	Usage              json.RawMessage         `json:"usage,omitempty"`
 	ErrorCode          string                  `json:"error_code,omitempty"`
 	LeaseOwner         string                  `json:"-"`
@@ -89,4 +91,6 @@ type CloudRunCommit struct {
 	ErrorCode   string
 	EventType   string
 	Payload     json.RawMessage
+	// Set only by the canonical tool-result transaction, never from event JSON.
+	presentationResources []CloudPresentationResource
 }

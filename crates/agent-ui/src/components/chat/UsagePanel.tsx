@@ -3,29 +3,28 @@ import { formatTokenCount } from "../../lib/chat/formatTokenCount";
 import { cn } from "../../lib/shared/utils";
 import { Info } from "../IconSet";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { formatElapsedTime } from "./AssistantWorkTrace";
 
 export type UsagePanelUsage = {
-  totalTokens: number;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
+  totalTokens?: number;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 };
 
 export type UsageDetailEntry = {
   key: string;
-  usage: UsagePanelUsage;
+  usage?: UsagePanelUsage;
+  model?: string;
+  reasoningEffort?: string;
+  outcome?: string;
+  durationMs?: number;
 };
 
 function hasDisplayableUsage(usage: UsagePanelUsage | undefined): usage is UsagePanelUsage {
   if (!usage) return false;
-  return (
-    usage.totalTokens > 0 ||
-    usage.input > 0 ||
-    usage.output > 0 ||
-    usage.cacheRead > 0 ||
-    usage.cacheWrite > 0
-  );
+  return Object.values(usage).some((value) => typeof value === "number" && value > 0);
 }
 
 function buildUsageStats(
@@ -46,36 +45,48 @@ function buildUsageStats(
       : []),
     ...(hasDisplayableUsage(usage)
       ? [
-          {
-            key: "total",
-            label: t("chat.usageTotal"),
-            value: formatTokenCount(usage.totalTokens, locale),
-          },
-          {
-            key: "input",
-            label: t("chat.usageInput"),
-            value: formatTokenCount(usage.input, locale),
-          },
-          {
-            key: "output",
-            label: t("chat.usageOutput"),
-            value: formatTokenCount(usage.output, locale),
-          },
-          ...(usage.cacheRead > 0
+          ...(typeof usage.totalTokens === "number"
+            ? [
+                {
+                  key: "total",
+                  label: t("chat.usageTotal"),
+                  value: formatTokenCount(usage.totalTokens, locale),
+                },
+              ]
+            : []),
+          ...(typeof usage.input === "number"
+            ? [
+                {
+                  key: "input",
+                  label: t("chat.usageInput"),
+                  value: formatTokenCount(usage.input, locale),
+                },
+              ]
+            : []),
+          ...(typeof usage.output === "number"
+            ? [
+                {
+                  key: "output",
+                  label: t("chat.usageOutput"),
+                  value: formatTokenCount(usage.output, locale),
+                },
+              ]
+            : []),
+          ...((usage.cacheRead ?? 0) > 0
             ? [
                 {
                   key: "cache-read",
                   label: t("chat.usageCacheRead"),
-                  value: formatTokenCount(usage.cacheRead, locale),
+                  value: formatTokenCount(usage.cacheRead ?? 0, locale),
                 },
               ]
             : []),
-          ...(usage.cacheWrite > 0
+          ...((usage.cacheWrite ?? 0) > 0
             ? [
                 {
                   key: "cache-write",
                   label: t("chat.usageCacheWrite"),
-                  value: formatTokenCount(usage.cacheWrite, locale),
+                  value: formatTokenCount(usage.cacheWrite ?? 0, locale),
                 },
               ]
             : []),
@@ -119,13 +130,16 @@ export function UsageInfoPopover(props: {
 }) {
   const { entries, contextWindow, className } = props;
   const { t } = useLocale();
-  const displayableEntries = entries?.filter((entry) => hasDisplayableUsage(entry.usage)) ?? [];
+  const displayableEntries =
+    entries?.filter((entry) => hasDisplayableUsage(entry.usage) || entry.model || entry.outcome) ??
+    [];
   const hasContextWindow = typeof contextWindow === "number" && contextWindow > 0;
   if (displayableEntries.length === 0 && !hasContextWindow) {
     return null;
   }
 
-  const label = t("chat.usage");
+  const hasMetadata = displayableEntries.some((entry) => entry.model || entry.outcome);
+  const label = t(hasMetadata ? "chat.responseDetails" : "chat.usage");
   return (
     <Popover>
       <PopoverTrigger
@@ -154,6 +168,40 @@ export function UsageInfoPopover(props: {
                   <div className="mb-1 text-xs font-medium text-muted-foreground/75">
                     {label} {index + 1}
                   </div>
+                ) : null}
+                {entry.model || entry.outcome ? (
+                  <dl className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5 text-xs leading-5">
+                    {[
+                      ["chat.responseModel", entry.model],
+                      [
+                        "chat.responseReasoning",
+                        entry.reasoningEffort
+                          ? t(
+                              `chat.runtime.reasoningCompact.${entry.reasoningEffort === "none" ? "off" : entry.reasoningEffort}`,
+                            )
+                          : undefined,
+                      ],
+                      [
+                        "chat.responseOutcome",
+                        entry.outcome ? t(`chat.responseState.${entry.outcome}`) : undefined,
+                      ],
+                      [
+                        "chat.responseDuration",
+                        entry.durationMs === undefined
+                          ? undefined
+                          : formatElapsedTime(entry.durationMs),
+                      ],
+                    ]
+                      .filter(([, value]) => value)
+                      .map(([key = "", value]) => (
+                        <div key={key} className="contents">
+                          <dt className="text-muted-foreground">{t(key)}</dt>
+                          <dd className="max-w-36 break-words text-right font-medium text-foreground/90">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
                 ) : null}
                 <UsagePanel
                   usage={entry.usage}

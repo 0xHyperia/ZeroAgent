@@ -40,7 +40,11 @@ async function provider(
   const stub = stubProvider(cfg);
   for (const key of apiMethods) Object.assign(Sandbox, { [key]: stub[key] });
   try {
-    await callback(stub, new E2BAdapter(cfg), cfg);
+    const adapter = new E2BAdapter(cfg);
+    // A live capability originates only in an explicitly authorized create.
+    await adapter.execute(op("sandbox.create", {}, undefined, cfg), context());
+    stub.calls.length = 0;
+    await callback(stub, adapter, cfg);
   } finally {
     for (const key of apiMethods) Object.assign(Sandbox, { [key]: original[key] });
   }
@@ -64,6 +68,13 @@ function stubProvider(cfg: Config) {
   };
   const sandbox = {
     sandboxId: info.sandboxId,
+    access: (envdVersion: string) => ({
+      sandboxId: info.sandboxId,
+      sandboxDomain: "e2b.app",
+      envdVersion,
+      envdAccessToken: "test-envd-capability",
+      trafficAccessToken: "test-traffic-capability",
+    }),
     getInfo: async (...args: any[]) => {
       calls.push({ action: "instance.getInfo", args });
       return info;
@@ -188,6 +199,7 @@ test("paused VM requires explicit resume; foreign or network-policy drift cannot
     stub.info.state = "running";
     await adapter.execute(op("sandbox.resume"), context());
     assert(stub.calls.some((call) => call.action === "connect"));
+    assert.equal(stub.calls.find((call) => call.action === "connect")?.args[1].timeoutMs, adapter.config.sandboxTimeoutMs);
     stub.info.network.allowPublicTraffic = true;
     await assert.rejects(
       adapter.execute(op("command.run", { command: "true" }), context()),
@@ -248,6 +260,10 @@ test("command cancellation kills the owned remote VM and descendants, then resol
         error.detail?.sandbox_terminated === true,
     );
     assert.equal(stub.calls.filter((call) => call.action === "kill").length, 1);
+    await assert.rejects(
+      adapter.execute(op("command.run", { command: "true" }), context()),
+      /sandbox_connection_unavailable/,
+    );
     const run = stub.calls.find((call) => call.action === "commands.run")!.args[1];
     assert.equal(run.retainOutput, false);
     assert.equal(run.background, true);
@@ -266,6 +282,13 @@ test("output limit triggers remote termination; failed termination leaves unknow
       (error: unknown) =>
         error instanceof Fault && error.code === "output_limit" && !error.uncertain,
     );
+  });
+  // A killed VM is not reused for the independent failed-termination case.
+  await provider(async (stub, adapter, cfg) => {
+    stub.setRun(async (_cmd, opts) => {
+      opts.onStdout("x".repeat(cfg.maxOutputBytes + 1));
+      return { pid: 123, wait: async () => ({ exitCode: 0 }) };
+    });
     Object.assign(Sandbox, {
       kill: async () => {
         throw new Error("network failure secret URL");
@@ -548,6 +571,8 @@ test("archive cancellation stops the owned VM and uncertain guest cleanup remain
         error.detail?.sandbox_terminated === true,
     );
     assert(stub.calls.some((call) => call.action === "kill"));
+  });
+  await provider(async (stub, adapter) => {
     stub.setRun(async (_cmd, opts) => ({
       pid: 124,
       wait: async () => ({ exitCode: 0 }),
@@ -626,8 +651,40 @@ test("kill confirms an already-absent VM without skipping ownership checks for a
 });
 test("ordinary workspace operations never extend the reserved VM lifetime", async () => {
   await provider(async (stub, adapter) => {
+    const expiry = stub.info.endAt.getTime();
     await adapter.execute(op("command.run", { command: "true" }), context());
-    const connect = stub.calls.find((call) => call.action === "connect");
-    assert.equal(connect?.args[1].timeoutMs, undefined);
+    await adapter.execute(op("sandbox.connect"), context());
+    assert.equal(stub.info.endAt.getTime(), expiry);
+    assert(!stub.calls.some((call) => call.action === "connect"));
+  });
+});
+
+test("adapter restart never uses SDK connect to recover an active capability", async () => {
+  await provider(async (stub, _adapter, cfg) => {
+    const restarted = new E2BAdapter(cfg);
+    await assert.rejects(
+      restarted.execute(op("command.run", { command: "true" }), context()),
+      /sandbox_connection_unavailable/,
+    );
+    await restarted.execute(op("sandbox.info"), context());
+    await restarted.execute(op("sandbox.kill"), context());
+    assert(!stub.calls.some((call) => call.action === "connect" || call.action === "commands.run"));
+    assert(stub.calls.some((call) => call.action === "kill"));
+  });
+});
+
+test("cached access rejects provider lifetime drift, changed incarnation and a newly paused VM", async () => {
+  await provider(async (stub, adapter) => {
+    const endAt = stub.info.endAt;
+    stub.info.endAt = new Date(endAt.getTime() + 1);
+    await assert.rejects(adapter.execute(op("command.run", { command: "true" }), context()), /sandbox_connection_unavailable/);
+    stub.info.endAt = endAt;
+    const startedAt = stub.info.startedAt;
+    stub.info.startedAt = new Date(startedAt.getTime() + 1);
+    await assert.rejects(adapter.execute(op("command.run", { command: "true" }), context()), /sandbox_connection_unavailable/);
+    stub.info.startedAt = startedAt;
+    stub.info.state = "paused";
+    await assert.rejects(adapter.execute(op("command.run", { command: "true" }), context()), /sandbox_paused/);
+    assert(!stub.calls.some((call) => call.action === "connect" || call.action === "commands.run"));
   });
 });

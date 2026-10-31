@@ -18,11 +18,9 @@ func (e *cloudRunToolExecution) researchSchemas() []map[string]any {
 	if _, ok := e.runtime.service.store.(CloudResearchSourceStore); !ok {
 		return nil
 	}
-	search, fetch := e.runtime.service.CloudResearch()
-	if search == nil && fetch == nil {
-		return nil
-	}
-	return []map[string]any{cloudResearchReadSourceSchema()}
+	// Persisted source reads are local and remain available when no outbound
+	// research provider is enabled. They grant no new network capability.
+	return []map[string]any{cloudToolFunction("read_source", "Read a bounded range of an account-owned persisted source from this Run, or a historical source explicitly supplied in this conversation's selected context/read_history result. Guessed IDs and other conversations are denied. Search snippets have no fetched page body.", map[string]any{"source_id": cloudToolString("A source UUID supplied in this Run or selected historical resource metadata."), "from_line": map[string]any{"type": "integer", "minimum": 1}, "to_line": map[string]any{"type": "integer", "minimum": 1}}, "source_id")}
 }
 
 func cloudResearchReadSourceSchema() map[string]any {
@@ -128,7 +126,7 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 		}
 	}
 	search, fetch := e.runtime.service.CloudResearch()
-	if (call.Name == "web_search" && search == nil) || (call.Name == "fetch_page" && fetch == nil) || (call.Name == "read_source" && search == nil && fetch == nil) {
+	if (call.Name == "web_search" && search == nil) || (call.Name == "fetch_page" && fetch == nil) {
 		return nil, &cloudToolRunError{code: "cloud_research_unavailable"}
 	}
 	store, ok := e.runtime.service.store.(CloudResearchSourceStore)
@@ -198,7 +196,7 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 	if op.State == CloudToolSucceeded {
 		if call.Name == "read_source" {
 			source, getErr := store.GetCloudResearchSource(ctx, e.run.UserID, sourceID)
-			if getErr != nil || source.RunID != e.run.ID {
+			if getErr != nil || source.RunID != e.run.ID && !e.historySourceAllowed(ctx, sourceID) {
 				return nil, &cloudToolRunError{code: "cloud_research_source_unavailable"}
 			}
 			return e.sourceToolResult([]CloudResearchSource{*source}, from, to), nil
@@ -267,7 +265,7 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 		inputs = append(inputs, CloudResearchSourceInput{Kind: CloudResearchPage, URL: page.RequestedURL, FinalURL: page.FinalURL, Title: page.Title, Text: page.Text, SHA256: page.SHA256, BodySHA256: page.BodySHA256, ObservedAt: page.FetchedAt, Truncated: page.Truncated})
 	} else {
 		source, getErr := store.GetCloudResearchSource(ctx, e.run.UserID, sourceID)
-		if getErr != nil || source.RunID != e.run.ID {
+		if getErr != nil || source.RunID != e.run.ID && !e.historySourceAllowed(ctx, sourceID) {
 			_ = e.commit(ctx, op, CloudToolFailed, nil, "cloud_research_source_unavailable")
 			return nil, &cloudToolRunError{code: "cloud_research_source_unavailable"}
 		}
@@ -334,6 +332,9 @@ func (e *cloudRunToolExecution) pruneResearchPrior(ctx context.Context, prior []
 			available, err := e.runtime.service.CloudResearchSourceAvailable(ctx, e.run.UserID, id)
 			if err != nil {
 				return nil, err
+			}
+			if available && e.historySources[id] != "" && !e.historySourceAllowed(ctx, id) {
+				available = false
 			}
 			if available {
 				kept = append(kept, item)

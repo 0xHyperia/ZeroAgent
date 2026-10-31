@@ -3,6 +3,14 @@ import {
   type CloudChatReasoningEffort,
   parseCloudChatModelParameters,
 } from "./cloudChatModelParameters";
+import {
+  CLOUD_CHAT_PRESENTATION_MAX_BYTES,
+  CLOUD_CHAT_PUBLIC_TOOLS,
+  type CloudChatPresentation,
+  type CloudChatToolState,
+  parseCloudChatPresentation,
+  reduceCloudChatPresentation,
+} from "./cloudChatPresentation";
 import { type CloudChatPublicResearch, parseCloudChatPublicResearch } from "./cloudChatResearch";
 
 export type CloudChatRunState =
@@ -19,6 +27,7 @@ export type CloudChatRun = {
   conversation_id: string;
   client_request_id: string;
   model: string;
+  reasoning_effort?: CloudChatReasoningEffort;
   state: CloudChatRunState;
   user_message_id: string;
   assistant_message_id: string;
@@ -31,27 +40,15 @@ export type CloudChatRun = {
   active_tools?: CloudChatActiveTool[];
   model_parameters?: CloudChatModelParameters;
   public_research?: CloudChatPublicResearch;
+  presentation?: CloudChatPresentation;
 };
 
 export type CloudChatActiveTool = {
   tool_id: string;
   name: string;
-  state: "prepared" | "executing" | "succeeded" | "failed" | "cancelled" | "unknown";
+  state: CloudChatToolState;
   status: string;
 };
-const PUBLIC_TOOLS = new Set([
-  "execute_code",
-  "execute_command",
-  "read_file",
-  "write_file",
-  "publish_artifact",
-  "web_search",
-  "fetch_page",
-  "read_source",
-  "read_history",
-  "load_uploaded_file",
-  "extract_archive",
-]);
 function activeTool(value: unknown): CloudChatActiveTool {
   if (
     !record(value) ||
@@ -59,7 +56,7 @@ function activeTool(value: unknown): CloudChatActiveTool {
     !value.tool_id ||
     value.tool_id.length > 128 ||
     typeof value.name !== "string" ||
-    !PUBLIC_TOOLS.has(value.name) ||
+    !CLOUD_CHAT_PUBLIC_TOOLS.has(value.name) ||
     !["prepared", "executing", "succeeded", "failed", "cancelled", "unknown"].includes(
       String(value.state),
     ) ||
@@ -90,7 +87,7 @@ export type CloudChatRunEvent = {
   run_id: string;
   seq: string;
   type: string;
-  data?: { delta?: string; state?: CloudChatRunState; error_code?: string; usage?: unknown };
+  data?: Record<string, unknown>;
 };
 
 type CloudChatFetch = (path: string, init?: RequestInit) => Promise<Response>;
@@ -111,7 +108,7 @@ const TERMINAL_STATES = new Set<CloudChatRunState>([
   "interrupted",
 ]);
 const MAX_OUTPUT_CHARS = 8 * 1024 * 1024;
-const MAX_EVENT_CHARS = MAX_OUTPUT_CHARS * 2 + 64 * 1024;
+const MAX_EVENT_CHARS = MAX_OUTPUT_CHARS * 2 + CLOUD_CHAT_PRESENTATION_MAX_BYTES + 64 * 1024;
 
 export class CloudChatRunRequestError extends Error {
   readonly reason?: string;
@@ -242,6 +239,10 @@ export function parseCloudChatRun(value: unknown): CloudChatRun {
   cloudChatSequence(value.last_seq);
   const parsed = {
     ...value,
+    presentation:
+      value.presentation !== undefined && value.presentation !== null
+        ? parseCloudChatPresentation(value.presentation)
+        : undefined,
     ...(value.public_research !== undefined
       ? { public_research: parseCloudChatPublicResearch(value.public_research, true) }
       : {}),
@@ -274,6 +275,7 @@ export function reduceCloudChatRunEvent(run: CloudChatRun, value: unknown): Clou
   if (BigInt(seq) !== BigInt(run.last_seq) + 1n) throw new Error("任务事件需要重新同步");
   const event = value as CloudChatRunEvent;
   const data = record(event.data) ? event.data : {};
+  const presentation = reduceCloudChatPresentation(run.presentation, event.type, data, run);
   let output = run.output;
   if (event.type === "message.delta") {
     if (typeof data.delta !== "string") throw new Error("任务输出事件无效");
@@ -284,7 +286,13 @@ export function reduceCloudChatRunEvent(run: CloudChatRun, value: unknown): Clou
   if (event.type.startsWith("tool.")) {
     const tool = activeTool(data);
     const previous = tools.find((item) => item.tool_id === tool.tool_id);
-    if (!(tool.state === "prepared" && previous?.state === "executing")) {
+    const projected = presentation?.blocks.find(
+      (block) => block.type === "tool" && block.tool_id === tool.tool_id,
+    );
+    if (
+      !(tool.state === "prepared" && previous?.state === "executing") &&
+      (!projected || projected.state === tool.state)
+    ) {
       tools = tools.filter((item) => item.tool_id !== tool.tool_id);
       if (["prepared", "executing", "unknown"].includes(tool.state))
         tools = [...tools, tool].slice(-8);
@@ -301,6 +309,7 @@ export function reduceCloudChatRunEvent(run: CloudChatRun, value: unknown): Clou
     ...run,
     last_seq: seq,
     output,
+    ...(presentation !== undefined ? { presentation } : {}),
     active_tools: TERMINAL_STATES.has(nextState as CloudChatRunState) ? [] : tools,
     state: RUN_STATES.has(nextState as CloudChatRunState)
       ? (nextState as CloudChatRunState)
@@ -461,7 +470,46 @@ export function createCloudChatRunsClient(request: CloudChatFetch) {
         response,
         path === "/api/web-chat/runs" && init?.method === "POST",
       );
-    const data: unknown = await response.json();
+    const declared = response.headers.get("Content-Length");
+    if (
+      declared !== null &&
+      (!/^\d+$/.test(declared) || BigInt(declared) > BigInt(MAX_EVENT_CHARS))
+    ) {
+      await response.body?.cancel();
+      throw new Error("任务响应超过显示上限");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("任务响应为空");
+    const signal = init?.signal ?? undefined;
+    const cancel = () => {
+      void reader.cancel().catch(() => undefined);
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    let text = "",
+      size = 0;
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    try {
+      for (;;) {
+        aborted(signal);
+        const part = await reader.read();
+        aborted(signal);
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > MAX_EVENT_CHARS) throw new Error("任务响应超过显示上限");
+        text += decoder.decode(part.value, { stream: true });
+      }
+      text += decoder.decode();
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("任务响应无效");
+    }
     if (!record(data)) throw new Error("任务响应无效");
     return data;
   }

@@ -9,6 +9,7 @@ import (
 )
 
 func (h *HTTPHandler) registerCloudBranches(mux *http.ServeMux) {
+	h.registerCloudConversationManagement(mux)
 	mux.HandleFunc("POST /api/web-chat/conversations/{id}/branch", h.withSession(h.branchCloudConversation))
 	mux.HandleFunc("GET /api/web-chat/branches/{request_id}", h.withSession(h.getCloudBranch))
 	mux.HandleFunc("GET /api/web-chat/conversations/{id}/export", h.withSession(h.exportCloudConversation))
@@ -144,6 +145,7 @@ func (h *HTTPHandler) exportCloudConversation(w http.ResponseWriter, r *http.Req
 				}
 			}
 		}
+		writeCloudPresentationMarkdown(&output, message.Presentation)
 		output.WriteString("\n\n")
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")

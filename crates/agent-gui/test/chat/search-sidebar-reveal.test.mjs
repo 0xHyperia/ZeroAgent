@@ -27,11 +27,14 @@ const icons = [
   "ImageIcon",
   "ListChecks",
   "Loader2",
+  "MessageSquare",
+  "PanelLeft",
   "PanelLeftClose",
   "Plus",
   "Search",
   "Settings",
   "Share2",
+  "SquarePen",
   "Trash2",
   "X",
 ];
@@ -140,4 +143,25 @@ test("search completion reveals a collapsed virtual list once without saving sid
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+
+test("scroll loading requests one page per boundary, ignores retired observers and retains manual native loading",async()=>{
+ const previous=globalThis.IntersectionObserver,observers=[];
+ class Observer{constructor(callback,options){this.callback=callback;this.options=options;this.disconnected=false;observers.push(this);}observe(target){this.target=target;}disconnect(){this.disconnected=true;}unobserve(){}takeRecords(){return [];}}
+ globalThis.IntersectionObserver=Observer;
+ const container=document.body.appendChild(document.createElement("div")),root=createRoot(container);let loads=0;
+ let props={items,currentConversationId:"active",busyConversationIds:new Map(),runningConversationIds:new Set(),listStatus:"ready",scopeKey:"lazy:a",totalItems:100,hasMore:true,isLoadingMore:false,isOpen:true,recentCollapsed:false,canShareConversations:false,renamingId:null,renameDraft:"",loadMoreMode:"scroll",onLoadMore:()=>loads++};
+ const render=()=>act(async()=>root.render(renderSidebar(props)));
+ const current=()=>observers.findLast(observer=>!observer.disconnected&&observer.options?.root?.classList.contains("chat-history-list"));
+ try{
+   await render();let observer=current();assert.ok(observer);assert.doesNotMatch(container.textContent,/sidebar.continueLoadingHistory/);
+   await act(async()=>{observer.callback([{isIntersecting:true}]);observer.callback([{isIntersecting:true}]);});assert.equal(loads,1);
+   props={...props,isLoadingMore:true};await render();assert.equal(observer.disconnected,true);
+   await act(async()=>observer.callback([{isIntersecting:true}]));assert.equal(loads,1);
+   props={...props,isLoadingMore:false,items:[...items]};await render();observer=current();assert.ok(observer);
+   await act(async()=>observer.callback([{isIntersecting:true}]));assert.equal(loads,2);
+   props={...props,isLoadingMore:true};await render();props={...props,isLoadingMore:false,errorMessage:"offline"};await render();assert.equal(current(),undefined);assert.match(container.textContent,/chat.workspaceHistoryRetry/);
+   props={...props,errorMessage:null,loadMoreMode:"manual"};await render();assert.equal(current(),undefined);assert.match(container.textContent,/sidebar.continueLoadingHistory/);
+ }finally{await act(async()=>root.unmount());container.remove();if(previous===undefined)delete globalThis.IntersectionObserver;else globalThis.IntersectionObserver=previous;}
 });

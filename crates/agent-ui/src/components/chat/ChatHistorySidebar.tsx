@@ -208,6 +208,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     scopeKey = "",
     hasMore,
     isLoadingMore,
+    loadMoreMode = "manual",
     errorMessage,
     actionErrorMessage = null,
     onDismissActionError,
@@ -217,6 +218,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     isOpen,
     fontScale = 1,
     conversationSearchRequestKey,
+    conversationSearchAdapter,
     activeView = "chat",
     showProjects = false,
     workspaceSectionLabel,
@@ -259,6 +261,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onCommitRename,
     onCancelRename,
     onSetPinned,
+    onSetArchived,
     onMoveToWorkspace,
     onMoveConversationsToWorkspace,
     canShareConversations,
@@ -616,6 +619,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     if (!sectionsDisabled) {
       onMoveToWorkspace(id, cwd);
     }
+  });
+  const handleSetArchived = useStableEvent((id: string, archived: boolean) => {
+    if (!sectionsDisabled) onSetArchived?.(id, archived);
   });
   const handleMoveConversationsToWorkspace = useStableEvent(
     (ids: readonly string[], cwd: string) => {
@@ -1042,6 +1048,60 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
 
   const menuSide = isMobileMenuLayout ? "bottom" : "right";
   const historyScrollRef = useRef<HTMLDivElement | null>(null);
+  const [historyLoadSentinel, setHistoryLoadSentinel] = useState<HTMLDivElement | null>(null);
+  const historyLoadRequested = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new list scope retires its previous load latch.
+  useEffect(() => {
+    if (!isLoadingMore) historyLoadRequested.current = false;
+  }, [isLoadingMore, scopeKey]);
+  useEffect(() => {
+    if (
+      loadMoreMode !== "scroll" ||
+      !historyLoadSentinel ||
+      !historyScrollRef.current ||
+      !isOpen ||
+      recentCollapsed ||
+      showProjects ||
+      sectionsDisabled ||
+      !hasMore ||
+      isLoadingMore ||
+      errorMessage ||
+      listStatus !== "ready" ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    let active = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          !active ||
+          !entries.some((entry) => entry.isIntersecting) ||
+          historyLoadRequested.current
+        )
+          return;
+        historyLoadRequested.current = true;
+        handleLoadMore();
+      },
+      { root: historyScrollRef.current, rootMargin: "0px 0px 160px 0px" },
+    );
+    observer.observe(historyLoadSentinel);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [
+    loadMoreMode,
+    historyLoadSentinel,
+    isOpen,
+    recentCollapsed,
+    showProjects,
+    sectionsDisabled,
+    hasMore,
+    isLoadingMore,
+    errorMessage,
+    listStatus,
+    handleLoadMore,
+  ]);
   // Divider slot between the pinned block and the rest: index of the first
   // unpinned row, only when at least one pinned row sits above it.
   const firstUnpinnedHistoryIndex = useMemo(() => {
@@ -1215,6 +1275,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         onCommitRename={handleCommitRename}
         onCancelRename={handleCancelRename}
         onSetPinned={handleSetPinned}
+        onSetArchived={onSetArchived ? handleSetArchived : undefined}
         onMoveToWorkspace={handleMoveToWorkspace}
         moveWorkspaces={activeProjects}
         onShareConversation={handleShareConversation}
@@ -1248,6 +1309,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       onConversationOpenInWorkbenchSplit,
       handleMoveToWorkspace,
       handleSetPinned,
+      handleSetArchived,
+      onSetArchived,
       handleSetPendingDelete,
       handleShareConversation,
       handleStartRenaming,
@@ -2196,7 +2259,25 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     </p>
                   </div>
                 ) : null}
-                {taskItems.length > 0 && (hasMore || isLoadingMore) ? (
+                {loadMoreMode === "scroll" &&
+                taskItems.length > 0 &&
+                (hasMore || isLoadingMore) &&
+                !errorMessage ? (
+                  <div
+                    ref={setHistoryLoadSentinel}
+                    className="flex h-10 shrink-0 items-center justify-center"
+                    aria-live="polite"
+                  >
+                    {isLoadingMore ? (
+                      <span role="status" className="text-xs text-muted-foreground">
+                        {t("sidebar.loadingMoreHistory")}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {taskItems.length > 0 &&
+                (hasMore || isLoadingMore) &&
+                (loadMoreMode !== "scroll" || errorMessage) ? (
                   <button
                     type="button"
                     onClick={handleLoadMore}
@@ -2209,7 +2290,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                   >
                     {isLoadingMore
                       ? t("sidebar.loadingMoreHistory")
-                      : t("sidebar.continueLoadingHistory")}
+                      : loadMoreMode === "scroll" && errorMessage
+                        ? t("chat.workspaceHistoryRetry")
+                        : t("sidebar.continueLoadingHistory")}
                   </button>
                 ) : null}
               </div>
@@ -2252,6 +2335,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         conversations={items}
         currentWorkdir={currentConversationWorkdir}
         onSelectConversation={handleSelectConversation}
+        searchAdapter={conversationSearchAdapter}
       />
     </>
   );

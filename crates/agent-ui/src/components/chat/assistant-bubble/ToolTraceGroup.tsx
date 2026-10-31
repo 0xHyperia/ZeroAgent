@@ -35,8 +35,20 @@ function getToolGroupCounts(items: ToolTraceItem[], runningToolCallIds: string[]
   let failed = 0;
   let completed = 0;
   let waiting = 0;
+  let unknown = 0;
+  let cancelled = 0;
 
   for (const item of items) {
+    if (item.publicStatus) {
+      const state = item.publicStatus.state;
+      if (state === "succeeded") completed += 1;
+      else if (state === "failed") failed += 1;
+      else if (state === "cancelled") cancelled += 1;
+      else if (state === "unknown" || !runningIds.has(item.toolCall.id)) unknown += 1;
+      else if (state === "prepared") waiting += 1;
+      else running += 1;
+      continue;
+    }
     if (item.toolCall.id && runningIds.has(item.toolCall.id)) {
       running += 1;
       continue;
@@ -52,7 +64,7 @@ function getToolGroupCounts(items: ToolTraceItem[], runningToolCallIds: string[]
     completed += 1;
   }
 
-  return { running, failed, completed, waiting };
+  return { running, failed, completed, waiting, unknown, cancelled };
 }
 
 export function getToolBatchCounts(items: ToolTraceItem[]) {
@@ -107,6 +119,11 @@ function getRunningToolTarget(item: ToolTraceItem) {
 }
 
 function getRunningToolActivity(item: ToolTraceItem, t: (key: string) => string) {
+  if (item.publicStatus)
+    return {
+      category: getToolActivityCategory(item.toolCall.name),
+      label: item.publicStatus.label,
+    };
   const fileOperation = getFileOperationDisplay(item);
   const category = getToolActivityCategory(item.toolCall.name);
   const action = fileOperation
@@ -167,13 +184,17 @@ function ToolTraceGroupInner(props: {
   const statusLabel =
     counts.failed > 0
       ? `${counts.failed} ${t("chat.tool.failed")}`
-      : counts.running > 0
-        ? showTurnStatus
-          ? t("chat.tool.running")
-          : `${counts.running} ${t("chat.tool.running")}`
-        : counts.waiting > 0
-          ? `${counts.waiting} ${t("chat.tool.waiting")}`
-          : t("chat.tool.success");
+      : counts.unknown > 0
+        ? `${counts.unknown} ${t("chat.tool.unknown")}`
+        : counts.cancelled > 0 && counts.running === 0
+          ? `${counts.cancelled} ${t("chat.tool.cancelled")}`
+          : counts.running > 0
+            ? showTurnStatus
+              ? t("chat.tool.running")
+              : `${counts.running} ${t("chat.tool.running")}`
+            : counts.waiting > 0
+              ? `${counts.waiting} ${t("chat.tool.waiting")}`
+              : t("chat.tool.success");
 
   // 中文标签之间没有天然的词边界（"读取了文件运行了命令"会黏成一句），
   // 用全角竖线分隔；全角字符自带留白，两侧不再加空格。
@@ -185,7 +206,12 @@ function ToolTraceGroupInner(props: {
     return item ? getRunningToolActivity(item, t) : null;
   }, [items, runningToolCallIds, t]);
   const headerLabel = runningActivity?.label ?? countLabel;
-  const showStatus = counts.failed > 0 || counts.running > 0 || counts.waiting > 0;
+  const showStatus =
+    counts.failed > 0 ||
+    counts.running > 0 ||
+    counts.waiting > 0 ||
+    counts.unknown > 0 ||
+    counts.cancelled > 0;
   const BatchIcon =
     TOOL_BATCH_ICONS[runningActivity?.category ?? batchCounts[0]?.category ?? "other"];
 

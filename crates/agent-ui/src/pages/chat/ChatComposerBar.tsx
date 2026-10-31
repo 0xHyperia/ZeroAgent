@@ -368,6 +368,8 @@ export type ChatComposerBarProps = {
   onOpenWorktree?: (worktree: { path: string; repositoryPath: string; branch: string }) => void;
   onWorktreeRemoved?: (worktree: { path: string; repositoryPath: string; branch: string }) => void;
   onSend: () => void;
+  /** Host-owned editing/queue action label; stop keeps its own meaning. */
+  submitLabel?: string;
   onStop: () => void;
   onPrepareChatRuntime?: () => void;
   onComposerBusyChange: (isBusy: boolean) => void;
@@ -391,6 +393,9 @@ export type ChatComposerBarProps = {
   queuedTurns: ChatQueueTurnPreview[];
   queuePaused?: boolean;
   queueControlPending?: boolean;
+  queueRunDisabled?: boolean;
+  queueRunLabel?: string;
+  queueNotice?: ReactNode;
   onQueuePausedChange?: (paused: boolean) => void;
   onRunQueuedTurnNow: (id: string) => void;
   onMoveQueuedTurnUp: (id: string) => void;
@@ -480,6 +485,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     onOpenWorktree,
     onWorktreeRemoved,
     onSend,
+    submitLabel,
     onStop,
     onPrepareChatRuntime,
     onComposerBusyChange,
@@ -500,6 +506,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     queuedTurns,
     queuePaused,
     queueControlPending,
+    queueRunDisabled = false,
+    queueRunLabel,
+    queueNotice,
     onQueuePausedChange,
     onRunQueuedTurnNow,
     onMoveQueuedTurnUp,
@@ -674,10 +683,10 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const sendDisabled = isInputDisabled || stt.active || isUploadingFiles || !hasSendableDraft;
   const canQueueDraftWhileSending = allowQueueWhileSending && isSending && !sendDisabled;
   const primaryActionTitle = canQueueDraftWhileSending
-    ? t("chat.queue.addToQueue")
+    ? (submitLabel ?? t("chat.queue.addToQueue"))
     : isSending
       ? t("chat.stopGeneration")
-      : t("chat.sendMessage");
+      : (submitLabel ?? t("chat.sendMessage"));
   const sendShortcutHint =
     readComposerSendShortcut() === "ctrlEnter"
       ? /Mac|iPhone|iPad|iPod/i.test(typeof navigator === "undefined" ? "" : navigator.platform)
@@ -1402,6 +1411,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   )}
                 >
                   <div className="min-h-0 overflow-hidden">
+                    {queueNotice ? (
+                      <div
+                        className="px-2 py-1 text-xs leading-5 text-muted-foreground"
+                        role="status"
+                      >
+                        {queueNotice}
+                      </div>
+                    ) : null}
                     <div className="relative min-h-0 pt-0.5">
                       <ul
                         ref={queueListRef}
@@ -1448,7 +1465,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                               <RuntimeControlTooltip label={t("chat.queue.moveUp")}>
                                 <button
                                   type="button"
-                                  disabled={queueCollapsed || index === 0}
+                                  disabled={queueCollapsed || queueControlPending || index === 0}
                                   onClick={() => onMoveQueuedTurnUp(item.id)}
                                   aria-label={t("chat.queue.moveUp")}
                                   className={cn(
@@ -1462,7 +1479,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                               <RuntimeControlTooltip label={t("chat.queue.edit")}>
                                 <button
                                   type="button"
-                                  disabled={queueCollapsed}
+                                  disabled={queueCollapsed || queueControlPending}
                                   onClick={() => onEditQueuedTurn(item.id)}
                                   aria-label={t("chat.queue.edit")}
                                   className={cn(
@@ -1473,12 +1490,16 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                                   <SquarePen className="size-3" />
                                 </button>
                               </RuntimeControlTooltip>
-                              <RuntimeControlTooltip label={t("chat.queue.runNow")}>
+                              <RuntimeControlTooltip
+                                label={queueRunLabel ?? t("chat.queue.runNow")}
+                              >
                                 <button
                                   type="button"
-                                  disabled={queueCollapsed}
+                                  disabled={
+                                    queueCollapsed || queueControlPending || queueRunDisabled
+                                  }
                                   onClick={() => onRunQueuedTurnNow(item.id)}
-                                  aria-label={t("chat.queue.runNow")}
+                                  aria-label={queueRunLabel ?? t("chat.queue.runNow")}
                                   className={cn(
                                     "inline-flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors",
                                     "hover:bg-background/80 hover:text-foreground",
@@ -1490,7 +1511,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                               <RuntimeControlTooltip label={t("chat.queue.delete")}>
                                 <button
                                   type="button"
-                                  disabled={queueCollapsed}
+                                  disabled={queueCollapsed || queueControlPending}
                                   onClick={() => onRemoveQueuedTurn(item.id)}
                                   aria-label={t("chat.queue.delete")}
                                   className={cn(
@@ -1919,6 +1940,19 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     disabled={controlsDisabled || isSending || manualCompactBlocked}
                     onConfirm={onManualCompactConfirm}
                   />
+                ) : null}
+                {canQueueDraftWhileSending ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title={t("chat.stopGeneration")}
+                    aria-label={t("chat.stopGeneration")}
+                    onClick={onStop}
+                    data-composer-secondary-action="stop"
+                    className="shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Square className="size-3 fill-current" />
+                  </Button>
                 ) : null}
                 <Button
                   data-composer-primary-action={

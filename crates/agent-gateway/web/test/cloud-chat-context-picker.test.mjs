@@ -12,7 +12,7 @@ async function mount(t,overrides={}){
   const events={attached:[],projects:[],closed:0,focused:0,research:0};
   let revision=0;
   const captureGuard=()=>{const at=revision;return()=>{if(at!==revision)throw new Error('retired account');};};
-  let props={kind:'files',anchor,mobile:false,scope:'one',revision:0,projectsClient:{listProjects:async()=>({items:[],next_before_id:''})},filesClient:{list:async()=>({files:[],nextCursor:''})},captureGuard,attachedIds:[],disabled:false,researchEnabled:false,onSelectProject:async project=>events.projects.push(project),onAttach:item=>events.attached.push(item.id),onBrowse(){},onToggleResearch:()=>events.research++,onFillDraft(){},onFocusComposer:()=>events.focused++,...overrides};
+  let props={kind:'files',anchor,mobile:false,scope:'one',revision:0,projectsClient:{listProjects:async()=>({items:[],next_before_id:''})},filesClient:{list:async()=>({files:[],nextCursor:''})},captureGuard,attachedIds:[],disabled:false,researchEnabled:false,onSelectProject:async project=>events.projects.push(project),onAttach:item=>events.attached.push(item.id),onBrowse(){},onCreateProject(){},onToggleResearch:()=>events.research++,onFillDraft(){},onFocusComposer:()=>events.focused++,...overrides};
   const {CloudChatContextPicker}=env.loadModule('src/components/cloudchat/CloudChatContextPicker.tsx');
   const render=async()=>env.act(async()=>{root.render(env.React.createElement(CloudChatContextPicker,{...props,onClose:()=>{events.closed++;props={...props,kind:null};root.render(env.React.createElement(CloudChatContextPicker,{...props,onClose(){}}));}}));await tick();});
   t.after(async()=>{await env.act(async()=>root.unmount());host.remove();anchor.remove();env.cleanup();});
@@ -76,4 +76,11 @@ test('project selection is single-flight and waits for the association result be
   await app.click('计划');const row=document.querySelector('[data-picker-entry]');assert.equal(row.disabled,true);
   await app.env.act(async()=>{row.click();await tick();});assert.equal(selected,1);assert.equal(app.events.closed,0);
   await app.env.act(async()=>{release();await tick();});assert.equal(app.events.closed,1);
+});
+
+
+test('creating a project from the composer closes the picker and opens creation without page navigation',async t=>{
+ let created=0,browsed=0;
+ const app=await mount(t,{kind:'projects',onCreateProject:()=>created++,onBrowse:()=>browsed++});
+ await app.click('新建项目');assert.equal(created,1);assert.equal(browsed,0);assert.equal(app.events.closed,1);
 });

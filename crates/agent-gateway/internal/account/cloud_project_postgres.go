@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_projects (
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  UNIQUE(id,user_id)
 );
+ALTER TABLE zeroagent_cloud_projects ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'folder';
+ALTER TABLE zeroagent_cloud_projects ADD COLUMN IF NOT EXISTS color TEXT NOT NULL DEFAULT 'default';
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_projects_owner_idx ON zeroagent_cloud_projects(user_id,created_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_project_conversations (
  conversation_id UUID PRIMARY KEY REFERENCES zerobox_cloud_conversations(id) ON DELETE CASCADE,
@@ -32,12 +34,12 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_project_files (
  PRIMARY KEY(project_id,file_id),FOREIGN KEY(project_id,user_id) REFERENCES zeroagent_cloud_projects(id,user_id) ON DELETE CASCADE
 );`
 
-const cloudProjectColumns = `p.id::text,p.user_id,p.name,p.description,p.instructions,p.version,p.created_at,p.updated_at`
-const cloudProjectConversationColumns = `c.id::text,COALESCE(b.project_id::text,''),COALESCE(b.version,0),COALESCE(b.created_at,c.created_at),c.user_id,c.title,c.model,c.created_at,c.updated_at`
+const cloudProjectColumns = `p.id::text,p.user_id,p.name,p.description,p.instructions,p.version,p.created_at,p.updated_at,p.icon,p.color`
+const cloudProjectConversationColumns = `c.id::text,COALESCE(b.project_id::text,''),COALESCE(b.version,0),COALESCE(b.created_at,c.created_at),c.user_id,c.title,c.model,c.created_at,c.updated_at,c.pinned,c.archived,c.management_version`
 
 func scanCloudProject(row interface{ Scan(...any) error }) (*CloudProject, error) {
 	var p CloudProject
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.Instructions, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.Instructions, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.Icon, &p.Color)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -56,10 +58,13 @@ func cloudProjectSQLError(err error) error {
 }
 
 func (s *PersistentStore) CreateCloudProject(ctx context.Context, input *CloudProject) (*CloudProject, error) {
-	if input == nil || input.UserID <= 0 || !validCloudProject(CloudProjectUpdate{input.Name, input.Description, input.Instructions}) {
+	if input == nil || input.UserID <= 0 || !validCloudProject(CloudProjectUpdate{Name: input.Name, Description: input.Description, Instructions: input.Instructions}) {
 		return nil, ErrCloudProjectInvalid
 	}
 	project := *input
+	if !normalizeCloudProjectAppearance(&project) {
+		return nil, ErrCloudProjectInvalid
+	}
 	var err error
 	if project.ID == "" {
 		project.ID = uuid.NewString()
@@ -81,7 +86,7 @@ func (s *PersistentStore) CreateCloudProject(ctx context.Context, input *CloudPr
 	if count >= CloudProjectMaxAccountProjects {
 		return nil, ErrCloudProjectQuota
 	}
-	result, err := scanCloudProject(tx.QueryRowContext(ctx, `INSERT INTO zeroagent_cloud_projects AS p(id,user_id,name,description,instructions) VALUES($1,$2,$3,$4,$5) RETURNING `+cloudProjectColumns, project.ID, project.UserID, project.Name, project.Description, project.Instructions))
+	result, err := scanCloudProject(tx.QueryRowContext(ctx, `INSERT INTO zeroagent_cloud_projects AS p(id,user_id,name,description,instructions,icon,color) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING `+cloudProjectColumns, project.ID, project.UserID, project.Name, project.Description, project.Instructions, project.Icon, project.Color))
 	if err != nil {
 		return nil, cloudProjectSQLError(err)
 	}
@@ -153,7 +158,7 @@ func (s *PersistentStore) UpdateCloudProject(ctx context.Context, userID int64, 
 	if version < 1 || p.Version != version {
 		return nil, ErrCloudProjectConflict
 	}
-	p, err = scanCloudProject(tx.QueryRowContext(ctx, `UPDATE zeroagent_cloud_projects p SET name=$3,description=$4,instructions=$5,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND user_id=$2 RETURNING `+cloudProjectColumns, p.ID, userID, update.Name, update.Description, update.Instructions))
+	p, err = scanCloudProject(tx.QueryRowContext(ctx, `UPDATE zeroagent_cloud_projects p SET name=$3,description=$4,instructions=$5,icon=COALESCE($6,icon),color=COALESCE($7,color),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND user_id=$2 RETURNING `+cloudProjectColumns, p.ID, userID, update.Name, update.Description, update.Instructions, update.Icon, update.Color))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +193,7 @@ func (s *PersistentStore) DeleteCloudProject(ctx context.Context, userID int64, 
 func scanCloudProjectConversation(row interface{ Scan(...any) error }) (*CloudProjectConversation, error) {
 	var binding CloudProjectConversation
 	var c CloudConversation
-	err := row.Scan(&binding.ConversationID, &binding.ProjectID, &binding.Version, &binding.CreatedAt, &c.UserID, &c.Title, &c.Model, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&binding.ConversationID, &binding.ProjectID, &binding.Version, &binding.CreatedAt, &c.UserID, &c.Title, &c.Model, &c.CreatedAt, &c.UpdatedAt, &c.Pinned, &c.Archived, &c.ManagementVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

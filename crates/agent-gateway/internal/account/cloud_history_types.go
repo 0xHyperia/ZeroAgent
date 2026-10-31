@@ -15,13 +15,14 @@ const (
 )
 
 type CloudMessageHead struct {
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversation_id"`
-	Role           string    `json:"role"`
-	CreatedAt      time.Time `json:"created_at"`
-	ContentBytes   int64     `json:"content_bytes"`
-	ContentSHA256  string    `json:"content_sha256"`
-	UsageBytes     int64     `json:"usage_bytes,omitempty"`
+	ID                string    `json:"id"`
+	ConversationID    string    `json:"conversation_id"`
+	Role              string    `json:"role"`
+	CreatedAt         time.Time `json:"created_at"`
+	ContentBytes      int64     `json:"content_bytes"`
+	ContentSHA256     string    `json:"content_sha256"`
+	PresentationBytes int64     `json:"presentation_bytes,omitempty"`
+	UsageBytes        int64     `json:"usage_bytes,omitempty"`
 }
 
 type CloudHistoryHeadsPage struct {
@@ -32,10 +33,11 @@ type CloudHistoryHeadsPage struct {
 
 type CloudHistoryMessage struct {
 	CloudMessage
-	ContentBytes   int64  `json:"content_bytes"`
-	ContentSHA256  string `json:"content_sha256"`
-	ContentOmitted bool   `json:"content_omitted"`
-	UsageOmitted   bool   `json:"usage_omitted,omitempty"`
+	ContentBytes        int64  `json:"content_bytes"`
+	ContentSHA256       string `json:"content_sha256"`
+	ContentOmitted      bool   `json:"content_omitted"`
+	PresentationOmitted bool   `json:"presentation_omitted,omitempty"`
+	UsageOmitted        bool   `json:"usage_omitted,omitempty"`
 }
 
 type CloudHistoryPage struct {

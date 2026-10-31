@@ -20,6 +20,7 @@ import (
 const cloudRunLease = 30 * time.Second
 
 type CreateCloudRunInput struct {
+	pendingVersion  int64
 	ConversationID  string                  `json:"conversation_id"`
 	ClientRequestID string                  `json:"client_request_id"`
 	Model           string                  `json:"model"`
@@ -277,7 +278,7 @@ func (s *Service) CreateCloudRun(ctx context.Context, session *Session, input Cr
 	if !ok {
 		return nil, false, ErrCloudRunInvalid
 	}
-	run, created, err := store.CreateCloudRun(ctx, &CloudRun{ConversationID: input.ConversationID, UserID: session.UserID, SessionRef: ref, ClientRequestID: input.ClientRequestID, RequestHash: hash, Model: input.Model, ReasoningEffort: input.ReasoningEffort, ProviderKeyID: input.ProviderKeyID, ModelParameters: parameters, PublicResearch: publicResearch, RequestContent: content})
+	run, created, err := store.CreateCloudRun(ctx, &CloudRun{pendingVersion: input.pendingVersion, ConversationID: input.ConversationID, UserID: session.UserID, SessionRef: ref, ClientRequestID: input.ClientRequestID, RequestHash: hash, Model: input.Model, ReasoningEffort: input.ReasoningEffort, ProviderKeyID: input.ProviderKeyID, ModelParameters: parameters, PublicResearch: publicResearch, RequestContent: content})
 	if err != nil {
 		return nil, false, err
 	}
@@ -496,7 +497,7 @@ func cloudRunAPIError(err error) error {
 	if errors.Is(err, ErrNotFound) {
 		return &APIError{Status: http.StatusNotFound, Message: "cloud task or conversation not found"}
 	}
-	if errors.Is(err, ErrCloudRunConflict) {
+	if errors.Is(err, ErrCloudRunConflict) || errors.Is(err, ErrCloudPendingConflict) {
 		return &APIError{Status: http.StatusConflict, Message: "request ID was already used for different content", Reason: "request_conflict"}
 	}
 	if errors.Is(err, ErrCloudRunBusy) {

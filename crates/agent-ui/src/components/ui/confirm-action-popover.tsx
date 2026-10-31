@@ -3,6 +3,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type { ReactNode } from "react";
 import { Button } from "./button";
+import { LabelTooltip } from "./label-tooltip";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./popover";
 
 export function ConfirmActionPopover(props: {
@@ -23,6 +24,8 @@ export function ConfirmActionPopover(props: {
   // state (e.g. the usage ring's two-tap touch flow) own the open state.
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Tooltip and popover share the actual trigger button, including its ref and events. */
+  triggerLabel?: ReactNode;
   children: (open: () => void) => ReactNode;
 }) {
   const {
@@ -35,17 +38,19 @@ export function ConfirmActionPopover(props: {
     tone = "destructive",
     open,
     onOpenChange,
+    triggerLabel,
     children,
   } = props;
   const { t } = useLocale();
+  const trigger = <PopoverTrigger render={children(() => {}) as React.ReactElement} />;
 
   return (
     <Popover
       open={open}
       onOpenChange={onOpenChange ? (nextOpen) => onOpenChange(nextOpen) : undefined}
     >
-      {/* Pass no-op — Popover.Trigger merges its own click handler via render prop */}
-      <PopoverTrigger render={children(() => {}) as React.ReactElement} />
+      {/* The render element must forward Base UI's handlers/ref; a tooltip wrapper does not. */}
+      {triggerLabel ? <LabelTooltip label={triggerLabel} render={trigger} /> : trigger}
       <PopoverContent
         side={side}
         align={align}

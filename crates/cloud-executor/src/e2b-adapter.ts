@@ -10,6 +10,7 @@ import {
   siteBundleInput,
 } from "./file-broker.ts";
 import { type Config, Fault, type Operation, scopeHash } from "./protocol.ts";
+import { WorkspaceSandbox } from "./sandbox-access.ts";
 import { sanitizeSdkEnvironment, sdkOptions } from "./sdk-options.ts";
 
 function brokerError(value: unknown): string {
@@ -74,6 +75,18 @@ function brokerError(value: unknown): string {
 export class E2BAdapter implements Adapter {
   config: Config;
   enabled: boolean;
+  // Capabilities stay in this process, never in Gateway responses or receipts.
+  // After a restart, owned VMs can still be inspected/killed/reconciled. Normal
+  // work fails closed instead of silently reconnecting, resuming or extending TTL.
+  private connections = new Map<
+    string,
+    {
+      sandbox: WorkspaceSandbox;
+      startedAt: number;
+      expiresAt: number;
+      scope: string;
+    }
+  >();
   constructor(config: Config) {
     this.config = config;
     this.enabled = !!config.apiKey;
@@ -131,7 +144,16 @@ export class E2BAdapter implements Adapter {
       auto_resume: false,
     };
   }
+  private remember(sandbox: WorkspaceSandbox, info: SandboxInfo, op: Operation) {
+    this.connections.set(info.sandboxId, {
+      sandbox,
+      startedAt: info.startedAt.getTime(),
+      expiresAt: info.endAt.getTime(),
+      scope: scopeHash(this.config, op),
+    });
+  }
   private async terminate(sandboxId: string): Promise<boolean> {
+    this.connections.delete(sandboxId);
     try {
       await Sandbox.kill(sandboxId, this.options());
       return true;
@@ -142,6 +164,8 @@ export class E2BAdapter implements Adapter {
   async execute(op: Operation, context: Context): Promise<Record<string, unknown>> {
     if (!this.enabled) throw new Fault("e2b_disabled", 503);
     context.signal.throwIfAborted();
+    for (const [id, connection] of this.connections)
+      if (connection.expiresAt <= Date.now()) this.connections.delete(id);
     if (op.action === "sandbox.reconcile") {
       const expected = this.metadata(op, String(op.input.create_operation_id));
       const paginator = Sandbox.list({
@@ -183,7 +207,7 @@ export class E2BAdapter implements Adapter {
     if (op.action === "sandbox.create") {
       // No SDK retry: a timed-out create may still have allocated a billed VM.
       if (!this.config.template) throw new Fault("explicit_template_required", 503);
-      const sandbox = await Sandbox.create(this.config.template, {
+      const sandbox = await WorkspaceSandbox.create(this.config.template, {
         ...this.options(),
         signal: context.signal,
         timeoutMs: this.config.sandboxTimeoutMs,
@@ -208,6 +232,7 @@ export class E2BAdapter implements Adapter {
         );
         if (initialized.exit_code !== 0 || JSON.parse(String(initialized.stdout)).error)
           throw new Fault("sandbox_initialization_failed", 502);
+        this.remember(sandbox as WorkspaceSandbox, info, op);
         return this.view(info);
       } catch {
         const confirmed = await this.terminate(sandbox.sandboxId);
@@ -226,6 +251,7 @@ export class E2BAdapter implements Adapter {
       info = await Sandbox.getInfo(id, { ...this.options(), signal: context.signal });
     } catch (error) {
       if (error instanceof SandboxNotFoundError) {
+        this.connections.delete(id);
         if (op.action === "sandbox.kill")
           return { sandbox_id: id, sandbox_terminated: true, was_running: false };
         throw new Fault("sandbox_not_found", 404);
@@ -234,30 +260,45 @@ export class E2BAdapter implements Adapter {
     }
     this.owned(info, op);
     // Killing an owned VM also remains possible after policy drift.
-    if (op.action === "sandbox.kill")
+    if (op.action === "sandbox.kill") {
+      this.connections.delete(id);
       return {
         sandbox_id: id,
         sandbox_terminated: true,
         was_running: await Sandbox.kill(id, this.options()),
       };
+    }
     this.isolated(info);
     if (op.action === "sandbox.info") return this.view(info);
-    if (op.action === "sandbox.pause")
+    if (op.action === "sandbox.pause") {
+      this.connections.delete(id);
       return { sandbox_id: id, paused: await Sandbox.pause(id, this.options()) };
+    }
     if (info.state === "paused" && op.action !== "sandbox.resume")
       throw new Fault("sandbox_paused", 409);
     context.signal.throwIfAborted();
-    const sandbox = await Sandbox.connect(id, {
-      ...this.options(),
-      signal: context.signal,
-      ...(op.action === "sandbox.resume" ? { timeoutMs: this.config.sandboxTimeoutMs } : {}),
-    });
-    if (op.action === "sandbox.resume" || op.action === "sandbox.connect") {
+    if (op.action === "sandbox.resume") {
+      const sandbox = await WorkspaceSandbox.connect(id, {
+        ...this.options(),
+        signal: context.signal,
+        timeoutMs: this.config.sandboxTimeoutMs,
+      });
       const current = await sandbox.getInfo(this.options());
       this.owned(current, op);
       this.isolated(current);
+      this.remember(sandbox as WorkspaceSandbox, current, op);
       return this.view(current);
     }
+    const connection = this.connections.get(id);
+    if (
+      !connection ||
+      connection.scope !== scopeHash(this.config, op) ||
+      connection.startedAt !== info.startedAt.getTime() ||
+      info.endAt.getTime() > connection.expiresAt
+    )
+      throw new Fault("sandbox_connection_unavailable", 409);
+    const sandbox = connection.sandbox;
+    if (op.action === "sandbox.connect") return this.view(info);
     if (op.action === "command.run") {
       const cwd = op.input.cwd
         ? `${this.config.workspaceRoot}/${op.input.cwd}`
@@ -275,7 +316,10 @@ export class E2BAdapter implements Adapter {
       };
     }
     if (op.action === "code.run")
-      return { sandbox_id: id, ...(await this.code(sandbox, op, context.signal)) };
+      return {
+        sandbox_id: id,
+        ...(await this.code(sandbox, info.envdVersion, op, context.signal)),
+      };
     if (op.action === "archive.extract") {
       const invocation = archiveInput({ ...op.input, root: this.config.workspaceRoot });
       const output = await this.command(
@@ -444,7 +488,7 @@ export class E2BAdapter implements Adapter {
           sandbox_terminated: await stop,
         });
       return { stdout, stderr, exit_code: exitCode, output_bytes: bytes };
-    } catch (error) {
+    } catch {
       // A broken SDK stream/timeout is not proof that the process stopped. Kill
       // the VM (including descendants), rather than merely disconnecting it.
       halt();
@@ -461,7 +505,8 @@ export class E2BAdapter implements Adapter {
     }
   }
   private async code(
-    sandbox: Sandbox,
+    sandbox: WorkspaceSandbox,
+    envdVersion: string,
     op: Operation,
     signal: AbortSignal,
   ): Promise<Record<string, unknown>> {
@@ -470,7 +515,7 @@ export class E2BAdapter implements Adapter {
       resourceLimits: { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 32 },
       workerData: {
         apiKey: this.config.apiKey,
-        sandboxId: sandbox.sandboxId,
+        access: sandbox.access(envdVersion),
         code: op.input.code,
         language: op.input.language ?? "python",
         root: this.config.workspaceRoot,
