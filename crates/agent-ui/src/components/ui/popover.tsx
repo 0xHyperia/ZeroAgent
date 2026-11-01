@@ -19,8 +19,9 @@ export function PopoverClose(props: React.ComponentPropsWithoutRef<typeof Popove
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
 }
 
-type PopoverContentProps = React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Popup> &
-  Pick<
+type PopoverContentProps = React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Popup> & {
+  portalContainer?: React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Portal>["container"];
+} & Pick<
     React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Positioner>,
     | "align"
     | "alignOffset"
@@ -42,13 +43,14 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
       sideOffset = 4,
       anchor,
       positionMethod,
+      portalContainer,
       ...props
     },
     ref,
   ) => {
     const zoneStyle = useZoneFontScaleStyle();
     return (
-      <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Portal container={portalContainer}>
         <PopoverPrimitive.Positioner
           anchor={anchor}
           positionMethod={positionMethod}

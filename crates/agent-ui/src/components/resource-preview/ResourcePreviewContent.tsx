@@ -4,12 +4,13 @@ import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
-import { previewImageDimensions } from "./previewImageDimensions";
+import { previewImageDimensions, previewSVGDimensions } from "./previewImageDimensions";
 import { isolatedPreviewDocument, type ResourcePreviewKind, resourceText } from "./previewPolicy";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import type { PreviewWorkerResult } from "./previewWorkerProtocol";
+import ResourceImagePreview from "./ResourceImagePreview";
+import ResourceMediaPreview from "./ResourceMediaPreview";
 import { usePreviewReadingState } from "./readingSession";
-import { usePreviewViewport } from "./usePreviewViewport";
 
 const PDFPreview = lazy(() => import("./ResourcePDFPreview"));
 const DOCXPreview = lazy(() => import("./ResourceDOCXPreview"));
@@ -61,7 +62,9 @@ export default function ResourcePreviewContent(
         setData(result);
       } else if (["html", "svg"].includes(kind)) {
         // No scripts or same-origin permission even for a user's own upload.
-        setDocument(isolatedPreviewDocument(resourceText(bytes)));
+        const content = resourceText(bytes);
+        if (kind === "svg") setDimensions(previewSVGDimensions(content));
+        setDocument(isolatedPreviewDocument(content, kind === "svg" ? "image" : undefined));
       } else if (["image", "audio", "video"].includes(kind)) {
         if (kind === "image") setDimensions(previewImageDimensions(bytes, props.mime));
         const value = objectURL(new Blob([bytes.slice().buffer], { type: props.mime }));
@@ -129,10 +132,10 @@ export default function ResourcePreviewContent(
         <TextPreview bytes={bytes} onDownload={props.onDownload} showToolbar={false} />
       </>
     );
-  if (["html", "svg"].includes(kind))
+  if (kind === "html")
     return (
       <>
-        <PreviewToolbar label={kind === "svg" ? "矢量图像" : "网页文档"} detail="只读">
+        <PreviewToolbar label="网页文档" detail="只读">
           {
             <Button variant="ghost" size="sm" onClick={() => setSource(true)}>
               查看源码
@@ -174,121 +177,39 @@ export default function ResourcePreviewContent(
     ) : (
       <PreviewLoading message="正在读取压缩包目录…" onCancel={props.onCancel} />
     );
-  if (kind === "image")
-    return url ? (
-      <ImagePreview
+  if (kind === "image" || kind === "svg")
+    return dimensions && (url || document) ? (
+      <ResourceImagePreview
+        key={url || document}
         url={url}
+        document={kind === "svg" ? document : undefined}
         name={props.name}
         dimensions={dimensions}
         assertCurrent={assertCurrent}
         onError={setError}
+        onCancel={props.onCancel}
+        thumbnail={props.thumbnail}
+        onViewSource={kind === "svg" ? () => setSource(true) : undefined}
       />
     ) : (
       <PreviewLoading message="正在读取图像…" onCancel={props.onCancel} />
     );
-  if (kind === "audio")
+  if (kind === "audio" || kind === "video")
     return url ? (
-      <>
-        <PreviewToolbar label="音频" detail="原件播放" />
-        <div className="za-preview-media-stage">
-          {/* biome-ignore lint/a11y/useMediaCaption: original uploaded media has no caption track; do not invent one */}
-          <audio
-            className="za-preview-media"
-            controls
-            src={url}
-            preload="metadata"
-            onError={() => setError("浏览器不支持此音频编码，请下载原件。")}
-          >
-            浏览器不支持音频播放。
-          </audio>
-        </div>
-      </>
+      <ResourceMediaPreview
+        key={url}
+        kind={kind}
+        url={url}
+        name={props.name}
+        assertCurrent={assertCurrent}
+        onDownload={props.onDownload}
+        onRetry={props.onRetry}
+        onCancel={props.onCancel}
+      />
     ) : (
-      <PreviewLoading message="正在读取音频…" onCancel={props.onCancel} />
-    );
-  if (kind === "video")
-    return url ? (
-      <>
-        <PreviewToolbar label="视频" detail="原件播放" />
-        <div className="za-preview-media-stage">
-          {/* biome-ignore lint/a11y/useMediaCaption: original uploaded media has no caption track; do not invent one */}
-          <video
-            className="za-preview-media"
-            controls
-            playsInline
-            src={url}
-            preload="metadata"
-            onError={() => setError("浏览器不支持此视频编码，请下载原件。")}
-          >
-            浏览器不支持视频播放。
-          </video>
-        </div>
-      </>
-    ) : (
-      <PreviewLoading message="正在读取视频…" onCancel={props.onCancel} />
+      <PreviewLoading message="正在读取媒体…" onCancel={props.onCancel} />
     );
   return null;
-}
-
-function ImagePreview({
-  url,
-  name,
-  dimensions,
-  assertCurrent,
-  onError,
-}: {
-  url: string;
-  name: string;
-  dimensions: { width: number; height: number } | null;
-  assertCurrent: () => void;
-  onError: (message: string) => void;
-}) {
-  const [zoom, setZoom] = useState("fit");
-  const { container, viewport } = usePreviewViewport();
-  const fit =
-    dimensions && viewport.width && viewport.height
-      ? Math.min(
-          1,
-          Math.max(1, viewport.width - 32) / dimensions.width,
-          Math.max(1, viewport.height - 32) / dimensions.height,
-        )
-      : 1;
-  const scale = zoom === "fit" ? fit : Number(zoom);
-  return (
-    <>
-      <PreviewToolbar
-        label="图像"
-        detail={dimensions ? `${dimensions.width} × ${dimensions.height}` : "只读"}
-      >
-        <PreviewZoomControl
-          label="图像缩放"
-          value={zoom === "fit" ? "fit-page" : Number(zoom) * 100}
-          fitWidth={false}
-          actualPercent={scale * 100}
-          percentages={[50, 75, 100, 150, 200]}
-          onChange={(value) => setZoom(typeof value === "number" ? String(value / 100) : "fit")}
-        />
-      </PreviewToolbar>
-      <PreviewScrollArea ref={container} className="za-preview-image-scroll">
-        <div className="za-preview-visual-inner">
-          <img
-            className="za-preview-image"
-            src={url}
-            alt={name}
-            style={dimensions ? { width: `${dimensions.width * scale}px` } : undefined}
-            onLoad={() => {
-              try {
-                assertCurrent();
-              } catch {
-                onError("此预览已失效，请重新打开文件。");
-              }
-            }}
-            onError={() => onError("图片未能解码，请下载原件查看。")}
-          />
-        </div>
-      </PreviewScrollArea>
-    </>
-  );
 }
 
 function TextPreview({

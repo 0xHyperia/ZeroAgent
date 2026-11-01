@@ -6,6 +6,11 @@ import { useZoneFontScaleStyle } from "./zone-font-scale";
 
 export const TOOLTIP_OPEN_DELAY = 350;
 export const TOOLTIP_CLOSE_DELAY = 80;
+/** Fullscreen surfaces must keep their hints inside the browser's top-layer element. */
+export const TooltipPortalContainer =
+  React.createContext<React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Portal>["container"]>(
+    undefined,
+  );
 const TooltipDescriptionContext = React.createContext<{
   contentId: string;
   open: boolean;
@@ -134,8 +139,9 @@ export const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentPro
   ) => {
     const zoneStyle = useZoneFontScaleStyle();
     const description = React.useContext(TooltipDescriptionContext);
+    const portalContainer = React.useContext(TooltipPortalContainer);
     return (
-      <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Portal container={portalContainer}>
         <TooltipPrimitive.Positioner
           align={align}
           anchor={anchor}

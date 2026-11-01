@@ -83,7 +83,7 @@ export function checkPreviewSignature(kind: ResourcePreviewKind, bytes: Uint8Arr
 
 // No scripts, cookies, same-origin privilege, forms or external subresources.
 // Content is still placed inside a sandbox with no permissions by the viewer.
-export function isolatedPreviewDocument(body: string, mode?: "document"): string {
+export function isolatedPreviewDocument(body: string, mode?: "document" | "image"): string {
   const styles = `
     html{color-scheme:light;background:#fff;color:#171717;font:15px/1.6 system-ui,sans-serif}
     body{margin:0;padding:16px;overflow-wrap:anywhere}
@@ -91,8 +91,9 @@ export function isolatedPreviewDocument(body: string, mode?: "document"): string
     .docx-wrapper{background:#f3f3f1!important;padding:24px!important}
     .docx-wrapper>section.docx{background:#fff!important;box-shadow:0 1px 3px #0001,0 8px 28px #0001!important;margin:0 auto 24px!important}
     ${mode === "document" ? "html,body{background:#f3f3f1}body{padding:0}" : ""}
+    ${mode === "image" ? "html,body{width:100%;height:100%;padding:0;margin:0;overflow:hidden;background:transparent}body>svg{display:block;width:100%!important;height:100%!important;max-width:none}" : ""}
     ${
-      mode === "document"
+      mode === "document" || mode === "image"
         ? ""
         : `@media(max-width:960px){
       body{padding:4px}

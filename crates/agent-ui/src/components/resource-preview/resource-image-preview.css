@@ -1,0 +1,146 @@
+.za-image-workspace {
+  container: image-viewer / inline-size;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: var(--za-preview-viewport-height);
+  overflow: hidden;
+  background: var(--za-surface-subtle);
+}
+.za-image-canvas {
+  position: absolute;
+  inset: 64px calc(var(--za-image-side-inset, 0px) + 16px) 68px 16px;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+}
+.za-image-canvas:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+.za-image-workspace[data-can-pan="true"] .za-image-canvas {
+  cursor: grab;
+}
+.za-image-workspace[data-can-pan="true"][data-moving="true"] .za-image-canvas {
+  cursor: grabbing;
+}
+.za-image-content {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-color: var(--za-surface);
+  background-image: conic-gradient(
+    hsl(var(--foreground) / 0.045) 25%,
+    transparent 0 50%,
+    hsl(var(--foreground) / 0.045) 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
+  box-shadow: 0 2px 14px rgb(0 0 0 / 0.035);
+  transition:
+    opacity 160ms ease,
+    width 160ms ease,
+    height 160ms ease,
+    transform 160ms ease;
+}
+:where(.za-image-workspace[data-ready="true"]) .za-image-content,
+:where(.za-image-cover[data-ready="true"]) .za-image-cover-content {
+  opacity: 1;
+}
+:where(.za-image-workspace[data-moving="true"]) .za-image-content {
+  transition: opacity 160ms ease;
+}
+.za-image-loading {
+  position: absolute;
+  inset: 64px var(--za-image-side-inset, 0px) 68px 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.za-image-loading .za-preview-loading {
+  pointer-events: auto;
+}
+.za-image-dock-position {
+  position: absolute;
+  inset: auto var(--za-image-side-inset, 0px) max(16px, env(safe-area-inset-bottom)) 0;
+  display: flex;
+  justify-content: center;
+  padding-inline: 12px;
+  pointer-events: none;
+}
+.za-image-tools {
+  width: auto;
+  max-width: 100%;
+  gap: 4px;
+  pointer-events: auto;
+}
+.za-image-tools button {
+  flex: none;
+  border-radius: 99px;
+  color: hsl(var(--muted-foreground));
+}
+.za-image-tools button:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+.za-image-tools svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.7;
+}
+.za-image-tool-divider {
+  width: 1px;
+  height: 16px;
+  margin-inline: 5px;
+  background: var(--za-border);
+}
+.za-image-cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.za-image-cover-content {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.za-image-cover .za-image-loading {
+  inset: 0;
+}
+@container image-viewer (max-width: 560px) {
+  .za-image-tools button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (pointer: coarse) {
+  .za-image-tools button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-image-content,
+  .za-image-cover-content,
+  .za-image-workspace[data-moving="true"] .za-image-content {
+    transition: none;
+  }
+}

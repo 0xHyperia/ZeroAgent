@@ -78,7 +78,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
   const thumbnailUnavailable =
     thumbnail &&
     (resource.size > 4 * 1024 * 1024 ||
-      !["docx", "pptx", "pdf", "image", "text", "markdown", "sheet"].includes(kind));
+      !["docx", "pptx", "pdf", "image", "svg", "text", "markdown", "sheet"].includes(kind));
   // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit retry owns a fresh abort lifetime
   useEffect(() => {
     const controller = new AbortController();

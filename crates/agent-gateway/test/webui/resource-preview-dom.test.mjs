@@ -16,7 +16,7 @@ async function chooseZoom(app,label,itemText) {
 }
 
 async function mount(t, resource, load, options = {}) {
-  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
+  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
   options.setup?.(env);
   const { ResourcePreview } = env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const host = document.body.appendChild(document.createElement("div"));
@@ -24,6 +24,8 @@ async function mount(t, resource, load, options = {}) {
   const state = () => {
     const unavailable = host.querySelector(".za-preview-unavailable");
     if (unavailable) return /已取消/.test(unavailable.textContent) ? "paused" : "error";
+    // JSDOM does not decode images. Decoder states are exercised explicitly by image tests.
+    if (host.querySelector(".za-image-content,.za-image-cover-content")) return "loaded";
     const loading = host.querySelector(".za-preview-loading");
     if (loading) return /正在准备预览/.test(loading.textContent) ? "preparing" : "parsing";
     if (host.querySelector('[aria-busy="true"]')) return "parsing";
@@ -139,9 +141,9 @@ test("image fit follows its actual reading pane and original-size zoom remains a
   gif.writeUInt16LE(1600, 6); gif.writeUInt16LE(900, 8);
   let paneWidth = 260, notifyResize, disconnected = false;
   const app = await mount(t, descriptor(gif, {name:"画布.gif",mime:"image/gif"}), async () => ({blob:new Blob([gif]),assertCurrent(){}}), {setup(env) {
-    Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientWidth", {configurable:true,get(){return this.classList.contains("za-preview-image-scroll") ? paneWidth : 0;}});
-    Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientHeight", {configurable:true,get(){return this.classList.contains("za-preview-image-scroll") ? 180 : 0;}});
-    globalThis.ResizeObserver = class { constructor(callback){this.callback=callback;} observe(element){if(element.classList.contains("za-preview-image-scroll")){notifyResize=this.callback;this.reader=true;}} disconnect(){if(this.reader)disconnected=true;} };
+    Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientWidth", {configurable:true,get(){return this.classList.contains("za-image-workspace") ? paneWidth : 0;}});
+    Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientHeight", {configurable:true,get(){return this.classList.contains("za-image-workspace") ? 480 : 0;}});
+    globalThis.ResizeObserver = class { constructor(callback){this.callback=callback;} observe(element){if(element.classList.contains("za-image-workspace")){notifyResize=this.callback;this.reader=true;}} disconnect(){if(this.reader)disconnected=true;} };
   }});
   assert.ok(Math.abs(parseFloat(app.host.querySelector("img").style.width)-228)<0.01);
   assert.match(app.host.textContent, /1600 × 900/);
@@ -155,22 +157,22 @@ test("image fit follows its actual reading pane and original-size zoom remains a
   assert.equal(disconnected, true);
 });
 
-test("spreadsheet coordinates, zoom and worksheet switching use one read-only canvas", async t => {
+test("compatible spreadsheet coordinates, zoom and worksheet switching use one read-only canvas", async t => {
   const bytes=Buffer.from("test spreadsheet bytes"), requests=[];
   const sheetNames=["预算", "空表"];
   const first=Array.from({length:28},(_,index)=>index===0?"项目":index===27?"最末列":"");
+  const model = (name, rows) => ({name,widths:Array(28).fill(100),heights:rows.map(()=>24),merges:[],styles:[{}],cells:rows.flatMap((row,r)=>row.map((text,column)=>({row:r,column,text,style:0}))) });
   const app=await mount(t,descriptor(bytes,{name:"预算.xlsx",mime:"application/octet-stream"}),async()=>({blob:new Blob([bytes]),assertCurrent(){}}),{mocks:{"./previewWorkerClient":{createResourcePreviewWorker:()=>({
-    dispose(){},async request(input){requests.push(input.type);return {sheetNames,rows:input.type==="sheet"?[]:[first,["服务器", "120"]]};},
+    dispose(){},async request(input){requests.push(input.kind??input.type);return input.kind==="sheet-source"?{sheetFallback:true}:{sheetNames,sheet:model(input.name??"预算",input.type==="sheet"?[[""]]:[first,["服务器", "120"]])};},
   })}}});
   assert.equal(app.host.querySelectorAll(".za-preview-toolbar").length,1);
-  assert.deepEqual([...app.host.querySelectorAll("thead th")].slice(-2).map(item=>item.textContent),["AA","AB"]);
-  assert.equal(app.host.querySelectorAll("tbody tr:last-child td").length,28);
-  assert.equal(app.host.querySelector(".za-preview-caption"),null);
+  assert.equal(app.host.querySelector('[role="grid"]').getAttribute("aria-colcount"),"28");
+  assert.ok(app.host.querySelector(".za-sheet-canvas"));
   await chooseZoom(app,"表格缩放","150%");
-  assert.equal(app.host.querySelector("table").style.zoom,"1.5");
+  assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"150%");
   await app.click("空表");
-  assert.deepEqual(requests,["load","sheet"]);
-  assert.match(app.host.textContent,/此工作表暂无可显示的内容/);
+  assert.deepEqual(requests,["sheet-source","sheet","sheet"]);
+  assert.match(app.host.querySelector('[role="grid"]').getAttribute("aria-label"),/空表/);
   assert.doesNotMatch(app.host.textContent,/服务器/);
   assert.equal(app.host.querySelector('.za-preview-sheets button[aria-pressed="true"]').textContent,"空表");
 });

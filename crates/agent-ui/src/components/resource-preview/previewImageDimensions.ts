@@ -110,3 +110,60 @@ export function previewImageDimensions(bytes: Uint8Array, mime: string) {
     throw new Error("图片格式或尺寸不适合当前预览，请下载原件查看。");
   return { width, height };
 }
+
+/** Only metadata is read here; SVG remains in the scriptless, network-denied preview frame. */
+export function previewSVGDimensions(source: string) {
+  const parsed = new DOMParser().parseFromString(source, "image/svg+xml");
+  const root = parsed.documentElement;
+  if (
+    root.localName !== "svg" ||
+    root.namespaceURI !== "http://www.w3.org/2000/svg" ||
+    parsed.querySelector("parsererror") ||
+    root.querySelectorAll("*").length > 6000
+  )
+    throw new Error("SVG 文件无效或过于复杂，请下载原件查看。");
+  const length = (value: string | null) => {
+    const match = value?.trim().match(/^(\d+(?:\.\d+)?)(px|pt|pc|in|cm|mm)?$/i);
+    if (!match) return 0;
+    const factor: Record<string, number> = {
+      px: 1,
+      pt: 96 / 72,
+      pc: 16,
+      in: 96,
+      cm: 96 / 2.54,
+      mm: 96 / 25.4,
+    };
+    return Number(match[1]) * factor[match[2]?.toLowerCase() ?? "px"];
+  };
+  const viewBox = root
+    .getAttribute("viewBox")
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const boxWidth = viewBox?.length === 4 ? viewBox[2] : 0;
+  const boxHeight = viewBox?.length === 4 ? viewBox[3] : 0;
+  const explicitWidth = length(root.getAttribute("width"));
+  const explicitHeight = length(root.getAttribute("height"));
+  const width =
+    explicitWidth ||
+    (explicitHeight && boxWidth > 0 && boxHeight > 0
+      ? (explicitHeight * boxWidth) / boxHeight
+      : boxWidth) ||
+    300;
+  const height =
+    explicitHeight ||
+    (explicitWidth && boxWidth > 0 && boxHeight > 0
+      ? (explicitWidth * boxHeight) / boxWidth
+      : boxHeight) ||
+    150;
+  if (
+    ![width, height].every(Number.isFinite) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > 8192 ||
+    height > 8192 ||
+    width * height > 16_000_000
+  )
+    throw new Error("SVG 尺寸不适合当前预览，请下载原件查看。");
+  return { width, height };
+}

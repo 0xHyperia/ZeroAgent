@@ -494,8 +494,7 @@
 .za-preview-slide-scroll,
 .za-preview-reading-scroll,
 .za-preview-table-scroll,
-.za-preview-pdf,
-.za-preview-media-stage {
+.za-preview-pdf {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -750,17 +749,6 @@
   padding: 0;
   background: transparent;
   color: #777;
-}
-.za-preview-media-stage {
-  display: grid;
-  place-items: center;
-  padding: 20px;
-}
-.za-preview-media {
-  display: block;
-  width: 100%;
-  max-height: 100%;
-  margin: auto;
 }
 .za-preview-table-scroll {
   background: var(--za-surface);

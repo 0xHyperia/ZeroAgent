@@ -132,6 +132,7 @@ export function PreviewZoomControl({
   onChange,
   maxPercent,
   actualPercent,
+  gestures = true,
   fitPage = true,
   fitWidth = true,
   percentages = [25, 50, 75, 100, 125, 150, 200, 300],
@@ -141,6 +142,8 @@ export function PreviewZoomControl({
   onChange: (value: PreviewZoom) => void;
   maxPercent?: number;
   actualPercent?: number;
+  /** Image canvases implement anchor-aware pan/pinch without a second gesture listener. */
+  gestures?: boolean;
   fitPage?: boolean;
   fitWidth?: boolean;
   percentages?: number[];
@@ -149,6 +152,7 @@ export function PreviewZoomControl({
   const latest = useRef({ value, actualPercent, onChange });
   latest.current = { value, actualPercent, onChange };
   useEffect(() => {
+    if (!gestures) return;
     const element = trigger.current?.closest<HTMLElement>(
       "[data-cloud-resource-panel],.za-resource-preview",
     );
@@ -164,7 +168,7 @@ export function PreviewZoomControl({
       maxPercent ?? 400,
       (next) => latest.current.onChange(next),
     );
-  }, [maxPercent]);
+  }, [maxPercent, gestures]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -188,16 +192,20 @@ export function PreviewZoomControl({
           }
         >
           {percentages.map((percent) => (
-            <DropdownMenuRadioItem key={percent} value={String(percent)}>
+            <DropdownMenuRadioItem key={percent} value={String(percent)} closeOnClick>
               {percent}%
             </DropdownMenuRadioItem>
           ))}
           {fitWidth || fitPage ? <DropdownMenuSeparator /> : null}
           {fitWidth ? (
-            <DropdownMenuRadioItem value="fit-width">适合宽度</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="fit-width" closeOnClick>
+              适合宽度
+            </DropdownMenuRadioItem>
           ) : null}
           {fitPage ? (
-            <DropdownMenuRadioItem value="fit-page">缩放至适合窗口</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="fit-page" closeOnClick>
+              缩放至适合窗口
+            </DropdownMenuRadioItem>
           ) : null}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
