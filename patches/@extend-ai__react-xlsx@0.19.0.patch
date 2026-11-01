@@ -1,0 +1,722 @@
+diff --git a/dist/chunk-TYJLNPNE.cjs b/dist/chunk-TYJLNPNE.cjs
+index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20cc43c393e 100644
+--- a/dist/chunk-TYJLNPNE.cjs
++++ b/dist/chunk-TYJLNPNE.cjs
+@@ -3758,7 +3758,7 @@ var MIN_COL_WIDTH_PX = 30;
+ var MIN_ROW_HEIGHT_PX = 16;
+ var DEFAULT_COL_WIDTH_EMU = 64 * EMU_PER_PIXEL2;
+ var DEFAULT_ROW_HEIGHT_EMU = 20 * EMU_PER_PIXEL2;
+-var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 7;
++var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 8; // ZeroAgent/ChatGPT logical workbook column unit.
+ var columnCharacterWidthCache = /* @__PURE__ */ new Map();
+ function resolveDeviceGridlineThicknessPx() {
+   if (typeof window === "undefined") {
+@@ -3771,6 +3771,7 @@ function resolveDeviceGridlineThicknessPx() {
+   return 1 / devicePixelRatio;
+ }
+ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
++  return DEFAULT_COLUMN_CHARACTER_WIDTH_PX; // Stable across worker/browser font availability.
+   const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
+   const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
+   const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
+@@ -4704,7 +4705,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+     if (!iconSetNode) {
+       return null;
+     }
+-    const iconSetName = iconSetNode.getAttribute("iconSet");
++    const iconSetName = iconSetNode.getAttribute("iconSet") ?? "3TrafficLights1";
+     const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
+     if (!iconSetName || cfvos.length === 0) {
+       return null;
+@@ -6797,6 +6798,8 @@ function anyBecameError(workbook, positions) {
+   });
+ }
+ function safeCalculate(workbook, options = {}) {
++  // ZeroAgent read-only preview: keep the file's saved formula results on load.
++  if (options.reparse) return { workbook: workbook, calculated: false, skipReason: "zeroagent-cached-preview" };
+   if (hasUnresolvedSheetReferences(workbook)) {
+     return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
+   }
+@@ -7244,7 +7247,7 @@ var DEFAULT_COL_WIDTH = 80;
+ var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+ var CSV_MIME_TYPE = "text/csv;charset=utf-8";
+ var MIN_ROW_HEIGHT_PX2 = 16;
+-var GRID_HEADER_HEIGHT = 24;
++var GRID_HEADER_HEIGHT = 20;
+ var GRID_ROW_HEADER_WIDTH = 40;
+ var HISTORY_LIMIT = 100;
+ var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
+@@ -13474,7 +13477,7 @@ var RANGE_HIGHLIGHT_STYLES = `
+ `;
+ var DEFAULT_ROW_HEIGHT2 = 24;
+ var DEFAULT_COL_WIDTH2 = 80;
+-var HEADER_HEIGHT = 24;
++var HEADER_HEIGHT = 20;
+ var ROW_HEADER_WIDTH = 40;
+ var INTERNAL_CLIPBOARD_MIME2 = "application/x-react-xlsx-range+json";
+ var MIN_OPEN_GRID_ROWS = 200;
+@@ -16153,6 +16156,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+   return cellValue.toString();
+ }
+ function getCellNumericValue(worksheet, row, col) {
++  if (worksheet.__zaValues) return worksheet.__zaValues[`${row}:${col}`] ?? null;
+   const cellValue = worksheet.getCalculatedValueAt(row, col);
+   if (cellValue.is_number) {
+     return _nullishCoalesce(cellValue.asNumber(), () => ( null));
+@@ -17665,10 +17669,23 @@ function normalizeConditionalTextOperand(value) {
+   }
+   return String(value).trim().toLowerCase();
+ }
+-function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells) {
++function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col) {
+   const normalizedRuleType = rule.ruleType.trim().toLowerCase();
+   const left = resolveConditionalFormulaComparable(_nullishCoalesce(_optionalChain([rule, 'access', _957 => _957.formulas, 'optionalAccess', _958 => _958[0]]), () => ( "")), worksheet, sheet, batchedCells);
+   const right = resolveConditionalFormulaComparable(_nullishCoalesce(_optionalChain([rule, 'access', _959 => _959.formulas, 'optionalAccess', _960 => _960[1]]), () => ( "")), worksheet, sheet, batchedCells);
++  if (normalizedRuleType === "expression") {
++    const match = /^=?\s*(\$?[A-Z]+)(\$?\d+)\s*(>=|<=|<>|=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/i.exec(rule.formulas?.[0] ?? "");
++    if (match) {
++      const reference = parseA1CellReference3((match[1] + match[2]).replace(/\$/g, ""));
++      const origin = rule.ranges[0].start;
++      const targetRow = reference.row + (match[2].startsWith("$") ? 0 : row - origin.row);
++      const targetCol = reference.col + (match[1].startsWith("$") ? 0 : col - origin.col);
++      const value = sheet?.zeroagentVisualValues?.[`${targetRow}:${targetCol}`] ?? (worksheet ? getCellNumericValue(worksheet,targetRow,targetCol) : getBatchedCellNumericValue(batchedCells?.get(`${targetRow}:${targetCol}`)));
++      const compare = Number(match[4]);
++      return value != null && ({ ">":value>compare,"<":value<compare,">=":value>=compare,"<=":value<=compare,"=":value===compare,"<>":value!==compare })[match[3]];
++    }
++    return false;
++  }
+   if (normalizedRuleType === "cellis") {
+     return resolveConditionalCellIsMatch(_nullishCoalesce(rule.operator, () => ( "equal")), left, right, numericValue, textValue);
+   }
+@@ -17720,7 +17737,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+     if (textValue === void 0) {
+       textValue = readTextValue();
+     }
+-    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells)) {
++    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col)) {
+       continue;
+     }
+     matchedStyles.push(rule.style);
+@@ -17738,6 +17755,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+   return resolved;
+ }
+ function buildConditionalIcon(iconSet, iconId) {
++  iconId = (Number(iconSet[0]) || 3) - 1 - iconId; // OOXML icon zero is the lowest threshold.
+   switch (iconSet) {
+     case "NoIcons":
+       return null;
+@@ -20581,7 +20599,7 @@ function XlsxGrid({
+         return;
+       }
+     }
+-    const externalTarget = target && !target.startsWith("#") ? target : null;
++    const externalTarget = null; // ZeroAgent: external workbook links never execute in the preview.
+     if (externalTarget && typeof window !== "undefined") {
+       window.open(externalTarget, "_blank", "noopener,noreferrer");
+     }
+@@ -20842,7 +20860,7 @@ function XlsxGrid({
+     const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
+     const batchedCell = batchCoversRow ? _optionalChain([viewportRowBatch, 'optionalAccess', _1139 => _1139.cells, 'access', _1140 => _1140.get, 'call', _1141 => _1141(cacheKey)]) : void 0;
+     const worksheetMergedSecondary = _nullishCoalesce(_optionalChain([worksheet, 'optionalAccess', _1142 => _1142.isMergedSecondary, 'call', _1143 => _1143(row, col)]), () => ( false));
+-    if (!worksheet && !batchedCell) {
++    if (!worksheet && !batchedCell && !sparklinesByCell.has(cacheKey)) {
+       const emptyData = {
+         isMergedSecondary: false,
+         style: scaleCssProperties({
+@@ -20934,17 +20952,18 @@ function XlsxGrid({
+     const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
+     const rawHyperlink = batchCoversRow ? _optionalChain([batchedCell, 'optionalAccess', _1160 => _1160.hyperlink]) : _optionalChain([worksheet, 'optionalAccess', _1161 => _1161.getHyperlinkAt, 'call', _1162 => _1162(row, col)]);
+     const sparkline = _nullishCoalesce(sparklinesByCell.get(cacheKey), () => ( null));
+-    const sparklineValues = sparkline && worksheet ? sparkline.range.start.row === sparkline.range.end.row ? Array.from(
++    const visualWorksheet = worksheet ?? (activeSheet?.zeroagentVisualValues ? { __zaValues: activeSheet.zeroagentVisualValues } : null);
++    const sparklineValues = sparkline && visualWorksheet ? sparkline.range.start.row === sparkline.range.end.row ? Array.from(
+       { length: Math.abs(sparkline.range.end.col - sparkline.range.start.col) + 1 },
+       (_2, index) => getCellNumericValue(
+-        worksheet,
++        visualWorksheet,
+         sparkline.range.start.row,
+         Math.min(sparkline.range.start.col, sparkline.range.end.col) + index
+       )
+     ) : Array.from(
+       { length: Math.abs(sparkline.range.end.row - sparkline.range.start.row) + 1 },
+       (_2, index) => getCellNumericValue(
+-        worksheet,
++        visualWorksheet,
+         Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
+         sparkline.range.start.col
+       )
+@@ -20956,24 +20975,24 @@ function XlsxGrid({
+       chartHighlight,
+       checkboxState,
+       colSpan: _optionalChain([merge, 'optionalAccess', _1164 => _1164.colSpan]),
+-      conditionalDataBar: worksheet ? resolveConditionalDataBarForCell(
++      conditionalDataBar: visualWorksheet ? resolveConditionalDataBarForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+-      conditionalColorScale: worksheet ? resolveConditionalColorScaleForCell(
++      conditionalColorScale: visualWorksheet ? resolveConditionalColorScaleForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+-      conditionalIcon: worksheet ? resolveConditionalIconForCell(
++      conditionalIcon: visualWorksheet ? resolveConditionalIconForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+@@ -26429,8 +26448,9 @@ function XlsxGrid({
+                       }
+                       const previousEnd = index === 0 ? 0 : _nullishCoalesce(_optionalChain([virtualRows, 'access', _1390 => _1390[index - 1], 'optionalAccess', _1391 => _1391.end]), () => ( 0));
+                       const gapHeight = Math.max(0, virtualRow.start - previousEnd);
++                      // Keep gap nodes stable: conditional removal across the React scroll slot can orphan a tall spacer after reversing scroll.
+                       return /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, _chunkCJBI5F6Vcjs.S, { children: [
+-                        gapHeight > 0 ? /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "tr", { "aria-hidden": "true", style: { height: gapHeight }, children: /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "td", { colSpan: rowColSpan }) }) : null,
++                        /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "tr", { "aria-hidden": "true", style: { height: gapHeight, display: gapHeight > 0 ? void 0 : "none" }, children: /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "td", { colSpan: rowColSpan }) }),
+                         /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, 
+                           MemoGridRow,
+                           {
+diff --git a/dist/chunk-Y737JKUG.js b/dist/chunk-Y737JKUG.js
+index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de97608ac48b0 100644
+--- a/dist/chunk-Y737JKUG.js
++++ b/dist/chunk-Y737JKUG.js
+@@ -3755,7 +3755,7 @@ var MIN_COL_WIDTH_PX = 30;
+ var MIN_ROW_HEIGHT_PX = 16;
+ var DEFAULT_COL_WIDTH_EMU = 64 * EMU_PER_PIXEL2;
+ var DEFAULT_ROW_HEIGHT_EMU = 20 * EMU_PER_PIXEL2;
+-var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 7;
++var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 8; // ZeroAgent/ChatGPT logical workbook column unit.
+ var columnCharacterWidthCache = /* @__PURE__ */ new Map();
+ function resolveDeviceGridlineThicknessPx() {
+   if (typeof window === "undefined") {
+@@ -3768,6 +3768,7 @@ function resolveDeviceGridlineThicknessPx() {
+   return 1 / devicePixelRatio;
+ }
+ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
++  return DEFAULT_COLUMN_CHARACTER_WIDTH_PX; // Stable across worker/browser font availability.
+   const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
+   const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
+   const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
+@@ -4701,7 +4702,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+     if (!iconSetNode) {
+       return null;
+     }
+-    const iconSetName = iconSetNode.getAttribute("iconSet");
++    const iconSetName = iconSetNode.getAttribute("iconSet") ?? "3TrafficLights1";
+     const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
+     if (!iconSetName || cfvos.length === 0) {
+       return null;
+@@ -6794,6 +6795,8 @@ function anyBecameError(workbook, positions) {
+   });
+ }
+ function safeCalculate(workbook, options = {}) {
++  // ZeroAgent read-only preview: keep the file's saved formula results on load.
++  if (options.reparse) return { workbook: workbook, calculated: false, skipReason: "zeroagent-cached-preview" };
+   if (hasUnresolvedSheetReferences(workbook)) {
+     return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
+   }
+@@ -7241,7 +7244,7 @@ var DEFAULT_COL_WIDTH = 80;
+ var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+ var CSV_MIME_TYPE = "text/csv;charset=utf-8";
+ var MIN_ROW_HEIGHT_PX2 = 16;
+-var GRID_HEADER_HEIGHT = 24;
++var GRID_HEADER_HEIGHT = 20;
+ var GRID_ROW_HEADER_WIDTH = 40;
+ var HISTORY_LIMIT = 100;
+ var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
+@@ -13471,7 +13474,7 @@ var RANGE_HIGHLIGHT_STYLES = `
+ `;
+ var DEFAULT_ROW_HEIGHT2 = 24;
+ var DEFAULT_COL_WIDTH2 = 80;
+-var HEADER_HEIGHT = 24;
++var HEADER_HEIGHT = 20;
+ var ROW_HEADER_WIDTH = 40;
+ var INTERNAL_CLIPBOARD_MIME2 = "application/x-react-xlsx-range+json";
+ var MIN_OPEN_GRID_ROWS = 200;
+@@ -16150,6 +16153,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+   return cellValue.toString();
+ }
+ function getCellNumericValue(worksheet, row, col) {
++  if (worksheet.__zaValues) return worksheet.__zaValues[`${row}:${col}`] ?? null;
+   const cellValue = worksheet.getCalculatedValueAt(row, col);
+   if (cellValue.is_number) {
+     return cellValue.asNumber() ?? null;
+@@ -17662,10 +17666,23 @@ function normalizeConditionalTextOperand(value) {
+   }
+   return String(value).trim().toLowerCase();
+ }
+-function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells) {
++function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col) {
+   const normalizedRuleType = rule.ruleType.trim().toLowerCase();
+   const left = resolveConditionalFormulaComparable(rule.formulas?.[0] ?? "", worksheet, sheet, batchedCells);
+   const right = resolveConditionalFormulaComparable(rule.formulas?.[1] ?? "", worksheet, sheet, batchedCells);
++  if (normalizedRuleType === "expression") {
++    const match = /^=?\s*(\$?[A-Z]+)(\$?\d+)\s*(>=|<=|<>|=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/i.exec(rule.formulas?.[0] ?? "");
++    if (match) {
++      const reference = parseA1CellReference3((match[1] + match[2]).replace(/\$/g, ""));
++      const origin = rule.ranges[0].start;
++      const targetRow = reference.row + (match[2].startsWith("$") ? 0 : row - origin.row);
++      const targetCol = reference.col + (match[1].startsWith("$") ? 0 : col - origin.col);
++      const value = sheet?.zeroagentVisualValues?.[`${targetRow}:${targetCol}`] ?? (worksheet ? getCellNumericValue(worksheet,targetRow,targetCol) : getBatchedCellNumericValue(batchedCells?.get(`${targetRow}:${targetCol}`)));
++      const compare = Number(match[4]);
++      return value != null && ({ ">":value>compare,"<":value<compare,">=":value>=compare,"<=":value<=compare,"=":value===compare,"<>":value!==compare })[match[3]];
++    }
++    return false;
++  }
+   if (normalizedRuleType === "cellis") {
+     return resolveConditionalCellIsMatch(rule.operator ?? "equal", left, right, numericValue, textValue);
+   }
+@@ -17717,7 +17734,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+     if (textValue === void 0) {
+       textValue = readTextValue();
+     }
+-    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells)) {
++    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col)) {
+       continue;
+     }
+     matchedStyles.push(rule.style);
+@@ -17735,6 +17752,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+   return resolved;
+ }
+ function buildConditionalIcon(iconSet, iconId) {
++  iconId = (Number(iconSet[0]) || 3) - 1 - iconId; // OOXML icon zero is the lowest threshold.
+   switch (iconSet) {
+     case "NoIcons":
+       return null;
+@@ -20578,7 +20596,7 @@ function XlsxGrid({
+         return;
+       }
+     }
+-    const externalTarget = target && !target.startsWith("#") ? target : null;
++    const externalTarget = null; // ZeroAgent: external workbook links never execute in the preview.
+     if (externalTarget && typeof window !== "undefined") {
+       window.open(externalTarget, "_blank", "noopener,noreferrer");
+     }
+@@ -20839,7 +20857,7 @@ function XlsxGrid({
+     const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
+     const batchedCell = batchCoversRow ? viewportRowBatch?.cells.get(cacheKey) : void 0;
+     const worksheetMergedSecondary = worksheet?.isMergedSecondary(row, col) ?? false;
+-    if (!worksheet && !batchedCell) {
++    if (!worksheet && !batchedCell && !sparklinesByCell.has(cacheKey)) {
+       const emptyData = {
+         isMergedSecondary: false,
+         style: scaleCssProperties({
+@@ -20931,17 +20949,18 @@ function XlsxGrid({
+     const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
+     const rawHyperlink = batchCoversRow ? batchedCell?.hyperlink : worksheet?.getHyperlinkAt(row, col);
+     const sparkline = sparklinesByCell.get(cacheKey) ?? null;
+-    const sparklineValues = sparkline && worksheet ? sparkline.range.start.row === sparkline.range.end.row ? Array.from(
++    const visualWorksheet = worksheet ?? (activeSheet?.zeroagentVisualValues ? { __zaValues: activeSheet.zeroagentVisualValues } : null);
++    const sparklineValues = sparkline && visualWorksheet ? sparkline.range.start.row === sparkline.range.end.row ? Array.from(
+       { length: Math.abs(sparkline.range.end.col - sparkline.range.start.col) + 1 },
+       (_2, index) => getCellNumericValue(
+-        worksheet,
++        visualWorksheet,
+         sparkline.range.start.row,
+         Math.min(sparkline.range.start.col, sparkline.range.end.col) + index
+       )
+     ) : Array.from(
+       { length: Math.abs(sparkline.range.end.row - sparkline.range.start.row) + 1 },
+       (_2, index) => getCellNumericValue(
+-        worksheet,
++        visualWorksheet,
+         Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
+         sparkline.range.start.col
+       )
+@@ -20953,24 +20972,24 @@ function XlsxGrid({
+       chartHighlight,
+       checkboxState,
+       colSpan: merge?.colSpan,
+-      conditionalDataBar: worksheet ? resolveConditionalDataBarForCell(
++      conditionalDataBar: visualWorksheet ? resolveConditionalDataBarForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+-      conditionalColorScale: worksheet ? resolveConditionalColorScaleForCell(
++      conditionalColorScale: visualWorksheet ? resolveConditionalColorScaleForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+-      conditionalIcon: worksheet ? resolveConditionalIconForCell(
++      conditionalIcon: visualWorksheet ? resolveConditionalIconForCell(
+         row,
+         col,
+-        worksheet,
++        visualWorksheet,
+         activeSheet,
+         conditionalFormatMetricsCacheRef.current
+       ) : null,
+@@ -26426,8 +26445,9 @@ function XlsxGrid({
+                       }
+                       const previousEnd = index === 0 ? 0 : virtualRows[index - 1]?.end ?? 0;
+                       const gapHeight = Math.max(0, virtualRow.start - previousEnd);
++                      // Keep gap nodes stable: conditional removal across the React scroll slot can orphan a tall spacer after reversing scroll.
+                       return /* @__PURE__ */ u(S, { children: [
+-                        gapHeight > 0 ? /* @__PURE__ */ u("tr", { "aria-hidden": "true", style: { height: gapHeight }, children: /* @__PURE__ */ u("td", { colSpan: rowColSpan }) }) : null,
++                        /* @__PURE__ */ u("tr", { "aria-hidden": "true", style: { height: gapHeight, display: gapHeight > 0 ? void 0 : "none" }, children: /* @__PURE__ */ u("td", { colSpan: rowColSpan }) }),
+                         /* @__PURE__ */ u(
+                           MemoGridRow,
+                           {
+diff --git a/dist/index.cjs b/dist/index.cjs
+index b3d25302daae60fbc095ebdea3ddb89c1da50788..1d1102c79c7107ebabda9e9f1e5d7bc32eee476a 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -3554,7 +3554,7 @@ var MIN_COL_WIDTH_PX = 30;
+ var MIN_ROW_HEIGHT_PX = 16;
+ var DEFAULT_COL_WIDTH_EMU = 64 * EMU_PER_PIXEL2;
+ var DEFAULT_ROW_HEIGHT_EMU = 20 * EMU_PER_PIXEL2;
+-var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 7;
++var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 8; // ZeroAgent/ChatGPT logical workbook column unit.
+ var columnCharacterWidthCache = /* @__PURE__ */ new Map();
+ function resolveDeviceGridlineThicknessPx() {
+   if (typeof window === "undefined") {
+@@ -3567,6 +3567,7 @@ function resolveDeviceGridlineThicknessPx() {
+   return 1 / devicePixelRatio;
+ }
+ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
++  return DEFAULT_COLUMN_CHARACTER_WIDTH_PX; // Stable across worker/browser font availability.
+   const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
+   const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
+   const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
+@@ -4500,7 +4501,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+     if (!iconSetNode) {
+       return null;
+     }
+-    const iconSetName = iconSetNode.getAttribute("iconSet");
++    const iconSetName = iconSetNode.getAttribute("iconSet") ?? "3TrafficLights1";
+     const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
+     if (!iconSetName || cfvos.length === 0) {
+       return null;
+@@ -6593,6 +6594,8 @@ function anyBecameError(workbook, positions) {
+   });
+ }
+ function safeCalculate(workbook, options = {}) {
++  // ZeroAgent read-only preview: keep the file's saved formula results on load.
++  if (options.reparse) return { workbook: workbook, calculated: false, skipReason: "zeroagent-cached-preview" };
+   if (hasUnresolvedSheetReferences(workbook)) {
+     return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
+   }
+@@ -7108,7 +7111,7 @@ var DEFAULT_COL_WIDTH = 80;
+ var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+ var CSV_MIME_TYPE = "text/csv;charset=utf-8";
+ var MIN_ROW_HEIGHT_PX2 = 16;
+-var GRID_HEADER_HEIGHT = 24;
++var GRID_HEADER_HEIGHT = 20;
+ var GRID_ROW_HEADER_WIDTH = 40;
+ var HISTORY_LIMIT = 100;
+ var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
+@@ -11433,7 +11436,7 @@ var _jsxruntime = require('react/jsx-runtime');
+ 
+ var DEFAULT_ROW_HEIGHT2 = 24;
+ var DEFAULT_COL_WIDTH2 = 80;
+-var HEADER_HEIGHT = 24;
++var HEADER_HEIGHT = 20;
+ var ROW_HEADER_WIDTH = 40;
+ var CANVAS_VIEWPORT_OVERSCAN_PX = 480;
+ var CANVAS_SCROLL_BUFFER_PX = 480;
+@@ -13589,6 +13592,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+   return cellValue.toString();
+ }
+ function getCellNumericValue(worksheet, row, col) {
++  if (worksheet.__zaValues) return worksheet.__zaValues[`${row}:${col}`] ?? null;
+   const cellValue = worksheet.getCalculatedValueAt(row, col);
+   if (cellValue.is_number) {
+     return _nullishCoalesce(cellValue.asNumber(), () => ( null));
+@@ -14277,10 +14281,23 @@ function normalizeConditionalTextOperand(value) {
+   }
+   return String(value).trim().toLowerCase();
+ }
+-function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells) {
++function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col) {
+   const normalizedRuleType = rule.ruleType.trim().toLowerCase();
+   const left = resolveConditionalFormulaComparable(_nullishCoalesce(_optionalChain([rule, 'access', _840 => _840.formulas, 'optionalAccess', _841 => _841[0]]), () => ( "")), worksheet, sheet, batchedCells);
+   const right = resolveConditionalFormulaComparable(_nullishCoalesce(_optionalChain([rule, 'access', _842 => _842.formulas, 'optionalAccess', _843 => _843[1]]), () => ( "")), worksheet, sheet, batchedCells);
++  if (normalizedRuleType === "expression") {
++    const match = /^=?\s*(\$?[A-Z]+)(\$?\d+)\s*(>=|<=|<>|=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/i.exec(rule.formulas?.[0] ?? "");
++    if (match) {
++      const reference = parseA1CellReference3((match[1] + match[2]).replace(/\$/g, ""));
++      const origin = rule.ranges[0].start;
++      const targetRow = reference.row + (match[2].startsWith("$") ? 0 : row - origin.row);
++      const targetCol = reference.col + (match[1].startsWith("$") ? 0 : col - origin.col);
++      const value = sheet?.zeroagentVisualValues?.[`${targetRow}:${targetCol}`] ?? (worksheet ? getCellNumericValue(worksheet,targetRow,targetCol) : getBatchedCellNumericValue(batchedCells?.get(`${targetRow}:${targetCol}`)));
++      const compare = Number(match[4]);
++      return value != null && ({ ">":value>compare,"<":value<compare,">=":value>=compare,"<=":value<=compare,"=":value===compare,"<>":value!==compare })[match[3]];
++    }
++    return false;
++  }
+   if (normalizedRuleType === "cellis") {
+     return resolveConditionalCellIsMatch(_nullishCoalesce(rule.operator, () => ( "equal")), left, right, numericValue, textValue);
+   }
+@@ -14332,7 +14349,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+     if (textValue === void 0) {
+       textValue = readTextValue();
+     }
+-    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells)) {
++    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col)) {
+       continue;
+     }
+     matchedStyles.push(rule.style);
+@@ -14350,6 +14367,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+   return resolved;
+ }
+ function buildConditionalIcon(iconSet, iconId) {
++  iconId = (Number(iconSet[0]) || 3) - 1 - iconId; // OOXML icon zero is the lowest threshold.
+   switch (iconSet) {
+     case "NoIcons":
+       return null;
+@@ -16447,6 +16465,10 @@ var SlotStore = (_class2 = class {constructor() { _class2.prototype.__init8.call
+     this.observer.observe(target, { childList: true, subtree: true });
+   }
+   render(key, node, owner) {
++    if (node == null || node === false) {
++      if (this.slots.delete(key)) this.notify();
++      return null;
++    }
+     let slot = this.slots.get(key);
+     if (!slot) {
+       const host = owner.createElement("span");
+diff --git a/dist/index.js b/dist/index.js
+index bc533f84d4aa28923c38cfd7b37ec78f15a4b277..c049ca1cb0fae3f0dbcb0cbec1b2025c88a16d7e 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3551,7 +3551,7 @@ var MIN_COL_WIDTH_PX = 30;
+ var MIN_ROW_HEIGHT_PX = 16;
+ var DEFAULT_COL_WIDTH_EMU = 64 * EMU_PER_PIXEL2;
+ var DEFAULT_ROW_HEIGHT_EMU = 20 * EMU_PER_PIXEL2;
+-var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 7;
++var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 8; // ZeroAgent/ChatGPT logical workbook column unit.
+ var columnCharacterWidthCache = /* @__PURE__ */ new Map();
+ function resolveDeviceGridlineThicknessPx() {
+   if (typeof window === "undefined") {
+@@ -3564,6 +3564,7 @@ function resolveDeviceGridlineThicknessPx() {
+   return 1 / devicePixelRatio;
+ }
+ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
++  return DEFAULT_COLUMN_CHARACTER_WIDTH_PX; // Stable across worker/browser font availability.
+   const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
+   const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
+   const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
+@@ -4497,7 +4498,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+     if (!iconSetNode) {
+       return null;
+     }
+-    const iconSetName = iconSetNode.getAttribute("iconSet");
++    const iconSetName = iconSetNode.getAttribute("iconSet") ?? "3TrafficLights1";
+     const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
+     if (!iconSetName || cfvos.length === 0) {
+       return null;
+@@ -6590,6 +6591,8 @@ function anyBecameError(workbook, positions) {
+   });
+ }
+ function safeCalculate(workbook, options = {}) {
++  // ZeroAgent read-only preview: keep the file's saved formula results on load.
++  if (options.reparse) return { workbook: workbook, calculated: false, skipReason: "zeroagent-cached-preview" };
+   if (hasUnresolvedSheetReferences(workbook)) {
+     return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
+   }
+@@ -7105,7 +7108,7 @@ var DEFAULT_COL_WIDTH = 80;
+ var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+ var CSV_MIME_TYPE = "text/csv;charset=utf-8";
+ var MIN_ROW_HEIGHT_PX2 = 16;
+-var GRID_HEADER_HEIGHT = 24;
++var GRID_HEADER_HEIGHT = 20;
+ var GRID_ROW_HEADER_WIDTH = 40;
+ var HISTORY_LIMIT = 100;
+ var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
+@@ -11430,7 +11433,7 @@ import { Fragment as Fragment2, jsx as jsx2 } from "react/jsx-runtime";
+ import { Fragment as Fragment4, jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
+ var DEFAULT_ROW_HEIGHT2 = 24;
+ var DEFAULT_COL_WIDTH2 = 80;
+-var HEADER_HEIGHT = 24;
++var HEADER_HEIGHT = 20;
+ var ROW_HEADER_WIDTH = 40;
+ var CANVAS_VIEWPORT_OVERSCAN_PX = 480;
+ var CANVAS_SCROLL_BUFFER_PX = 480;
+@@ -13586,6 +13589,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+   return cellValue.toString();
+ }
+ function getCellNumericValue(worksheet, row, col) {
++  if (worksheet.__zaValues) return worksheet.__zaValues[`${row}:${col}`] ?? null;
+   const cellValue = worksheet.getCalculatedValueAt(row, col);
+   if (cellValue.is_number) {
+     return cellValue.asNumber() ?? null;
+@@ -14274,10 +14278,23 @@ function normalizeConditionalTextOperand(value) {
+   }
+   return String(value).trim().toLowerCase();
+ }
+-function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells) {
++function resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col) {
+   const normalizedRuleType = rule.ruleType.trim().toLowerCase();
+   const left = resolveConditionalFormulaComparable(rule.formulas?.[0] ?? "", worksheet, sheet, batchedCells);
+   const right = resolveConditionalFormulaComparable(rule.formulas?.[1] ?? "", worksheet, sheet, batchedCells);
++  if (normalizedRuleType === "expression") {
++    const match = /^=?\s*(\$?[A-Z]+)(\$?\d+)\s*(>=|<=|<>|=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/i.exec(rule.formulas?.[0] ?? "");
++    if (match) {
++      const reference = parseA1CellReference3((match[1] + match[2]).replace(/\$/g, ""));
++      const origin = rule.ranges[0].start;
++      const targetRow = reference.row + (match[2].startsWith("$") ? 0 : row - origin.row);
++      const targetCol = reference.col + (match[1].startsWith("$") ? 0 : col - origin.col);
++      const value = sheet?.zeroagentVisualValues?.[`${targetRow}:${targetCol}`] ?? (worksheet ? getCellNumericValue(worksheet,targetRow,targetCol) : getBatchedCellNumericValue(batchedCells?.get(`${targetRow}:${targetCol}`)));
++      const compare = Number(match[4]);
++      return value != null && ({ ">":value>compare,"<":value<compare,">=":value>=compare,"<=":value<=compare,"=":value===compare,"<>":value!==compare })[match[3]];
++    }
++    return false;
++  }
+   if (normalizedRuleType === "cellis") {
+     return resolveConditionalCellIsMatch(rule.operator ?? "equal", left, right, numericValue, textValue);
+   }
+@@ -14329,7 +14346,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+     if (textValue === void 0) {
+       textValue = readTextValue();
+     }
+-    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells)) {
++    if (!resolveConditionalStyledRuleMatch(rule, numericValue, textValue, worksheet, sheet, batchedCells, row, col)) {
+       continue;
+     }
+     matchedStyles.push(rule.style);
+@@ -14347,6 +14364,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+   return resolved;
+ }
+ function buildConditionalIcon(iconSet, iconId) {
++  iconId = (Number(iconSet[0]) || 3) - 1 - iconId; // OOXML icon zero is the lowest threshold.
+   switch (iconSet) {
+     case "NoIcons":
+       return null;
+@@ -16444,6 +16462,10 @@ var SlotStore = class {
+     this.observer.observe(target, { childList: true, subtree: true });
+   }
+   render(key, node, owner) {
++    if (node == null || node === false) {
++      if (this.slots.delete(key)) this.notify();
++      return null;
++    }
+     let slot = this.slots.get(key);
+     if (!slot) {
+       const host = owner.createElement("span");
+diff --git a/dist/xlsx-worker.js b/dist/xlsx-worker.js
+index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e7db53231 100644
+--- a/dist/xlsx-worker.js
++++ b/dist/xlsx-worker.js
+@@ -1,3 +1,38 @@
++// Workers have no native XML DOM; retain styles, conditional formats and sparklines off-thread.
++import { DOMParser as WorkerDOMParser, Node } from "linkedom/worker";
++// LinkeDOM's XML nodes retain namespace prefixes and do not implement the wildcard
++// tag lookup used by the OOXML reader. Normalize these two DOM contracts locally.
++class DOMParser extends WorkerDOMParser {
++  parseFromString(xml, type) {
++    const document = super.parseFromString(xml, type);
++    const visit = (node, inherited = {}) => {
++      const namespaces = { ...inherited };
++      if (node.nodeType === 1) {
++        for (const attr of node.attributes) {
++          if (attr.name === "xmlns") namespaces[""] = attr.value;
++          else if (attr.name.startsWith("xmlns:")) namespaces[attr.name.slice(6)] = attr.value;
++        }
++        const parts = node.nodeName.split(":");
++        Object.defineProperty(node, "localName", { value: parts.at(-1) });
++        Object.defineProperty(node, "namespaceURI", { value: namespaces[parts.length > 1 ? parts[0] : ""] ?? null });
++      }
++      node.getElementsByTagName = (name) => {
++        const result = [];
++        const walk = (parent) => {
++          for (const child of parent.childNodes) if (child.nodeType === 1) {
++            if (name === "*" || child.nodeName === name) result.push(child);
++            walk(child);
++          }
++        };
++        walk(node);
++        return result;
++      };
++      for (const child of node.childNodes) if (child.nodeType === 1) visit(child, namespaces);
++    };
++    visit(document);
++    return document;
++  }
++}
+ var __defProp = Object.defineProperty;
+ var __getOwnPropNames = Object.getOwnPropertyNames;
+ var __esm = (fn, res) => function __init() {
+@@ -5940,9 +5975,10 @@ var MIN_COL_WIDTH_PX = 30;
+ var MIN_ROW_HEIGHT_PX = 16;
+ var DEFAULT_COL_WIDTH_EMU = 64 * EMU_PER_PIXEL2;
+ var DEFAULT_ROW_HEIGHT_EMU = 20 * EMU_PER_PIXEL2;
+-var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 7;
++var DEFAULT_COLUMN_CHARACTER_WIDTH_PX = 8; // ZeroAgent/ChatGPT logical workbook column unit.
+ var columnCharacterWidthCache = /* @__PURE__ */ new Map();
+ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
++  return DEFAULT_COLUMN_CHARACTER_WIDTH_PX; // Stable across worker/browser font availability.
+   const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
+   const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
+   const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
+@@ -6803,7 +6839,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+     if (!iconSetNode) {
+       return null;
+     }
+-    const iconSetName = iconSetNode.getAttribute("iconSet");
++    const iconSetName = iconSetNode.getAttribute("iconSet") ?? "3TrafficLights1";
+     const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
+     if (!iconSetName || cfvos.length === 0) {
+       return null;
+@@ -7535,6 +7571,8 @@ function anyBecameError(workbook2, positions) {
+   });
+ }
+ function safeCalculate(workbook2, options = {}) {
++  // ZeroAgent read-only preview: keep the file's saved formula results on load.
++  if (options.reparse) return { workbook: workbook2, calculated: false, skipReason: "zeroagent-cached-preview" };
+   if (hasUnresolvedSheetReferences(workbook2)) {
+     return { workbook: workbook2, calculated: false, skipReason: "unresolved-sheet-refs" };
+   }
+@@ -8173,7 +8211,7 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
+     activeWorkbook = result.workbook;
+   }
+   const nextWorkbook = activeWorkbook;
+-  const shouldUseFastStructureParse = bytes.byteLength >= FAST_STRUCTURE_PARSE_THRESHOLD_BYTES && totalFormulas <= FORMULA_COUNT_THRESHOLD;
++  const shouldUseFastStructureParse = false; // Keep OOXML formatting at every supported file size.
+   const structureAssets = effectiveSkipXmlParsing || shouldUseFastStructureParse || !canParseXmlInWorker() ? null : parseWorkbookStructureAssets(bytes, {
+     includeCachedFormulaValues: true
+   });
+@@ -8190,6 +8228,25 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
+   const sheetLayoutStates = structureAssets ? void 0 : parseWorkerSheetLayoutAssets(bytes, nextWorkbook.sheetCount);
+   workbook = nextWorkbook;
+   sheets = buildSheetList(nextWorkbook, themePalette, structureAssets, sheetLayoutStates, showHiddenSheets);
++  // Worker-backed viewers have no worksheet handle. Transfer only the bounded saved
++  // numeric inputs needed for conditional formats and sparklines, never a live workbook.
++  let visualCells = 0;
++  for (const sheet of sheets) {
++    const values = {};
++    const worksheet = nextWorkbook.getSheet(sheet.workbookSheetIndex);
++    const ranges = [...sheet.conditionalFormatRules.flatMap(rule => rule.ranges), ...sheet.sparklines.map(item => item.range)];
++    for (const range of ranges) for (let row = range.start.row; row <= range.end.row; row++) {
++      for (let col = range.start.col; col <= range.end.col; col++) {
++        const key = `${row}:${col}`;
++        if (key in values) continue;
++        if (++visualCells > 100000) throw new Error("Conditional formatting exceeds the preview limit.");
++        const cell = worksheet.getCalculatedValueAt(row, col);
++        values[key] = cell.is_number ? cell.asNumber() : cell.is_boolean ? (cell.asBoolean() ? 1 : 0) : null;
++      }
++    }
++    sheet.zeroagentVisualValues = values;
++  }
++
+   tablesByWorkbookSheetIndex = Array.from(
+     { length: nextWorkbook.sheetCount },
+     (_, workbookSheetIndex) => mapWorksheetTables(

@@ -3,3 +3,5 @@
 # Unified-diff context prefixes are payload, including blank context lines and tabs.
 # Keep patch bytes intact; applied K-brain source has its own formatting and tests.
 patches/kbrain/*.patch -whitespace
+# pnpm dependency patches also retain the upstream compiled-code context verbatim.
+patches/@extend-ai__react-xlsx@0.19.0.patch -whitespace

@@ -50,7 +50,8 @@ export default defineConfig(async () => {
     // it is keyed on the lockfile/config only — edits to the fork would
     // silently keep running the stale copy until a `--force`. Serve it as
     // source instead so the fork is always live (and HMR-able) in dev.
-    exclude: ["@tanstack/react-virtual"],
+    exclude: ["@tanstack/react-virtual", "@extend-ai/react-xlsx", "@extend-ai/react-xlsx/vanilla", "@extend-ai/react-xlsx/internal"],
+    include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"],
   },
   build: {
     // Monaco language workers are emitted as indivisible lazy assets (largest

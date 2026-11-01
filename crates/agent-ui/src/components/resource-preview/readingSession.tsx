@@ -27,6 +27,7 @@ type ReadingSnapshot = {
   sheetName: string;
   sheetZoom: number;
   sheetCell: string;
+  sheetRange: string;
   sheetWrap: boolean;
 };
 

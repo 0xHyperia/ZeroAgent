@@ -1530,6 +1530,165 @@
   padding-top: var(--za-reader-top-inset, 0px);
 }
 
+/* Sheet canvas is a continuous workbook surface, not a document sheet of paper. */
+.za-sheet-formula-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 36px;
+  margin-top: max(0px, calc(var(--za-reader-top-inset, 12px) - 10px));
+  border-bottom: 1px solid var(--za-border);
+  background: var(--za-surface);
+  font-size: 12px;
+}
+.za-sheet-formula-bar form {
+  flex: none;
+  width: 88px;
+  border-right: 1px solid var(--za-border);
+}
+.za-sheet-formula-bar input {
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 16px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: hsl(var(--foreground));
+  font: inherit;
+}
+.za-sheet-formula-bar input:focus-visible {
+  box-shadow: inset 0 0 0 1px #3574ed;
+  border-radius: 4px;
+}
+.za-sheet-formula-bar input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px hsl(var(--destructive));
+}
+.za-sheet-formula-bar > input {
+  flex: 1;
+  padding-inline: 8px 16px;
+}
+.za-sheet-formula-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  flex: none;
+  color: hsl(var(--muted-foreground) / 0.55);
+}
+.za-sheet-formula-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.za-sheet-scroll {
+  height: 100%;
+  overscroll-behavior: contain;
+  outline: none;
+  background: #fff;
+}
+.za-sheet-scroll > .za-preview-scroll-content {
+  padding: 0;
+}
+.za-sheet-scroll-space {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+.za-sheet-canvas {
+  position: sticky;
+  top: 0;
+  left: 0;
+  display: block;
+  max-width: none;
+  cursor: default;
+  user-select: none;
+}
+.za-sheet-scroll:focus-visible {
+  box-shadow: inset 0 0 0 1px #3574ed;
+}
+.za-sheet-footer {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-height: 36px;
+  border-top: 1px solid var(--za-border);
+  background: var(--za-surface);
+}
+.za-sheet-footer .za-preview-sheets {
+  flex: 1;
+  min-height: 34px;
+  padding: 2px 8px;
+  border: 0;
+}
+.za-sheet-footer .za-preview-sheets button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-weight: 400;
+}
+.za-sheet-footer .za-preview-sheets button:hover {
+  color: hsl(var(--foreground));
+  background: var(--za-control-hover);
+}
+.za-sheet-footer .za-preview-sheets button[aria-pressed="true"] {
+  background: var(--za-control-selected);
+}
+.za-sheet-limit,
+.za-sheet-selection-count {
+  flex: none;
+  padding: 0 12px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.za-sheet-notice {
+  margin: 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: hsl(var(--destructive));
+  background: var(--za-surface);
+}
+.za-sheet-cover {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  pointer-events: none;
+}
+.za-sheet-cover canvas {
+  display: block;
+  max-width: none;
+}
+@container resource-preview (max-width: 599px) {
+  .za-sheet-formula-bar {
+    height: 44px;
+  }
+  .za-sheet-formula-bar input {
+    height: 40px;
+    font-size: 16px;
+  }
+  .za-sheet-formula-bar form {
+    width: 72px;
+  }
+  .za-sheet-formula-icon {
+    width: 30px;
+  }
+  .za-sheet-footer .za-preview-sheets {
+    min-height: 44px;
+  }
+  .za-sheet-footer .za-preview-sheets button {
+    min-height: 44px;
+  }
+  .za-sheet-selection-count {
+    display: none;
+  }
+}
+@media (max-width: 599px) {
+  .za-preview-zoom-menu [role="menuitemradio"] {
+    min-height: 44px;
+  }
+}
+
 .za-preview-scroll-root > :is(.za-preview-reading-scroll, .za-preview-text-scroll) {
   height: 100%;
   padding: 0;
@@ -1812,3 +1971,26 @@
     transition: none;
   }
 }
+
+/* The complete workbook engine fills the continuous canvas; only chrome follows the app theme. */
+.za-sheet-engine, .za-sheet-engine-scroll {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+}
+.za-sheet-engine-scroll > [data-scroll-viewport] {
+  overscroll-behavior: contain;
+  outline: none;
+}
+.za-sheet-engine-content { min-height: 100%; }
+.za-sheet-cover-engine {
+  position: absolute;
+  transform-origin: top left;
+  pointer-events: none;
+}
+.za-sheet-cover-engine [data-scroll-area-scrollbar],
+.za-sheet-cover-engine [data-xlsx-selection-overlay] { display: none !important; }
+.za-sheet-cover-engine [data-scroll-viewport] { overflow: hidden !important; }

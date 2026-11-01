@@ -198,18 +198,18 @@ test("PPT rapid page jumps preserve only the newest result while navigation stay
 
 test("read-only sheet snapshots restore a reopened immutable resource and retire on descriptor or account changes",async t=>{
   const requests=[],bytes=Buffer.from("synthetic sheet"),resource={identity:"file:1",name:"预算.xlsx",mime:"application/octet-stream",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")};
-  const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){requests.push(input);return {sheetNames:["预算","实际"],rows:[["项目","数值"],["服务器","120"]]};}})}});
+  const app=await setup(t,{"@extend-ai/react-xlsx":{setWasmSource(){}},"@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url":{default:"/test.wasm"},"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){requests.push(input);if(input.kind==="sheet-source")return {sheetFallback:true};return {sheetNames:["预算","实际"],sheet:{name:input.name??"预算",widths:[100,160],heights:[24,24],cells:[{row:0,column:0,text:"项目",style:0},{row:1,column:1,text:"120",style:0}],styles:[{}],merges:[],truncated:false}};}})}});
   const {ResourcePreview,ResourcePreviewReadingSession}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const load=async()=>({blob:new Blob([bytes]),assertCurrent(){}});
   const render=async(scope="account-a",shown=true,descriptor=resource)=>{await app.render(app.env.React.createElement(ResourcePreviewReadingSession,{scope},shown?app.env.React.createElement(ResourcePreview,{resource:descriptor,load}):null));if(shown)await app.wait(()=>!!app.host.querySelector("table"));};
   await render();await app.env.act(async()=>{[...app.host.querySelectorAll(".za-preview-sheets button")].find(item=>item.textContent==="实际").click();await flush();});
   await app.wait(()=>!!app.host.querySelector("table"));await app.input("定位单元格","B2");
-  await app.env.act(async()=>{app.host.querySelector('.za-preview-coordinate button[type="submit"]').click();await flush();});
+  await app.env.act(async()=>{app.host.querySelector('.za-sheet-formula-bar form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await flush();});
   assert.equal(app.host.querySelector('[data-cell="B2"]').getAttribute("aria-selected"),"true");
-  await app.zoom("表格缩放",150);await app.env.act(async()=>{[...app.host.querySelectorAll("button")].find(item=>item.textContent==="换行").click();});
-  assert.equal(app.host.querySelector("table").getAttribute("aria-readonly"),"true");assert.equal(app.host.querySelector("[contenteditable]"),null);
+  await app.zoom("表格缩放",150);
+  assert.equal(app.host.querySelector('[role="grid"]').getAttribute("aria-readonly"),"true");assert.equal(app.host.querySelector("[contenteditable]"),null);
   await render("account-a",false);await render();
-  assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"实际");assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"B2");assert.equal(app.host.querySelector("table").style.zoom,"1.5");assert.equal(app.host.querySelector("table").dataset.wrap,"false");
+  assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"实际");assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"B2");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"150%");assert.equal(app.host.querySelector('input[aria-label="公式栏"]').value,"120");
   assert.ok(requests.some(item=>item.type==="sheet"&&item.name==="实际"));
   await render("account-a",true,{...resource,name:"另一名称.xlsx"});assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"A1");
   await render("account-b");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"100%");

@@ -48,7 +48,9 @@ export default defineConfig(({ mode }) => ({
     // it is keyed on the lockfile/config only — edits to the fork would
     // silently keep running the stale copy until a `--force`. Serve it as
     // source instead so the fork is always live (and HMR-able) in dev.
-    exclude: ["@tanstack/react-virtual"],
+    // The patched workbook engine and its local worker stay unbundled during development.
+    exclude: ["@tanstack/react-virtual", "@extend-ai/react-xlsx", "@extend-ai/react-xlsx/vanilla", "@extend-ai/react-xlsx/internal"],
+    include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"],
   },
   build: {
     // Gateway embeds the web build; an Android build must not replace it with mobile bridges.

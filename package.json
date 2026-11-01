@@ -35,6 +35,8 @@
   },
   "pnpm": {
     "overrides": {
+      "@fast-csv/format>@types/node": "26.2.0",
+      "@fast-csv/parse>@types/node": "26.2.0",
       "@base-ui/react": "1.6.0",
       "@biomejs/biome": "2.4.15",
       "@bufbuild/protobuf": "2.12.1",
@@ -55,6 +57,16 @@
       "react-dom": "19.2.4",
       "unplugin-icons": "23.0.1",
       "vite": "8.0.5"
+    },
+    "patchedDependencies": {
+      "@extend-ai/react-xlsx@0.19.0": "patches/@extend-ai__react-xlsx@0.19.0.patch"
+    },
+    "packageExtensions": {
+      "@extend-ai/react-xlsx@0.19.0": {
+        "dependencies": {
+          "linkedom": "0.18.12"
+        }
+      }
     }
   },
   "devDependencies": {
