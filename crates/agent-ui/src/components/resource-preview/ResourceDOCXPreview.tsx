@@ -1,45 +1,76 @@
-import { useEffect, useState } from "react";
-import { createDocxOutline, prepareDocxOutline } from "./docxOutline";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { List, MessageSquare, PanelLeft } from "../IconSet";
+import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
+import { TooltipButton as Button } from "../ui/tooltip-button";
+import { prepareDocxOutline } from "./docxOutline";
+import { checkedDocumentSelection, prepareReaderDocument } from "./docxReaderDocument";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
-import { PreviewToolbar } from "./PreviewToolbar";
+import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { isolatedPreviewDocument } from "./previewPolicy";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
+import { ResourceDocumentComments, type RevisionSelection } from "./ResourceDocumentComments";
+import { usePreviewReadingState } from "./readingSession";
+import { usePreviewViewport } from "./usePreviewViewport";
 
 export type ResourceDOCXPreviewProps = PreviewRecovery & {
   bytes: Uint8Array;
   name: string;
   assertCurrent: () => void;
   onCancel?: () => void;
+  thumbnail?: boolean;
 };
 
-const OUTLINE_CSS = `
-  .za-docx-reader{display:grid;grid-template-columns:176px minmax(0,1fr);align-items:start}
-  .za-docx-reader>.docx-wrapper{min-width:0}
-  .za-docx-outline{position:sticky;top:20px;max-height:calc(100dvh - 40px);overflow:auto;margin:20px 0 20px 12px;padding:0 8px;color:#555;font:12px/1.65 system-ui,sans-serif}
-  .za-docx-outline summary{padding:10px 6px;color:#333;font-weight:600;cursor:pointer;user-select:none}
-  .za-docx-outline ol{list-style:none;margin:0;padding:0 0 8px}
-  .za-docx-outline li{margin:2px 0}
-  .za-docx-outline a{display:block;padding:7px 8px 7px calc(8px + min(var(--outline-level),4)*10px);border-radius:7px;color:inherit;text-decoration:none;overflow-wrap:anywhere}
-  .za-docx-outline a:hover{background:#e8e8e4;color:#222}
-  .za-docx-outline a:focus-visible{outline:2px solid #647a99;outline-offset:-2px;background:#e8e8e4;color:#222}
-  .za-docx-reader :is(p[id],.za-docx-outline-anchor){scroll-margin-top:24px}
-  .za-docx-outline-anchor{display:block;height:0}
-  @media(max-width:700px){
-    .za-docx-reader{display:block}
-    .za-docx-outline{position:relative;top:auto;max-height:none;margin:0 12px;padding:0;border-bottom:1px solid #deded9}
-    .za-docx-outline nav{max-height:160px;overflow:auto;padding-bottom:4px}
-    .za-docx-outline summary{padding:12px 4px}
-  }
-  @media(pointer:coarse){.za-docx-outline :is(summary,a){min-height:44px;box-sizing:border-box}}
-  @media(prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
-`;
-
-/** Verified bytes become a self-contained read-only document. No iframe DOM
- * access, messages, scripts or same-origin privileges are needed for its TOC. */
 export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const { bytes, assertCurrent } = props;
   const [source, setSource] = useState("");
+  const [reader, setReader] = useState<ReturnType<typeof prepareReaderDocument> | null>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const [navigation, setNavigation] = usePreviewReadingState(
+    "docxNavigation",
+    typeof window.matchMedia === "function" && window.matchMedia("(max-width: 820px)").matches
+      ? "closed"
+      : "contents",
+  );
+  const [page, setPage] = useState(1);
+  const [annotating, setAnnotating] = useState(false);
+  const commentMarks = useRef<string[]>([]);
+  const [selection, setSelection] = useState<RevisionSelection | null>(null);
+  const { onRequestRevision } = useContext(PreviewIdentityContext);
+  const chrome = useContext(PreviewToolbarMount);
+  const setFileMenu = chrome?.setFileMenu;
+  useEffect(() => {
+    if (!setFileMenu || props.thumbnail) return;
+    setFileMenu(
+      <>
+        <DropdownMenuItem
+          onClick={() => setNavigation((old) => (old === "closed" ? "contents" : "closed"))}
+        >
+          <List className="size-4" />
+          文档导航
+        </DropdownMenuItem>
+        {onRequestRevision ? (
+          <DropdownMenuItem onClick={() => setAnnotating((old) => !old)}>
+            <MessageSquare className="size-4" />
+            请求修改
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+      </>,
+    );
+    return () => setFileMenu(null);
+  }, [setFileMenu, props.thumbnail, onRequestRevision, setNavigation]);
+
   const [error, setError] = useState("");
+  const [zoom, setZoom] = usePreviewReadingState("docxZoom", "fit-width");
+  const [pageWidth, setPageWidth] = useState(816);
+  const { container, viewport } = usePreviewViewport();
+  const logicalWidth = pageWidth + 48;
+  const scale =
+    typeof zoom === "number"
+      ? zoom / 100
+      : Math.min(1, (viewport.width || logicalWidth) / logicalWidth);
   useEffect(() => {
     const controller = new AbortController();
     const client = createResourcePreviewWorker(controller.signal);
@@ -74,14 +105,30 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
       body.append(...nodes);
       // Original document hyperlinks never acquire navigation authority.
       for (const link of body.querySelectorAll("a")) link.removeAttribute("href");
-      const navigation = createDocxOutline(body, outline);
-      if (navigation) {
-        body.className = "za-docx-reader";
+      if (props.thumbnail) {
+        for (const page of [...body.querySelectorAll("section.docx")].slice(1)) page.remove();
         const styles = window.document.createElement("style");
-        styles.textContent = OUTLINE_CSS;
-        body.prepend(styles, navigation);
+        styles.textContent =
+          "html,body{background:white!important;min-height:100%}.docx-wrapper{padding:0!important;background:white!important}.docx-wrapper>section.docx{margin:0!important;box-shadow:none!important}";
+        body.prepend(styles);
       }
-      if (check()) setSource(isolatedPreviewDocument(body.outerHTML, "document"));
+      const firstPage = body.querySelector<HTMLElement>("section.docx");
+      const width = firstPage?.style.width ?? "";
+      const numeric = Number.parseFloat(width);
+      const widthInPixels =
+        numeric * (width.endsWith("pt") ? 96 / 72 : width.endsWith("in") ? 96 : 1);
+      if (Number.isFinite(widthInPixels) && widthInPixels > 0)
+        setPageWidth(Math.max(320, Math.min(2400, widthInPixels)));
+      if (check()) {
+        if (props.thumbnail) setSource(isolatedPreviewDocument(body.outerHTML, "document"));
+        else {
+          const document = prepareReaderDocument(body, outline);
+          setReader(document);
+          setSource(document.source);
+          if (!document.headings.length)
+            setNavigation((old) => (old === "contents" ? "closed" : old));
+        }
+      }
     })().catch((cause: unknown) => {
       if (active && !controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : "文档未能预览，请下载原件查看。");
@@ -91,26 +138,230 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
       controller.abort();
       client.dispose();
     };
-  }, [bytes, assertCurrent]);
+  }, [bytes, assertCurrent, props.thumbnail, setNavigation]);
+  const post = useCallback(
+    (message: object) => {
+      if (reader)
+        frame.current?.contentWindow?.postMessage({ token: reader.token, ...message }, "*");
+    },
+    [reader],
+  );
+  function navigate(id: string) {
+    post({ type: "navigate", id });
+    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 820px)").matches)
+      setNavigation("closed");
+  }
+  useEffect(() => {
+    if (!reader) return;
+    const receive = (event: MessageEvent) => {
+      if (
+        event.source !== frame.current?.contentWindow ||
+        event.origin !== "null" ||
+        event.data?.token !== reader.token
+      )
+        return;
+      try {
+        assertCurrent();
+      } catch {
+        return;
+      }
+      if (event.data.type === "ready") {
+        post({ type: "annotate", enabled: annotating });
+        post({ type: "marks", ids: commentMarks.current });
+      }
+      if (
+        event.data.type === "page" &&
+        Number.isSafeInteger(event.data.page) &&
+        event.data.page >= 1 &&
+        event.data.page <= reader.pages.length
+      )
+        setPage(event.data.page);
+      if (event.data.type === "selection" && annotating) {
+        const chosen = checkedDocumentSelection(event.data, reader.blocks);
+        const rect = frame.current?.getBoundingClientRect(),
+          host = surface.current?.getBoundingClientRect();
+        if (chosen && rect && host)
+          setSelection({
+            ...chosen,
+            x: Math.min(
+              Math.max(12, rect.left - host.left + chosen.x * scale),
+              Math.max(12, host.width - 352),
+            ),
+            y: Math.min(rect.top - host.top + chosen.y * scale, host.height - 150),
+          });
+      }
+    };
+    window.addEventListener("message", receive);
+    post({ type: "annotate", enabled: annotating });
+    return () => window.removeEventListener("message", receive);
+  }, [reader, annotating, assertCurrent, scale, post]);
   return (
     <>
-      <PreviewToolbar label="Word 文档" detail="只读" />
-      {error ? (
-        <PreviewUnavailable message={error} onDownload={props.onDownload} onRetry={props.onRetry} />
-      ) : source ? (
-        <>
-          <iframe
-            className="za-preview-document"
-            sandbox=""
-            referrerPolicy="no-referrer"
-            title={props.name}
-            srcDoc={source}
+      <PreviewToolbar label="Word 文档" detail="只读">
+        {!props.thumbnail ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="文档导航"
+            tooltip="文档导航"
+            onClick={() =>
+              setNavigation(
+                navigation === "closed"
+                  ? reader?.headings.length
+                    ? "contents"
+                    : "pages"
+                  : "closed",
+              )
+            }
+          >
+            <List className="size-4" />
+          </Button>
+        ) : null}
+        {onRequestRevision && !props.thumbnail ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="za-request-revision"
+            data-active={annotating}
+            onClick={() => setAnnotating(!annotating)}
+          >
+            <MessageSquare className="size-4" />
+            请求修改
+          </Button>
+        ) : null}
+        <PreviewZoomControl label="文档缩放" value={zoom} onChange={setZoom} fitPage={false} />
+      </PreviewToolbar>
+      <div className="za-document-workspace" ref={surface}>
+        {!props.thumbnail && reader ? (
+          navigation !== "closed" ? (
+            <aside className="za-document-navigation" aria-label="文档导航">
+              <header>
+                <strong>{navigation === "contents" ? "目录" : `${reader.pages.length} 页`}</strong>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={navigation === "contents" ? "切换为页面缩略图" : "切换为文档目录"}
+                  disabled={!reader.headings.length}
+                  onClick={() => setNavigation(navigation === "contents" ? "pages" : "contents")}
+                >
+                  <PanelLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="收起文档导航"
+                  onClick={() => setNavigation("closed")}
+                >
+                  <List className="size-4" />
+                </Button>
+              </header>
+              <nav>
+                {navigation === "contents"
+                  ? reader.headings.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        style={{ paddingInlineStart: 10 + Math.min(4, item.level) * 10 }}
+                        onClick={() => navigate(item.id)}
+                      >
+                        {item.title}
+                      </button>
+                    ))
+                  : reader.pages.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="za-document-page-link"
+                        aria-label={`第 ${index + 1} 页`}
+                        aria-current={page === index + 1 ? "page" : undefined}
+                        onClick={() => navigate(item.id)}
+                      >
+                        <span>{index + 1}</span>
+                        {item.cover ? (
+                          <span className="za-document-page-cover" inert>
+                            <iframe
+                              sandbox=""
+                              title={`第 ${index + 1} 页缩略图`}
+                              loading="lazy"
+                              srcDoc={item.cover}
+                              tabIndex={-1}
+                            />
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+              </nav>
+            </aside>
+          ) : (
+            <button
+              type="button"
+              className="za-document-navigation-rail"
+              aria-label="展开文档导航"
+              onClick={() => setNavigation(reader.headings.length ? "contents" : "pages")}
+            >
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+            </button>
+          )
+        ) : null}
+        <div ref={container} className="za-docx-zoom-viewport">
+          {error ? (
+            <PreviewUnavailable
+              message={error}
+              onDownload={props.onDownload}
+              onRetry={props.onRetry}
+            />
+          ) : source ? (
+            <div
+              className="za-docx-zoom-surface"
+              style={
+                props.thumbnail
+                  ? undefined
+                  : { width: logicalWidth * scale, height: "100%", marginInline: "auto" }
+              }
+            >
+              <iframe
+                ref={frame}
+                className="za-preview-document"
+                sandbox={props.thumbnail ? "" : "allow-scripts"}
+                referrerPolicy="no-referrer"
+                title={props.name}
+                srcDoc={source}
+                style={
+                  props.thumbnail
+                    ? undefined
+                    : {
+                        width: logicalWidth,
+                        height: `${100 / scale}%`,
+                        transform: `scale(${scale})`,
+                        transformOrigin: "top left",
+                      }
+                }
+              />
+            </div>
+          ) : (
+            <PreviewLoading message="正在排版文档…" onCancel={props.onCancel} />
+          )}
+        </div>
+        {!props.thumbnail ? (
+          <ResourceDocumentComments
+            enabled={annotating}
+            onEnabled={setAnnotating}
+            selection={selection}
+            onSelection={setSelection}
+            onNavigate={navigate}
+            onMarks={(items) => {
+              const ids = items.map((item) => item.block);
+              commentMarks.current = ids;
+              post({ type: "marks", ids });
+            }}
           />
-          <p className="za-preview-caption">字体和复杂排版可能与原件有所不同。</p>
-        </>
-      ) : (
-        <PreviewLoading message="正在排版文档…" onCancel={props.onCancel} />
-      )}
+        ) : null}
+      </div>
     </>
   );
 }

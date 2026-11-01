@@ -91,12 +91,16 @@ export function isolatedPreviewDocument(body: string, mode?: "document"): string
     .docx-wrapper{background:#f3f3f1!important;padding:24px!important}
     .docx-wrapper>section.docx{background:#fff!important;box-shadow:0 1px 3px #0001,0 8px 28px #0001!important;margin:0 auto 24px!important}
     ${mode === "document" ? "html,body{background:#f3f3f1}body{padding:0}" : ""}
-    @media(max-width:960px){
+    ${
+      mode === "document"
+        ? ""
+        : `@media(max-width:960px){
       body{padding:4px}
       .docx-wrapper{padding:12px!important}
       .docx-wrapper>section.docx{box-sizing:border-box!important;width:100%!important;min-width:0!important;max-width:100%!important;min-height:0!important;padding:24px!important;margin-bottom:12px!important}
       .docx-wrapper table{width:100%!important;max-width:100%!important;table-layout:fixed!important;overflow-wrap:anywhere}
       .docx-wrapper col,.docx-wrapper td{width:auto!important;min-width:0!important}
+    }`
     }`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; media-src data:; font-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"><meta name="referrer" content="no-referrer"><style>${styles}</style></head><body>${body}</body></html>`;
 }

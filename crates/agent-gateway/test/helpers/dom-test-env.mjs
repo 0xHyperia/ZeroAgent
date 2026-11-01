@@ -48,6 +48,8 @@ export async function createWebDomTestEnv(options = {}) {
   const ReactDOMClient = requireFromWeb("react-dom/client");
   const loader = createWebModuleLoader({
     ...options,
+    // Vite icon modules are real components in a DOM test, not structural loader records.
+    iconFactory: specifier => specifier.endsWith("?raw") ? '<svg aria-hidden="true"></svg>' : props => React.createElement("svg", { ...props, "aria-hidden": true }),
     mocks: {
       react: React,
       "react/jsx-runtime": requireFromWeb("react/jsx-runtime"),

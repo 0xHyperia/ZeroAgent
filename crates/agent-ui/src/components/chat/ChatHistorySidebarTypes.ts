@@ -36,6 +36,9 @@ export type ChatHistorySidebarProps = {
   workspaceHistory?: ReadonlyMap<string, WorkspaceHistoryState>;
   onLoadWorkspaceHistory?: (cwd: string, more?: boolean) => Promise<void>;
   items: readonly SidebarConversation[];
+  /** Visible host-owned groups outside the recent list, sharing row actions and bulk selection. */
+  navigationItems?: readonly SidebarConversation[];
+  renderConversationMoveMenu?: (item: SidebarConversation) => ReactNode;
   taskItems?: readonly SidebarConversation[];
   currentConversationId: string;
   // Per-row in-flight mutations: only that row's menu/inputs disable.
@@ -161,7 +164,9 @@ export type ChatHistorySidebarProps = {
   onOpenResourceHub: (resource: SidebarShortcutId) => void;
   headerTop?: ReactNode;
   /** Account-scoped navigation supplied by hosts without local workspace trees. */
-  navigationContent?: ReactNode;
+  navigationContent?:
+    | ReactNode
+    | ((options: { renderConversation: (item: SidebarConversation) => ReactNode }) => ReactNode);
   brand?: ReactNode;
   mobileRail?: ReactNode;
   hideCloseButton?: boolean;

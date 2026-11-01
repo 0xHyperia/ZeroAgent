@@ -1,4 +1,7 @@
+import { useContext } from "react";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { PreviewIdentityContext } from "./PreviewChrome";
+import { getResourceFileIcon } from "./ResourceFileIcon";
 
 export type PreviewRecovery = { onDownload?: () => void; onRetry?: () => void };
 
@@ -9,10 +12,14 @@ export function PreviewLoading({
   message?: string;
   onCancel?: () => void;
 }) {
+  const { name } = useContext(PreviewIdentityContext);
+  const Icon = getResourceFileIcon(name);
   return (
     <div className="za-preview-loading" role="status" aria-live="polite">
-      <span className="za-preview-loading-mark" aria-hidden="true" />
-      <p>{message}</p>
+      <span className="za-preview-file-loading" aria-hidden="true">
+        <Icon />
+      </span>
+      <p className="sr-only">{message}</p>
       {onCancel ? (
         <Button variant="ghost" size="sm" onClick={onCancel}>
           取消读取

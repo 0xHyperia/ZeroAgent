@@ -22,7 +22,7 @@ const artifactVersionID="44444444-4444-4444-8444-444444444444",olderArtifactID="
 const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFamilyID,number:2,conversation_id:fileConversation,source_run_id:artifactRunID,name:"website.html",mime:"text/html",size:5,sha256:"a".repeat(64),state:"ready",version:3,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",download_url:`/api/web-chat/artifacts/versions/${artifactVersionID}/download`,...overrides});
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 
-async function mount(t, { initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false } = {}) {
+async function mount(t, { initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -52,7 +52,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   let uploadOnline=true, fileListOnline=true;
   let transcript, floorNav;
   const editScrolls=[];
-  let projectPanel,memoryPanel,finishBranch,finishArtifact;
+  let projectPanel,memoryPanel,finishBranch,finishArtifact,revisionPanel;
   let branchOnline=!uncertainBranch;
   const branches=new Map();
   const history = new Map([
@@ -306,6 +306,10 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   };
 
   env = await createWebDomTestEnv({ mocks: {
+    ...(revisionHarness ? {
+      "@/components/CloudChatFilePanel": {CloudChatFilePanel: props => {revisionPanel=props;return null;}},
+      "@/components/cloudchat/CloudChatArtifactsPanel": {CloudChatArtifactsPanel: props => {revisionPanel=props;return null;}},
+    } : {}),
     "@/lib/mobileRuntime": { isEmbeddedMobileRuntime: () => mobileLayout, MOBILE_BACK_EVENT: "zeroagent:mobile-back" },
     "@liveagent/ui/components/IconSet": new Proxy({}, {get:()=>()=>null}),
     [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]: new Proxy({}, {get:()=>()=>null}),
@@ -345,7 +349,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     "@liveagent/ui/components/AppErrorBoundary": { AppErrorBoundary: (props) => props.children },
     "@liveagent/ui/components/chat/ChatHistorySidebar": { ChatHistorySidebar: (props) => {sidebar=props;return env.React.createElement("nav", {"data-sidebar-loading":props.listStatus},
       env.React.createElement("button", {"data-new-conversation":"",onClick:props.onNewConversation}, "新对话"),
-      props.navigationContent,
+      typeof props.navigationContent === "function" ? props.navigationContent({ renderConversation: item => env.React.createElement("button", { "data-conversation": item.id, "aria-current": item.id === props.currentConversationId ? "page" : undefined, onClick: () => props.onSelectConversation(item.id) }, item.title) }) : props.navigationContent,
       props.items.map((item) => env.React.createElement("button", { key: item.id, "data-conversation": item.id, onClick: () => props.onSelectConversation(item.id) }, item.title)),
       props.hasMore?env.React.createElement("button",{"data-more-conversations":"",disabled:props.isLoadingMore,onClick:props.onLoadMore},props.isLoadingMore?"正在加载更多会话":"加载更多会话"):null,props.accountMenu,props.mobileRail,
       props.errorMessage?env.React.createElement("p",{role:"alert"},props.errorMessage):null,props.footerTrailing); } },
@@ -364,7 +368,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
         env.React.createElement("div", {"data-fixture-composer":"", contentEditable:true,suppressContentEditableWarning:true}),
         props.feedback,
         realModelControls?env.React.createElement(env.loadModule("../../agent-ui/src/components/chat/ComposerModelControls.tsx").ComposerModelControls,{...props,open:true,showExecutionControls:env.loadModule("@liveagent/ui/contracts/composerPresentation.ts").resolveComposerControls(props.capabilities,{executionControls:props.showExecutionControls}).executionControls}):null,
-        env.React.createElement("div",{"data-pending-attachments":""},props.pendingUploadedFiles.map(file=>env.React.createElement("div",{key:file.relativePath},env.React.createElement("button",{onClick:()=>props.onOpenPendingUpload?.(file.relativePath)},file.fileName),env.React.createElement("button",{"aria-label":`移除 ${file.fileName}`,onClick:()=>props.onRemovePendingUpload(file.relativePath)},"移除")))),
+        env.React.createElement("div",{"data-pending-attachments":""},props.pendingUploadedFiles.map(file=>env.React.createElement("div",{key:file.relativePath},env.React.createElement("button",{onClick:()=>props.onOpenPendingUpload?.(file.relativePath)},file.fileName+(file.statusText?` · ${file.statusText}`:"")),env.React.createElement("button",{"aria-label":`移除 ${file.fileName}`,onClick:()=>props.onRemovePendingUpload(file.relativePath)},"移除")))),
         env.React.createElement("button", { "data-action": "send", onClick: props.onSend, disabled: (props.isSending && !props.allowQueueWhileSending) || props.isInputDisabled }, "发送"),
         env.React.createElement("button", { "data-action": "stop", onClick: props.onStop, disabled: !props.isSending }, "停止"));
     } },
@@ -419,6 +423,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   return {
     env, calls, streams, history, runs, host, files,branches,artifacts,editScrolls,pendingQueues,savedDrafts,
     get sidebar(){return sidebar;},
+    get revisionPanel(){return revisionPanel;},
     set delayRename(value){delayRename=value;},
     async finishRename(){await env.act(async()=>{finishRename();await tick();});},
     get composer() { return composer; }, get clearCount() { return clearCount; },
@@ -473,11 +478,11 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     async finishArtifact(){await env.act(async()=>{finishArtifact();await tick();});},
     async openArtifact(id=artifactVersionID){await env.act(async()=>{transcript.onOpenFileLink({path:`cloud-artifacts/${id}`,source:"relative"});await tick();});},
     async reload(){await env.act(async()=>{root.render(null);await tick();});await render();},
-    async chooseArtifact(id){const select=host.querySelector('select[aria-label="成果版本"]');await env.act(async()=>{select.value=id;select.dispatchEvent(new Event("change",{bubbles:true}));await tick();});},
+    async chooseArtifact(id){if(!host.querySelector(".za-reader-version"))await env.act(async()=>{host.querySelector('[aria-label="版本历史记录"]').click();await tick();});const button=host.querySelector(`[data-version-id="${id}"]`);assert.ok(button);await env.act(async()=>{button.click();await tick();});},
     async edit(messageID,text,files=[]){const ref=transcript.rows.find(row=>row.key===messageID).messageRef;await env.act(async()=>{transcript.onResendFromEdit(ref,text,files,[]);await tick();});},
     async fork(messageID){const ref=transcript.rows.find(row=>row.key===messageID).messageRef;await env.act(async()=>{transcript.onBranchConversation(ref);await tick();});},
     async clickText(text){
-      const find=()=>[...host.querySelectorAll('button,[role="menuitem"]')].find(element=>element.textContent.trim()===text);
+      const find=()=>[...document.querySelectorAll('button,[role="menuitem"]')].find(element=>element.textContent.trim()===text);
       let button=find();
       if(!button && text==="文件库"){await env.act(async()=>{sidebar.onOpenResourceHub();await tick();});return;}
       if(!button && text==="项目"){await env.act(async()=>{composerContextPicker.onBrowse("projects");await tick();});return;}
@@ -799,8 +804,8 @@ test("continuing a saved artifact submits only its exact version ID and survives
  const older=artifactRecord({id:olderArtifactID,number:1,name:"website-v1.html",download_url:`/api/web-chat/artifacts/versions/${olderArtifactID}/download`});
  const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord(),older]});
  await app.openArtifact();await app.chooseArtifact(olderArtifactID);await app.clickText("继续修改");
- assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].fileName,"website-v1.html · v1");
- assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website-v1.html · v1/);assert.equal(app.host.textContent.match(/website-v1.html · v1/g).length,1);assert.doesNotMatch(app.draft,/artifact|444444|555555|workspace/);
+ assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].fileName,"website-v1.html");assert.match(app.composer.pendingUploadedFiles[0].statusText,/v1/);
+ assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website-v1.html · 已保存 · v1/);assert.equal(app.host.textContent.match(/website-v1.html · 已保存 · v1/g).length,1);assert.doesNotMatch(app.draft,/artifact|444444|555555|workspace/);
  await app.click('[data-action="send"]');
  const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
  assert.deepEqual(input.content,[{type:"text",text:"新的问题"},{type:"artifact_reference",version_id:olderArtifactID}]);
@@ -853,7 +858,7 @@ test("editing and regenerating retain source artifact references while preservin
    const run=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
    assert.deepEqual(run.content,[{type:"text",text:changed?"改成深色网页":"修改网页"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:olderArtifactID}]);
    assert.equal(app.draft,"新的问题");assert.equal(app.clearCount,0);assert.equal(app.composer.pendingUploadedFiles[0].relativePath,`cloud-artifacts/${artifactVersionID}`);
-   assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website.html · v2/);assert.deepEqual(app.history.get(fileConversation),messages);
+   assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website.html · 已保存 · v2/);assert.deepEqual(app.history.get(fileConversation),messages);
  });
 });
 
@@ -919,19 +924,19 @@ test("unsupported effective cache and explicit text-only image settings are expl
 });
 test("a workspace-loadable original is attached without treating an unparsed or large source as extracted text",async(t)=>{
  const app=await mount(t,{fileMode:true,initialFiles:[fileRecord({name:"large.csv",mime:"text/csv",size:2*1024*1024,state:"ready",text_bytes:600000,workspace_loadable:true})]});await app.clickText("文件库");await app.clickText("large.csv");
- assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);assert.match(app.host.textContent,/不表示文件已完成文本解析/);await app.clickText("引用到消息");assert.match(app.host.textContent,/原件可在隔离沙箱读取/);await app.click('[data-action="send"]');
+ assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);await app.click('[aria-label="文件更多操作"]');await app.clickText("文件信息");assert.match(app.host.textContent,/不表示文件已完成文本解析/);await app.clickText("引用到消息");assert.match(app.host.textContent,/原件可在隔离沙箱读取/);await app.click('[data-action="send"]');
  const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(request.content,[{type:"text",text:"新的问题"},{type:"file_reference",file_id:fileId}]);
 });
 
 test("a ZIP file is offered by the chooser and sent only as a canonical workspace-only reference",async(t)=>{
  const app=await mount(t,{fileMode:true,initialFiles:[fileRecord({name:"project.zip",mime:"application/zip",state:"uploaded",processing_stage:"workspace_only",text_bytes:0,workspace_loadable:true})]});
  assert.match(app.host.querySelector('input[type="file"]').accept,/\.zip/);await app.clickText("文件库");await app.clickText("project.zip");
- assert.match(app.host.textContent,/隔离沙箱中读取或解压/);assert.match(app.host.textContent,/不会自动运行其中的代码/);assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);
+ await app.click('[aria-label="文件更多操作"]');await app.clickText("文件信息");assert.match(app.host.textContent,/隔离沙箱中读取或解压/);assert.match(app.host.textContent,/不会自动运行其中的代码/);assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);
  await app.clickText("引用到消息");await app.click('[data-action="send"]');const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(request.content,[{type:"text",text:"新的问题"},{type:"file_reference",file_id:fileId}]);
 });
 test("the single pending artifact card opens its exact version and removes only its draft reference",async(t)=>{
- const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord()]});await app.openArtifact();await app.clickText("继续修改");assert.equal(app.host.textContent.match(/website.html · v2/g).length,1);
- await app.clickText("website.html · v2");assert.ok(app.host.querySelector('[data-cloud-resource-inline]'));await app.click('[aria-label="关闭成果库"]');await app.click('[aria-label="移除 website.html · v2"]');assert.equal(app.composer.pendingUploadedFiles.length,0);assert.equal(app.artifacts.size,1);assert.equal(app.calls.some(call=>call.method==="DELETE"),false);
+ const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord()]});await app.openArtifact();await app.clickText("继续修改");assert.equal(app.host.textContent.match(/website.html · 已保存 · v2/g).length,1);
+ await app.clickText("website.html · 已保存 · v2");assert.ok(app.host.querySelector('[data-cloud-resource-inline]'));await app.click('[aria-label="关闭成果库"]');await app.click('[aria-label="移除 website.html"]');assert.equal(app.composer.pendingUploadedFiles.length,0);assert.equal(app.artifacts.size,1);assert.equal(app.calls.some(call=>call.method==="DELETE"),false);
 });
 
 test("a full account queue preserves the draft and both attachment kinds until an explicit same-request retry succeeds",async(t)=>{
@@ -1606,16 +1611,101 @@ test('project moves relocate the sidebar row, and project New keeps context with
  await app.env.act(async()=>{await app.contextPicker.onSelectProject(project);await tick();await tick();});
  assert.ok(app.calls.some(call=>call.path.includes('catalog?')&&call.path.includes('scope=unassigned')));
  assert.equal(app.sidebar.items.some(item=>item.id===fileConversation),false);
- assert.equal(app.host.querySelector('.cloud-project-conversation')?.getAttribute('aria-current'),"page");
+ assert.equal(app.host.querySelector('.cloud-project-conversation button')?.getAttribute('aria-current'),"page");
  assert.equal(app.draft,"现有草稿");
  const before=app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length;
  await app.env.act(async()=>{app.host.querySelector('.cloud-project-actions button[aria-label^="在"]').click();await tick();});
  assert.equal(app.contextPicker.selectedProjectId,project.id);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length,before);
  assert.equal(app.runs.size,0);
- await app.env.act(async()=>{app.host.querySelector('.cloud-project-conversation').click();await tick();});
+ await app.env.act(async()=>{app.host.querySelector('.cloud-project-conversation button').click();await tick();});
  assert.equal(app.draft,"现有草稿");
  await app.env.act(async()=>{await app.contextPicker.onSelectProject(null);await tick();await tick();});
  assert.equal(app.sidebar.items.some(item=>item.id===fileConversation),true);
  assert.equal(app.host.querySelector('.cloud-project-conversation'),null);
+});
+
+test("a sidebar project move targets its own row and preserves the current conversation and draft", async t => {
+ const app=await mount(t,{initialDraftText:"正在编写的草稿"});
+ const project=composerProjectRecord();app.projectRecords.set(project.id,project);
+ const menu=()=>app.sidebar.renderConversationMoveMenu({id:alternateConversation}).props;
+ await app.env.act(async()=>{await menu().onMove(project);await tick();});
+ assert.equal(app.projectBindings.get(alternateConversation).project_id,project.id);
+ assert.equal(app.sidebar.currentConversationId,defaultConversation);assert.equal(app.draft,"正在编写的草稿");
+ assert.equal(app.sidebar.items.some(item=>item.id===alternateConversation),false);
+ await app.clickText(project.name);
+ assert.equal(app.sidebar.navigationItems.some(item=>item.id===alternateConversation),true);
+ await app.env.act(async()=>{await menu().onMove(null);await tick();});
+ assert.equal(app.projectBindings.get(alternateConversation).project_id,"");
+ assert.equal(app.sidebar.items.some(item=>item.id===alternateConversation),true);
+ assert.equal(app.sidebar.navigationItems.some(item=>item.id===alternateConversation),false);
+ assert.equal(app.sidebar.currentConversationId,defaultConversation);assert.equal(app.draft,"正在编写的草稿");
+ assert.equal(app.runs.size,0);
+});
+
+test("creating a destination from another row keeps creation in the dialog without changing current project context", async t => {
+ const app=await mount(t,{initialDraftText:"独立草稿"});
+ await app.env.act(async()=>{app.sidebar.renderConversationMoveMenu({id:alternateConversation}).props.onCreate();await tick();});
+ assert.ok(app.host.querySelector('input[aria-label="项目名称"]'));
+ assert.equal(app.sidebar.currentConversationId,defaultConversation);assert.equal(app.draft,"独立草稿");
+ await app.clickText("取消");
+ assert.equal(app.host.querySelector('input[aria-label="项目名称"]'),null);
+ assert.equal(app.calls.some(call=>call.method==="PUT"&&call.path.endsWith('/project')),false);
+});
+
+test("a late sidebar project move cannot refresh another account or replace its draft", async t => {
+ const app=await mount(t,{initialDraftText:"账户一草稿"});const project=composerProjectRecord();app.projectRecords.set(project.id,project);
+ app.delayProjectAssociation=true;
+ let pending;
+ await app.env.act(async()=>{pending=app.sidebar.renderConversationMoveMenu({id:alternateConversation}).props.onMove(project).catch(()=>undefined);await tick();});
+ await app.switchAccount(2);
+ const requests=app.calls.length;
+ await app.finishProjectAssociation();await pending;
+ assert.equal(app.sidebar.navigationItems.length,0);
+ assert.equal(app.calls.slice(requests).some(call=>call.path.includes('/catalog?')),false);
+ assert.doesNotMatch(app.draft,/账户一草稿/);
+});
+
+test("moving the current row locks sending until its project association is confirmed and keeps the draft", async t => {
+ const app=await mount(t,{initialDraftText:"移动期间保留的草稿"});const project=composerProjectRecord();app.projectRecords.set(project.id,project);
+ app.delayProjectAssociation=true;let pending;
+ await app.env.act(async()=>{pending=app.sidebar.renderConversationMoveMenu({id:defaultConversation}).props.onMove(project);await tick();});
+ assert.equal(app.composer.isInputDisabled,true);
+ await app.click('[data-action="send"]');assert.equal(app.runs.size,0);
+ await app.env.act(async()=>{await app.contextPicker.onSelectProject(null);await tick();});
+ assert.equal(app.calls.filter(call=>call.method==="PUT"&&call.path.endsWith('/project')).length,1);
+ await app.finishProjectAssociation();await pending;
+ assert.equal(app.composer.isInputDisabled,false);assert.equal(app.draft,"移动期间保留的草稿");
+ assert.equal(app.contextPicker.selectedProjectId,project.id);
+ assert.equal(app.runs.size,0);
+});
+
+
+test("explicit document revision sends the original draft and exact immutable resource through normal Run submission",async t=>{
+ for(const kind of ["file","artifact"])await t.test(kind,async child=>{
+  const resource=kind==="file"?fileRecord({name:"review.docx",workspace_loadable:true}):artifactRecord({name:"review.docx"});
+  const app=await mount(child,{fileMode:true,revisionHarness:true,initialFiles:kind==="file"?[resource]:[],initialArtifacts:kind==="artifact"?[resource]:[],initialDraftText:"保留已有补充要求"});
+  if(kind==="artifact")await app.openArtifact(resource.id);
+  else await app.env.act(async()=>{app.transcript.onOpenFileLink({path:`cloud-files/${resource.id}`,source:"relative"});await tick();});
+  assert.ok(app.revisionPanel?.onRequestRevision);
+  assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").length,0);
+  let accepted;
+  await app.env.act(async()=>{accepted=await app.revisionPanel.onRequestRevision(resource,[{id:"comment-1",page:2,block:"za-reader-block-3",start:4,end:8,quote:"原文片段",comment:"改为简洁表达"}]);await tick();});
+  assert.equal(accepted,true);
+  const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");assert.equal(posts.length,1);
+  const input=JSON.parse(posts[0].body);
+  assert.equal(input.model,"test-model");assert.equal(input.provider_key_id,1);
+  assert.match(input.content[0].text,/保留已有补充要求/);assert.match(input.content[0].text,/第 2 页 · za-reader-block-3 · 字符 4–8/);assert.match(input.content[0].text,/原文：原文片段/);assert.match(input.content[0].text,/修改要求：改为简洁表达/);
+  assert.deepEqual(input.content[1],kind==="file"?{type:"file_reference",file_id:resource.id}:{type:"artifact_reference",version_id:resource.id});
+ });
+});
+
+test("a late revision resource check cannot send annotations into a switched conversation",async t=>{
+ const resource=artifactRecord({name:"review.docx"}),app=await mount(t,{fileMode:true,revisionHarness:true,initialArtifacts:[resource],delayedArtifact:true});
+ await app.openArtifact(resource.id);
+ let result;
+ const pending=app.revisionPanel.onRequestRevision(resource,[{id:"c",page:1,block:"za-reader-block-1",start:0,end:1,quote:"原",comment:"改"}]).then(value=>{result=value;},()=>{result=false;});
+ await app.click(`[data-conversation="${secondFileConversation}"]`);
+ const nextDraft=app.draft;await app.finishArtifact();await pending;
+ assert.equal(result,false);assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);assert.equal(app.draft,nextDraft);
 });

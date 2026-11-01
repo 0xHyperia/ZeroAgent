@@ -2,7 +2,9 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -12,6 +14,8 @@ import (
 )
 
 func (h *HTTPHandler) registerCloudArtifacts(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/web-chat/artifacts/versions/{id}/restore", h.withSession(h.restoreCloudArtifact))
+	mux.HandleFunc("GET /api/web-chat/artifacts/restores/{request_id}", h.withSession(h.cloudArtifactRestoreReceipt))
 	mux.HandleFunc("GET /api/web-chat/artifacts", h.withSession(h.listCloudArtifacts))
 	mux.HandleFunc("GET /api/web-chat/artifacts/versions/{id}", h.withSession(h.getCloudArtifact))
 	mux.HandleFunc("GET /api/web-chat/artifacts/versions/{id}/download", h.withSession(h.downloadCloudArtifact))
@@ -178,4 +182,41 @@ func (h *HTTPHandler) deleteCloudArtifact(w http.ResponseWriter, r *http.Request
 	}
 	cloudFileResponseHeaders(w, nil)
 	writeJSON(w, status, map[string]any{"family_id": familyID, "state": map[bool]string{true: CloudArtifactDeleted, false: CloudArtifactDeleting}[status == 200]})
+}
+
+func (h *HTTPHandler) restoreCloudArtifact(w http.ResponseWriter, r *http.Request, session *Session) {
+	if !h.cloudWriteAllowed(w, r) {
+		return
+	}
+	var input struct {
+		HeadID    string `json:"expected_head_id"`
+		RequestID string `json:"client_request_id"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		writeError(w, cloudArtifactAPIError(ErrCloudArtifactInvalid))
+		return
+	}
+	source, err := canonicalCloudFileID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, cloudArtifactAPIError(ErrNotFound))
+		return
+	}
+	result, err := h.service.RestoreCloudArtifact(r.Context(), session.UserID, source, input.HeadID, input.RequestID)
+	if err != nil {
+		writeError(w, cloudArtifactAPIError(err))
+		return
+	}
+	cloudFileResponseHeaders(w, nil)
+	writeJSON(w, 200, map[string]any{"version": result})
+}
+func (h *HTTPHandler) cloudArtifactRestoreReceipt(w http.ResponseWriter, r *http.Request, session *Session) {
+	result, err := h.service.CloudArtifactRestoreReceipt(r.Context(), session.UserID, r.PathValue("request_id"))
+	if err != nil {
+		writeError(w, cloudArtifactAPIError(err))
+		return
+	}
+	cloudFileResponseHeaders(w, nil)
+	writeJSON(w, 200, map[string]any{"version": result})
 }

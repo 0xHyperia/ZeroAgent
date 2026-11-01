@@ -19,6 +19,9 @@ func (s *MemoryStore) artifactState() *cloudArtifactMemoryState {
 	return s.cloudArtifacts
 }
 func (s *MemoryStore) ReserveCloudArtifact(ctx context.Context, userID int64, owner string, attempt int64, input *CloudArtifactVersion) (*CloudArtifactVersion, bool, error) {
+	return s.reserveCloudArtifact(ctx, userID, owner, attempt, input, nil)
+}
+func (s *MemoryStore) reserveCloudArtifact(ctx context.Context, userID int64, owner string, attempt int64, input *CloudArtifactVersion, restore *cloudArtifactRestoreIntent) (*CloudArtifactVersion, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -37,18 +40,36 @@ func (s *MemoryStore) ReserveCloudArtifact(ctx context.Context, userID int64, ow
 		copy := cloneCloudArtifact(prior)
 		return &copy, false, nil
 	}
-	if s.cloudRuns == nil {
-		return nil, false, ErrNotFound
-	}
-	run, ok := s.cloudRuns.runs[version.SourceRunID]
-	if !ok || run.UserID != userID || run.ConversationID != version.ConversationID {
-		return nil, false, ErrNotFound
-	}
-	if run.State != CloudRunRunning {
-		return nil, false, ErrCloudRunLeaseLost
-	}
-	if err = validateCloudRunLease(&run, owner, attempt, s.now()); err != nil {
-		return nil, false, err
+	if restore != nil {
+		source, ok := state.versions[restore.SourceID]
+		if !ok || source.UserID != userID || source.FamilyID != version.FamilyID || source.State != CloudArtifactReady || source.DeletedAt != nil {
+			return nil, false, ErrNotFound
+		}
+		head := ""
+		var number int64
+		for _, v := range state.versions {
+			if v.FamilyID == source.FamilyID && v.Number > number && v.DeletedAt == nil {
+				head = v.ID
+				number = v.Number
+			}
+		}
+		if head != restore.HeadID || head == restore.SourceID {
+			return nil, false, ErrCloudArtifactConflict
+		}
+	} else {
+		if s.cloudRuns == nil {
+			return nil, false, ErrNotFound
+		}
+		run, ok := s.cloudRuns.runs[version.SourceRunID]
+		if !ok || run.UserID != userID || run.ConversationID != version.ConversationID {
+			return nil, false, ErrNotFound
+		}
+		if run.State != CloudRunRunning {
+			return nil, false, ErrCloudRunLeaseLost
+		}
+		if err = validateCloudRunLease(&run, owner, attempt, s.now()); err != nil {
+			return nil, false, err
+		}
 	}
 	family, exists := state.families[version.FamilyID]
 	if exists && (family.UserID != userID || family.DeletedAt != nil) {
@@ -152,6 +173,9 @@ func (s *MemoryStore) ListCloudArtifacts(ctx context.Context, userID int64, conv
 	return cloudArtifactPage(result, limit), nil
 }
 func (s *MemoryStore) UpdateCloudArtifact(ctx context.Context, userID int64, id string, expected int64, owner string, attempt int64, update CloudArtifactUpdate) (*CloudArtifactVersion, error) {
+	return s.updateCloudArtifactVersion(ctx, userID, id, expected, owner, attempt, update, false)
+}
+func (s *MemoryStore) updateCloudArtifactVersion(ctx context.Context, userID int64, id string, expected int64, owner string, attempt int64, update CloudArtifactUpdate, restoring bool) (*CloudArtifactVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -162,16 +186,25 @@ func (s *MemoryStore) UpdateCloudArtifact(ctx context.Context, userID int64, id 
 	if !ok || version.UserID != userID {
 		return nil, ErrNotFound
 	}
+	if restoring && !isCloudArtifactRestore(version) {
+		return nil, ErrCloudArtifactConflict
+	}
 	if update.State == CloudArtifactReady {
-		run, ok := s.cloudRuns.runs[version.SourceRunID]
-		if !ok {
-			return nil, ErrNotFound
-		}
-		if run.State != CloudRunRunning {
-			return nil, ErrCloudRunLeaseLost
-		}
-		if err := validateCloudRunLease(&run, owner, attempt, s.now()); err != nil {
-			return nil, err
+		if restoring {
+			if !validCloudArtifactRestore(version, update) {
+				return nil, ErrCloudArtifactConflict
+			}
+		} else {
+			run, ok := s.cloudRuns.runs[version.SourceRunID]
+			if !ok {
+				return nil, ErrNotFound
+			}
+			if run.State != CloudRunRunning {
+				return nil, ErrCloudRunLeaseLost
+			}
+			if err := validateCloudRunLease(&run, owner, attempt, s.now()); err != nil {
+				return nil, err
+			}
 		}
 		if state.families[version.FamilyID].DeletedAt != nil {
 			return nil, ErrCloudArtifactConflict
@@ -234,4 +267,15 @@ func (s *MemoryStore) ListCloudArtifactCleanup(ctx context.Context, limit int) (
 		result = result[:limit]
 	}
 	return result, nil
+}
+
+func (s *MemoryStore) ReserveCloudArtifactRestore(ctx context.Context, userID int64, sourceID, headID, requestID string) (*CloudArtifactVersion, bool, error) {
+	input, intent, err := prepareCloudArtifactRestore(ctx, s, userID, sourceID, headID, requestID)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.reserveCloudArtifact(ctx, userID, "", 0, input, intent)
+}
+func (s *MemoryStore) UpdateCloudArtifactRestore(ctx context.Context, userID int64, id string, expected int64, update CloudArtifactUpdate) (*CloudArtifactVersion, error) {
+	return s.updateCloudArtifactVersion(ctx, userID, id, expected, "", 0, update, true)
 }

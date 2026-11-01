@@ -1,0 +1,146 @@
+.za-composer-attachment {
+  position: relative;
+  flex: 0 0 224px;
+  width: 224px;
+  max-width: calc(100vw - 72px);
+  border: 1px solid var(--za-border);
+  border-radius: 16px;
+  background: var(--za-surface-subtle);
+  color: hsl(var(--foreground));
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.za-composer-attachment:hover {
+  border-color: hsl(var(--foreground) / 0.2);
+  background: var(--za-control-hover);
+}
+.za-composer-attachment:focus-within {
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.4);
+}
+.za-composer-attachment[data-cover="true"] {
+  flex-basis: 168px;
+  width: 168px;
+  background: var(--za-surface);
+}
+.za-composer-attachment-cover {
+  height: 100px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 15px 15px 0 0;
+  border-bottom: 1px solid var(--za-border);
+}
+.za-composer-attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 64px;
+  padding: 11px 14px;
+}
+.za-composer-attachment[data-cover="true"] .za-composer-attachment-info {
+  gap: 6px;
+  min-height: 35px;
+  padding: 8px 10px;
+}
+.za-composer-attachment-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 36px;
+  border-radius: 9px;
+  color: hsl(var(--muted-foreground));
+  background: var(--za-control-hover);
+}
+.za-composer-attachment[data-cover="true"] .za-composer-attachment-icon {
+  width: 16px;
+  height: 16px;
+  background: none;
+}
+.za-composer-attachment-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+.za-composer-attachment-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  margin-top: 2px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+.za-composer-attachment-open {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  outline: none;
+}
+.za-composer-attachment-open:disabled {
+  cursor: default;
+}
+.za-composer-attachment-remove {
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--za-surface);
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+.za-composer-attachment-remove::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+.za-composer-attachment:hover .za-composer-attachment-remove,
+.za-composer-attachment:focus-within .za-composer-attachment-remove,
+.za-composer-image-attachment:hover .za-composer-attachment-remove,
+.za-composer-image-attachment:focus-within .za-composer-attachment-remove {
+  opacity: 1;
+  transform: scale(1);
+}
+.za-composer-attachment-remove:hover {
+  transform: scale(1.1) !important;
+}
+.za-composer-attachment-remove:active {
+  transform: scale(0.94) !important;
+}
+.za-composer-attachment-remove:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.za-composer-attachment-remove:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (hover: none), (pointer: coarse), (max-width: 767px) {
+  .za-composer-attachment-remove {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-composer-attachment,
+  .za-composer-attachment-remove {
+    transition: none;
+  }
+}

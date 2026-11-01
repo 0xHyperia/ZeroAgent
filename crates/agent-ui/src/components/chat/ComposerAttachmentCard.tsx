@@ -6,6 +6,7 @@ import type { PendingUploadedFile } from "../../lib/chat/uploadedFiles";
 import { ImagePreview, type ImagePreviewSlide } from "./ImagePreview";
 import { ImagePreviewActionFeedback, ImagePreviewContextMenu } from "./ImagePreviewMenu";
 import { getCompletedImageLoadState } from "./imageLoadState";
+import "./composer-attachments.css";
 
 export function ComposerAttachmentCard(props: {
   file?: PendingUploadedFile;
@@ -21,6 +22,7 @@ export function ComposerAttachmentCard(props: {
   closePreviewLabel?: string;
   onRemove: () => void;
   onOpen?: () => void;
+  previewContent?: ReactNode;
 }) {
   const {
     file,
@@ -36,7 +38,14 @@ export function ComposerAttachmentCard(props: {
     closePreviewLabel,
     onRemove,
     onOpen,
+    previewContent,
   } = props;
+  const format = fileName.split(".").pop()?.toUpperCase() || "文件";
+  const fileSize = file?.sizeBytes
+    ? file.sizeBytes >= 1024 * 1024
+      ? `${(file.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(file.sizeBytes / 1024))} KB`
+    : "";
   const [previewOpen, setPreviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -82,12 +91,12 @@ export function ComposerAttachmentCard(props: {
   );
 
   // 图片附件：纯缩略图方块，点击放大预览，文件名放悬浮提示，角标删除。
-  if (imageSrc || isImageLoading) {
+  if (!previewContent && (imageSrc || isImageLoading)) {
     return (
       <div
         title={fileName}
         className={cn(
-          "group relative size-12 shrink-0 overflow-hidden",
+          "group za-composer-image-attachment relative size-24 shrink-0 overflow-hidden",
           "rounded-lg border border-black/[0.075] bg-black/[0.035] transition-[border-color]",
           "hover:border-black/[0.16] dark:border-white/[0.11] dark:bg-white/[0.065] dark:hover:border-white/[0.22]",
         )}
@@ -138,11 +147,7 @@ export function ComposerAttachmentCard(props: {
           type="button"
           disabled={disabled}
           onClick={onRemove}
-          className={cn(
-            "absolute right-0.5 top-0.5 z-10 inline-flex size-4 items-center justify-center",
-            "rounded-full bg-black/50 text-white/95 backdrop-blur-sm transition-[background-color,scale]",
-            "hover:bg-black/70 active:scale-90 focus-visible:bg-black/70 disabled:pointer-events-none disabled:opacity-35",
-          )}
+          className="za-composer-attachment-remove"
           aria-label={`${removeLabel} ${fileName}`}
           title={removeLabel}
         >
@@ -162,48 +167,33 @@ export function ComposerAttachmentCard(props: {
   }
 
   return (
-    <div
-      title={pathTitle}
-      className={cn(
-        "group flex h-9 w-36 max-w-viewport-inset-5rem shrink-0 items-center gap-1",
-        "rounded-lg border border-black/[0.075] bg-black/[0.035] p-1 pr-1.5 shadow-ui-composerattachmentcard-1 transition-[border-color,background-color]",
-        "hover:border-black/[0.11] hover:bg-black/[0.05] dark:border-white/[0.11] dark:bg-white/[0.065] dark:shadow-ui-composerattachmentcard-2 dark:hover:border-white/[0.16] dark:hover:bg-white/[0.09]",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center overflow-hidden",
-          "rounded-md bg-black/[0.045] text-muted-foreground dark:bg-white/[0.08]",
-        )}
-      >
-        {fallbackIcon}
-      </span>
-
+    <div className="za-composer-attachment" data-cover={Boolean(previewContent)} title={pathTitle}>
+      {previewContent ? <div className="za-composer-attachment-cover">{previewContent}</div> : null}
+      <div className="za-composer-attachment-info">
+        <span className="za-composer-attachment-icon">{fallbackIcon}</span>
+        <div className="min-w-0 flex-1">
+          <span className="za-composer-attachment-name">{fileName}</span>
+          {!previewContent || file?.statusText ? (
+            <span className="za-composer-attachment-meta">
+              {file?.statusText || [format, fileSize].filter(Boolean).join(" · ")}
+            </span>
+          ) : null}
+        </div>
+      </div>
       {onOpen ? (
         <button
           type="button"
+          className="za-composer-attachment-open"
           disabled={disabled}
           onClick={onOpen}
-          title={fileName}
-          className="min-w-0 flex-1 truncate text-left text-xs font-medium leading-4 tracking-tight text-foreground/90 hover:underline disabled:opacity-50"
-        >
-          {fileName}
-        </button>
-      ) : (
-        <span className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground/90">
-          {fileName}
-        </span>
-      )}
-
+          aria-label={`预览 ${fileName}`}
+        />
+      ) : null}
       <button
         type="button"
         disabled={disabled}
         onClick={onRemove}
-        className={cn(
-          "inline-flex size-5 shrink-0 items-center justify-center",
-          "rounded-full text-muted-foreground/75 outline-hidden transition-[background-color,color,scale]",
-          "hover:bg-foreground/[0.07] hover:text-foreground active:scale-90 focus-visible:bg-foreground/[0.07] focus-visible:text-foreground disabled:pointer-events-none disabled:opacity-35",
-        )}
+        className="za-composer-attachment-remove"
         aria-label={`${removeLabel} ${fileName}`}
         title={removeLabel}
       >

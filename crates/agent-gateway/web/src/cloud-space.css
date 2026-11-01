@@ -671,28 +671,6 @@
   line-height: 1.7;
   color: hsl(var(--muted-foreground));
 }
-.za-file-drop-boundary { position: relative; }
-.za-file-drop-overlay {
-  position: absolute;
-  z-index: 10;
-  inset: 8px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: 24px;
-  border: 1px dashed hsl(var(--foreground) / 0.4);
-  border-radius: 20px;
-  background: hsl(var(--background) / 0.96);
-  color: hsl(var(--foreground));
-  text-align: center;
-  pointer-events: none;
-}
-.za-file-drop-overlay strong { font-size: 16px; font-weight: 550; overflow-wrap: anywhere; }
-.za-file-drop-overlay span { color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.6; }
-.za-file-drop-overlay[data-blocked="true"] { border-style: solid; }
-@media (prefers-reduced-motion: reduce) { .za-file-drop-overlay { transition: none; } }
 .cloud-space-skeleton > div {
   display: grid;
   grid-template-columns: 32px 1fr 80px;

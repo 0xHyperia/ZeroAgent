@@ -74,6 +74,17 @@ function menuItem(label) {
     .find((element) => element.textContent === label);
 }
 
+test("host project destinations replace only the native move submenu and keep the standard actions", async () => {
+  const row = mountRow({ onSetArchived() {}, renderMoveMenu: item => React.createElement("span", { "data-cloud-move": item.id }, "移至项目") });
+  try {
+    await click(row.container.querySelector('button[aria-label="chat.conversationMore"]'));
+    assert.equal(document.querySelector('[data-cloud-move]').getAttribute('data-cloud-move'), "one");
+    assert.ok(menuItem("chat.conversationRename")); assert.ok(menuItem("chat.conversationPin"));
+    assert.ok(menuItem("chat.workspaceArchive")); assert.ok(menuItem("chat.conversationDelete"));
+    assert.equal(menuItem("chat.conversationMoveToWorkspace"), undefined);
+  } finally { await row.cleanup(); }
+});
+
 test("mobile selection-mode taps toggle bulk selection once without pointerup double-toggle", async () => {
   window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
   const row = mountRow({ isMobileMenuLayout: true, isSelectionMode: true });

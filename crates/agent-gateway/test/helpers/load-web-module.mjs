@@ -166,7 +166,7 @@ export function createWebModuleLoader(options = {}) {
 
   function resolveMock(specifier, parentDir) {
     if (mocks.has(specifier)) return mocks.get(specifier);
-    if (specifier.startsWith("~icons/")) return createIconMock(specifier);
+    if (specifier.startsWith("~icons/")) return options.iconFactory?.(specifier) ?? createIconMock(specifier);
     if (
       specifier.startsWith(".") ||
       path.isAbsolute(specifier) ||

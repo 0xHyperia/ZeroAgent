@@ -227,6 +227,34 @@ export function createCloudChatArtifactsClient(request: Request, captureGuard: C
       if (version.id !== id(versionId)) throw new Error("成果版本响应不一致");
       return version;
     },
+    async restore(
+      source: CloudChatArtifactVersion,
+      expectedHeadId: string,
+      requestId: string,
+      signal?: AbortSignal,
+    ) {
+      const result = parseVersion(
+        (
+          await json(`${versionPath(source.id)}/restore`, {
+            method: "POST",
+            signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expected_head_id: id(expectedHeadId),
+              client_request_id: id(requestId),
+            }),
+          })
+        ).version,
+      );
+      if (result.family_id !== source.family_id || result.sha256 !== source.sha256)
+        throw new Error("恢复版本响应不一致");
+      return result;
+    },
+    async restoreReceipt(requestId: string, signal?: AbortSignal) {
+      return parseVersion(
+        (await json(`/api/web-chat/artifacts/restores/${id(requestId)}`, { signal })).version,
+      );
+    },
     async download(version: CloudChatArtifactVersion, signal?: AbortSignal) {
       const result = await binary(version, CLOUD_ARTIFACT_MAX_BYTES, signal);
       result.guard();

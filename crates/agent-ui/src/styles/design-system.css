@@ -581,7 +581,8 @@
   gap: 8px;
 }
 .app-status-notice[data-density="compact"] .app-status-body {
-  display: block;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
 }
 .app-status-notice[data-density="compact"] .app-status-message {
   font-size: calc(12px * var(--zone-font-scale, 1));
@@ -593,6 +594,38 @@
   width: 14px;
   height: 14px;
   margin-top: 0;
+}
+.app-status-notice[data-density="compact"]:has(.app-status-actions) {
+  padding: 8px 12px;
+  border: 1px solid var(--za-border);
+  background: var(--za-surface-subtle);
+}
+.app-status-notice[data-density="compact"]:has(.app-status-actions) .app-status-message {
+  color: hsl(var(--foreground));
+  font-weight: 500;
+}
+.app-status-notice[data-density="compact"] .app-status-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-content: flex-end;
+  margin-top: 0;
+}
+.app-status-notice[data-density="compact"] .app-status-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.app-status-notice[data-density="compact"] .app-status-action:hover:not(:disabled) {
+  background: var(--za-control-hover);
 }
 .app-status-stack {
   display: flex;
@@ -676,6 +709,9 @@
 @media (prefers-reduced-motion: reduce) {
   .app-status-busy {
     animation: none;
+  }
+  .app-status-action {
+    transition: none;
   }
   @layer components {
     .za-control,

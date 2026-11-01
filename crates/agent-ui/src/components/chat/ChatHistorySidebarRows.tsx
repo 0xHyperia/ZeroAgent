@@ -61,6 +61,7 @@ import {
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -148,6 +149,7 @@ type HistoryRowProps = {
   onSetArchived?: (id: string, archived: boolean) => void;
   onMoveToWorkspace: (id: string, cwd: string) => void;
   moveWorkspaces: readonly WorkspaceProject[];
+  renderMoveMenu?: (item: SidebarConversation) => ReactNode;
   onShareConversation: (item: SidebarConversation) => void;
   onDeleteConversation: (id: string) => void;
   onSetPendingDelete: (id: string | null) => void;
@@ -224,6 +226,7 @@ function areHistoryRowPropsEqual(previous: HistoryRowProps, next: HistoryRowProp
     previous.onSetPinned === next.onSetPinned &&
     previous.onSetArchived === next.onSetArchived &&
     previous.onMoveToWorkspace === next.onMoveToWorkspace &&
+    previous.renderMoveMenu === next.renderMoveMenu &&
     previous.moveWorkspaces === next.moveWorkspaces &&
     previous.onShareConversation === next.onShareConversation &&
     previous.onDeleteConversation === next.onDeleteConversation &&
@@ -264,6 +267,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
     onSetArchived,
     onMoveToWorkspace,
     moveWorkspaces,
+    renderMoveMenu,
     onShareConversation,
     onDeleteConversation,
     onSetPendingDelete,
@@ -769,34 +773,40 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
         <SquarePen className={CONVERSATION_MENU_ICON_CLASS} />
         {t("chat.conversationRename")}
       </DropdownMenuItem>
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger
-          disabled={isInteractionDisabled || isRunning || isBusy || moveWorkspaces.length === 0}
-          className={CONVERSATION_MENU_ITEM_CLASS}
-        >
-          <Folder className={CONVERSATION_MENU_ICON_CLASS} />
-          {t("chat.conversationMoveToWorkspace")}
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent
-          variant="soft"
-          className={cn(SIDEBAR_CONTEXT_MENU_CLASS, "max-h-72")}
-        >
-          {moveWorkspaces.map((workspace) => (
-            <DropdownMenuItem
-              key={workspace.id}
-              disabled={isInteractionDisabled || isRunning || isBusy || workspace.path === item.cwd}
-              onSelect={() => handleMoveToWorkspace(workspace.path)}
-              className={CONVERSATION_MENU_ITEM_CLASS}
-            >
-              <FolderClosed className={CONVERSATION_MENU_ICON_CLASS} />
-              <span className="min-w-0 truncate font-medium">{workspace.name}</span>
-              <span className="min-w-0 truncate text-xs text-muted-foreground">
-                ({workspace.path})
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      {renderMoveMenu ? (
+        renderMoveMenu(item)
+      ) : (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger
+            disabled={isInteractionDisabled || isRunning || isBusy || moveWorkspaces.length === 0}
+            className={CONVERSATION_MENU_ITEM_CLASS}
+          >
+            <Folder className={CONVERSATION_MENU_ICON_CLASS} />
+            {t("chat.conversationMoveToWorkspace")}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent
+            variant="soft"
+            className={cn(SIDEBAR_CONTEXT_MENU_CLASS, "max-h-72")}
+          >
+            {moveWorkspaces.map((workspace) => (
+              <DropdownMenuItem
+                key={workspace.id}
+                disabled={
+                  isInteractionDisabled || isRunning || isBusy || workspace.path === item.cwd
+                }
+                onSelect={() => handleMoveToWorkspace(workspace.path)}
+                className={CONVERSATION_MENU_ITEM_CLASS}
+              >
+                <FolderClosed className={CONVERSATION_MENU_ICON_CLASS} />
+                <span className="min-w-0 truncate font-medium">{workspace.name}</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  ({workspace.path})
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       {canShareConversation && !item.isPending ? (
         <DropdownMenuItem
           disabled={isInteractionDisabled}

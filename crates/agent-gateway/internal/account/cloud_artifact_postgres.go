@@ -65,6 +65,9 @@ func artifactTxRun(ctx context.Context, tx *sql.Tx, userID int64, runID, owner s
 	return run, nil
 }
 func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64, owner string, attempt int64, input *CloudArtifactVersion) (*CloudArtifactVersion, bool, error) {
+	return s.reserveCloudArtifact(ctx, userID, owner, attempt, input, nil)
+}
+func (s *PersistentStore) reserveCloudArtifact(ctx context.Context, userID int64, owner string, attempt int64, input *CloudArtifactVersion, restore *cloudArtifactRestoreIntent) (*CloudArtifactVersion, bool, error) {
 	a, err := prepareCloudArtifact(input, userID, time.Now())
 	if err != nil {
 		return nil, false, err
@@ -97,12 +100,29 @@ func (s *PersistentStore) ReserveCloudArtifact(ctx context.Context, userID int64
 		}
 		return nil, false, err
 	}
-	run, err := artifactTxRun(ctx, tx, userID, a.SourceRunID, owner, attempt)
-	if err != nil {
-		return nil, false, err
-	}
-	if run.ConversationID != a.ConversationID {
-		return nil, false, ErrCloudArtifactInvalid
+	if restore != nil {
+		source, readErr := scanCloudArtifact(tx.QueryRowContext(ctx, "SELECT "+artifactColumns+" FROM zeroagent_cloud_artifact_versions a WHERE a.id=$1 AND a.user_id=$2 FOR UPDATE", restore.SourceID, userID))
+		if readErr != nil {
+			return nil, false, readErr
+		}
+		if source.FamilyID != a.FamilyID || source.State != CloudArtifactReady || source.DeletedAt != nil {
+			return nil, false, ErrNotFound
+		}
+		var head string
+		if err = tx.QueryRowContext(ctx, "SELECT id::text FROM zeroagent_cloud_artifact_versions WHERE family_id=$1 AND user_id=$2 AND deleted_at IS NULL ORDER BY number DESC LIMIT 1", a.FamilyID, userID).Scan(&head); err != nil {
+			return nil, false, err
+		}
+		if head != restore.HeadID || head == restore.SourceID {
+			return nil, false, ErrCloudArtifactConflict
+		}
+	} else {
+		run, err := artifactTxRun(ctx, tx, userID, a.SourceRunID, owner, attempt)
+		if err != nil {
+			return nil, false, err
+		}
+		if run.ConversationID != a.ConversationID {
+			return nil, false, ErrCloudArtifactInvalid
+		}
 	}
 	var count int
 	var used int64
@@ -185,6 +205,9 @@ func (s *PersistentStore) ListCloudArtifacts(ctx context.Context, userID int64, 
 	return cloudArtifactPage(result, limit), nil
 }
 func (s *PersistentStore) UpdateCloudArtifact(ctx context.Context, userID int64, id string, expected int64, owner string, attempt int64, update CloudArtifactUpdate) (*CloudArtifactVersion, error) {
+	return s.updateCloudArtifactVersion(ctx, userID, id, expected, owner, attempt, update, false)
+}
+func (s *PersistentStore) updateCloudArtifactVersion(ctx context.Context, userID int64, id string, expected int64, owner string, attempt int64, update CloudArtifactUpdate, restoring bool) (*CloudArtifactVersion, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -200,9 +223,18 @@ func (s *PersistentStore) UpdateCloudArtifact(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
+	if restoring && !isCloudArtifactRestore(*a) {
+		return nil, ErrCloudArtifactConflict
+	}
 	if update.State == CloudArtifactReady {
-		if _, err = artifactTxRun(ctx, tx, userID, a.SourceRunID, owner, attempt); err != nil {
-			return nil, err
+		if restoring {
+			if !validCloudArtifactRestore(*a, update) {
+				return nil, ErrCloudArtifactConflict
+			}
+		} else {
+			if _, err = artifactTxRun(ctx, tx, userID, a.SourceRunID, owner, attempt); err != nil {
+				return nil, err
+			}
 		}
 		var deleted sql.NullTime
 		if err = tx.QueryRowContext(ctx, `SELECT deleted_at FROM zeroagent_cloud_artifact_families WHERE id=$1 FOR SHARE`, a.FamilyID).Scan(&deleted); err != nil {
@@ -293,4 +325,15 @@ func (s *PersistentStore) ListCloudArtifactCleanup(ctx context.Context, limit in
 		result = append(result, *a)
 	}
 	return result, rows.Err()
+}
+
+func (s *PersistentStore) ReserveCloudArtifactRestore(ctx context.Context, userID int64, sourceID, headID, requestID string) (*CloudArtifactVersion, bool, error) {
+	input, intent, err := prepareCloudArtifactRestore(ctx, s, userID, sourceID, headID, requestID)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.reserveCloudArtifact(ctx, userID, "", 0, input, intent)
+}
+func (s *PersistentStore) UpdateCloudArtifactRestore(ctx context.Context, userID int64, id string, expected int64, update CloudArtifactUpdate) (*CloudArtifactVersion, error) {
+	return s.updateCloudArtifactVersion(ctx, userID, id, expected, "", 0, update, true)
 }

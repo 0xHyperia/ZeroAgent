@@ -9,8 +9,14 @@ const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 const descriptor = (bytes = png, extra = {}) => ({ identity: "owner-a:file:1", name: "图片.png", mime: "image/png", size: bytes.length, sha256: sha(bytes), ...extra });
 async function flush() { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); }
 
+async function chooseZoom(app,label,itemText) {
+ await app.env.act(async()=>{app.host.querySelector(`button[aria-label="${label}"]`).dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true,cancelable:true}));await flush();});
+ const item=[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent===itemText);assert.ok(item,`${itemText}: ${[...document.querySelectorAll("[role=menuitemradio]")].map(el=>el.textContent).join(",")} / ${app.host.querySelector(`button[aria-label="${label}"]`).outerHTML}`);
+ await app.env.act(async()=>{item.click();await flush();});
+}
+
 async function mount(t, resource, load, options = {}) {
-  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "../IconSet": { ChevronRight: () => null }, ...options.mocks } });
+  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
   options.setup?.(env);
   const { ResourcePreview } = env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const host = document.body.appendChild(document.createElement("div"));
@@ -63,7 +69,7 @@ test("shared raster reader validates bytes, reports decoding failure and release
   let requests = 0;
   const app = await mount(t, descriptor(), async signal => { requests++; signal.throwIfAborted(); return { blob: new Blob([png]), assertCurrent() {} }; });
   assert.equal(app.host.querySelector("img").src, "blob:owned-0");
-  assert.match(app.host.textContent, /1 × 1/);
+  assert.equal(app.host.querySelector(".za-preview-caption"),null,"reading does not reserve a permanent implementation caption");
   await app.env.act(async () => app.host.querySelector("img").dispatchEvent(new Event("error")));
   assert.equal(app.host.querySelector("img"), null);
   assert.match(app.host.textContent, /图片未能解码/);
@@ -135,15 +141,15 @@ test("image fit follows its actual reading pane and original-size zoom remains a
   const app = await mount(t, descriptor(gif, {name:"画布.gif",mime:"image/gif"}), async () => ({blob:new Blob([gif]),assertCurrent(){}}), {setup(env) {
     Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientWidth", {configurable:true,get(){return this.classList.contains("za-preview-image-scroll") ? paneWidth : 0;}});
     Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientHeight", {configurable:true,get(){return this.classList.contains("za-preview-image-scroll") ? 180 : 0;}});
-    globalThis.ResizeObserver = class { constructor(callback){notifyResize=callback;} observe(){} disconnect(){disconnected=true;} };
+    globalThis.ResizeObserver = class { constructor(callback){this.callback=callback;} observe(element){if(element.classList.contains("za-preview-image-scroll")){notifyResize=this.callback;this.reader=true;}} disconnect(){if(this.reader)disconnected=true;} };
   }});
   assert.ok(Math.abs(parseFloat(app.host.querySelector("img").style.width)-228)<0.01);
   assert.match(app.host.textContent, /1600 × 900/);
-  const zoom = app.host.querySelector('select[aria-label="图像缩放"]');
-  await app.env.act(async () => {zoom.value="1";zoom.dispatchEvent(new Event("change",{bubbles:true}));});
+  await chooseZoom(app,"图像缩放","100%");
   assert.equal(app.host.querySelector("img").style.width, "1600px");
   paneWidth = 180;
-  await app.env.act(async () => {notifyResize();zoom.value="fit";zoom.dispatchEvent(new Event("change",{bubbles:true}));});
+  await app.env.act(async () => notifyResize());
+  await chooseZoom(app,"图像缩放","缩放至适合窗口");
   assert.equal(app.host.querySelector("img").style.width, "148px");
   await app.render(descriptor(gif, {name:"旧格式.doc",mime:"application/msword"}));
   assert.equal(disconnected, true);
@@ -159,9 +165,8 @@ test("spreadsheet coordinates, zoom and worksheet switching use one read-only ca
   assert.equal(app.host.querySelectorAll(".za-preview-toolbar").length,1);
   assert.deepEqual([...app.host.querySelectorAll("thead th")].slice(-2).map(item=>item.textContent),["AA","AB"]);
   assert.equal(app.host.querySelectorAll("tbody tr:last-child td").length,28);
-  assert.match(app.host.textContent,/不保留格式、合并单元格或公式计算/);
-  const zoom=app.host.querySelector('select[aria-label="表格缩放"]');
-  await app.env.act(async()=>{zoom.value="1.5";zoom.dispatchEvent(new Event("change",{bubbles:true}));});
+  assert.equal(app.host.querySelector(".za-preview-caption"),null);
+  await chooseZoom(app,"表格缩放","150%");
   assert.equal(app.host.querySelector("table").style.zoom,"1.5");
   await app.click("空表");
   assert.deepEqual(requests,["load","sheet"]);
@@ -187,13 +192,12 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
   });
   const fittedWidth=parseFloat(app.host.querySelector("img").style.width);
   assert.ok(Math.abs(fittedWidth-268*16/9)<0.01);
-  const zoom=app.host.querySelector('select[aria-label="幻灯片缩放"]');
-  await app.env.act(async()=>{zoom.value="200";zoom.dispatchEvent(new Event("change",{bubbles:true}));});
+  await chooseZoom(app,"幻灯片缩放","200%");
   assert.equal(parseFloat(app.host.querySelector("img").style.width),3200);
   await app.env.act(async()=>{app.host.querySelector('button[aria-label="下一页"]').click();await flush();});
   assert.match(app.host.querySelector("img").alt,/第 2 页/);
   assert.equal(app.host.querySelector('input[aria-label="页码"]').value,"2");
-  assert.equal(app.host.querySelector('select[aria-label="幻灯片缩放"]').value,"200");
+  assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"200%");
   assert.equal(app.host.querySelector('button[aria-label="下一页"]').disabled,true);
   assert.deepEqual(revoked,["blob:slide-0"]);
 });

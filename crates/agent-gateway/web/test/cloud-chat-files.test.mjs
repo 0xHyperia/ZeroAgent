@@ -106,7 +106,7 @@ async function mountReader(t, {fromLine, attachResult=false}={}) {
   [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,
   "@/lib/accountRequest":{captureAccountRequestGuard:capture},
   "@liveagent/ui/components/resource-preview/ResourcePreview":{ResourcePreview:()=>env.React.createElement("div",{"data-file-preview":""},"文件正文")},
-  [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.title,props.subtitle,props.headerActions),props.children)},
+  [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.title,props.subtitle,props.headerActions),props.children,props.details)},
  };
  env=await createWebDomTestEnv({mocks});
  const {CloudChatFilePanel}=env.loadModule("src/components/CloudChatFilePanel.tsx");
@@ -137,13 +137,12 @@ test("opening a cited file keeps the requested original lines expanded",async t=
 });
 
 
-test("refreshing the same original keeps its existing preview during the metadata read",async t=>{
- const app=await mountReader(t);const preview=app.host.querySelector("[data-file-preview]");let finish;
- app.client.get=()=>new Promise(resolve=>{finish=()=>resolve(record());});
+test("file reading menu keeps contextual actions and opening details preserves the preview",async t=>{
+ const app=await mountReader(t);const preview=app.host.querySelector("[data-file-preview]");
  await app.env.act(async()=>{app.host.querySelector('[aria-label="文件更多操作"]').click();await new Promise(resolve=>setImmediate(resolve));});
- const refresh=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent==="刷新状态");
- await app.env.act(async()=>{refresh.click();await new Promise(resolve=>setImmediate(resolve));});
- assert.equal(app.host.querySelector("[data-file-preview]"),preview,"pending metadata must not retire the reading canvas");
- await app.env.act(async()=>{finish();await new Promise(resolve=>setImmediate(resolve));});
+ const items=[...document.querySelectorAll('[role="menuitem"]')];
+ assert.ok(!items.some(item=>/刷新状态|全部文件/.test(item.textContent)));
+ await app.env.act(async()=>{items.find(item=>item.textContent==="文件信息").click();await new Promise(resolve=>setImmediate(resolve));});
+ assert.ok(app.host.querySelector('[aria-label="文件详情"]'));
  assert.equal(app.host.querySelector("[data-file-preview]"),preview);
 });

@@ -19,7 +19,6 @@ import type {
   RunClarifyTurn,
 } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { useClarifySession } from "@liveagent/ui/components/chat/clarify/useClarifySession";
-import { getUploadedFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
 import {
   MentionComposer,
   type MentionComposerApp,
@@ -49,6 +48,7 @@ import {
   Trash2,
   WandSparkles,
 } from "@liveagent/ui/components/IconSet";
+import { getUploadedResourceFileIcon } from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -175,6 +175,7 @@ function PendingComposerAttachment(props: {
   imagePreviewLoader?: UploadedImagePreviewLoader;
   onRemove: (relativePath: string) => void;
   onOpen?: (relativePath: string) => void;
+  renderPreview?: (file: PendingUploadedFile) => ReactNode;
 }) {
   const {
     file,
@@ -192,7 +193,7 @@ function PendingComposerAttachment(props: {
     workdir,
     imagePreviewLoader,
   );
-  const TypeIcon = getUploadedFileTypeIcon(file);
+  const TypeIcon = getUploadedResourceFileIcon(file);
 
   return (
     <ComposerAttachmentCard
@@ -209,6 +210,7 @@ function PendingComposerAttachment(props: {
       closePreviewLabel={closePreviewLabel}
       onRemove={() => onRemove(file.relativePath)}
       onOpen={onOpen ? () => onOpen(file.relativePath) : undefined}
+      previewContent={props.renderPreview?.(file)}
     />
   );
 }
@@ -386,6 +388,8 @@ export type ChatComposerBarProps = {
   /** Prompts previously sent in this conversation for ↑/↓ recall. */
   loadHistoryPrompts?: () => readonly string[];
   pendingUploadedFiles: PendingUploadedFile[];
+  renderPendingUploadPreview?: (file: PendingUploadedFile) => ReactNode;
+  uploadingAttachments?: readonly { id: string; fileName: string; sizeBytes: number }[];
   onRemovePendingUpload: (relativePath: string) => void;
   onOpenPendingUpload?: (relativePath: string) => void;
   /** 输入框上方的目标栏（/goal）；与指令队列上下排列。 */
@@ -580,7 +584,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const singleLineInput = useInlineComposerLayout({
     enabled: inlineLayout,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
-    hasAttachments: pendingUploadedFiles.length > 0,
+    hasAttachments: pendingUploadedFiles.length > 0 || Boolean(props.uploadingAttachments?.length),
     isEmpty: composerIsEmpty,
     cardRef: glassCardRef,
     composerRef,
@@ -1654,12 +1658,12 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               isComposerExpanded && "min-h-0 flex-1",
             )}
           >
-            {pendingUploadedFiles.length > 0 ? (
+            {pendingUploadedFiles.length > 0 || props.uploadingAttachments?.length ? (
               <div
                 ref={attachmentListRef}
                 className={cn(
                   "upload-file-list relative z-10 flex shrink-0 items-center gap-1.5 overflow-x-auto",
-                  "overflow-y-hidden overscroll-x-contain pb-1 pl-4 pr-12 pt-2",
+                  "overflow-y-hidden overscroll-x-contain pb-2 pl-4 pr-12 pt-3",
                   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:size-0",
                 )}
               >
@@ -1675,6 +1679,27 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     imagePreviewLoader={onLoadUploadedImagePreview}
                     onRemove={onRemovePendingUpload}
                     onOpen={onOpenPendingUpload}
+                    renderPreview={props.renderPendingUploadPreview}
+                  />
+                ))}
+                {props.uploadingAttachments?.map((file) => (
+                  <ComposerAttachmentCard
+                    key={file.id}
+                    fileName={file.fileName}
+                    pathTitle={file.fileName}
+                    fallbackIcon={null}
+                    disabled
+                    removeLabel=""
+                    onRemove={() => {}}
+                    previewContent={
+                      <div
+                        className="flex size-full items-center justify-center bg-muted/30"
+                        role="status"
+                        aria-label={`正在上传 ${file.fileName}`}
+                      >
+                        <Loader2 className="size-5 animate-spin motion-reduce:animate-none" />
+                      </div>
+                    }
                   />
                 ))}
               </div>

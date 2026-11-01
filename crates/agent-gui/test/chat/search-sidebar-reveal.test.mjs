@@ -4,6 +4,7 @@ import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 import React from "react";
 
 let dialogProps;
+const historyRows = new Map();
 const scrolls = [];
 const virtualizer = {
   getVirtualItems: () => [],
@@ -61,7 +62,7 @@ const env = await createDomTestEnv({
     "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key, locale: "en" }) },
     "@tanstack/react-virtual": { useVirtualizer: () => virtualizer },
     "./ChatHistorySidebarRows": {
-      HistoryRow: () => null,
+      HistoryRow: props => { historyRows.set(props.item.id, props); return null; },
       ProjectRow: () => null,
       ProjectGroupHeader: () => null,
     },
@@ -72,6 +73,48 @@ const env = await createDomTestEnv({
       },
     },
   },
+});
+
+test("host project navigation reuses the standard row state, actions and bulk selection", async () => {
+  historyRows.clear();
+  const container = document.body.appendChild(document.createElement("div")), root = createRoot(container);
+  const item = { id: "project-chat", title: "Project conversation", createdAt: 1, updatedAt: 2 };
+  const calls = [];
+  const moveMenu = () => null;
+  let props = {
+    items: [], navigationItems: [item], currentConversationId: item.id,
+    busyConversationIds: new Map(), runningConversationIds: new Set(),
+    listStatus: "ready", scopeKey: "cloud:project", isOpen: true,
+    navigationContent: ({ renderConversation }) => renderConversation(item),
+    renderConversationMoveMenu: moveMenu,
+    onSelectConversation: id => calls.push(["select", id]),
+    onStartRenaming: value => calls.push(["rename", value.id]),
+    onSetPinned: (id, value) => calls.push(["pin", id, value]),
+    onSetArchived: (id, value) => calls.push(["archive", id, value]),
+    onDeleteConversation: id => calls.push(["delete", id]),
+    onCancelRename() {},
+  };
+  const render = () => act(async () => root.render(renderSidebar(props)));
+  try {
+    await render();
+    let row = historyRows.get(item.id);
+    assert.ok(row); assert.equal(row.isActive, true); assert.equal(row.renderMoveMenu, moveMenu);
+    await act(async () => {
+      row.onSelectConversation(item.id); row.onStartRenaming(item);
+      row.onSetPinned(item.id, true); row.onSetArchived(item.id, true);
+      row.onDeleteConversation(item.id);
+    });
+    assert.deepEqual(calls, [["select", item.id], ["rename", item.id], ["pin", item.id, true], ["archive", item.id, true], ["delete", item.id]]);
+    await act(async () => row.onSelectForBulk(item.id, { shiftKey: false, toggleKey: false }));
+    row = historyRows.get(item.id);
+    assert.equal(row.isSelectionMode, true); assert.equal(row.isSelected, true);
+    props = { ...props, navigationItems: [], navigationContent: null };
+    await render();
+    props = { ...props, navigationItems: [item], navigationContent: ({ renderConversation }) => renderConversation(item), runningConversationIds: new Set([item.id]) };
+    await render(); row = historyRows.get(item.id);
+    assert.equal(row.isSelected, false); assert.equal(row.isDeleteDisabled, true);
+    assert.equal(row.isSelectionDisabled, true);
+  } finally { await act(async () => root.unmount()); container.remove(); historyRows.clear(); }
 });
 const { act, createRoot } = env;
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });

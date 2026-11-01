@@ -12,6 +12,8 @@ export type DividerSideMinSizes = { firstMin: number; secondMin: number };
 export type DividerLayerProps = {
   dividers: readonly DividerGeometry[];
   dividerSize: number;
+  /** Extra pointer target across the split axis; does not change pane geometry. */
+  hitSlop?: number;
   separatorLabel: string;
   minPaneWidth?: number;
   minPaneHeight?: number;
@@ -59,6 +61,7 @@ export function DividerLayer(props: DividerLayerProps) {
   const {
     dividers,
     dividerSize,
+    hitSlop = 0,
     separatorLabel,
     minPaneWidth = MIN_CONVERSATION_PANE_WIDTH,
     minPaneHeight = MIN_CONVERSATION_PANE_HEIGHT,
@@ -113,10 +116,10 @@ export function DividerLayer(props: DividerLayerProps) {
               "group/divider",
             )}
             style={{
-              left: divider.rect.left,
-              top: divider.rect.top,
-              width: divider.rect.width,
-              height: divider.rect.height,
+              left: divider.rect.left - (divider.axis === "horizontal" ? hitSlop / 2 : 0),
+              top: divider.rect.top - (divider.axis === "vertical" ? hitSlop / 2 : 0),
+              width: divider.rect.width + (divider.axis === "horizontal" ? hitSlop : 0),
+              height: divider.rect.height + (divider.axis === "vertical" ? hitSlop : 0),
             }}
             onDoubleClick={() => onEqualize?.(divider.splitId)}
             onPointerDown={(event) => {

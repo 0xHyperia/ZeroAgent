@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { type Components, Streamdown } from "streamdown";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
-import { PreviewToolbar } from "./PreviewToolbar";
+import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { previewImageDimensions } from "./previewImageDimensions";
 import { isolatedPreviewDocument, type ResourcePreviewKind, resourceText } from "./previewPolicy";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
@@ -17,6 +17,7 @@ const SheetPreview = lazy(() => import("./ResourceSheetPreview"));
 export default function ResourcePreviewContent(
   props: PreviewRecovery & {
     kind: ResourcePreviewKind;
+    thumbnail?: boolean;
     name: string;
     mime: string;
     bytes: Uint8Array;
@@ -87,6 +88,7 @@ export default function ResourcePreviewContent(
       >
         <PDFPreview
           bytes={bytes}
+          thumbnail={props.thumbnail}
           assertCurrent={assertCurrent}
           onDownload={props.onDownload}
           onRetry={props.onRetry}
@@ -101,6 +103,7 @@ export default function ResourcePreviewContent(
         <Reader
           bytes={bytes}
           name={props.name}
+          thumbnail={props.thumbnail}
           assertCurrent={assertCurrent}
           onDownload={props.onDownload}
           onRetry={props.onRetry}
@@ -165,7 +168,6 @@ export default function ResourcePreviewContent(
         ) : (
           <PreviewUnavailable message="压缩包内没有文件。" />
         )}
-        <p className="za-preview-caption">仅浏览目录，不会自动解压到服务器。</p>
       </>
     ) : (
       <PreviewLoading message="正在读取压缩包目录…" onCancel={props.onCancel} />
@@ -256,16 +258,13 @@ function ImagePreview({
         label="图像"
         detail={dimensions ? `${dimensions.width} × ${dimensions.height}` : "只读"}
       >
-        <select
-          aria-label="图像缩放"
-          value={zoom}
-          onChange={(event) => setZoom(event.target.value)}
-        >
-          <option value="fit">适合窗口</option>
-          <option value="1">100%</option>
-          <option value="1.5">150%</option>
-          <option value="2">200%</option>
-        </select>
+        <PreviewZoomControl
+          label="图像缩放"
+          value={zoom === "fit" ? "fit-page" : Number(zoom) * 100}
+          fitWidth={false}
+          percentages={[50, 75, 100, 150, 200]}
+          onChange={(value) => setZoom(typeof value === "number" ? String(value / 100) : "fit")}
+        />
       </PreviewToolbar>
       <div ref={container} className="za-preview-image-scroll">
         <div className="za-preview-visual-inner">

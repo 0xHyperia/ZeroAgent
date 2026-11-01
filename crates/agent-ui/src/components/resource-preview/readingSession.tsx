@@ -9,13 +9,19 @@ import {
   useRef,
   useState,
 } from "react";
+import type { DocumentRevisionComment } from "./ResourceDocumentComments";
 
 export type PreviewZoom = "fit-width" | "fit-page" | number;
 type ReadingSnapshot = {
   pdfPage: number;
   pdfZoom: PreviewZoom;
+  pdfNavigation: boolean;
+  docxZoom: PreviewZoom;
+  docxNavigation: "contents" | "pages" | "closed";
+  documentComments: DocumentRevisionComment[];
   slidePage: number;
   slideZoom: PreviewZoom;
+  slideGrid: boolean;
   sheetName: string;
   sheetZoom: number;
   sheetCell: string;
@@ -35,6 +41,26 @@ export function createReadingSnapshotStore() {
       return snapshot;
     },
     write<K extends keyof ReadingSnapshot>(key: string, field: K, value: ReadingSnapshot[K]) {
+      if (
+        field === "documentComments" &&
+        (!Array.isArray(value) ||
+          value.length > 20 ||
+          value.some(
+            (item) =>
+              !item ||
+              typeof item !== "object" ||
+              typeof item.quote !== "string" ||
+              item.quote.length > 2000 ||
+              typeof item.comment !== "string" ||
+              item.comment.length > 2000 ||
+              typeof item.block !== "string" ||
+              item.block.length > 80 ||
+              !Number.isSafeInteger(item.page) ||
+              item.page < 1 ||
+              item.page > 1000,
+          ))
+      )
+        return;
       if (typeof value === "string" && value.length > 128) return;
       if (typeof value === "number" && (!Number.isFinite(value) || Math.abs(value) > 10_000))
         return;

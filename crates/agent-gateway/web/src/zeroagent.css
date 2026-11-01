@@ -194,12 +194,12 @@ html[data-zeroagent-platform="android"] .gateway-settings-overlay {
 }
 
 html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
-html[data-zeroagent-platform="android"] .gateway-main-shell > [data-app-workbench-chrome] > header {
+html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] > header {
   box-sizing: border-box;
   padding-top: calc(10px + var(--zeroagent-safe-area-top));
 }
 
-html[data-zeroagent-platform="android"] .gateway-main-shell > [data-app-workbench-chrome] {
+html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] {
   height: calc(48px + var(--zeroagent-safe-area-top));
 }
 
@@ -243,10 +243,7 @@ html[data-zeroagent-platform="android"] [data-slot="dialog-viewport"] {
 
 @media (max-width: 640px) {
   html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
-  html[data-zeroagent-platform="android"]
-    .gateway-main-shell
-    > [data-app-workbench-chrome]
-    > header {
+  html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] > header {
     padding-top: calc(8px + var(--zeroagent-safe-area-top));
   }
 }
@@ -269,10 +266,12 @@ html[data-zeroagent-platform="android"]
 
 /* A resource is a second canvas, never a sheet covering the live conversation. */
 .cloud-resource-workbench {
+  position: relative;
   z-index: var(--layer-content);
   isolation: isolate;
 }
 .cloud-workspace-primary {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -280,37 +279,200 @@ html[data-zeroagent-platform="android"]
   flex-direction: column;
   overflow: hidden;
 }
-.cloud-workspace-primary[hidden] { display: none; }
+.cloud-workspace-primary[hidden] {
+  display: none;
+}
 .cloud-resource-workbench[data-reader-open="true"] > .cloud-workspace-primary {
-  flex: 1 1 44%;
+  flex: 0 0 var(--cloud-primary-width, 44%);
+}
+.cloud-reader-divider-gap {
+  flex: 0 0 8px;
+  background: linear-gradient(to right, var(--za-surface) 50%, var(--za-surface-subtle) 50%);
+}
+.cloud-resource-workbench [data-workbench-divider="cloud-reader"] {
+  z-index: 20;
+  touch-action: none;
+}
+.cloud-resource-workbench [data-workbench-divider="cloud-reader"] > span {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, hsl(var(--foreground) / 0.25), transparent);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.cloud-resource-workbench
+  [data-workbench-divider="cloud-reader"]:is(:hover, :focus-visible)
+  > span {
+  opacity: 1;
+}
+.cloud-resource-workbench[data-reader-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+.cloud-resource-workbench[data-reader-resizing="true"] iframe {
+  pointer-events: none;
+}
+.cloud-resource-workbench[data-reader-resizing="true"]
+  [data-workbench-divider="cloud-reader"]
+  > span {
+  opacity: 1;
+}
+@media (forced-colors: active) {
+  .cloud-resource-workbench [data-workbench-divider="cloud-reader"] > span {
+    background: CanvasText;
+    opacity: 1;
+  }
 }
 .cloud-resource-reader {
+  position: relative;
   display: flex;
-  flex: 1 1 56%;
+  flex: 1 1 0;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border-inline-start: 1px solid hsl(var(--border) / .7);
-  background: hsl(var(--background));
+  background: var(--za-surface-subtle);
   container: cloud-reader / inline-size;
 }
 .cloud-resource-workbench[data-reader-only="true"] .cloud-resource-reader {
   border-inline-start: 0;
 }
 .cloud-reader-header {
+  position: absolute;
+  z-index: 5;
+  inset: 0 0 auto;
+  pointer-events: none;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 12px;
-  min-height: 70px;
-  padding: 12px 16px;
-  border-bottom: 1px solid hsl(var(--border) / .65);
+  gap: 6px;
+  min-height: 56px;
+  padding: 8px 12px;
 }
-.cloud-reader-heading { flex: 1; min-width: 0; }
-.cloud-reader-draggable-title { cursor: grab; border-radius: 6px; transition: color 120ms ease, background-color 120ms ease; }
-.cloud-reader-draggable-title:hover { background: hsl(var(--foreground) / .045); }
-.cloud-reader-draggable-title:active { cursor: grabbing; }
+.cloud-reader-header > * {
+  pointer-events: auto;
+}
+.cloud-workspace-chrome {
+  flex-shrink: 0;
+}
+.cloud-resource-workbench[data-reader-open="true"] .cloud-workspace-chrome {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 5;
+  pointer-events: none;
+}
+.cloud-resource-workbench[data-reader-open="true"]
+  .cloud-workspace-chrome
+  :is(header, .app-workbench-chrome) {
+  background: transparent;
+  border: 0;
+}
+.cloud-resource-workbench[data-reader-open="true"] .cloud-workspace-chrome :is(button, a, input) {
+  pointer-events: auto;
+}
+.cloud-resource-workbench[data-reader-open="true"] .gateway-transcript-shell {
+  padding-top: 56px;
+}
+.cloud-resource-reader .za-reader-stage {
+  --za-reader-top-inset: 64px;
+}
+.cloud-resource-reader
+  :is(.za-docx-zoom-viewport, .za-preview-pdf, .za-preview-media, .za-preview-markdown) {
+  scroll-padding-top: 72px;
+}
+.cloud-reader-heading {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 280px;
+  margin-inline-end: auto;
+}
+.cloud-reader-format-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-width: 0;
+}
+.cloud-reader-format-tools:empty {
+  display: none;
+}
+.cloud-reader-format-tools .za-preview-toolbar-tools {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cloud-reader-format-tools :is(select, button) {
+  min-height: 32px;
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  background: var(--za-surface);
+  padding: 5px 9px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+.cloud-reader-format-tools :is(select, button):hover {
+  background: var(--za-control-hover);
+}
+.cloud-reader-format-tools :is(select, button, input):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.cloud-reader-format-tools .za-preview-pages {
+  gap: 2px;
+}
+.cloud-reader-format-tools .za-preview-pages button {
+  border: 0;
+  width: 28px;
+  padding-inline: 0;
+  background: transparent;
+}
+.cloud-reader-format-tools .za-preview-page-number {
+  white-space: nowrap;
+  font-size: 11px;
+}
+.cloud-reader-format-tools .za-preview-page-number input {
+  width: 24px;
+  background: transparent;
+  text-align: center;
+}
+.cloud-reader-actions :is(button, .za-control),
+.cloud-reader-window-actions button {
+  border-radius: 999px;
+  background: var(--za-surface);
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border) / 0.55);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.025);
+}
+.cloud-reader-actions :is(button, .za-control):hover,
+.cloud-reader-window-actions button:hover {
+  background: var(--za-control-hover);
+}
+.cloud-reader-reference-action {
+  width: 32px;
+  padding-inline: 0;
+}
+.cloud-resource-reader:has(.za-resource-preview) .cloud-reader-subtitle {
+  display: none;
+}
+.cloud-resource-reader:has(.za-resource-preview) .za-reader-title-menu {
+  border: 1px solid var(--za-border);
+  background: var(--za-surface);
+  border-radius: 999px;
+  min-height: 32px;
+}
+.cloud-reader-draggable-title {
+  cursor: grab;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+.cloud-reader-draggable-title:not(:has(button)):hover {
+  background: hsl(var(--foreground) / 0.045);
+}
+.cloud-reader-draggable-title:active {
+  cursor: grabbing;
+}
 .cloud-reader-heading h2 {
   overflow: hidden;
   margin: 0;
@@ -320,6 +482,9 @@ html[data-zeroagent-platform="android"]
   font-weight: 550;
   line-height: 1.5;
 }
+.cloud-reader-heading .za-reader-title-menu:hover {
+  background: var(--za-control-hover);
+}
 .cloud-reader-subtitle {
   display: flex;
   align-items: center;
@@ -328,7 +493,13 @@ html[data-zeroagent-platform="android"]
   color: hsl(var(--muted-foreground));
   font-size: 11px;
 }
-.cloud-reader-actions, .cloud-reader-window-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.cloud-reader-actions,
+.cloud-reader-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
 .cloud-reader-body {
   display: flex;
   flex: 1;
@@ -340,42 +511,148 @@ html[data-zeroagent-platform="android"]
   overflow: auto;
   overscroll-behavior: contain;
 }
-.cloud-reader-body > :last-child { min-height: 0; }
-.cloud-reader-body:has(.za-resource-preview) { padding: 0; }
-.cloud-reader-body > [role="alert"], .cloud-reader-body > [role="status"] { margin: 12px 16px 0; }
-.cloud-reader-body .za-resource-preview { height: 100%; margin-top: 0; }
-.cloud-reader-body:has(.za-resource-preview) > div:last-child { display: flex; flex-direction: column; }
-.cloud-reader-body:has(.za-resource-preview) > div:last-child > .za-resource-preview { flex: 1; }
-.cloud-reader-body:has(.za-resource-preview) > div:last-child > :not(.za-resource-preview) { flex-shrink: 0; }
+.cloud-reader-body > :last-child {
+  min-height: 0;
+}
+.cloud-reader-body:has(.za-resource-preview) {
+  padding: 0;
+}
+.cloud-reader-body > [role="alert"],
+.cloud-reader-body > [role="status"] {
+  margin: 12px 16px 0;
+}
+.cloud-reader-body .za-resource-preview {
+  height: 100%;
+  margin-top: 0;
+}
+.cloud-resource-reader .za-resource-preview {
+  border: 0;
+  border-radius: 0;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child > .za-resource-preview {
+  flex: 1;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child > :not(.za-resource-preview) {
+  flex-shrink: 0;
+}
 .cloud-reader-file-info {
   padding: 10px 16px;
-  border-top: 1px solid hsl(var(--border) / .6);
+  border-top: 1px solid hsl(var(--border) / 0.6);
   color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 1.7;
 }
-.cloud-reader-file-info summary { cursor: pointer; min-height: 28px; }
-.cloud-reader-file-info p { margin-block: 6px; }
-@container cloud-reader (max-width: 540px) {
-  .cloud-reader-header { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px 12px; padding: 10px 12px; }
-  .cloud-reader-heading { grid-column: 1; grid-row: 1; }
-  .cloud-reader-window-actions { grid-column: 2; grid-row: 1; }
-  .cloud-reader-actions { grid-column: 1 / -1; grid-row: 2; }
-  .cloud-reader-actions:empty { display: none; }
-  .cloud-reader-actions button { min-height: 36px; }
-  .cloud-reader-actions [data-reader-secondary] { width: 36px; padding-inline: 0; }
-  .cloud-reader-action-label { display: none; }
+.cloud-reader-file-info summary {
+  cursor: pointer;
+  min-height: 28px;
+}
+.cloud-reader-file-info p {
+  margin-block: 6px;
+}
+@container cloud-reader (max-width: 480px) {
+  .cloud-reader-header {
+    gap: 4px;
+    padding: 6px 8px;
+    min-height: 56px;
+  }
+  .cloud-reader-heading {
+    flex: 1 1 auto;
+  }
+  .cloud-reader-format-tools {
+    flex-shrink: 0;
+  }
+  .cloud-reader-actions:empty {
+    display: none;
+  }
+  .cloud-reader-actions button {
+    min-height: 36px;
+  }
+  .cloud-reader-actions [data-reader-secondary] {
+    width: 36px;
+    padding-inline: 0;
+  }
+  .cloud-reader-action-label {
+    display: none;
+  }
+  .cloud-reader-reference-action {
+    display: none;
+  }
+  .cloud-reader-continue-action {
+    display: none;
+  }
+  .cloud-reader-format-tools .za-preview-toolbar-tools {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+  .cloud-reader-heading .za-reader-title-menu {
+    padding-inline: 8px;
+  }
+  .cloud-reader-heading .za-reader-title-menu > .truncate {
+    max-width: 14ch;
+  }
+}
+@container cloud-reader (max-width: 720px) {
+  .cloud-reader-actions [data-reader-history] {
+    display: none;
+  }
+  .cloud-reader-format-tools .za-preview-pages {
+    position: absolute;
+    z-index: 3;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    border: 1px solid var(--za-border);
+    border-radius: 999px;
+    background: var(--za-surface);
+    box-shadow: 0 3px 14px rgb(0 0 0 / 0.06);
+  }
+  .cloud-resource-reader:has(.za-preview-caption) .cloud-reader-format-tools .za-preview-pages {
+    bottom: 44px;
+  }
 }
 @media (max-width: 820px) {
-  .cloud-reader-header { padding: 8px 12px; }
-  .cloud-reader-actions button, .cloud-reader-window-actions button { min-width: 44px; min-height: 44px; }
-  .cloud-reader-file-info { padding-block: 0; }
-  .cloud-reader-file-info summary { min-height: 44px; padding-block: 12px; }
-  .cloud-reader-body { padding: 12px; }
+  .cloud-reader-header {
+    padding: 8px 12px;
+  }
+  .cloud-reader-actions button,
+  .cloud-reader-window-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .cloud-reader-format-tools :is(select, button) {
+    min-height: 44px;
+  }
+  .cloud-reader-file-info {
+    padding-block: 0;
+  }
+  .cloud-reader-file-info summary {
+    min-height: 44px;
+    padding-block: 12px;
+  }
+  .cloud-reader-body {
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-resource-workbench [data-workbench-divider="cloud-reader"]::after {
+    transition: none;
+  }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .cloud-resource-reader { animation: cloud-reader-enter 160ms ease-out; }
-  @keyframes cloud-reader-enter { from { opacity: .4; transform: translateX(8px); } }
+  .cloud-resource-reader {
+    animation: cloud-reader-enter 160ms ease-out;
+  }
+  @keyframes cloud-reader-enter {
+    from {
+      opacity: 0.4;
+      transform: translateX(8px);
+    }
+  }
 }
 
 /* CloudChat content layout; common frame and floating roles live in agent-ui. */
@@ -664,11 +941,22 @@ html[data-zeroagent-platform="android"]
   border-radius: 50%;
   background: currentColor;
 }
-.cloud-project-color:hover { transform: scale(1.12); }
-.cloud-project-color[aria-pressed="true"] span { outline: 3px solid hsl(var(--muted)); outline-offset: 3px; }
-.cloud-project-color:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.cloud-project-color:hover {
+  transform: scale(1.12);
+}
+.cloud-project-color[aria-pressed="true"] span {
+  outline: 3px solid hsl(var(--muted));
+  outline-offset: 3px;
+}
+.cloud-project-color:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
 @media (prefers-reduced-motion: reduce) {
-  .cloud-project-color, .cloud-project-catalog-row { transition: none; }
+  .cloud-project-color,
+  .cloud-project-catalog-row {
+    transition: none;
+  }
 }
 .cloud-project-toggle {
   padding-right: 10px;
@@ -683,7 +971,9 @@ html[data-zeroagent-platform="android"]
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: transform 180ms ease, opacity 120ms ease;
+  transition:
+    transform 180ms ease,
+    opacity 120ms ease;
 }
 .cloud-project-group[data-expanded="true"] .cloud-project-folder > :last-child {
   transform: rotate(90deg);
@@ -717,7 +1007,9 @@ html[data-zeroagent-platform="android"]
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transition: grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1), opacity 150ms ease;
+  transition:
+    grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 150ms ease;
 }
 .cloud-project-disclosure[data-open="true"] {
   grid-template-rows: 1fr;
@@ -727,8 +1019,8 @@ html[data-zeroagent-platform="android"]
   overflow: hidden;
   min-height: 0;
 }
-.cloud-project-conversation {
-  padding-left: 36px;
+.cloud-project-conversation [data-sidebar="menu-button"] {
+  padding-left: 32px;
 }
 .cloud-project-list-note {
   display: block;
@@ -752,17 +1044,36 @@ html[data-zeroagent-platform="android"]
   width: 60%;
 }
 @media (hover: none), (max-width: 820px) {
-  .cloud-project-actions { opacity: 1; pointer-events: auto; }
-  .cloud-project-actions { top: 6px; }
-  .cloud-project-actions button { width: 32px; height: 32px; }
-  .cloud-project-toggle { min-height: 44px; padding-right: 76px; }
+  .cloud-project-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .cloud-project-actions {
+    top: 6px;
+  }
+  .cloud-project-actions button {
+    width: 32px;
+    height: 32px;
+  }
+  .cloud-project-toggle {
+    min-height: 44px;
+    padding-right: 76px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cloud-project-disclosure, .cloud-project-folder > :last-child, .cloud-project-actions { transition: none; }
-  .cloud-project-loading span { animation: none; }
+  .cloud-project-disclosure,
+  .cloud-project-folder > :last-child,
+  .cloud-project-actions {
+    transition: none;
+  }
+  .cloud-project-loading span {
+    animation: none;
+  }
 }
 @keyframes cloud-project-loading {
-  50% { opacity: 0.4; }
+  50% {
+    opacity: 0.4;
+  }
 }
 .cloud-chat-shell [data-app-workbench-chrome] {
   --app-header-height: 60px;
@@ -1588,4 +1899,71 @@ html[data-zeroagent-platform="android"]
 
 .cloud-mode-switch {
   flex-shrink: 0;
+}
+
+.cloud-reader-bottom-tools {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: none;
+}
+.cloud-reader-bottom-tools:empty {
+  display: none;
+}
+.cloud-reader-bottom-tools .za-preview-pages {
+  pointer-events: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  background: var(--za-surface);
+  box-shadow: 0 3px 14px #0001;
+}
+.za-reader-stage:has(.za-document-comment-queue) .cloud-reader-bottom-tools {
+  bottom: 70px;
+}
+
+@container cloud-reader (max-width: 720px) {
+  .cloud-reader-format-tools
+    :is(.za-request-revision, [aria-label="文档导航"], [aria-label="PDF 页面目录"]) {
+    display: none;
+  }
+  .cloud-reader-heading .za-reader-title-menu > .truncate {
+    max-width: none;
+  }
+  .cloud-reader-heading .za-reader-title-menu {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+@container cloud-reader (max-width: 720px) {
+  .za-reader-history-time-compact {
+    display: block;
+  }
+  .za-reader-history-time-full {
+    display: none;
+  }
+  .cloud-reader-history-open .cloud-reader-actions > [data-reader-secondary] {
+    display: none;
+  }
+  .cloud-reader-history-open .cloud-reader-heading h2 {
+    overflow: hidden;
+    max-width: 100%;
+  }
+}
+
+.cloud-reader-body:has(.cloud-reader-opening) {
+  padding: 0;
+}
+.cloud-reader-body:has(.cloud-reader-opening) > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.cloud-reader-opening {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }

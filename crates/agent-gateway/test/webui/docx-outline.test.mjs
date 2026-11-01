@@ -6,12 +6,24 @@ import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const loader = createWebModuleLoader();
 const { prepareDocxOutline, createDocxOutline, DOCX_OUTLINE_LIMITS } = loader.loadModule("@liveagent/ui/components/resource-preview/docxOutline.ts");
+const { createDocxPageNavigation } = loader.loadModule("@liveagent/ui/components/resource-preview/docxPageNavigation.ts");
 const requireFromUI = createRequire(new URL("../../../agent-ui/package.json", import.meta.url));
 const requireFromWeb = createRequire(new URL("../../web/package.json", import.meta.url));
 const { JSDOM } = requireFromWeb("jsdom");
 const { zipSync, strToU8 } = requireFromUI("fflate");
 const paragraph = properties => ({ type: "paragraph", children: [], ...properties });
 const model = (paragraphs, styles = []) => ({ documentPart: { body: { type: "document", children: paragraphs } }, stylesPart: { styles } });
+
+test("DOCX page navigation uses original pages, bounded inert covers and unique native destinations", () => {
+ const dom=new JSDOM('<div id="root"><i id="za-docx-page-1"></i><div class="docx-wrapper"><section class="docx"><p id="bookmark"><a href="https://example.test">真实第一页</a></p></section><section class="docx"><p>真实第二页</p></section></div></div>');
+ const root=dom.window.document.querySelector('#root'),nav=createDocxPageNavigation(root,null);root.prepend(nav);
+ assert.equal(nav.open,false);assert.match(nav.querySelector('summary').textContent,/2/);
+ const links=[...nav.querySelectorAll('.za-docx-page-list>a')];assert.equal(links.length,2);
+ for(const link of links){const id=link.getAttribute('href').replace('about:srcdoc#','');assert.ok(root.querySelector(`[id="${id}"]`));assert.ok(link.querySelector('[inert][aria-hidden="true"]'));assert.equal(link.querySelector('.za-docx-page-thumb [id],.za-docx-page-thumb [href]'),null);}
+ assert.match(links[0].textContent,/真实第一页/);assert.equal(root.querySelectorAll('#bookmark').length,1);
+ assert.equal(nav.querySelector('script,iframe'),null);
+ dom.window.close();
+});
 
 test("DOCX outline uses paragraph levels and localized style inheritance, with explicit body text overriding a heading style", () => {
   const values = [paragraph({ outlineLevel: 0, className: "original" }), paragraph({ styleName: "正文带编号" }), paragraph({ styleName: "章标题" }), paragraph({ outlineLevel: 9, styleName: "章标题" }), paragraph({ styleName: "Heading1" })];
@@ -77,7 +89,8 @@ async function adapter(t, mocks = {}) {
   const host = document.body.appendChild(document.createElement("div")), root = env.createRoot(host);
   t.after(async () => { await env.act(async () => root.unmount()); host.remove(); env.cleanup(); if (parser) Object.defineProperty(globalThis, "DOMParser", parser); else delete globalThis.DOMParser; });
   const Component = env.loadModule("@liveagent/ui/components/resource-preview/ResourceDOCXPreview.tsx").default;
-  const mount = async props => env.act(async () => root.render(env.React.createElement(Component, props)));
+  const Identity=env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx").PreviewIdentityContext;
+  const mount = async props => env.act(async () => root.render(env.React.createElement(Identity.Provider,{value:{name:props.name,mime:"",onRequestRevision:props.onRequestRevision}},env.React.createElement(Component, props))));
   const waitFor = async predicate => {
     const deadline = Date.now() + 5000;
     while (!predicate() && Date.now() < deadline) await env.act(async () => new Promise(resolve => setTimeout(resolve, 10)));
@@ -86,7 +99,7 @@ async function adapter(t, mocks = {}) {
   return { env, host, root, mount, waitFor };
 }
 
-test("real DOCX bytes are inspected before parse/render and produce one sandboxed document with its native directory", async t => {
+test("real DOCX bytes are inspected before parse/render and produce an opaque nonce-only reader and separate semantic navigation", async t => {
   const calls = [];
   const real = requireFromUI("docx-preview");
   const { inspectPreviewArchive } = loader.loadModule("@liveagent/ui/components/resource-preview/previewArchive.ts");
@@ -98,16 +111,23 @@ test("real DOCX bytes are inspected before parse/render and produce one sandboxe
   await app.waitFor(() => app.host.querySelector("iframe") || app.host.querySelector(".za-preview-unavailable"));
   assert.deepEqual(calls, ["inspect", "parse", "render"]);
   const frame = app.host.querySelector("iframe"); assert.ok(frame, app.host.textContent);
-  assert.equal(frame.getAttribute("sandbox"), "");
+  assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
+  assert.doesNotMatch(frame.getAttribute("sandbox"),/allow-same-origin|allow-forms|allow-popups/);
   assert.equal(frame.getAttribute("referrerpolicy"), "no-referrer");
-  assert.match(frame.srcdoc, /script-src 'none'; connect-src 'none'/);
+  assert.match(frame.srcdoc, /script-src 'nonce-[a-f0-9]+'; connect-src 'none'/);
   assert.match(frame.srcdoc, /base-uri 'none'/);
   const rendered = new JSDOM(frame.srcdoc); t.after(() => rendered.window.close());
-  const links = [...rendered.window.document.querySelectorAll('nav[aria-label="文档目录"] a')];
-  assert.deepEqual(links.map(link => link.textContent), ["实际中文章节", "独立三级标题"]);
-  assert.ok(links.every(link => link.getAttribute("href").startsWith("about:srcdoc#")));
-  assert.equal(rendered.window.document.querySelector("h1,h2,h3"), null);
-  assert.doesNotMatch(app.host.textContent, /页数|第.*页/);
+  const navigation=app.host.querySelector('aside[aria-label="文档导航"] nav');
+  assert.ok(navigation);
+  assert.deepEqual([...navigation.querySelectorAll("button")].map(item=>item.textContent),["实际中文章节","独立三级标题"]);
+  assert.equal(rendered.window.document.querySelectorAll("script").length,1);
+  assert.equal(rendered.window.document.querySelector("h1,h2,h3"),null);
+  assert.equal(rendered.window.document.querySelector("nav"),null);
+  const before=frame;
+  await app.env.act(async()=>app.host.querySelector('[aria-label="切换为页面缩略图"]').click());
+  assert.equal(app.host.querySelector('iframe.za-preview-document'),before);
+  assert.ok(app.host.querySelector('button[aria-label="第 1 页"] iframe[sandbox=""]'));
+
 });
 
 test("retiring a DOCX adapter while parsing disposes its worker and never renders a late model", async t => {
@@ -122,4 +142,51 @@ test("retiring a DOCX adapter while parsing disposes its worker and never render
   assert.equal(disposed, true); assert.equal(signal.aborted, true);
   await app.env.act(async () => release(model([paragraph({ outlineLevel: 0 })])));
   assert.equal(rendered, false); assert.equal(app.host.querySelector("iframe"), null);
+});
+
+
+test("Word bridge strips document authority and accepts only validated original-text anchors",t=>{
+ const dom=new JSDOM('<div><script nonce="attacker">top.location="x"</script><iframe src="https://evil.test"></iframe><div class="docx-wrapper"><section class="docx"><p onclick="alert(1)" data-reader-block="spoof">真实文本</p><img src="https://evil.test/track" onerror="alert(1)"><a href="https://evil.test">link</a></section></div></div>');t.after(()=>dom.window.close());
+ const api=loader.loadModule("@liveagent/ui/components/resource-preview/docxReaderDocument.ts");
+ const resource=api.prepareReaderDocument(dom.window.document.querySelector('div'),[]),rendered=new JSDOM(resource.source);t.after(()=>rendered.window.close());
+ assert.equal(rendered.window.document.querySelectorAll('script').length,1);
+ assert.match(resource.source,/connect-src 'none'/);assert.match(resource.source,/default-src 'none'/);
+ assert.equal(rendered.window.document.querySelector('iframe,[onclick],[onerror],[href],img[src]'),null);
+ assert.equal(resource.blocks[0].text,'真实文本');
+ assert.equal(api.checkedDocumentSelection({id:resource.blocks[0].id,start:0,end:2,x:10,y:20},resource.blocks).quote,'真实');
+ for(const payload of [{id:'spoof',start:0,end:2,x:0,y:0},{id:resource.blocks[0].id,start:-1,end:2,x:0,y:0},{id:resource.blocks[0].id,start:0,end:1000,x:0,y:0},{id:resource.blocks[0].id,start:0,end:2,x:Infinity,y:0}])assert.equal(api.checkedDocumentSelection(payload,resource.blocks),null);
+});
+
+test("Word annotation bridge rejects foreign frames, origins and channels and never submits on selection",async t=>{
+ const real=requireFromUI("docx-preview"),{inspectPreviewArchive}=loader.loadModule("@liveagent/ui/components/resource-preview/previewArchive.ts");
+ let sends=0;
+ const app=await adapter(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){return {entries:inspectPreviewArchive(input.bytes)}}})},"docx-preview":real});
+ await app.mount({bytes:docxFixture(),name:'批注.docx',assertCurrent(){},onRequestRevision:async()=>{sends++;return true}});
+ await app.waitFor(()=>app.host.querySelector('iframe.za-preview-document'));
+ const frame=app.host.querySelector('iframe.za-preview-document'),token=frame.srcdoc.match(/nonce="([a-f0-9]+)"/)[1];
+ const rendered=new JSDOM(frame.srcdoc);t.after(()=>rendered.window.close());
+ const block=rendered.window.document.querySelector('[data-reader-block]'),data={token,type:'selection',id:block.dataset.readerBlock,start:0,end:2,x:100,y:100};
+ await app.env.act(async()=>app.host.querySelector('.za-request-revision').click());
+ const deliver=async(source,origin,value)=>app.env.act(async()=>window.dispatchEvent(new window.MessageEvent('message',{source,origin,data:value})));
+ await deliver(window,'null',data);await deliver(frame.contentWindow,'https://evil.test',data);await deliver(frame.contentWindow,'null',{...data,token:'wrong'});
+ assert.equal(app.host.querySelector('[aria-label="修改建议"]'),null);
+ await deliver(frame.contentWindow,'null',data);
+ assert.ok(app.host.querySelector('[aria-label="修改建议"]'));
+ assert.equal(sends,0);
+ const input=app.host.querySelector('[aria-label="修改建议"]');
+ await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'更加简洁');input.dispatchEvent(new window.Event('input',{bubbles:true}));});
+ await app.env.act(async()=>app.host.querySelector('[aria-label="添加批注"]').click());
+ assert.match(app.host.textContent,/这 1 条批注/);assert.equal(sends,0);
+ await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());
+ await app.waitFor(()=>document.querySelector('[aria-label="编辑第 1 条批注"]'));
+ await app.env.act(async()=>document.querySelector('[aria-label="编辑第 1 条批注"]').click());
+ assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'更加简洁');
+ await app.env.act(async()=>app.host.querySelector('[aria-label="关闭批注输入"]').click());
+ await deliver(frame.contentWindow,'null',{...data,start:2,end:4});
+ assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'','a new anchor does not inherit an unfinished edit');
+ await app.env.act(async()=>app.host.querySelector('[aria-label="关闭批注输入"]').click());
+ await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());
+ await app.waitFor(()=>document.querySelector('[aria-label="移除第 1 条批注"]'));
+ await app.env.act(async()=>document.querySelector('[aria-label="移除第 1 条批注"]').click());
+ assert.doesNotMatch(app.host.textContent,/这 1 条批注/);assert.equal(sends,0);
 });

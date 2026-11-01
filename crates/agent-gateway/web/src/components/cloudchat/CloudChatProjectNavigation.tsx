@@ -6,7 +6,9 @@ import {
   SquarePen,
 } from "@liveagent/ui/components/IconSet";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   CloudAccountGuard,
   CloudChatProjectsClient,
@@ -21,7 +23,12 @@ type ProjectNavigationProps = {
   revision: number;
   onOpen: (id?: string) => void;
   onCreate: () => void;
-  onOpenConversation?: (id: string) => void;
+  renderConversation: (item: SidebarConversation) => ReactNode;
+  onVisibleConversationsChange?: (
+    projectId: string,
+    items: readonly SidebarConversation[],
+    position: number,
+  ) => void;
   onNewConversation?: (project: CloudProject) => void;
   currentConversationId?: string;
   activeProjectId?: string;
@@ -29,7 +36,7 @@ type ProjectNavigationProps = {
 };
 
 function ProjectConversations(
-  props: ProjectNavigationProps & { project: CloudProject; expanded: boolean },
+  props: ProjectNavigationProps & { project: CloudProject; expanded: boolean; position: number },
 ) {
   const [items, setItems] = useState<CloudProjectConversation[]>([]);
   const [cursor, setCursor] = useState("");
@@ -119,28 +126,33 @@ function ProjectConversations(
       observer.disconnect();
     };
   }, [cursor, expanded, isOpen, loading, error, load]);
-  const visible = items
-    .filter((item) => !item.conversation?.archived)
-    .sort(
-      (a, b) =>
-        Number(!!b.conversation?.pinned) - Number(!!a.conversation?.pinned) ||
-        Date.parse(b.conversation?.updated_at ?? b.created_at) -
-          Date.parse(a.conversation?.updated_at ?? a.created_at),
-    );
+  const visible = useMemo<SidebarConversation[]>(
+    () =>
+      items
+        .filter((item) => !item.conversation?.archived)
+        .map((binding) => ({
+          id: binding.conversation_id,
+          title: binding.conversation?.title || "未命名对话",
+          model: binding.conversation?.model || "",
+          providerId: "web-chat",
+          createdAt: Date.parse(binding.conversation?.created_at || binding.created_at),
+          updatedAt: Date.parse(binding.conversation?.updated_at || binding.created_at),
+          isPinned: binding.conversation?.pinned === true,
+        }))
+        .sort((a, b) => Number(!!b.isPinned) - Number(!!a.isPinned) || b.updatedAt - a.updatedAt),
+    [items],
+  );
+  const { onVisibleConversationsChange, position } = props;
+  useEffect(() => {
+    onVisibleConversationsChange?.(project.id, expanded && isOpen ? visible : [], position);
+    return () => onVisibleConversationsChange?.(project.id, [], position);
+  }, [project.id, expanded, isOpen, visible, onVisibleConversationsChange, position]);
   return (
     <div className="cloud-project-conversations">
-      {visible.map((binding) => (
-        <button
-          key={binding.conversation_id}
-          type="button"
-          className="cloud-sidebar-destination cloud-project-conversation"
-          aria-current={
-            props.currentConversationId === binding.conversation_id ? "page" : undefined
-          }
-          onClick={() => props.onOpenConversation?.(binding.conversation_id)}
-        >
-          <span className="truncate">{binding.conversation?.title || "未命名对话"}</span>
-        </button>
+      {visible.map((item) => (
+        <div key={item.id} className="cloud-project-conversation">
+          {props.renderConversation(item)}
+        </div>
       ))}
       {loading ? (
         <div role="status" aria-label="正在加载项目会话" className="cloud-project-loading">
@@ -168,7 +180,7 @@ function ProjectConversations(
   );
 }
 
-function ProjectGroup(props: ProjectNavigationProps & { project: CloudProject }) {
+function ProjectGroup(props: ProjectNavigationProps & { project: CloudProject; position: number }) {
   const [expanded, setExpanded] = useState(props.activeProjectId === props.project.id);
   const contentId = useId();
   useEffect(() => {
@@ -295,8 +307,8 @@ export function CloudChatProjectNavigation(props: ProjectNavigationProps) {
           <Plus className="size-4" />
         </Button>
       </div>
-      {shown.map((project) => (
-        <ProjectGroup {...props} key={project.id} project={project} />
+      {shown.map((project, position) => (
+        <ProjectGroup {...props} key={project.id} project={project} position={position} />
       ))}
       {loading && projects.length === 0 ? (
         <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">

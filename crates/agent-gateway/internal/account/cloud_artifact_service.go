@@ -20,6 +20,7 @@ import (
 )
 
 type cloudArtifactJournal struct {
+	Restore        *cloudArtifactRestoreIntent           `json:"restore,omitempty"`
 	Operations     map[string]cloudArtifactOperationFact `json:"operations"`
 	PutStarted     bool                                  `json:"put_started"`
 	ObjectVerified bool                                  `json:"object_verified"`

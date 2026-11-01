@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
-import { PreviewToolbar } from "./PreviewToolbar";
+import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { parseSheetCoordinate, sheetColumnName } from "./previewGeometry";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import { usePreviewReadingState } from "./readingSession";
@@ -170,16 +170,16 @@ export default function ResourceSheetPreview(
             定位
           </Button>
         </form>
-        <select
-          aria-label="表格缩放"
-          value={zoom}
-          onChange={(event) => setZoom(Number(event.target.value))}
-        >
-          <option value="0.75">75%</option>
-          <option value="1">100%</option>
-          <option value="1.25">125%</option>
-          <option value="1.5">150%</option>
-        </select>
+        <PreviewZoomControl
+          label="表格缩放"
+          value={zoom * 100}
+          fitPage={false}
+          fitWidth={false}
+          percentages={[75, 100, 125, 150]}
+          onChange={(value) => {
+            if (typeof value === "number") setZoom(value / 100);
+          }}
+        />
         <Button
           variant="ghost"
           size="sm"
@@ -295,10 +295,6 @@ export default function ResourceSheetPreview(
           </Button>
         ))}
       </fieldset>
-      <p className="za-preview-caption">
-        <span aria-live="polite">当前单元格 {cell}</span> · 仅显示前 500 行、80
-        列的单元格值；不保留格式、合并单元格或公式计算。
-      </p>
     </>
   );
 }

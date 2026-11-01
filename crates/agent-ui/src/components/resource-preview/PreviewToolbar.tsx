@@ -1,6 +1,16 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
-import { ChevronRight } from "../IconSet";
+import { type KeyboardEvent, type ReactNode, useContext, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ChevronRight } from "../IconSet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { PreviewToolbarMount } from "./PreviewChrome";
 import type { PreviewZoom } from "./readingSession";
 
 /** Reading tools are local presentation state; the host still owns all file actions. */
@@ -13,6 +23,20 @@ export function PreviewToolbar({
   detail?: ReactNode;
   children?: ReactNode;
 }) {
+  const mount = useContext(PreviewToolbarMount);
+  if (mount)
+    return mount.target && children
+      ? createPortal(
+          <fieldset
+            className="za-preview-toolbar-tools"
+            aria-label={label}
+            style={{ border: 0, padding: 0, margin: 0 }}
+          >
+            {children}
+          </fieldset>,
+          mount.target,
+        )
+      : null;
   return (
     <div className="za-preview-toolbar">
       <div className="za-preview-toolbar-label">
@@ -35,6 +59,7 @@ export function PreviewPageControls({
   busy?: boolean;
   onPage: (page: number) => void;
 }) {
+  const mount = useContext(PreviewToolbarMount);
   const [input, setInput] = useState(String(page));
   useEffect(() => setInput(String(page)), [page]);
   const commit = () => {
@@ -44,7 +69,7 @@ export function PreviewPageControls({
       onPage(target);
     } else setInput(String(page));
   };
-  return (
+  const controls = (
     <nav className="za-preview-pages" aria-label="页面导航" aria-busy={busy}>
       <Button
         variant="ghost"
@@ -92,6 +117,7 @@ export function PreviewPageControls({
       </Button>
     </nav>
   );
+  return mount?.pageTarget ? createPortal(controls, mount.pageTarget) : controls;
 }
 
 export function PreviewZoomControl({
@@ -99,31 +125,53 @@ export function PreviewZoomControl({
   value,
   onChange,
   maxPercent,
+  fitPage = true,
+  fitWidth = true,
+  percentages = [25, 50, 75, 100, 125, 150, 200, 300],
 }: {
   label: string;
   value: PreviewZoom;
   onChange: (value: PreviewZoom) => void;
   maxPercent?: number;
+  fitPage?: boolean;
+  fitWidth?: boolean;
+  percentages?: number[];
 }) {
   return (
-    <select
-      aria-label={label}
-      value={value}
-      onChange={(event) => {
-        const next = event.target.value;
-        onChange(next === "fit-width" || next === "fit-page" ? next : Number(next));
-      }}
-    >
-      <option value="fit-width">适合宽度</option>
-      <option value="fit-page">适合整页</option>
-      {[50, 75, 100, 125, 150, 200, 300].map((percent) => (
-        <option key={percent} value={percent}>
-          {value === percent && maxPercent !== undefined && percent > maxPercent
-            ? `${Math.round(maxPercent * 10) / 10}%（上限）`
-            : `${percent}%`}
-        </option>
-      ))}
-    </select>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<button type="button" className="za-preview-zoom-trigger" />}
+        aria-label={label}
+      >
+        {typeof value === "number"
+          ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
+          : value === "fit-page"
+            ? "适合窗口"
+            : "适合宽度"}
+        <ChevronDown className="size-3" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="za-preview-zoom-menu">
+        <DropdownMenuRadioGroup
+          value={String(value)}
+          onValueChange={(next) =>
+            onChange(next === "fit-width" || next === "fit-page" ? next : Number(next))
+          }
+        >
+          {percentages.map((percent) => (
+            <DropdownMenuRadioItem key={percent} value={String(percent)}>
+              {percent}%
+            </DropdownMenuRadioItem>
+          ))}
+          {fitWidth || fitPage ? <DropdownMenuSeparator /> : null}
+          {fitWidth ? (
+            <DropdownMenuRadioItem value="fit-width">适合宽度</DropdownMenuRadioItem>
+          ) : null}
+          {fitPage ? (
+            <DropdownMenuRadioItem value="fit-page">缩放至适合窗口</DropdownMenuRadioItem>
+          ) : null}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -11,7 +11,7 @@ async function mount(t,overrides={}){
  let props={"aria-label":"drop target",fileLabel:"松开添加到当前草稿",resourceLabel:"松开引用资料",hint:"不会自动发送",resourceMime:"application/x-zeroagent-cloud-resource+json",onFiles:(files,directories)=>calls.files.push({files,directories}),onResources:value=>calls.resources.push(value),onRejected:value=>calls.rejections.push(value),...overrides};
  async function render(){await env.act(async()=>root.render(env.React.createElement(FileDropBoundary,props,env.React.createElement("div",{"data-child":""},"content"))));}
  await render();t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
- return {env,host,calls,async update(next){props={...props,...next};await render();},async drag(type,data,target=host.querySelector("section"),relatedTarget=null){const event=new window.Event(type,{bubbles:true,cancelable:true});Object.defineProperties(event,{dataTransfer:{value:data},relatedTarget:{value:relatedTarget}});await env.act(async()=>target.dispatchEvent(event));return event;}};
+ return {env,host,calls,async update(next){props={...props,...next};await render();},async drag(type,data,target=host.querySelector("section"),relatedTarget=null,point={x:300,y:200}){const event=new window.Event(type,{bubbles:true,cancelable:true});Object.defineProperties(event,{dataTransfer:{value:data},relatedTarget:{value:relatedTarget},clientX:{value:point.x},clientY:{value:point.y}});await env.act(async()=>target.dispatchEvent(event));return event;}};
 }
 
 test("file target handles nested entry, exit and global cancellation without intercepting text or existing drags",async t=>{
@@ -51,6 +51,41 @@ test("cloud resource drag serializes only bounded identities and rejects corrupt
  api.writeCloudResourceDragPayload(data,[{kind:"file",id:ID,target_id:ID},{kind:"file",id:ID,target_id:ID}]);assert.equal(api.readCloudResourceDragPayload(data).length,1);
  assert.equal(api.writeCloudResourceDragPayload(transfer([]),Array(9).fill({kind:"file",id:ID,target_id:ID})),false);
  for(const value of [{version:2,items:[]},{version:1,items:[{kind:"file",id:"../x",target_id:ID}]},{version:1,items:[{kind:"file",id:ID,target_id:ID,site_version_id:VERSION}]}]){data.setData(api.CLOUD_RESOURCE_DRAG_MIME,JSON.stringify(value));assert.equal(api.readCloudResourceDragPayload(data),null);}
+});
+
+test("viewport coverage is portalled above the whole application and retires with its owning view",async t=>{
+ const app=await mount(t,{coverage:"viewport"});
+ await app.drag("dragenter",transfer());
+ const overlay=document.querySelector('[data-coverage="viewport"]');
+ assert.ok(overlay);assert.equal(app.host.contains(overlay),false);assert.equal(overlay.parentElement,document.body);
+ // The body portal replaces the native target. Leave can precede enter and have
+ // a null relatedTarget even though the pointer remains inside the viewport.
+ await app.drag("dragleave",transfer(),app.host.querySelector("section"));
+ assert.equal(document.querySelector('[data-coverage="viewport"]'),overlay);
+ await app.drag("dragenter",transfer(),overlay);
+ await app.drag("dragleave",transfer(),overlay,null,{x:0,y:200});
+ assert.equal(document.querySelector('[data-coverage="viewport"]'),overlay,"portal target swaps can report zero coordinates");
+ await app.drag("dragleave",transfer(),document.documentElement,null,{x:0,y:200});
+ assert.equal(document.querySelector('[data-coverage="viewport"]'),null);
+ await app.drag("dragenter",transfer());
+ const dropTarget=document.querySelector('[data-coverage="viewport"]');
+ const file=new File(["preview-only"],"sample.txt");await app.drag("drop",transfer(["Files"],[file]),dropTarget);assert.equal(app.calls.files.length,1);
+ await app.drag("dragenter",transfer());
+ await app.update({active:false});assert.equal(document.querySelector('[data-coverage="viewport"]'),null);
+ assert.equal((await app.drag("drop",transfer())).defaultPrevented,false);assert.equal(app.calls.files.length,1);
+});
+
+test("viewport capture accepts an external file over a non-React surface exactly once",async t=>{
+ const app=await mount(t,{coverage:"viewport"}),outside=document.body.appendChild(document.createElement("div"));
+ t.after(()=>outside.remove());
+ const file=new File(["not sent"],"drop.md"),data=transfer(["Files"],[file]);
+ await app.drag("dragenter",data,outside);
+ assert.ok(document.querySelector('[data-coverage="viewport"]'));
+ assert.equal((await app.drag("dragover",data,outside)).defaultPrevented,true);
+ const drop=await app.drag("drop",data,outside);
+ assert.equal(drop.defaultPrevented,true);
+ assert.deepEqual(app.calls.files,[{files:[file],directories:0}]);
+ assert.equal(document.querySelector('[data-coverage="viewport"]'),null);
 });
 
 test("upload preflight keeps valid originals and explains rejected size, type, directory and count",async t=>{

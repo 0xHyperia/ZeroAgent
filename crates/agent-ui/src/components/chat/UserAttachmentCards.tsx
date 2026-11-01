@@ -8,7 +8,7 @@ import {
 } from "../../lib/chat/uploadedImagePreview";
 import { cn } from "../../lib/shared/utils";
 import { X } from "../IconSet";
-import { getUploadedFileTypeIcon } from "./fileTypeIcons";
+import { getUploadedResourceFileIcon } from "../resource-preview/ResourceFileIcon";
 import { ImagePreview, type ImagePreviewSlide } from "./ImagePreview";
 import { ImagePreviewActionFeedback, ImagePreviewContextMenu } from "./ImagePreviewMenu";
 import { getCompletedImageLoadState } from "./imageLoadState";
@@ -77,7 +77,7 @@ function UserImageAttachmentCard(props: {
     if (status) setImageLoadState({ src: imageSrc, status });
   }, [imageSrc]);
   const labeledPreview = `${previewLabel}: ${file.fileName}`;
-  const FallbackIcon = getUploadedFileTypeIcon(file);
+  const FallbackIcon = getUploadedResourceFileIcon(file);
   const previewSlides = useMemo<ImagePreviewSlide[]>(() => {
     const slide = createUserAttachmentImagePreviewSlide(file, imageSrc, workspaceRoot);
     return slide ? [slide] : [];
@@ -209,7 +209,7 @@ function UserFileAttachmentCard(props: {
   compact: boolean;
 }) {
   const { file, onRemove, removeLabel, compact } = props;
-  const TypeIcon = getUploadedFileTypeIcon(file);
+  const TypeIcon = getUploadedResourceFileIcon(file);
 
   return (
     <div

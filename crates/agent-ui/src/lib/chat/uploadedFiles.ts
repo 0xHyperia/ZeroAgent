@@ -40,6 +40,8 @@ export type PendingUploadedFile = {
   fileName: string;
   kind: UploadedReadableFileKind;
   sizeBytes: number;
+  /** Host-derived display state; never used to decide whether a file can be sent. */
+  statusText?: string;
   displayMode?: "largePaste";
   displayLabel?: string;
   displayCharCount?: number;

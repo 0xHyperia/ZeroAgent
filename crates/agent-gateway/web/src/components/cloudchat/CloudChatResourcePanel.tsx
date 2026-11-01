@@ -1,23 +1,16 @@
 import { Maximize2, Minimize2, X } from "@liveagent/ui/components/IconSet";
+import { PreviewToolbarMount } from "@liveagent/ui/components/resource-preview/PreviewChrome";
 import { Sheet, SheetDescription, SheetPopup, SheetTitle } from "@liveagent/ui/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@liveagent/ui/components/ui/tooltip";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   type CloudResourceDragIdentity,
   writeCloudResourceDragPayload,
 } from "@/lib/cloudResourceDrag";
-import { CloudChatReaderLayout } from "./CloudChatResourceWorkbench";
+import { CloudChatReaderLayout, CloudChatResourcePresentation } from "./CloudChatReaderContext";
 
-export const CloudChatResourcePresentation = createContext<"panel" | "page" | "inline">("panel");
+export { CloudChatResourcePresentation } from "./CloudChatReaderContext";
 
 export function CloudChatResourcePanel(props: {
   title: ReactNode;
@@ -26,6 +19,7 @@ export function CloudChatResourcePanel(props: {
   wide?: boolean;
   headerActions?: ReactNode;
   subtitle?: ReactNode;
+  details?: ReactNode;
   className?: string;
   dragResource?: CloudResourceDragIdentity;
   onClose: () => void;
@@ -36,6 +30,13 @@ export function CloudChatResourcePanel(props: {
   const titleId = useId();
   const reader = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
+  const [pageTarget, setPageTarget] = useState<HTMLDivElement | null>(null);
+  const [fileMenu, setFileMenu] = useState<ReactNode>(null);
+  const toolbarMount = useMemo(
+    () => ({ target: toolbarTarget, pageTarget, fileMenu, setFileMenu }),
+    [toolbarTarget, pageTarget, fileMenu],
+  );
   useEffect(() => {
     if (presentation !== "inline") return;
     const previous = document.activeElement;
@@ -73,83 +74,90 @@ export function CloudChatResourcePanel(props: {
   }, []);
   if (presentation === "inline") {
     return (
-      <section
-        ref={reader}
-        aria-labelledby={titleId}
-        data-cloud-resource-panel=""
-        data-cloud-resource-inline=""
-        className={`cloud-resource-reader ${props.className ?? ""}`}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (readerLayout?.expanded) readerLayout.toggleExpanded();
-            else props.onClose();
-          }
-        }}
-      >
-        <header className="cloud-reader-header">
-          <div className="cloud-reader-heading">
-            {props.dragResource ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <h2
-                      id={titleId}
-                      className="cloud-reader-draggable-title"
-                      draggable
-                      onDragStart={(event) => {
-                        if (
-                          !props.dragResource ||
-                          !writeCloudResourceDragPayload(event.dataTransfer, [props.dragResource])
-                        )
-                          event.preventDefault();
-                      }}
-                    >
-                      {props.title}
-                    </h2>
-                  }
-                />
-                <TooltipContent side="bottom">拖到对话中引用；也可使用“引用”按钮</TooltipContent>
-              </Tooltip>
-            ) : (
-              <h2 id={titleId} title={typeof props.title === "string" ? props.title : undefined}>
-                {props.title}
-              </h2>
-            )}
-            <div className="cloud-reader-subtitle">{props.subtitle ?? props.description}</div>
-          </div>
-          <div className="cloud-reader-actions">{props.headerActions}</div>
-          <div className="cloud-reader-window-actions">
-            {readerLayout?.canSplit ? (
+      <PreviewToolbarMount.Provider value={toolbarMount}>
+        <section
+          ref={reader}
+          aria-labelledby={titleId}
+          data-cloud-resource-panel=""
+          data-cloud-resource-inline=""
+          className={`cloud-resource-reader ${props.className ?? ""}`}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !event.defaultPrevented) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (readerLayout?.expanded) readerLayout.toggleExpanded();
+              else props.onClose();
+            }
+          }}
+        >
+          <header className="cloud-reader-header">
+            <div className="cloud-reader-heading">
+              {props.dragResource ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <h2
+                        id={titleId}
+                        className="cloud-reader-draggable-title"
+                        draggable
+                        onDragStart={(event) => {
+                          if (
+                            !props.dragResource ||
+                            !writeCloudResourceDragPayload(event.dataTransfer, [props.dragResource])
+                          )
+                            event.preventDefault();
+                        }}
+                      >
+                        {props.title}
+                      </h2>
+                    }
+                  />
+                  <TooltipContent side="bottom">拖到对话中引用；也可使用“引用”按钮</TooltipContent>
+                </Tooltip>
+              ) : (
+                <h2 id={titleId} title={typeof props.title === "string" ? props.title : undefined}>
+                  {props.title}
+                </h2>
+              )}
+              <div className="cloud-reader-subtitle">{props.subtitle ?? props.description}</div>
+            </div>
+            <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
+            <div className="cloud-reader-actions">{props.headerActions}</div>
+            <div className="cloud-reader-window-actions">
+              {readerLayout?.canSplit ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
+                  title={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
+                  onClick={readerLayout.toggleExpanded}
+                >
+                  {readerLayout.expanded ? (
+                    <Minimize2 className="size-4" />
+                  ) : (
+                    <Maximize2 className="size-4" />
+                  )}
+                </Button>
+              ) : null}
               <Button
+                ref={closeButton}
                 variant="ghost"
                 size="icon-sm"
-                aria-label={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
-                title={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
-                onClick={readerLayout.toggleExpanded}
+                onClick={props.onClose}
+                aria-label={props.closeLabel ?? "关闭资料面板"}
+                title="关闭阅读"
               >
-                {readerLayout.expanded ? (
-                  <Minimize2 className="size-4" />
-                ) : (
-                  <Maximize2 className="size-4" />
-                )}
+                <X className="size-4" />
               </Button>
-            ) : null}
-            <Button
-              ref={closeButton}
-              variant="ghost"
-              size="icon-sm"
-              onClick={props.onClose}
-              aria-label={props.closeLabel ?? "关闭资料面板"}
-              title="关闭阅读"
-            >
-              <X className="size-4" />
-            </Button>
+            </div>
+          </header>
+          <div className="za-reader-stage">
+            <div className="cloud-reader-body">{props.children}</div>
+            {props.details}
+            <div ref={setPageTarget} className="cloud-reader-bottom-tools" />
           </div>
-        </header>
-        <div className="cloud-reader-body">{props.children}</div>
-      </section>
+        </section>
+      </PreviewToolbarMount.Provider>
     );
   }
   if (presentation === "page") {

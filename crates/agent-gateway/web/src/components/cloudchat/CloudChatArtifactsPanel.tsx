@@ -1,5 +1,12 @@
+import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
 import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/previewPolicy";
+import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "@liveagent/ui/components/resource-preview/ResourcePreview";
+import {
+  ResourceDeleteDialog,
+  ResourceInspector,
+  ResourceTitleMenu,
+} from "@liveagent/ui/components/resource-preview/ResourceReaderDetails";
 import { Button, buttonVariants } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -12,6 +19,7 @@ import { TooltipButton as ReaderAction } from "@liveagent/ui/components/ui/toolt
 import { useEffect, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import {
+  CloudChatArtifactError,
   type CloudChatArtifactsClient,
   type CloudChatArtifactVersion,
   cloudArtifactCanPreviewImage,
@@ -24,6 +32,10 @@ import { CloudChatResourcePanel } from "./CloudChatResourcePanel";
 import { CloudChatSiteView } from "./CloudChatSiteView";
 
 type Props = {
+  onRequestRevision?: (
+    resource: CloudChatArtifactVersion,
+    comments: readonly DocumentRevisionComment[],
+  ) => Promise<boolean>;
   client: CloudChatArtifactsClient;
   conversationId?: string;
   initialVersionId?: string;
@@ -44,6 +56,13 @@ export function CloudChatArtifactsPanel(props: Props) {
   const [nextCursor, setNextCursor] = useState("");
   const [selected, setSelected] = useState<CloudChatArtifactVersion | null>(null);
   const [sitePreviewId, setSitePreviewId] = useState("");
+  const restoreInFlight = useRef(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreRequest, setRestoreRequest] = useState<{
+    requestId: string;
+    source: CloudChatArtifactVersion;
+    head: string;
+  } | null>(null);
   const [familyVersions, setFamilyVersions] = useState<CloudChatArtifactVersion[]>([]);
   const [scope, setScope] = useState<"conversation" | "account">(
     conversationId ? "conversation" : "account",
@@ -53,6 +72,7 @@ export function CloudChatArtifactsPanel(props: Props) {
     [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false),
     [notice, setNotice] = useState("");
+  const [inspector, setInspector] = useState<"details" | "history" | null>(null);
   const mounted = useRef(true),
     generation = useRef(0),
     abort = useRef(new AbortController());
@@ -112,7 +132,6 @@ export function CloudChatArtifactsPanel(props: Props) {
     setError("");
     if (selected?.id !== versionId) {
       setText(null);
-      setSelected(null);
     }
     setConfirmDelete(false);
     try {
@@ -249,6 +268,64 @@ export function CloudChatArtifactsPanel(props: Props) {
     }
   }
 
+  async function restoreVersion() {
+    if (!selected || restoreInFlight.current || restoreBusy || !valid()) return;
+    const head = familyVersions[0];
+    if (
+      !head ||
+      (!restoreRequest &&
+        (head.state !== "ready" ||
+          head.id === selected.id ||
+          selected.state !== "ready" ||
+          /\.zip$/i.test(selected.name)))
+    )
+      return;
+    const request = restoreRequest ?? {
+      requestId: crypto.randomUUID(),
+      source: selected,
+      head: head.id,
+    };
+    restoreInFlight.current = true;
+    setRestoreRequest(request);
+    setRestoreBusy(true);
+    setError("");
+    const guard = captureAccountRequestGuard();
+    try {
+      const version = restoreRequest
+        ? await client.restoreReceipt(request.requestId, abort.current.signal)
+        : await client.restore(
+            request.source,
+            request.head,
+            request.requestId,
+            abort.current.signal,
+          );
+      guard();
+      if (!valid()) return;
+      if (
+        version.family_id !== request.source.family_id ||
+        version.sha256 !== request.source.sha256
+      )
+        throw new Error("恢复版本响应不一致");
+      if (version.state === "ready") {
+        setRestoreRequest(null);
+        await showVersion(version.id);
+      } else if (version.state === "failed" || version.state === "deleted") {
+        setRestoreRequest(null);
+        throw new Error("版本未能恢复，旧文件和批注保持不变。");
+      } else setError("恢复结果尚未确认，请稍后核对。不会重复提交恢复请求。");
+    } catch (cause) {
+      if (!valid()) return;
+      if (
+        cause instanceof CloudChatArtifactError &&
+        ([400, 401, 409, 413].includes(cause.status) || (cause.status === 404 && !restoreRequest))
+      )
+        setRestoreRequest(null);
+      report(cause);
+    } finally {
+      restoreInFlight.current = false;
+      if (valid()) setRestoreBusy(false);
+    }
+  }
   function continueWork() {
     if (!selected || busy || selected.state !== "ready" || !valid()) return;
     try {
@@ -262,7 +339,97 @@ export function CloudChatArtifactsPanel(props: Props) {
 
   return (
     <CloudChatResourcePanel
-      title={selected ? selected.name : "成果库"}
+      title={
+        selected && inspector === "history" ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="za-reader-title-menu"
+            aria-label="返回文件阅读"
+            onClick={() => setInspector(null)}
+          >
+            <ArrowLeft className="size-4 shrink-0" />
+            <span className="truncate za-reader-history-time-full">
+              {new Date(selected.created_at).toLocaleString("zh-CN")}
+            </span>
+            <span className="truncate za-reader-history-time-compact">
+              {new Date(selected.created_at).toLocaleString("zh-CN", {
+                month: "numeric",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </Button>
+        ) : selected ? (
+          <ResourceTitleMenu name={selected.name}>
+            <DropdownMenuItem className="gap-2" onClick={() => setInspector("details")}>
+              <Info className="size-4" />
+              文件信息
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onClick={() => setInspector("history")}>
+              <History className="size-4" />
+              版本历史记录
+            </DropdownMenuItem>
+          </ResourceTitleMenu>
+        ) : initialVersionId ? (
+          "文件预览"
+        ) : (
+          "成果库"
+        )
+      }
+      details={
+        selected && inspector ? (
+          <ResourceInspector
+            title={inspector === "history" ? "版本历史记录" : "文件详情"}
+            onClose={() => setInspector(null)}
+          >
+            {inspector === "history" ? (
+              <div aria-busy={busy}>
+                {familyVersions.map((version) => (
+                  <button
+                    key={version.id}
+                    type="button"
+                    className="za-reader-version"
+                    data-version-id={version.id}
+                    aria-label={`查看版本 v${version.number}`}
+                    aria-current={version.id === selected.id ? "true" : undefined}
+                    disabled={busy}
+                    onClick={() => checkedShow(version.id)}
+                  >
+                    <time dateTime={version.created_at}>
+                      {new Date(version.created_at).toLocaleString("zh-CN")}
+                    </time>
+                    <strong>
+                      {version.id === familyVersions[0]?.id ? "当前版本" : `版本 ${version.number}`}
+                    </strong>
+                    <span>
+                      {cloudArtifactStatus(version)} · {cloudArtifactSize(version.size)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <>
+                <p className="font-medium">{selected.name}</p>
+                <p className="text-muted-foreground">资料空间 / 工作成果</p>
+                <dl>
+                  <dt>文件类型</dt>
+                  <dd>{selected.name.split(".").pop()?.toUpperCase()} 文件</dd>
+                  <dt>文件大小</dt>
+                  <dd>{cloudArtifactSize(selected.size)}</dd>
+                  <dt>保存时间</dt>
+                  <dd>{new Date(selected.created_at).toLocaleString("zh-CN")}</dd>
+                  <dt>当前版本</dt>
+                  <dd>
+                    v{selected.number} · {cloudArtifactStatus(selected)}
+                  </dd>
+                </dl>
+              </>
+            )}
+          </ResourceInspector>
+        ) : null
+      }
       dragResource={
         selected?.state === "ready" && props.onContinue && !busy
           ? { kind: "artifact", id: selected.family_id, target_id: selected.id }
@@ -277,9 +444,42 @@ export function CloudChatArtifactsPanel(props: Props) {
       headerActions={
         selected ? (
           <>
-            {props.onContinue ? (
+            {inspector === "history" ? (
               <Button
                 size="sm"
+                variant="outline"
+                className="za-reader-restore-button"
+                disabled={
+                  restoreBusy ||
+                  (!restoreRequest &&
+                    (familyVersions[0]?.state !== "ready" ||
+                      familyVersions[0]?.id === selected.id ||
+                      selected.state !== "ready" ||
+                      /\.zip$/i.test(selected.name)))
+                }
+                onClick={() => void restoreVersion()}
+              >
+                {restoreBusy ? (
+                  <span className="za-reader-button-spinner" aria-hidden="true" />
+                ) : null}
+                {restoreRequest && !restoreBusy ? "核对恢复状态" : "恢复此版本"}
+              </Button>
+            ) : null}
+            <ReaderAction
+              variant="ghost"
+              size="sm"
+              aria-label="版本历史记录"
+              data-reader-history=""
+              tooltip="版本历史记录"
+              onClick={() => setInspector(inspector === "history" ? null : "history")}
+            >
+              <History className="size-4" />
+              <span>v{selected.number}</span>
+            </ReaderAction>
+            {props.onContinue && !["docx", "pdf"].includes(resourcePreviewKind(selected)) ? (
+              <Button
+                size="sm"
+                className="cloud-reader-continue-action"
                 disabled={busy || selected.state !== "ready"}
                 onClick={continueWork}
               >
@@ -287,8 +487,8 @@ export function CloudChatArtifactsPanel(props: Props) {
               </Button>
             ) : null}
             <ReaderAction
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon-sm"
               data-reader-secondary=""
               aria-label="下载此版本"
               tooltip="下载此版本"
@@ -296,7 +496,7 @@ export function CloudChatArtifactsPanel(props: Props) {
               onClick={() => void download()}
             >
               <Download className="size-4" />
-              <span className="cloud-reader-action-label">下载此版本</span>
+              <span className="sr-only">下载此版本</span>
             </ReaderAction>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -307,23 +507,21 @@ export function CloudChatArtifactsPanel(props: Props) {
                 <MoreHorizontal className="size-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {conversationId ? (
+                <DropdownMenuItem
+                  disabled={busy || selected.state !== "ready"}
+                  onClick={() => void download()}
+                >
+                  <Download className="size-4" />
+                  下载此版本
+                </DropdownMenuItem>
+                {props.onContinue ? (
                   <DropdownMenuItem
-                    onClick={() => void loadList("conversation")}
-                    className="gap-2.5"
+                    disabled={busy || selected.state !== "ready"}
+                    onClick={continueWork}
                   >
-                    <FolderOpen className="size-4" />
-                    当前对话成果
+                    继续修改
                   </DropdownMenuItem>
                 ) : null}
-                <DropdownMenuItem onClick={() => void loadList("account")} className="gap-2.5">
-                  <FolderOpen className="size-4" />
-                  账户成果库
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void showVersion(selected.id)} className="gap-2.5">
-                  <RefreshCw className="size-4" />
-                  刷新状态
-                </DropdownMenuItem>
                 {props.onOpenSourceRun ? (
                   <DropdownMenuItem
                     onClick={() => {
@@ -379,6 +577,7 @@ export function CloudChatArtifactsPanel(props: Props) {
           </>
         ) : undefined
       }
+      className={inspector === "history" ? "cloud-reader-history-open" : undefined}
       closeLabel="关闭成果库"
       wide={Boolean(
         selected &&
@@ -388,62 +587,31 @@ export function CloudChatArtifactsPanel(props: Props) {
       )}
       onClose={props.onClose}
     >
-      {!selected ? (
-        <div className="flex flex-wrap items-center gap-8px">
-          {conversationId ? (
-            <button
-              type="button"
-              className={buttonClass}
-              disabled={busy}
-              onClick={() => void loadList("conversation")}
+      {error ? (
+        <CloudChatFeedback
+          tone="error"
+          message={error}
+          compact
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy || restoreBusy}
+              onClick={() => {
+                const id = selected?.id ?? initialVersionId;
+                if (id) checkedShow(id);
+                else void loadList();
+              }}
             >
-              当前对话成果
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={buttonClass}
-            disabled={busy}
-            onClick={() => void loadList("account")}
-          >
-            账户成果库
-          </button>
-          <button
-            type="button"
-            className={buttonClass}
-            disabled={busy}
-            onClick={() => void loadList()}
-          >
-            刷新状态
-          </button>
-          {busy ? (
-            <span role="status" className="text-xs text-muted-foreground">
-              正在读取成果…
-            </span>
-          ) : null}
-        </div>
+              重新读取
+            </Button>
+          }
+        />
       ) : null}
-      {error ? <CloudChatFeedback tone="error" message={error} compact /> : null}
       {notice ? <CloudChatFeedback message={notice} compact /> : null}
       <div className="min-h-0 flex-1 overflow-auto">
         {selected ? (
           <>
-            <label className="flex items-center gap-8px text-sm">
-              历史版本
-              <select
-                aria-label="成果版本"
-                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-10px py-6px"
-                disabled={busy}
-                value={selected.id}
-                onChange={(event) => checkedShow(event.target.value)}
-              >
-                {familyVersions.map((version) => (
-                  <option key={version.id} value={version.id}>
-                    v{version.number} · {version.name} · {cloudArtifactStatus(version)}
-                  </option>
-                ))}
-              </select>
-            </label>
             {selected.state !== "ready" ? (
               <p className="mt-12px text-sm text-muted-foreground">
                 正式文件尚未保存完成，此版本暂不可下载。请稍后刷新核对。
@@ -475,6 +643,12 @@ export function CloudChatArtifactsPanel(props: Props) {
                   assertCurrent();
                   return { blob: result.blob, assertCurrent };
                 }}
+                onRequestRevision={
+                  props.onRequestRevision
+                    ? (comments) =>
+                        currentProps.current.onRequestRevision?.(selected, comments) ?? false
+                    : undefined
+                }
                 onDownload={() => void download()}
               />
             ) : null}
@@ -489,38 +663,23 @@ export function CloudChatArtifactsPanel(props: Props) {
               </>
             ) : null}
             {confirmDelete ? (
-              <div
-                role="alert"
-                className="mt-12px rounded-xl border border-destructive/30 p-12px text-sm"
-              >
-                <p>确认删除这项成果的全部历史版本？已有消息中的下载和版本引用会失效。</p>
-                <div className="mt-8px flex gap-8px">
-                  <button
-                    type="button"
-                    className={buttonClass}
-                    disabled={busy}
-                    onClick={() => void removeFamily()}
-                  >
-                    确认删除成果
-                  </button>
-                  <button
-                    type="button"
-                    className={buttonClass}
-                    disabled={busy}
-                    onClick={() => setConfirmDelete(false)}
-                  >
-                    保留成果
-                  </button>
-                </div>
-              </div>
+              <ResourceDeleteDialog
+                open
+                busy={busy}
+                name={selected.name}
+                description="这项成果的全部历史版本将被永久删除，已有消息中的下载和版本引用会失效。"
+                confirmLabel="确认删除成果"
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={() => void removeFamily()}
+              />
             ) : null}
           </>
+        ) : initialVersionId && busy ? (
+          <div className="cloud-reader-opening">
+            <PreviewLoading message="正在打开文件…" />
+          </div>
         ) : families.length ? (
           <>
-            <p className="mb-12px text-xs text-muted-foreground">
-              {scope === "conversation" ? "当前对话" : "账户"}已加载 {versions.length}{" "}
-              个版本，按成果合并展示。
-            </p>
             <ul className="m-0 list-none space-y-12px p-0">
               {families.map((version) => (
                 <li key={version.family_id} className="rounded-xl border border-border p-12px">
@@ -548,9 +707,7 @@ export function CloudChatArtifactsPanel(props: Props) {
               >
                 {busy ? "正在加载更多…" : "加载更多成果"}
               </button>
-            ) : (
-              <p className="mt-12px text-xs text-muted-foreground">已显示全部可用成果。</p>
-            )}
+            ) : null}
           </>
         ) : !busy ? (
           <p className="py-24px text-center text-sm text-muted-foreground">
@@ -565,11 +722,12 @@ export function CloudChatArtifactsPanel(props: Props) {
 }
 
 import {
+  ArrowLeft,
   Download,
   FileText,
-  FolderOpen,
+  History,
   ImageIcon,
+  Info,
   MoreHorizontal,
-  RefreshCw,
   Trash2,
 } from "@liveagent/ui/components/IconSet";

@@ -6,7 +6,7 @@ import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 const streamdown = await import(new URL("../../../agent-ui/node_modules/streamdown/dist/index.js", import.meta.url));
 async function flush() { for (let i=0;i<5;i++) await new Promise(resolve=>setImmediate(resolve)); }
 async function setup(t, mocks={}) {
-  const env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,"../IconSet":{ChevronRight:()=>null},...mocks}});
+  const env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,"../IconSet":new Proxy({},{get:()=>()=>null}),...mocks}});
   const extra=new Map(["DOMParser","XMLSerializer"].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
   for(const name of extra.keys()) globalThis[name]=env.dom.window[name];
   const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
@@ -15,7 +15,7 @@ async function setup(t, mocks={}) {
     const deadline=Date.now()+3000;
     while(!predicate()&&Date.now()<deadline)await env.act(async()=>new Promise(resolve=>setTimeout(resolve,10)));
     assert.ok(predicate(),host.textContent);
-  },async input(label,value){const el=host.querySelector(`input[aria-label="${label}"]`);assert.ok(el,label);await env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));});return el;},async key(el,key){await env.act(async()=>{el.dispatchEvent(new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true}));await flush();});}};
+  },async zoom(label,percent){await env.act(async()=>{host.querySelector(`button[aria-label="${label}"]`).click();await flush();});const item=[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent===`${percent}%`);assert.ok(item,document.body.textContent);await env.act(async()=>{item.click();await flush();});},async input(label,value){const el=host.querySelector(`input[aria-label="${label}"]`);assert.ok(el,label);await env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));});return el;},async key(el,key){await env.act(async()=>{el.dispatchEvent(new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true}));await flush();});}};
 }
 
 test("reading geometry distinguishes true percent, width and whole-page fit and retains pixel budgets",async t=>{
@@ -39,6 +39,38 @@ test("snapshot store is limited to twenty recent resources and rejects unbounded
   store.write("bad","sheetName","x".repeat(129));assert.equal(store.read("bad"),undefined);
 });
 
+test("PDF comment anchors survive glyph span splits and reject changed originals or invalid offsets",async t=>{
+  const app=await setup(t),{pdfTextRange}=app.env.loadModule("@liveagent/ui/components/resource-preview/pdfTextRange.ts");
+  const layer=document.createElement('div');layer.innerHTML='<span>Cloud</span><span>Chat 文档</span><br><span>第二行</span>';
+  assert.equal(pdfTextRange(layer,3,10,'udChat ').toString(),'udChat ');
+  assert.equal(pdfTextRange(layer,10,14,'文档第二').toString(),'文档第二');
+  for(const [start,end,quote] of [[0,5,'changed'],[-1,4,'Cloud'],[0,999,'Cloud'],[4,3,''],[0,2001,'x']])assert.equal(pdfTextRange(layer,start,end,quote),null);
+  layer.innerHTML='<span>Cl</span><span>oudChat 文档</span><span>第二行</span>';
+  assert.equal(pdfTextRange(layer,3,10,'udChat ').toString(),'udChat ');
+});
+
+test("comment list locates and edits individual anchors, deletes one, and retains the rest after a rejected send",async t=>{
+ const app=await setup(t),h=app.env.React.createElement;
+ const {ResourceDocumentComments}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceDocumentComments.tsx"),{PreviewIdentityContext}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
+ const submitted=[],visited=[];let choose;
+ function Reader(){const [selection,setSelection]=app.env.React.useState(null),[enabled,setEnabled]=app.env.React.useState(true);choose=setSelection;return h(PreviewIdentityContext.Provider,{value:{name:'draft.pdf',mime:'application/pdf',onRequestRevision:async comments=>{submitted.push(comments);return false}}},h(ResourceDocumentComments,{enabled,onEnabled:setEnabled,selection,onSelection:setSelection,onNavigate:id=>visited.push(id),onMarks(){}}));}
+ const click=async label=>app.env.act(async()=>{const button=document.querySelector(`[aria-label="${label}"]`);assert.ok(button,label);button.click();await flush();});
+ await app.render(h(Reader));
+ for(let i=1;i<=2;i++){await app.env.act(async()=>choose({id:`pdf-page-${i}`,page:i,start:0,end:3,quote:`原文${i}`,x:20,y:100}));await app.input('修改建议',`建议${i}`);await click('添加批注');}
+ assert.equal(submitted.length,0);await click('查看 2 条批注');
+ assert.match(document.querySelector('[aria-label="批注列表"]').textContent,/原文1.*建议1.*原文2.*建议2/);
+ await click('定位第 1 条批注，第 1 页');assert.equal(visited.at(-1),'pdf-page-1');
+ await click('查看 2 条批注');await click('编辑第 2 条批注');assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'建议2');
+ await app.input('修改建议','保留第二条的新要求');await click('添加批注');
+ await click('查看 2 条批注');await click('移除第 1 条批注');
+ assert.match(document.querySelector('[aria-label="批注列表"]').textContent,/保留第二条的新要求/);
+ assert.doesNotMatch(document.querySelector('[aria-label="批注列表"]').textContent,/原文1/);
+ await app.key(document.querySelector('[aria-label="批注列表"]'),'Escape');
+ await app.env.act(async()=>{[...app.host.querySelectorAll('button')].find(button=>button.textContent.includes('发送')).click();await flush();});
+ assert.equal(submitted.length,1);assert.equal(submitted[0].length,1);assert.equal(submitted[0][0].block,'pdf-page-2');assert.equal(submitted[0][0].comment,'保留第二条的新要求');
+ assert.match(app.host.textContent,/这 1 条批注/);assert.match(app.host.querySelector('[role="alert"]').textContent,/批注已保留/);
+});
+
 test("page entry validates Enter, restores an unfinished edit on blur and keeps Escape local",async t=>{
   const app=await setup(t),{PreviewPageControls}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewToolbar.tsx"),pages=[];
   await app.render(app.env.React.createElement(PreviewPageControls,{page:2,count:12,busy:true,onPage:value=>pages.push(value)}));
@@ -58,23 +90,50 @@ test("PDF page rendering ignores an older page resolution after a newer jump and
   Object.defineProperty(window.HTMLElement.prototype,"clientHeight",{configurable:true,get(){return this.classList.contains("za-preview-pdf")?300:0;}});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>renders.length===1);
-  const zoom=app.host.querySelector("select");await app.env.act(async()=>{zoom.value="200";zoom.dispatchEvent(new Event("change",{bubbles:true}));await flush();});
+  await app.zoom("PDF 缩放",200);
   assert.equal(renders.at(-1).width,1600);
   await app.key(await app.input("页码","1"),"Enter");assert.equal(app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy"),"false");
   await app.key(await app.input("页码","3"),"Enter");await app.key(await app.input("页码","2"),"Enter");
-  await app.env.act(async()=>{pending.get(2)();await flush();});assert.equal(app.host.querySelector("canvas").getAttribute("aria-label"),"PDF 第 2 页");
+  await app.env.act(async()=>{pending.get(2)();await flush();});assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').style.visibility,"visible");
   await app.env.act(async()=>{pending.get(3)();await flush();});assert.equal(renders.at(-1).number,2);assert.ok(!renders.some(item=>item.number===3));assert.ok(cancelled.includes(1));
 });
 
-test("PDF keeps its canvas across a failed page so another page can recover without reopening",async t=>{
+test("PDF continuous pages isolate a failed page so another page can recover without reopening",async t=>{
   const page={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
   const document={numPages:3,getPage:number=>number===2?Promise.reject(new Error("bad page")):Promise.resolve(page)};
   const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(document),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy")==="false");
   const canvas=app.host.querySelector("canvas");await app.key(await app.input("页码","2"),"Enter");await app.wait(()=>/此页未能渲染/.test(app.host.textContent));
-  await app.key(await app.input("页码","3"),"Enter");await app.wait(()=>app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy")==="false");
-  assert.equal(app.host.querySelector("canvas"),canvas);assert.equal(canvas.style.display,"");assert.doesNotMatch(app.host.textContent,/此页未能渲染/);
+  await app.key(await app.input("页码","3"),"Enter");await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 3 页"]').style.visibility==="visible");
+  assert.equal(app.host.querySelector("canvas"),canvas);
+  assert.equal(app.host.querySelectorAll("[data-pdf-page]").length,3);
+  assert.equal(app.host.querySelector('[data-pdf-page="3"] .za-preview-unavailable'),null);
+});
+
+test("continuous PDF pages decode only nearby sheets, release offscreen pixels and disconnect on close",async t=>{
+  const requests=[], observers=[];
+  const page={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
+  const doc={numPages:100,getPage:async number=>{requests.push(number);return page;}};
+  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+  const original=globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver=class {
+    constructor(callback,options){this.callback=callback;this.options=options;observers.push(this);}
+    observe(element){this.element=element;}
+    disconnect(){this.closed=true;}
+  };
+  t.after(()=>{globalThis.IntersectionObserver=original;});
+  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
+  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));
+  await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 1 页"]').style.visibility==="visible");
+  assert.deepEqual(requests,[1]);assert.equal(app.host.querySelectorAll('[data-pdf-page]').length,100);
+  assert.equal(app.host.querySelector('[aria-label="PDF 第 80 页"]').width,0);
+  const near=observers.find(item=>item.options.rootMargin&&item.element.dataset.pdfPage==="2");
+  await app.env.act(async()=>{near.callback([{isIntersecting:true}]);await flush();});
+  assert.deepEqual(requests,[1,2]);assert.ok(app.host.querySelector('[aria-label="PDF 第 2 页"]').width>0);
+  await app.env.act(async()=>{near.callback([{isIntersecting:false}]);await flush();});
+  assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').width,0);
+  await app.render(null);assert.ok(observers.every(item=>item.closed));
 });
 
 test("PPT rapid page jumps preserve only the newest result while navigation stays usable",async t=>{
@@ -87,8 +146,8 @@ test("PPT rapid page jumps preserve only the newest result while navigation stay
   await app.key(canvas,"ArrowLeft");assert.equal(document.activeElement,canvas);
   await app.env.act(async()=>{pending.get(2)();await flush();});await app.wait(()=>!!app.host.querySelector("img"));
   await app.env.act(async()=>{pending.get(3)();await flush();});assert.match(app.host.querySelector("img").alt,/第 2 页/);
-  const zoom=app.host.querySelector('select[aria-label="幻灯片缩放"]');await app.env.act(async()=>{zoom.value="300";zoom.dispatchEvent(new Event("change",{bubbles:true}));});
-  assert.equal(parseFloat(app.host.querySelector("img").style.width),4096);assert.equal(zoom.selectedOptions[0].textContent,"256%（上限）");
+  await app.zoom("幻灯片缩放",300);
+  assert.equal(parseFloat(app.host.querySelector("img").style.width),4096);assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"256%");
 });
 
 test("read-only sheet snapshots restore a reopened immutable resource and retire on descriptor or account changes",async t=>{
@@ -101,12 +160,46 @@ test("read-only sheet snapshots restore a reopened immutable resource and retire
   await app.wait(()=>!!app.host.querySelector("table"));await app.input("定位单元格","B2");
   await app.env.act(async()=>{app.host.querySelector('.za-preview-coordinate button[type="submit"]').click();await flush();});
   assert.equal(app.host.querySelector('[data-cell="B2"]').getAttribute("aria-selected"),"true");
-  const zoom=app.host.querySelector('select[aria-label="表格缩放"]');await app.env.act(async()=>{zoom.value="1.5";zoom.dispatchEvent(new Event("change",{bubbles:true}));[...app.host.querySelectorAll("button")].find(item=>item.textContent==="换行").click();});
+  await app.zoom("表格缩放",150);await app.env.act(async()=>{[...app.host.querySelectorAll("button")].find(item=>item.textContent==="换行").click();});
   assert.equal(app.host.querySelector("table").getAttribute("aria-readonly"),"true");assert.equal(app.host.querySelector("[contenteditable]"),null);
   await render("account-a",false);await render();
   assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"实际");assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"B2");assert.equal(app.host.querySelector("table").style.zoom,"1.5");assert.equal(app.host.querySelector("table").dataset.wrap,"false");
   assert.ok(requests.some(item=>item.type==="sheet"&&item.name==="实际"));
   await render("account-a",true,{...resource,name:"另一名称.xlsx"});assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"A1");
-  await render("account-b");assert.equal(app.host.querySelector('select[aria-label="表格缩放"]').value,"1");
+  await render("account-b");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"100%");
   await render("account-a");assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"预算");
+});
+
+test("slide grid, presentation keyboard and return share the selected page without reloading the original",async t=>{
+ const requests=[],svg=number=>`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text>${number}</text></svg>`;
+ const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){requests.push(input);return {slideCount:3,svg:svg((input.index??0)+1)};}})}});
+ const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
+ await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),name:"deck.pptx",assertCurrent(){}}));
+ await app.wait(()=>!!app.host.querySelector("img"));
+ await app.env.act(async()=>app.host.querySelector('button[aria-label="网格视图"]').click());
+ assert.equal(app.host.querySelectorAll('.za-preview-slide-grid button').length,3);
+ await app.env.act(async()=>{app.host.querySelector('button[aria-label="打开第 2 页"]').click();await flush();});
+ await app.wait(()=>/第 2 页/.test(app.host.querySelector('img')?.alt??""));
+ await app.env.act(async()=>{app.host.querySelector('button[aria-label="演示"]').click();await flush();});
+ const dialog=document.querySelector('[role="dialog"]');assert.ok(dialog);
+ await app.key(dialog,"ArrowRight");
+ await app.wait(()=>/第 3 张/.test(document.querySelector('.za-slide-playback')?.textContent??""));
+ await app.env.act(async()=>{document.querySelector('button[aria-label="退出演示模式"]').click();await flush();});
+ assert.equal(document.querySelector('[role="dialog"]'),null);
+ assert.match(app.host.querySelector('img').alt,/第 3 页/);
+ assert.equal(requests.filter(item=>item.type==="load").length,1);
+});
+
+
+test("format view menu mounts inside the actual file-title menu context",async t=>{
+ const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="20" y="40">页</text></svg>';
+ const worker={dispose(){},async request(){return {slideCount:2,svg}}};
+ const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>worker}}),h=app.env.React.createElement;
+ const Slides=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
+ const {PreviewToolbarMount}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx"),{ResourceTitleMenu}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceReaderDetails.tsx");
+ function Reader(){const [fileMenu,setFileMenu]=app.env.React.useState(null),[target,setTarget]=app.env.React.useState(null);const value=app.env.React.useMemo(()=>({target,fileMenu,setFileMenu}),[target,fileMenu]);return h(PreviewToolbarMount.Provider,{value},h(ResourceTitleMenu,{name:'演示.pptx'}),h('div',{ref:setTarget}),h(Slides,{bytes:new Uint8Array([1]),name:'演示.pptx',assertCurrent(){}}));}
+ await app.render(h(Reader));await app.wait(()=>app.host.querySelector('[aria-label="文件菜单：演示.pptx"]'));
+ await app.env.act(async()=>{app.host.querySelector('[aria-label="文件菜单：演示.pptx"]').click();await flush();});
+ const menu=document.querySelector('[role="menuitemcheckbox"]');assert.ok(menu);assert.match(menu.textContent,/网格视图/);
+ await app.env.act(async()=>{menu.click();await flush();});assert.ok(app.host.querySelector('[aria-label="幻灯片网格"]'));
 });

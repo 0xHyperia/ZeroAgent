@@ -4,6 +4,23 @@ import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+test("a workbench DOM node attached after the first effect still enables PC split reading",async t=>{
+  let env;
+  env=await createWebDomTestEnv({mocks:{"@liveagent/ui/application/WorkbenchShell":{
+    WorkbenchBody(props){const [ready,setReady]=env.React.useState(false);env.React.useEffect(()=>setReady(true),[]);return ready?env.React.createElement("div",props):null;},
+  }}});
+  const original=window.HTMLElement.prototype.getBoundingClientRect;
+  window.HTMLElement.prototype.getBoundingClientRect=function(){return {width:1400,height:800,top:0,left:0,right:1400,bottom:800};};
+  const {CloudChatResourceWorkbench}=env.loadModule("src/components/cloudchat/CloudChatResourceWorkbench.tsx");
+  const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
+  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();window.HTMLElement.prototype.getBoundingClientRect=original;env.cleanup();});
+  await env.act(async()=>{root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,primary:"对话"},"预览"));await tick();});
+  assert.equal(host.querySelector('.cloud-resource-workbench').getAttribute('data-reader-only'),'false');
+  assert.ok(host.querySelector('[aria-label="调整对话与预览宽度"]'));
+  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:false,primary:"对话"},"预览")));
+  assert.equal(host.querySelector('[aria-label="调整对话与预览宽度"]'),null,"a library-only canvas has no phantom splitter over the document");
+});
+
 test("reading expansion and actual-canvas resizing preserve the draft, resource and focus return", async (t) => {
   const icons = new Proxy({}, { get: () => () => null });
   const env = await createWebDomTestEnv({ mocks: {
@@ -38,6 +55,7 @@ test("reading expansion and actual-canvas resizing preserve the draft, resource 
     const [open, setOpen] = env.React.useState(false);
     return h(CloudChatResourceWorkbench, {
       open, primaryVisible: true,
+      header: h("header", {"data-chat-chrome":""}, "对话标题"),
       primary: h("div", null,
         h("input", { "aria-label": "草稿", defaultValue: "已有草稿" }),
         h("button", { onClick: () => setOpen(true) }, "打开资料")),
@@ -58,11 +76,23 @@ test("reading expansion and actual-canvas resizing preserve the draft, resource 
   await env.act(async () => { trigger.click(); await tick(); });
   const reader = host.querySelector('[aria-label="阅读位置"]');
   const primary = host.querySelector(".cloud-workspace-primary");
+  assert.equal(host.querySelector("[data-chat-chrome]").closest(".cloud-workspace-primary"),primary,
+    "chat chrome belongs to the primary column so the reader starts at the workbench top");
   assert.equal(primary.hidden, false);
   assert.equal(host.querySelector('[role="dialog"]'), null, "wide reading must not trap the conversation");
   assert.equal(document.activeElement.getAttribute("aria-label"), "关闭资料面板");
+  const separator = host.querySelector('[role="separator"][aria-label="调整对话与预览宽度"]');
+  assert.ok(separator, "the existing workbench divider is available in split reading");
+  assert.equal(separator.style.width,"16px","a forgiving pointer target does not widen the layout gap");
+  await env.act(async () => separator.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  assert.equal(separator.getAttribute("aria-valuenow"), "46");
+  assert.equal(host.querySelector('[aria-label="阅读位置"]'), reader);
+  await env.act(async () => separator.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true })));
+  assert.equal(separator.getAttribute("aria-valuenow"), "50");
+  assert.equal(host.querySelector('[aria-label="草稿"]'), draft);
   await env.act(async () => { host.querySelector('[aria-label="展开阅读"]').click(); await tick(); });
   assert.equal(primary.hidden, true);
+  assert.equal(host.querySelector('[role="separator"]'), null);
   assert.equal(primary.hasAttribute("inert"), true);
   assert.equal(host.querySelector('[aria-label="阅读位置"]'), reader);
   await env.act(async () => { host.querySelector('[aria-label="恢复并排阅读"]').click(); await tick(); });

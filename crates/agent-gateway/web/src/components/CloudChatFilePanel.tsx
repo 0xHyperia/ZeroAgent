@@ -1,15 +1,24 @@
 import {
+  Check,
   Download,
   FileText,
   FolderOpen,
+  Info,
   MoreHorizontal,
-  RefreshCw,
+  Plus,
   Search,
   Trash2,
   Upload,
 } from "@liveagent/ui/components/IconSet";
+import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
 import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/previewPolicy";
+import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "@liveagent/ui/components/resource-preview/ResourcePreview";
+import {
+  ResourceDeleteDialog,
+  ResourceInspector,
+  ResourceTitleMenu,
+} from "@liveagent/ui/components/resource-preview/ResourceReaderDetails";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -34,11 +43,16 @@ import { CloudChatFeedback } from "./cloudchat/CloudChatFeedback";
 import { CloudChatResourcePanel } from "./cloudchat/CloudChatResourcePanel";
 
 type Props = {
+  onRequestRevision?: (
+    resource: CloudChatFile,
+    comments: readonly DocumentRevisionComment[],
+  ) => Promise<boolean>;
   client: CloudChatFilesClient;
   initialFileId?: string;
   fromLine?: number;
   toLine?: number;
   canAttach: boolean;
+  attached?: boolean;
   isCurrent: () => boolean;
   onClose: () => void;
   // biome-ignore lint/suspicious/noConfusingVoidType: existing hosts return void; false explicitly rejects a reference.
@@ -47,6 +61,8 @@ type Props = {
   onError: (cause: unknown) => void;
   onUpload?: () => void;
   onBrowseLibrary?: () => void;
+  onOpenInSpace?: () => void;
+  onOpenSourceConversation?: (id: string) => void;
 };
 
 export function CloudChatFilePanel(props: Props) {
@@ -60,6 +76,17 @@ export function CloudChatFilePanel(props: Props) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sourceOpen, setSourceOpen] = useState(props.fromLine !== undefined);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const selectedUsage =
+    selected?.state === "vision_ready"
+      ? "可由支持视觉的模型理解，此文件没有文字原文。"
+      : selected?.workspace_loadable
+        ? selected.mime === "application/zip"
+          ? "引用后可在隔离沙箱中读取或解压，不会自动运行其中的代码。"
+          : "可在工作模式中读取；在线预览不表示文件已完成文本解析。"
+        : selected?.state !== "ready"
+          ? "暂时无法供模型理解，可下载原件或刷新处理状态。"
+          : "引用资料后，可在对话中继续分析。";
   const mounted = useRef(true);
   const controller = useRef(new AbortController());
   const generation = useRef(0);
@@ -254,7 +281,61 @@ export function CloudChatFilePanel(props: Props) {
 
   return (
     <CloudChatResourcePanel
-      title={selected ? selected.name : "文件库"}
+      title={
+        selected ? (
+          <ResourceTitleMenu name={selected.name}>
+            <DropdownMenuItem className="gap-2" onClick={() => setDetailsOpen(true)}>
+              <Info className="size-4" />
+              文件信息
+            </DropdownMenuItem>
+            {props.onOpenInSpace ? (
+              <DropdownMenuItem className="gap-2" onClick={props.onOpenInSpace}>
+                <FolderOpen className="size-4" />
+                在资料空间中打开
+              </DropdownMenuItem>
+            ) : null}
+          </ResourceTitleMenu>
+        ) : initialFileId ? (
+          "文件预览"
+        ) : (
+          "文件库"
+        )
+      }
+      details={
+        selected && detailsOpen ? (
+          <ResourceInspector title="文件详情" onClose={() => setDetailsOpen(false)}>
+            <p className="font-medium">{selected.name}</p>
+            <p className="text-muted-foreground">资料空间 / 上传文件</p>
+            <dl>
+              <dt>文件类型</dt>
+              <dd>{selected.name.split(".").pop()?.toUpperCase()} 文件</dd>
+              <dt>文件大小</dt>
+              <dd>{(selected.size / 1024).toFixed(1)} KB</dd>
+              <dt>最近更新</dt>
+              <dd>{new Date(selected.updated_at).toLocaleString("zh-CN")}</dd>
+              <dt>状态</dt>
+              <dd>{cloudFileStatus(selected)}</dd>
+              <dt>AI 使用</dt>
+              <dd>{selectedUsage}</dd>
+            </dl>
+            {selected.conversation_id && props.onOpenSourceConversation ? (
+              <dl>
+                <dt>来源对话</dt>
+                <dd>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="px-0"
+                    onClick={() => props.onOpenSourceConversation?.(selected.conversation_id)}
+                  >
+                    打开来源对话
+                  </Button>
+                </dd>
+              </dl>
+            ) : null}
+          </ResourceInspector>
+        ) : null
+      }
       dragResource={
         selected && props.canAttach && cloudFileCanReference(selected) && !busy
           ? { kind: "file", id: selected.id, target_id: selected.id }
@@ -269,16 +350,23 @@ export function CloudChatFilePanel(props: Props) {
       headerActions={
         selected ? (
           <>
-            <Button
+            <ReaderAction
+              variant="ghost"
               size="sm"
-              disabled={busy || !props.canAttach || !cloudFileCanReference(selected)}
+              className="cloud-reader-reference-action"
+              aria-label={props.attached ? "已添加到草稿" : "引用到消息"}
+              tooltip={props.attached ? "已添加到草稿" : "引用到消息"}
+              disabled={
+                busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
+              }
               onClick={() => attach(selected)}
             >
-              引用到消息
-            </Button>
+              {props.attached ? <Check className="size-4" /> : <Plus className="size-4" />}
+              <span className="sr-only">{props.attached ? "已添加到草稿" : "引用到消息"}</span>
+            </ReaderAction>
             <ReaderAction
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon-sm"
               data-reader-secondary=""
               aria-label="下载原件"
               tooltip="下载原件"
@@ -288,7 +376,7 @@ export function CloudChatFilePanel(props: Props) {
               onClick={() => void download(selected)}
             >
               <Download className="size-4" />
-              <span className="cloud-reader-action-label">下载原件</span>
+              <span className="sr-only">下载原件</span>
             </ReaderAction>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -300,22 +388,18 @@ export function CloudChatFilePanel(props: Props) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() =>
-                    props.onBrowseLibrary ? props.onBrowseLibrary() : void loadLibrary()
+                  disabled={
+                    busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
                   }
+                  onClick={() => attach(selected)}
                   className="gap-2.5"
                 >
-                  <FolderOpen className="size-4" />
-                  全部文件
+                  <Plus className="size-4" />
+                  {props.attached ? "已添加到草稿" : "引用到消息"}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() =>
-                    void showFile(selected.id, source?.from_line ?? 1, source?.to_line ?? 100)
-                  }
-                  className="gap-2.5"
-                >
-                  <RefreshCw className="size-4" />
-                  刷新状态
+                <DropdownMenuItem onClick={() => setDetailsOpen(true)} className="gap-2.5">
+                  <Info className="size-4" />
+                  文件信息
                 </DropdownMenuItem>
                 {source ? (
                   <DropdownMenuItem
@@ -346,7 +430,7 @@ export function CloudChatFilePanel(props: Props) {
       )}
       onClose={props.onClose}
     >
-      {!selected ? (
+      {!selected && !initialFileId ? (
         <div className="flex flex-wrap items-center gap-8px">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -369,15 +453,6 @@ export function CloudChatFilePanel(props: Props) {
               上传到对话
             </Button>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            type="button"
-            disabled={busy}
-            onClick={() => void loadLibrary()}
-          >
-            刷新状态
-          </Button>
           {busy ? (
             <span role="status" className="text-xs text-muted-foreground">
               正在处理…
@@ -385,45 +460,51 @@ export function CloudChatFilePanel(props: Props) {
           ) : null}
         </div>
       ) : null}
-      {error ? <CloudChatFeedback tone="error" message={error} compact /> : null}
-      {confirmDelete ? (
-        <div className="rounded-xl border border-destructive/30 p-12px text-sm" role="alert">
-          <p>确认删除原件？已有消息中的该文件和引用将无法再读取。</p>
-          <div className="mt-8px flex gap-8px">
+      {error ? (
+        <CloudChatFeedback
+          tone="error"
+          message={error}
+          compact
+          actions={
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              type="button"
               disabled={busy}
               onClick={() => {
-                const file =
-                  selected?.id === confirmDelete
-                    ? selected
-                    : files.find((item) => item.id === confirmDelete);
-                if (file) void remove(file);
+                const id = selected?.id ?? initialFileId;
+                if (id) void showFile(id, fromLine, toLine);
+                else void loadLibrary();
               }}
             >
-              确认删除
+              重新读取
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              disabled={busy}
-              onClick={() => setConfirmDelete(null)}
-            >
-              保留文件
-            </Button>
-          </div>
-        </div>
+          }
+        />
+      ) : null}
+      {confirmDelete ? (
+        <ResourceDeleteDialog
+          open
+          busy={busy}
+          name={selected?.name ?? files.find((item) => item.id === confirmDelete)?.name ?? "文件"}
+          description="原件将被永久删除，已有消息中的该文件和引用将无法再读取。只想从当前草稿移除时，请使用附件上的移除按钮。"
+          confirmLabel="确认删除"
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            const file =
+              selected?.id === confirmDelete
+                ? selected
+                : files.find((item) => item.id === confirmDelete);
+            if (file) void remove(file);
+          }}
+        />
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto">
         {selected ? (
           <>
             {selected.uploaded_at && !["deleting", "deleted"].includes(selected.state) ? (
               <ResourcePreview
-                key={`${selected.id}:${selected.version}`}
-                resource={{ ...selected, identity: `${selected.id}:${selected.version}` }}
+                key={`${selected.id}:${selected.sha256}`}
+                resource={{ ...selected, identity: `${selected.id}:${selected.sha256}` }}
                 load={async (signal) => {
                   const guard = captureAccountRequestGuard();
                   const result = await client.download(selected, signal);
@@ -435,6 +516,12 @@ export function CloudChatFilePanel(props: Props) {
                   assertCurrent();
                   return { blob: result.blob, assertCurrent };
                 }}
+                onRequestRevision={
+                  props.onRequestRevision && cloudFileCanReference(selected)
+                    ? (comments) =>
+                        currentProps.current.onRequestRevision?.(selected, comments) ?? false
+                    : undefined
+                }
                 onDownload={() => void download(selected)}
               />
             ) : null}
@@ -486,24 +573,12 @@ export function CloudChatFilePanel(props: Props) {
                   </Button>
                 </div>
               </details>
-            ) : (
-              <details className="cloud-reader-file-info">
-                <summary>文件信息</summary>
-                <p>{cloudFileStatus(selected)}</p>
-                <p>
-                  {selected.state === "vision_ready"
-                    ? "引用图片后，可由支持视觉的模型理解。此文件没有文字原文。"
-                    : selected.workspace_loadable
-                      ? selected.mime === "application/zip"
-                        ? "引用后可在隔离沙箱中读取或解压；不会自动运行其中的代码。"
-                        : "已保存原件。引用后可在工作模式中读取；在线预览不表示文件已完成文本解析。"
-                      : selected.state !== "ready"
-                        ? "暂时无法供模型理解。可下载原件，或稍后刷新处理状态。"
-                        : "引用资料后，可在对话中继续分析。"}
-                </p>
-              </details>
-            )}
+            ) : null}
           </>
+        ) : initialFileId && busy ? (
+          <div className="cloud-reader-opening">
+            <PreviewLoading message="正在打开文件…" />
+          </div>
         ) : files.length ? (
           <ul className="m-0 list-none space-y-12px p-0">
             {files

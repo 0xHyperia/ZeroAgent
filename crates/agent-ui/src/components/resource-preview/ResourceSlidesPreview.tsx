@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ChevronRight, LayoutGrid, PanelLeft, Play, X } from "../IconSet";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
+import { TooltipButton as Button } from "../ui/tooltip-button";
+import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import {
   PreviewPageControls,
@@ -59,6 +64,13 @@ export default function ResourceSlidesPreview(
   const [svg, setSVG] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [outline, setOutline] = useState(false);
+  const [grid, setGrid] = usePreviewReadingState("slideGrid", false);
+  const [presenting, setPresenting] = useState(false);
+  const chrome = useContext(PreviewToolbarMount);
+  const setFileMenu = chrome?.setFileMenu;
+  const gridRoot = useRef<HTMLElement>(null);
+  const rail = useRef<HTMLElement>(null);
   const [maxPercent, setMaxPercent] = useState<number>();
   const client = useRef<ReturnType<typeof createResourcePreviewWorker> | null>(null);
   const generation = useRef(0);
@@ -119,9 +131,38 @@ export default function ResourceSlidesPreview(
     }
   }
 
+  useEffect(() => {
+    if (!setFileMenu) return;
+    setFileMenu(
+      <>
+        <DropdownMenuItem
+          role="menuitemcheckbox"
+          aria-checked={grid}
+          disabled={!count}
+          onClick={() => setGrid((value) => !value)}
+        >
+          <LayoutGrid className="size-4 mr-2" />
+          网格视图
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </>,
+    );
+    return () => setFileMenu(null);
+  }, [setFileMenu, setGrid, grid, count]);
   return (
     <>
       <PreviewToolbar label="幻灯片" detail="只读">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="幻灯片目录"
+          tooltip="幻灯片目录"
+          aria-pressed={outline}
+          disabled={!count}
+          onClick={() => setOutline((value) => !value)}
+        >
+          <PanelLeft className="size-4" />
+        </Button>
         <PreviewPageControls
           page={page}
           count={count}
@@ -134,25 +175,229 @@ export default function ResourceSlidesPreview(
           onChange={setZoom}
           maxPercent={maxPercent}
         />
+        {!setFileMenu ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="网格视图"
+            tooltip="网格视图"
+            aria-pressed={grid}
+            disabled={!count}
+            onClick={() => setGrid((value) => !value)}
+          >
+            <LayoutGrid className="size-4" />
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="演示"
+          tooltip="演示"
+          disabled={!count}
+          onClick={() => setPresenting(true)}
+        >
+          <Play className="size-4" />
+        </Button>
       </PreviewToolbar>
-      <SlideImage
-        svg={svg}
-        name={`${props.name} · 第 ${page} 页`}
-        zoom={zoom}
-        page={page}
-        count={count}
-        busy={busy}
-        error={error}
-        onCancel={props.onCancel}
-        onDownload={props.onDownload}
-        onRetry={props.onRetry}
-        onPage={(target) => void navigate(target)}
-        assertCurrent={assertCurrent}
-        onError={setError}
-        onMaxPercent={setMaxPercent}
-      />
-      <p className="za-preview-caption">静态预览；特殊字体、动画和嵌入对象请用原应用查看。</p>
+      <div className="za-preview-slides-layout">
+        {outline && !grid ? (
+          <nav ref={rail} className="za-preview-slide-rail" aria-label="选择幻灯片">
+            <span className="za-preview-rail-count">{count} 页</span>
+            {Array.from({ length: count }, (_, index) => index + 1).map((number) => (
+              <button
+                type="button"
+                key={number}
+                aria-label={`转到第 ${number} 页`}
+                aria-current={number === page ? "page" : undefined}
+                onClick={() => void navigate(number)}
+              >
+                <span>{number}</span>
+                <SlideThumbnail
+                  index={number - 1}
+                  worker={client.current}
+                  root={rail}
+                  assertCurrent={assertCurrent}
+                />
+              </button>
+            ))}
+          </nav>
+        ) : null}
+        {grid ? (
+          <section ref={gridRoot} className="za-preview-slide-grid" aria-label="幻灯片网格">
+            {Array.from({ length: count }, (_, index) => index + 1).map((number) => (
+              <button
+                type="button"
+                key={number}
+                aria-label={`打开第 ${number} 页`}
+                aria-current={number === page ? "page" : undefined}
+                onClick={() => {
+                  setGrid(false);
+                  void navigate(number);
+                }}
+              >
+                <span className="za-preview-grid-number">{number}</span>
+                <SlideThumbnail
+                  index={number - 1}
+                  worker={client.current}
+                  root={gridRoot}
+                  assertCurrent={assertCurrent}
+                />
+              </button>
+            ))}
+          </section>
+        ) : (
+          <SlideImage
+            svg={svg}
+            name={`${props.name} · 第 ${page} 页`}
+            zoom={zoom}
+            page={page}
+            count={count}
+            busy={busy}
+            error={error}
+            onCancel={props.onCancel}
+            onDownload={props.onDownload}
+            onRetry={props.onRetry}
+            onPage={(target) => void navigate(target)}
+            assertCurrent={assertCurrent}
+            onError={setError}
+            onMaxPercent={setMaxPercent}
+          />
+        )}
+      </div>
+      <Dialog open={presenting} onOpenChange={setPresenting}>
+        <DialogContent
+          layout="lightbox"
+          className="za-slide-presentation"
+          onKeyDown={(event) => {
+            if (event.target instanceof HTMLElement && event.target.closest("button")) return;
+            if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) {
+              event.preventDefault();
+              void navigate(Math.min(count, page + 1));
+            } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) {
+              event.preventDefault();
+              void navigate(Math.max(1, page - 1));
+            } else if (event.key === "Home" || event.key === "End") {
+              event.preventDefault();
+              void navigate(event.key === "Home" ? 1 : count);
+            }
+          }}
+        >
+          <DialogTitle className="sr-only">幻灯片演示</DialogTitle>
+          <SlideImage
+            svg={svg}
+            name={`${props.name} · 第 ${page} 页`}
+            zoom="fit-page"
+            page={page}
+            count={count}
+            busy={busy}
+            error={error}
+            onCancel={props.onCancel}
+            onDownload={props.onDownload}
+            onRetry={props.onRetry}
+            onPage={(target) => void navigate(target)}
+            assertCurrent={assertCurrent}
+            onError={setError}
+            onMaxPercent={setMaxPercent}
+          />
+          <button
+            type="button"
+            className="za-slide-advance"
+            aria-label="切换到下一张幻灯片"
+            disabled={page >= count || busy}
+            onClick={() => void navigate(page + 1)}
+          />
+          <fieldset className="za-slide-playback" aria-label="幻灯片播放控件">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="上一张幻灯片"
+              tooltip="上一张幻灯片"
+              disabled={page <= 1}
+              onClick={() => void navigate(page - 1)}
+            >
+              <ChevronRight className="size-4 rotate-180" />
+            </Button>
+            <span aria-live="polite">
+              第 {page} 张，共 {count} 张
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="下一张幻灯片"
+              tooltip="下一张幻灯片"
+              disabled={page >= count}
+              onClick={() => void navigate(page + 1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="退出演示模式"
+              tooltip="退出演示模式"
+              onClick={() => setPresenting(false)}
+            >
+              <X className="size-4" />
+            </Button>
+          </fieldset>
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+/** Real, isolated slide covers; only visible rail entries ask the existing worker to render. */
+function SlideThumbnail({
+  index,
+  worker,
+  root,
+  assertCurrent,
+}: {
+  index: number;
+  worker: ReturnType<typeof createResourcePreviewWorker> | null;
+  root: import("react").RefObject<HTMLElement | null>;
+  assertCurrent: () => void;
+}) {
+  const host = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [url, setURL] = useState("");
+  useEffect(() => {
+    if (!host.current || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      root: root.current,
+      rootMargin: "160px",
+    });
+    observer.observe(host.current);
+    return () => observer.disconnect();
+  }, [root]);
+  useEffect(() => {
+    if (!visible || !worker) {
+      setURL("");
+      return;
+    }
+    let active = true,
+      owned = "";
+    void worker
+      .request({ type: "slide", index })
+      .then((result) => {
+        assertCurrent();
+        if (!active) return;
+        const safe = safeSlide(result.svg ?? "");
+        owned = URL.createObjectURL(new Blob([safe.svg], { type: "image/svg+xml" }));
+        setURL(owned);
+      })
+      .catch(() => {
+        /* A failed cover never disables navigation to the actual page. */
+      });
+    return () => {
+      active = false;
+      if (owned) URL.revokeObjectURL(owned);
+    };
+  }, [index, worker, visible, assertCurrent]);
+  return (
+    <span ref={host} className="za-preview-slide-cover" aria-hidden="true">
+      {url ? <img src={url} alt="" /> : <span className="za-preview-cover-placeholder" />}
+    </span>
   );
 }
 

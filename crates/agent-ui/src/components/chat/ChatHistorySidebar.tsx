@@ -357,13 +357,13 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
 
   const itemById = useMemo(() => {
     const index = new Map<string, SidebarConversation>();
-    for (const item of items) {
+    for (const item of [...items, ...(props.navigationItems ?? [])]) {
       // Preserve Array.find's first-match behavior if malformed input contains
       // duplicate ids while making repeated lookups constant-time.
       if (!index.has(item.id)) index.set(item.id, item);
     }
     return index;
-  }, [items]);
+  }, [items, props.navigationItems]);
   const pinnedConversations = useMemo(() => items.filter((item) => item.isPinned), [items]);
   const currentConversationWorkdir = useMemo(
     () => itemById.get(currentConversationId)?.cwd,
@@ -484,7 +484,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     [props.taskItems, items, showProjects],
   );
   const visibleItems = useMemo(() => {
-    if (!showProjects) return items;
+    if (!showProjects)
+      return props.navigationItems?.length ? [...props.navigationItems, ...items] : items;
     const visibleProjects = [
       ...(projectsCollapsed
         ? []
@@ -523,6 +524,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     visibleProjectConversations,
     taskItems,
     recentCollapsed,
+    props.navigationItems,
   ]);
   const orderedConversationIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
   const visibleRunningProjectPathKeys = useMemo(() => {
@@ -1278,6 +1280,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         onSetArchived={onSetArchived ? handleSetArchived : undefined}
         onMoveToWorkspace={handleMoveToWorkspace}
         moveWorkspaces={activeProjects}
+        renderMoveMenu={props.renderConversationMoveMenu}
         onShareConversation={handleShareConversation}
         onDeleteConversation={handleDeleteConversation}
         onSetPendingDelete={handleSetPendingDelete}
@@ -1317,6 +1320,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       busyConversationIds,
       canShareConversations,
       activeProjects,
+      props.renderConversationMoveMenu,
       approvalConversationIds,
       questionConversationIds,
       enterSelectionMode,
@@ -1600,7 +1604,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
             </SidebarMenu>
           </SidebarHeader>
 
-          {navigationContent}
+          {typeof navigationContent === "function"
+            ? navigationContent({ renderConversation: renderHistoryRow })
+            : navigationContent}
           <SidebarContent
             aria-disabled={sectionsDisabled || undefined}
             inert={sectionsDisabled}
