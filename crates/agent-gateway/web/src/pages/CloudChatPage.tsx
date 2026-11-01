@@ -4897,6 +4897,7 @@ export function CloudChatPage({
                               onRequestRevision={requestDocumentRevision}
                               onOpenInSpace={() => openResource("files", true)}
                               onOpenSourceConversation={navigateConversation}
+                              conversationsClient={conversationClient}
                               onBrowseLibrary={
                                 workspaceView === "library" ? () => setFilePanel(null) : undefined
                               }

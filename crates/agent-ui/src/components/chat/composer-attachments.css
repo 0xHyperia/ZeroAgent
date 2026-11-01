@@ -144,3 +144,25 @@
     transition: none;
   }
 }
+
+.za-user-file-attachment {
+  min-height: 56px;
+  border: 1px solid var(--za-border);
+  border-radius: 14px;
+  background: var(--za-surface);
+  color: hsl(var(--foreground));
+  padding: 9px 12px;
+  text-align: start;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+.za-user-file-attachment:has(button):hover {
+  background: var(--za-control-hover);
+  border-color: hsl(var(--foreground) / 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-user-file-attachment {
+    transition: none;
+  }
+}

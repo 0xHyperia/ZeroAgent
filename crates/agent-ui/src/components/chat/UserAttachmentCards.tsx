@@ -1,3 +1,4 @@
+import "./composer-attachments.css";
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "../../i18n";
@@ -92,7 +93,7 @@ function UserImageAttachmentCard(props: {
 
   return (
     <div
-      title={file.relativePath}
+      title={file.fileName}
       className={cn(
         "group relative overflow-hidden",
         "rounded-xl border border-white/60 bg-white/75 dark:border-white/[0.12] dark:bg-white/[0.06]",
@@ -204,29 +205,23 @@ function UserImageAttachmentCard(props: {
 
 function UserFileAttachmentCard(props: {
   file: PendingUploadedFile;
+  onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;
   removeLabel?: string;
   compact: boolean;
 }) {
-  const { file, onRemove, removeLabel, compact } = props;
+  const { file, onOpen, onRemove, removeLabel, compact } = props;
   const TypeIcon = getUploadedResourceFileIcon(file);
 
   return (
     <div
-      title={file.relativePath}
+      title={file.fileName}
       className={cn(
-        "group relative flex items-center gap-2",
-        "rounded-xl border border-white/60 bg-white/75 px-2.5 py-2 text-left shadow-ui-userattachmentcards-20",
-        "transition-shadow hover:shadow-ui-userattachmentcards-21 dark:border-white/[0.12] dark:bg-white/[0.06]",
+        "za-user-file-attachment group relative flex items-center gap-2",
         compact ? "min-w-0 basis-third-minus-gap grow" : "w-full",
       )}
     >
-      <div
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b",
-          "from-black/[0.03] to-black/[0.06] dark:from-white/[0.06] dark:to-white/[0.1]",
-        )}
-      >
+      <div className={cn("flex size-8 shrink-0 items-center justify-center")}>
         <TypeIcon className="size-4.5" />
       </div>
       <div className="min-w-0 flex-1">
@@ -237,6 +232,14 @@ function UserFileAttachmentCard(props: {
           {formatUploadedFileSize(file.sizeBytes)}
         </div>
       </div>
+      {onOpen ? (
+        <button
+          type="button"
+          className="absolute inset-0 rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-ring/60"
+          aria-label={`预览 ${file.fileName}`}
+          onClick={() => onOpen(file)}
+        />
+      ) : null}
       {onRemove ? (
         <button
           type="button"
@@ -263,6 +266,7 @@ function UserAttachmentCard(props: {
   imagePreviewMode: ImagePreviewMode;
   compactImageLayout: boolean;
   compactFileLayout: boolean;
+  onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;
   removeLabel?: string;
   previewLabel: string;
@@ -275,6 +279,7 @@ function UserAttachmentCard(props: {
     imagePreviewMode,
     compactImageLayout,
     compactFileLayout,
+    onOpen,
     onRemove,
     removeLabel,
     previewLabel,
@@ -313,6 +318,7 @@ function UserAttachmentCard(props: {
   return (
     <UserFileAttachmentCard
       file={file}
+      onOpen={onOpen}
       onRemove={onRemove}
       removeLabel={removeLabel}
       compact={compactFileLayout}
@@ -325,6 +331,7 @@ export function UserAttachmentCards(props: {
   workspaceRoot?: string;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
   imagePreviewMode?: ImagePreviewMode;
+  onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;
   removeLabel?: string;
 }) {
@@ -333,6 +340,7 @@ export function UserAttachmentCards(props: {
     workspaceRoot,
     onLoadUploadedImagePreview,
     imagePreviewMode = "absolutePath",
+    onOpen,
     onRemove,
     removeLabel: explicitRemoveLabel,
   } = props;
@@ -360,6 +368,7 @@ export function UserAttachmentCards(props: {
               imagePreviewMode={imagePreviewMode}
               compactImageLayout={compactImageLayout}
               compactFileLayout={false}
+              onOpen={onOpen}
               onRemove={onRemove}
               removeLabel={removeLabel}
               previewLabel={previewLabel}
@@ -379,6 +388,7 @@ export function UserAttachmentCards(props: {
               imagePreviewMode={imagePreviewMode}
               compactImageLayout={false}
               compactFileLayout={compactFileLayout}
+              onOpen={onOpen}
               onRemove={onRemove}
               removeLabel={removeLabel}
               previewLabel={previewLabel}

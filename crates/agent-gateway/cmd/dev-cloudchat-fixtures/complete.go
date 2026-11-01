@@ -162,7 +162,11 @@ func fixtureSite(version int) ([]byte, *cloudsite.Manifest, error) {
 	return result, manifest, err
 }
 
-func buildCompleteFixtures(user int64, refs []fileReference, samples string) ([]fixturePlan, error) {
+func buildCompleteFixtures(user int64, refs []fileReference, samples string, prefixes ...string) ([]fixturePlan, error) {
+	prefix := ""
+	if len(prefixes) > 0 {
+		prefix = prefixes[0]
+	}
 	doc, docBytes, err := readFixtureSample(samples, refs, ".docx")
 	if err != nil {
 		return nil, err
@@ -171,7 +175,7 @@ func buildCompleteFixtures(user int64, refs []fileReference, samples string) ([]
 	if err != nil {
 		return nil, err
 	}
-	outputKey := "complete-deliverables-v1"
+	outputKey := prefix + "complete-deliverables-v1"
 	sourceID := stableID(user, outputKey+":source")
 	turn := fixtureTurn{User: "合成验收数据：查看已保存的文档、表格、两版私有站点及来源。此案例模拟成果保存后后续整理失败，不代表真实模型/E2B执行。", State: "failed", References: []fileReference{doc, sheet}, Blocks: []fixtureBlock{
 		{Type: "reasoning", Round: 0, Seconds: 2, Text: "合成验收数据：先检查输入资料。"},
@@ -266,7 +270,7 @@ func buildCompleteFixtures(user int64, refs []fileReference, samples string) ([]
 	plan.Fingerprint = ""
 	plan.Fingerprint = digest(encoded(plan))
 
-	queue, err := buildFixture(user, fixture{Key: "complete-pending-v1", Title: "合成验收数据 · 待发送队列", Turns: []fixtureTurn{simpleTurn("合成验收数据：检查待发送内容。", "下方三条待发送内容尚未执行。可编辑、重排、删除或取回输入框；发送仍需你明确操作。")}}, -3)
+	queue, err := buildFixture(user, fixture{Key: prefix + "complete-pending-v1", Title: "合成验收数据 · 待发送队列", Turns: []fixtureTurn{simpleTurn("合成验收数据：检查待发送内容。", "下方三条待发送内容尚未执行。可编辑、重排、删除或取回输入框；发送仍需你明确操作。")}}, -3)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +291,7 @@ func buildCompleteFixtures(user int64, refs []fileReference, samples string) ([]
 			a := x.Artifacts[3].Artifact
 			parts = append(parts, map[string]any{"type": "artifact_reference", "version_id": a.ID, "name": a.Name, "mime": a.MIME, "size": a.Size})
 		}
-		item := account.CloudPendingItem{ClientItemID: stableID(user, fmt.Sprintf("complete-pending-v1:item:%d", index)), Content: encoded(parts), Model: "gpt-6.1-sol", ReasoningEffort: "high", Composer: fixtureComposer(text), Presentation: "work"}
+		item := account.CloudPendingItem{ClientItemID: stableID(user, prefix+fmt.Sprintf("complete-pending-v1:item:%d", index)), Content: encoded(parts), Model: "gpt-6.1-sol", ReasoningEffort: "high", Composer: fixtureComposer(text), Presentation: "work"}
 		q, e := mem.MutateCloudPendingQueue(ctx, user, queue.Conversation.ID, account.CloudPendingMutation{Kind: "enqueue", ExpectedVersion: queue.Extras.Queue.Version, Item: &item})
 		if e != nil {
 			return nil, e
@@ -301,7 +305,7 @@ func buildCompleteFixtures(user int64, refs []fileReference, samples string) ([]
 	queue.Fingerprint = ""
 	queue.Fingerprint = digest(encoded(queue))
 
-	draft, err := buildFixture(user, fixture{Key: "complete-saved-draft-v1", Title: "合成验收数据 · 服务端草稿恢复", Turns: []fixtureTurn{simpleTurn("合成验收数据：检查刷新后的输入恢复。", "此会话有尚未发送的工作模式草稿，含文档与成果引用。刷新后恢复，编辑后按正常草稿机制保存。")}}, -2)
+	draft, err := buildFixture(user, fixture{Key: prefix + "complete-saved-draft-v1", Title: "合成验收数据 · 服务端草稿恢复", Turns: []fixtureTurn{simpleTurn("合成验收数据：检查刷新后的输入恢复。", "此会话有尚未发送的工作模式草稿，含文档与成果引用。刷新后恢复，编辑后按正常草稿机制保存。")}}, -2)
 	if err != nil {
 		return nil, err
 	}

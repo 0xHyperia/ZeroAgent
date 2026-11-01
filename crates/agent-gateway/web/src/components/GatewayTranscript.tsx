@@ -242,6 +242,7 @@ function GatewayUserMessageBubbleBody(props: {
   text: string;
   attachments: PendingUploadedFile[];
   workspaceRoot?: string;
+  onOpenAttachment?: (file: PendingUploadedFile) => void;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
   loadCommitDetails?: CommitDetailsLoader;
 }) {
@@ -258,6 +259,7 @@ function GatewayUserMessageBubbleBody(props: {
     >
       <UserAttachmentCards
         files={visibleFiles}
+        onOpen={props.onOpenAttachment}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         imagePreviewMode="imageKind"
@@ -290,6 +292,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
   setCopiedMessageId: Dispatch<SetStateAction<string | null>>;
   setEditingMessageId: Dispatch<SetStateAction<string | null>>;
   workspaceRoot?: string;
+  onOpenAttachment?: (file: PendingUploadedFile) => void;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
   loadCommitDetails?: CommitDetailsLoader;
   onResendFromEdit?: (
@@ -309,6 +312,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
     setCopiedMessageId,
     setEditingMessageId,
     workspaceRoot,
+    onOpenAttachment,
     onLoadUploadedImagePreview,
     loadCommitDetails,
     onResendFromEdit,
@@ -346,6 +350,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
       <EditableUserMessageBubble
         initialText={row.inlineEditText ?? row.text}
         attachments={row.attachments}
+        onOpenAttachment={onOpenAttachment}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         imagePreviewMode="imageKind"
@@ -370,6 +375,7 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
       <GatewayUserMessageBubbleBody
         text={row.text}
         attachments={row.attachments}
+        onOpenAttachment={onOpenAttachment}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         loadCommitDetails={loadCommitDetails}
@@ -1117,6 +1123,17 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 onLoadUploadedImagePreview={onLoadUploadedImagePreview}
                 loadCommitDetails={loadCommitDetails}
                 onResendFromEdit={onResendFromEdit}
+                onOpenAttachment={
+                  onOpenFileLink
+                    ? (file) =>
+                        onOpenFileLink({
+                          path: /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(file.relativePath)
+                            ? `cloud-files/${file.relativePath}`
+                            : file.relativePath,
+                          source: "relative",
+                        })
+                    : undefined
+                }
                 onLoadContent={
                   (row.contentOmitted || row.contentPreview) && onOpenFileLink
                     ? () =>

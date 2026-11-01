@@ -1,13 +1,10 @@
 import {
-  Check,
   Download,
   FileText,
   FolderOpen,
   Info,
-  MoreHorizontal,
   Plus,
   Search,
-  Trash2,
   Upload,
 } from "@liveagent/ui/components/IconSet";
 import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
@@ -20,13 +17,7 @@ import {
   ResourceTitleMenu,
 } from "@liveagent/ui/components/resource-preview/ResourceReaderDetails";
 import { Button } from "@liveagent/ui/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@liveagent/ui/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { TooltipButton as ReaderAction } from "@liveagent/ui/components/ui/tooltip-button";
 import { useEffect, useRef, useState } from "react";
@@ -40,6 +31,10 @@ import {
   cloudFileStatus,
 } from "@/lib/cloudChatFiles";
 import { CloudChatFeedback } from "./cloudchat/CloudChatFeedback";
+import {
+  CloudChatRelatedConversations,
+  type ReaderConversationsClient,
+} from "./cloudchat/CloudChatRelatedConversations";
 import { CloudChatResourcePanel } from "./cloudchat/CloudChatResourcePanel";
 
 type Props = {
@@ -63,6 +58,7 @@ type Props = {
   onBrowseLibrary?: () => void;
   onOpenInSpace?: () => void;
   onOpenSourceConversation?: (id: string) => void;
+  conversationsClient?: ReaderConversationsClient;
 };
 
 export function CloudChatFilePanel(props: Props) {
@@ -77,16 +73,6 @@ export function CloudChatFilePanel(props: Props) {
   const [query, setQuery] = useState("");
   const [sourceOpen, setSourceOpen] = useState(props.fromLine !== undefined);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const selectedUsage =
-    selected?.state === "vision_ready"
-      ? "可由支持视觉的模型理解，此文件没有文字原文。"
-      : selected?.workspace_loadable
-        ? selected.mime === "application/zip"
-          ? "引用后可在隔离沙箱中读取或解压，不会自动运行其中的代码。"
-          : "可在工作模式中读取；在线预览不表示文件已完成文本解析。"
-        : selected?.state !== "ready"
-          ? "暂时无法供模型理解，可下载原件或刷新处理状态。"
-          : "引用资料后，可在对话中继续分析。";
   const mounted = useRef(true);
   const controller = useRef(new AbortController());
   const generation = useRef(0);
@@ -284,6 +270,16 @@ export function CloudChatFilePanel(props: Props) {
       title={
         selected ? (
           <ResourceTitleMenu name={selected.name}>
+            <DropdownMenuItem
+              className="gap-2"
+              disabled={
+                busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
+              }
+              onClick={() => attach(selected)}
+            >
+              <Plus className="size-4" />
+              引用到消息
+            </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" onClick={() => setDetailsOpen(true)}>
               <Info className="size-4" />
               文件信息
@@ -313,26 +309,13 @@ export function CloudChatFilePanel(props: Props) {
               <dd>{(selected.size / 1024).toFixed(1)} KB</dd>
               <dt>最近更新</dt>
               <dd>{new Date(selected.updated_at).toLocaleString("zh-CN")}</dd>
-              <dt>状态</dt>
-              <dd>{cloudFileStatus(selected)}</dd>
-              <dt>AI 使用</dt>
-              <dd>{selectedUsage}</dd>
             </dl>
-            {selected.conversation_id && props.onOpenSourceConversation ? (
-              <dl>
-                <dt>来源对话</dt>
-                <dd>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="px-0"
-                    onClick={() => props.onOpenSourceConversation?.(selected.conversation_id)}
-                  >
-                    打开来源对话
-                  </Button>
-                </dd>
-              </dl>
-            ) : null}
+            <CloudChatRelatedConversations
+              ids={[selected.conversation_id]}
+              client={props.conversationsClient}
+              isCurrent={props.isCurrent}
+              onOpen={props.onOpenSourceConversation}
+            />
           </ResourceInspector>
         ) : null
       }
@@ -349,78 +332,20 @@ export function CloudChatFilePanel(props: Props) {
       }
       headerActions={
         selected ? (
-          <>
-            <ReaderAction
-              variant="ghost"
-              size="sm"
-              className="cloud-reader-reference-action"
-              aria-label={props.attached ? "已添加到草稿" : "引用到消息"}
-              tooltip={props.attached ? "已添加到草稿" : "引用到消息"}
-              disabled={
-                busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
-              }
-              onClick={() => attach(selected)}
-            >
-              {props.attached ? <Check className="size-4" /> : <Plus className="size-4" />}
-              <span className="sr-only">{props.attached ? "已添加到草稿" : "引用到消息"}</span>
-            </ReaderAction>
-            <ReaderAction
-              variant="ghost"
-              size="icon-sm"
-              data-reader-secondary=""
-              aria-label="下载原件"
-              tooltip="下载原件"
-              disabled={
-                busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
-              }
-              onClick={() => void download(selected)}
-            >
-              <Download className="size-4" />
-              <span className="sr-only">下载原件</span>
-            </ReaderAction>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="文件更多操作"
-                disabled={busy}
-              >
-                <MoreHorizontal className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={
-                    busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
-                  }
-                  onClick={() => attach(selected)}
-                  className="gap-2.5"
-                >
-                  <Plus className="size-4" />
-                  {props.attached ? "已添加到草稿" : "引用到消息"}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setDetailsOpen(true)} className="gap-2.5">
-                  <Info className="size-4" />
-                  文件信息
-                </DropdownMenuItem>
-                {source ? (
-                  <DropdownMenuItem
-                    onClick={() => setSourceOpen((open) => !open)}
-                    className="gap-2.5"
-                  >
-                    <FileText className="size-4" />
-                    {sourceOpen ? "收起原文" : "查看原文"}
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setConfirmDelete(selected.id)}
-                  className="gap-2.5 text-destructive"
-                >
-                  <Trash2 className="size-4" />
-                  删除原件
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
+          <ReaderAction
+            variant="ghost"
+            size="icon-sm"
+            data-reader-secondary=""
+            aria-label="下载原件"
+            tooltip="下载原件"
+            disabled={
+              busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
+            }
+            onClick={() => void download(selected)}
+          >
+            <Download className="size-4" />
+            <span className="sr-only">下载原件</span>
+          </ReaderAction>
         ) : undefined
       }
       closeLabel="关闭文件库"

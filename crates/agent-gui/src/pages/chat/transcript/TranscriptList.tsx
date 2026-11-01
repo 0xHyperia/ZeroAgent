@@ -646,6 +646,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
                   isEditing={editingMessageKey === row.key}
                   workspaceRoot={workspaceRoot}
                   loadCommitDetails={loadCommitDetails}
+                  onOpenFileLink={onOpenFileLink}
                   onStartEdit={handleStartEdit}
                   onCancelEdit={handleCancelEdit}
                   onResendFromEdit={onResendFromEdit}

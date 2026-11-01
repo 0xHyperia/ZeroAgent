@@ -6,13 +6,24 @@ import {
   TextLayer,
 } from "pdfjs-dist";
 import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { type RefObject, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { List, MessageSquare } from "../IconSet";
+import {
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { List, SquareMousePointer } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { DocumentNavigation } from "./DocumentNavigation";
 import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
+import { PreviewScrollArea } from "./PreviewScrollArea";
 import {
+  PreviewLeadingTools,
   PreviewPageControls,
   PreviewToolbar,
   PreviewZoomControl,
@@ -26,6 +37,12 @@ import {
   ResourceDocumentComments,
   type RevisionSelection,
 } from "./ResourceDocumentComments";
+import {
+  COMMENT_CURSOR,
+  COMMENT_PIN,
+  READER_NAVIGATION_INSET,
+  readerScrollBehavior,
+} from "./readerInteraction";
 import { type PreviewZoom, usePreviewReadingState } from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
 
@@ -50,6 +67,13 @@ export default function ResourcePDFPreview({
   const chrome = useContext(PreviewToolbarMount);
   const [navigation, setNavigation] = usePreviewReadingState("pdfNavigation", false);
   const [annotating, setAnnotating] = useState(false);
+  const annotationExit = useRef<(() => void) | null>(null);
+  const annotationState = useRef(false);
+  annotationState.current = annotating;
+  const toggleAnnotation = useCallback(() => {
+    if (annotationState.current) annotationExit.current?.();
+    else setAnnotating(true);
+  }, []);
   const [selection, setSelection] = useState<RevisionSelection | null>(null);
   const [commentDestination, setCommentDestination] = useState<{
     comment: DocumentRevisionComment;
@@ -67,8 +91,8 @@ export default function ResourcePDFPreview({
           页面目录
         </DropdownMenuItem>
         {onRequestRevision ? (
-          <DropdownMenuItem onClick={() => setAnnotating((old) => !old)}>
-            <MessageSquare className="size-4" />
+          <DropdownMenuItem onClick={toggleAnnotation}>
+            <SquareMousePointer className="size-4" />
             请求修改
           </DropdownMenuItem>
         ) : null}
@@ -76,14 +100,24 @@ export default function ResourcePDFPreview({
       </>,
     );
     return () => setFileMenu(null);
-  }, [setFileMenu, thumbnail, onRequestRevision, setNavigation]);
+  }, [setFileMenu, thumbnail, onRequestRevision, setNavigation, toggleAnnotation]);
 
   const workspace = useRef<HTMLDivElement>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = usePreviewReadingState("pdfPage", 1);
   const [zoom, setZoom] = usePreviewReadingState("pdfZoom", "fit-width");
   const [error, setError] = useState("");
-  const { container, viewport } = usePreviewViewport<HTMLElement>();
+  const { container, viewport, sideInset } = usePreviewViewport();
+  const paperViewport = {
+    ...viewport,
+    width: Math.max(
+      1,
+      viewport.width -
+        sideInset -
+        (navigation && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0),
+    ),
+  };
+  const [actualPercent, setActualPercent] = useState(100);
   const initialPage = useRef(page);
   const currentPage = useRef(page);
   currentPage.current = page;
@@ -101,19 +135,20 @@ export default function ResourcePDFPreview({
       const element = container.current;
       if (!element || !document) return;
       const line = element.scrollTop + element.clientHeight * 0.45;
+      const pages = element.querySelectorAll<HTMLElement>("[data-pdf-page]");
       // Stable page placeholders permit logarithmic lookup even in long documents.
       let low = 0,
-        high = element.children.length - 1,
+        high = pages.length - 1,
         index = 0;
       while (low <= high) {
         const middle = (low + high) >>> 1;
-        const candidate = element.children[middle];
+        const candidate = pages[middle];
         if (candidate instanceof HTMLElement && candidate.offsetTop <= line) {
           index = middle;
           low = middle + 1;
         } else high = middle - 1;
       }
-      const number = Number(element.children[index]?.getAttribute("data-pdf-page"));
+      const number = Number(pages[index]?.getAttribute("data-pdf-page"));
       if (number >= 1 && number <= document.numPages) setPage(number);
     });
   }
@@ -167,104 +202,124 @@ export default function ResourcePDFPreview({
         ?.scrollIntoView?.({ block: "start", behavior: "instant" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [document, container, viewport.width, viewport.height, zoom]);
+  }, [document, container, viewport.width, viewport.height, zoom, sideInset, navigation]);
   function navigatePage(target: number) {
     if (!document || !Number.isInteger(target) || target < 1 || target > document.numPages) return;
     setPage(target);
     container.current
       ?.querySelector(`[data-pdf-page="${target}"]`)
-      ?.scrollIntoView?.({ block: "start", behavior: "instant" });
+      ?.scrollIntoView?.({ block: "start", behavior: readerScrollBehavior() });
+  }
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  function trackSelection() {
+    const current = selectionRef.current,
+      host = workspace.current?.getBoundingClientRect();
+    const paper = container.current?.querySelector<HTMLElement>(
+      `[data-pdf-page="${current?.page}"]`,
+    );
+    const layer = paper?.querySelector<HTMLElement>(".za-pdf-text-layer");
+    if (!current || !host || !paper || !layer) return;
+    const bounds = paper.getBoundingClientRect();
+    const region = current.region;
+    const rect = region
+      ? {
+          left: bounds.left + region.left * bounds.width,
+          top: bounds.top + region.top * bounds.height,
+          bottom: bounds.top + (region.top + region.height) * bounds.height,
+        }
+      : pdfTextRange(layer, current.start, current.end, current.quote)?.getBoundingClientRect();
+    if (!rect) return;
+    setSelection((old) =>
+      old
+        ? {
+            ...old,
+            x: Math.max(12, Math.min(rect.left - host.left, host.width - 352)),
+            y: Math.min(rect.bottom - host.top, host.height - 110),
+            visible: rect.bottom - host.top > 72 && rect.top - host.top < host.height - 20,
+          }
+        : null,
+    );
   }
   return (
     <>
       <PreviewToolbar label="PDF" detail="只读">
-        {!thumbnail ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="PDF 页面目录"
-            onClick={() => setNavigation(!navigation)}
-          >
-            <List className="size-4" />
-          </Button>
-        ) : null}
-        {onRequestRevision && !thumbnail ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="za-request-revision"
-            data-active={annotating}
-            onClick={() => setAnnotating(!annotating)}
-          >
-            <MessageSquare className="size-4" />
-            请求修改
-          </Button>
-        ) : null}
-        <PreviewPageControls page={page} count={document?.numPages ?? 0} onPage={navigatePage} />
-        <PreviewZoomControl label="PDF 缩放" value={zoom} onChange={setZoom} />
-      </PreviewToolbar>
-      <div className="za-document-workspace" ref={workspace}>
-        {!thumbnail && document ? (
-          navigation ? (
-            <aside className="za-document-navigation" aria-label="PDF 页面目录">
-              <header>
-                <strong>{document.numPages} 页</strong>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="收起 PDF 目录"
-                  onClick={() => setNavigation(false)}
-                >
-                  <List className="size-4" />
-                </Button>
-              </header>
-              <nav>
-                {Array.from({ length: Math.min(document.numPages, 80) }, (_, index) => (
-                  <button
-                    type="button"
-                    key={index + 1}
-                    className="za-document-page-link"
-                    aria-label={`跳到第 ${index + 1} 页`}
-                    aria-current={page === index + 1 ? "page" : undefined}
-                    onClick={() => navigatePage(index + 1)}
-                  >
-                    <span>{index + 1}</span>
-                    <PDFPage
-                      document={document}
-                      number={index + 1}
-                      selected={false}
-                      zoom="fit-width"
-                      pane={{ width: 124, height: 180 }}
-                      root={workspace}
-                      assertCurrent={assertCurrent}
-                    />
-                  </button>
-                ))}
-              </nav>
-            </aside>
-          ) : (
-            <button
-              type="button"
-              className="za-document-navigation-rail"
-              aria-label="展开 PDF 目录"
-              onClick={() => setNavigation(true)}
+        <PreviewLeadingTools>
+          {onRequestRevision && !thumbnail ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="za-request-revision"
+              data-active={annotating}
+              onClick={toggleAnnotation}
             >
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
-            </button>
-          )
+              <SquareMousePointer className="size-4" />
+              请求修改
+            </Button>
+          ) : null}
+        </PreviewLeadingTools>
+        <PreviewPageControls page={page} count={document?.numPages ?? 0} onPage={navigatePage} />
+        <PreviewZoomControl
+          label="PDF 缩放"
+          value={zoom}
+          onChange={setZoom}
+          actualPercent={actualPercent}
+        />
+      </PreviewToolbar>
+      <div
+        className="za-document-workspace"
+        ref={workspace}
+        data-navigation-pinned={navigation}
+        data-annotating={annotating}
+        style={
+          {
+            "--za-comment-cursor": COMMENT_CURSOR,
+            "--za-comment-pin": COMMENT_PIN,
+          } as React.CSSProperties
+        }
+      >
+        {!thumbnail && document ? (
+          <DocumentNavigation
+            label="PDF 目录"
+            pinned={navigation}
+            onPinned={setNavigation}
+            count={document.numPages}
+            current={page}
+            title={`${document.numPages} 页`}
+          >
+            {Array.from({ length: Math.min(document.numPages, 80) }, (_, index) => (
+              <button
+                type="button"
+                // biome-ignore lint/suspicious/noArrayIndexKey: Immutable PDF page numbers are stable identities.
+                key={index + 1}
+                className="za-document-page-link"
+                aria-label={`跳到第 ${index + 1} 页`}
+                aria-current={page === index + 1 ? "page" : undefined}
+                onClick={() => navigatePage(index + 1)}
+              >
+                <span>{index + 1}</span>
+                <PDFPage
+                  document={document}
+                  number={index + 1}
+                  selected={false}
+                  zoom="fit-width"
+                  pane={{ width: 124, height: 180 }}
+                  root={workspace}
+                  assertCurrent={assertCurrent}
+                />
+              </button>
+            ))}
+          </DocumentNavigation>
         ) : null}
-        <section
+        <PreviewScrollArea
           ref={container}
           className="za-preview-pdf"
           aria-label="PDF 阅读画布"
           aria-busy={!document && !error}
-          onScroll={trackPage}
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: focus scopes page shortcuts to this reading canvas
+          onScroll={() => {
+            trackPage();
+            trackSelection();
+          }}
           tabIndex={0}
           onKeyDown={(event) => previewPageKey(event, page, document?.numPages ?? 0, navigatePage)}
         >
@@ -279,7 +334,8 @@ export default function ResourcePDFPreview({
                 number={index + 1}
                 selected={page === index + 1}
                 zoom={zoom}
-                pane={viewport}
+                pane={paperViewport}
+                onScale={index === 0 ? setActualPercent : undefined}
                 root={container}
                 assertCurrent={assertCurrent}
                 onDownload={onDownload}
@@ -288,15 +344,17 @@ export default function ResourcePDFPreview({
                 onSelection={setSelection}
                 workspace={workspace}
                 comments={markedComments}
+                activeSelection={selection}
                 commentDestination={commentDestination}
               />
             ))
           ) : (
             <PreviewLoading message="正在读取 PDF…" onCancel={onCancel} />
           )}
-        </section>
+        </PreviewScrollArea>
         {!thumbnail ? (
           <ResourceDocumentComments
+            exitRef={annotationExit}
             enabled={annotating}
             onEnabled={setAnnotating}
             selection={selection}
@@ -331,7 +389,11 @@ function PDFPage({
   workspace,
   comments = NO_COMMENTS,
   commentDestination,
+  onScale,
+  activeSelection,
 }: PreviewRecovery & {
+  onScale?: (percent: number) => void;
+  activeSelection?: RevisionSelection | null;
   comments?: readonly DocumentRevisionComment[];
   commentDestination?: { comment: DocumentRevisionComment; request: number } | null;
   annotating?: boolean;
@@ -357,11 +419,21 @@ function PDFPage({
   const [marks, setMarks] = useState<
     { key: string; left: number; top: number; width: number; height: number }[]
   >([]);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  const [lasso, setLasso] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const enabled = near || selected;
   const scale = boundedPreviewScale(
     previewScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 }),
     size,
   );
+  useEffect(() => {
+    onScale?.(scale * 100);
+  }, [scale, onScale]);
   useEffect(() => {
     const element = holder.current;
     if (!element || typeof IntersectionObserver === "undefined") return;
@@ -440,6 +512,7 @@ function PDFPage({
   }, [enabled]);
   // Geometry is measured from the newly rendered glyph layer, never from stale PDF coordinates.
   useLayoutEffect(() => {
+    if (!textRevision) return;
     const paper = holder.current,
       layer = text.current;
     const box = paper?.getBoundingClientRect();
@@ -450,6 +523,16 @@ function PDFPage({
     const rectangles: typeof marks = [];
     for (const comment of comments) {
       if (comment.block !== `pdf-page-${number}`) continue;
+      if (comment.region) {
+        rectangles.push({
+          key: comment.id,
+          left: comment.region.left * 100,
+          top: comment.region.top * 100,
+          width: comment.region.width * 100,
+          height: comment.region.height * 100,
+        });
+        continue;
+      }
       const range = pdfTextRange(layer, comment.start, comment.end, comment.quote);
       if (!range || typeof range.getClientRects !== "function") continue;
       for (const rect of Array.from(range.getClientRects()).slice(0, 128)) {
@@ -466,6 +549,7 @@ function PDFPage({
     setMarks(rectangles);
   }, [comments, number, enabled, busy, textRevision]);
   useLayoutEffect(() => {
+    if (!textRevision) return;
     if (
       !commentDestination ||
       commentDestination.request === navigatedRequest.current ||
@@ -480,14 +564,96 @@ function PDFPage({
     const element = range?.startContainer.parentElement;
     if (element) {
       navigatedRequest.current = commentDestination.request;
-      element.scrollIntoView?.({ block: "center", behavior: "instant" });
+      element.scrollIntoView?.({ block: "center", behavior: readerScrollBehavior() });
     }
   }, [commentDestination, number, enabled, busy, textRevision]);
   return (
+    // biome-ignore lint/a11y/useSemanticElements: A rendered PDF page groups text and canvas, rather than form fields.
     <div
       ref={holder}
+      role="group"
+      aria-label={`第 ${number} 页`}
       className="za-preview-pdf-page"
       data-annotating={annotating}
+      onPointerDown={(event) => {
+        if (!annotating || event.button !== 0 || event.shiftKey) return;
+        event.preventDefault();
+        window.getSelection()?.removeAllRanges();
+        const box = event.currentTarget.getBoundingClientRect();
+        drag.current = { x: event.clientX - box.left, y: event.clientY - box.top };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const start = drag.current;
+        if (!start) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        const x = Math.max(0, Math.min(box.width, event.clientX - box.left)),
+          y = Math.max(0, Math.min(box.height, event.clientY - box.top));
+        setLasso({
+          left: Math.min(start.x, x),
+          top: Math.min(start.y, y),
+          width: Math.abs(start.x - x),
+          height: Math.abs(start.y - y),
+        });
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+        setLasso(null);
+      }}
+      onPointerUp={(event) => {
+        const start = drag.current;
+        drag.current = null;
+        if (!start || !onSelection || !text.current) return;
+        const paper = event.currentTarget.getBoundingClientRect(),
+          host = workspace?.current?.getBoundingClientRect();
+        const area = lasso;
+        setLasso(null);
+        if (!host) return;
+        const nodes = [...text.current.querySelectorAll<HTMLElement>('span[role="presentation"]')];
+        let offset = 0,
+          from = -1,
+          to = -1;
+        for (const node of nodes) {
+          const bounds = node.getBoundingClientRect(),
+            length = node.textContent?.length ?? 0;
+          const hit =
+            area && area.width > 5 && area.height > 5
+              ? bounds.left < paper.left + area.left + area.width &&
+                bounds.right > paper.left + area.left &&
+                bounds.top < paper.top + area.top + area.height &&
+                bounds.bottom > paper.top + area.top
+              : event.clientX >= bounds.left &&
+                event.clientX <= bounds.right &&
+                event.clientY >= bounds.top &&
+                event.clientY <= bounds.bottom;
+          if (hit) {
+            if (from < 0) from = offset;
+            to = offset + length;
+          }
+          offset += length;
+        }
+        if (from < 0 || to <= from) return;
+        const quote = (text.current.textContent ?? "").slice(from, Math.min(to, from + 2000));
+        const region =
+          area && area.width > 5 && area.height > 5
+            ? {
+                left: area.left / paper.width,
+                top: area.top / paper.height,
+                width: area.width / paper.width,
+                height: area.height / paper.height,
+              }
+            : undefined;
+        onSelection({
+          id: `pdf-page-${number}`,
+          page: number,
+          start: from,
+          end: from + quote.length,
+          quote,
+          x: Math.max(12, Math.min(event.clientX - host.left, host.width - 352)),
+          y: Math.min(event.clientY - host.top, host.height - 150),
+          region,
+        });
+      }}
       onMouseUp={(event) => {
         if (!annotating || !onSelection || !text.current) return;
         const selection = window.getSelection();
@@ -535,9 +701,31 @@ function PDFPage({
       />
       <div ref={text} className="za-pdf-text-layer" />
       <div className="za-pdf-comment-marks" aria-hidden="true">
+        {lasso ? (
+          <span
+            className="za-pdf-region"
+            style={{ left: lasso.left, top: lasso.top, width: lasso.width, height: lasso.height }}
+          />
+        ) : null}
+        {activeSelection?.page === number && activeSelection.region ? (
+          <span
+            className="za-pdf-region"
+            style={{
+              left: `${activeSelection.region.left * 100}%`,
+              top: `${activeSelection.region.top * 100}%`,
+              width: `${activeSelection.region.width * 100}%`,
+              height: `${activeSelection.region.height * 100}%`,
+            }}
+          />
+        ) : null}
         {marks.map((mark) => (
           <span
             key={mark.key}
+            data-note={
+              comments.find(
+                (comment) => mark.key === comment.id || mark.key.startsWith(`${comment.id}-`),
+              )?.comment
+            }
             style={{
               left: `${mark.left}%`,
               top: `${mark.top}%`,

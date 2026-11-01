@@ -26,7 +26,7 @@
   overscroll-behavior: contain;
 }
 .za-docx-zoom-surface {
-  min-height: 100%;
+  flex-shrink: 0;
   overflow: hidden;
 }
 .za-docx-zoom-surface > iframe {
@@ -54,12 +54,14 @@
   font-weight: 500;
 }
 .za-reader-inspector {
-  flex: 0 0 260px;
-  width: 260px;
+  position: absolute;
+  z-index: 4;
+  inset: 52px 12px 8px auto;
+  width: 272px;
   max-width: calc(100% - 24px);
   min-height: 0;
   overflow: auto;
-  margin: var(--za-reader-top-inset, 8px) 8px 8px 0;
+  margin: 0;
   border: 1px solid var(--za-border);
   border-radius: 20px;
   box-shadow: 0 3px 12px rgb(0 0 0 / 0.045);
@@ -126,49 +128,25 @@
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid var(--za-border);
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px 8px;
 }
 .za-reader-inspector-content dt {
-  margin-top: 14px;
-  font-size: 11px;
+  margin: 0;
+  font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
 .za-reader-inspector-content dd {
-  margin: 2px 0 0;
-}
-.za-reader-version {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  width: 100%;
-  min-height: 64px;
-  margin-bottom: 6px;
-  padding: 11px 12px;
-  border-radius: 12px;
-  text-align: left;
-  transition: background-color 140ms ease;
-}
-.za-reader-version:hover {
-  background: var(--za-control-hover);
-}
-.za-reader-version[aria-current="true"] {
-  background: var(--za-control-selected);
-}
-.za-reader-version span {
-  font-size: 11px;
-  color: hsl(var(--muted-foreground));
-}
-.za-reader-version:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: -2px;
+  margin: 0;
 }
 @container reader-stage (max-width: 780px) {
   .za-reader-inspector {
     position: absolute;
     z-index: 4;
-    inset: var(--za-reader-top-inset, 8px) 8px 8px auto;
+    inset: 52px 12px 8px auto;
     margin: 0;
-    width: min(280px, calc(100% - 24px));
+    width: min(272px, calc(100% - 24px));
     border: 1px solid var(--za-border);
     border-radius: 20px;
     box-shadow: 0 8px 30px rgb(0 0 0 / 0.1);
@@ -183,9 +161,6 @@
 @media (prefers-reduced-motion: reduce) {
   .za-reader-inspector {
     animation: none;
-  }
-  .za-reader-version {
-    transition: none;
   }
 }
 .za-resource-preview[data-variant="thumbnail"] {
@@ -1017,12 +992,15 @@
 .za-document-workspace > .za-docx-zoom-viewport {
   min-width: 0;
   height: 100%;
+  /* Paper transforms are anchored by the reader, never by the browser's DOM scroll anchor. */
+  overflow-anchor: none;
 }
 .za-document-navigation {
-  flex: 0 0 172px;
-  width: 172px;
+  position: absolute;
+  inset: var(--za-reader-top-inset, 12px) auto 8px 6px;
+  width: 232px;
   min-height: 0;
-  margin: var(--za-reader-top-inset, 12px) 0 8px 8px;
+  margin: 0;
   border: 1px solid var(--za-border);
   border-radius: 20px;
   background: var(--za-surface);
@@ -1038,7 +1016,7 @@
   padding: 8px;
   gap: 2px;
   font-size: 12px;
-  color: var(--za-text-secondary);
+  color: hsl(var(--muted-foreground));
 }
 .za-document-navigation > header strong {
   flex: 1;
@@ -1065,14 +1043,54 @@
   transition: background 140ms;
 }
 .za-document-navigation nav > button:hover {
-  background: var(--za-surface-hover);
+  background: var(--za-control-hover);
 }
 .za-document-navigation nav > button[aria-current] {
   background: #e7effa;
   color: #3276d4;
 }
-.za-document-page-link {
-  display: flex !important;
+.za-document-navigation nav > button[aria-current]:hover {
+  background: #dce8fa;
+}
+.za-document-navigation nav > button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+.za-document-navigation-zone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 3;
+  width: 22px;
+}
+.za-document-navigation-zone[data-open="true"] {
+  width: 244px;
+}
+.za-document-navigation-zone[data-open="true"] > .za-document-navigation-rail {
+  visibility: hidden;
+}
+.za-document-workspace[data-navigation-pinned="true"] {
+  --za-reader-navigation-inset: 244px;
+}
+.za-reader-stage:has(> .za-reader-inspector) {
+  --za-reader-side-inset: 288px;
+}
+.za-docx-zoom-viewport > .za-preview-scroll-content {
+  padding-inline: var(--za-reader-navigation-inset, 0px) var(--za-reader-side-inset, 0px);
+}
+.za-preview-pdf > .za-preview-scroll-content {
+  padding-inline: calc(var(--za-reader-navigation-inset, 0px) + 16px)
+    calc(var(--za-reader-side-inset, 0px) + 16px);
+}
+@container reader-stage (max-width: 599px) {
+  .za-reader-stage:has(> .za-reader-inspector),
+  .za-document-workspace,
+  .za-document-workspace[data-navigation-pinned="true"] {
+    --za-reader-side-inset: 0px;
+    --za-reader-navigation-inset: 0px;
+  }
+}
+.za-document-navigation nav > .za-document-page-link {
+  display: flex;
   align-items: start;
   gap: 6px;
 }
@@ -1088,7 +1106,7 @@
 .za-document-page-cover iframe {
   width: 864px;
   height: 1120px;
-  transform: scale(0.14);
+  transform: scale(0.21);
   transform-origin: top left;
   pointer-events: none;
   border: 0;
@@ -1096,10 +1114,10 @@
 }
 .za-document-navigation-rail {
   position: absolute;
-  inset: 45% auto auto 2px;
+  inset: 45% auto auto 0;
   z-index: 3;
-  width: 18px;
-  padding: 12px 4px;
+  width: 22px;
+  padding: 12px 6px;
   background: transparent;
   border: 0;
   display: grid;
@@ -1116,15 +1134,15 @@
     width 140ms;
   width: 8px;
 }
-.za-document-navigation-rail span:first-child {
+.za-document-navigation-rail span[data-current="true"] {
   background: #757575;
   width: 10px;
 }
 .za-document-navigation-rail:hover {
-  background: var(--za-surface);
+  background: transparent;
 }
 .za-document-navigation-rail:hover span {
-  background: var(--za-text-secondary);
+  background: hsl(var(--muted-foreground));
   width: 10px;
 }
 .za-request-revision[data-active="true"] {
@@ -1144,7 +1162,7 @@
 }
 .za-document-comment-input {
   position: absolute;
-  width: min(336px, calc(100% - 32px));
+  width: min(360px, calc(100% - 24px));
   max-height: 180px;
   border-radius: 18px;
   border: 1px solid var(--za-border);
@@ -1158,7 +1176,7 @@
   padding: 4px 8px;
   margin-bottom: 6px;
   border-left: 2px solid #93bdf2;
-  color: var(--za-text-secondary);
+  color: hsl(var(--muted-foreground));
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1200,7 +1218,7 @@
   flex-shrink: 0;
   border-radius: 999px;
 }
-.za-document-comment-queue > button:last-child:not(.za-document-comment-count) {
+.za-document-comment-queue > .za-document-comment-send {
   background: #377cf4;
   color: #fff;
 }
@@ -1222,7 +1240,7 @@
   border-radius: 12px;
   background: var(--za-surface);
   font-size: 12px;
-  color: var(--za-danger);
+  color: hsl(var(--destructive));
 }
 .za-reader-button-spinner {
   display: inline-block;
@@ -1241,8 +1259,8 @@
 @container resource-preview (max-width: 600px) {
   .za-document-navigation {
     position: absolute;
-    inset: 0 auto 0 0;
-    width: 172px;
+    inset: var(--za-reader-top-inset, 64px) auto 8px 6px;
+    width: min(232px, calc(100vw - 48px));
     box-shadow: 0 6px 24px #0002;
   }
   .za-document-comment-queue {
@@ -1297,7 +1315,7 @@
   background: #80b9ee70;
 }
 .za-preview-pdf-page[data-annotating="true"] .za-pdf-text-layer span:hover {
-  outline: 1px dashed #8ebaf2;
+  outline: 1px solid #3478df;
 }
 .za-document-page-link .za-preview-pdf-page {
   min-width: 0;
@@ -1342,19 +1360,6 @@
 
 .za-reader-history-time-compact {
   display: none;
-}
-.za-reader-version {
-  position: relative;
-}
-.za-reader-version[aria-current="true"]::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 14px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .za-document-page-link .za-preview-paper-number {
@@ -1415,7 +1420,7 @@
 }
 .za-document-comment-list-page {
   font-size: 11px;
-  color: var(--za-text-secondary);
+  color: hsl(var(--muted-foreground));
 }
 .za-document-comment-list q,
 .za-document-comment-list-text {
@@ -1429,8 +1434,17 @@
   line-height: 1.6;
 }
 .za-document-comment-list q {
-  color: var(--za-text-secondary);
-  -webkit-line-clamp: 2;
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  quotes: none;
+  color: hsl(var(--muted-foreground));
+}
+.za-document-comment-list-text {
+  font-size: 14px;
+  color: hsl(var(--foreground));
+  margin-top: 5px;
 }
 .za-document-comment-list-actions {
   display: flex;
@@ -1473,5 +1487,328 @@
   .za-document-comment-input button {
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+/* Full-height reading viewport; only content reserves the initial tool clearance. */
+.za-preview-scroll-root {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.za-preview-scroll-content {
+  min-height: 100%;
+  min-width: 100%;
+}
+.za-preview-scroll-root
+  > :is(
+    .za-docx-zoom-viewport,
+    .za-preview-pdf,
+    .za-preview-slide-scroll,
+    .za-preview-image-scroll,
+    .za-preview-table-scroll
+  ) {
+  height: 100%;
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+.za-docx-zoom-viewport > .za-preview-scroll-content {
+  display: flex;
+  flex-direction: column;
+}
+.za-preview-pdf > .za-preview-scroll-content {
+  padding: var(--za-reader-top-inset, 28px) calc(var(--za-reader-side-inset, 0px) + 16px) 52px
+    calc(var(--za-reader-navigation-inset, 0px) + 16px);
+}
+.za-preview-slide-scroll > .za-preview-scroll-content {
+  display: grid;
+  min-height: 100%;
+  padding-top: var(--za-reader-top-inset, 0px);
+}
+.za-preview-table-scroll > .za-preview-scroll-content {
+  padding-top: var(--za-reader-top-inset, 0px);
+}
+
+.za-preview-scroll-root > :is(.za-preview-reading-scroll, .za-preview-text-scroll) {
+  height: 100%;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+.za-preview-reading-scroll > .za-preview-scroll-content {
+  padding: var(--za-reader-top-inset, 24px) 24px 24px;
+}
+.za-preview-text-scroll .za-preview-text {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  padding-top: var(--za-reader-top-inset, 20px);
+}
+
+/* Annotation surfaces stay at interface scale while paper changes size. */
+.za-document-comment-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 32px;
+  cursor: grab;
+  touch-action: none;
+}
+.za-document-comment-drag:active {
+  cursor: grabbing;
+}
+.za-document-comment-queue {
+  border-radius: 14px;
+  padding: 5px 8px;
+  font-size: 14px;
+  gap: 8px;
+}
+.za-document-comment-queue > .za-document-comment-send {
+  border-radius: 10px;
+}
+.za-document-comment-input {
+  border-radius: 999px;
+  padding: 4px 6px;
+  animation: za-comment-enter 150ms ease-out;
+}
+.za-document-comment-quote {
+  display: none;
+}
+.za-document-comment-field input {
+  font-size: 14px;
+  padding: 8px 12px;
+}
+.za-request-revision {
+  transition:
+    background 160ms,
+    color 160ms,
+    box-shadow 160ms;
+}
+.za-request-revision:active {
+  transform: scale(0.97);
+}
+.za-document-comment-field button {
+  border-radius: 999px;
+}
+.za-document-comment-field button[type="submit"] {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  background: #171717;
+  color: white;
+  transition:
+    background 140ms,
+    transform 140ms;
+}
+.za-document-comment-field button[type="submit"]:disabled {
+  background: #a3a3a3;
+  opacity: 1;
+}
+.za-document-comment-field button[type="submit"]:not(:disabled):hover {
+  background: #333;
+  transform: scale(1.05);
+}
+.za-document-image-shortcut {
+  position: absolute;
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  background: var(--za-surface);
+  box-shadow: 0 4px 12px #0002;
+  animation: za-comment-enter 150ms ease-out;
+}
+.za-document-image-shortcut button {
+  gap: 6px;
+  border-radius: inherit;
+  font-size: 12px;
+}
+.za-document-image-shortcut kbd {
+  color: hsl(var(--muted-foreground));
+  font-family: inherit;
+  background: var(--za-control-hover);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+@keyframes za-comment-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-document-comment-input,
+  .za-document-image-shortcut {
+    animation: none;
+  }
+}
+.za-document-comment-list {
+  width: min(360px, calc(100vw - 32px));
+  padding: 6px;
+}
+.za-document-comment-list li {
+  border-bottom: 1px solid var(--za-border);
+}
+.za-document-comment-list li:last-child {
+  border-bottom: 0;
+}
+.za-preview-pdf-page[data-annotating="true"],
+.za-preview-pdf-page[data-annotating="true"] .za-pdf-text-layer span {
+  cursor: var(--za-comment-cursor, pointer);
+  touch-action: none;
+}
+.za-pdf-comment-marks span,
+.za-pdf-comment-marks .za-pdf-region {
+  border: 2px dashed #3478df;
+  background: #3478df1a;
+}
+.za-pdf-comment-marks span:after {
+  content: "";
+  position: absolute;
+  right: -11px;
+  top: -11px;
+  width: 28px;
+  height: 28px;
+  background: var(--za-comment-pin) center / contain no-repeat;
+  filter: drop-shadow(0 2px 2px #0002);
+}
+@container reader-stage (max-width: 599px) {
+  .za-resource-preview,
+  .za-document-workspace,
+  .za-document-workspace[data-navigation-pinned="true"] {
+    --za-reader-side-inset: 0px;
+    --za-reader-navigation-inset: 0px;
+  }
+  .za-document-comment-field input {
+    font-size: 16px;
+  }
+  .za-document-comment-field button[type="submit"] {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+  .za-document-comment-drag {
+    min-width: 32px;
+    min-height: 44px;
+  }
+}
+
+/* Covers are fixed crops, never nested reading surfaces. */
+.za-docx-thumbnail {
+  position: relative;
+  height: 100px;
+  width: 100%;
+  overflow: hidden;
+  background: white;
+  pointer-events: none;
+}
+.za-docx-thumbnail > iframe {
+  display: block;
+  width: 816px;
+  min-width: 816px;
+  height: 1120px;
+  border: 0;
+  transform: scale(0.205);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.za-resource-preview[data-variant="thumbnail"] [data-scroll-area-scrollbar] {
+  display: none;
+}
+.za-resource-preview[data-variant="thumbnail"] [data-slot="scroll-area-scrollbar"] {
+  display: none;
+}
+.za-resource-preview[data-variant="thumbnail"] .za-preview-scroll-root {
+  overflow: hidden;
+}
+.za-reader-timeline h4 {
+  margin: 8px 0 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 400;
+}
+.za-reader-timeline ol {
+  padding: 0 0 0 18px;
+  margin: 0 0 24px;
+  list-style: none;
+}
+.za-reader-timeline li {
+  position: relative;
+  padding: 0 0 20px;
+  border-left: 1px solid var(--za-border);
+}
+.za-reader-timeline li:last-child {
+  border-color: transparent;
+  padding-bottom: 0;
+}
+.za-reader-timeline-point {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+  margin-left: 10px;
+  width: calc(100% - 10px);
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  text-align: start;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: background 140ms ease;
+}
+.za-reader-timeline-point::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  left: -14px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #999;
+  outline: 3px solid var(--za-surface);
+}
+.za-reader-timeline-point time {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+.za-reader-timeline-point:hover,
+.za-reader-timeline-point[aria-current="true"] {
+  background: var(--za-control-hover);
+}
+.za-reader-timeline-point[aria-current="true"]::before {
+  background: hsl(var(--foreground));
+}
+.za-reader-timeline-point:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.za-pdf-comment-marks [data-note] {
+  pointer-events: auto;
+}
+.za-pdf-comment-marks [data-note]:hover::before {
+  content: attr(data-note);
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 8;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 8px 12px;
+  background: var(--za-surface);
+  color: hsl(var(--foreground));
+  border: 1px solid var(--za-border);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px #0002;
+  font: 14px / 1.5 system-ui;
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-reader-timeline-point {
+    transition: none;
   }
 }

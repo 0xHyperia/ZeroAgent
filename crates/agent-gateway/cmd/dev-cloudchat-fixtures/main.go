@@ -62,6 +62,7 @@ type fileReference struct {
 	SHA256 string `json:"-"`
 }
 type fixturePlan struct {
+	ProjectID    string                    `json:"project_id,omitempty"`
 	Key          string                    `json:"key"`
 	Conversation account.CloudConversation `json:"conversation"`
 	Messages     []account.CloudMessage    `json:"messages"`
@@ -70,6 +71,7 @@ type fixturePlan struct {
 	Extras       *fixtureExtras            `json:"extras,omitempty"`
 }
 type receiptEntry struct {
+	ProjectID      string               `json:"project_id,omitempty"`
 	Key            string               `json:"key"`
 	ConversationID string               `json:"conversation_id"`
 	Title          string               `json:"title"`
@@ -407,7 +409,17 @@ func applyPlans(ctx context.Context, dsn string, user int64, plans []fixturePlan
 			return nil, errors.New("resource reference no longer matches this account; no fixture was written")
 		}
 	}
+	projectPresent, err := prepareReaderProject(ctx, tx, user, plans, previous)
+	if err != nil {
+		return nil, err
+	}
 	statuses := make([]string, len(plans))
+	if !projectPresent {
+		for i := range statuses {
+			statuses[i] = "preserved_deleted_project"
+		}
+		return statuses, nil
+	}
 	for index, plan := range plans {
 		c := plan.Conversation
 		var owner int64
@@ -441,6 +453,11 @@ func applyPlans(ctx context.Context, dsn string, user int64, plans []fixturePlan
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_conversations(id,user_id,title,model,created_at,updated_at,pinned,archived,management_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, c.ID, user, c.Title, c.Model, c.CreatedAt, c.UpdatedAt, c.Pinned, c.Archived, c.ManagementVersion); err != nil {
 			return nil, errors.New("conversation fixture insert failed; transaction rolled back")
+		}
+		if plan.ProjectID != "" {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_project_conversations(conversation_id,user_id,project_id,version) VALUES($1,$2,$3,1)`, c.ID, user, plan.ProjectID); err != nil {
+				return nil, err
+			}
 		}
 		for _, m := range plan.Messages {
 			if _, err = tx.ExecContext(ctx, `INSERT INTO zerobox_cloud_messages(id,conversation_id,user_id,role,content,usage,created_at,presentation) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8::jsonb)`, m.ID, c.ID, user, m.Role, string(m.Content), jsonValue(m.Usage), m.CreatedAt, jsonValue(m.Presentation)); err != nil {
@@ -507,7 +524,7 @@ func execute(args []string, output io.Writer) error {
 	resourceReceipt := flags.String("space-receipt", "", "optional receipt for existing account-owned resource files")
 	receiptPath := flags.String("receipt", "", "required with --apply; durable local receipt preserves later user deletions")
 	baseURL := flags.String("base-url", "http://127.0.0.1:52386/", "local Web URL used only in the output receipt")
-	profile := flags.String("profile", "core", "core or complete; complete adds inert drafts/queue and real local artifact objects")
+	profile := flags.String("profile", "core", "core, complete, or reader; reader creates a dedicated acceptance project")
 	samplesDir := flags.String("samples-dir", "", "complete profile: directory containing receipt-matched original samples")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *user <= 0 {
 		return errors.New("--user-id is required; --apply is opt-in")
@@ -528,8 +545,8 @@ func execute(args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if *profile != "core" && *profile != "complete" {
-		return errors.New("profile must be core or complete")
+	if *profile != "core" && *profile != "complete" && *profile != "reader" {
+		return errors.New("profile must be core, complete or reader")
 	}
 	if *profile == "complete" {
 		extra, buildErr := buildCompleteFixtures(*user, refs, *samplesDir)
@@ -537,6 +554,12 @@ func execute(args []string, output io.Writer) error {
 			return buildErr
 		}
 		plans = append(plans, extra...)
+	}
+	if *profile == "reader" {
+		plans, refs, err = buildReaderFixtures(*user, refs, *samplesDir)
+		if err != nil {
+			return err
+		}
 	}
 	statuses := make([]string, len(plans))
 	for index := range statuses {
@@ -563,7 +586,7 @@ func execute(args []string, output io.Writer) error {
 			dsn = os.Getenv("DATABASE_URL")
 		}
 		var objects fixtureObjectStore
-		if *profile == "complete" {
+		if *profile == "complete" || *profile == "reader" {
 			store, openErr := openFixtureObjects()
 			if openErr != nil {
 				return openErr
@@ -584,7 +607,7 @@ func execute(args []string, output io.Writer) error {
 		query := link.Query()
 		query.Set("conversation", plan.Conversation.ID)
 		link.RawQuery = query.Encode()
-		result.Entries = append(result.Entries, receiptEntry{Key: plan.Key, ConversationID: plan.Conversation.ID, Title: plan.Conversation.Title, MessageCount: len(plan.Messages), FirstMessageID: plan.Messages[0].ID, LastMessageID: plan.Messages[len(plan.Messages)-1].ID, Fingerprint: plan.Fingerprint, Status: statuses[index], URL: link.String(), Resources: extraReceipt(plan)})
+		result.Entries = append(result.Entries, receiptEntry{ProjectID: plan.ProjectID, Key: plan.Key, ConversationID: plan.Conversation.ID, Title: plan.Conversation.Title, MessageCount: len(plan.Messages), FirstMessageID: plan.Messages[0].ID, LastMessageID: plan.Messages[len(plan.Messages)-1].ID, Fingerprint: plan.Fingerprint, Status: statuses[index], URL: link.String(), Resources: extraReceipt(plan)})
 	}
 	encoder := json.NewEncoder(output)
 	if *apply {

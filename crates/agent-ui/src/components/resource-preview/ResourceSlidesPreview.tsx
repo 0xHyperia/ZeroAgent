@@ -5,6 +5,7 @@ import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
+import { PreviewScrollArea } from "./PreviewScrollArea";
 import {
   PreviewPageControls,
   PreviewToolbar,
@@ -72,6 +73,7 @@ export default function ResourceSlidesPreview(
   const gridRoot = useRef<HTMLElement>(null);
   const rail = useRef<HTMLElement>(null);
   const [maxPercent, setMaxPercent] = useState<number>();
+  const [actualPercent, setActualPercent] = useState(100);
   const client = useRef<ReturnType<typeof createResourcePreviewWorker> | null>(null);
   const generation = useRef(0);
   const lifetime = useRef<AbortSignal | null>(null);
@@ -174,6 +176,7 @@ export default function ResourceSlidesPreview(
           value={zoom}
           onChange={setZoom}
           maxPercent={maxPercent}
+          actualPercent={actualPercent}
         />
         {!setFileMenu ? (
           <Button
@@ -261,6 +264,7 @@ export default function ResourceSlidesPreview(
             assertCurrent={assertCurrent}
             onError={setError}
             onMaxPercent={setMaxPercent}
+            onScale={setActualPercent}
           />
         )}
       </div>
@@ -298,6 +302,7 @@ export default function ResourceSlidesPreview(
             assertCurrent={assertCurrent}
             onError={setError}
             onMaxPercent={setMaxPercent}
+            onScale={setActualPercent}
           />
           <button
             type="button"
@@ -416,6 +421,7 @@ function SlideImage({
   assertCurrent,
   onError,
   onMaxPercent,
+  onScale,
 }: PreviewRecovery & {
   svg: string;
   name: string;
@@ -429,9 +435,10 @@ function SlideImage({
   assertCurrent: () => void;
   onError: (message: string) => void;
   onMaxPercent: (percent: number) => void;
+  onScale?: (percent: number) => void;
 }) {
   const [image, setImage] = useState<{ url: string; width: number; height: number } | null>(null);
-  const { container, viewport } = usePreviewViewport<HTMLElement>();
+  const { container, viewport } = usePreviewViewport();
   useEffect(() => {
     let url = "";
     if (!svg) {
@@ -460,13 +467,15 @@ function SlideImage({
         image,
       )
     : 1;
+  useEffect(() => {
+    onScale?.(scale * 100);
+  }, [scale, onScale]);
   return (
-    <section
+    <PreviewScrollArea
       ref={container}
       className="za-preview-slide-scroll"
       aria-label="幻灯片阅读画布"
       aria-busy={busy}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: focus scopes page shortcuts to this reading canvas
       tabIndex={0}
       onKeyDown={(event) => previewPageKey(event, page, count, onPage)}
     >
@@ -495,6 +504,6 @@ function SlideImage({
           />
         </div>
       )}
-    </section>
+    </PreviewScrollArea>
   );
 }

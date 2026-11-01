@@ -1,4 +1,5 @@
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
+import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import {
   type PendingUploadedFile,
@@ -20,6 +21,7 @@ export type UserMessageRowProps = {
   row: UserRow;
   isEditing: boolean;
   workspaceRoot?: string;
+  onOpenFileLink?: (link: ChatFileLink) => void;
   loadCommitDetails: CommitDetailsLoader;
   onStartEdit: (key: string) => void;
   onCancelEdit: () => void;
@@ -42,6 +44,10 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
     onResendFromEdit,
   } = props;
   const item = row.item;
+  const openAttachment = props.onOpenFileLink
+    ? (file: PendingUploadedFile) =>
+        props.onOpenFileLink?.({ path: file.relativePath, source: "relative" })
+    : undefined;
 
   const effectiveMessageRef = item.messageRef;
   const compactedClass = item.isFromCompactedSegment ? "opacity-70" : "";
@@ -55,6 +61,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
       <EditableUserMessageBubble
         initialText={item.text}
         attachments={item.attachments}
+        onOpenAttachment={openAttachment}
         workspaceRoot={workspaceRoot}
         className={compactedClass}
         preserveViewportScrollOnFocus
@@ -88,7 +95,11 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
           "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
         )}
       >
-        <UserAttachmentCards files={visibleFiles} workspaceRoot={workspaceRoot} />
+        <UserAttachmentCards
+          files={visibleFiles}
+          workspaceRoot={workspaceRoot}
+          onOpen={openAttachment}
+        />
         {item.text ? (
           <UserMessageContent
             text={item.text}

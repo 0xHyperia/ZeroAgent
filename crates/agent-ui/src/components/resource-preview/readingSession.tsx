@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { validDocumentRegion } from "./docxReaderDocument";
 import type { DocumentRevisionComment } from "./ResourceDocumentComments";
 
 export type PreviewZoom = "fit-width" | "fit-page" | number;
@@ -17,6 +18,7 @@ type ReadingSnapshot = {
   pdfZoom: PreviewZoom;
   pdfNavigation: boolean;
   docxZoom: PreviewZoom;
+  textZoom: number;
   docxNavigation: "contents" | "pages" | "closed";
   documentComments: DocumentRevisionComment[];
   slidePage: number;
@@ -57,7 +59,22 @@ export function createReadingSnapshotStore() {
               item.block.length > 80 ||
               !Number.isSafeInteger(item.page) ||
               item.page < 1 ||
-              item.page > 1000,
+              item.page > 1000 ||
+              (item.region !== undefined && !validDocumentRegion(item.region)) ||
+              (item.anchors !== undefined &&
+                (!Array.isArray(item.anchors) ||
+                  item.anchors.length > 20 ||
+                  item.anchors.some(
+                    (anchor) =>
+                      !anchor ||
+                      typeof anchor.id !== "string" ||
+                      anchor.id.length > 80 ||
+                      !Number.isSafeInteger(anchor.start) ||
+                      !Number.isSafeInteger(anchor.end) ||
+                      anchor.start < 0 ||
+                      anchor.end <= anchor.start ||
+                      anchor.end - anchor.start > 2000,
+                  ))),
           ))
       )
         return;

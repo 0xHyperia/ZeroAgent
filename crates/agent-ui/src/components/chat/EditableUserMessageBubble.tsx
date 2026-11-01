@@ -19,6 +19,7 @@ export type EditableUserMessageBubbleProps = {
   textareaClassName?: string;
   textareaSizing?: "lineCount" | "content";
   preserveViewportScrollOnFocus?: boolean;
+  onOpenAttachment?: (file: PendingUploadedFile) => void;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
   imagePreviewMode?: "absolutePath" | "imageKind";
   attachmentRemoveLabel?: string;
@@ -110,6 +111,7 @@ export const EditableUserMessageBubble = memo(function EditableUserMessageBubble
     >
       <UserAttachmentCards
         files={visibleAttachments}
+        onOpen={props.onOpenAttachment}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         imagePreviewMode={imagePreviewMode}

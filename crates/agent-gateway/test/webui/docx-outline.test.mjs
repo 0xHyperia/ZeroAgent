@@ -12,6 +12,26 @@ const requireFromWeb = createRequire(new URL("../../web/package.json", import.me
 const { JSDOM } = requireFromWeb("jsdom");
 const { zipSync, strToU8 } = requireFromUI("fflate");
 const paragraph = properties => ({ type: "paragraph", children: [], ...properties });
+
+test("region annotations only quote known same-page anchors and reject forged geometry or recursive payloads", () => {
+ const {checkedDocumentSelection}=loader.loadModule("@liveagent/ui/components/resource-preview/docxReaderDocument.ts");
+ const blocks=[{id:'a',page:1,text:'真实标题'},{id:'b',page:1,text:'原始摘要'},{id:'c',page:2,text:'第二页'}];
+ const region={left:.1,top:.2,width:.6,height:.1};
+ const payload={id:'forged',start:0,end:1,x:20,y:90,region,quote:'attacker',anchors:[{id:'a',start:0,end:4},{id:'b',start:1,end:4}]};
+ const selected=checkedDocumentSelection(payload,blocks);
+ assert.equal(selected.page,1);assert.equal(selected.quote,'真实标题\n始摘要');assert.equal(selected.id,'a');
+ for(const bad of [
+  {...payload,region:{...region,left:Infinity}},
+  {...payload,region:{...region,width:1}},
+  {...payload,anchors:[{id:'a',start:0,end:2},{id:'c',start:0,end:2}]},
+  {...payload,anchors:[{id:'a',start:0,end:2},{id:'a',start:2,end:4}]},
+  {...payload,anchors:[{id:'unknown',start:0,end:1}]},
+  {...payload,anchors:[]},
+  {...payload,anchors:Array(21).fill({id:'a',start:0,end:1})},
+ ])assert.equal(checkedDocumentSelection(bad,blocks),null);
+ const nested={id:'a',start:0,end:4};nested.anchors=[nested];
+ assert.equal(checkedDocumentSelection({...payload,anchors:[nested]},blocks).quote,'真实标题','nested fields have no authority and cannot recurse');
+});
 const model = (paragraphs, styles = []) => ({ documentPart: { body: { type: "document", children: paragraphs } }, stylesPart: { styles } });
 
 test("DOCX page navigation uses original pages, bounded inert covers and unique native destinations", () => {
@@ -157,6 +177,29 @@ test("Word bridge strips document authority and accepts only validated original-
  for(const payload of [{id:'spoof',start:0,end:2,x:0,y:0},{id:resource.blocks[0].id,start:-1,end:2,x:0,y:0},{id:resource.blocks[0].id,start:0,end:1000,x:0,y:0},{id:resource.blocks[0].id,start:0,end:2,x:Infinity,y:0}])assert.equal(api.checkedDocumentSelection(payload,resource.blocks),null);
 });
 
+test("embedded Word images have trusted anchors and ordinary-reading shortcuts use the guarded revision path",async t=>{
+ const {inspectPreviewArchive}=loader.loadModule("@liveagent/ui/components/resource-preview/previewArchive.ts");
+ let sends=0;
+ const app=await adapter(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){return {entries:inspectPreviewArchive(input.bytes)}}})},"docx-preview":{async parseAsync(){return model([])},async renderDocument(){const root=document.createElement('div');root.innerHTML='<div class="docx-wrapper"><section class="docx"><p>图示说明</p><p><img alt="交付流程" src="data:image/png;base64,aA=="></p></section></div>';return [root]}}});
+ await app.mount({bytes:docxFixture(),name:'图片方案.docx',assertCurrent(){},onRequestRevision:async()=>{sends++;return true}});
+ await app.waitFor(()=>app.host.querySelector('iframe.za-preview-document'));
+ const frame=app.host.querySelector('iframe.za-preview-document'),token=frame.srcdoc.match(/nonce="([a-f0-9]+)"/)[1];
+ const rendered=new JSDOM(frame.srcdoc);t.after(()=>rendered.window.close());
+ const image=rendered.window.document.querySelector('[data-reader-kind="image"]');assert.ok(image);
+ const api=loader.loadModule("@liveagent/ui/components/resource-preview/docxReaderDocument.ts");
+ const blocks=[{id:image.dataset.readerBlock,page:1,text:image.dataset.readerText,kind:'image'}];
+ const value={token,type:'image-shortcut',id:blocks[0].id,start:0,end:blocks[0].text.length,x:250,y:150,quote:'伪造说明'};
+ assert.equal(api.checkedDocumentSelection(value,blocks).quote,'图片 1：交付流程');
+ const deliver=async(source,origin,data)=>app.env.act(async()=>window.dispatchEvent(new window.MessageEvent('message',{source,origin,data})));
+ await deliver(window,'null',value);assert.equal(app.host.querySelector('.za-document-image-shortcut'),null);
+ await deliver(frame.contentWindow,'null',{...value,id:'spoof'});assert.equal(app.host.querySelector('.za-document-image-shortcut'),null);
+ await deliver(frame.contentWindow,'null',value);assert.ok(app.host.querySelector('.za-document-image-shortcut'));
+ assert.equal(app.host.querySelector('[aria-label="修改建议"]'),null,'reading does not open a comment form');
+ await app.env.act(async()=>app.host.querySelector('.za-document-image-shortcut button').click());
+ assert.equal(app.host.querySelector('.za-request-revision').getAttribute('aria-pressed'),'true');
+ assert.ok(app.host.querySelector('[aria-label="修改建议"]'));assert.equal(sends,0,'neither selecting nor entering modification submits a run');
+});
+
 test("Word annotation bridge rejects foreign frames, origins and channels and never submits on selection",async t=>{
  const real=requireFromUI("docx-preview"),{inspectPreviewArchive}=loader.loadModule("@liveagent/ui/components/resource-preview/previewArchive.ts");
  let sends=0;
@@ -168,6 +211,18 @@ test("Word annotation bridge rejects foreign frames, origins and channels and ne
  const block=rendered.window.document.querySelector('[data-reader-block]'),data={token,type:'selection',id:block.dataset.readerBlock,start:0,end:2,x:100,y:100};
  await app.env.act(async()=>app.host.querySelector('.za-request-revision').click());
  const deliver=async(source,origin,value)=>app.env.act(async()=>window.dispatchEvent(new window.MessageEvent('message',{source,origin,data:value})));
+ const surface=app.host.querySelector('.za-docx-zoom-surface');
+ const oldHeight=surface.style.height;
+ await deliver(window,'null',{token,type:'height',height:4000});
+ await deliver(frame.contentWindow,'https://evil.test',{token,type:'height',height:4000});
+ for(const height of [Infinity,-1,2000001])await deliver(frame.contentWindow,'null',{token,type:'height',height});
+ assert.equal(surface.style.height,oldHeight,'foreign or unbounded measurements cannot change the reading canvas');
+ await deliver(frame.contentWindow,'null',{token,type:'height',height:4000});
+ assert.equal(frame.style.height,'4000px','the isolated document expands inside the host-owned scroll viewport');
+ let destination;
+ app.host.querySelector('.za-docx-zoom-viewport').scrollTo=value=>{destination=value;};
+ await deliver(frame.contentWindow,'null',{token,type:'navigate',top:500});
+ assert.ok(Number.isFinite(destination?.top)&&destination.top>=0,'navigation uses the actual outer reading viewport');
  await deliver(window,'null',data);await deliver(frame.contentWindow,'https://evil.test',data);await deliver(frame.contentWindow,'null',{...data,token:'wrong'});
  assert.equal(app.host.querySelector('[aria-label="修改建议"]'),null);
  await deliver(frame.contentWindow,'null',data);
@@ -181,10 +236,10 @@ test("Word annotation bridge rejects foreign frames, origins and channels and ne
  await app.waitFor(()=>document.querySelector('[aria-label="编辑第 1 条批注"]'));
  await app.env.act(async()=>document.querySelector('[aria-label="编辑第 1 条批注"]').click());
  assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'更加简洁');
- await app.env.act(async()=>app.host.querySelector('[aria-label="关闭批注输入"]').click());
+ await app.env.act(async()=>app.host.querySelector('[aria-label="修改建议"]').dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
  await deliver(frame.contentWindow,'null',{...data,start:2,end:4});
  assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'','a new anchor does not inherit an unfinished edit');
- await app.env.act(async()=>app.host.querySelector('[aria-label="关闭批注输入"]').click());
+ await app.env.act(async()=>app.host.querySelector('[aria-label="修改建议"]').dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
  await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());
  await app.waitFor(()=>document.querySelector('[aria-label="移除第 1 条批注"]'));
  await app.env.act(async()=>document.querySelector('[aria-label="移除第 1 条批注"]').click());

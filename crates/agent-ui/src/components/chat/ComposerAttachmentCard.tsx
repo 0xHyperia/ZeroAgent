@@ -173,7 +173,7 @@ export function ComposerAttachmentCard(props: {
         <span className="za-composer-attachment-icon">{fallbackIcon}</span>
         <div className="min-w-0 flex-1">
           <span className="za-composer-attachment-name">{fileName}</span>
-          {!previewContent || file?.statusText ? (
+          {!previewContent ? (
             <span className="za-composer-attachment-meta">
               {file?.statusText || [format, fileSize].filter(Boolean).join(" · ")}
             </span>

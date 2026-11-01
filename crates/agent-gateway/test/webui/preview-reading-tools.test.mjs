@@ -5,6 +5,52 @@ import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const streamdown = await import(new URL("../../../agent-ui/node_modules/streamdown/dist/index.js", import.meta.url));
 async function flush() { for (let i=0;i<5;i++) await new Promise(resolve=>setImmediate(resolve)); }
+
+test("document navigation keeps the hover path open, follows the active anchor and leaves pinned navigation open",async t=>{
+ const app=await setup(t),h=app.env.React.createElement;
+ const {DocumentNavigation}=app.env.loadModule("@liveagent/ui/components/resource-preview/DocumentNavigation.tsx");
+ const scrolled=[];window.HTMLElement.prototype.scrollIntoView=function(){scrolled.push(this.textContent)};
+ function View({current=1}){const [pinned,setPinned]=app.env.React.useState(false);return h(DocumentNavigation,{label:'文档导航',pinned,onPinned:setPinned,count:3,current,title:'目录'},[1,2,3].map(n=>h('button',{key:n,'aria-current':n===current?'page':undefined},`第${n}页`)));}
+ await app.render(h(View,{}));
+ const zone=app.host.querySelector('.za-document-navigation-zone'),rail=zone.querySelector('button');
+ const mouse=(target,type,relatedTarget)=>{const event=new window.MouseEvent(type,{bubbles:true,relatedTarget});Object.defineProperty(event,'pointerType',{value:'mouse'});target.dispatchEvent(event);};
+ await app.env.act(async()=>mouse(rail,'pointerover',document.body));
+ const panel=app.host.querySelector('aside');assert.ok(panel);assert.equal(zone.dataset.pinned,'false');
+ await app.env.act(async()=>mouse(rail,'pointerout',panel.querySelector('button')));
+ assert.equal(app.host.querySelector('aside'),panel,'moving into the panel keeps the same preview mounted');
+ await app.env.act(async()=>mouse(zone,'pointerout',document.body));assert.equal(app.host.querySelector('aside'),null);
+ // Keyboard focus reveals the same panel and remains usable without a pointer.
+ await app.env.act(async()=>rail.focus());assert.ok(app.host.querySelector('aside'));
+ await app.render(h(View,{current:3}));assert.equal(scrolled.at(-1),'第3页');
+ await app.env.act(async()=>app.host.querySelector('[aria-label="固定文档导航"]').click());
+ await app.env.act(async()=>zone.dispatchEvent(new window.MouseEvent('pointerout',{bubbles:true,relatedTarget:document.body})));
+ assert.ok(app.host.querySelector('aside'));assert.equal(zone.dataset.pinned,'true');
+ await app.env.act(async()=>app.host.querySelector('[aria-label="收起文档导航"]').click());assert.equal(app.host.querySelector('aside'),null);
+});
+
+test("unsent region comments retain their anchors when cancelling discard and clear only after explicit discard",async t=>{
+ const app=await setup(t),h=app.env.React.createElement;let choose;
+ const {ResourceDocumentComments}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceDocumentComments.tsx");
+ function Reader(){const [selection,setSelection]=app.env.React.useState(null),[enabled,setEnabled]=app.env.React.useState(true);choose=setSelection;return h(ResourceDocumentComments,{enabled,onEnabled:setEnabled,selection,onSelection:setSelection,onNavigate(){},onMarks(){}});}
+ await app.render(h(Reader));
+ const region={left:.1,top:.2,width:.5,height:.2},anchors=[{id:'a',start:0,end:2},{id:'b',start:0,end:2}];
+ await app.env.act(async()=>choose({id:'a',start:0,end:2,page:1,quote:'标题\n摘要',x:10,y:90,region,anchors}));
+ await app.input('修改建议','精简选中区域');await app.env.act(async()=>app.host.querySelector('[aria-label="添加批注"]').click());
+ const clickText=async text=>app.env.act(async()=>{[...document.querySelectorAll('button')].find(e=>e.textContent===text).click();await flush();});
+ await clickText('取消');assert.match(document.querySelector('[role="alertdialog"]').textContent,/要舍弃批注吗/);
+ await clickText('保留批注');assert.match(app.host.textContent,/这 1 条批注/);
+ await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());
+ await app.env.act(async()=>document.querySelector('[aria-label="编辑第 1 条批注"]').click());
+ assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'精简选中区域');
+ await clickText('取消');await clickText('放弃');assert.equal(app.host.querySelector('fieldset'),null);
+});
+
+test("floating comment position clamps to the reader when the pane narrows or a drag leaves its boundaries",async t=>{
+ const app=await setup(t),{constrainReaderPosition}=app.env.loadModule("@liveagent/ui/components/resource-preview/useReaderFloatingPosition.ts");
+ assert.deepEqual(constrainReaderPosition({x:-400,y:-20},{width:440,height:800},{width:300,height:44}),{x:8,y:64});
+ assert.deepEqual(constrainReaderPosition({x:1000,y:1000},{width:440,height:800},{width:300,height:44}),{x:132,y:748});
+ assert.deepEqual(constrainReaderPosition({x:100,y:150},{width:440,height:800},{width:300,height:44}),{x:100,y:150});
+});
 async function setup(t, mocks={}) {
   const env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,"../IconSet":new Proxy({},{get:()=>()=>null}),...mocks}});
   const extra=new Map(["DOMParser","XMLSerializer"].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
@@ -185,6 +231,7 @@ test("slide grid, presentation keyboard and return share the selected page witho
  await app.key(dialog,"ArrowRight");
  await app.wait(()=>/第 3 张/.test(document.querySelector('.za-slide-playback')?.textContent??""));
  await app.env.act(async()=>{document.querySelector('button[aria-label="退出演示模式"]').click();await flush();});
+ await app.wait(()=>document.querySelector('[role="dialog"]')===null);
  assert.equal(document.querySelector('[role="dialog"]'),null);
  assert.match(app.host.querySelector('img').alt,/第 3 页/);
  assert.equal(requests.filter(item=>item.type==="load").length,1);
@@ -202,4 +249,59 @@ test("format view menu mounts inside the actual file-title menu context",async t
  await app.env.act(async()=>{app.host.querySelector('[aria-label="文件菜单：演示.pptx"]').click();await flush();});
  const menu=document.querySelector('[role="menuitemcheckbox"]');assert.ok(menu);assert.match(menu.textContent,/网格视图/);
  await app.env.act(async()=>{menu.click();await flush();});assert.ok(app.host.querySelector('[aria-label="幻灯片网格"]'));
+});
+
+
+test("reader zoom consumes only modified gestures inside its own surface and releases listeners",async t=>{
+ const app=await setup(t),{bindReaderZoom,nextReaderZoom}=app.env.loadModule("@liveagent/ui/components/resource-preview/readerZoom.ts");
+ const surface=app.host.appendChild(document.createElement('div')),outside=document.body.appendChild(document.createElement('div'));t.after(()=>outside.remove());
+ const changes=[],dispose=bindReaderZoom(surface,100,300,value=>changes.push(value));
+ const wheel=(target,ctrlKey)=>{const event=new window.WheelEvent('wheel',{deltaY:-20,ctrlKey,bubbles:true,cancelable:true});target.dispatchEvent(event);return event.defaultPrevented;};
+ assert.equal(wheel(outside,true),false);assert.equal(wheel(surface,false),false);assert.equal(wheel(surface,true),true);assert.ok(changes[0]>100&&changes[0]<125);
+ assert.equal(nextReaderZoom(399,-100,400),400);assert.equal(nextReaderZoom(25,100),25);
+ const key=new window.KeyboardEvent('keydown',{key:'0',ctrlKey:true,bubbles:true,cancelable:true});surface.dispatchEvent(key);assert.equal(key.defaultPrevented,true);assert.equal(changes.at(-1),'fit-width');
+ const field=surface.appendChild(document.createElement('input'));const typing=new window.KeyboardEvent('keydown',{key:'=',ctrlKey:true,bubbles:true,cancelable:true});field.dispatchEvent(typing);assert.equal(typing.defaultPrevented,false);
+ dispose();assert.equal(wheel(surface,true),false);
+});
+
+test("reader pinch survives React zoom updates and leaves ordinary touch scrolling alone",async t=>{
+ const app=await setup(t),h=app.env.React.createElement,{PreviewZoomControl}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewToolbar.tsx");
+ function Reader(){const [zoom,setZoom]=app.env.React.useState(100);return h('div',{className:'za-resource-preview'},h(PreviewZoomControl,{label:'阅读缩放',value:zoom,onChange:setZoom}));}
+ await app.render(h(Reader));const surface=app.host.querySelector('.za-resource-preview');
+ const gesture=async(type,points)=>{let event;await app.env.act(async()=>{event=new window.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(event,'touches',{value:points.map(([clientX,clientY])=>({clientX,clientY}))});surface.dispatchEvent(event);await flush();});return event.defaultPrevented;};
+ assert.equal(await gesture('touchstart',[[0,0]]),false);
+ assert.equal(await gesture('touchstart',[[0,0],[100,0]]),true);
+ assert.equal(await gesture('touchmove',[[0,0],[150,0]]),true);assert.match(app.host.textContent,/150%/);
+ assert.equal(await gesture('touchmove',[[0,0],[200,0]]),true);assert.match(app.host.textContent,/200%/);
+ await gesture('touchend',[]);
+ assert.equal(await gesture('touchmove',[[0,0]]),false);
+});
+
+test("annotation input follows geometry changes without losing its draft and hides only while the anchor is offscreen",async t=>{
+ const app=await setup(t),h=app.env.React.createElement,{ResourceDocumentComments}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceDocumentComments.tsx");
+ const anchor={id:'za-reader-block-1',start:0,end:4,quote:'原文摘要',page:1,x:40,y:100};
+ const view=selection=>h(ResourceDocumentComments,{enabled:true,onEnabled(){},selection,onSelection(){},onNavigate(){},onMarks(){}});
+ await app.render(view(anchor));await app.input('修改建议','把这一段写得更简洁');
+ await app.render(view({...anchor,y:260}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'把这一段写得更简洁');
+ await app.render(view({...anchor,y:-80,visible:false}));assert.equal(app.host.querySelector('[aria-label="修改建议"]'),null);
+ await app.render(view({...anchor,y:140,visible:true}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'把这一段写得更简洁');
+ await app.render(view({...anchor,id:'za-reader-block-2'}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'');
+});
+
+test("history groups versions by date on an uncluttered timeline and selection never restores automatically",async t=>{
+ const app=await setup(t),h=app.env.React.createElement,{ResourceVersionTimeline}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceVersionTimeline.tsx");
+ const versions=[{id:'v3',number:3,created_at:'2026-10-31T10:00:00Z'},{id:'v2',number:2,created_at:'2026-10-31T09:00:00Z'},{id:'v1',number:1,created_at:'2026-10-30T08:00:00Z'}],selected=[];
+ await app.render(h(ResourceVersionTimeline,{versions,selected:'v2',busy:false,onSelect:id=>selected.push(id)}));
+ assert.equal(app.host.querySelectorAll('section').length,2);assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId,'v2');assert.match(app.host.textContent,/已创建/);assert.doesNotMatch(app.host.textContent,/KB|ready|已保存/);
+ await app.env.act(async()=>app.host.querySelector('[data-version-id="v1"]').click());assert.deepEqual(selected,['v1']);
+});
+
+
+test("sent file cards use the host preview capability without removing the original attachment",async t=>{
+ const app=await setup(t),h=app.env.React.createElement,{UserAttachmentCards}=app.env.loadModule("@liveagent/ui/components/chat/UserAttachmentCards.tsx");
+ const file={relativePath:'11111111-1111-4111-8111-111111111111',fileName:'示例方案.pdf',kind:'pdf',sizeBytes:2048},opened=[];
+ await app.render(h(UserAttachmentCards,{files:[file],onOpen:value=>opened.push(value)}));
+ const button=app.host.querySelector('[aria-label="预览 示例方案.pdf"]');assert.ok(button);
+ await app.env.act(async()=>button.click());assert.equal(opened[0],file);assert.match(app.host.textContent,/示例方案.pdf/);
+ await app.render(h(UserAttachmentCards,{files:[file]}));assert.equal(app.host.querySelector('[aria-label="预览 示例方案.pdf"]'),null,'hosts without preview capabilities retain display-only cards');
 });

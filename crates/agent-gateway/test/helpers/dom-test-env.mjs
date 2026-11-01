@@ -10,6 +10,8 @@ export async function createWebDomTestEnv(options = {}) {
     pretendToBeVisual: true,
   });
   dom.window.scrollTo = () => {};
+  // JSDOM has no Web Animations API; the shared Base UI viewport checks for active animations.
+  dom.window.Element.prototype.getAnimations = () => [];
   const { window } = dom;
   const globals = {
     window,

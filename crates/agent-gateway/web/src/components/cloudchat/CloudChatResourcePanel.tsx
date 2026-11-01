@@ -1,7 +1,6 @@
 import { Maximize2, Minimize2, X } from "@liveagent/ui/components/IconSet";
 import { PreviewToolbarMount } from "@liveagent/ui/components/resource-preview/PreviewChrome";
 import { Sheet, SheetDescription, SheetPopup, SheetTitle } from "@liveagent/ui/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@liveagent/ui/components/ui/tooltip";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { type ReactNode, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -31,11 +30,19 @@ export function CloudChatResourcePanel(props: {
   const reader = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
+  const [leadingTarget, setLeadingTarget] = useState<HTMLDivElement | null>(null);
   const [pageTarget, setPageTarget] = useState<HTMLDivElement | null>(null);
   const [fileMenu, setFileMenu] = useState<ReactNode>(null);
   const toolbarMount = useMemo(
-    () => ({ target: toolbarTarget, pageTarget, fileMenu, setFileMenu }),
-    [toolbarTarget, pageTarget, fileMenu],
+    () => ({
+      target: toolbarTarget,
+      leadingTarget,
+      inspectorOpen: !!props.details,
+      pageTarget,
+      fileMenu,
+      setFileMenu,
+    }),
+    [toolbarTarget, leadingTarget, props.details, pageTarget, fileMenu],
   );
   useEffect(() => {
     if (presentation !== "inline") return;
@@ -93,27 +100,20 @@ export function CloudChatResourcePanel(props: {
           <header className="cloud-reader-header">
             <div className="cloud-reader-heading">
               {props.dragResource ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <h2
-                        id={titleId}
-                        className="cloud-reader-draggable-title"
-                        draggable
-                        onDragStart={(event) => {
-                          if (
-                            !props.dragResource ||
-                            !writeCloudResourceDragPayload(event.dataTransfer, [props.dragResource])
-                          )
-                            event.preventDefault();
-                        }}
-                      >
-                        {props.title}
-                      </h2>
-                    }
-                  />
-                  <TooltipContent side="bottom">拖到对话中引用；也可使用“引用”按钮</TooltipContent>
-                </Tooltip>
+                <h2
+                  id={titleId}
+                  className="cloud-reader-draggable-title"
+                  draggable
+                  onDragStart={(event) => {
+                    if (
+                      !props.dragResource ||
+                      !writeCloudResourceDragPayload(event.dataTransfer, [props.dragResource])
+                    )
+                      event.preventDefault();
+                  }}
+                >
+                  {props.title}
+                </h2>
               ) : (
                 <h2 id={titleId} title={typeof props.title === "string" ? props.title : undefined}>
                   {props.title}
@@ -122,6 +122,7 @@ export function CloudChatResourcePanel(props: {
               <div className="cloud-reader-subtitle">{props.subtitle ?? props.description}</div>
             </div>
             <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
+            <div ref={setLeadingTarget} className="cloud-reader-leading-tools" />
             <div className="cloud-reader-actions">{props.headerActions}</div>
             <div className="cloud-reader-window-actions">
               {readerLayout?.canSplit ? (
@@ -129,7 +130,7 @@ export function CloudChatResourcePanel(props: {
                   variant="ghost"
                   size="icon-sm"
                   aria-label={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
-                  title={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
+                  tooltip={readerLayout.expanded ? "恢复并排阅读" : "进入完整视图"}
                   onClick={readerLayout.toggleExpanded}
                 >
                   {readerLayout.expanded ? (

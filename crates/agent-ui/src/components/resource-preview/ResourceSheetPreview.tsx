@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
+import { PreviewScrollArea } from "./PreviewScrollArea";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { parseSheetCoordinate, sheetColumnName } from "./previewGeometry";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
@@ -195,7 +196,7 @@ export default function ResourceSheetPreview(
           {coordinateError}
         </p>
       ) : null}
-      <div ref={canvas} className="za-preview-table-scroll" aria-busy={busy}>
+      <PreviewScrollArea ref={canvas} className="za-preview-table-scroll" aria-busy={busy}>
         {error ? (
           <PreviewUnavailable
             message={error}
@@ -281,7 +282,7 @@ export default function ResourceSheetPreview(
         ) : (
           <PreviewUnavailable message="此工作表暂无可显示的内容。" />
         )}
-      </div>
+      </PreviewScrollArea>
       <fieldset className="za-preview-sheets" aria-label="工作表">
         {names.map((name) => (
           <Button

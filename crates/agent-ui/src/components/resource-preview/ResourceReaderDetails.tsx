@@ -10,6 +10,7 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { PreviewToolbarMount } from "./PreviewChrome";
 import { getResourceFileIcon } from "./ResourceFileIcon";
 import "./resource-preview.css";
@@ -18,20 +19,29 @@ export function ResourceTitleMenu({ name, children }: { name: string; children: 
   const chrome = useContext(PreviewToolbarMount);
   const Icon = getResourceFileIcon(name);
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" className="za-reader-title-menu" />}
-        aria-label={`文件菜单：${name}`}
-      >
-        <Icon className="size-4 shrink-0" />
-        <span className="truncate">{name}</span>
-        <ChevronDown className="size-3 shrink-0" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
-        {chrome?.fileMenu}
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Tooltip>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <TooltipTrigger
+              render={<Button variant="ghost" size="sm" className="za-reader-title-menu" />}
+            />
+          }
+          aria-label={`文件菜单：${name}`}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate">{name}</span>
+          <ChevronDown className="size-3 shrink-0" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
+          {chrome?.fileMenu}
+          {children}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <TooltipContent side="bottom" className="max-w-sm break-words">
+        {name}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

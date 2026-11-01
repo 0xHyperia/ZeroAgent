@@ -9,6 +9,8 @@ export const PreviewIdentityContext = createContext<{
 }>({ name: "file", mime: "" });
 export const PreviewToolbarMount = createContext<{
   target: HTMLElement | null;
+  leadingTarget?: HTMLElement | null;
+  inspectorOpen?: boolean;
   pageTarget?: HTMLElement | null;
   fileMenu?: ReactNode;
   setFileMenu?: (content: ReactNode) => void;

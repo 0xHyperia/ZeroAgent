@@ -1,0 +1,49 @@
+/* The viewport remains the native scroll owner; Base UI owns only the overlay rails.
+   Explicit selectors also win over host-wide scrollbar-width: thin declarations. */
+.scroll-area-root > [data-scroll-viewport] {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+}
+.scroll-area-root > [data-scroll-viewport]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.scroll-area-root > .scroll-area-scrollbar {
+  z-index: 4;
+  border: 0;
+  background: transparent;
+  opacity: 1;
+  transition: opacity 140ms ease;
+}
+.scroll-area-root > .scroll-area-scrollbar[data-orientation="vertical"] {
+  width: 10px;
+  padding: 3px 2px;
+}
+.scroll-area-root > .scroll-area-scrollbar[data-orientation="horizontal"] {
+  height: 10px;
+  padding: 2px 3px;
+}
+.scroll-area-scrollbar > .scroll-area-thumb {
+  background: hsl(var(--foreground) / 0.18);
+  border-radius: 999px;
+  transition: background-color 140ms ease;
+}
+.scroll-area-scrollbar:is([data-hovering], [data-scrolling], :hover, :active) {
+  opacity: 1;
+}
+.scroll-area-scrollbar:hover > .scroll-area-thumb,
+.scroll-area-scrollbar:active > .scroll-area-thumb {
+  background: hsl(var(--foreground) / 0.32);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-area-root > .scroll-area-scrollbar,
+  .scroll-area-root > .scroll-area-scrollbar > .scroll-area-thumb {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .scroll-area-root > .scroll-area-scrollbar > .scroll-area-thumb {
+    background: CanvasText;
+  }
+}

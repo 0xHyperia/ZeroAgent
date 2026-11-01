@@ -2,11 +2,13 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { type Components, Streamdown } from "streamdown";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
+import { PreviewScrollArea } from "./PreviewScrollArea";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { previewImageDimensions } from "./previewImageDimensions";
 import { isolatedPreviewDocument, type ResourcePreviewKind, resourceText } from "./previewPolicy";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import type { PreviewWorkerResult } from "./previewWorkerProtocol";
+import { usePreviewReadingState } from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
 
 const PDFPreview = lazy(() => import("./ResourcePDFPreview"));
@@ -262,11 +264,12 @@ function ImagePreview({
           label="图像缩放"
           value={zoom === "fit" ? "fit-page" : Number(zoom) * 100}
           fitWidth={false}
+          actualPercent={scale * 100}
           percentages={[50, 75, 100, 150, 200]}
           onChange={(value) => setZoom(typeof value === "number" ? String(value / 100) : "fit")}
         />
       </PreviewToolbar>
-      <div ref={container} className="za-preview-image-scroll">
+      <PreviewScrollArea ref={container} className="za-preview-image-scroll">
         <div className="za-preview-visual-inner">
           <img
             className="za-preview-image"
@@ -283,7 +286,7 @@ function ImagePreview({
             onError={() => onError("图片未能解码，请下载原件查看。")}
           />
         </div>
-      </div>
+      </PreviewScrollArea>
     </>
   );
 }
@@ -294,6 +297,16 @@ function TextPreview({
   onDownload,
   showToolbar = true,
 }: PreviewRecovery & { bytes: Uint8Array; markdown?: boolean; showToolbar?: boolean }) {
+  const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
+  const zoomControl = (
+    <PreviewZoomControl
+      label="文本缩放"
+      value={zoom}
+      onChange={(value) => setZoom(typeof value === "number" ? value : 100)}
+      fitPage={false}
+      fitWidth={false}
+    />
+  );
   let text: string;
   try {
     text = resourceText(bytes);
@@ -310,9 +323,11 @@ function TextPreview({
   if (markdown)
     return (
       <>
-        {showToolbar ? <PreviewToolbar label="Markdown 文档" detail="只读" /> : null}
-        <div className="za-preview-reading-scroll">
-          <div className="za-preview-markdown document-markdown">
+        <PreviewToolbar label={showToolbar ? "Markdown 文档" : "文本缩放"} detail="只读">
+          {zoomControl}
+        </PreviewToolbar>
+        <PreviewScrollArea className="za-preview-reading-scroll">
+          <div className="za-preview-markdown document-markdown" style={{ zoom: zoom / 100 }}>
             <Streamdown
               mode="static"
               skipHtml
@@ -350,17 +365,22 @@ function TextPreview({
               {text}
             </Streamdown>
           </div>
-        </div>
+        </PreviewScrollArea>
       </>
     );
   return (
     <>
-      {showToolbar ? (
-        <PreviewToolbar label="文本" detail={`${text.split("\n").length} 行 · 只读`} />
-      ) : null}
-      <pre className="za-preview-text" title="文件内容">
-        {text}
-      </pre>
+      <PreviewToolbar
+        label={showToolbar ? "文本" : "文本缩放"}
+        detail={`${text.split("\n").length} 行 · 只读`}
+      >
+        {zoomControl}
+      </PreviewToolbar>
+      <PreviewScrollArea className="za-preview-text-scroll">
+        <pre className="za-preview-text" title="文件内容" style={{ zoom: zoom / 100 }}>
+          {text}
+        </pre>
+      </PreviewScrollArea>
     </>
   );
 }

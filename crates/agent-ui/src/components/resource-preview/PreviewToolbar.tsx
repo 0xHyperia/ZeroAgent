@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useContext, useEffect, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight } from "../IconSet";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewToolbarMount } from "./PreviewChrome";
+import { bindReaderZoom } from "./readerZoom";
 import type { PreviewZoom } from "./readingSession";
 
 /** Reading tools are local presentation state; the host still owns all file actions. */
@@ -46,6 +47,11 @@ export function PreviewToolbar({
       {children ? <div className="za-preview-toolbar-tools">{children}</div> : null}
     </div>
   );
+}
+
+export function PreviewLeadingTools({ children }: { children: ReactNode }) {
+  const mount = useContext(PreviewToolbarMount);
+  return mount?.leadingTarget ? createPortal(children, mount.leadingTarget) : children;
 }
 
 export function PreviewPageControls({
@@ -125,6 +131,7 @@ export function PreviewZoomControl({
   value,
   onChange,
   maxPercent,
+  actualPercent,
   fitPage = true,
   fitWidth = true,
   percentages = [25, 50, 75, 100, 125, 150, 200, 300],
@@ -133,21 +140,44 @@ export function PreviewZoomControl({
   value: PreviewZoom;
   onChange: (value: PreviewZoom) => void;
   maxPercent?: number;
+  actualPercent?: number;
   fitPage?: boolean;
   fitWidth?: boolean;
   percentages?: number[];
 }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const latest = useRef({ value, actualPercent, onChange });
+  latest.current = { value, actualPercent, onChange };
+  useEffect(() => {
+    const element = trigger.current?.closest<HTMLElement>(
+      "[data-cloud-resource-panel],.za-resource-preview",
+    );
+    if (!element || element.matches('[data-variant="thumbnail"]')) return;
+    return bindReaderZoom(
+      element,
+      () => {
+        const snapshot = latest.current;
+        return typeof snapshot.value === "number"
+          ? snapshot.value
+          : (snapshot.actualPercent ?? 100);
+      },
+      maxPercent ?? 400,
+      (next) => latest.current.onChange(next),
+    );
+  }, [maxPercent]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<button type="button" className="za-preview-zoom-trigger" />}
+        render={<button ref={trigger} type="button" className="za-preview-zoom-trigger" />}
         aria-label={label}
       >
-        {typeof value === "number"
-          ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
-          : value === "fit-page"
-            ? "适合窗口"
-            : "适合宽度"}
+        {typeof value !== "number" && actualPercent !== undefined
+          ? `${Math.round(actualPercent)}%`
+          : typeof value === "number"
+            ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
+            : value === "fit-page"
+              ? "适合窗口"
+              : "适合宽度"}
         <ChevronDown className="size-3" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="za-preview-zoom-menu">
