@@ -16,7 +16,7 @@ import { cachedDateTimeFormat } from "../../lib/shared/intlFormatters";
 import { cn } from "../../lib/shared/utils";
 import { ConfirmActionPopover } from "../ui/confirm-action-popover";
 import { LabelTooltip } from "../ui/label-tooltip";
-import { type UsageDetailEntry, UsageInfoPopover } from "./UsagePanel";
+import type { UsageDetailEntry } from "./UsagePanel";
 
 // 分享弹窗依赖 Markdown 渲染和截图库，按需加载，不进转录区首屏。
 const AssistantReplyShareDialog = lazy(() =>
@@ -220,8 +220,6 @@ export function TranscriptAssistantMessageActions(
     onCopy,
     alwaysShowActions = false,
     timestamp,
-    usageEntries,
-    usageContextWindow,
     retryDisabled,
     retryTitle,
     retryConfirmDescription,
@@ -339,7 +337,6 @@ export function TranscriptAssistantMessageActions(
             </button>
           )}
         </ConfirmActionPopover>
-        <UsageInfoPopover entries={usageEntries} contextWindow={usageContextWindow} />
         <TranscriptTimestampLabel timestamp={timestamp} className="ml-1" />
       </div>
     </div>
