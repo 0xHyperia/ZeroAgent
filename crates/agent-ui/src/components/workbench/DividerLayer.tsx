@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { cn } from "../../lib/shared/utils";
 import {
   clampRatioToSideMinSizes,
@@ -6,6 +6,7 @@ import {
   MIN_CONVERSATION_PANE_HEIGHT,
   MIN_CONVERSATION_PANE_WIDTH,
 } from "../../lib/workbench/geometry";
+import { LabelTooltip } from "../ui/label-tooltip";
 
 export type DividerSideMinSizes = { firstMin: number; secondMin: number };
 
@@ -26,8 +27,10 @@ export type DividerLayerProps = {
   onResizePreview: (splitId: string, ratio: number) => void;
   /** Final ratio on pointer-up / keyboard commit. */
   onResizeCommit: (splitId: string, ratio: number) => void;
-  /** Double-click equalizes the split back to 50/50. */
+  /** Double-click / Enter restores the caller's default (normally 50/50). */
   onEqualize?: (splitId: string) => void;
+  /** Optional discoverability hint, composed onto the separator without a DOM wrapper. */
+  resetHint?: string;
 };
 
 const KEYBOARD_RESIZE_STEP = 0.02;
@@ -69,7 +72,9 @@ export function DividerLayer(props: DividerLayerProps) {
     onResizePreview,
     onResizeCommit,
     onEqualize,
+    resetHint,
   } = props;
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     splitId: string;
@@ -97,7 +102,7 @@ export function DividerLayer(props: DividerLayerProps) {
     <>
       {dividers.map((divider) => {
         const ratioNow = clampFor(divider, currentRatio(divider, dividerSize));
-        return (
+        const separator = (
           // biome-ignore lint/a11y/useSemanticElements: This is an interactive, draggable separator with value semantics; hr cannot implement pointer capture or keyboard resizing.
           <div
             key={divider.splitId}
@@ -125,6 +130,7 @@ export function DividerLayer(props: DividerLayerProps) {
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
+              setDraggingId(divider.splitId);
               event.currentTarget.setPointerCapture(event.pointerId);
               dragRef.current = {
                 pointerId: event.pointerId,
@@ -162,6 +168,7 @@ export function DividerLayer(props: DividerLayerProps) {
               if (!drag || drag.pointerId !== event.pointerId) return;
               if (drag.frame !== null) cancelAnimationFrame(drag.frame);
               dragRef.current = null;
+              setDraggingId(null);
               event.currentTarget.releasePointerCapture(event.pointerId);
               onResizeCommit(divider.splitId, drag.lastRatio);
             }}
@@ -170,9 +177,18 @@ export function DividerLayer(props: DividerLayerProps) {
               if (!drag || drag.pointerId !== event.pointerId) return;
               if (drag.frame !== null) cancelAnimationFrame(drag.frame);
               dragRef.current = null;
+              setDraggingId(null);
               onResizeCommit(divider.splitId, drag.lastRatio);
             }}
+            onLostPointerCapture={() => setDraggingId(null)}
             onKeyDown={(event) => {
+              if (event.altKey || event.ctrlKey || event.metaKey || dragRef.current) return;
+              if (event.key === "Enter" && onEqualize) {
+                event.preventDefault();
+                event.stopPropagation();
+                onEqualize(divider.splitId);
+                return;
+              }
               const horizontal = divider.axis === "horizontal";
               const decreaseKey = horizontal ? "ArrowLeft" : "ArrowUp";
               const increaseKey = horizontal ? "ArrowRight" : "ArrowDown";
@@ -198,6 +214,17 @@ export function DividerLayer(props: DividerLayerProps) {
               )}
             />
           </div>
+        );
+        return resetHint && onEqualize ? (
+          <LabelTooltip
+            key={divider.splitId}
+            label={resetHint}
+            disabled={draggingId === divider.splitId}
+            side={divider.axis === "horizontal" ? "right" : "bottom"}
+            render={separator}
+          />
+        ) : (
+          separator
         );
       })}
     </>

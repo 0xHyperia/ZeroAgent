@@ -13,13 +13,13 @@ import { cn } from "../../lib/shared/utils";
 import { Input } from "./input";
 import { Separator } from "./separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./sheet";
+import { SidebarResizeContext, SidebarResizeHandle, useSidebarWidthLayout } from "./sidebar-resize";
 import { Skeleton } from "./skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 import { TooltipButton as Button } from "./tooltip-button";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "272px";
 const SIDEBAR_WIDTH_MOBILE = "min(86vw, 272px)";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
@@ -71,6 +71,8 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void;
 }) {
   const isMobile = useIsMobile();
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const widthLayout = useSidebarWidthLayout(wrapperRef, isMobile);
   const [openMobile, setOpenMobile] = React.useState(false);
 
   // This is the internal state of the sidebar.
@@ -153,23 +155,26 @@ function SidebarProvider({
 
   return (
     <SidebarContext.Provider value={contextValue}>
-      <div
-        data-slot="sidebar-wrapper"
-        style={
-          {
-            "--sidebar-width": SIDEBAR_WIDTH,
-            "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
-            ...style,
-          } as React.CSSProperties
-        }
-        className={cn(
-          "group/sidebar-wrapper relative flex size-full min-h-0 min-w-0 has-data-[variant=inset]:bg-sidebar",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </div>
+      <SidebarResizeContext.Provider value={widthLayout}>
+        <div
+          ref={wrapperRef}
+          data-slot="sidebar-wrapper"
+          style={
+            {
+              "--sidebar-width": `${widthLayout.width}px`,
+              "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+              ...style,
+            } as React.CSSProperties
+          }
+          className={cn(
+            "group/sidebar-wrapper relative flex size-full min-h-0 min-w-0 has-data-[variant=inset]:bg-sidebar",
+            className,
+          )}
+          {...props}
+        >
+          {children}
+        </div>
+      </SidebarResizeContext.Provider>
     </SidebarContext.Provider>
   );
 }
@@ -304,6 +309,7 @@ function Sidebar({
           {children}
         </div>
       </div>
+      {side === "left" && state === "expanded" ? <SidebarResizeHandle /> : null}
     </div>
   );
 }

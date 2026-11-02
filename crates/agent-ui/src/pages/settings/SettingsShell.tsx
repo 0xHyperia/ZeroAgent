@@ -1,5 +1,6 @@
 import { ArrowLeft, Search } from "@liveagent/ui/components/IconSet";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { SidebarResizeHandle } from "../../components/ui/sidebar-resize";
 import { TooltipButton } from "../../components/ui/tooltip-button";
 import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
 import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/registry";
@@ -180,7 +181,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
         <div className={web ? "contents" : "flex min-h-0 flex-1"}>
           <aside
             className={cn(
-              "flex w-68 shrink-0 flex-col bg-settings-rail",
+              "relative flex w-68 shrink-0 flex-col bg-settings-rail",
               "web:max-820:w-full web:max-820:flex-none web:max-820:bg-background/96",
             )}
           >
@@ -336,6 +337,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                 </div>
               ) : null}
             </nav>
+            <SidebarResizeHandle />
           </aside>
           <main className="flex min-w-0 flex-1 flex-col web:min-w-0 web:max-820:min-h-0 web:max-820:flex-auto">
             {presentation === "page" ? (

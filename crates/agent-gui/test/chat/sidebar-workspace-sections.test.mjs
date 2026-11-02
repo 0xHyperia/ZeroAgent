@@ -30,11 +30,13 @@ const icons = [
   "ListChecks",
   "Loader2",
   "MessageSquare",
+  "PanelLeft",
   "PanelLeftClose",
   "Plus",
   "Search",
   "Settings",
   "Share2",
+  "SquarePen",
   "Trash2",
   "X",
 ];

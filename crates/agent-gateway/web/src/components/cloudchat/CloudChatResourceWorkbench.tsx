@@ -1,9 +1,12 @@
 import { WorkbenchBody } from "@liveagent/ui/application/WorkbenchShell";
 import { ResourcePreviewReadingSession } from "@liveagent/ui/components/resource-preview/ResourcePreview";
 import { DividerLayer } from "@liveagent/ui/components/workbench/DividerLayer";
+import { useLocale } from "@liveagent/ui/i18n";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
 import { CloudChatReaderLayout } from "./CloudChatReaderContext";
+
+const DEFAULT_READER_SPLIT_RATIO = 0.44;
 
 /** Presentation only: both the original canvas and resource controller stay mounted. */
 export function CloudChatResourceWorkbench(props: {
@@ -14,11 +17,15 @@ export function CloudChatResourceWorkbench(props: {
   primary: ReactNode | ((readingOnly: boolean) => ReactNode);
   children: ReactNode;
 }) {
+  const { t } = useLocale();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [canSplit, setCanSplit] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [area, setArea] = useState({ width: 0, height: 0 });
-  const [split, setSplit] = useState({ scope: props.readingScope, ratio: 0.44 });
+  const [split, setSplit] = useState({
+    scope: props.readingScope,
+    ratio: DEFAULT_READER_SPLIT_RATIO,
+  });
   const [resizing, setResizing] = useState(false);
   useEffect(() => {
     const element = host;
@@ -41,7 +48,10 @@ export function CloudChatResourceWorkbench(props: {
   const usable = Math.max(1, area.width - 8);
   const ratio = Math.max(
     320 / usable,
-    Math.min(1 - 420 / usable, split.scope === props.readingScope ? split.ratio : 0.44),
+    Math.min(
+      1 - 420 / usable,
+      split.scope === props.readingScope ? split.ratio : DEFAULT_READER_SPLIT_RATIO,
+    ),
   );
   const primaryWidth = usable * ratio;
   const changeRatio = (_id: string, value: number) =>
@@ -111,10 +121,11 @@ export function CloudChatResourceWorkbench(props: {
             dividerSize={8}
             hitSlop={8}
             separatorLabel="调整对话与预览宽度"
+            resetHint={t("layout.resetWidthHint")}
             minSizesForSplit={() => ({ firstMin: 320, secondMin: 420 })}
             onResizePreview={changeRatio}
             onResizeCommit={changeRatio}
-            onEqualize={() => changeRatio("cloud-reader", 0.5)}
+            onEqualize={() => changeRatio("cloud-reader", DEFAULT_READER_SPLIT_RATIO)}
           />
         </WorkbenchBody>
       </CloudChatReaderLayout.Provider>

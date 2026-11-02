@@ -1,3 +1,4 @@
+import { normalizeRightDockSettings } from "@liveagent/app/lib/settings";
 import {
   createContext,
   type ReactNode,
@@ -12,6 +13,7 @@ import { usePanelRef } from "react-resizable-panels";
 import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { cn } from "../../lib/shared/utils";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
 import {
@@ -23,6 +25,7 @@ import {
 
 // Matches the `duration-200` flex-grow transition below, plus a small margin.
 const TOOLS_PANEL_TRANSITION_MS = 240;
+const DEFAULT_TOOLS_PANEL_WIDTH = normalizeRightDockSettings({}).width;
 
 type PanelsState = {
   open: boolean;
@@ -36,6 +39,7 @@ type PanelsState = {
   panelRef: ReturnType<typeof usePanelRef>;
   onClose: () => void;
   startResize: () => void;
+  resetWidth: () => void;
 };
 const Context = createContext<PanelsState | null>(null);
 function usePanels() {
@@ -109,11 +113,18 @@ export function WorkspacePanelGroup({
       toolsMaximum,
       panelRef,
       startResize: () => setResizing(true),
+      resetWidth: () => {
+        if (!open || mobile) return;
+        const next = Math.max(toolsMinimum, Math.min(toolsMaximum, DEFAULT_TOOLS_PANEL_WIDTH));
+        panelRef.current?.resize(next);
+        onWidthChange(next);
+      },
     }),
     [
       open,
       width,
       onClose,
+      onWidthChange,
       immediate,
       mobile,
       resizing,
@@ -185,6 +196,7 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
     immediate,
     onClose,
     startResize,
+    resetWidth,
     panelRef,
     toolsMinimum,
     toolsMaximum,
@@ -226,13 +238,28 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
     <>
       {/* Keep the desktop separator registered and enabled while collapsed.
           The library caches separator-to-panel associations at registration. */}
-      <ResizableHandle
-        disabled={mobile}
-        aria-label={t("projectTools.resizePanel")}
-        aria-hidden={!open || mobile}
-        withHandle
-        onPointerDown={startResize}
-        className={cn((mobile || !open) && "invisible w-0 pointer-events-none")}
+      <LabelTooltip
+        label={t("layout.resetWidthHint")}
+        disabled={resizing || !open || mobile}
+        side="left"
+        render={
+          <ResizableHandle
+            disabled={mobile}
+            disableDoubleClick
+            aria-label={t("projectTools.resizePanel")}
+            aria-hidden={!open || mobile}
+            withHandle
+            onPointerDown={startResize}
+            onDoubleClick={resetWidth}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey) return;
+              event.preventDefault();
+              event.stopPropagation();
+              resetWidth();
+            }}
+            className={cn((mobile || !open) && "invisible w-0 pointer-events-none")}
+          />
+        }
       />
       <ResizablePanel
         id="workspace-tools"

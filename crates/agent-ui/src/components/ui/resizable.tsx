@@ -26,13 +26,13 @@ export function ResizableHandle({
     <ResizablePrimitive.Separator
       data-slot="resizable-handle"
       className={cn(
-        "relative z-10 flex w-px shrink-0 items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+        "group/resize relative z-10 flex w-px shrink-0 items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2 hover:bg-ring/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring transition-colors duration-150 motion-reduce:transition-none",
         className,
       )}
       {...props}
     >
       {withHandle ? (
-        <div className="pointer-events-none h-10 w-0.5 rounded-full bg-muted-foreground/35" />
+        <div className="pointer-events-none h-10 w-0.5 rounded-full bg-muted-foreground/35 group-hover/resize:bg-ring/65 group-focus-visible/resize:bg-ring/65 transition-colors duration-150 motion-reduce:transition-none" />
       ) : null}
     </ResizablePrimitive.Separator>
   );

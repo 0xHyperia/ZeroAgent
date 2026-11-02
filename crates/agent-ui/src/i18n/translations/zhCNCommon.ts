@@ -1,4 +1,8 @@
 export const ZH_CN_COMMON_TRANSLATIONS = {
+  "layout.resetWidthHint": "双击恢复默认宽度",
+  "sidebar.resizeWidth": "调整侧栏宽度",
+  "sidebar.resizeWidthHint":
+    "拖动调整宽度，双击恢复默认；左右键微调，Shift 加速，Enter 恢复，Escape 取消拖动。",
   "chat.modelPickerView": "模型选择视图",
   "chat.modelPickerByGroup": "按分组",
   "chat.modelPickerByVendor": "按厂商",

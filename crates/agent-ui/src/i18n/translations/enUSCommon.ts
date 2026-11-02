@@ -1,4 +1,8 @@
 export const EN_US_COMMON_TRANSLATIONS = {
+  "layout.resetWidthHint": "Double-click to restore default width",
+  "sidebar.resizeWidth": "Resize sidebar",
+  "sidebar.resizeWidthHint":
+    "Drag to resize; double-click to reset. Arrow keys adjust, Shift accelerates, Enter resets, Escape cancels the drag.",
   "chat.modelPickerView": "Model picker view",
   "chat.modelPickerByGroup": "By group",
   "chat.modelPickerByVendor": "By vendor",

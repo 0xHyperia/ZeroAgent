@@ -1483,8 +1483,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         ) : null}
         <div
           className={cn(
-            "chat-history-sidebar-inner flex w-272px min-w-272px min-h-0 flex-1 flex-col",
-            "web:max-820:w-full web:max-820:min-w-0 web:max-820:translate-z-0 web:max-820:[backface-visibility:hidden]",
+            "chat-history-sidebar-inner flex w-full min-w-0 min-h-0 flex-1 flex-col",
+            "web:max-820:translate-z-0 web:max-820:[backface-visibility:hidden]",
           )}
         >
           {headerTop}

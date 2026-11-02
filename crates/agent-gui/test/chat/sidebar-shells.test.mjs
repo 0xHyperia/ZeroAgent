@@ -210,6 +210,13 @@ test("standard resizable panels restore width, preserve main content, and save k
     await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
     assert.ok(widths.length > 0, "keyboard resizing saves the new width");
     assert.ok(widths.at(-1) > 400);
+    await act(async () => separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    assert.equal(widths.at(-1), 420, "double click restores the configured default instead of the collapsed initial size");
+    assert.equal(tools.getAttribute("aria-hidden"), "false", "reset leaves the tools open");
+    await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    assert.equal(widths.at(-1), 420);
+    assert.equal(document.getElementById("main-draft"), draft);
+    assert.equal(draft.value, "draft");
     await act(async () => { mobile = true; mediaListeners.forEach(listener => listener()); });
     assert.equal(document.querySelectorAll("#tools-content").length, 1);
     assert.ok(document.querySelector('[role="dialog"]')?.contains(document.getElementById("tools-content")));
