@@ -28,6 +28,7 @@ export type ResourceDOCXPreviewProps = PreviewRecovery & {
 export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const { bytes, assertCurrent } = props;
   const [source, setSource] = useState("");
+  const [paintedSource, setPaintedSource] = useState("");
   const [reader, setReader] = useState<ReturnType<typeof prepareReaderDocument> | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const surface = useRef<HTMLDivElement>(null);
@@ -400,12 +401,20 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             tabIndex={-1}
             title={props.name}
             srcDoc={source}
+            className="za-preview-frame-content"
+            data-ready={paintedSource === source}
+            onLoad={() => setPaintedSource(source)}
           />
         ) : error ? (
           <span className="za-thumbnail-fallback">Word</span>
         ) : (
           <PreviewLoading />
         )}
+        {source && paintedSource !== source ? (
+          <div className="za-preview-frame-pending" data-cover="true">
+            <PreviewLoading />
+          </div>
+        ) : null}
       </div>
     );
   return (
@@ -549,11 +558,13 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             >
               <iframe
                 ref={frame}
-                className="za-preview-document"
+                className="za-preview-document za-preview-frame-content"
+                data-ready={paintedSource === source}
                 sandbox={props.thumbnail ? "" : "allow-scripts"}
                 referrerPolicy="no-referrer"
                 title={props.name}
                 srcDoc={source}
+                onLoad={() => setPaintedSource(source)}
                 style={
                   props.thumbnail
                     ? undefined
@@ -570,6 +581,11 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             <PreviewLoading message="正在排版文档…" onCancel={props.onCancel} />
           )}
         </PreviewScrollArea>
+        {source && paintedSource !== source && !error ? (
+          <div className="za-preview-frame-pending">
+            <PreviewLoading onCancel={props.onCancel} />
+          </div>
+        ) : null}
         {imageShortcut && !annotating && imageShortcut.visible !== false && onRequestRevision ? (
           <div
             className="za-document-image-shortcut"

@@ -1,0 +1,140 @@
+/* Two distinct reading states: a turning cover ring and a stationary file shimmer. */
+.za-preview-loading[data-loading-variant] {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 220px;
+  padding: 0;
+}
+.za-preview-loading[data-loading-variant="thumbnail"] {
+  width: 100%;
+  height: 100%;
+  min-height: 100px;
+  background: #808080;
+  color: #fff;
+}
+.za-preview-cover-ring {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+.za-preview-cover-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
+}
+.za-preview-cover-ring-track {
+  opacity: 0.28;
+}
+.za-preview-cover-ring-arc {
+  stroke-dasharray: 18 45;
+  stroke-linecap: round;
+  animation: za-preview-cover-turn 2000ms linear infinite;
+  animation-delay: var(--za-loading-elapsed, 0ms);
+}
+.za-preview-file-loading {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: hsl(var(--foreground) / 0.23);
+}
+.za-preview-file-loading svg {
+  width: 44px;
+  height: 44px;
+  color: inherit;
+  stroke-width: 1.6;
+}
+.dark .za-preview-file-loading {
+  color: hsl(var(--foreground) / 0.4);
+}
+.za-preview-file-loading::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  background: linear-gradient(
+    120deg,
+    transparent 45%,
+    var(--za-preview-loading-canvas, var(--za-surface-subtle)) 50%,
+    transparent 55%
+  );
+  background-size: 280% 100%;
+  animation: za-preview-file-shimmer 1800ms linear infinite;
+  animation-delay: var(--za-loading-elapsed, 0ms);
+}
+.za-preview-loading-cancel {
+  position: absolute;
+  bottom: 24px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+}
+.za-preview-loading-cancel:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.za-preview-body > .za-preview-loading[data-loading-variant="reader"] {
+  position: absolute;
+  inset: 0;
+}
+.za-preview-body {
+  position: relative;
+}
+.za-docx-zoom-viewport > .za-preview-scroll-content:has(> .za-preview-loading),
+.za-preview-slide-scroll > .za-preview-scroll-content:has(> .za-preview-loading) {
+  display: flex;
+}
+.za-preview-frame-pending {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  background: var(--za-preview-loading-canvas, var(--za-surface-subtle));
+}
+.za-preview-frame-pending[data-cover="true"] {
+  background: #808080;
+}
+.za-preview-frame-content[data-ready="false"] {
+  opacity: 0;
+}
+.za-preview-frame-content[data-ready="true"] {
+  animation: za-preview-content-enter 160ms ease-out;
+}
+@keyframes za-preview-cover-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes za-preview-file-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+@keyframes za-preview-content-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-preview-cover-ring-arc,
+  .za-preview-file-loading::after,
+  .za-preview-frame-content[data-ready="true"] {
+    animation: none;
+  }
+  .za-preview-file-loading::after {
+    display: none;
+  }
+}

@@ -1,4 +1,5 @@
 import { Component, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
+import { File } from "../IconSet";
 import { PreviewIdentityContext } from "./PreviewChrome";
 import {
   checkPreviewSignature,
@@ -75,9 +76,14 @@ export function ResourcePreview(props: ResourcePreviewProps) {
   } | null>(null);
   const [error, setError] = useState<{ identity: string; message: string } | null>(null);
   const kind = resourcePreviewKind(resource);
+  const loadingClock = useRef({ identity, startedAt: performance.now() });
+  if (loadingClock.current.identity !== identity)
+    loadingClock.current = { identity, startedAt: performance.now() };
+  const textCover = kind === "text" || kind === "markdown";
   const thumbnailUnavailable =
     thumbnail &&
-    (resource.size > 4 * 1024 * 1024 ||
+    (textCover ||
+      resource.size > 4 * 1024 * 1024 ||
       !["docx", "pptx", "pdf", "image", "svg", "text", "markdown", "sheet"].includes(kind));
   // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit retry owns a fresh abort lifetime
   useEffect(() => {
@@ -149,6 +155,8 @@ export function ResourcePreview(props: ResourcePreviewProps) {
       value={{
         name: resource.name,
         mime: resource.mime,
+        thumbnail,
+        loadingStartedAt: loadingClock.current.startedAt,
         onRequestRevision: props.onRequestRevision,
       }}
     >
@@ -160,10 +168,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
       >
         <div className="za-preview-body">
           {thumbnail && (thumbnailUnavailable || error?.identity === identity) ? (
-            <div className="za-thumbnail-fallback">
-              <TypeIcon />
-              <span>{resource.name.split(".").pop()?.toUpperCase()}</span>
-            </div>
+            <div className="za-thumbnail-fallback">{textCover ? <File /> : <TypeIcon />}</div>
           ) : kind === "unsupported" ? (
             <PreviewUnavailable
               onDownload={props.onDownload}
@@ -189,13 +194,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
             >
               <Suspense
                 fallback={
-                  thumbnail ? (
-                    <div className="za-thumbnail-loading">
-                      <TypeIcon />
-                    </div>
-                  ) : (
-                    <PreviewLoading onCancel={() => setPaused(identity)} />
-                  )
+                  <PreviewLoading onCancel={thumbnail ? undefined : () => setPaused(identity)} />
                 }
               >
                 <PreviewReadingTarget identity={identity}>
@@ -214,12 +213,8 @@ export function ResourcePreview(props: ResourcePreviewProps) {
                 </PreviewReadingTarget>
               </Suspense>
             </PreviewBoundary>
-          ) : thumbnail ? (
-            <div className="za-thumbnail-loading">
-              <TypeIcon />
-            </div>
           ) : (
-            <PreviewLoading onCancel={() => setPaused(identity)} />
+            <PreviewLoading onCancel={thumbnail ? undefined : () => setPaused(identity)} />
           )}
         </div>
       </section>

@@ -257,6 +257,11 @@ function StyledSheet({
     const scale = coverWidth / 360;
     return (
       <div ref={frame} className="za-sheet-cover" aria-hidden="true" inert>
+        {busy ? (
+          <div className="za-preview-frame-pending" data-cover="true">
+            {feedback}
+          </div>
+        ) : null}
         <div
           className="za-sheet-cover-engine"
           style={{

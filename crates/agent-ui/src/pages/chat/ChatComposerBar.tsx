@@ -48,7 +48,11 @@ import {
   Trash2,
   WandSparkles,
 } from "@liveagent/ui/components/IconSet";
-import { getUploadedResourceFileIcon } from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
+import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
+import {
+  getResourceFileIcon,
+  getUploadedResourceFileIcon,
+} from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1682,26 +1686,23 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     renderPreview={props.renderPendingUploadPreview}
                   />
                 ))}
-                {props.uploadingAttachments?.map((file) => (
-                  <ComposerAttachmentCard
-                    key={file.id}
-                    fileName={file.fileName}
-                    pathTitle={file.fileName}
-                    fallbackIcon={null}
-                    disabled
-                    removeLabel=""
-                    onRemove={() => {}}
-                    previewContent={
-                      <div
-                        className="flex size-full items-center justify-center bg-muted/30"
-                        role="status"
-                        aria-label={`正在上传 ${file.fileName}`}
-                      >
-                        <Loader2 className="size-5 animate-spin motion-reduce:animate-none" />
-                      </div>
-                    }
-                  />
-                ))}
+                {props.uploadingAttachments?.map((file) => {
+                  const FileIcon = getResourceFileIcon(file.fileName);
+                  return (
+                    <ComposerAttachmentCard
+                      key={file.id}
+                      fileName={file.fileName}
+                      pathTitle={file.fileName}
+                      fallbackIcon={<FileIcon />}
+                      disabled
+                      removeLabel=""
+                      onRemove={() => {}}
+                      previewContent={
+                        <PreviewLoading variant="thumbnail" message={`正在上传 ${file.fileName}`} />
+                      }
+                    />
+                  );
+                })}
               </div>
             ) : null}
 

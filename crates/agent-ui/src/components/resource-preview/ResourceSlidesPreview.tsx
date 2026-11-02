@@ -438,6 +438,7 @@ function SlideImage({
   onScale?: (percent: number) => void;
 }) {
   const [image, setImage] = useState<{ url: string; width: number; height: number } | null>(null);
+  const [paintedURL, setPaintedURL] = useState("");
   const { container, viewport } = usePreviewViewport();
   useEffect(() => {
     let url = "";
@@ -491,17 +492,24 @@ function SlideImage({
           <img
             src={image.url}
             alt={name}
-            className="za-preview-slide"
+            className="za-preview-slide za-preview-frame-content"
+            data-ready={paintedURL === image.url}
             style={{ width: `${image.width * scale}px` }}
             onLoad={() => {
               try {
                 assertCurrent();
+                setPaintedURL(image.url);
               } catch {
                 onError("此预览已失效，请重新打开文件。");
               }
             }}
             onError={() => onError("此页未能显示，请下载原件查看。")}
           />
+          {paintedURL !== image.url ? (
+            <div className="za-preview-frame-pending">
+              <PreviewLoading onCancel={onCancel} />
+            </div>
+          ) : null}
         </div>
       )}
     </PreviewScrollArea>

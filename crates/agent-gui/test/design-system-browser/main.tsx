@@ -7,7 +7,12 @@ import {
   type ComposerModelControlsProps,
 } from "@liveagent/ui/components/chat/ComposerModelControls";
 import { ConversationStarter } from "@liveagent/ui/components/chat/ConversationStarter";
-import { BookOpen, FileText, LoaderCircle, MessageSquare } from "@liveagent/ui/components/IconSet";
+import {
+  BookOpen,
+  FileText,
+  LoaderCircle,
+  MessageSquare,
+} from "@liveagent/ui/components/IconSet";
 import { ResourceSelectionCard } from "@liveagent/ui/components/resources/ResourceSelectionCard";
 import { AccountAvatar, AccountIdentity } from "@liveagent/ui/components/ui/account-identity";
 import { Button } from "@liveagent/ui/components/ui/button";
@@ -42,6 +47,7 @@ import { DEFAULT_CHAT_RUNTIME_CONTROLS } from "@liveagent/ui/lib/settings/types"
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UpdateNavigationPreview } from "./UpdateNavigationPreview";
+import { LoadingMotionPreview } from "./LoadingMotionPreview";
 
 // Isolated display data. No account, Gateway, Tauri, upload or model client is mounted.
 const models: ComposerModelControlsProps["modelOptions"] = [
@@ -238,7 +244,9 @@ function App() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Dialog>
-                  <DialogTrigger render={<Button variant="outline" />}>打开样例弹窗</DialogTrigger>
+                  <DialogTrigger render={<Button variant="outline" />}>
+                    打开样例弹窗
+                  </DialogTrigger>
                   <DialogContent closeLabel="关闭样例弹窗">
                     <DialogHeader>
                       <DialogTitle>验证弹窗和焦点</DialogTitle>
@@ -344,5 +352,11 @@ function App() {
 const root = document.getElementById("root");
 if (root)
   createRoot(root).render(
-    new URLSearchParams(location.search).has("updates") ? <UpdateNavigationPreview /> : <App />,
+    new URLSearchParams(location.search).has("loading") ? (
+      <LoadingMotionPreview />
+    ) : new URLSearchParams(location.search).has("updates") ? (
+      <UpdateNavigationPreview />
+    ) : (
+      <App />
+    ),
   );

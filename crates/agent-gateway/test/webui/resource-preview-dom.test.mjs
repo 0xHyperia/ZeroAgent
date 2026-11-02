@@ -25,7 +25,7 @@ async function mount(t, resource, load, options = {}) {
     const unavailable = host.querySelector(".za-preview-unavailable");
     if (unavailable) return /已取消/.test(unavailable.textContent) ? "paused" : "error";
     // JSDOM does not decode images. Decoder states are exercised explicitly by image tests.
-    if (host.querySelector(".za-image-content,.za-image-cover-content")) return "loaded";
+    if (host.querySelector(".za-image-content,.za-image-cover-content,.za-thumbnail-fallback")) return "loaded";
     const loading = host.querySelector(".za-preview-loading");
     if (loading) return /正在准备预览/.test(loading.textContent) ? "preparing" : "parsing";
     if (host.querySelector('[aria-busy="true"]')) return "parsing";
@@ -48,7 +48,7 @@ async function mount(t, resource, load, options = {}) {
   };
   const render = async (next = resource, reader = load, expected = "settled") => {
     await env.act(async () => {
-      root.render(env.React.createElement(ResourcePreview, { resource: next, load: reader, onDownload: () => downloads++ }));
+      root.render(env.React.createElement(ResourcePreview, { resource: next, load: reader, variant: options.variant, onDownload: () => downloads++ }));
     });
     await waitFor(expected);
   };
@@ -185,6 +185,7 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
   URL.revokeObjectURL=url=>revoked.push(url);
   t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;for(const [key,value] of globals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}});
   const app=await mount(t,descriptor(bytes,{name:"演示.pptx",mime:"application/octet-stream"}),async()=>({blob:new Blob([bytes]),assertCurrent(){}}),{
+    waitFor: host => Boolean(host.querySelector("img")),
     setup(env){
       globalThis.DOMParser=env.dom.window.DOMParser;globalThis.XMLSerializer=env.dom.window.XMLSerializer;
       Object.defineProperty(env.dom.window.HTMLElement.prototype,"clientWidth",{configurable:true,get(){return this.classList.contains("za-preview-slide-scroll")?640:0;}});
@@ -192,6 +193,9 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
     },
     mocks:{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){return {slideCount:2,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="20" y="40">第${input.index??0}页</text></svg>`};}})}},
   });
+  assert.ok(app.host.querySelector(".za-preview-frame-pending"),"decoded bytes retain feedback until the image has painted");
+  await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
+  assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   const fittedWidth=parseFloat(app.host.querySelector("img").style.width);
   assert.ok(Math.abs(fittedWidth-268*16/9)<0.01);
   await chooseZoom(app,"幻灯片缩放","200%");
@@ -202,6 +206,22 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
   assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"200%");
   assert.equal(app.host.querySelector('button[aria-label="下一页"]').disabled,true);
   assert.deepEqual(revoked,["blob:slide-0"]);
+});
+
+test("cover read and image decode share the cover ring, while plain text covers skip reading the original", async t => {
+  let finish, reads=0;
+  const app=await mount(t,descriptor(),async signal=>{reads++;await new Promise(resolve=>{finish=resolve;});return {blob:new Blob([png]),assertCurrent:()=>signal.throwIfAborted()};},{variant:"thumbnail",waitFor:"preparing"});
+  assert.equal(app.host.querySelector(".za-preview-loading").dataset.loadingVariant,"thumbnail");
+  assert.ok(app.host.querySelector(".za-preview-cover-ring"));
+  assert.equal(app.host.querySelector(".za-preview-file-loading"),null);
+  await app.env.act(async()=>{finish();await flush();});
+  await app.waitFor(host=>Boolean(host.querySelector("img")));
+  assert.equal(app.host.querySelector(".za-preview-loading").dataset.loadingVariant,"thumbnail","the decode stage must not change to the reader glyph");
+  await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
+  assert.equal(app.host.querySelector(".za-preview-loading"),null);
+  await app.render(descriptor(Buffer.from("text"),{name:"说明.md",mime:"text/markdown"}),async()=>{reads++;throw new Error("generic covers do not read bytes");});
+  assert.ok(app.host.querySelector(".za-thumbnail-fallback"));
+  assert.equal(reads,1);
 });
 
 test("cancel during format parsing disposes the worker and blocks a late parsed result", async t => {

@@ -127,10 +127,18 @@ test("real DOCX bytes are inspected before parse/render and produce an opaque no
     "./previewWorkerClient": { createResourcePreviewWorker: () => ({ dispose() {}, async request(input) { calls.push("inspect"); return { entries: inspectPreviewArchive(input.bytes) }; } }) },
     "docx-preview": { async parseAsync(...args) { calls.push("parse"); return real.parseAsync(...args); }, async renderDocument(...args) { calls.push("render"); return real.renderDocument(...args); } },
   });
+  const holdFrameLoad=event=>{if(event.target?.tagName==="IFRAME")event.stopImmediatePropagation();};
+  app.env.dom.window.document.addEventListener("load",holdFrameLoad,true);
   await app.mount({ bytes: docxFixture(), name: "中文文档.docx", assertCurrent() {} });
   await app.waitFor(() => app.host.querySelector("iframe") || app.host.querySelector(".za-preview-unavailable"));
   assert.deepEqual(calls, ["inspect", "parse", "render"]);
   const frame = app.host.querySelector("iframe"); assert.ok(frame, app.host.textContent);
+  assert.equal(frame.dataset.ready,"false");
+  assert.ok(app.host.querySelector(".za-preview-frame-pending"),"parsed DOCX retains feedback until the isolated frame is loaded");
+  app.env.dom.window.document.removeEventListener("load",holdFrameLoad,true);
+  await app.env.act(async()=>frame.dispatchEvent(new Event("load")));
+  assert.equal(frame.dataset.ready,"true");
+  assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
   assert.doesNotMatch(frame.getAttribute("sandbox"),/allow-same-origin|allow-forms|allow-popups/);
   assert.equal(frame.getAttribute("referrerpolicy"), "no-referrer");

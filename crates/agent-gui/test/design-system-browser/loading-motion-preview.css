@@ -1,0 +1,122 @@
+.loading-proof {
+  display: grid;
+  grid-template-columns: 1fr 40%;
+  height: 100dvh;
+  color: hsl(var(--foreground));
+  background: var(--za-surface);
+}
+.loading-proof-chat {
+  position: relative;
+  min-width: 0;
+  padding: 12px 24px;
+}
+.loading-proof-chat > header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.loading-proof-chat > p {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+.loading-proof-composer {
+  position: absolute;
+  bottom: 20px;
+  inset-inline: 20px;
+  padding: 14px;
+  border: 1px solid var(--za-border);
+  border-radius: 28px;
+  background: var(--za-surface);
+  box-shadow: 0 4px 20px #00000008;
+}
+.loading-proof-composer textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 0;
+  background: transparent;
+  height: 64px;
+  padding-top: 18px;
+  outline: none;
+}
+.loading-proof-composer footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+.loading-proof-composer footer span {
+  font-size: 13px;
+}
+.loading-proof-reader {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: #f7f7f7;
+  border-left: 1px solid var(--za-border);
+}
+.loading-proof.dark .loading-proof-reader {
+  background: #202020;
+}
+.loading-proof-reader > header {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+.loading-proof-reader > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 60%;
+  border-radius: 999px;
+  border: 1px solid var(--za-border);
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--za-surface);
+}
+.loading-proof-reader > header svg {
+  width: 16px;
+  height: 16px;
+}
+.loading-proof-reader > .za-resource-preview {
+  --za-preview-loading-canvas: #f7f7f7;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  margin: 0;
+  background: transparent;
+}
+.loading-proof.dark .loading-proof-reader > .za-resource-preview {
+  --za-preview-loading-canvas: #202020;
+}
+@media (max-width: 700px) {
+  .loading-proof {
+    grid-template-columns: 1fr;
+    grid-template-rows: 50% 50%;
+  }
+  .loading-proof-chat {
+    padding: 8px 12px;
+  }
+  .loading-proof-chat > p {
+    display: none;
+  }
+  .loading-proof-chat > header {
+    font-size: 12px;
+    gap: 0;
+  }
+  .loading-proof-composer {
+    inset-inline: 12px;
+    bottom: 12px;
+  }
+  .loading-proof-reader {
+    border-top: 1px solid var(--za-border);
+  }
+}

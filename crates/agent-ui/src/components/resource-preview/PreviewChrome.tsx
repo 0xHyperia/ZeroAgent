@@ -5,6 +5,8 @@ import type { DocumentRevisionComment } from "./ResourceDocumentComments";
 export const PreviewIdentityContext = createContext<{
   name: string;
   mime: string;
+  thumbnail?: boolean;
+  loadingStartedAt?: number;
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
 }>({ name: "file", mime: "" });
 export const PreviewToolbarMount = createContext<{

@@ -183,7 +183,7 @@
   transform: scale(0.205);
   transform-origin: top left;
 }
-.za-resource-preview[data-variant="thumbnail"] :is(.za-preview-loading, .za-preview-unavailable) {
+.za-resource-preview[data-variant="thumbnail"] .za-preview-unavailable {
   gap: 8px;
   min-height: 100px;
   height: 100px;
@@ -223,7 +223,6 @@
   width: 28px;
   height: 32px;
   filter: grayscale(1);
-  animation: za-file-breathe 1.8s ease-in-out infinite;
 }
 .za-thumbnail-loading[data-idle="true"] svg {
   animation: none;
@@ -375,7 +374,6 @@
   background: var(--za-surface);
   color: hsl(var(--foreground));
 }
-.za-preview-loading,
 .za-preview-unavailable {
   position: relative;
   display: flex;
@@ -390,63 +388,6 @@
   color: hsl(var(--muted-foreground));
   font-size: 13px;
   line-height: 1.7;
-}
-.za-preview-file-loading {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 60px;
-  opacity: 0.5;
-  filter: grayscale(1);
-  animation: za-file-breathe 1.8s ease-in-out infinite;
-}
-.za-preview-file-loading svg {
-  width: 44px;
-  height: 48px;
-}
-.za-preview-file-loading::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    110deg,
-    transparent 25%,
-    hsl(var(--background) / 0.85) 48%,
-    transparent 72%
-  );
-  background-size: 240% 100%;
-  animation: za-file-sweep 1.8s ease-in-out infinite;
-}
-.za-preview-loading > button {
-  position: absolute;
-  bottom: 24px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-}
-@keyframes za-file-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.65;
-  }
-}
-@keyframes za-file-sweep {
-  from {
-    background-position: 180% 0;
-  }
-  to {
-    background-position: -80% 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .za-preview-file-loading,
-  .za-preview-file-loading::after {
-    animation: none;
-  }
 }
 .za-preview-loading p,
 .za-preview-unavailable p {

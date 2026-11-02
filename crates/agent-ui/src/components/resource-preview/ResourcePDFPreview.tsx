@@ -104,6 +104,8 @@ export default function ResourcePDFPreview({
 
   const workspace = useRef<HTMLDivElement>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [painted, setPainted] = useState(false);
+  const markPainted = useCallback(() => setPainted(true), []);
   const [page, setPage] = usePreviewReadingState("pdfPage", 1);
   const [zoom, setZoom] = usePreviewReadingState("pdfZoom", "fit-width");
   const [error, setError] = useState("");
@@ -154,6 +156,7 @@ export default function ResourcePDFPreview({
   }
   useEffect(() => {
     let active = true;
+    setPainted(false);
     const assets = pdfPreviewAssetsURL(pdfVersion);
     const task = getDocument({
       data: bytes.slice(),
@@ -313,7 +316,8 @@ export default function ResourcePDFPreview({
         ) : null}
         <PreviewScrollArea
           ref={container}
-          className="za-preview-pdf"
+          className="za-preview-pdf za-preview-frame-content"
+          data-ready={painted || !!error}
           aria-label="PDF 阅读画布"
           aria-busy={!document && !error}
           onScroll={() => {
@@ -345,13 +349,18 @@ export default function ResourcePDFPreview({
                 workspace={workspace}
                 comments={markedComments}
                 activeSelection={selection}
+                onPainted={thumbnail || page === index + 1 ? markPainted : undefined}
+                hideLoading={!painted}
                 commentDestination={commentDestination}
               />
             ))
-          ) : (
-            <PreviewLoading message="正在读取 PDF…" onCancel={onCancel} />
-          )}
+          ) : null}
         </PreviewScrollArea>
+        {!painted && !error ? (
+          <div className="za-preview-frame-pending" data-cover={!!thumbnail}>
+            <PreviewLoading message="正在读取 PDF…" onCancel={thumbnail ? undefined : onCancel} />
+          </div>
+        ) : null}
         {!thumbnail ? (
           <ResourceDocumentComments
             exitRef={annotationExit}
@@ -391,7 +400,11 @@ function PDFPage({
   commentDestination,
   onScale,
   activeSelection,
+  onPainted,
+  hideLoading,
 }: PreviewRecovery & {
+  onPainted?: () => void;
+  hideLoading?: boolean;
   onScale?: (percent: number) => void;
   activeSelection?: RevisionSelection | null;
   comments?: readonly DocumentRevisionComment[];
@@ -427,6 +440,9 @@ function PDFPage({
     height: number;
   } | null>(null);
   const enabled = near || selected;
+  useEffect(() => {
+    if (!busy && enabled) onPainted?.();
+  }, [busy, enabled, onPainted]);
   const scale = boundedPreviewScale(
     previewScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 }),
     size,
@@ -739,7 +755,7 @@ function PDFPage({
         <div className="za-preview-rendering">
           <PreviewUnavailable message={error} onDownload={onDownload} onRetry={onRetry} />
         </div>
-      ) : busy && (near || selected) ? (
+      ) : !hideLoading && busy && (near || selected) ? (
         <div className="za-preview-rendering">
           <PreviewLoading message={`正在渲染第 ${number} 页…`} />
         </div>

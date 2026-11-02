@@ -129,19 +129,35 @@ test("page entry validates Enter, restores an unfinished edit on blur and keeps 
 
 test("PDF page rendering ignores an older page resolution after a newer jump and uses actual percent",async t=>{
   const pending=new Map(),renders=[],cancelled=[];
-  const pdfPage=number=>({getViewport:({scale})=>({width:600*scale,height:800*scale}),render:({viewport})=>{renders.push({number,width:viewport.width});return {promise:Promise.resolve(),cancel(){cancelled.push(number);}};}});
+  let firstPaint;
+  const pdfPage=number=>({getViewport:({scale})=>({width:600*scale,height:800*scale}),render:({viewport})=>{renders.push({number,width:viewport.width});return {promise:number===1&&!firstPaint?new Promise(resolve=>{firstPaint=resolve;}):Promise.resolve(),cancel(){cancelled.push(number);}};}});
   const document={numPages:3,getPage:number=>number===1?Promise.resolve(pdfPage(1)):new Promise(resolve=>pending.set(number,()=>resolve(pdfPage(number))))};
   const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(document),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
   Object.defineProperty(window.HTMLElement.prototype,"clientWidth",{configurable:true,get(){return this.classList.contains("za-preview-pdf")?640:0;}});
   Object.defineProperty(window.HTMLElement.prototype,"clientHeight",{configurable:true,get(){return this.classList.contains("za-preview-pdf")?300:0;}});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>renders.length===1);
+  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"false");
+  assert.equal(app.host.querySelectorAll(".za-preview-loading").length,1,"one canvas loader remains until first pixels, rather than loaders on empty sheets");
+  await app.env.act(async()=>{firstPaint();await flush();});
+  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"true");
+  assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   await app.zoom("PDF 缩放",200);
   assert.equal(renders.at(-1).width,1600);
   await app.key(await app.input("页码","1"),"Enter");assert.equal(app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy"),"false");
   await app.key(await app.input("页码","3"),"Enter");await app.key(await app.input("页码","2"),"Enter");
   await app.env.act(async()=>{pending.get(2)();await flush();});assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').style.visibility,"visible");
   await app.env.act(async()=>{pending.get(3)();await flush();});assert.equal(renders.at(-1).number,2);assert.ok(!renders.some(item=>item.number===3));assert.ok(cancelled.includes(1));
+});
+
+test("PDF document failure leaves the loading canvas and exposes recovery instead of a hidden error",async t=>{
+  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.reject(new Error("broken document")),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
+  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){},onRetry(){},onDownload(){}}));
+  await app.wait(()=>app.host.querySelector(".za-preview-unavailable"));
+  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"true");
+  assert.equal(app.host.querySelector(".za-preview-loading"),null);
+  assert.match(app.host.textContent,/重试预览/);
 });
 
 test("PDF continuous pages isolate a failed page so another page can recover without reopening",async t=>{
