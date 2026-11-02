@@ -47,11 +47,7 @@ import {
 import * as monaco from "@liveagent/ui/lib/monacoEditor";
 import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
-import CssWorker from "monaco-editor/languages/features/css/css.worker.js?worker";
-import HtmlWorker from "monaco-editor/languages/features/html/html.worker.js?worker";
-import JsonWorker from "monaco-editor/languages/features/json/json.worker.js?worker";
-import TsWorker from "monaco-editor/languages/features/typescript/ts.worker.js?worker";
+import "../../lib/monacoWorkers";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -67,28 +63,6 @@ import {
   type EditorRemoteSource,
   localEditorFileIo,
 } from "./workspaceEditorFileIo";
-
-type MonacoEnvironmentGlobal = typeof globalThis & {
-  MonacoEnvironment?: {
-    getWorker: (workerId: string, label: string) => Worker;
-  };
-};
-
-const monacoGlobal = globalThis as MonacoEnvironmentGlobal;
-
-if (!monacoGlobal.MonacoEnvironment) {
-  monacoGlobal.MonacoEnvironment = {
-    getWorker(_workerId, label) {
-      if (label === "json") return new JsonWorker();
-      if (label === "css" || label === "scss" || label === "less") return new CssWorker();
-      if (label === "html" || label === "handlebars" || label === "razor") {
-        return new HtmlWorker();
-      }
-      if (label === "typescript" || label === "javascript") return new TsWorker();
-      return new EditorWorker();
-    },
-  };
-}
 
 export type WorkspaceCodeEditorOpenRequest = {
   id: number;

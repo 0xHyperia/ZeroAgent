@@ -1,6 +1,8 @@
 import type { SVGProps } from "react";
+import Code2 from "~icons/lucide/code-xml";
 import { getFileTypeIcon, getUploadedFileTypeIcon } from "../chat/fileTypeIcons";
 import { FileText } from "../IconSet";
+import { isSourceFileName } from "./sourceFileType";
 
 type Props = SVGProps<SVGSVGElement>;
 
@@ -59,6 +61,7 @@ function documentIcon(name: string) {
   if (["xlsx", "xls", "csv", "tsv", "ods"].includes(extension ?? "")) return SheetIcon;
   if (["pptx", "ppt", "odp"].includes(extension ?? "")) return SlidesIcon;
   if (["md", "markdown", "mdown", "mkd"].includes(extension ?? "")) return MarkdownIcon;
+  if (isSourceFileName(name) && !/\.(?:txt|log)$/i.test(name)) return Code2;
   return null;
 }
 

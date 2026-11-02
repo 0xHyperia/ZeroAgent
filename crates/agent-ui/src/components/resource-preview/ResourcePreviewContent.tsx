@@ -1,16 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
-import { PreviewScrollArea } from "./PreviewScrollArea";
-import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
+import { PreviewToolbar } from "./PreviewToolbar";
 import { previewImageDimensions, previewSVGDimensions } from "./previewImageDimensions";
 import { isolatedPreviewDocument, type ResourcePreviewKind, resourceText } from "./previewPolicy";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import type { PreviewWorkerResult } from "./previewWorkerProtocol";
 import ResourceImagePreview from "./ResourceImagePreview";
 import ResourceMediaPreview from "./ResourceMediaPreview";
-import { usePreviewReadingState } from "./readingSession";
 
+const SourcePreview = lazy(() => import("./ResourceSourcePreview"));
 const MarkdownPreview = lazy(() => import("./ResourceMarkdownPreview"));
 const PDFPreview = lazy(() => import("./ResourcePDFPreview"));
 const DOCXPreview = lazy(() => import("./ResourceDOCXPreview"));
@@ -128,17 +127,27 @@ export default function ResourcePreviewContent(
         />
       </Suspense>
     );
-  if (kind === "text") return <TextPreview bytes={bytes} onDownload={props.onDownload} />;
+  if (kind === "text")
+    return (
+      <Suspense fallback={<PreviewLoading onCancel={props.onCancel} />}>
+        <SourcePreview
+          bytes={bytes}
+          assertCurrent={assertCurrent}
+          onDownload={props.onDownload}
+          onCancel={props.onCancel}
+        />
+      </Suspense>
+    );
   if (["html", "svg"].includes(kind) && source)
     return (
-      <>
-        <PreviewToolbar label={kind === "svg" ? "SVG 源码" : "HTML 源码"} detail="只读">
-          <Button variant="ghost" size="sm" onClick={() => setSource(false)}>
-            返回预览
-          </Button>
-        </PreviewToolbar>
-        <TextPreview bytes={bytes} onDownload={props.onDownload} showToolbar={false} />
-      </>
+      <Suspense fallback={<PreviewLoading onCancel={props.onCancel} />}>
+        <SourcePreview
+          bytes={bytes}
+          assertCurrent={assertCurrent}
+          onDownload={props.onDownload}
+          onPreview={() => setSource(false)}
+        />
+      </Suspense>
     );
   if (kind === "html")
     return (
@@ -218,49 +227,4 @@ export default function ResourcePreviewContent(
       <PreviewLoading message="正在读取媒体…" onCancel={props.onCancel} />
     );
   return null;
-}
-
-function TextPreview({
-  bytes,
-  onDownload,
-  showToolbar = true,
-}: PreviewRecovery & { bytes: Uint8Array; showToolbar?: boolean }) {
-  const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
-  const zoomControl = (
-    <PreviewZoomControl
-      label="文本缩放"
-      value={zoom}
-      onChange={(value) => setZoom(typeof value === "number" ? value : 100)}
-      fitPage={false}
-      fitWidth={false}
-    />
-  );
-  let text: string;
-  try {
-    text = resourceText(bytes);
-  } catch {
-    return (
-      <PreviewUnavailable
-        message="此文件不是可预览的 UTF-8 文本，或超过文本预览范围。"
-        onDownload={onDownload}
-      />
-    );
-  }
-  if (!text.trim())
-    return <PreviewUnavailable message="此文件暂无可显示的内容。" onDownload={onDownload} />;
-  return (
-    <>
-      <PreviewToolbar
-        label={showToolbar ? "文本" : "文本缩放"}
-        detail={`${text.split("\n").length} 行 · 只读`}
-      >
-        {zoomControl}
-      </PreviewToolbar>
-      <PreviewScrollArea className="za-preview-text-scroll">
-        <pre className="za-preview-text" title="文件内容" style={{ zoom: zoom / 100 }}>
-          {text}
-        </pre>
-      </PreviewScrollArea>
-    </>
-  );
 }

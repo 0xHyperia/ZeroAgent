@@ -19,14 +19,17 @@ export function PreviewToolbar({
   label,
   detail,
   children,
+  placement = "format",
 }: {
   label: string;
   detail?: ReactNode;
   children?: ReactNode;
+  placement?: "format" | "options";
 }) {
   const mount = useContext(PreviewToolbarMount);
+  const target = placement === "options" ? (mount?.optionsTarget ?? mount?.target) : mount?.target;
   if (mount)
-    return mount.target && children
+    return target && children
       ? createPortal(
           <fieldset
             className="za-preview-toolbar-tools"
@@ -35,7 +38,7 @@ export function PreviewToolbar({
           >
             {children}
           </fieldset>,
-          mount.target,
+          target,
         )
       : null;
   return (

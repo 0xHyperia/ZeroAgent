@@ -619,9 +619,16 @@ function PreviewBody(props: {
   } = props;
   const { t } = useLocale();
   if (
-    ["document", "presentation", "pdf", "archive", "spreadsheet", "audio", "video"].includes(
-      preview.kind,
-    )
+    [
+      "document",
+      "presentation",
+      "pdf",
+      "archive",
+      "spreadsheet",
+      "audio",
+      "video",
+      "text",
+    ].includes(preview.kind)
   ) {
     return (
       <div className="h-full overflow-auto bg-background px-3 pb-3">
@@ -634,6 +641,11 @@ function PreviewBody(props: {
             size: preview.bytes.byteLength,
             sha256: preview.sha256,
           }}
+          sourcePaths={
+            /^(?:[a-z]:[\\/]|\/)/i.test(preview.path)
+              ? { path: preview.path }
+              : { relativePath: preview.path }
+          }
           load={async (signal) => {
             const assertCurrent = () => {
               signal.throwIfAborted();

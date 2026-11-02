@@ -24,6 +24,40 @@ import {
   type HighlightOptions,
   type HighlightResult,
 } from "@streamdown/code";
+import { normalizeSourceLanguage, sourceLanguages } from "./sourceLanguages";
+import { getSyntaxHighlighter } from "./syntaxHighlighter";
+
+// Keep the existing bounded/stream-aware wrapper, but use full TextMate rules rather than
+// the upstream forgiving JavaScript-regexp approximation for embedded/less common grammars.
+const completeCodePlugin: CodeHighlighterPlugin | undefined = baseCodePlugin && {
+  ...baseCodePlugin,
+  supportsLanguage: (language) => normalizeSourceLanguage(language) !== undefined,
+  getSupportedLanguages: () =>
+    sourceLanguages.flatMap((language) => [language.id, ...language.aliases]),
+  highlight(options, callback) {
+    void getSyntaxHighlighter()
+      .then(async (engine) => {
+        const language = normalizeSourceLanguage(options.language) ?? "plaintext";
+        if (language !== "plaintext")
+          await engine.loadLanguage(language as Parameters<typeof engine.loadLanguage>[0]);
+        await engine.loadTheme(...(options.themes as Parameters<typeof engine.loadTheme>));
+        return engine.codeToTokens(options.code, {
+          lang: language === "plaintext" ? "text" : language,
+          themes: { light: options.themes[0], dark: options.themes[1] },
+        });
+      })
+      .then((result) => callback?.(result))
+      .catch(() => {
+        // Keep a failed grammar readable. No file content is logged or cached by this layer.
+        callback?.({
+          tokens: options.code.split(/\r\n|\r|\n/).map((content) => [{ content, offset: 0 }]),
+          fg: "",
+          bg: "",
+        });
+      });
+    return null;
+  },
+};
 
 const EXACT_CACHE_LIMIT = 256;
 const IDENTITY_CACHE_LIMIT = 64;
@@ -93,7 +127,7 @@ function lruSet<Value>(cache: Map<string, Value>, key: string, value: Value, lim
 }
 
 export function createThrottledCodePlugin(
-  base: CodeHighlighterPlugin = baseCodePlugin,
+  base: CodeHighlighterPlugin = completeCodePlugin ?? baseCodePlugin,
 ): CodeHighlighterPlugin {
   const exactCache = new Map<string, HighlightResult>();
   const identities = new Map<string, IdentityEntry>();
@@ -177,6 +211,6 @@ export function createThrottledCodePlugin(
 
 // 测试环境会把 @streamdown/code mock 成 { code: undefined }（禁用高亮）；
 // 此时透传 undefined 给 Streamdown（= 无高亮），与 mock 意图一致。
-export const throttledCodePlugin: CodeHighlighterPlugin | undefined = baseCodePlugin
-  ? createThrottledCodePlugin(baseCodePlugin)
+export const throttledCodePlugin: CodeHighlighterPlugin | undefined = completeCodePlugin
+  ? createThrottledCodePlugin(completeCodePlugin)
   : undefined;

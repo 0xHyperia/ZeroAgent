@@ -193,6 +193,26 @@ export const DropdownMenuItem = React.forwardRef<HTMLDivElement, DropdownMenuIte
 DropdownMenuItem.displayName = "DropdownMenuItem";
 
 export const DropdownMenuRadioGroup = Menu.RadioGroup;
+export const DropdownMenuCheckboxItem = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof Menu.CheckboxItem>
+>(({ className, children, ...props }, ref) => (
+  <Menu.CheckboxItem
+    ref={ref}
+    className={cn(
+      "za-menu-item flex cursor-pointer items-center gap-3 px-3 py-2 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50",
+      React.useContext(MenuVariantContext) === "soft" && softItemClassName,
+      className,
+    )}
+    {...props}
+  >
+    {children}
+    <Menu.CheckboxItemIndicator className="ml-auto" aria-hidden="true">
+      ✓
+    </Menu.CheckboxItemIndicator>
+  </Menu.CheckboxItem>
+));
+DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem";
 export const DropdownMenuRadioItem = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof Menu.RadioItem>

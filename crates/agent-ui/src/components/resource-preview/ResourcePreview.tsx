@@ -23,6 +23,9 @@ export type ResourcePreviewProps = {
   /** The host owns authentication and resource/version access; it never passes a URL or key. */
   load: (signal: AbortSignal) => Promise<{ blob: Blob; assertCurrent: () => void }>;
   onDownload?: () => void;
+  /** Source links select original lines; paths are optional host-provided display values. */
+  sourceRange?: { fromLine: number; toLine?: number };
+  sourcePaths?: { path?: string; relativePath?: string };
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
   /** A non-interactive, bounded cover rendered from the same verified original. */
   variant?: "reader" | "thumbnail";
@@ -157,6 +160,8 @@ export function ResourcePreview(props: ResourcePreviewProps) {
         mime: resource.mime,
         thumbnail,
         loadingStartedAt: loadingClock.current.startedAt,
+        sourceRange: props.sourceRange,
+        sourcePaths: props.sourcePaths,
         onRequestRevision: props.onRequestRevision,
       }}
     >

@@ -19,6 +19,12 @@ type ReadingSnapshot = {
   pdfNavigation: boolean;
   docxZoom: PreviewZoom;
   textZoom: number;
+  sourceZoom: number;
+  sourceWrap: boolean;
+  sourceLanguage: string;
+  sourceLine: number;
+  sourceLeft: number;
+  textView: "preview" | "source";
   docxNavigation: "contents" | "pages" | "closed";
   documentComments: DocumentRevisionComment[];
   slidePage: number;
@@ -80,7 +86,8 @@ export function createReadingSnapshotStore() {
       )
         return;
       if (typeof value === "string" && value.length > 128) return;
-      if (typeof value === "number" && (!Number.isFinite(value) || Math.abs(value) > 10_000))
+      const maximum = field === "sourceLine" || field === "sourceLeft" ? 10_000_000 : 10_000;
+      if (typeof value === "number" && (!Number.isFinite(value) || Math.abs(value) > maximum))
         return;
       const snapshot = { ...entries.get(key), [field]: value };
       entries.delete(key);

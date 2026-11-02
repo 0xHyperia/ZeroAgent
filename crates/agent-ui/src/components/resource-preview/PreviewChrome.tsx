@@ -7,11 +7,14 @@ export const PreviewIdentityContext = createContext<{
   mime: string;
   thumbnail?: boolean;
   loadingStartedAt?: number;
+  sourceRange?: { fromLine: number; toLine?: number };
+  sourcePaths?: { path?: string; relativePath?: string };
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
 }>({ name: "file", mime: "" });
 export const PreviewToolbarMount = createContext<{
   target: HTMLElement | null;
   leadingTarget?: HTMLElement | null;
+  optionsTarget?: HTMLElement | null;
   inspectorOpen?: boolean;
   pageTarget?: HTMLElement | null;
   fileMenu?: ReactNode;

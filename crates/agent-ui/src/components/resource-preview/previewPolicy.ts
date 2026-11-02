@@ -1,3 +1,5 @@
+import { isSourceFileName } from "./sourceFileType";
+
 export const RESOURCE_PREVIEW_MAX_BYTES = 32 * 1024 * 1024;
 export const RESOURCE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 export type ResourcePreviewKind =
@@ -52,6 +54,7 @@ export function resourcePreviewKind(
     return "video";
   if (extension === "zip" || file.mime === "application/zip") return "archive";
   if (
+    isSourceFileName(file.name) ||
     file.mime.startsWith("text/") ||
     [
       "application/json",

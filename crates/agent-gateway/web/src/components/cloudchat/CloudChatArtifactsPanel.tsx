@@ -407,7 +407,7 @@ export function CloudChatArtifactsPanel(props: Props) {
       closeLabel="关闭成果库"
       wide={Boolean(
         selected &&
-          ["docx", "pptx", "pdf", "sheet", "html", "svg", "archive"].includes(
+          ["docx", "pptx", "pdf", "sheet", "html", "svg", "archive", "markdown", "text"].includes(
             resourcePreviewKind(selected),
           ),
       )}

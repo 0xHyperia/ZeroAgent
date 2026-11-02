@@ -8,7 +8,10 @@ import {
   Upload,
 } from "@liveagent/ui/components/IconSet";
 import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
-import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/previewPolicy";
+import {
+  RESOURCE_TEXT_MAX_BYTES,
+  resourcePreviewKind,
+} from "@liveagent/ui/components/resource-preview/previewPolicy";
 import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "@liveagent/ui/components/resource-preview/ResourcePreview";
 import {
@@ -20,7 +23,7 @@ import { Button } from "@liveagent/ui/components/ui/button";
 import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { TooltipButton as ReaderAction } from "@liveagent/ui/components/ui/tooltip-button";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import {
   CLOUD_FILE_CONTEXT_BYTES,
@@ -72,6 +75,11 @@ export function CloudChatFilePanel(props: Props) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sourceOpen, setSourceOpen] = useState(props.fromLine !== undefined);
+  const sourceRange = useMemo(
+    () =>
+      props.fromLine === undefined ? undefined : { fromLine: props.fromLine, toLine: props.toLine },
+    [props.fromLine, props.toLine],
+  );
   const [detailsOpen, setDetailsOpen] = useState(false);
   const mounted = useRef(true);
   const controller = useRef(new AbortController());
@@ -130,7 +138,12 @@ export function CloudChatFilePanel(props: Props) {
       guard();
       if (!valid() || generation.current !== seq) return;
       setSelected(file);
+      const fullSourcePreview =
+        ["text", "markdown"].includes(resourcePreviewKind(file)) &&
+        file.size <= RESOURCE_TEXT_MAX_BYTES &&
+        !!file.uploaded_at;
       if (
+        !fullSourcePreview &&
         file.state === "ready" &&
         (!file.workspace_loadable || file.text_bytes <= CLOUD_FILE_CONTEXT_BYTES)
       ) {
@@ -284,12 +297,6 @@ export function CloudChatFilePanel(props: Props) {
               <Info className="size-4" />
               文件信息
             </DropdownMenuItem>
-            {source && resourcePreviewKind(selected) === "markdown" ? (
-              <DropdownMenuItem className="gap-2" onClick={() => setSourceOpen((open) => !open)}>
-                <FileText className="size-4" />
-                {sourceOpen ? "关闭原文" : "查看原文"}
-              </DropdownMenuItem>
-            ) : null}
             {props.onOpenInSpace ? (
               <DropdownMenuItem className="gap-2" onClick={props.onOpenInSpace}>
                 <FolderOpen className="size-4" />
@@ -357,7 +364,7 @@ export function CloudChatFilePanel(props: Props) {
       closeLabel="关闭文件库"
       wide={Boolean(
         selected &&
-          ["docx", "pptx", "pdf", "sheet", "html", "svg", "markdown"].includes(
+          ["docx", "pptx", "pdf", "sheet", "html", "svg", "markdown", "text"].includes(
             resourcePreviewKind(selected),
           ),
       )}
@@ -437,6 +444,7 @@ export function CloudChatFilePanel(props: Props) {
             {selected.uploaded_at && !["deleting", "deleted"].includes(selected.state) ? (
               <ResourcePreview
                 key={`${selected.id}:${selected.sha256}`}
+                sourceRange={sourceRange}
                 resource={{ ...selected, identity: `${selected.id}:${selected.sha256}` }}
                 load={async (signal) => {
                   const guard = captureAccountRequestGuard();
@@ -458,7 +466,10 @@ export function CloudChatFilePanel(props: Props) {
                 onDownload={() => void download(selected)}
               />
             ) : null}
-            {source && (resourcePreviewKind(selected) !== "markdown" || sourceOpen) ? (
+            {source &&
+            (!["text", "markdown"].includes(resourcePreviewKind(selected)) ||
+              selected.size > RESOURCE_TEXT_MAX_BYTES ||
+              !selected.uploaded_at) ? (
               <details
                 className="mt-4"
                 open={sourceOpen}

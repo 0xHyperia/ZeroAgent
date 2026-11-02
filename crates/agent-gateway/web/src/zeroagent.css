@@ -1988,6 +1988,8 @@ html[data-zeroagent-platform="android"]
 .cloud-reader-actions {
   order: 3;
 }
+.cloud-reader-options-tools { order: 3; display: flex; }
+.cloud-reader-options-tools:empty { display: none; }
 .cloud-reader-window-actions {
   order: 4;
   gap: 0;
@@ -2064,6 +2066,14 @@ html[data-zeroagent-platform="android"]
   transform: rotate(-8deg);
 }
 @container cloud-reader (max-width: 600px) {
+  .cloud-resource-reader:has(.za-source-preview) .cloud-reader-header button {
+    height: 44px;
+    min-height: 44px;
+  }
+  .cloud-resource-reader:has(.za-source-preview) .cloud-reader-header
+    :is(.cloud-reader-actions, .cloud-reader-options-tools, .cloud-reader-window-actions) button {
+    min-width: 44px;
+  }
   .cloud-reader-header {
     gap: 4px;
     padding-inline: 8px;

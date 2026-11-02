@@ -15,8 +15,9 @@ import WrapText from "~icons/lucide/wrap-text";
 import { throttledCodePlugin } from "../../lib/markdownCodeHighlight";
 import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { COPY_FEEDBACK_DURATION, useCopyFeedback } from "../../lib/shared/useCopyFeedback";
-import { Check, ChevronRight, Copy } from "../IconSet";
+import { Check, ChevronRight, Copy, FileText } from "../IconSet";
 import {
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -25,10 +26,12 @@ import {
   DropdownMenuSubTrigger,
 } from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
-import { PreviewToolbarMount } from "./PreviewChrome";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
+import { PreviewLeadingTools } from "./PreviewToolbar";
 import { resourceText } from "./previewPolicy";
+import ResourceSourcePreview, { SourceViewControl } from "./ResourceSourcePreview";
 import { bindReaderZoom } from "./readerZoom";
 import { usePreviewReadingState } from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
@@ -107,6 +110,18 @@ function MarkdownCover({ text }: { text: string }) {
 }
 
 function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: () => void }) {
+  const identity = useContext(PreviewIdentityContext);
+  const [view, setView] = usePreviewReadingState(
+    "textView",
+    identity.sourceRange ? "source" : "preview",
+  );
+  const source = view === "source";
+  const fromLine = identity.sourceRange?.fromLine;
+  const toLine = identity.sourceRange?.toLine;
+  const sourceLink = fromLine === undefined ? "" : `${fromLine}:${toLine ?? fromLine}`;
+  useEffect(() => {
+    if (sourceLink) setView("source");
+  }, [sourceLink, setView]);
   const viewport = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
   const latest = useRef(zoom);
@@ -129,44 +144,67 @@ function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: 
     if (!setFileMenu) return;
     setFileMenu(
       <>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            文本缩放
-            <span className="ml-auto text-muted-foreground">{Math.round(zoom)}%</span>
-            <ChevronRight className="size-4" />
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={String(zoom)}
-              onValueChange={(value) => setZoom(Number(value))}
-            >
-              {[75, 100, 125, 150, 200].map((value) => (
-                <DropdownMenuRadioItem key={value} value={String(value)} closeOnClick>
-                  {value}%
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        <DropdownMenuItem onClick={() => setView(source ? "preview" : "source")}>
+          <FileText className="size-4" />
+          {source ? "正文预览" : "查看原文"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {!source ? (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              文本缩放
+              <span className="ml-auto text-muted-foreground">{Math.round(zoom)}%</span>
+              <ChevronRight className="size-4" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={String(zoom)}
+                onValueChange={(value) => setZoom(Number(value))}
+              >
+                {[75, 100, 125, 150, 200].map((value) => (
+                  <DropdownMenuRadioItem key={value} value={String(value)} closeOnClick>
+                    {value}%
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ) : null}
         <DropdownMenuSeparator />
       </>,
     );
     return () => setFileMenu(null);
-  }, [setFileMenu, zoom, setZoom]);
+  }, [setFileMenu, zoom, setZoom, source, setView]);
   return (
-    <PreviewScrollArea
-      ref={viewport}
-      className="za-markdown-reading-scroll"
-      tabIndex={0}
-      aria-label="Markdown 文档正文"
-    >
-      <div
-        className="za-markdown-column"
-        style={{ "--za-markdown-zoom": zoom / 100 } as CSSProperties}
-      >
-        <MarkdownBody text={text} assertCurrent={assertCurrent} />
+    <div className="za-markdown-views">
+      {!source ? (
+        <PreviewLeadingTools>
+          <SourceViewControl source={false} onChange={() => setView("source")} />
+        </PreviewLeadingTools>
+      ) : null}
+      <div className="za-markdown-rendered" hidden={source} inert={source}>
+        <PreviewScrollArea
+          ref={viewport}
+          className="za-markdown-reading-scroll"
+          tabIndex={0}
+          aria-label="Markdown 文档正文"
+        >
+          <div
+            className="za-markdown-column"
+            style={{ "--za-markdown-zoom": zoom / 100 } as CSSProperties}
+          >
+            <MarkdownBody text={text} assertCurrent={assertCurrent} />
+          </div>
+        </PreviewScrollArea>
       </div>
-    </PreviewScrollArea>
+      {source ? (
+        <ResourceSourcePreview
+          text={text}
+          assertCurrent={assertCurrent}
+          onPreview={() => setView("preview")}
+        />
+      ) : null}
+    </div>
   );
 }
 

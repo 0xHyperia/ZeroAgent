@@ -16,7 +16,8 @@ async function chooseZoom(app,label,itemText) {
 }
 
 async function mount(t, resource, load, options = {}) {
-  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "@streamdown/code": {code:undefined}, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
+  let env;
+  env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { "../../lib/monacoNls": {preparePreferredMonacoNlsLocale:async()=>{},lockMonacoNlsLocale(){}}, "./ResourceSourceEditor": { default: props => env.React.createElement("pre", {"data-source-ready":"true"}, props.text) }, streamdown, "@streamdown/code": {code:undefined}, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
   options.setup?.(env);
   const { ResourcePreview } = env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const host = document.body.appendChild(document.createElement("div"));
@@ -298,6 +299,7 @@ test("empty text gives an explicit state while HTML preview keeps its sandbox th
   await app.click("查看源码");
   assert.equal(app.host.querySelector("iframe"),null);assert.equal(app.host.querySelector("script"),null);
   assert.match(app.host.querySelector("pre").textContent,/window.secret=true/);
-  await app.click("返回预览");
+  await app.env.act(async()=>{app.host.querySelector('[aria-label="阅读视图"]').dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true,cancelable:true}));await flush();});
+  await app.env.act(async()=>{[...document.querySelectorAll('[role="menuitemradio"]')].find(e=>e.textContent==='正文预览').click();await flush();});
   assert.equal(app.host.querySelector("iframe").getAttribute("sandbox"),"");
 });

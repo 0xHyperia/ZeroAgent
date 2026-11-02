@@ -1,0 +1,76 @@
+.source-proof {
+  display: flex;
+  height: 100dvh;
+  min-width: 0;
+  background: var(--za-surface);
+  color: hsl(var(--foreground));
+}
+.source-proof > aside {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 20px;
+  border-right: 1px solid var(--za-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.source-proof textarea {
+  min-height: 100px;
+  padding: 12px;
+  border: 1px solid var(--za-border);
+  border-radius: 14px;
+}
+.source-proof-reader {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  --za-reader-top-inset: 54px;
+}
+.source-proof-reader > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 5;
+  pointer-events: none;
+}
+.source-proof-reader > header > * {
+  pointer-events: auto;
+}
+.source-proof-reader > header > :nth-child(3) {
+  margin-left: auto;
+}
+.source-proof-reader .za-resource-preview {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+@media (max-width: 600px) {
+  .source-proof {
+    flex-direction: column;
+  }
+  .source-proof > aside {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 4px;
+  }
+  .source-proof > aside > strong,
+  .source-proof > aside > textarea {
+    display: none;
+  }
+  .source-proof-reader > header {
+    padding: 4px;
+    gap: 4px;
+  }
+  .source-proof-reader .za-reader-title-menu {
+    max-width: 160px;
+  }
+  .source-proof-reader {
+    min-height: 0;
+  }
+}

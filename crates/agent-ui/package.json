@@ -41,6 +41,7 @@
     "postal-mime": "^3.0.1",
     "react-resizable-panels": "^4.12.4",
     "remark-breaks": "^4.0.0",
+    "shiki": "3.23.0",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"

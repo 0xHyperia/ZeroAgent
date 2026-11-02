@@ -31,18 +31,20 @@ export function CloudChatResourcePanel(props: {
   const closeButton = useRef<HTMLButtonElement>(null);
   const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
   const [leadingTarget, setLeadingTarget] = useState<HTMLDivElement | null>(null);
+  const [optionsTarget, setOptionsTarget] = useState<HTMLDivElement | null>(null);
   const [pageTarget, setPageTarget] = useState<HTMLDivElement | null>(null);
   const [fileMenu, setFileMenu] = useState<ReactNode>(null);
   const toolbarMount = useMemo(
     () => ({
       target: toolbarTarget,
       leadingTarget,
+      optionsTarget,
       inspectorOpen: !!props.details,
       pageTarget,
       fileMenu,
       setFileMenu,
     }),
-    [toolbarTarget, leadingTarget, props.details, pageTarget, fileMenu],
+    [toolbarTarget, leadingTarget, optionsTarget, props.details, pageTarget, fileMenu],
   );
   useEffect(() => {
     if (presentation !== "inline") return;
@@ -124,6 +126,7 @@ export function CloudChatResourcePanel(props: {
             <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
             <div ref={setLeadingTarget} className="cloud-reader-leading-tools" />
             <div className="cloud-reader-actions">{props.headerActions}</div>
+            <div ref={setOptionsTarget} className="cloud-reader-options-tools" />
             <div className="cloud-reader-window-actions">
               {readerLayout?.canSplit ? (
                 <Button
