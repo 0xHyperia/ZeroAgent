@@ -60,7 +60,9 @@
   width: 272px;
   max-width: calc(100% - 24px);
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   margin: 0;
   border: 1px solid var(--za-border);
   border-radius: 20px;
@@ -75,6 +77,17 @@
   align-items: center;
   padding: 12px 14px;
   gap: 8px;
+  flex: none;
+}
+.za-reader-inspector-scroll,
+.za-document-navigation-scroll {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+.za-reader-panel-scroll-content {
+  min-width: 0;
+  width: 100%;
 }
 .za-reader-inspector > header button {
   border-radius: 999px;
@@ -104,14 +117,6 @@
 }
 .za-reader-stage :is(.za-docx-zoom-viewport, .za-preview-pdf, .za-preview-slide-scroll) {
   padding-top: var(--za-reader-top-inset, 16px);
-}
-.za-reader-stage,
-.za-reader-stage * {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
-}
-.za-reader-stage *:hover {
-  scrollbar-color: hsl(var(--foreground) / 0.32) transparent;
 }
 .za-reader-inspector h3 {
   margin: 0;
@@ -165,6 +170,9 @@
 }
 .za-resource-preview[data-variant="thumbnail"] {
   --za-preview-viewport-height: 100px;
+  --za-reader-top-inset: 0px;
+  --za-reader-side-inset: 0px;
+  --za-reader-navigation-inset: 0px;
   height: 100px;
   margin: 0;
   border: 0;
@@ -202,8 +210,7 @@
 .za-resource-preview[data-variant="thumbnail"] .za-preview-visual-inner {
   padding: 0;
 }
-.za-resource-preview[data-variant="thumbnail"]
-  :is(.za-preview-text, .za-preview-table-scroll) {
+.za-resource-preview[data-variant="thumbnail"] :is(.za-preview-text, .za-preview-table-scroll) {
   font-size: 7px;
   padding: 12px;
 }
@@ -895,6 +902,7 @@
   z-index: 3;
 }
 .za-document-navigation > header {
+  flex: none;
   display: flex;
   align-items: center;
   padding: 8px;
@@ -907,7 +915,6 @@
   font-weight: 500;
 }
 .za-document-navigation nav {
-  overflow: auto;
   min-height: 0;
   padding: 2px 6px 10px;
   overscroll-behavior: contain;
@@ -1381,6 +1388,9 @@
   min-height: 0;
   height: 100%;
 }
+.za-preview-scroll-root > [data-scroll-viewport]::-webkit-scrollbar-track {
+  margin: 8px;
+}
 .za-preview-scroll-content {
   min-height: 100%;
   min-width: 100%;
@@ -1769,6 +1779,22 @@
 .za-resource-preview[data-variant="thumbnail"] .za-preview-scroll-root {
   overflow: hidden;
 }
+.za-resource-preview[data-variant="thumbnail"] .za-native-scroll {
+  overflow: hidden;
+  scrollbar-width: none;
+}
+.za-resource-preview[data-variant="thumbnail"] .za-native-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.za-resource-preview[data-variant="thumbnail"] .za-preview-pdf > .za-preview-scroll-content {
+  padding: 0;
+}
+.za-resource-preview[data-variant="thumbnail"] .za-preview-pdf-page {
+  margin: 0;
+  box-shadow: none;
+}
 .za-reader-timeline h4 {
   margin: 8px 0 12px;
   color: hsl(var(--muted-foreground));
@@ -1857,7 +1883,8 @@
 }
 
 /* The complete workbook engine fills the continuous canvas; only chrome follows the app theme. */
-.za-sheet-engine, .za-sheet-engine-scroll {
+.za-sheet-engine,
+.za-sheet-engine-scroll {
   display: flex;
   flex: 1;
   min-height: 0;
@@ -1869,12 +1896,18 @@
   overscroll-behavior: contain;
   outline: none;
 }
-.za-sheet-engine-content { min-height: 100%; }
+.za-sheet-engine-content {
+  min-height: 100%;
+}
 .za-sheet-cover-engine {
   position: absolute;
   transform-origin: top left;
   pointer-events: none;
 }
 .za-sheet-cover-engine [data-scroll-area-scrollbar],
-.za-sheet-cover-engine [data-xlsx-selection-overlay] { display: none !important; }
-.za-sheet-cover-engine [data-scroll-viewport] { overflow: hidden !important; }
+.za-sheet-cover-engine [data-xlsx-selection-overlay] {
+  display: none !important;
+}
+.za-sheet-cover-engine [data-scroll-viewport] {
+  overflow: hidden !important;
+}

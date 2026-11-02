@@ -34,6 +34,7 @@ import {
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
+import "../ui/scroll-area.css";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -1620,7 +1621,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 ref={workspaceTreeRef}
                 onClickCapture={reorder.onClickCapture}
                 onPointerDownCapture={reorder.onPointerDownCapture}
-                className="scroll-fade min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col"
+                className="za-native-scroll scroll-fade min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col"
               >
                 {pinnedConversations.length > 0 || pinnedProjects.length > 0 ? (
                   <SidebarGroup
@@ -2225,7 +2226,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
               <div
                 ref={historyScrollRef}
                 aria-busy={listStatus === "loading" || listStatus === "syncing" || isLoadingMore}
-                className="chat-history-list scroll-fade min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3"
+                className="chat-history-list za-native-scroll scroll-fade min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3"
               >
                 {taskItems.length > 0 ? (
                   <div

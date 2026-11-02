@@ -1,49 +1,52 @@
-/* The viewport remains the native scroll owner; Base UI owns only the overlay rails.
-   Explicit selectors also win over host-wide scrollbar-width: thin declarations. */
-.scroll-area-root > [data-scroll-viewport] {
-  scrollbar-width: none;
-  scrollbar-gutter: auto;
+/* The conversation sidebar is the visual baseline. Keep real browser scrolling,
+   including endpoint buttons, rather than drawing a second kind of scrollbar. */
+:root {
+  --za-scrollbar-size: 10px;
+  --za-scrollbar-track-hover: hsl(var(--muted) / 0.34);
+  --za-scrollbar-thumb: hsl(var(--muted-foreground) / 0.22);
+  --za-scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.36);
+  --za-scrollbar-thumb-active: hsl(var(--muted-foreground) / 0.5);
 }
-.scroll-area-root > [data-scroll-viewport]::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+:root.dark {
+  --za-scrollbar-track-hover: hsl(var(--muted) / 0.46);
+  --za-scrollbar-thumb: hsl(var(--muted-foreground) / 0.28);
+  --za-scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.46);
+  --za-scrollbar-thumb-active: hsl(var(--muted-foreground) / 0.62);
 }
-.scroll-area-root > .scroll-area-scrollbar {
-  z-index: 4;
-  border: 0;
-  background: transparent;
-  opacity: 1;
-  transition: opacity 140ms ease;
+html .za-native-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--za-scrollbar-thumb) transparent;
 }
-.scroll-area-root > .scroll-area-scrollbar[data-orientation="vertical"] {
-  width: 10px;
-  padding: 3px 2px;
+html .za-native-scroll:is(:hover, :focus-within) {
+  scrollbar-color: var(--za-scrollbar-thumb-hover) transparent;
 }
-.scroll-area-root > .scroll-area-scrollbar[data-orientation="horizontal"] {
-  height: 10px;
-  padding: 2px 3px;
+html .za-native-scroll::-webkit-scrollbar {
+  width: var(--za-scrollbar-size);
+  height: var(--za-scrollbar-size);
 }
-.scroll-area-scrollbar > .scroll-area-thumb {
-  background: hsl(var(--foreground) / 0.18);
+html .za-native-scroll::-webkit-scrollbar-track {
   border-radius: 999px;
-  transition: background-color 140ms ease;
+  background: transparent;
 }
-.scroll-area-scrollbar:is([data-hovering], [data-scrolling], :hover, :active) {
-  opacity: 1;
+html .za-native-scroll::-webkit-scrollbar-track:hover {
+  background: var(--za-scrollbar-track-hover);
 }
-.scroll-area-scrollbar:hover > .scroll-area-thumb,
-.scroll-area-scrollbar:active > .scroll-area-thumb {
-  background: hsl(var(--foreground) / 0.32);
+html .za-native-scroll::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--za-scrollbar-thumb);
+  background-clip: content-box;
 }
-@media (prefers-reduced-motion: reduce) {
-  .scroll-area-root > .scroll-area-scrollbar,
-  .scroll-area-root > .scroll-area-scrollbar > .scroll-area-thumb {
-    transition: none;
-  }
+html .za-native-scroll::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background-color: var(--za-scrollbar-thumb-hover);
 }
-@media (forced-colors: active) {
-  .scroll-area-root > .scroll-area-scrollbar > .scroll-area-thumb {
-    background: CanvasText;
-  }
+html .za-native-scroll::-webkit-scrollbar-thumb:active {
+  border-width: 2px;
+  background-color: var(--za-scrollbar-thumb-active);
+}
+html .za-native-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }

@@ -52,8 +52,7 @@
     height 160ms ease,
     transform 160ms ease;
 }
-:where(.za-image-workspace[data-ready="true"]) .za-image-content,
-:where(.za-image-cover[data-ready="true"]) .za-image-cover-content {
+:where(.za-image-workspace[data-ready="true"]) .za-image-content {
   opacity: 1;
 }
 :where(.za-image-workspace[data-moving="true"]) .za-image-content {
@@ -121,6 +120,9 @@
   object-fit: contain;
   opacity: 0;
   transition: opacity 160ms ease;
+}
+:where(.za-image-cover[data-ready="true"]) .za-image-cover-content {
+  opacity: 1;
 }
 .za-image-cover .za-image-loading {
   inset: 0;

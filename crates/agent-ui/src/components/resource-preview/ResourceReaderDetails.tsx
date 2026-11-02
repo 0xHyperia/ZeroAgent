@@ -10,6 +10,7 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { PreviewToolbarMount } from "./PreviewChrome";
 import { getResourceFileIcon } from "./ResourceFileIcon";
@@ -97,7 +98,12 @@ export function ResourceInspector({
             <X className="size-4" />
           </Button>
         </header>
-        <div className="za-reader-inspector-content">{children}</div>
+        <ScrollArea
+          className="za-reader-inspector-scroll"
+          contentClassName="za-reader-panel-scroll-content"
+        >
+          <div className="za-reader-inspector-content">{children}</div>
+        </ScrollArea>
       </aside>
     </>
   );

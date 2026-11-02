@@ -393,7 +393,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   ]);
   if (props.thumbnail)
     return (
-      <div className="za-docx-thumbnail" inert>
+      <div className="za-docx-thumbnail" ref={container} inert>
         {source ? (
           <iframe
             sandbox=""
@@ -402,6 +402,11 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             title={props.name}
             srcDoc={source}
             className="za-preview-frame-content"
+            style={{
+              width: pageWidth,
+              minWidth: pageWidth,
+              transform: `scale(${(viewport.width || 168) / pageWidth})`,
+            }}
             data-ready={paintedSource === source}
             onLoad={() => setPaintedSource(source)}
           />

@@ -1024,3 +1024,30 @@ x86_64 调试 APK 构建成功并覆盖安装到 emulator-5554（Success），�
 - 独立 `?source=1` 合成验收页检查 Vue 模板/TypeScript/CSS、Rust、Zig、浅深主题以及语言搜索与 Enter 选择。Vue 浅色与深色各显示七种以上实测 token 颜色，主题切换后使用对应配色；证据 `vue-light.png`、`vue-dark.png`。新选择器复用现有 Command/Dialog 原语，手机 44px 条目规则已加入；本轮 viewport 工具未有效作用到隔离标签，未将 2232px 的截图误记为手机验收。截图据实命名为 `language-search-desktop.png`，临时视口均已恢复。
 - 54 项相关回归通过，其中真实引擎遍历全部 235 种语法与别名并在两种主题分词，检查多行与嵌套语言、原生 token 隔离、短色值、超长行、失效账户、模型关闭、迟到语法、失败重试与旧预览行为；另有 5 项流式高亮缓存/节流回归通过。Web、桌面（含独立远程前端）生产构建和 UI/桌面/夹具类型检查通过，UI 边界与产品契约通过。日志为同目录 `tests-final.log`、`throttle-tests.log`、`web-build-final.log`、`gui-build.log`。保留单行 20,000 字符的高亮成本限制，完整原文仍可阅读/复制；未知或自创语言不伪称已有语法。本轮未提交、未推送。
 - final result: passed
+
+## 2026-11-02 附件换行、封面与滚动边界修复
+
+- 输入区复用共享 ComposerAttachmentCard 和原编辑器，将单行横向滚动改为按实际容器自动换行。大量附件只在限定高度内纵向滚动，窄容器保持两列。新增附件滚动附件列表，不移动编辑焦点或页面。
+- 阅读器继续使用现有 Base UI ScrollArea，轨道上下使用 8px margin 内缩，避开原语的内联 top/bottom 定位与外层圆角裁切。实际 Markdown 画布 top=2.67、bottom=1180.67，轨道 top=10.67、bottom=1172.67；滚到底后 thumb bottom=1169.66，保留轨道内边距，未被裁掉。
+- 修复 Word 实际页宽与封面宽度不一致、PDF 封面沿用正文工具留白、PPT 缺少独立首页封面，以及图像 ready 状态被后写 opacity:0 覆盖的问题。SVG 无 viewBox 时按原始宽高构造隔离坐标空间，再整体等比缩放，避免只显示左上角。代码/JSON 维持通用格式占位，不伪造内容封面。
+- 封面读取最多并行 2 项，只对明确 HTTP 429 作两次有界且可取消的重试；关闭、换身份或离开可见范围会取消等待。原件完整性、隔离 iframe、权限和草稿边界保留，无新增账户或文件内容缓存。
+- 实际产品页面 http://localhost:5174/?conversation=706d8ae8-63a7-5fd0-82f3-bf5d457dc22c 验证 6 份原有草稿附件、Word 真实封面、Markdown 阅读器与上下滚动边界。附件列表 clientWidth=scrollWidth=767px，无横向溢出。未发送消息或调用模型。最后恢复原先表格预览，保留全部 6 份附件。
+- 独立 ?covers=1 本地合成验收页验证 Word/PDF/PPTX/XLSX/Markdown/SVG/JSON：使用真实字节和生产共享组件，所有有内容封面的格式均已可见且无内嵌工具/滚动条；图像 ready 后 opacity=1。320px 画布实际列表宽293px，scrollWidth同为293px，两列宽126px；768px 画布列表宽751px且scrollWidth同值。更改宽度后草稿保留。这是容器响应式验证，不声称浏览器手机视口或真机验收。临时页已关闭。
+- 浏览器扩展文件选择因缺少本地文件 URL 权限未成功；没有改权限，改用已有 Vite 允许目录中的合成样本清单，通过本地开发夹具读取。该路径不上传、不携带账户凭据，未绕过产品文件认证链路。产品原有附件另在实际界面验收。
+- 45 项预览/阅读工具/限流队列回归通过，新增覆盖并发限制、等待取消、有界重试、认证错误不重试、Word 首页面、PPT 首张图像、图像 ready 后可见及无 viewBox SVG 的原始坐标保留。UI 和夹具类型检查、10个变更源码 Biome 检查、UI 边界、产品契约检查通过。最终 Web 生产构建通过，保留既有混合导入和图标插件耗时提示；未构建安装包或 APK。
+- 证据位于 .codex-artifacts/covers-20261102/：product-markdown-final.png 为实际产品最终画面；synthetic-covers-320.png 为隔离容器验收。日志 tests-final.log、typecheck-final.log、biome.log、web-build-final.log。未提交、未推送。
+- final result: passed
+
+### 同日补充：消除原生滚动条端点箭头
+
+- 查明正文阅读器已使用共享 ScrollArea，但输入附件、文档导航和文件详情仍是原生 overflow 滚动；仅修改正文轨道没有统一这三处。本轮将它们全部接入同一 ScrollArea，并在共享样式显式屏蔽原生 scrollbar-button。
+- ComposerAttachmentList 将原 ref 转交真实 viewport，保留新增附件滚动、自动换行及草稿；目录继续使用原 nav ref 跟随当前页，详情标题固定、内容独立滚动，关闭与焦点逻辑不变。
+- 本地合成附件列表在 320px 容器中实际到顶 scrollTop=0、到底约279px；原生箭头 display:none，自定义滑块 border-radius=999px，无横向溢出。实际产品目录和详情 viewport 同样隐藏原生按钮。验收后恢复原先表格预览，六份未发送附件保持，临时验收标签关闭。
+- 37 项预览和阅读工具回归、UI/夹具类型检查及 Web 生产构建通过；Biome 与 diff 检查通过。证据 shared-scrollbar-ends.png 为合成组件端点，product-shared-scrollbars.png 为实际产品；日志 scroll-regression.log、scroll-web-build.log。未提交、未推送。
+
+### 用户澄清后的修正：以左侧对话列表滚动条为准
+
+- 用户明确左侧对话列表正确、右侧自绘滚动条错误，上一节移除端点按钮的解释不符合其要求。本节替代该外观决策。查明左侧是原生 overflow 视口及 Gateway 的 thin/颜色/轨道规则，右侧则是 Base UI 的覆盖式滑块。
+- 共享 ScrollArea 改为原生 viewport 与内容布局包装，不再生成第二套滑块；继续提供原 viewport ref、事件、内容包装及双向滚动。左侧列表、阅读器、附件、目录与详情直接使用同一 za-native-scroll 规则；Gateway 旧变量引用共享令牌，浅深主题不再维护两份数值。保留浏览器原生端点，不隐藏其上下按钮。
+- 实际产品左侧与 Markdown 右侧均为 thin、10px、相同颜色令牌，端点按钮 display:inline，覆盖式滚动条节点数量为零。右侧原生键盘到底 scrollTop=max=4784，回顶 scrollTop=0；内容异步排版时高度仍会更新。六份未发送附件保留且换行，表格封面内部依然无滚动条，表格正文保留原生双向滚动。
+- 37 项预览与阅读工具回归、UI 类型检查、Web 生产构建通过；格式与 lint 错误修正后再次检查。实际产品证据 product-native-scrollbars.png，构建日志 native-scroll-web-build.log。未提交、未推送。

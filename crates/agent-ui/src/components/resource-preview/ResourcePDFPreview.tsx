@@ -112,12 +112,14 @@ export default function ResourcePDFPreview({
   const { container, viewport, sideInset } = usePreviewViewport();
   const paperViewport = {
     ...viewport,
-    width: Math.max(
-      1,
-      viewport.width -
-        sideInset -
-        (navigation && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0),
-    ),
+    width: thumbnail
+      ? Math.max(1, viewport.width)
+      : Math.max(
+          1,
+          viewport.width -
+            sideInset -
+            (navigation && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0),
+        ),
   };
   const [actualPercent, setActualPercent] = useState(100);
   const initialPage = useRef(page);
@@ -338,6 +340,7 @@ export default function ResourcePDFPreview({
                 number={index + 1}
                 selected={page === index + 1}
                 zoom={zoom}
+                cover={thumbnail}
                 pane={paperViewport}
                 onScale={index === 0 ? setActualPercent : undefined}
                 root={container}
@@ -402,6 +405,7 @@ function PDFPage({
   activeSelection,
   onPainted,
   hideLoading,
+  cover = false,
 }: PreviewRecovery & {
   onPainted?: () => void;
   hideLoading?: boolean;
@@ -412,6 +416,7 @@ function PDFPage({
   annotating?: boolean;
   onSelection?: (value: RevisionSelection) => void;
   workspace?: RefObject<HTMLDivElement | null>;
+  cover?: boolean;
   document: PDFDocumentProxy;
   number: number;
   selected: boolean;
@@ -444,7 +449,9 @@ function PDFPage({
     if (!busy && enabled) onPainted?.();
   }, [busy, enabled, onPainted]);
   const scale = boundedPreviewScale(
-    previewScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 }),
+    cover
+      ? (pane.width || 168) / size.width
+      : previewScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 }),
     size,
   );
   useEffect(() => {

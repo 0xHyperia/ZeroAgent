@@ -409,6 +409,11 @@ function ImageCanvas(props: Props) {
 }
 
 function ImageCover(props: Props) {
+  const { container, viewport } = usePreviewViewport();
+  const scale = Math.min(
+    (viewport.width || 168) / props.dimensions.width,
+    (viewport.height || 100) / props.dimensions.height,
+  );
   const [ready, setReady] = useState(false);
   const loaded = () => {
     try {
@@ -419,7 +424,7 @@ function ImageCover(props: Props) {
     }
   };
   return (
-    <div className="za-image-cover" data-ready={ready}>
+    <div ref={container} className="za-image-cover" data-ready={ready}>
       {props.document ? (
         <iframe
           className="za-image-cover-content"
@@ -427,6 +432,15 @@ function ImageCover(props: Props) {
           referrerPolicy="no-referrer"
           title={props.name}
           srcDoc={props.document}
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: props.dimensions.width,
+            height: props.dimensions.height,
+            maxWidth: "none",
+            transform: `translate(-50%, -50%) scale(${scale})`,
+          }}
           onLoad={loaded}
         />
       ) : (

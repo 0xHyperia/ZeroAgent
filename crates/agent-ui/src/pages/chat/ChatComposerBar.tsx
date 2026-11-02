@@ -11,6 +11,7 @@ import {
 } from "@liveagent/app/lib/settings";
 import { CommandSafetyModeSelector } from "@liveagent/ui/components/chat/CommandSafetyModeSelector";
 import { ComposerAttachmentCard } from "@liveagent/ui/components/chat/ComposerAttachmentCard";
+import { ComposerAttachmentList } from "@liveagent/ui/components/chat/ComposerAttachmentList";
 import { ComposerModelControls } from "@liveagent/ui/components/chat/ComposerModelControls";
 import { ContextUsageRing } from "@liveagent/ui/components/chat/ContextUsageRing";
 import { ClarifyPanel } from "@liveagent/ui/components/chat/clarify/ClarifyPanel";
@@ -984,7 +985,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     if (pendingUploadedFiles.length <= previousCount) return;
 
     const attachmentList = attachmentListRef.current;
-    if (attachmentList) attachmentList.scrollLeft = attachmentList.scrollWidth;
+    if (attachmentList) attachmentList.scrollTop = attachmentList.scrollHeight;
   }, [pendingUploadedFiles.length]);
 
   // ref 与 state 同步更新：高度上报的 RO 回调可能先于 effect 执行，
@@ -1663,13 +1664,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             )}
           >
             {pendingUploadedFiles.length > 0 || props.uploadingAttachments?.length ? (
-              <div
+              <ComposerAttachmentList
                 ref={attachmentListRef}
-                className={cn(
-                  "upload-file-list relative z-10 flex shrink-0 items-center gap-1.5 overflow-x-auto",
-                  "overflow-y-hidden overscroll-x-contain pb-2 pl-4 pr-12 pt-3",
-                  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:size-0",
-                )}
+                className="upload-file-list relative z-10"
               >
                 {pendingUploadedFiles.map((file) => (
                   <PendingComposerAttachment
@@ -1703,7 +1700,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     />
                   );
                 })}
-              </div>
+              </ComposerAttachmentList>
             ) : null}
 
             {showComposerExpandToggle ? (

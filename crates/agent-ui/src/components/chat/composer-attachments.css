@@ -1,8 +1,38 @@
+.za-composer-attachment-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: min(310px, 36dvh);
+}
+.za-composer-attachment-scroll > .za-composer-attachment-viewport {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: inherit;
+  overscroll-behavior: contain;
+}
+.za-composer-attachment-list {
+  container: composer-attachments / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px 8px;
+}
+.za-composer-attachment-list > * {
+  max-width: 100%;
+}
 .za-composer-attachment {
   position: relative;
   flex: 0 0 224px;
   width: 224px;
-  max-width: calc(100vw - 72px);
+  max-width: 100%;
   border: 1px solid var(--za-border);
   border-radius: 16px;
   background: var(--za-surface-subtle);
@@ -23,6 +53,18 @@
   flex-basis: 168px;
   width: 168px;
   background: var(--za-surface);
+}
+@media (max-width: 599px) {
+  .za-composer-attachment-list {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+}
+@container composer-attachments (max-width: 360px) {
+  .za-composer-attachment[data-cover="true"] {
+    flex-basis: calc((100% - 8px) / 2);
+    width: calc((100% - 8px) / 2);
+  }
 }
 .za-composer-attachment-cover {
   height: 100px;

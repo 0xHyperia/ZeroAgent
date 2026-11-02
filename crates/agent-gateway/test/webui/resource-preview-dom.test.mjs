@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 
@@ -222,12 +223,70 @@ test("cover read and image decode share the cover ring, while plain text covers 
   assert.equal(app.host.querySelector(".za-preview-file-loading"),null);
   await app.env.act(async()=>{finish();await flush();});
   await app.waitFor(host=>Boolean(host.querySelector("img")));
+  const imageStyles=document.head.appendChild(document.createElement("style"));
+  imageStyles.textContent=readFileSync(new URL("../../../agent-ui/src/components/resource-preview/resource-image-preview.css",import.meta.url),"utf8");
+  assert.equal(getComputedStyle(app.host.querySelector("img")).opacity,"0","decoding covers wait before revealing their content");
   assert.equal(app.host.querySelector(".za-preview-loading").dataset.loadingVariant,"thumbnail","the decode stage must not change to the reader glyph");
   await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
   assert.equal(app.host.querySelector(".za-preview-loading"),null);
+  assert.equal(getComputedStyle(app.host.querySelector("img")).opacity,"1","a decoded cover must become visible, not leave an empty card");
   await app.render(descriptor(Buffer.from("text"),{name:"说明.txt",mime:"text/plain"}),async()=>{reads++;throw new Error("generic covers do not read bytes");});
   assert.ok(app.host.querySelector(".za-thumbnail-fallback"));
   assert.equal(reads,1);
+});
+
+test("PPT cover renders the real first slide as an inert image without a reading surface or controls", async t => {
+  const bytes = Buffer.from([0x50, 0x4b, 1, 2]);
+  const created = [], revoked = [];
+  const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+  const globals=new Map(["DOMParser","XMLSerializer"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  URL.createObjectURL = blob => { created.push(blob); return "blob:slide-cover"; };
+  URL.revokeObjectURL = url => revoked.push(url);
+  t.after(() => { URL.createObjectURL = create; URL.revokeObjectURL = revoke; for(const [key,value] of globals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];} });
+  const app = await mount(t, descriptor(bytes, {name:"首张封面.pptx",mime:"application/octet-stream"}), async signal => ({blob:new Blob([bytes]),assertCurrent:()=>signal.throwIfAborted()}), {
+    variant:"thumbnail",
+    setup(env){globalThis.DOMParser=env.dom.window.DOMParser;globalThis.XMLSerializer=env.dom.window.XMLSerializer;},
+    mocks:{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(){return {slideCount:2,svg:'<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="20" y="40">真实第一页</text></svg>'};}})}},
+  });
+  assert.ok(created[0], app.host.innerHTML);
+  assert.match(await created[0].text(), /真实第一页/);
+  assert.ok(app.host.querySelector(".za-image-cover-content"));
+  assert.equal(app.host.querySelector("button,[data-scroll-viewport],.za-preview-toolbar"),null);
+  await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
+  assert.equal(app.host.querySelector(".za-preview-loading"),null);
+});
+
+test("Word cover uses the real first page and a scriptless non-scrolling document", async t => {
+  const bytes = Buffer.from([0x50, 0x4b, 1, 2]);
+  const app = await mount(t, descriptor(bytes,{name:"首页.docx",mime:"application/octet-stream"}), async signal => ({blob:new Blob([bytes]),assertCurrent:()=>signal.throwIfAborted()}), {
+    variant:"thumbnail",
+    mocks:{
+      "./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(){return {entries:[{name:"word/document.xml"}]};}})},
+      "docx-preview":{async parseAsync(){return {documentPart:{body:{children:[]}}};}, async renderDocument(){const body=document.createElement("div");body.innerHTML='<style>.docx{color:black}</style><div class="docx-wrapper"><section class="docx" style="width:600pt"><h1>真实首页</h1></section><section class="docx"><h1>不要显示的第二页</h1></section></div>';return [...body.childNodes];}},
+    },
+  });
+  const frame = app.host.querySelector(".za-docx-thumbnail iframe");
+  assert.ok(frame, app.host.innerHTML);
+  assert.equal(frame.getAttribute("sandbox"), "");
+  assert.match(frame.srcdoc, /真实首页/);
+  assert.doesNotMatch(frame.srcdoc, /不要显示的第二页/);
+  assert.match(frame.srcdoc, /overflow:hidden!important/);
+  assert.equal(frame.style.width,"800px");
+});
+
+test("SVG covers fit the full native coordinate space without requiring a viewBox or frame scrollbars", async t => {
+  const bytes=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480"><rect x="600" y="400" width="100" height="60" fill="blue"/></svg>');
+  const globals=new Map(["DOMParser"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  t.after(()=>{for(const [key,value] of globals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}});
+  const app=await mount(t,descriptor(bytes,{name:"坐标.svg",mime:"image/svg+xml"}),async signal=>({blob:new Blob([bytes]),assertCurrent:()=>signal.throwIfAborted()}),{
+    variant:"thumbnail",setup(env){globalThis.DOMParser=env.dom.window.DOMParser;},
+  });
+  const frame=app.host.querySelector(".za-image-cover iframe");
+  assert.equal(frame.style.width,"720px");assert.equal(frame.style.height,"480px");
+  assert.match(frame.style.transform,/scale\(0\.20833333333333334\)/);
+  assert.equal(frame.getAttribute("sandbox"),"");
+  assert.match(frame.srcdoc,/overflow:hidden/);
+  assert.equal(app.host.querySelector("button,[data-scroll-viewport]"),null);
 });
 
 test("Markdown covers render bounded real content without tools, external requests or a scroll viewport", async t => {

@@ -24,12 +24,12 @@
    component host; all product layout and state styling lives in TSX classes. */
 html[data-liveagent-webui="gateway"] {
   --ring: 220 13% 62%;
-  --gateway-scrollbar-size: var(--spacing-10px);
+  --gateway-scrollbar-size: var(--za-scrollbar-size);
   --gateway-scrollbar-track: transparent;
-  --gateway-scrollbar-track-hover: hsl(var(--muted) / 0.34);
-  --gateway-scrollbar-thumb: hsl(var(--muted-foreground) / 0.22);
-  --gateway-scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.36);
-  --gateway-scrollbar-thumb-active: hsl(var(--muted-foreground) / 0.5);
+  --gateway-scrollbar-track-hover: var(--za-scrollbar-track-hover);
+  --gateway-scrollbar-thumb: var(--za-scrollbar-thumb);
+  --gateway-scrollbar-thumb-hover: var(--za-scrollbar-thumb-hover);
+  --gateway-scrollbar-thumb-active: var(--za-scrollbar-thumb-active);
   --gateway-scrollbar-thumb-border: hsl(var(--background) / 0.82);
   --project-tools-tabs-scrollbar-track: hsl(var(--muted) / 0.42);
   --project-tools-tabs-scrollbar-track-hover: var(--gateway-scrollbar-track-hover);
@@ -40,10 +40,6 @@ html[data-liveagent-webui="gateway"] {
 
 html[data-liveagent-webui="gateway"].dark {
   --ring: 220 18% 68%;
-  --gateway-scrollbar-track-hover: hsl(var(--muted) / 0.46);
-  --gateway-scrollbar-thumb: hsl(var(--muted-foreground) / 0.28);
-  --gateway-scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.46);
-  --gateway-scrollbar-thumb-active: hsl(var(--muted-foreground) / 0.62);
   --gateway-scrollbar-thumb-border: hsl(var(--background) / 0.76);
 }
 

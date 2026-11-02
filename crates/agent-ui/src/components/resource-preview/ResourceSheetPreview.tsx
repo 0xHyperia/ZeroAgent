@@ -176,7 +176,7 @@ function StyledSheet({
           viewportProps={{
             ...rest,
             "aria-label": `${props.name} · 工作表`,
-            style: { ...rest.style, scrollbarWidth: "none" },
+            style: rest.style,
           }}
         >
           {children}

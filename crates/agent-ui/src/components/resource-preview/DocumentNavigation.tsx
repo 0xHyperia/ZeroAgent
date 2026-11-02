@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PanelLeft } from "../IconSet";
+import { ScrollArea } from "../ui/scroll-area";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 
 /** The rail and its preview share one pointer boundary, including the path between them. */
@@ -73,7 +74,12 @@ export function DocumentNavigation(props: {
               <PanelLeft className="size-4" />
             </Button>
           </header>
-          <nav ref={nav}>{props.children}</nav>
+          <ScrollArea
+            className="za-document-navigation-scroll"
+            contentClassName="za-reader-panel-scroll-content"
+          >
+            <nav ref={nav}>{props.children}</nav>
+          </ScrollArea>
         </aside>
       ) : null}
     </div>

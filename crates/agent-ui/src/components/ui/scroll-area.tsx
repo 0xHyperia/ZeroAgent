@@ -1,69 +1,44 @@
-import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react";
 import * as React from "react";
-
 import { cn } from "../../lib/shared/utils";
 import "./scroll-area.css";
 
+/** Layout wrapper only: refs, scroll events and browser gestures belong to the viewport. */
 export const ScrollArea = React.forwardRef<
   HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
+  React.ComponentPropsWithoutRef<"div"> & {
     viewportRef?: React.Ref<HTMLDivElement>;
     contentClassName?: string;
-    viewportProps?: Omit<
-      React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Viewport>,
-      "render"
-    >;
+    viewportProps?: React.ComponentPropsWithoutRef<"div">;
     horizontal?: boolean;
   }
->(
-  (
-    { className, children, viewportRef, contentClassName, viewportProps, horizontal, ...props },
-    ref,
-  ) => (
-    <ScrollAreaPrimitive.Root
+>(function ScrollArea(
+  { className, children, viewportRef, contentClassName, viewportProps, horizontal, ...props },
+  ref,
+) {
+  return (
+    <div
       ref={ref}
       data-scroll-area-root
       className={cn("scroll-area-root relative overflow-hidden", className)}
       {...props}
     >
-      <ScrollAreaPrimitive.Viewport
+      <div
         ref={viewportRef}
+        role="region"
+        aria-label="滚动内容"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: A scroll viewport needs keyboard focus for native PageUp/PageDown/Home/End in WebViews.
+        tabIndex={0}
         {...viewportProps}
-        className={cn("size-full rounded-inherit [overflow-anchor:none]", viewportProps?.className)}
+        className={cn(
+          "za-native-scroll size-full rounded-inherit [overflow-anchor:none]",
+          horizontal ? "overflow-auto" : "overflow-y-auto overflow-x-hidden",
+          viewportProps?.className,
+        )}
         data-scroll-viewport
       >
-        <ScrollAreaPrimitive.Content className={cn("[overflow-anchor:none]", contentClassName)}>
-          {children}
-        </ScrollAreaPrimitive.Content>
-      </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
-      {horizontal ? <ScrollBar orientation="horizontal" /> : null}
-      <ScrollAreaPrimitive.Corner />
-    </ScrollAreaPrimitive.Root>
-  ),
-);
+        <div className={cn("[overflow-anchor:none]", contentClassName)}>{children}</div>
+      </div>
+    </div>
+  );
+});
 ScrollArea.displayName = "ScrollArea";
-
-const ScrollBar = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Scrollbar>
->(({ className, orientation = "vertical", ...props }, ref) => (
-  <ScrollAreaPrimitive.Scrollbar
-    ref={ref}
-    orientation={orientation}
-    data-scroll-area-scrollbar
-    className={cn(
-      "scroll-area-scrollbar flex touch-none select-none transition-colors",
-      orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent p-px",
-      orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent p-px",
-      className,
-    )}
-    {...props}
-  >
-    <ScrollAreaPrimitive.Thumb
-      data-scroll-area-thumb
-      className="scroll-area-thumb relative flex-1 rounded-full"
-    />
-  </ScrollAreaPrimitive.Scrollbar>
-));
-ScrollBar.displayName = "ScrollBar";

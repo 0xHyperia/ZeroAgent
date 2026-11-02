@@ -14,6 +14,7 @@ import {
 } from "./PreviewToolbar";
 import { boundedPreviewScale, previewScale } from "./previewGeometry";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
+import ResourceImagePreview from "./ResourceImagePreview";
 import { usePreviewReadingState } from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
 
@@ -57,6 +58,7 @@ export default function ResourceSlidesPreview(
     name: string;
     assertCurrent: () => void;
     onCancel?: () => void;
+    thumbnail?: boolean;
   },
 ) {
   const [page, setPage] = usePreviewReadingState("slidePage", 1);
@@ -91,7 +93,7 @@ export default function ResourceSlidesPreview(
       if (controller.signal.aborted || generation.current !== seq) return;
       const pages = result.slideCount ?? 0;
       if (!pages || pages > 150) throw new Error("幻灯片页数超出预览范围。");
-      const restored = Math.max(1, Math.min(initialPage.current, pages));
+      const restored = props.thumbnail ? 1 : Math.max(1, Math.min(initialPage.current, pages));
       if (restored !== 1) result = await worker.request({ type: "slide", index: restored - 1 });
       assertCurrent();
       if (controller.signal.aborted || generation.current !== seq) return;
@@ -111,7 +113,7 @@ export default function ResourceSlidesPreview(
       worker.dispose();
       client.current = null;
     };
-  }, [bytes, assertCurrent, setPage]);
+  }, [bytes, assertCurrent, setPage, props.thumbnail]);
 
   async function navigate(target: number) {
     if (!client.current || !Number.isInteger(target) || target < 1 || target > count) return;
@@ -134,7 +136,7 @@ export default function ResourceSlidesPreview(
   }
 
   useEffect(() => {
-    if (!setFileMenu) return;
+    if (!setFileMenu || props.thumbnail) return;
     setFileMenu(
       <>
         <DropdownMenuItem
@@ -150,7 +152,17 @@ export default function ResourceSlidesPreview(
       </>,
     );
     return () => setFileMenu(null);
-  }, [setFileMenu, setGrid, grid, count]);
+  }, [setFileMenu, setGrid, grid, count, props.thumbnail]);
+  if (props.thumbnail)
+    return (
+      <SlideCover
+        svg={svg}
+        name={props.name}
+        error={error}
+        assertCurrent={assertCurrent}
+        onError={setError}
+      />
+    );
   return (
     <>
       <PreviewToolbar label="幻灯片" detail="只读">
@@ -348,6 +360,50 @@ export default function ResourceSlidesPreview(
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function SlideCover({
+  svg,
+  name,
+  error,
+  assertCurrent,
+  onError,
+}: {
+  svg: string;
+  name: string;
+  error: string;
+  assertCurrent: () => void;
+  onError: (message: string) => void;
+}) {
+  const [image, setImage] = useState<{ url: string; width: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!svg) return;
+    let url = "";
+    try {
+      assertCurrent();
+      const safe = safeSlide(svg);
+      url = URL.createObjectURL(new Blob([safe.svg], { type: "image/svg+xml" }));
+      setImage({ url, width: safe.width, height: safe.height });
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : "封面无法显示");
+    }
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [svg, assertCurrent, onError]);
+  if (error) return <PreviewUnavailable message={error} />;
+  return image ? (
+    <ResourceImagePreview
+      thumbnail
+      url={image.url}
+      name={name}
+      dimensions={image}
+      assertCurrent={assertCurrent}
+      onError={onError}
+    />
+  ) : (
+    <PreviewLoading />
   );
 }
 

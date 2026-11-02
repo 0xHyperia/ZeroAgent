@@ -12,6 +12,7 @@ import { getResourceFileIcon } from "./ResourceFileIcon";
 import "./resource-preview.css";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewReadingTarget, usePreviewReadingScope } from "./readingSession";
+import { readThumbnail } from "./thumbnailRead";
 
 export { PreviewUnavailable } from "./PreviewFeedback";
 export { ResourcePreviewReadingSession } from "./readingSession";
@@ -109,7 +110,8 @@ export function ResourcePreview(props: ResourcePreviewProps) {
         throw new Error("此文件超出预览范围，请下载原件查看。");
       if (kind === "image" && resource.size > 8 * 1024 * 1024)
         throw new Error("图片较大，请下载原件查看。");
-      const result = await current.current.load(controller.signal);
+      const load = () => current.current.load(controller.signal);
+      const result = thumbnail ? await readThumbnail(controller.signal, load) : await load();
       result.assertCurrent();
       if (result.blob.size !== resource.size) throw new Error("文件读取不完整，请重试。");
       const bytes = new Uint8Array(await result.blob.arrayBuffer());
@@ -143,6 +145,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
     attempt,
     paused,
     identity,
+    thumbnail,
     thumbnailUnavailable,
   ]);
 
@@ -173,7 +176,12 @@ export function ResourcePreview(props: ResourcePreviewProps) {
       >
         <div className="za-preview-body">
           {thumbnail && (thumbnailUnavailable || error?.identity === identity) ? (
-            <div className="za-thumbnail-fallback">{textCover ? <File /> : <TypeIcon />}</div>
+            <div
+              className="za-thumbnail-fallback"
+              title={error?.identity === identity ? error.message : undefined}
+            >
+              {textCover ? <File /> : <TypeIcon />}
+            </div>
           ) : kind === "unsupported" ? (
             <PreviewUnavailable
               onDownload={props.onDownload}
@@ -227,7 +235,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
   );
 }
 
-/** Horizontal clipping is respected: offscreen draft cards do not read or parse files. */
+/** Offscreen draft cards do not read or parse files, including rows below the attachment viewport. */
 export function ResourceThumbnail(props: Omit<ResourcePreviewProps, "variant" | "onDownload">) {
   const TypeIcon = getResourceFileIcon(props.resource.name);
   const host = useRef<HTMLDivElement>(null);

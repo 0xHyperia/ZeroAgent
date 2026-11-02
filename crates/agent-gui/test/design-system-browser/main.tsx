@@ -1,5 +1,6 @@
 import "@liveagent/app/index.css";
 import "./fixture.css";
+import { AttachmentCoversFixture } from "./AttachmentCoversFixture";
 import { t } from "@liveagent/app/i18n/config";
 import { ApplicationRail } from "@liveagent/ui/application/ApplicationRail";
 import {
@@ -354,7 +355,9 @@ function App() {
 const root = document.getElementById("root");
 if (root)
   createRoot(root).render(
-    new URLSearchParams(location.search).has("source") ? (
+    new URLSearchParams(location.search).has("covers") ? (
+      <AttachmentCoversFixture />
+    ) : new URLSearchParams(location.search).has("source") ? (
       <SourcePreviewFixture />
     ) : new URLSearchParams(location.search).has("markdown") ? (
       <MarkdownPreviewFixture />
