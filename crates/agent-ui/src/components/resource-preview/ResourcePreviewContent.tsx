@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { type Components, Streamdown } from "streamdown";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
@@ -12,6 +11,7 @@ import ResourceImagePreview from "./ResourceImagePreview";
 import ResourceMediaPreview from "./ResourceMediaPreview";
 import { usePreviewReadingState } from "./readingSession";
 
+const MarkdownPreview = lazy(() => import("./ResourceMarkdownPreview"));
 const PDFPreview = lazy(() => import("./ResourcePDFPreview"));
 const DOCXPreview = lazy(() => import("./ResourceDOCXPreview"));
 const SlidesPreview = lazy(() => import("./ResourceSlidesPreview"));
@@ -117,10 +117,18 @@ export default function ResourcePreviewContent(
       </Suspense>
     );
   }
-  if (["text", "markdown"].includes(kind))
+  if (kind === "markdown")
     return (
-      <TextPreview bytes={bytes} markdown={kind === "markdown"} onDownload={props.onDownload} />
+      <Suspense fallback={<PreviewLoading onCancel={props.onCancel} />}>
+        <MarkdownPreview
+          bytes={bytes}
+          thumbnail={props.thumbnail}
+          assertCurrent={assertCurrent}
+          onDownload={props.onDownload}
+        />
+      </Suspense>
     );
+  if (kind === "text") return <TextPreview bytes={bytes} onDownload={props.onDownload} />;
   if (["html", "svg"].includes(kind) && source)
     return (
       <>
@@ -214,10 +222,9 @@ export default function ResourcePreviewContent(
 
 function TextPreview({
   bytes,
-  markdown = false,
   onDownload,
   showToolbar = true,
-}: PreviewRecovery & { bytes: Uint8Array; markdown?: boolean; showToolbar?: boolean }) {
+}: PreviewRecovery & { bytes: Uint8Array; showToolbar?: boolean }) {
   const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
   const zoomControl = (
     <PreviewZoomControl
@@ -241,54 +248,6 @@ function TextPreview({
   }
   if (!text.trim())
     return <PreviewUnavailable message="此文件暂无可显示的内容。" onDownload={onDownload} />;
-  if (markdown)
-    return (
-      <>
-        <PreviewToolbar label={showToolbar ? "Markdown 文档" : "文本缩放"} detail="只读">
-          {zoomControl}
-        </PreviewToolbar>
-        <PreviewScrollArea className="za-preview-reading-scroll">
-          <div className="za-preview-markdown document-markdown" style={{ zoom: zoom / 100 }}>
-            <Streamdown
-              mode="static"
-              skipHtml
-              allowedElements={[
-                "p",
-                "br",
-                "em",
-                "strong",
-                "del",
-                "h1",
-                "h2",
-                "h3",
-                "h4",
-                "h5",
-                "h6",
-                "ul",
-                "ol",
-                "li",
-                "blockquote",
-                "pre",
-                "code",
-                "table",
-                "thead",
-                "tbody",
-                "tr",
-                "th",
-                "td",
-                "hr",
-                "a",
-                "img",
-              ]}
-              components={previewMarkdownComponents}
-              controls={false}
-            >
-              {text}
-            </Streamdown>
-          </div>
-        </PreviewScrollArea>
-      </>
-    );
   return (
     <>
       <PreviewToolbar
@@ -305,17 +264,3 @@ function TextPreview({
     </>
   );
 }
-
-const previewMarkdownComponents: Components = {
-  a: ({ href, children }) =>
-    /^https?:\/\//i.test(href ?? "") ? (
-      <a href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    ),
-  img: ({ alt }) => (
-    <span className="za-preview-caption">{alt ? `图像：${alt}` : "外链图像未自动加载"}</span>
-  ),
-};

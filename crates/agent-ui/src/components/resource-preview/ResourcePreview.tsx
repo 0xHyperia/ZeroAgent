@@ -79,7 +79,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
   const loadingClock = useRef({ identity, startedAt: performance.now() });
   if (loadingClock.current.identity !== identity)
     loadingClock.current = { identity, startedAt: performance.now() };
-  const textCover = kind === "text" || kind === "markdown";
+  const textCover = kind === "text";
   const thumbnailUnavailable =
     thumbnail &&
     (textCover ||

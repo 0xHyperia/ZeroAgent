@@ -48,6 +48,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UpdateNavigationPreview } from "./UpdateNavigationPreview";
 import { LoadingMotionPreview } from "./LoadingMotionPreview";
+import { MarkdownPreviewFixture } from "./MarkdownPreviewFixture";
 
 // Isolated display data. No account, Gateway, Tauri, upload or model client is mounted.
 const models: ComposerModelControlsProps["modelOptions"] = [
@@ -352,7 +353,9 @@ function App() {
 const root = document.getElementById("root");
 if (root)
   createRoot(root).render(
-    new URLSearchParams(location.search).has("loading") ? (
+    new URLSearchParams(location.search).has("markdown") ? (
+      <MarkdownPreviewFixture />
+    ) : new URLSearchParams(location.search).has("loading") ? (
       <LoadingMotionPreview />
     ) : new URLSearchParams(location.search).has("updates") ? (
       <UpdateNavigationPreview />

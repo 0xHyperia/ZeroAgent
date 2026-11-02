@@ -284,6 +284,12 @@ export function CloudChatFilePanel(props: Props) {
               <Info className="size-4" />
               文件信息
             </DropdownMenuItem>
+            {source && resourcePreviewKind(selected) === "markdown" ? (
+              <DropdownMenuItem className="gap-2" onClick={() => setSourceOpen((open) => !open)}>
+                <FileText className="size-4" />
+                {sourceOpen ? "关闭原文" : "查看原文"}
+              </DropdownMenuItem>
+            ) : null}
             {props.onOpenInSpace ? (
               <DropdownMenuItem className="gap-2" onClick={props.onOpenInSpace}>
                 <FolderOpen className="size-4" />
@@ -351,7 +357,9 @@ export function CloudChatFilePanel(props: Props) {
       closeLabel="关闭文件库"
       wide={Boolean(
         selected &&
-          ["docx", "pptx", "pdf", "sheet", "html", "svg"].includes(resourcePreviewKind(selected)),
+          ["docx", "pptx", "pdf", "sheet", "html", "svg", "markdown"].includes(
+            resourcePreviewKind(selected),
+          ),
       )}
       onClose={props.onClose}
     >
@@ -450,7 +458,7 @@ export function CloudChatFilePanel(props: Props) {
                 onDownload={() => void download(selected)}
               />
             ) : null}
-            {source ? (
+            {source && (resourcePreviewKind(selected) !== "markdown" || sourceOpen) ? (
               <details
                 className="mt-4"
                 open={sourceOpen}

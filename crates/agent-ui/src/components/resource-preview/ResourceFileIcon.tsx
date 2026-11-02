@@ -1,5 +1,6 @@
 import type { SVGProps } from "react";
 import { getFileTypeIcon, getUploadedFileTypeIcon } from "../chat/fileTypeIcons";
+import { FileText } from "../IconSet";
 
 type Props = SVGProps<SVGSVGElement>;
 
@@ -27,9 +28,7 @@ function DocumentIcon({ kind, ...props }: Props & { kind: "word" | "pdf" | "shee
         </>
       ) : null}
       {kind === "pdf" ? (
-        <>
-          <path d="M3 11h1.5a1.5 1.5 0 0 1 0 3H3v3m5-6v6h1a3 3 0 0 0 0-6H8m6 6v-6h3m-3 3h2" />
-        </>
+        <path d="M3 11h1.5a1.5 1.5 0 0 1 0 3H3v3m5-6v6h1a3 3 0 0 0 0-6H8m6 6v-6h3m-3 3h2" />
       ) : null}
       {kind === "sheet" ? (
         <>
@@ -51,6 +50,7 @@ const WordIcon = (props: Props) => <DocumentIcon kind="word" color="#4b87d1" {..
 const PDFIcon = (props: Props) => <DocumentIcon kind="pdf" color="#d46770" {...props} />;
 const SheetIcon = (props: Props) => <DocumentIcon kind="sheet" color="#40966c" {...props} />;
 const SlidesIcon = (props: Props) => <DocumentIcon kind="slides" color="#ce7184" {...props} />;
+const MarkdownIcon = (props: Props) => <FileText color="#4b87d1" {...props} />;
 
 function documentIcon(name: string) {
   const extension = name.split(".").pop()?.toLowerCase();
@@ -58,6 +58,7 @@ function documentIcon(name: string) {
   if (extension === "pdf") return PDFIcon;
   if (["xlsx", "xls", "csv", "tsv", "ods"].includes(extension ?? "")) return SheetIcon;
   if (["pptx", "ppt", "odp"].includes(extension ?? "")) return SlidesIcon;
+  if (["md", "markdown", "mdown", "mkd"].includes(extension ?? "")) return MarkdownIcon;
   return null;
 }
 

@@ -16,7 +16,7 @@ async function chooseZoom(app,label,itemText) {
 }
 
 async function mount(t, resource, load, options = {}) {
-  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
+  const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { streamdown, "@streamdown/code": {code:undefined}, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
   options.setup?.(env);
   const { ResourcePreview } = env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const host = document.body.appendChild(document.createElement("div"));
@@ -133,6 +133,11 @@ test("bad PDF signatures and invalid UTF-8 show format-specific feedback with th
   await app.render(descriptor(binary, { name: "二进制.txt", mime: "text/plain" }), async () => ({ blob: new Blob([binary]), assertCurrent() {} }));
   assert.match(app.host.textContent, /UTF-8/);
   await app.click("下载原件"); assert.equal(app.downloads, 1);
+  await app.render(descriptor(binary, { name: "损坏.md", mime: "text/markdown" }), async () => ({ blob: new Blob([binary]), assertCurrent() {} }));
+  assert.match(app.host.textContent, /UTF-8/);
+  const empty=Buffer.from("\n\n");
+  await app.render(descriptor(empty, {name:"空白.md",mime:"text/markdown"}),async()=>({blob:new Blob([empty]),assertCurrent(){}}));
+  assert.match(app.host.textContent,/暂无可显示的内容/);
 });
 
 test("image fit follows its actual reading pane and original-size zoom remains available", async t => {
@@ -219,9 +224,55 @@ test("cover read and image decode share the cover ring, while plain text covers 
   assert.equal(app.host.querySelector(".za-preview-loading").dataset.loadingVariant,"thumbnail","the decode stage must not change to the reader glyph");
   await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
   assert.equal(app.host.querySelector(".za-preview-loading"),null);
-  await app.render(descriptor(Buffer.from("text"),{name:"说明.md",mime:"text/markdown"}),async()=>{reads++;throw new Error("generic covers do not read bytes");});
+  await app.render(descriptor(Buffer.from("text"),{name:"说明.txt",mime:"text/plain"}),async()=>{reads++;throw new Error("generic covers do not read bytes");});
   assert.ok(app.host.querySelector(".za-thumbnail-fallback"));
   assert.equal(reads,1);
+});
+
+test("Markdown covers render bounded real content without tools, external requests or a scroll viewport", async t => {
+  const bytes = Buffer.from('# 实际文档封面\n\n中文正文与 **重点**。\n\n```js\nconst ready = true;\n```\n\n![外部图像](https://example.invalid/track.png)\n\n' + '正文 '.repeat(5000) + '\n\n# 超出封面范围');
+  let reads = 0;
+  const app = await mount(t, descriptor(bytes, {name:"中文说明.md",mime:"text/markdown"}), async signal => {
+    reads++; return {blob:new Blob([bytes]),assertCurrent:()=>signal.throwIfAborted()};
+  }, {variant:"thumbnail",mocks:{"@streamdown/code":{code:undefined}}});
+  assert.equal(reads,1);
+  assert.equal(app.host.querySelector('.za-markdown-cover h1')?.textContent,'实际文档封面');
+  assert.match(app.host.textContent,/中文正文与/);
+  assert.doesNotMatch(app.host.textContent,/超出封面范围/);
+  assert.equal(app.host.querySelector('button,a,img,iframe,[data-scroll-viewport]'),null);
+  assert.ok(app.host.querySelector('.za-markdown-cover[inert]'));
+});
+
+test("Markdown reader wraps each code block, copies exact code and table cells, and scopes zoom to the reader", async t => {
+  const bytes=Buffer.from('# 阅读示例\n\n正文 `inline`。\n\n```js\nconst result = 23;\nconsole.log(result);\n```\n\n```text\nsecond\n```\n\n| 名称 | 值 |\n| --- | --- |\n| **金额** | 23 |\n\n- [x] 已完成\n\n![隔离图片](https://example.invalid/track.png)\n\n<script>alert(1)</script>');
+  const copies=[];let current=true;
+  const app=await mount(t,descriptor(bytes,{name:"说明.md",mime:"text/markdown"}),async()=>({blob:new Blob([bytes]),assertCurrent(){assert.ok(current,"文件已切换");}}),{
+    mocks:{"@streamdown/code":{code:undefined}},
+    setup(){Object.defineProperty(navigator,'clipboard',{configurable:true,value:{async writeText(value){copies.push(value);}}});}
+  });
+  await app.waitFor(host=>host.querySelectorAll('.za-markdown-code pre').length===2);
+  const blocks=app.host.querySelectorAll('.za-markdown-code');
+  const wrap=blocks[0].querySelector('[aria-label="启用自动换行"]');
+  await app.env.act(async()=>wrap.click());
+  assert.equal(wrap.getAttribute('aria-pressed'),'true');
+  assert.equal(blocks[1].getAttribute('data-wrapped'),'false');
+  const copy=blocks[0].querySelector('[aria-label="复制代码"]');
+  await app.env.act(async()=>{copy.click();await flush();});
+  assert.deepEqual(copies,['const result = 23;\nconsole.log(result);']);
+  assert.equal(copy.getAttribute('aria-label'),'已复制');
+  await app.env.act(async()=>{app.host.querySelector('[aria-label="复制表格"]').click();await flush();});
+  assert.equal(copies[1],'名称\t值\n金额\t23');
+  assert.equal(app.host.querySelector('img,script,iframe'),null);
+  assert.equal(app.host.querySelector('input[type="checkbox"]').disabled,true);
+  const viewport=app.host.querySelector('[aria-label="Markdown 文档正文"]');
+  const key=new KeyboardEvent('keydown',{key:'+',ctrlKey:true,bubbles:true,cancelable:true});
+  await app.env.act(async()=>viewport.dispatchEvent(key));
+  assert.equal(key.defaultPrevented,true);
+  assert.ok(Number(app.host.querySelector('.za-markdown-column').style.getPropertyValue('--za-markdown-zoom'))>1);
+  current=false;
+  await app.env.act(async()=>{copy.click();await flush();});
+  assert.equal(copies.length,2,'stale resources cannot copy contents');
+  assert.match(app.host.textContent,/复制失败/);
 });
 
 test("cancel during format parsing disposes the worker and blocks a late parsed result", async t => {

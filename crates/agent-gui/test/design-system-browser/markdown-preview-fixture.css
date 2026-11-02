@@ -1,0 +1,54 @@
+.markdown-proof {
+  display: grid;
+  grid-template: auto minmax(0, 1fr) / 300px minmax(0, 1fr);
+  height: 100dvh;
+  color: hsl(var(--foreground));
+  background: var(--za-surface);
+}
+.markdown-proof > header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--za-border);
+}
+.markdown-proof-draft {
+  padding: 20px;
+  border-right: 1px solid var(--za-border);
+}
+.markdown-proof textarea {
+  width: 100%;
+  height: 120px;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid var(--za-border);
+  border-radius: 16px;
+  background: var(--za-surface);
+}
+.markdown-proof-reader {
+  min-width: 0;
+  min-height: 0;
+}
+.markdown-proof-reader .za-resource-preview {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+@media (max-width: 600px) {
+  .markdown-proof {
+    grid-template: auto auto minmax(0, 1fr) / minmax(0, 1fr);
+  }
+  .markdown-proof-draft {
+    display: flex;
+    gap: 16px;
+    padding: 12px;
+    border-bottom: 1px solid var(--za-border);
+  }
+  .markdown-proof textarea {
+    min-width: 0;
+    height: 80px;
+    margin: 0;
+  }
+}
