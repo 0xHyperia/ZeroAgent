@@ -32,7 +32,7 @@ packageExtensionsChecksum: sha256-TyTaN+d3T+LkpFKXbOmnXYMqlhr3oneo161Qv4wZwbI=
 
 patchedDependencies:
   '@extend-ai/react-xlsx@0.19.0':
-    hash: 0fb068f2a00ef1613c0644aac22c43c264af282943f2b4774085e112203d075d
+    hash: 4a43c693d8adb93eced5541213c78549b72403ff049fa23f75c0799db5145ab7
     path: patches/@extend-ai__react-xlsx@0.19.0.patch
 
 importers:
@@ -346,7 +346,7 @@ importers:
         version: 1.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@extend-ai/react-xlsx':
         specifier: 0.19.0
-        version: 0.19.0(patch_hash=0fb068f2a00ef1613c0644aac22c43c264af282943f2b4774085e112203d075d)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        version: 0.19.0(patch_hash=4a43c693d8adb93eced5541213c78549b72403ff049fa23f75c0799db5145ab7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@git-diff-view/file':
         specifier: 0.1.3
         version: 0.1.3
@@ -4913,7 +4913,7 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
-  '@extend-ai/react-xlsx@0.19.0(patch_hash=0fb068f2a00ef1613c0644aac22c43c264af282943f2b4774085e112203d075d)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@extend-ai/react-xlsx@0.19.0(patch_hash=4a43c693d8adb93eced5541213c78549b72403ff049fa23f75c0799db5145ab7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@dukelib/sheets-wasm': 0.1.23
       csstype: 3.2.3

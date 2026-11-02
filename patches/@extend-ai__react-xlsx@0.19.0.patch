@@ -1,5 +1,5 @@
 diff --git a/dist/chunk-TYJLNPNE.cjs b/dist/chunk-TYJLNPNE.cjs
-index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20cc43c393e 100644
+index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bcb61c4bbc 100644
 --- a/dist/chunk-TYJLNPNE.cjs
 +++ b/dist/chunk-TYJLNPNE.cjs
 @@ -3758,7 +3758,7 @@ var MIN_COL_WIDTH_PX = 30;
@@ -105,7 +105,71 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
    switch (iconSet) {
      case "NoIcons":
        return null;
-@@ -20581,7 +20599,7 @@ function XlsxGrid({
+@@ -19672,7 +19690,8 @@ function XlsxGrid({
+     [colIndexByActual, frozenCols]
+   );
+   const indexedMergedRegions = _chunkCJBI5F6Vcjs.T.call(void 0, 
+-    () => mergedRegions.flatMap((region) => {
++    // Worker mode exposes merge metadata through activeSheet, without a local worksheet.
++    () => (activeSheet?.mergedRanges ?? mergedRegions).flatMap((region) => {
+       const startRowIndex = rowIndexByActual.get(region.start.row);
+       const endRowIndex = rowIndexByActual.get(region.end.row);
+       const startColIndex = colIndexByActual.get(region.start.col);
+@@ -19687,7 +19706,7 @@ function XlsxGrid({
+         startRowIndex
+       }];
+     }),
+-    [colIndexByActual, mergedRegions, rowIndexByActual]
++    [activeSheet?.mergedRanges, colIndexByActual, mergedRegions, rowIndexByActual]
+   );
+   const domBaseRowIndices = _chunkCJBI5F6Vcjs.T.call(void 0, 
+     () => Array.from(/* @__PURE__ */ new Set([
+@@ -20339,9 +20358,10 @@ function XlsxGrid({
+     return geometryCell;
+   }, [displayHeaderHeight, displayRowHeaderWidth, frozenPaneBottom, frozenPaneRight]);
+   const resolvePointerCellFromHitTest = _chunkCJBI5F6Vcjs.q.call(void 0, (clientX, clientY) => {
++    const wrapper = wrapperRef.current;
+     const elementsAtPoint = typeof document.elementsFromPoint === "function" ? document.elementsFromPoint(clientX, clientY) : [document.elementFromPoint(clientX, clientY)].filter((element) => Boolean(element));
+     for (const element of elementsAtPoint) {
+-      if (!(element instanceof HTMLElement)) {
++      if (!(element instanceof HTMLElement) || !wrapper?.contains(element)) {
+         continue;
+       }
+       const cell = parseCellAddressAttribute(_nullishCoalesce(_optionalChain([element, 'access', _1115 => _1115.closest, 'call', _1116 => _1116("[data-xlsx-cell]"), 'optionalAccess', _1117 => _1117.getAttribute, 'call', _1118 => _1118("data-xlsx-cell")]), () => ( null)));
+@@ -20366,18 +20386,20 @@ function XlsxGrid({
+     return null;
+   }, []);
+   const resolvePointerCellFromClient = _chunkCJBI5F6Vcjs.q.call(void 0, (clientX, clientY) => {
++    const hitCell = !experimentalCanvas ? resolvePointerCellFromHitTest(clientX, clientY) : null;
++    if (hitCell) return resolveMergeAnchorCell(hitCell);
+     const geometryCell = resolvePointerCellFromGeometry(clientX, clientY);
+     if (geometryCell) {
+       return resolveMergeAnchorCell(geometryCell);
+     }
+     const resolvedCell = resolvePointerCellFromHitTest(clientX, clientY);
+     return resolvedCell ? resolveMergeAnchorCell(resolvedCell) : null;
+-  }, [resolveMergeAnchorCell, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest]);
++  }, [experimentalCanvas, resolveMergeAnchorCell, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest]);
+   const resolveDraggedSelectionCell = _chunkCJBI5F6Vcjs.q.call(void 0, (dragState, clientX, clientY) => {
+     const geometryCell = resolvePointerCellFromGeometry(clientX, clientY);
+     const hitCell = resolvePointerCellFromHitTest(clientX, clientY);
+-    const actualRow = _nullishCoalesce(_optionalChain([geometryCell, 'optionalAccess', _1119 => _1119.row]), () => ( (hitCell && rowIndexByActual.has(hitCell.row) ? hitCell.row : void 0)));
+-    const actualCol = _nullishCoalesce(_optionalChain([geometryCell, 'optionalAccess', _1120 => _1120.col]), () => ( _optionalChain([hitCell, 'optionalAccess', _1121 => _1121.col])));
++    const actualRow = (!experimentalCanvas ? hitCell?.row : void 0) ?? geometryCell?.row ?? (hitCell && rowIndexByActual.has(hitCell.row) ? hitCell.row : void 0);
++    const actualCol = (!experimentalCanvas ? hitCell?.col : void 0) ?? geometryCell?.col ?? hitCell?.col;
+     if (actualRow === void 0 || actualCol === void 0) {
+       return null;
+     }
+@@ -20388,7 +20410,7 @@ function XlsxGrid({
+       return { row: dragState.originCell.row, col: actualCol };
+     }
+     return { row: actualRow, col: actualCol };
+-  }, [resolvePointerCellFromGeometry, resolvePointerCellFromHitTest, rowIndexByActual]);
++  }, [experimentalCanvas, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest, rowIndexByActual]);
+   const resolveCellPointerOrigin = _chunkCJBI5F6Vcjs.q.call(void 0, (cell, rect, clientX, clientY) => {
+     const rowIndex = rowIndexByActual.get(cell.row);
+     const colIndex = colIndexByActual.get(cell.col);
+@@ -20581,7 +20603,7 @@ function XlsxGrid({
          return;
        }
      }
@@ -114,7 +178,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
      if (externalTarget && typeof window !== "undefined") {
        window.open(externalTarget, "_blank", "noopener,noreferrer");
      }
-@@ -20842,7 +20860,7 @@ function XlsxGrid({
+@@ -20842,7 +20864,7 @@ function XlsxGrid({
      const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
      const batchedCell = batchCoversRow ? _optionalChain([viewportRowBatch, 'optionalAccess', _1139 => _1139.cells, 'access', _1140 => _1140.get, 'call', _1141 => _1141(cacheKey)]) : void 0;
      const worksheetMergedSecondary = _nullishCoalesce(_optionalChain([worksheet, 'optionalAccess', _1142 => _1142.isMergedSecondary, 'call', _1143 => _1143(row, col)]), () => ( false));
@@ -123,7 +187,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
        const emptyData = {
          isMergedSecondary: false,
          style: scaleCssProperties({
-@@ -20934,17 +20952,18 @@ function XlsxGrid({
+@@ -20934,17 +20956,18 @@ function XlsxGrid({
      const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
      const rawHyperlink = batchCoversRow ? _optionalChain([batchedCell, 'optionalAccess', _1160 => _1160.hyperlink]) : _optionalChain([worksheet, 'optionalAccess', _1161 => _1161.getHyperlinkAt, 'call', _1162 => _1162(row, col)]);
      const sparkline = _nullishCoalesce(sparklinesByCell.get(cacheKey), () => ( null));
@@ -145,7 +209,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
          Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
          sparkline.range.start.col
        )
-@@ -20956,24 +20975,24 @@ function XlsxGrid({
+@@ -20956,24 +20979,24 @@ function XlsxGrid({
        chartHighlight,
        checkboxState,
        colSpan: _optionalChain([merge, 'optionalAccess', _1164 => _1164.colSpan]),
@@ -176,7 +240,64 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
          activeSheet,
          conditionalFormatMetricsCacheRef.current
        ) : null,
-@@ -26429,8 +26448,9 @@ function XlsxGrid({
+@@ -21143,7 +21166,6 @@ function XlsxGrid({
+       width: sumPrefixRange(colPrefixSums, startColIndex, endColIndex)
+     };
+   }, [colIndexByActual, colPrefixSums, displayHeaderHeight, displayRowHeaderWidth, displayedSelection, rowIndexByActual, rowPrefixSums]);
+-  const resolvedSelectionOverlay = selectionOverlay;
+   const rangeHighlightRects = _chunkCJBI5F6Vcjs.T.call(void 0, () => highlightedCellRanges.map(({ highlight, index, range }) => {
+     const rows = getHighlightAxisExtent(visibleRows, rowPrefixSums, range.start.row, range.end.row);
+     const cols = getHighlightAxisExtent(visibleCols, colPrefixSums, range.start.col, range.end.col);
+@@ -21519,12 +21541,13 @@ function XlsxGrid({
+     if (!wrapper) {
+       return null;
+     }
+-    const element = wrapper.querySelector(`[data-xlsx-cell="${cell.row}:${cell.col}"]`);
++    const anchor = resolveMergeAnchorCell(cell);
++    const element = wrapper.querySelector(`[data-xlsx-cell="${anchor.row}:${anchor.col}"]`);
+     if (!element) {
+       return null;
+     }
+     return resolveMountedCellOverlayRect(element);
+-  }, [resolveMountedCellOverlayRect]);
++  }, [resolveMergeAnchorCell, resolveMountedCellOverlayRect]);
+   const resolveGeometryOverlayRect = _chunkCJBI5F6Vcjs.q.call(void 0, (range) => {
+     const normalized = normalizeRange2(range);
+     const isSingleCellSelection = normalized.start.row === normalized.end.row && normalized.start.col === normalized.end.col;
+@@ -21648,6 +21671,8 @@ function XlsxGrid({
+     resolveGeometryOverlayRect,
+     resolveMountedRangeOverlayRect
+   ]);
++  // Declarative renders must use the same measured DOM geometry as pointer previews.
++  const resolvedSelectionOverlay = !experimentalCanvas && displayedSelection ? resolveOverlayRect(displayedSelection) ?? selectionOverlay : selectionOverlay;
+   const resolveCellDisplayRect = _chunkCJBI5F6Vcjs.q.call(void 0, (cell) => {
+     const rowIndex = rowIndexByActual.get(cell.row);
+     const colIndex = colIndexByActual.get(cell.col);
+@@ -22267,6 +22292,12 @@ function XlsxGrid({
+       return;
+     }
+     applyPreviewOverlay(overlayRange);
++    // The host React scroll slot can commit after the engine layout effect.
++    const frame = window.requestAnimationFrame(() => {
++      const currentRange = selectionPreviewRangeRef.current ?? displayedSelectionRef.current;
++      if (currentRange) applyPreviewOverlay(currentRange);
++    });
++    return () => window.cancelAnimationFrame(frame);
+   }, [applyHeaderSelection, applyPreviewOverlay, displayedSelection, revision]);
+   _chunkCJBI5F6Vcjs._.call(void 0, () => {
+     syncActiveValidationOverlay(activeCell);
+@@ -22329,9 +22360,7 @@ function XlsxGrid({
+     event.preventDefault();
+     focusGrid();
+     axisSelectionRef.current = null;
+-    const targetCell = resolveMergeAnchorCell(
+-      event.currentTarget.colSpan > 1 || event.currentTarget.rowSpan > 1 ? _nullishCoalesce(resolvePointerCellFromGeometry(event.clientX, event.clientY), () => ( cell)) : cell
+-    );
++    const targetCell = resolveMergeAnchorCell(cell);
+     const currentSelection = selectionRef.current;
+     const anchor = event.shiftKey && currentSelection ? currentSelection.start : targetCell;
+     const initialRange = resolveCellSelectionRange({ start: anchor, end: targetCell });
+@@ -26429,8 +26458,9 @@ function XlsxGrid({
                        }
                        const previousEnd = index === 0 ? 0 : _nullishCoalesce(_optionalChain([virtualRows, 'access', _1390 => _1390[index - 1], 'optionalAccess', _1391 => _1391.end]), () => ( 0));
                        const gapHeight = Math.max(0, virtualRow.start - previousEnd);
@@ -188,7 +309,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..f20e02d91a4fdd91aaa2307eba81d20c
                            MemoGridRow,
                            {
 diff --git a/dist/chunk-Y737JKUG.js b/dist/chunk-Y737JKUG.js
-index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de97608ac48b0 100644
+index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d5a27890c 100644
 --- a/dist/chunk-Y737JKUG.js
 +++ b/dist/chunk-Y737JKUG.js
 @@ -3755,7 +3755,7 @@ var MIN_COL_WIDTH_PX = 30;
@@ -294,7 +415,71 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de976
    switch (iconSet) {
      case "NoIcons":
        return null;
-@@ -20578,7 +20596,7 @@ function XlsxGrid({
+@@ -19669,7 +19687,8 @@ function XlsxGrid({
+     [colIndexByActual, frozenCols]
+   );
+   const indexedMergedRegions = T(
+-    () => mergedRegions.flatMap((region) => {
++    // Worker mode exposes merge metadata through activeSheet, without a local worksheet.
++    () => (activeSheet?.mergedRanges ?? mergedRegions).flatMap((region) => {
+       const startRowIndex = rowIndexByActual.get(region.start.row);
+       const endRowIndex = rowIndexByActual.get(region.end.row);
+       const startColIndex = colIndexByActual.get(region.start.col);
+@@ -19684,7 +19703,7 @@ function XlsxGrid({
+         startRowIndex
+       }];
+     }),
+-    [colIndexByActual, mergedRegions, rowIndexByActual]
++    [activeSheet?.mergedRanges, colIndexByActual, mergedRegions, rowIndexByActual]
+   );
+   const domBaseRowIndices = T(
+     () => Array.from(/* @__PURE__ */ new Set([
+@@ -20336,9 +20355,10 @@ function XlsxGrid({
+     return geometryCell;
+   }, [displayHeaderHeight, displayRowHeaderWidth, frozenPaneBottom, frozenPaneRight]);
+   const resolvePointerCellFromHitTest = q((clientX, clientY) => {
++    const wrapper = wrapperRef.current;
+     const elementsAtPoint = typeof document.elementsFromPoint === "function" ? document.elementsFromPoint(clientX, clientY) : [document.elementFromPoint(clientX, clientY)].filter((element) => Boolean(element));
+     for (const element of elementsAtPoint) {
+-      if (!(element instanceof HTMLElement)) {
++      if (!(element instanceof HTMLElement) || !wrapper?.contains(element)) {
+         continue;
+       }
+       const cell = parseCellAddressAttribute(element.closest("[data-xlsx-cell]")?.getAttribute("data-xlsx-cell") ?? null);
+@@ -20363,18 +20383,20 @@ function XlsxGrid({
+     return null;
+   }, []);
+   const resolvePointerCellFromClient = q((clientX, clientY) => {
++    const hitCell = !experimentalCanvas ? resolvePointerCellFromHitTest(clientX, clientY) : null;
++    if (hitCell) return resolveMergeAnchorCell(hitCell);
+     const geometryCell = resolvePointerCellFromGeometry(clientX, clientY);
+     if (geometryCell) {
+       return resolveMergeAnchorCell(geometryCell);
+     }
+     const resolvedCell = resolvePointerCellFromHitTest(clientX, clientY);
+     return resolvedCell ? resolveMergeAnchorCell(resolvedCell) : null;
+-  }, [resolveMergeAnchorCell, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest]);
++  }, [experimentalCanvas, resolveMergeAnchorCell, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest]);
+   const resolveDraggedSelectionCell = q((dragState, clientX, clientY) => {
+     const geometryCell = resolvePointerCellFromGeometry(clientX, clientY);
+     const hitCell = resolvePointerCellFromHitTest(clientX, clientY);
+-    const actualRow = geometryCell?.row ?? (hitCell && rowIndexByActual.has(hitCell.row) ? hitCell.row : void 0);
+-    const actualCol = geometryCell?.col ?? hitCell?.col;
++    const actualRow = (!experimentalCanvas ? hitCell?.row : void 0) ?? geometryCell?.row ?? (hitCell && rowIndexByActual.has(hitCell.row) ? hitCell.row : void 0);
++    const actualCol = (!experimentalCanvas ? hitCell?.col : void 0) ?? geometryCell?.col ?? hitCell?.col;
+     if (actualRow === void 0 || actualCol === void 0) {
+       return null;
+     }
+@@ -20385,7 +20407,7 @@ function XlsxGrid({
+       return { row: dragState.originCell.row, col: actualCol };
+     }
+     return { row: actualRow, col: actualCol };
+-  }, [resolvePointerCellFromGeometry, resolvePointerCellFromHitTest, rowIndexByActual]);
++  }, [experimentalCanvas, resolvePointerCellFromGeometry, resolvePointerCellFromHitTest, rowIndexByActual]);
+   const resolveCellPointerOrigin = q((cell, rect, clientX, clientY) => {
+     const rowIndex = rowIndexByActual.get(cell.row);
+     const colIndex = colIndexByActual.get(cell.col);
+@@ -20578,7 +20600,7 @@ function XlsxGrid({
          return;
        }
      }
@@ -303,7 +488,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de976
      if (externalTarget && typeof window !== "undefined") {
        window.open(externalTarget, "_blank", "noopener,noreferrer");
      }
-@@ -20839,7 +20857,7 @@ function XlsxGrid({
+@@ -20839,7 +20861,7 @@ function XlsxGrid({
      const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
      const batchedCell = batchCoversRow ? viewportRowBatch?.cells.get(cacheKey) : void 0;
      const worksheetMergedSecondary = worksheet?.isMergedSecondary(row, col) ?? false;
@@ -312,7 +497,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de976
        const emptyData = {
          isMergedSecondary: false,
          style: scaleCssProperties({
-@@ -20931,17 +20949,18 @@ function XlsxGrid({
+@@ -20931,17 +20953,18 @@ function XlsxGrid({
      const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
      const rawHyperlink = batchCoversRow ? batchedCell?.hyperlink : worksheet?.getHyperlinkAt(row, col);
      const sparkline = sparklinesByCell.get(cacheKey) ?? null;
@@ -334,7 +519,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de976
          Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
          sparkline.range.start.col
        )
-@@ -20953,24 +20972,24 @@ function XlsxGrid({
+@@ -20953,24 +20976,24 @@ function XlsxGrid({
        chartHighlight,
        checkboxState,
        colSpan: merge?.colSpan,
@@ -365,7 +550,64 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..c5f1b9e6ac7d31882ec705895e6de976
          activeSheet,
          conditionalFormatMetricsCacheRef.current
        ) : null,
-@@ -26426,8 +26445,9 @@ function XlsxGrid({
+@@ -21140,7 +21163,6 @@ function XlsxGrid({
+       width: sumPrefixRange(colPrefixSums, startColIndex, endColIndex)
+     };
+   }, [colIndexByActual, colPrefixSums, displayHeaderHeight, displayRowHeaderWidth, displayedSelection, rowIndexByActual, rowPrefixSums]);
+-  const resolvedSelectionOverlay = selectionOverlay;
+   const rangeHighlightRects = T(() => highlightedCellRanges.map(({ highlight, index, range }) => {
+     const rows = getHighlightAxisExtent(visibleRows, rowPrefixSums, range.start.row, range.end.row);
+     const cols = getHighlightAxisExtent(visibleCols, colPrefixSums, range.start.col, range.end.col);
+@@ -21516,12 +21538,13 @@ function XlsxGrid({
+     if (!wrapper) {
+       return null;
+     }
+-    const element = wrapper.querySelector(`[data-xlsx-cell="${cell.row}:${cell.col}"]`);
++    const anchor = resolveMergeAnchorCell(cell);
++    const element = wrapper.querySelector(`[data-xlsx-cell="${anchor.row}:${anchor.col}"]`);
+     if (!element) {
+       return null;
+     }
+     return resolveMountedCellOverlayRect(element);
+-  }, [resolveMountedCellOverlayRect]);
++  }, [resolveMergeAnchorCell, resolveMountedCellOverlayRect]);
+   const resolveGeometryOverlayRect = q((range) => {
+     const normalized = normalizeRange2(range);
+     const isSingleCellSelection = normalized.start.row === normalized.end.row && normalized.start.col === normalized.end.col;
+@@ -21645,6 +21668,8 @@ function XlsxGrid({
+     resolveGeometryOverlayRect,
+     resolveMountedRangeOverlayRect
+   ]);
++  // Declarative renders must use the same measured DOM geometry as pointer previews.
++  const resolvedSelectionOverlay = !experimentalCanvas && displayedSelection ? resolveOverlayRect(displayedSelection) ?? selectionOverlay : selectionOverlay;
+   const resolveCellDisplayRect = q((cell) => {
+     const rowIndex = rowIndexByActual.get(cell.row);
+     const colIndex = colIndexByActual.get(cell.col);
+@@ -22264,6 +22289,12 @@ function XlsxGrid({
+       return;
+     }
+     applyPreviewOverlay(overlayRange);
++    // The host React scroll slot can commit after the engine layout effect.
++    const frame = window.requestAnimationFrame(() => {
++      const currentRange = selectionPreviewRangeRef.current ?? displayedSelectionRef.current;
++      if (currentRange) applyPreviewOverlay(currentRange);
++    });
++    return () => window.cancelAnimationFrame(frame);
+   }, [applyHeaderSelection, applyPreviewOverlay, displayedSelection, revision]);
+   _(() => {
+     syncActiveValidationOverlay(activeCell);
+@@ -22326,9 +22357,7 @@ function XlsxGrid({
+     event.preventDefault();
+     focusGrid();
+     axisSelectionRef.current = null;
+-    const targetCell = resolveMergeAnchorCell(
+-      event.currentTarget.colSpan > 1 || event.currentTarget.rowSpan > 1 ? resolvePointerCellFromGeometry(event.clientX, event.clientY) ?? cell : cell
+-    );
++    const targetCell = resolveMergeAnchorCell(cell);
+     const currentSelection = selectionRef.current;
+     const anchor = event.shiftKey && currentSelection ? currentSelection.start : targetCell;
+     const initialRange = resolveCellSelectionRange({ start: anchor, end: targetCell });
+@@ -26426,8 +26455,9 @@ function XlsxGrid({
                        }
                        const previousEnd = index === 0 ? 0 : virtualRows[index - 1]?.end ?? 0;
                        const gapHeight = Math.max(0, virtualRow.start - previousEnd);
