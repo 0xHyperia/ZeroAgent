@@ -62,7 +62,7 @@ export function CloudSpaceNavigation(props: {
   ] as const;
   return (
     <div className="cloud-space-navigation">
-      <nav aria-label="资料空间分类">
+      <nav aria-label="资料空间分类" className="flex flex-col gap-1">
         {categories.map(({ id, label, Icon }) => (
           <button
             type="button"
@@ -90,18 +90,20 @@ export function CloudSpaceNavigation(props: {
           <Star className="size-4" />
           收藏
         </button>
+        <button
+          type="button"
+          className="cloud-sidebar-destination"
+          aria-current={
+            props.location.category === "sites" && props.location.scope === "all"
+              ? "page"
+              : undefined
+          }
+          onClick={() => props.onNavigate({ ...CLOUD_SPACE_HOME, category: "sites" })}
+        >
+          <Globe className="size-4" />
+          站点
+        </button>
       </nav>
-      <button
-        type="button"
-        className="cloud-sidebar-destination"
-        aria-current={
-          props.location.category === "sites" && props.location.scope === "all" ? "page" : undefined
-        }
-        onClick={() => props.onNavigate({ ...CLOUD_SPACE_HOME, category: "sites" })}
-      >
-        <Globe className="size-4" />
-        站点
-      </button>
       <section className="cloud-space-folders">
         <div className="cloud-space-folder-heading">
           <button
@@ -122,7 +124,7 @@ export function CloudSpaceNavigation(props: {
             <Plus className="size-4" />
           </TooltipButton>
         </div>
-        <div hidden={!foldersOpen}>
+        <div hidden={!foldersOpen} className="space-y-1">
           {page?.folders.map((item) => (
             <button
               type="button"

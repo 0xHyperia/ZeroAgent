@@ -72,7 +72,7 @@ import {
   type CloudSpacePage as SpacePage,
 } from "@/lib/cloudSpace";
 import { CloudChatFeedback } from "./CloudChatFeedback";
-import { CloudSpaceCover, cloudSpaceFormat } from "./CloudSpaceCover";
+import { CloudSpaceCover, CloudSpaceFormatIcon, cloudSpaceFormat } from "./CloudSpaceCover";
 
 export function CloudSpaceIcon({
   item,
@@ -158,6 +158,20 @@ function statusLabel(item: CloudSpaceItem) {
   );
 }
 type Editor = { type: "folder" | "rename" | "move" | "work"; items: CloudSpaceItem[] };
+function SpaceSkeleton({ append = false }: { append?: boolean }) {
+  return (
+    <div className="cloud-space-skeleton" data-append={append || undefined} aria-hidden="true">
+      {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].slice(0, append ? 3 : 10).map((key) => (
+        <div key={key}>
+          <span className="cloud-space-skeleton-icon" />
+          <span className="cloud-space-skeleton-name" />
+          <span className="cloud-space-skeleton-date" />
+          <span className="cloud-space-skeleton-size" />
+        </div>
+      ))}
+    </div>
+  );
+}
 type Props = {
   client: CloudSpaceClient;
   files: CloudChatFilesClient;
@@ -203,6 +217,8 @@ export function CloudSpacePage(props: Props) {
   const [revision, setRevision] = useState(0),
     [cursor, setCursor] = useState(""),
     [selected, setSelected] = useState<string[]>([]);
+  const [loadedScope, setLoadedScope] = useState("");
+  const loadSentinel = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null),
     [name, setName] = useState(""),
     [folder, setFolder] = useState("");
@@ -278,6 +294,8 @@ export function CloudSpacePage(props: Props) {
     };
   }, []);
   const locationKey = JSON.stringify(location);
+  const scopeKey = JSON.stringify([locationKey, query, sort]);
+  const replacingScope = loadedScope !== scopeKey;
   useEffect(() => {
     if (props.active === false) {
       setEditor(null);
@@ -317,6 +335,7 @@ export function CloudSpacePage(props: Props) {
             guard();
             if (!mounted.current || controller.signal.aborted || seq !== sequence.current) return;
             setPage(data);
+            setLoadedScope(scopeKey);
             if (reconcileRequested.current) {
               reconcileRequested.current = false;
               unconfirmedRef.current = false;
@@ -358,6 +377,49 @@ export function CloudSpacePage(props: Props) {
       controller.abort();
     };
   }, [client, query, sort, cursor, revision, props.revision, props.captureGuard, location]);
+  useEffect(() => {
+    const sentinel = loadSentinel.current;
+    const next = page?.next_cursor;
+    if (
+      !sentinel ||
+      !next ||
+      next === cursor ||
+      replacingScope ||
+      busy ||
+      working ||
+      unconfirmed ||
+      error ||
+      props.active === false ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    let root = sentinel.parentElement;
+    while (root && !/(auto|scroll)/.test(getComputedStyle(root).overflowY))
+      root = root.parentElement;
+    const seq = sequence.current;
+    let requested = false,
+      active = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          !active ||
+          requested ||
+          seq !== sequence.current ||
+          !entries.some((entry) => entry.isIntersecting)
+        )
+          return;
+        requested = true;
+        observer.disconnect();
+        setCursor(next);
+      },
+      { root, rootMargin: "0px 0px 200px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [page?.next_cursor, cursor, replacingScope, busy, working, unconfirmed, error, props.active]);
   function refresh() {
     if (unconfirmedRef.current) reconcileRequested.current = true;
     setCursor("");
@@ -551,7 +613,7 @@ export function CloudSpacePage(props: Props) {
   const allLoadedSelected = items.length > 0 && targets.length === items.length;
   const heading =
     page?.folders.find((item) => item.id === location.folder)?.name ?? cloudSpaceTitle(location);
-  const frozen = busy || working || unconfirmed;
+  const frozen = (busy && !cursor) || replacingScope || working || unconfirmed;
   const itemMenu = (item: CloudSpaceItem) => (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -633,6 +695,13 @@ export function CloudSpacePage(props: Props) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+  // Keep one keyed list across layouts so grouping never recreates loaded covers.
+  const folders = items.filter((item) => item.kind === "folder");
+  const documents = items.filter((item) => item.kind !== "folder");
+  const entries: Array<CloudSpaceItem | "folders" | "files"> =
+    view === "grid" && !siteView && folders.length
+      ? ["folders", ...folders, ...(documents.length ? ["files" as const, ...documents] : [])]
+      : items;
   return (
     <FileDropBoundary
       className={`cloud-space-page ${siteView ? "cloud-space-sites" : ""}`}
@@ -953,7 +1022,7 @@ export function CloudSpacePage(props: Props) {
       ) : null}
       <div
         className="cloud-space-results-caption"
-        data-quiet={!query && location.scope !== "trash" && !busy ? "" : undefined}
+        data-quiet={!query && location.scope !== "trash" ? "" : undefined}
       >
         <span className="cloud-space-results-title">
           {query
@@ -978,73 +1047,9 @@ export function CloudSpacePage(props: Props) {
               : ""}
         </span>
       </div>
-      {selected.length ? (
-        <div className="cloud-space-selection">
-          <strong>{selected.length} 项已选择</strong>
-          <Button variant="ghost" size="sm" aria-label="取消选择" onClick={() => setSelected([])}>
-            <X className="size-4" />
-            取消
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={
-              frozen ||
-              !props.canReference ||
-              targets.some((item) => item.kind === "folder" || item.trashed) ||
-              selected.length > 8
-            }
-            onClick={() =>
-              void run(async (guard) => {
-                await props.onReference(targets);
-                guard();
-              })
-            }
-          >
-            <Plus className="size-4" />
-            在对话中使用
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={frozen || targets.some((item) => item.kind === "folder")}
-            onClick={() => openEditor("move", targets)}
-          >
-            <FolderClosed className="size-4" />
-            移动
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={frozen}
-            onClick={() => void mutate(targets, { trashed: location.scope !== "trash" })}
-          >
-            {location.scope === "trash" ? (
-              <ArchiveRestore className="size-4" />
-            ) : (
-              <Trash2 className="size-4" />
-            )}
-            {location.scope === "trash" ? "恢复" : "移入回收站"}
-          </Button>
-        </div>
-      ) : null}
       <div className="cloud-space-results" aria-busy={busy} data-view={view}>
-        {!page && busy ? (
-          <div className="cloud-space-skeleton" aria-hidden="true">
-            {["first", "second", "third", "fourth", "fifth", "sixth"].map((key) => (
-              <div key={key}>
-                <span />
-                <span />
-                <span />
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {page && items.length === 0 && busy ? (
-          <div className="cloud-space-query-loading" aria-hidden="true">
-            <LoaderCircle className="size-5 animate-spin" />
-            <span>{query ? "正在查找资料" : "正在更新资料"}</span>
-          </div>
+        {(busy || replacingScope) && (replacingScope || items.length === 0) && !error ? (
+          <SpaceSkeleton />
         ) : null}
         {page && items.length === 0 && !busy && !error ? (
           <div className="cloud-space-empty">
@@ -1110,7 +1115,7 @@ export function CloudSpacePage(props: Props) {
             ) : null}
           </div>
         ) : null}
-        {items.length ? (
+        {items.length && !replacingScope ? (
           <>
             <div className="cloud-space-table-head">
               <label className="cloud-space-select-all">
@@ -1128,150 +1133,208 @@ export function CloudSpacePage(props: Props) {
                 />
                 <span>名称</span>
               </label>
-              <span>位置</span>
-              <span>最近修改</span>
+              <span>修改日期</span>
+              <span>大小</span>
               <span />
             </div>
             <ul className="cloud-space-item-list">
-              {items.map((item) => (
-                <li
-                  key={`${item.kind}:${item.id}`}
-                  data-selected={selected.includes(item.id) || undefined}
-                >
-                  <label className="cloud-space-check">
-                    <input
-                      type="checkbox"
-                      aria-label={`选择 ${item.name}`}
-                      checked={selected.includes(item.id)}
-                      disabled={frozen}
-                      onChange={(event) =>
-                        setSelected((old) =>
-                          event.target.checked
-                            ? [...old, item.id]
-                            : old.filter((id) => id !== item.id),
-                        )
-                      }
-                    />
-                  </label>
-                  <div className="cloud-space-item-content">
-                    <button
-                      type="button"
-                      className="cloud-space-cover-open"
-                      aria-label={`打开 ${item.name}`}
-                      disabled={frozen}
-                      onClick={() => open(item)}
-                    >
-                      <CloudSpaceCover
-                        item={item}
-                        files={props.files}
-                        artifacts={props.artifacts}
-                        captureGuard={props.captureGuard}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      className="cloud-space-item-main"
-                      draggable={!frozen && !item.trashed && item.kind !== "folder"}
-                      onDragStart={(event) => {
-                        if (frozen || item.trashed || item.kind === "folder") {
-                          event.preventDefault();
-                          return;
-                        }
-                        const sources = selected.includes(item.id)
-                          ? targets.filter((target) => target.kind !== "folder" && !target.trashed)
-                          : [item];
-                        if (
-                          !writeCloudResourceDragPayload(
-                            event.dataTransfer,
-                            sources.flatMap((source) =>
-                              source.kind === "folder"
-                                ? []
-                                : [
-                                    {
-                                      kind: source.kind,
-                                      id: source.id,
-                                      target_id: source.target_id,
-                                      ...(source.site_version_id
-                                        ? { site_version_id: source.site_version_id }
-                                        : {}),
-                                    },
-                                  ],
-                            ),
-                          )
-                        ) {
-                          event.preventDefault();
-                          setError("一次最多拖动8份资料，请减少选择后再试。");
-                        } else setDraggingResources(true);
-                      }}
-                      onDragEnd={() => setDraggingResources(false)}
-                      onClick={() => open(item)}
-                      disabled={frozen}
-                    >
-                      <span className="cloud-space-item-name">
-                        <strong title={item.name}>
-                          {item.site_version_id ? item.name.replace(/\.zip$/i, "") : item.name}
-                        </strong>
-                        <span className="cloud-space-item-meta">
-                          {item.site_version_id ? (
-                            <>
-                              <Lock className="size-3" />
-                              私人预览 · {dateLabel(item.updated_at)}
-                            </>
-                          ) : (
-                            <>
-                              {cloudSpaceFormat(item)}
-                              {item.kind !== "folder" ? ` · ${cloudSpaceSize(item.size)}` : ""}
-                            </>
-                          )}
-                          {!["ready", "vision_ready", "uploaded"].includes(item.state)
-                            ? ` · ${statusLabel(item)}`
-                            : ""}
-                        </span>
-                        <span className="cloud-space-item-mobile-meta">
-                          {item.kind === "folder"
-                            ? "文件夹"
-                            : `${page?.folders.find((folder) => folder.id === item.folder_id)?.name ?? (item.kind === "artifact" ? "AI 产出" : "资料空间")} · ${dateLabel(item.updated_at)}`}
-                        </span>
-                      </span>
-                      {item.starred ? <Star className="cloud-space-star size-3.5" /> : null}
-                    </button>
-                  </div>
-                  <span className="cloud-space-cell cloud-space-location">
-                    {page?.folders.find((folder) => folder.id === item.folder_id)?.name ??
-                      "资料空间"}
-                  </span>
-                  <time
-                    className="cloud-space-cell"
-                    dateTime={item.updated_at}
-                    title={new Date(item.updated_at).toLocaleString("zh-CN")}
+              {entries.map((item) =>
+                typeof item === "string" ? (
+                  <li
+                    key={`section:${item}`}
+                    className="cloud-space-grid-section"
+                    role="presentation"
                   >
-                    {dateLabel(item.updated_at)}
-                  </time>
-                  {itemMenu(item)}
-                </li>
-              ))}
+                    <h2>{item === "folders" ? "文件夹" : "文件"}</h2>
+                  </li>
+                ) : (
+                  <li
+                    key={`${item.kind}:${item.id}`}
+                    className="cloud-space-item"
+                    data-folder={item.kind === "folder" || undefined}
+                    data-selected={selected.includes(item.id) || undefined}
+                  >
+                    <label className="cloud-space-check">
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${item.name}`}
+                        checked={selected.includes(item.id)}
+                        disabled={frozen}
+                        onChange={(event) =>
+                          setSelected((old) =>
+                            event.target.checked
+                              ? [...old, item.id]
+                              : old.filter((id) => id !== item.id),
+                          )
+                        }
+                      />
+                    </label>
+                    <div className="cloud-space-item-content">
+                      <div className="cloud-space-cover-target">
+                        <CloudSpaceCover
+                          item={item}
+                          showPreview={view === "grid" && props.active !== false}
+                          files={props.files}
+                          artifacts={props.artifacts}
+                          captureGuard={props.captureGuard}
+                        />
+                        <button
+                          type="button"
+                          className="cloud-space-cover-open"
+                          aria-label={`打开 ${item.name}`}
+                          disabled={frozen}
+                          onClick={() => open(item)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="cloud-space-item-main"
+                        draggable={!frozen && !item.trashed && item.kind !== "folder"}
+                        onDragStart={(event) => {
+                          if (frozen || item.trashed || item.kind === "folder") {
+                            event.preventDefault();
+                            return;
+                          }
+                          const sources = selected.includes(item.id)
+                            ? targets.filter(
+                                (target) => target.kind !== "folder" && !target.trashed,
+                              )
+                            : [item];
+                          if (
+                            !writeCloudResourceDragPayload(
+                              event.dataTransfer,
+                              sources.flatMap((source) =>
+                                source.kind === "folder"
+                                  ? []
+                                  : [
+                                      {
+                                        kind: source.kind,
+                                        id: source.id,
+                                        target_id: source.target_id,
+                                        ...(source.site_version_id
+                                          ? { site_version_id: source.site_version_id }
+                                          : {}),
+                                      },
+                                    ],
+                              ),
+                            )
+                          ) {
+                            event.preventDefault();
+                            setError("一次最多拖动8份资料，请减少选择后再试。");
+                          } else setDraggingResources(true);
+                        }}
+                        onDragEnd={() => setDraggingResources(false)}
+                        onClick={() => open(item)}
+                        disabled={frozen}
+                      >
+                        <span className="cloud-space-card-type" aria-hidden="true">
+                          <CloudSpaceFormatIcon item={item} />
+                        </span>
+                        <span className="cloud-space-item-name">
+                          <strong title={item.name}>
+                            {item.site_version_id ? item.name.replace(/\.zip$/i, "") : item.name}
+                          </strong>
+                          <span
+                            className="cloud-space-item-meta"
+                            data-pending={
+                              (item.kind !== "folder" &&
+                                !["ready", "vision_ready", "uploaded"].includes(item.state)) ||
+                              undefined
+                            }
+                          >
+                            {item.site_version_id ? (
+                              <>
+                                <Lock className="size-3" />
+                                私人预览 · {dateLabel(item.updated_at)}
+                              </>
+                            ) : (
+                              <>
+                                {cloudSpaceFormat(item)}
+                                {item.kind !== "folder" ? ` · ${cloudSpaceSize(item.size)}` : ""}
+                              </>
+                            )}
+                            {!["ready", "vision_ready", "uploaded"].includes(item.state)
+                              ? ` · ${statusLabel(item)}`
+                              : ""}
+                          </span>
+                          <span className="cloud-space-item-mobile-meta">
+                            {item.kind === "folder"
+                              ? "文件夹"
+                              : `${page?.folders.find((folder) => folder.id === item.folder_id)?.name ?? (item.kind === "artifact" ? "AI 产出" : "资料空间")} · ${dateLabel(item.updated_at)}`}
+                          </span>
+                        </span>
+                        {item.starred ? <Star className="cloud-space-star size-3.5" /> : null}
+                      </button>
+                    </div>
+                    <time
+                      className="cloud-space-cell"
+                      dateTime={item.updated_at}
+                      title={new Date(item.updated_at).toLocaleString("zh-CN")}
+                    >
+                      {dateLabel(item.updated_at)}
+                    </time>
+                    <span className="cloud-space-cell cloud-space-size">
+                      {item.kind === "folder" ? "—" : cloudSpaceSize(item.size)}
+                    </span>
+                    {itemMenu(item)}
+                  </li>
+                ),
+              )}
             </ul>
           </>
         ) : null}
+        {busy && cursor && !replacingScope && items.length > 0 ? <SpaceSkeleton append /> : null}
+        <div ref={loadSentinel} className="cloud-space-load-sentinel" aria-hidden="true" />
       </div>
-      {!error && page?.next_cursor ? (
-        <Button
-          variant="ghost"
-          className="cloud-space-load-more"
-          disabled={frozen}
-          onClick={() => setCursor(page.next_cursor)}
-        >
-          {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}加载更多
-        </Button>
-      ) : null}
-      {page ? (
-        <footer className="cloud-space-footer">
-          <span>{page.total} 项</span>
-          <button type="button" aria-label="管理存储空间" onClick={() => setCapacityOpen(true)}>
-            <HardDrive className="size-3.5" />
-            存储空间
-          </button>
-        </footer>
+      {selected.length ? (
+        <div className="cloud-space-selection">
+          <strong>{selected.length} 项已选择</strong>
+          <Button variant="ghost" size="sm" aria-label="取消选择" onClick={() => setSelected([])}>
+            <X className="size-4" />
+            取消
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={
+              frozen ||
+              !props.canReference ||
+              targets.some((item) => item.kind === "folder" || item.trashed) ||
+              selected.length > 8
+            }
+            onClick={() =>
+              void run(async (guard) => {
+                await props.onReference(targets);
+                guard();
+              })
+            }
+          >
+            <Plus className="size-4" />
+            在对话中使用
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={frozen || targets.some((item) => item.kind === "folder")}
+            onClick={() => openEditor("move", targets)}
+          >
+            <FolderClosed className="size-4" />
+            移动
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={frozen}
+            onClick={() => void mutate(targets, { trashed: location.scope !== "trash" })}
+          >
+            {location.scope === "trash" ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Trash2 className="size-4" />
+            )}
+            {location.scope === "trash" ? "恢复" : "移入回收站"}
+          </Button>
+        </div>
       ) : null}
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
         <DialogContent

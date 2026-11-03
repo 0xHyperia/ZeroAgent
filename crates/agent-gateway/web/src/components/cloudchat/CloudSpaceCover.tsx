@@ -1,10 +1,17 @@
-import { FolderClosed, Globe } from "@liveagent/ui/components/IconSet";
+import {
+  AudioLines,
+  FolderClosed,
+  Globe,
+  ImageIcon,
+  Video,
+} from "@liveagent/ui/components/IconSet";
+import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/previewPolicy";
 import { getResourceFileIcon } from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
 import {
   type ResourcePreviewProps,
   ResourceThumbnail,
 } from "@liveagent/ui/components/resource-preview/ResourcePreview";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { CloudChatArtifactsClient } from "@/lib/cloudChatArtifacts";
 import type { CloudChatFilesClient } from "@/lib/cloudChatFiles";
 import type { CloudSpaceItem } from "@/lib/cloudSpace";
@@ -26,89 +33,117 @@ export function cloudSpaceFormat(
   return ext ? `${ext.toUpperCase()} 文件` : "文件";
 }
 
-/** The library and composer use the same verified, bounded cover renderer. */
-export function CloudSpaceCover(props: {
+type CoverProps = {
   item: CloudSpaceItem;
+  showPreview: boolean;
   files: CloudChatFilesClient;
   artifacts: CloudChatArtifactsClient;
   captureGuard: () => () => void;
+};
+
+export function CloudSpaceFormatIcon({
+  item,
+  className,
+}: {
+  item: CloudSpaceItem;
+  className?: string;
 }) {
-  const { item, files, artifacts, captureGuard } = props;
-  const host = useRef<HTMLSpanElement>(null);
-  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
-  const [preview, setPreview] = useState<{ key: string; props: ResourcePreviewProps } | null>(null);
-  const [siteCover, setSiteCover] = useState<{ key: string; html: string } | null>(null);
-  const [coverWidth, setCoverWidth] = useState(0);
-  const key = `${item.kind}:${item.target_id}:${item.updated_at}`;
   const Icon =
     item.kind === "folder"
       ? FolderClosed
       : item.site_version_id
         ? Globe
-        : getResourceFileIcon(item.name);
+        : item.mime.startsWith("image/")
+          ? ImageIcon
+          : item.mime.startsWith("video/")
+            ? Video
+            : item.mime.startsWith("audio/")
+              ? AudioLines
+              : getResourceFileIcon(item.name);
+  return <Icon className={className} />;
+}
+
+/** Metadata edits do not replace the immutable original or its mounted cover. */
+export function CloudSpaceCover(props: CoverProps) {
+  const identity = `${props.item.kind}:${props.item.target_id}:${props.item.site_version_id ?? ""}`;
+  return <SpaceCoverContent key={identity} {...props} identity={identity} />;
+}
+
+function SpaceCoverContent(props: CoverProps & { identity: string }) {
+  const { item, files, artifacts, identity } = props;
+  const current = useRef(props);
+  current.current = props;
+  const host = useRef<HTMLSpanElement>(null),
+    previewHost = useRef<HTMLSpanElement>(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
+  const [started, setStarted] = useState(false);
+  const [preview, setPreview] = useState<ResourcePreviewProps | null>(null);
+  const [siteCover, setSiteCover] = useState<string | null>(null);
+  const [coverSize, setCoverSize] = useState({ width: 1100, height: 720 });
+  const eligible =
+    item.kind !== "folder" &&
+    !["uploading", "deleting", "deleted", "staging"].includes(item.state) &&
+    (!!item.site_version_id ||
+      (item.size > 0 &&
+        item.size <= 4 * 1024 * 1024 &&
+        ["docx", "pptx", "pdf", "image", "svg", "markdown", "sheet"].includes(
+          resourcePreviewKind(item),
+        )));
   useEffect(() => {
-    if (!visible || !item.site_version_id || !artifacts.sites?.cover) return;
-    const controller = new AbortController(),
-      guard = captureGuard();
-    void artifacts.sites
-      .cover(item.site_version_id, controller.signal)
-      .then((html) => {
-        guard();
-        if (!controller.signal.aborted) setSiteCover({ key, html });
-      })
-      .catch(() => {});
-    const node = host.current;
-    const observer =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => {
-            if (node) setCoverWidth(node.clientWidth);
-          })
-        : null;
-    if (node) {
-      setCoverWidth(node.clientWidth);
-      observer?.observe(node);
-    }
-    return () => {
-      controller.abort();
-      observer?.disconnect();
-    };
-  }, [visible, key, item.site_version_id, artifacts, captureGuard]);
+    if (props.showPreview && near && eligible) setStarted(true);
+  }, [props.showPreview, near, eligible]);
   useEffect(() => {
     if (!host.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
-      (entries) => setVisible(entries.some((entry) => entry.isIntersecting)),
+      (entries) => setNear(entries.some((entry) => entry.isIntersecting)),
       { rootMargin: "120px" },
     );
     observer.observe(host.current);
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (
-      !visible ||
-      item.kind === "folder" ||
-      item.site_version_id ||
-      !item.size ||
-      item.size > 4 * 1024 * 1024 ||
-      ["uploading", "deleting", "deleted", "staging"].includes(item.state)
-    )
-      return;
-    const controller = new AbortController();
-    const guard = captureGuard();
-    void Promise.resolve()
-      .then(async () => {
-        guard();
-        if (controller.signal.aborted) throw new DOMException("封面已关闭", "AbortError");
-        return item.kind === "file"
-          ? await files.get(item.target_id, controller.signal)
-          : await artifacts.get(item.target_id, controller.signal);
-      })
-      .then((resource) => {
-        guard();
-        if (controller.signal.aborted) return;
-        setPreview({
-          key,
-          props: {
-            resource: { ...resource, identity: `space:${key}:${resource.sha256}` },
+    const node = previewHost.current;
+    if (!node) return;
+    const measure = () => {
+      // Hidden list covers retain their grid geometry until they become visible again.
+      if (!node.dataset.hidden && node.clientWidth > 0 && node.clientHeight > 0)
+        setCoverSize((size) =>
+          size.width === node.clientWidth && size.height === node.clientHeight
+            ? size
+            : { width: node.clientWidth, height: node.clientHeight },
+        );
+    };
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    measure();
+    observer?.observe(node);
+    return () => observer?.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!started || !eligible) return;
+    const controller = new AbortController(),
+      guard = current.current.captureGuard();
+    if (item.site_version_id) {
+      void artifacts.sites
+        ?.cover(item.site_version_id, controller.signal)
+        .then((html) => {
+          guard();
+          if (!controller.signal.aborted) setSiteCover(html);
+        })
+        .catch(() => {});
+    } else {
+      void Promise.resolve()
+        .then(async () => {
+          guard();
+          if (controller.signal.aborted) throw new DOMException("封面已关闭", "AbortError");
+          return item.kind === "file"
+            ? await files.get(item.target_id, controller.signal)
+            : await artifacts.get(item.target_id, controller.signal);
+        })
+        .then((resource) => {
+          guard();
+          if (controller.signal.aborted) return;
+          setPreview({
+            resource: { ...resource, identity: `space:${identity}:${resource.sha256}` },
             load: async (signal) => {
               guard();
               const result =
@@ -126,24 +161,22 @@ export function CloudSpaceCover(props: {
               assertCurrent();
               return { blob: result.blob, assertCurrent };
             },
-          },
+          });
+        })
+        .catch(() => {
+          /* The original remains accessible if a cover cannot be read. */
         });
-      })
-      .catch(() => {
-        /* The original remains accessible if a cover cannot be read. */
-      });
+    }
     return () => controller.abort();
   }, [
-    visible,
-    key,
+    started,
+    eligible,
+    identity,
     item.kind,
     item.target_id,
     item.site_version_id,
-    item.size,
-    item.state,
     files,
     artifacts,
-    captureGuard,
   ]);
   return (
     <span
@@ -154,19 +187,32 @@ export function CloudSpaceCover(props: {
       data-folder={item.kind === "folder" || undefined}
       data-site={!!item.site_version_id || undefined}
     >
-      {siteCover?.key === key && visible ? (
-        <iframe
-          title="站点首页封面"
-          tabIndex={-1}
-          sandbox=""
-          srcDoc={siteCover.html}
-          style={{ width: 1100, height: 720, transform: `scale(${coverWidth / 1100})` }}
-        />
-      ) : preview?.key === key && visible ? (
-        <ResourceThumbnail {...preview.props} />
-      ) : (
-        <Icon className="size-6" />
-      )}
+      <span className="cloud-space-cover-icon">
+        <CloudSpaceFormatIcon item={item} className="size-6" />
+      </span>
+      <span
+        ref={previewHost}
+        className="cloud-space-cover-preview"
+        data-hidden={!props.showPreview || undefined}
+        style={
+          {
+            "--cloud-space-cover-width": `${coverSize.width}px`,
+            "--cloud-space-cover-height": `${coverSize.height}px`,
+          } as CSSProperties
+        }
+      >
+        {siteCover !== null ? (
+          <iframe
+            title="站点首页封面"
+            tabIndex={-1}
+            sandbox=""
+            srcDoc={siteCover}
+            style={{ width: 1100, height: 720, transform: `scale(${coverSize.width / 1100})` }}
+          />
+        ) : preview ? (
+          <ResourceThumbnail {...preview} retainOnExit />
+        ) : null}
+      </span>
     </span>
   );
 }

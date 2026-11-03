@@ -236,7 +236,13 @@ export function ResourcePreview(props: ResourcePreviewProps) {
 }
 
 /** Offscreen draft cards do not read or parse files, including rows below the attachment viewport. */
-export function ResourceThumbnail(props: Omit<ResourcePreviewProps, "variant" | "onDownload">) {
+export function ResourceThumbnail({
+  retainOnExit = false,
+  ...props
+}: Omit<ResourcePreviewProps, "variant" | "onDownload"> & {
+  /** Library grids retain the current cover across scroll and layout changes, until disposal. */
+  retainOnExit?: boolean;
+}) {
   const TypeIcon = getResourceFileIcon(props.resource.name);
   const host = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
@@ -244,11 +250,11 @@ export function ResourceThumbnail(props: Omit<ResourcePreviewProps, "variant" | 
     const element = host.current;
     if (!element || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver((entries) =>
-      setVisible(entries.some((entry) => entry.isIntersecting)),
+      setVisible((seen) => entries.some((entry) => entry.isIntersecting) || (retainOnExit && seen)),
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [retainOnExit]);
   return (
     <div ref={host} className="za-resource-thumbnail" inert aria-hidden="true">
       {visible ? (
