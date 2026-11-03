@@ -198,7 +198,8 @@ export default function ResourcePDFPreview({
   }, [bytes, assertCurrent, setPage]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: paper geometry changes require restoring the visible page after reflow.
   useLayoutEffect(() => {
-    if (!document) return;
+    // A cover must never scroll its containing composer or file browser.
+    if (!document || thumbnail) return;
     // A narrower pane changes every paper's height. Retain the page, rather than
     // retaining a pixel offset which could now point into a different page.
     const frame = requestAnimationFrame(() => {
@@ -207,7 +208,7 @@ export default function ResourcePDFPreview({
         ?.scrollIntoView?.({ block: "start", behavior: "instant" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [document, container, viewport.width, viewport.height, zoom, sideInset, navigation]);
+  }, [document, thumbnail, container, viewport.width, viewport.height, zoom, sideInset, navigation]);
   function navigatePage(target: number) {
     if (!document || !Number.isInteger(target) || target < 1 || target > document.numPages) return;
     setPage(target);

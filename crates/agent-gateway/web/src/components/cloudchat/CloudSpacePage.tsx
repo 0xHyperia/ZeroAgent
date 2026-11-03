@@ -13,10 +13,13 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
+  Lock,
   MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
+  Settings2,
+  Share2,
   SquarePen,
   Star,
   Trash2,
@@ -69,7 +72,7 @@ import {
   type CloudSpacePage as SpacePage,
 } from "@/lib/cloudSpace";
 import { CloudChatFeedback } from "./CloudChatFeedback";
-import { CloudSpaceImage } from "./CloudSpaceImage";
+import { CloudSpaceCover, cloudSpaceFormat } from "./CloudSpaceCover";
 
 export function CloudSpaceIcon({
   item,
@@ -161,11 +164,12 @@ type Props = {
   artifacts: CloudChatArtifactsClient;
   revision?: number;
   active?: boolean;
+  newFolderRequest?: number;
   storageOpen?: boolean;
   onStorageOpenChange?: (open: boolean) => void;
   location: CloudSpaceLocation;
   onNavigate: (location: CloudSpaceLocation) => void;
-  onOpen: (item: CloudSpaceItem) => void;
+  onOpen: (item: CloudSpaceItem, action?: "share" | "settings") => void;
   onReference: (
     items: readonly Pick<CloudSpaceItem, "kind" | "id" | "target_id" | "site_version_id">[],
   ) => Promise<void>;
@@ -177,13 +181,18 @@ type Props = {
 };
 
 export function CloudSpacePage(props: Props) {
+  const siteView = props.location.category === "sites";
   const [workKind, setWorkKind] = useState("文档");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sitesEnabled, setSitesEnabled] = useState(false);
   const [page, setPage] = useState<SpacePage | null>(null),
     [items, setItems] = useState<CloudSpaceItem[]>([]);
   const [query, setQuery] = useState(""),
     [sort, setSort] = useState("updated"),
     [view, setView] = useState<"list" | "grid">("list");
+  useEffect(() => {
+    if (siteView) setView("grid");
+  }, [siteView]);
   const [busy, setBusy] = useState(true),
     [working, setWorking] = useState(false),
     [error, setError] = useState(""),
@@ -268,7 +277,7 @@ export function CloudSpacePage(props: Props) {
       window.removeEventListener("keydown", key);
     };
   }, []);
-  const locationKey = `${location.category}:${location.scope}:${location.folder}`;
+  const locationKey = JSON.stringify(location);
   useEffect(() => {
     if (props.active === false) {
       setEditor(null);
@@ -470,6 +479,68 @@ export function CloudSpacePage(props: Props) {
     if (item.kind === "folder") navigate({ ...CLOUD_SPACE_HOME, folder: item.id });
     else props.onOpen(item);
   }
+  const lastFolderRequest = useRef(props.newFolderRequest ?? 0);
+  useEffect(() => {
+    if (
+      props.newFolderRequest === undefined ||
+      props.newFolderRequest === lastFolderRequest.current
+    )
+      return;
+    lastFolderRequest.current = props.newFolderRequest;
+    if (!working && !unconfirmed) {
+      setEditor({ type: "folder", items: [] });
+      setName("");
+      setFolder("");
+    }
+  }, [props.newFolderRequest, working, unconfirmed]);
+  const typeOptions = [
+    ["", "全部类型"],
+    ["document", "文档"],
+    ["spreadsheet", "表格"],
+    ["presentation", "演示文稿"],
+    ["pdf", "PDF"],
+    ["image", "图片"],
+    ["media", "音频与视频"],
+    ["code", "代码与其他"],
+    ["archive", "压缩包"],
+    ["folder", "文件夹"],
+  ];
+  const originOptions = [
+    ["", "全部来源"],
+    ["uploads", "上传"],
+    ["outputs", "AI 产出"],
+  ];
+  const filterMenu = (
+    label: string,
+    value: string,
+    options: string[][],
+    select: (value: string) => void,
+  ) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="cloud-space-filter"
+            data-active={!!value || undefined}
+            aria-label={`${label}：${options.find((option) => option[0] === value)?.[1] ?? label}`}
+          />
+        }
+      >
+        {value || filtersOpen ? options.find((option) => option[0] === value)?.[1] : label}
+        <ChevronDown className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" variant="soft" className="cloud-space-menu">
+        {options.map(([id, text]) => (
+          <DropdownMenuItem key={id} onClick={() => select(id)}>
+            {value === id ? <Check className="size-4" /> : <span className="size-4" />}
+            {text}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   const targets = items.filter((item) => selected.includes(item.id));
   const sortOptions = [
     { id: "updated", label: "最近修改" },
@@ -498,10 +569,34 @@ export function CloudSpacePage(props: Props) {
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" variant="soft" className="cloud-space-menu">
+        <DropdownMenuItem
+          onClick={() =>
+            setSelected((current) =>
+              current.includes(item.id)
+                ? current.filter((id) => id !== item.id)
+                : [...current, item.id],
+            )
+          }
+        >
+          <Check className="size-4" />
+          {selected.includes(item.id) ? "取消选择" : "选择资料"}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => open(item)}>
           <ArrowUpRight className="size-4" />
-          打开{item.kind === "folder" ? "文件夹" : "预览"}
+          {item.site_version_id ? "打开站点" : `打开${item.kind === "folder" ? "文件夹" : "预览"}`}
         </DropdownMenuItem>
+        {item.site_version_id && !item.trashed ? (
+          <>
+            <DropdownMenuItem onClick={() => props.onOpen(item, "share")}>
+              <Share2 className="size-4" />
+              分享
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => props.onOpen(item, "settings")}>
+              <Settings2 className="size-4" />
+              站点设置
+            </DropdownMenuItem>
+          </>
+        ) : null}
         {item.kind !== "folder" && !item.trashed ? (
           <DropdownMenuItem
             disabled={!props.canReference}
@@ -540,7 +635,7 @@ export function CloudSpacePage(props: Props) {
   );
   return (
     <FileDropBoundary
-      className="cloud-space-page"
+      className={`cloud-space-page ${siteView ? "cloud-space-sites" : ""}`}
       aria-label="个人资料空间"
       active={props.active !== false}
       resetKey={locationKey}
@@ -560,9 +655,6 @@ export function CloudSpacePage(props: Props) {
     >
       <header className="cloud-space-heading">
         <div className="min-w-0">
-          <div className="cloud-space-eyebrow">
-            个人资料空间 <span>仅你可见</span>
-          </div>
           <h1>{heading}</h1>
         </div>
         <div className="cloud-space-heading-actions">
@@ -570,7 +662,7 @@ export function CloudSpacePage(props: Props) {
             <Search className="size-4" />
             <Input
               aria-label="搜索全部资料"
-              placeholder="按名称搜索资料"
+              placeholder={siteView ? "搜索站点" : "搜索资料"}
               value={query}
               maxLength={200}
               onChange={(event) => setQuery(event.target.value)}
@@ -586,6 +678,16 @@ export function CloudSpacePage(props: Props) {
                 <X className="size-3.5" />
               </TooltipButton>
             ) : null}
+            <TooltipButton
+              className="cloud-space-mobile-filter"
+              title="筛选资料"
+              aria-label="筛选资料"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setFiltersOpen(true)}
+            >
+              <Settings2 className="size-4" />
+            </TooltipButton>
           </div>
           <Button
             variant="outline"
@@ -596,50 +698,63 @@ export function CloudSpacePage(props: Props) {
             <Upload className="size-4" />
             <span>上传</span>
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button className="cloud-space-create" disabled={working || unconfirmed} />}
+          {siteView && props.onCreateWork ? (
+            <Button
+              className="cloud-space-create"
+              disabled={working || unconfirmed || !props.canReference}
+              onClick={() => {
+                setWorkKind("站点");
+                openEditor("work", []);
+              }}
             >
               <Plus className="size-4" />
-              新建
-              <ChevronDown className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" variant="soft" className="cloud-space-menu">
-              {props.onCreateWork ? (
-                <>
-                  {["文档", "表格", "演示文稿", ...(sitesEnabled ? ["站点"] : [])].map((kind) => (
-                    <DropdownMenuItem
-                      key={kind}
-                      disabled={!props.canReference}
-                      onClick={() => {
-                        setWorkKind(kind);
-                        openEditor("work", []);
-                      }}
-                    >
-                      {kind === "站点" ? (
-                        <Globe className="size-4" />
-                      ) : (
-                        <FileText className="size-4" />
-                      )}
-                      {kind}
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        用 ZeroAgent 创作
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
-              <DropdownMenuItem onClick={() => openEditor("folder", [])}>
-                <FolderClosed className="size-4" />
-                新建文件夹
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => uploadRef.current?.click()}>
-                <Upload className="size-4" />
-                上传文件
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              创建站点
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button className="cloud-space-create" disabled={working || unconfirmed} />}
+              >
+                <Plus className="size-4" />用 AI 创建
+                <ChevronDown className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" variant="soft" className="cloud-space-menu">
+                {props.onCreateWork ? (
+                  <>
+                    {["文档", "表格", "演示文稿", ...(sitesEnabled ? ["站点"] : [])].map((kind) => (
+                      <DropdownMenuItem
+                        key={kind}
+                        disabled={!props.canReference}
+                        onClick={() => {
+                          setWorkKind(kind);
+                          openEditor("work", []);
+                        }}
+                      >
+                        {kind === "站点" ? (
+                          <Globe className="size-4" />
+                        ) : (
+                          <FileText className="size-4" />
+                        )}
+                        {kind}
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          用 ZeroAgent 创作
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+                <DropdownMenuItem onClick={() => openEditor("folder", [])}>
+                  <FolderClosed className="size-4" />
+                  新建文件夹
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => uploadRef.current?.click()}>
+                  <Upload className="size-4" />
+                  上传文件
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
       {draggingResources ? (
@@ -685,48 +800,71 @@ export function CloudSpacePage(props: Props) {
           void upload(files);
         }}
       />
+      <nav className="cloud-space-mobile-nav" aria-label="资料视图">
+        {(
+          [
+            { category: "recent", scope: "all", label: "最近" },
+            { category: "all", scope: "all", label: "全部资料" },
+            { category: "all", scope: "starred", label: "收藏" },
+            { category: "sites", scope: "all", label: "站点" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.label}
+            type="button"
+            aria-current={
+              !location.folder && location.category === tab.category && location.scope === tab.scope
+                ? "page"
+                : undefined
+            }
+            onClick={() =>
+              navigate({ ...CLOUD_SPACE_HOME, category: tab.category, scope: tab.scope })
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
       <div className="cloud-space-toolbar">
-        {location.folder ? (
-          <Button variant="ghost" size="sm" onClick={() => navigate(CLOUD_SPACE_HOME)}>
-            <ArrowLeft className="size-4" />
-            全部资料
-          </Button>
-        ) : (
-          <nav aria-label="资料来源" className="cloud-space-scopes">
-            {(
-              [
-                { id: "all", label: "全部" },
-                { id: "uploads", label: "上传" },
-                { id: "outputs", label: "产出" },
-                { id: "starred", label: "收藏" },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                aria-pressed={
-                  location.scope === "trash"
-                    ? false
-                    : tab.id === "starred"
-                      ? location.scope === "starred"
-                      : location.scope === "all" &&
-                        (tab.id === "all"
-                          ? !["uploads", "outputs"].includes(location.category)
-                          : location.category === tab.id)
-                }
-                onClick={() =>
-                  navigate(
-                    tab.id === "starred"
-                      ? { ...CLOUD_SPACE_HOME, scope: "starred" }
-                      : { ...CLOUD_SPACE_HOME, category: tab.id },
-                  )
-                }
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        )}
+        <span className="cloud-space-mobile-list-label">名称</span>
+        <div className="cloud-space-filters">
+          {location.folder ? (
+            <TooltipButton
+              variant="ghost"
+              size="icon-sm"
+              title="返回全部资料"
+              aria-label="返回全部资料"
+              onClick={() => navigate(CLOUD_SPACE_HOME)}
+            >
+              <ArrowLeft className="size-4" />
+            </TooltipButton>
+          ) : null}
+          {!siteView &&
+            filterMenu("类型", location.type ?? "", typeOptions, (type) =>
+              props.onNavigate({ ...location, type }),
+            )}
+          {!siteView &&
+            filterMenu("来源", location.origin ?? "", originOptions, (origin) =>
+              props.onNavigate({ ...location, origin: origin as CloudSpaceLocation["origin"] }),
+            )}
+          {filterMenu(
+            "位置",
+            location.folder,
+            [["", "全部位置"], ...(page?.folders.map((item) => [item.id, item.name]) ?? [])],
+            (folder) => props.onNavigate({ ...location, folder }),
+          )}
+          {location.type || location.origin ? (
+            <TooltipButton
+              variant="ghost"
+              size="icon-sm"
+              title="清除筛选"
+              aria-label="清除筛选"
+              onClick={() => props.onNavigate({ ...location, type: "", origin: "" })}
+            >
+              <X className="size-3.5" />
+            </TooltipButton>
+          ) : null}
+        </div>
         <div className="cloud-space-view-tools">
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -813,36 +951,10 @@ export function CloudSpacePage(props: Props) {
           description="请保留当前页面，完成后列表会自动更新。"
         />
       ) : null}
-      {!query &&
-      !location.folder &&
-      location.scope === "all" &&
-      location.category === "all" &&
-      page?.pinned.length ? (
-        <section className="cloud-space-pinned">
-          <h2>
-            随手可用 <span>已收藏的资料</span>
-          </h2>
-          <div>
-            {page.pinned.map((item) => (
-              <button type="button" key={item.id} disabled={frozen} onClick={() => open(item)}>
-                <CloudSpaceIcon item={item} />
-                <strong>{item.name}</strong>
-                <span>
-                  {item.kind === "folder"
-                    ? "文件夹"
-                    : item.site_version_id
-                      ? "站点"
-                      : item.kind === "artifact"
-                        ? "工作产出"
-                        : "上传资料"}
-                </span>
-                <ArrowUpRight className="size-3.5" />
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      <div className="cloud-space-results-caption">
+      <div
+        className="cloud-space-results-caption"
+        data-quiet={!query && location.scope !== "trash" && !busy ? "" : undefined}
+      >
         <span className="cloud-space-results-title">
           {query
             ? `“${query}”的搜索结果`
@@ -1016,8 +1128,7 @@ export function CloudSpacePage(props: Props) {
                 />
                 <span>名称</span>
               </label>
-              <span>来源</span>
-              <span>大小</span>
+              <span>位置</span>
               <span>最近修改</span>
               <span />
             </div>
@@ -1042,78 +1153,92 @@ export function CloudSpacePage(props: Props) {
                       }
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="cloud-space-item-main"
-                    draggable={!frozen && !item.trashed && item.kind !== "folder"}
-                    onDragStart={(event) => {
-                      if (frozen || item.trashed || item.kind === "folder") {
-                        event.preventDefault();
-                        return;
-                      }
-                      const sources = selected.includes(item.id)
-                        ? targets.filter((target) => target.kind !== "folder" && !target.trashed)
-                        : [item];
-                      if (
-                        !writeCloudResourceDragPayload(
-                          event.dataTransfer,
-                          sources.flatMap((source) =>
-                            source.kind === "folder"
-                              ? []
-                              : [
-                                  {
-                                    kind: source.kind,
-                                    id: source.id,
-                                    target_id: source.target_id,
-                                    ...(source.site_version_id
-                                      ? { site_version_id: source.site_version_id }
-                                      : {}),
-                                  },
-                                ],
-                          ),
-                        )
-                      ) {
-                        event.preventDefault();
-                        setError("一次最多拖动8份资料，请减少选择后再试。");
-                      } else setDraggingResources(true);
-                    }}
-                    onDragEnd={() => setDraggingResources(false)}
-                    onClick={() => open(item)}
-                    disabled={frozen}
-                  >
-                    {view === "grid" && item.mime.startsWith("image/") ? (
-                      <CloudSpaceImage
+                  <div className="cloud-space-item-content">
+                    <button
+                      type="button"
+                      className="cloud-space-cover-open"
+                      aria-label={`打开 ${item.name}`}
+                      disabled={frozen}
+                      onClick={() => open(item)}
+                    >
+                      <CloudSpaceCover
                         item={item}
                         files={props.files}
                         artifacts={props.artifacts}
                         captureGuard={props.captureGuard}
                       />
-                    ) : (
-                      <CloudSpaceIcon item={item} />
-                    )}
-                    <span>
-                      <strong title={item.name}>{item.name}</strong>
-                      {item.folder_id && !location.folder ? (
-                        <span className="cloud-space-item-origin">
-                          <FolderClosed className="size-3" />
-                          {page?.folders.find((folder) => folder.id === item.folder_id)?.name ??
-                            "文件夹内"}
+                    </button>
+                    <button
+                      type="button"
+                      className="cloud-space-item-main"
+                      draggable={!frozen && !item.trashed && item.kind !== "folder"}
+                      onDragStart={(event) => {
+                        if (frozen || item.trashed || item.kind === "folder") {
+                          event.preventDefault();
+                          return;
+                        }
+                        const sources = selected.includes(item.id)
+                          ? targets.filter((target) => target.kind !== "folder" && !target.trashed)
+                          : [item];
+                        if (
+                          !writeCloudResourceDragPayload(
+                            event.dataTransfer,
+                            sources.flatMap((source) =>
+                              source.kind === "folder"
+                                ? []
+                                : [
+                                    {
+                                      kind: source.kind,
+                                      id: source.id,
+                                      target_id: source.target_id,
+                                      ...(source.site_version_id
+                                        ? { site_version_id: source.site_version_id }
+                                        : {}),
+                                    },
+                                  ],
+                            ),
+                          )
+                        ) {
+                          event.preventDefault();
+                          setError("一次最多拖动8份资料，请减少选择后再试。");
+                        } else setDraggingResources(true);
+                      }}
+                      onDragEnd={() => setDraggingResources(false)}
+                      onClick={() => open(item)}
+                      disabled={frozen}
+                    >
+                      <span className="cloud-space-item-name">
+                        <strong title={item.name}>
+                          {item.site_version_id ? item.name.replace(/\.zip$/i, "") : item.name}
+                        </strong>
+                        <span className="cloud-space-item-meta">
+                          {item.site_version_id ? (
+                            <>
+                              <Lock className="size-3" />
+                              私人预览 · {dateLabel(item.updated_at)}
+                            </>
+                          ) : (
+                            <>
+                              {cloudSpaceFormat(item)}
+                              {item.kind !== "folder" ? ` · ${cloudSpaceSize(item.size)}` : ""}
+                            </>
+                          )}
+                          {!["ready", "vision_ready", "uploaded"].includes(item.state)
+                            ? ` · ${statusLabel(item)}`
+                            : ""}
                         </span>
-                      ) : null}
-                      <span className="cloud-space-item-mobile-meta">
-                        {statusLabel(item)} ·{" "}
-                        {item.kind === "folder"
-                          ? dateLabel(item.updated_at)
-                          : cloudSpaceSize(item.size)}
+                        <span className="cloud-space-item-mobile-meta">
+                          {item.kind === "folder"
+                            ? "文件夹"
+                            : `${page?.folders.find((folder) => folder.id === item.folder_id)?.name ?? (item.kind === "artifact" ? "AI 产出" : "资料空间")} · ${dateLabel(item.updated_at)}`}
+                        </span>
                       </span>
-                    </span>
-                    {item.starred ? <Star className="cloud-space-star size-3.5" /> : null}
-                  </button>
-                  <span className="cloud-space-cell cloud-space-source" data-state={item.state}>
-                    {statusLabel(item)}
-                  </span>
-                  <span className="cloud-space-cell">
-                    {item.kind === "folder" ? "—" : cloudSpaceSize(item.size)}
+                      {item.starred ? <Star className="cloud-space-star size-3.5" /> : null}
+                    </button>
+                  </div>
+                  <span className="cloud-space-cell cloud-space-location">
+                    {page?.folders.find((folder) => folder.id === item.folder_id)?.name ??
+                      "资料空间"}
                   </span>
                   <time
                     className="cloud-space-cell"
@@ -1141,14 +1266,59 @@ export function CloudSpacePage(props: Props) {
       ) : null}
       {page ? (
         <footer className="cloud-space-footer">
+          <span>{page.total} 项</span>
           <button type="button" aria-label="管理存储空间" onClick={() => setCapacityOpen(true)}>
             <HardDrive className="size-3.5" />
-            已用 {cloudSpaceSize(page.usage.used_bytes)} / {cloudSpaceSize(page.usage.limit_bytes)}
-            <span>管理空间</span>
+            存储空间
           </button>
-          <span>上传资料与工作产出，统一保存于你的账户</span>
         </footer>
       ) : null}
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent
+          className="cloud-space-editor cloud-space-filter-dialog"
+          showCloseButton
+          closeLabel="关闭资料筛选"
+        >
+          <DialogHeader>
+            <DialogTitle>筛选资料</DialogTitle>
+            <DialogDescription>按类型、来源和位置组合查找。</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div className="cloud-space-filter-fields">
+              <div>
+                <span>类型</span>
+                {filterMenu("类型", location.type ?? "", typeOptions, (type) =>
+                  props.onNavigate({ ...location, type }),
+                )}
+              </div>
+              <div>
+                <span>来源</span>
+                {filterMenu("来源", location.origin ?? "", originOptions, (origin) =>
+                  props.onNavigate({ ...location, origin: origin as CloudSpaceLocation["origin"] }),
+                )}
+              </div>
+              <div>
+                <span>位置</span>
+                {filterMenu(
+                  "位置",
+                  location.folder,
+                  [["", "全部位置"], ...(page?.folders.map((item) => [item.id, item.name]) ?? [])],
+                  (folder) => props.onNavigate({ ...location, folder }),
+                )}
+              </div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => props.onNavigate({ ...location, type: "", origin: "", folder: "" })}
+            >
+              重置
+            </Button>
+            <Button onClick={() => setFiltersOpen(false)}>完成</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(editor)}
         onOpenChange={(open) => {

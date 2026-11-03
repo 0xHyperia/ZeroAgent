@@ -1,3 +1,396 @@
+.cloud-site-host {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+.cloud-site-workspace {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  container-type: inline-size;
+}
+.cloud-site-browser-bar {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  height: 60px;
+  padding: 8px 12px;
+  background: hsl(var(--background));
+  border-bottom: 1px solid color-mix(in srgb, hsl(var(--border)) 60%, transparent);
+}
+.cloud-site-browser-leading,
+.cloud-site-browser-actions,
+.cloud-site-nav-capsule,
+.cloud-site-window-capsule {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.cloud-site-browser-bar button {
+  height: 36px;
+  min-width: 36px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 400;
+  transition:
+    background 160ms,
+    color 160ms,
+    box-shadow 160ms;
+}
+.cloud-site-browser-bar button:not(:disabled):hover {
+  background: hsl(var(--muted));
+}
+.cloud-site-nav-capsule,
+.cloud-site-window-capsule {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, hsl(var(--border)) 65%, transparent);
+  border-radius: 999px;
+  background: hsl(var(--background));
+  box-shadow: 0 2px 8px #00000005;
+}
+.cloud-site-nav-capsule button,
+.cloud-site-window-capsule button {
+  height: 30px;
+  min-width: 30px;
+}
+.cloud-site-browser-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.cloud-site-browser-title > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.cloud-site-browser-title a {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-browser-title a span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-site-browser-title a:hover {
+  color: hsl(var(--foreground));
+}
+.cloud-site-browser-title small {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-browser-bar .cloud-site-modify {
+  border: 1px solid color-mix(in srgb, hsl(var(--border)) 65%, transparent);
+  padding-inline: 12px;
+  background: hsl(var(--background));
+  box-shadow: 0 2px 8px #00000004;
+}
+.cloud-site-modify[aria-pressed="true"] {
+  color: #2c73e4;
+  background: #3785f614 !important;
+  border-color: #3785f61a;
+}
+.cloud-site-modify[aria-pressed="true"] svg {
+  animation: cloud-site-modify-in 200ms ease-out;
+}
+.cloud-site-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--muted));
+}
+.cloud-site-frame-host {
+  width: 100%;
+  height: 100%;
+}
+.cloud-site-frame-host > iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: white;
+}
+.cloud-site-canvas[hidden] {
+  display: none;
+}
+.cloud-site-opening {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-opening h2 {
+  font-size: 20px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+}
+.cloud-site-opening p {
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.cloud-site-workspace-feedback {
+  position: absolute;
+  z-index: 8;
+  left: 16px;
+  right: 16px;
+  top: 70px;
+  pointer-events: none;
+}
+.cloud-site-workspace-feedback > * {
+  pointer-events: auto;
+  box-shadow: 0 8px 30px #00000008;
+}
+.cloud-site-management-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.cloud-site-management {
+  width: min(100%, 840px);
+  margin: 0 auto;
+  padding: 54px 32px 80px;
+  font-size: 14px;
+}
+.cloud-site-management-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.cloud-site-management-heading > span {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 54px;
+  border-radius: 12px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-management h1 {
+  font-weight: 500;
+  font-size: 24px;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+.cloud-site-management-heading p {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-management nav {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 42px;
+}
+.cloud-site-management nav button {
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 16px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition:
+    background 160ms,
+    color 160ms;
+}
+.cloud-site-management nav button:hover,
+.cloud-site-management nav button[aria-current] {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.cloud-site-management h2 {
+  font-weight: 500;
+  font-size: 15px;
+  margin: 32px 0 12px;
+}
+.cloud-site-management h2 small {
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+  margin-left: 6px;
+}
+.cloud-site-setting {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  min-height: 86px;
+  padding-block: 20px;
+  border-top: 1px solid hsl(var(--border));
+}
+.cloud-site-setting p {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.cloud-site-setting > span {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+.cloud-site-setting button {
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cloud-site-name-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 55%;
+}
+.cloud-site-name-field input {
+  height: 36px;
+  border-radius: 10px;
+}
+.cloud-site-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cloud-site-file-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  border-top: 1px solid hsl(var(--border));
+  font-size: 13px;
+}
+.cloud-site-file-list li > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-site-file-list svg,
+.cloud-site-file-list small {
+  color: hsl(var(--muted-foreground));
+  flex: none;
+}
+.cloud-site-entry {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: hsl(var(--muted));
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+@keyframes cloud-site-modify-in {
+  from {
+    transform: rotate(-12deg) scale(0.92);
+  }
+  to {
+    transform: rotate(0) scale(1);
+  }
+}
+@container (max-width: 700px) {
+  .cloud-site-browser-bar {
+    height: 58px;
+    gap: 8px;
+    padding: 7px 8px;
+  }
+  .cloud-site-browser-title {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .cloud-site-browser-title a {
+    display: none;
+  }
+  .cloud-site-browser-actions > button > span,
+  .cloud-site-modify > span {
+    display: none;
+  }
+  .cloud-site-browser-bar .cloud-site-modify {
+    padding-inline: 9px;
+  }
+  .cloud-site-browser-leading {
+    gap: 5px;
+  }
+  .cloud-site-management {
+    padding: 32px 20px;
+  }
+}
+@media (max-width: 639px) {
+  .cloud-site-browser-bar {
+    height: 64px;
+  }
+  .cloud-site-browser-bar button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .cloud-site-nav-capsule {
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+  .cloud-site-window-capsule {
+    padding: 0;
+  }
+  .cloud-site-browser-title > span {
+    font-size: 12px;
+  }
+  .cloud-site-browser-bar .cloud-site-modify {
+    min-width: 40px;
+  }
+  .cloud-site-browser-actions {
+    gap: 1px;
+  }
+  .cloud-site-browser-leading {
+    gap: 1px;
+  }
+  .cloud-site-nav-capsule button {
+    min-width: 44px;
+  }
+  .cloud-site-nav-capsule button:nth-child(-n + 2) {
+    display: none;
+  }
+  .cloud-site-management nav button {
+    min-height: 44px;
+  }
+  .cloud-site-setting {
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .cloud-site-name-field {
+    max-width: 100%;
+    width: 100%;
+  }
+  .cloud-site-management h1 {
+    font-size: 21px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-site-workspace * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 .cloud-site-view {
   display: flex;
   flex-direction: column;

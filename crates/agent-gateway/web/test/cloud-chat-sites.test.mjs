@@ -78,3 +78,38 @@ test("lost share responses retain the request identity and require explicit retr
 test("retired site views never install delayed private content",async t=>{
  let complete;const app=await mount(t,{preview:()=>new Promise(resolve=>{complete=resolve;})});await app.click("预览站点");app.retire();await app.env.act(async()=>complete(access("private")));await app.flush();assert.equal(document.querySelector("iframe"),null);
 });
+
+test("site covers are owner reads and never create access grants",async()=>{
+ const api=module(),calls=[];
+ const client=api.createCloudChatSitesClient(async(path,init)=>{calls.push({path,init});return Response.json({html:"<html><body>真实首页</body></html>"});},safe);
+ assert.match(await client.cover(VERSION),/真实首页/);
+ assert.equal(calls.length,1);assert.ok(calls[0].path.endsWith(`/releases/${VERSION}/cover`));assert.equal(calls[0].init.method,undefined);
+});
+
+test("site workspace isolates messages, retains nested entry paths and submits only explicit annotations",async t=>{
+ const nested={...release,manifest:{...release.manifest,entry_point:"pages/index.html",entries:[{...release.manifest.entries[0],path:"pages/index.html"}]}};
+ const grant={...access("private"),url:access("private").url.replace("index.html","pages/index.html")};
+ let submitted=[];
+ const app=await mount(t,{get:async()=>nested,preview:async()=>grant},{openOnMount:true,workspace:{versions:[],onVersion(){},onClose(){},onRequestRevision:async comments=>{submitted=comments;return true;}}});
+ const frame=document.querySelector("iframe");assert.ok(frame);assert.equal(frame.src,grant.url);
+ const messages=[];frame.contentWindow.postMessage=(value,target)=>messages.push({value,target});
+ await app.env.act(async()=>frame.dispatchEvent(new Event("load")));await app.flush();
+ const init=messages.find(m=>m.value.command==="init").value;
+ const send=async(data,origin=new URL(grant.url).origin,source=frame.contentWindow)=>{
+  await app.env.act(async()=>window.dispatchEvent(new app.env.dom.window.MessageEvent("message",{data:{type:"zeroagent-site",channel:init.channel,path:"pages/index.html",...data},origin,source})));await app.flush();
+ };
+ await send({event:"ready"},"https://attacker.invalid");assert.equal([...document.querySelectorAll("button")].find(e=>e.textContent.includes("请求修改")).disabled,true);
+ await send({event:"ready"});await app.click("请求修改");
+ const selection={event:"selection",id:"site:abc:1234567890",quote:"原始标题",selector:"h1:nth-of-type(1)",x:12,y:80,width:300,height:50,visible:true};
+ await send({...selection,channel:"wrong"});assert.equal(document.querySelector('input[aria-label="修改建议"]'),null);
+ await send(selection,new URL(grant.url).origin,window);assert.equal(document.querySelector('input[aria-label="修改建议"]'),null);
+ await send(selection);const input=document.querySelector('input[aria-label="修改建议"]');assert.ok(input);
+ await app.env.act(async()=>{const setter=Object.getOwnPropertyDescriptor(app.env.dom.window.HTMLInputElement.prototype,"value").set;setter.call(input,"将标题改为验收结果");input.dispatchEvent(new Event("input",{bubbles:true}));});
+ await app.click("添加批注");assert.equal(submitted.length,0);await app.click("发送");
+ assert.equal(submitted.length,1);assert.match(submitted[0].quote,/页面：pages\/index.html/);assert.match(submitted[0].comment,/验收结果/);assert.ok(!JSON.stringify(submitted).includes("/v/"));assert.equal(app.calls.share.length,0);
+});
+
+test("unavailable standalone sites retain a close control and do not issue private grants",async t=>{
+ let closed=false;const app=await mount(t,{enabled:async()=>false},{openOnMount:true,workspace:{versions:[],onVersion(){},onClose(){closed=true;}}});
+ assert.match(document.body.textContent,/托管尚未启用/);await app.click("关闭站点");assert.equal(closed,true);assert.equal(app.calls.preview.length,0);
+});

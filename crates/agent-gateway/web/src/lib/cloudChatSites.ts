@@ -222,6 +222,12 @@ export function createCloudChatSitesClient(
   });
   return {
     captureGuard,
+    async cover(id: string, signal?: AbortSignal): Promise<string> {
+      const value = await json(`${path(id)}/cover`, { signal });
+      if (typeof value.html !== "string" || value.html.length > 2 * 1024 * 1024)
+        throw new Error("站点封面响应无效。");
+      return value.html;
+    },
     async enabled(signal?: AbortSignal): Promise<boolean> {
       const value = await json("/api/web-chat/sites/config", { signal });
       if (typeof value.enabled !== "boolean") throw new Error("站点配置响应无效。");

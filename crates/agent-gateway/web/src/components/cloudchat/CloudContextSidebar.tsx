@@ -29,6 +29,7 @@ export function CloudContextSidebar(props: {
   onSpaceNavigate?: (location: CloudSpaceLocation) => void;
   onSpaceOpen?: (item: CloudSpaceItem) => void;
   onSpaceStorage?: () => void;
+  onSpaceNewFolder?: () => void;
   activeResource?: Resource;
   files: CloudChatFilesClient;
   environments: readonly ExecutionEnvironment[];
@@ -121,6 +122,7 @@ export function CloudContextSidebar(props: {
               onOpen={props.onSpaceOpen}
               onOther={props.onOpenResource}
               onStorage={props.onSpaceStorage}
+              onNewFolder={props.onSpaceNewFolder}
             />
           ) : (
             <>

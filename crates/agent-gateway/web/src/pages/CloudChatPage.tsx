@@ -14,6 +14,7 @@ import {
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { FileDropBoundary } from "@liveagent/ui/components/files/FileDropBoundary";
 import {
+  ArrowLeft,
   BookOpen,
   ChevronDown,
   Globe,
@@ -101,6 +102,7 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import { siteRevisionText } from "@/lib/cloudSiteRevision";
 import {
   CLOUD_SPACE_HOME,
   CloudSpaceError,
@@ -443,11 +445,16 @@ export function CloudChatPage({
   draftResourcesRef.current = { files: attachments, artifacts: artifactAttachments };
   const [filePanel, setFilePanel] = useState<FilePanel | null>(null);
   const [sourcePanel, setSourcePanel] = useState<SourcePanel | null>(null);
-  const [artifactPanel, setArtifactPanel] = useState<{ versionId?: string; site?: boolean } | null>(
-    null,
-  );
+  const [artifactPanel, setArtifactPanel] = useState<{
+    versionId?: string;
+    site?: boolean;
+    item?: CloudSpaceItem;
+    siteAction?: "share" | "settings";
+  } | null>(null);
   const [workPanel, setWorkPanel] = useState<"memory" | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"chat" | "library">("chat");
+  const [spaceWork, setSpaceWork] = useState(false);
+  const [spaceFolderRequest, setSpaceFolderRequest] = useState(0);
   const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(CLOUD_SPACE_HOME);
   const [spaceRevision, setSpaceRevision] = useState(0);
   const [spaceVisited, setSpaceVisited] = useState(false);
@@ -3187,6 +3194,8 @@ export function CloudChatPage({
     (filePanel && (workspaceView !== "library" || filePanel.fileId)) ||
       (artifactPanel && (workspaceView !== "library" || artifactPanel.versionId)),
   );
+  const workingInSpace = workspaceView === "library" && spaceWork && readerOpen;
+  const chatWorkspaceVisible = workspaceView === "chat" || workingInSpace;
   function showFileResource(target: NonNullable<typeof filePanel>) {
     setFilePanel(target);
     setArtifactPanel(null);
@@ -3200,6 +3209,7 @@ export function CloudChatPage({
     setWorkPanel(null);
   }
   function clearResources() {
+    setSpaceWork(false);
     setAccountSettingsOpen(false);
     sidebarPreview.dismiss();
     setComposerMenu(null);
@@ -3355,12 +3365,13 @@ export function CloudChatPage({
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
-  function openSpaceItem(item: CloudSpaceItem) {
+  function openSpaceItem(item: CloudSpaceItem, siteAction?: "share" | "settings") {
     if (item.kind === "folder") {
       navigateSpace({ ...CLOUD_SPACE_HOME, folder: item.id });
       return;
     }
     projectNavigation.request(() => {
+      setSpaceWork(false);
       setSpaceVisited(true);
       setFilePanel(item.kind === "file" ? { fileId: item.target_id } : null);
       setArtifactPanel(
@@ -3368,6 +3379,8 @@ export function CloudChatPage({
           ? {
               versionId: item.site_version_id ?? item.target_id,
               site: Boolean(item.site_version_id),
+              item,
+              siteAction,
             }
           : null,
       );
@@ -3516,7 +3529,10 @@ export function CloudChatPage({
       (artifact ? latest.state !== "ready" : !cloudFileCanReference(latest as CloudChatFile))
     )
       return false;
-    const text = documentRevisionText(resource.name, comments);
+    const text =
+      artifact && comments.every((comment) => comment.block.startsWith("site:"))
+        ? siteRevisionText(resource.name, comments)
+        : documentRevisionText(resource.name, comments);
     const original = captureComposerDraft();
     if (!original.composer?.text.includes(text)) fillStarter(text);
     const next = captureComposerDraft();
@@ -3924,7 +3940,7 @@ export function CloudChatPage({
       footer={
         <>
           <MobileSidebarUpdate />
-          {accountMenu}
+          {!sidebar.isMobile || workspaceView !== "library" || sidebarOpen ? accountMenu : null}
         </>
       }
     />
@@ -3950,7 +3966,7 @@ export function CloudChatPage({
         data-workspace-view={workspaceView}
         coverage="viewport"
         active={
-          workspaceView === "chat" &&
+          chatWorkspaceVisible &&
           !accountSettingsOpen &&
           !draftConflictOpen &&
           !projectSettings.open &&
@@ -4003,6 +4019,8 @@ export function CloudChatPage({
               onClick={() => setSidebarOpen(false)}
             />
             <div
+              hidden={workingInSpace}
+              data-space-working={workingInSpace || undefined}
               data-sidebar-preview-region
               data-transient={sidebarPreview.open ? "true" : undefined}
               data-sidebar-context={shownSidebarDestination}
@@ -4160,6 +4178,10 @@ export function CloudChatPage({
                   files={filesClient}
                   spaceClient={spaceClient}
                   spaceLocation={spaceLocation}
+                  onSpaceNewFolder={() => {
+                    navigateSpace(spaceLocation);
+                    setSpaceFolderRequest((old) => old + 1);
+                  }}
                   spaceRevision={spaceRevision}
                   onSpaceNavigate={navigateSpace}
                   onSpaceOpen={openSpaceItem}
@@ -4193,148 +4215,186 @@ export function CloudChatPage({
               <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
               <CloudChatResourceWorkbench
                 header={
-                  <AppWorkbenchChrome
-                    className={landing ? "cloud-header-landing" : "cloud-header-thread"}
-                    navigationMode={
-                      !sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation
-                        ? "new-chat"
-                        : "sidebar"
-                    }
-                    navigationActions={
-                      !sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation ? (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          title="新对话"
-                          aria-label="新对话"
-                          tooltipShortcut="Ctrl+Shift+O"
-                          onClick={() => navigateConversation()}
-                          className="cloud-header-new-chat rounded-lg"
-                        >
-                          <SquarePen className="size-4.5" />
-                        </Button>
-                      ) : undefined
-                    }
-                    leadingActions={
-                      <>
-                        {sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation ? (
+                  workingInSpace ? (
+                    <div className="cloud-space-work-header">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSpaceWork(false);
+                          setFilePanel(null);
+                          setArtifactPanel(null);
+                        }}
+                      >
+                        <ArrowLeft className="size-4" />
+                        返回资料
+                      </Button>
+                      <span>{currentConversation?.title || "与 AI 一起工作"}</span>
+                    </div>
+                  ) : workspaceView === "library" && sidebar.isMobile ? (
+                    <header className="cloud-space-mobile-header">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="打开边栏"
+                        title="打开边栏"
+                        onClick={() => setSidebarOpen(true)}
+                      >
+                        <PanelLeft className="size-5" />
+                      </Button>
+                      <h1>资料空间</h1>
+                      <div>{!sidebarOpen ? accountMenu : null}</div>
+                    </header>
+                  ) : (
+                    <AppWorkbenchChrome
+                      className={landing ? "cloud-header-landing" : "cloud-header-thread"}
+                      navigationMode={
+                        !sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation
+                          ? "new-chat"
+                          : "sidebar"
+                      }
+                      navigationActions={
+                        !sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation ? (
                           <Button
                             variant="ghost"
                             size="icon-sm"
                             title="新对话"
                             aria-label="新对话"
+                            tooltipShortcut="Ctrl+Shift+O"
                             onClick={() => navigateConversation()}
-                            className="cloud-header-new-chat shrink-0 rounded-lg"
+                            className="cloud-header-new-chat rounded-lg"
                           >
                             <SquarePen className="size-4.5" />
                           </Button>
-                        ) : null}
-                        {workspaceView === "chat" && conversationId && !canSwitchPresentation ? (
-                          <CloudConversationTitle
-                            key={`${user.id}:${conversationId}`}
-                            title={currentConversation?.title || "新对话"}
-                            renameRequest={headerRenameRequest}
-                            onRename={(title) => saveConversationTitle(conversationId, title)}
-                          />
-                        ) : (
-                          <span
-                            className={`min-w-0 truncate text-sm font-medium ${landing && workspaceView === "chat" ? "cloud-header-title-landing" : ""}`}
-                          >
-                            {workspaceView === "library"
-                              ? "资料空间"
-                              : currentConversation?.title || "新对话"}
-                          </span>
-                        )}
-                        {workspaceView === "chat" && canSwitchPresentation ? (
-                          <CloudChatModeSwitch
-                            value={presentation}
-                            onChange={(mode) => {
-                              setComposerMenu(null);
-                              setPresentation(mode);
-                            }}
-                          />
-                        ) : null}
-                      </>
-                    }
-                    trailingActions={
-                      workspaceView === "chat" ? (
+                        ) : undefined
+                      }
+                      leadingActions={
                         <>
-                          {conversationId ? (
-                            <CloudConversationBranches
-                              key={`branches:${user.id}:${conversationId}`}
-                              conversationId={conversationId}
-                              client={conversationClient}
-                              onNavigate={navigateConversation}
-                            />
+                          {sidebar.isMobile &&
+                          workspaceView === "chat" &&
+                          !canSwitchPresentation ? (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title="新对话"
+                              aria-label="新对话"
+                              onClick={() => navigateConversation()}
+                              className="cloud-header-new-chat shrink-0 rounded-lg"
+                            >
+                              <SquarePen className="size-4.5" />
+                            </Button>
                           ) : null}
-                          {conversationId ? (
-                            <CloudChatHeaderActions
-                              key={`actions:${user.id}:${conversationId}`}
+                          {workspaceView === "chat" && conversationId && !canSwitchPresentation ? (
+                            <CloudConversationTitle
+                              key={`${user.id}:${conversationId}`}
                               title={currentConversation?.title || "新对话"}
-                              pinned={!!currentConversation?.pinned}
-                              archived={!!currentConversation?.archived}
-                              disabled={
-                                !currentConversation || conversationMutations.has(conversationId)
-                              }
-                              deleteDisabled={streaming || historyLoading || branchBusy}
-                              moveDisabled={composerLocked || streaming || projectContextBusy}
-                              projectId={
-                                composerProject.scope === `${user.id}:${conversationId}`
-                                  ? composerProject.project?.id
-                                  : undefined
-                              }
-                              projectsClient={projectsClient}
-                              captureGuard={captureWorkGuard}
-                              onRename={() => setHeaderRenameRequest((request) => request + 1)}
-                              onTogglePinned={() =>
-                                void manageConversation(conversationId, {
-                                  pinned: !currentConversation?.pinned,
-                                })
-                              }
-                              onToggleArchived={() =>
-                                void manageConversation(conversationId, {
-                                  archived: !currentConversation?.archived,
-                                })
-                              }
-                              onDelete={() => removeConversation(conversationId)}
-                              onError={setError}
-                              onMoveToProject={selectComposerProject}
+                              renameRequest={headerRenameRequest}
+                              onRename={(title) => saveConversationTitle(conversationId, title)}
+                            />
+                          ) : (
+                            <span
+                              className={`min-w-0 truncate text-sm font-medium ${landing && workspaceView === "chat" ? "cloud-header-title-landing" : ""}`}
+                            >
+                              {workspaceView === "library"
+                                ? "资料空间"
+                                : currentConversation?.title || "新对话"}
+                            </span>
+                          )}
+                          {workspaceView === "chat" && canSwitchPresentation ? (
+                            <CloudChatModeSwitch
+                              value={presentation}
+                              onChange={(mode) => {
+                                setComposerMenu(null);
+                                setPresentation(mode);
+                              }}
                             />
                           ) : null}
                         </>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={closeResources}>
-                          返回对话
-                        </Button>
-                      )
-                    }
-                    settings={settings}
-                    sidebarOpen={sidebarOpen}
-                    onOpenSettings={(section) => {
-                      if (section) setSettingsSection(section);
-                      setAccountSettingsOpen(true);
-                    }}
-                    onToggleTheme={() =>
-                      setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) }))
-                    }
-                    onOpenSidebar={() => setSidebarOpen(true)}
-                    preThemeActions={
-                      workspaceView === "chat" ? (
-                        <ExecutionEnvironmentSwitcher
-                          environments={environments}
-                          selection={selection}
-                          disabled={streaming}
-                          onSwitch={onSwitch}
-                        />
-                      ) : null
-                    }
-                  />
+                      }
+                      trailingActions={
+                        workspaceView === "chat" ? (
+                          <>
+                            {conversationId ? (
+                              <CloudConversationBranches
+                                key={`branches:${user.id}:${conversationId}`}
+                                conversationId={conversationId}
+                                client={conversationClient}
+                                onNavigate={navigateConversation}
+                              />
+                            ) : null}
+                            {conversationId ? (
+                              <CloudChatHeaderActions
+                                key={`actions:${user.id}:${conversationId}`}
+                                title={currentConversation?.title || "新对话"}
+                                pinned={!!currentConversation?.pinned}
+                                archived={!!currentConversation?.archived}
+                                disabled={
+                                  !currentConversation || conversationMutations.has(conversationId)
+                                }
+                                deleteDisabled={streaming || historyLoading || branchBusy}
+                                moveDisabled={composerLocked || streaming || projectContextBusy}
+                                projectId={
+                                  composerProject.scope === `${user.id}:${conversationId}`
+                                    ? composerProject.project?.id
+                                    : undefined
+                                }
+                                projectsClient={projectsClient}
+                                captureGuard={captureWorkGuard}
+                                onRename={() => setHeaderRenameRequest((request) => request + 1)}
+                                onTogglePinned={() =>
+                                  void manageConversation(conversationId, {
+                                    pinned: !currentConversation?.pinned,
+                                  })
+                                }
+                                onToggleArchived={() =>
+                                  void manageConversation(conversationId, {
+                                    archived: !currentConversation?.archived,
+                                  })
+                                }
+                                onDelete={() => removeConversation(conversationId)}
+                                onError={setError}
+                                onMoveToProject={selectComposerProject}
+                              />
+                            ) : null}
+                          </>
+                        ) : (
+                          <Button variant="ghost" size="sm" onClick={closeResources}>
+                            返回对话
+                          </Button>
+                        )
+                      }
+                      settings={settings}
+                      sidebarOpen={sidebarOpen}
+                      onOpenSettings={(section) => {
+                        if (section) setSettingsSection(section);
+                        setAccountSettingsOpen(true);
+                      }}
+                      onToggleTheme={() =>
+                        setSettings((current) => ({
+                          ...current,
+                          theme: getNextTheme(current.theme),
+                        }))
+                      }
+                      onOpenSidebar={() => setSidebarOpen(true)}
+                      preThemeActions={
+                        workspaceView === "chat" ? (
+                          <ExecutionEnvironmentSwitcher
+                            environments={environments}
+                            selection={selection}
+                            disabled={streaming}
+                            onSwitch={onSwitch}
+                          />
+                        ) : null
+                      }
+                    />
+                  )
                 }
                 readingScope={`${user.id}:${accountInvalidatedRef.current ? "retired" : "current"}`}
+                defaultSplitRatio={workingInSpace ? 0.34 : undefined}
                 open={readerOpen}
                 primaryVisible={
-                  workspaceView === "chat" ||
-                  (workspaceView === "library" && !sourcePanel && !workPanel)
+                  chatWorkspaceVisible ||
+                  (workspaceView === "library" && !sourcePanel && !workPanel && !readerOpen)
                 }
                 primary={(readingOnly) => (
                   <>
@@ -4343,7 +4403,7 @@ export function CloudChatPage({
                       settings={settings}
                       setSettings={setSettings}
                       isAgentMode={false}
-                      className={workspaceView === "chat" ? "contents" : "hidden"}
+                      className={chatWorkspaceVisible ? "contents" : "hidden"}
                       chat={{
                         containerRef: cloudChatFrameRef,
                         containerProps: {
@@ -4360,10 +4420,12 @@ export function CloudChatPage({
                                   savedDraft.scheduleCapture();
                               }}
                               className="gateway-transcript-stage cloud-conversation-layout relative min-h-0 flex-1 overflow-hidden @container"
-                              data-layout={landing ? "landing" : "thread"}
+                              data-layout={landing && !workingInSpace ? "landing" : "thread"}
                               data-presentation={presentation}
                             >
-                              {landing ? <CloudChatEmptyState mode={presentation} /> : null}
+                              {landing && !workingInSpace ? (
+                                <CloudChatEmptyState mode={presentation} />
+                              ) : null}
                               <div className="gateway-transcript-scroll-shell relative h-full min-h-0">
                                 <ScrollArea
                                   viewportRef={setTranscriptViewport}
@@ -4380,7 +4442,36 @@ export function CloudChatPage({
                                       );
                                     }}
                                     showUsage
-                                    emptyState={null}
+                                    emptyState={
+                                      workingInSpace ? (
+                                        <div className="cloud-space-work-empty">
+                                          <h2>这份资料，你想如何处理？</h2>
+                                          <p>提出目标，在右侧对照原文继续工作。</p>
+                                          <div>
+                                            {[
+                                              ["总结要点", "请总结这份资料的核心内容和关键结论。"],
+                                              [
+                                                "检查并完善",
+                                                "请检查这份资料，指出需要改进的地方，并给出具体建议。",
+                                              ],
+                                              [
+                                                "提取行动项",
+                                                "请根据这份资料提取行动项，列出待确认事项。",
+                                              ],
+                                            ].map(([label, prompt]) => (
+                                              <Button
+                                                key={label}
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => fillStarter(prompt)}
+                                              >
+                                                {label}
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : null
+                                    }
                                     hasMoreHistory={historyHasMore}
                                     isLoadingMoreHistory={historyPageLoading}
                                     onLoadEarlierHistory={() => void loadEarlierHistory()}
@@ -4771,7 +4862,7 @@ export function CloudChatPage({
                                 onEditQueuedTurn={(id) => void pendingQueue.beginEdit(id)}
                                 onRemoveQueuedTurn={(id) => void pendingQueue.remove(id)}
                               />
-                              {landing ? (
+                              {landing && !workingInSpace ? (
                                 <CloudChatStarters mode={presentation} onSelect={fillStarter} />
                               ) : null}
                             </div>
@@ -4818,11 +4909,15 @@ export function CloudChatPage({
                     viewRef.current.userId === user.id ? (
                       <div
                         className={
-                          workspaceView === "library" && !sourcePanel && !workPanel
+                          workspaceView === "library" && !sourcePanel && !workPanel && !readerOpen
                             ? "contents"
                             : "hidden"
                         }
-                        inert={workspaceView !== "library" || Boolean(sourcePanel || workPanel)}
+                        inert={
+                          workspaceView !== "library" ||
+                          Boolean(sourcePanel || workPanel) ||
+                          readerOpen
+                        }
                       >
                         <CloudSpacePage
                           key={user.id}
@@ -4830,10 +4925,12 @@ export function CloudChatPage({
                           files={filesClient}
                           artifacts={artifactsClient}
                           revision={spaceRevision}
+                          newFolderRequest={spaceFolderRequest}
                           active={
                             workspaceView === "library" &&
                             !sourcePanel &&
                             !workPanel &&
+                            !readerOpen &&
                             !readingOnly
                           }
                           storageOpen={spaceStorageOpen}
@@ -4894,6 +4991,8 @@ export function CloudChatPage({
                             <CloudChatFilePanel
                               key={`${user.id}:${conversationId}:${filePanel.fileId ?? "library"}`}
                               client={filesClient}
+                              workFromSpace={workspaceView === "library"}
+                              workActive={workingInSpace}
                               onRequestRevision={requestDocumentRevision}
                               onOpenInSpace={() => openResource("files", true)}
                               onOpenSourceConversation={navigateConversation}
@@ -4947,7 +5046,9 @@ export function CloudChatPage({
                                     ? current
                                     : [...current, file],
                                 );
-                                closeResources();
+                                if (workspaceView === "library" && !sidebar.isMobile)
+                                  setSpaceWork(true);
+                                else closeResources();
                                 requestAnimationFrame(() => composerRef.current?.focus());
                                 return true;
                               }}
@@ -4988,10 +5089,33 @@ export function CloudChatPage({
                                 artifactPanel.site === true,
                               ])}
                               client={artifactsClient}
+                              workFromSpace={workspaceView === "library"}
+                              workActive={workingInSpace}
                               onRequestRevision={requestDocumentRevision}
                               conversationId={conversationId || undefined}
                               initialVersionId={artifactPanel.versionId}
                               initialSite={artifactPanel.site}
+                              siteAction={artifactPanel.siteAction}
+                              siteName={artifactPanel.item?.name.replace(/\.zip$/i, "")}
+                              onSiteRename={
+                                artifactPanel.item
+                                  ? async (name) => {
+                                      const item = artifactPanel.item;
+                                      if (!item || !isCurrentView(view))
+                                        throw new Error("站点视图已失效");
+                                      const guard = captureAccountRequestGuard();
+                                      const saved = await spaceClient.update(item, { name });
+                                      guard();
+                                      if (!isCurrentView(view)) return;
+                                      setArtifactPanel((old) =>
+                                        old?.item?.id === item.id
+                                          ? { ...old, item: { ...item, ...saved } }
+                                          : old,
+                                      );
+                                      setSpaceRevision((old) => old + 1);
+                                    }
+                                  : undefined
+                              }
                               isCurrent={() => isCurrentView(view)}
                               onClose={
                                 workspaceView === "library"
@@ -5013,7 +5137,9 @@ export function CloudChatPage({
                                       if (
                                         artifactAttachments.some((item) => item.id === version.id)
                                       ) {
-                                        closeResources();
+                                        if (workspaceView === "library" && !sidebar.isMobile)
+                                          setSpaceWork(true);
+                                        else closeResources();
                                         requestAnimationFrame(() => composerRef.current?.focus());
                                         return true;
                                       }
@@ -5025,7 +5151,9 @@ export function CloudChatPage({
                                           ? current
                                           : [...current, version],
                                       );
-                                      closeResources();
+                                      if (workspaceView === "library" && !sidebar.isMobile)
+                                        setSpaceWork(true);
+                                      else closeResources();
                                       requestAnimationFrame(() => composerRef.current?.focus());
                                       return true;
                                     }

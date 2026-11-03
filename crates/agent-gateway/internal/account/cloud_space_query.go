@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ var ErrCloudSpacePageChanged = errors.New("space changed during pagination")
 
 type CloudSpaceQuery struct {
 	Query, Category, Scope, Folder, Sort, Cursor string
+	Type, Origin                                 string
 	// Kept for existing callers; new clients use an owner/query-bound cursor.
 	Offset int
 }
@@ -53,7 +55,9 @@ func normalizeSpaceQuery(userID int64, q CloudSpaceQuery) (CloudSpaceQuery, *clo
 	}
 	q.Query = strings.TrimSpace(q.Query)
 	if userID <= 0 || !utf8.ValidString(q.Query) || len(q.Query) > 200 || q.Offset < 0 || q.Offset > 5000 ||
-		!strings.Contains("|all|uploads|outputs|images|documents|sites|", "|"+q.Category+"|") ||
+		!strings.Contains("|all|recent|uploads|outputs|images|documents|sites|", "|"+q.Category+"|") ||
+		!strings.Contains("||document|pdf|spreadsheet|presentation|image|media|code|archive|folder|site|", "|"+q.Type+"|") ||
+		!strings.Contains("||uploads|outputs|", "|"+q.Origin+"|") ||
 		!strings.Contains("|all|starred|trash|", "|"+q.Scope+"|") ||
 		!strings.Contains("|updated|name|size|", "|"+q.Sort+"|") {
 		return q, nil, ErrCloudFileInvalid
@@ -82,7 +86,11 @@ func normalizeSpaceQuery(userID int64, q CloudSpaceQuery) (CloudSpaceQuery, *clo
 	return q, &cursor, nil
 }
 func spaceQueryScope(q CloudSpaceQuery) string {
-	data, _ := json.Marshal([]string{q.Query, q.Category, q.Scope, q.Folder, q.Sort})
+	parts := []string{q.Query, q.Category, q.Scope, q.Folder, q.Sort}
+	if q.Type != "" || q.Origin != "" {
+		parts = append(parts, q.Type, q.Origin)
+	}
+	data, _ := json.Marshal(parts)
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:16])
 }
@@ -117,7 +125,25 @@ func (s *MemoryStore) QueryCloudSpace(ctx context.Context, userID int64, query C
 	if cursor != nil && cursor.Revision != revision {
 		return nil, ErrCloudSpacePageChanged
 	}
-	all := filterCloudSpaceItems(snapshot, q.Query, q.Category, q.Scope, q.Folder, q.Sort)
+	category := q.Category
+	if category == "all" && (q.Type != "" || q.Origin != "") {
+		category = "filtered"
+	}
+	all := filterCloudSpaceItems(snapshot, q.Query, category, q.Scope, q.Folder, q.Sort)
+	filtered := all[:0]
+	for _, item := range all {
+		if q.Category == "recent" && item.Kind == "folder" {
+			continue
+		}
+		if q.Type != "" && cloudSpaceItemType(item) != q.Type {
+			continue
+		}
+		if q.Origin == "uploads" && item.Kind != "file" || q.Origin == "outputs" && item.Kind != "artifact" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	all = filtered
 	page := &CloudSpacePage{Items: []CloudSpaceItem{}, Total: len(all), NextOffset: -1, Usage: snapshot.Usage, Folders: []CloudSpaceItem{}, Pinned: []CloudSpaceItem{}}
 	for _, item := range snapshot.Items {
 		if item.Kind == "folder" && !item.Trashed {
@@ -143,4 +169,40 @@ func (s *MemoryStore) QueryCloudSpace(ctx context.Context, userID int64, query C
 		page.NextCursor = nextSpaceCursor(userID, q, revision, page.Items[len(page.Items)-1])
 	}
 	return page, nil
+}
+
+// One ordered classification drives both the memory adapter and PostgreSQL.
+// Metadata filtering never fetches the original or runs a document parser.
+var spaceTypeRules = []struct{ kind, mime, name string }{
+	{"image", "^image/", "\\.(png|jpe?g|gif|webp|svg|avif|bmp|tiff?)$"},
+	{"media", "^(audio|video)/", "\\.(mp[34]|m4[av]|mov|webm|wav|ogg|flac|aac)$"},
+	{"pdf", "^application/pdf$", "\\.pdf$"},
+	{"spreadsheet", "(spreadsheet|excel|csv|tab-separated)", "\\.(xlsx?|csv|tsv|ods)$"},
+	{"presentation", "(presentation|powerpoint)", "\\.(pptx?|odp)$"},
+	{"document", "(word|opendocument.text|markdown)", "\\.(docx?|odt|md|markdown|txt|rtf)$"},
+	{"archive", "(zip|compressed|x-tar|gzip)", "\\.(zip|7z|rar|tar|gz)$"},
+}
+
+var compiledSpaceTypeRules = func() []struct{ mime, name *regexp.Regexp } {
+	rules := make([]struct{ mime, name *regexp.Regexp }, len(spaceTypeRules))
+	for i, rule := range spaceTypeRules {
+		rules[i].mime = regexp.MustCompile(rule.mime)
+		rules[i].name = regexp.MustCompile(rule.name)
+	}
+	return rules
+}()
+
+func cloudSpaceItemType(item CloudSpaceItem) string {
+	if item.Kind == "folder" {
+		return "folder"
+	}
+	if item.SiteVersionID != "" {
+		return "site"
+	}
+	for i, rule := range compiledSpaceTypeRules {
+		if rule.mime.MatchString(strings.ToLower(item.MIME)) || rule.name.MatchString(strings.ToLower(item.Name)) {
+			return spaceTypeRules[i].kind
+		}
+	}
+	return "code"
 }

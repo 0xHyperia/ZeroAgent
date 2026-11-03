@@ -108,9 +108,9 @@ test("an unconfirmed upload blocks repeated writes until an explicit refresh suc
  await app.env.act(async()=>change());await app.flush();
  assert.match(document.body.textContent,/尚未确认/);
  await app.env.act(async()=>change());await app.flush();assert.equal(writes,1);
- assert.equal(document.querySelector('.cloud-space-heading-actions button').disabled,true);
+ assert.equal(document.querySelector('.cloud-space-upload').disabled,true);
  await app.click("刷新核对");
- assert.equal(document.querySelector('.cloud-space-heading-actions button').disabled,false);
+ assert.equal(document.querySelector('.cloud-space-upload').disabled,false);
 });
 
 test("bulk selection only includes loaded rows and stays selected when switching views",async t=>{
@@ -196,4 +196,23 @@ test("space upload claims a mutation synchronously and rejects a busy drop inste
  await app.env.act(async()=>{for(let index=0;index<2;index++){const event=new window.Event("drop",{bubbles:true,cancelable:true});Object.defineProperty(event,"dataTransfer",{value:data});target.dispatchEvent(event);}});
  assert.equal(writes,1);assert.match(document.body.textContent,/等待当前操作完成/);await app.env.act(async()=>release());await app.flush();
  await app.update({active:false});const ignored=await spaceDrag(app,"drop",data);assert.equal(ignored.defaultPrevented,false);assert.equal(writes,1);
+});
+
+
+test("combinable type, origin and folder filters are sent together with scoped pagination", async () => {
+ const api=load(),paths=[];
+ const client=api.createCloudSpaceClient(async path=>{paths.push(path);return Response.json(page());},safe);
+ await client.list({...home,category:"recent",type:"document",origin:"uploads",folder:ID},"计划","name","filter_cursor");
+ const query=new URL(paths[0],"http://localhost").searchParams;
+ assert.equal(query.get("category"),"recent");assert.equal(query.get("type"),"document");assert.equal(query.get("origin"),"uploads");assert.equal(query.get("folder"),ID);assert.equal(query.get("cursor"),"filter_cursor");
+ await client.list(home);
+ assert.equal(new URL(paths[1],"http://localhost").searchParams.has("type"),false);
+});
+
+test("the sidebar folder action opens an in-place dialog without changing existing items", async t => {
+ const app=await mount(t,{newFolderRequest:0});
+ await app.update({newFolderRequest:1});
+ assert.match(document.querySelector('[role="dialog"]').textContent,/新建文件夹/);
+ assert.match(document.querySelector('.cloud-space-item-list').textContent,/计划.md/);
+ assert.equal(app.calls.navigations.length,0);
 });

@@ -63,12 +63,19 @@ func scanSpaceItem(row interface{ Scan(...any) error }) (CloudSpaceItem, error) 
 	return item, err
 }
 func spaceWhere(q CloudSpaceQuery) (string, []any) {
+	typeCase := "CASE WHEN kind='folder' THEN 'folder' WHEN site_version_id<>'' THEN 'site' "
+	for _, rule := range spaceTypeRules {
+		typeCase += "WHEN lower(mime) ~ '" + rule.mime + "' OR lower_name ~ '" + rule.name + "' THEN '" + rule.kind + "' "
+	}
+	typeCase += "ELSE 'code' END"
 	return `trashed=$2 AND ($3<>'starred' OR starred) AND ($4='' OR folder_id=$4)
- AND NOT($4='' AND $5='' AND $3='all' AND $6='all' AND folder_id<>'')
+ AND NOT($4='' AND $5='' AND $3='all' AND $6='all' AND $7='' AND $8='' AND folder_id<>'')
  AND ($5='' OR position(lower($5) in lower(name))>0)
  AND ($6<>'uploads' OR kind='file') AND ($6<>'outputs' OR kind='artifact')
  AND ($6<>'images' OR mime LIKE 'image/%') AND ($6<>'documents' OR (kind<>'folder' AND mime NOT LIKE 'image/%'))
- AND ($6<>'sites' OR site_version_id<>'')`, []any{q.Scope == "trash", q.Scope, q.Folder, q.Query, q.Category}
+ AND ($6<>'sites' OR site_version_id<>'') AND ($6<>'recent' OR kind<>'folder')
+ AND ($8<>'uploads' OR kind='file') AND ($8<>'outputs' OR kind='artifact')
+ AND ($7='' OR (` + typeCase + `)=$7)`, []any{q.Scope == "trash", q.Scope, q.Folder, q.Query, q.Category, q.Type, q.Origin}
 }
 
 type spaceSortKey struct {

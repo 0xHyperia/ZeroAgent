@@ -18,6 +18,22 @@ import (
 	"github.com/liveagent/agent-gateway/internal/objectstore"
 )
 
+func TestCloudSitePreviewBridgePreservesDocumentParsing(t *testing.T) {
+	for _, body := range []string{
+		"<!doctype html><html><head><title>Site</title></head><body><main>Content</main></body></html>",
+		"<!doctype html><html><head></head><main>Content</main></html>",
+		"<!doctype html><main>Content</main>",
+	} {
+		got := string(sitePreviewDocument([]byte(body), "https://app.example.com"))
+		if !strings.HasPrefix(got, "<!doctype html>") || strings.Index(got, "zeroAgentSitePreview") < strings.Index(got, "</main>") {
+			t.Fatal("preview script must follow site content and preserve the doctype")
+		}
+		if strings.Count(got, "function zeroAgentSitePreview") != 1 {
+			t.Fatal("preview bridge must be inserted once")
+		}
+	}
+}
+
 func enableSiteFixture(t *testing.T, f *cloudFileHTTPFixture) {
 	t.Helper()
 	cfg, err := cloudsite.NewConfig("https://{site}.example.net", "https://app.example.com", "127.0.0.1:18081", strings.Repeat("s", 64), false)
@@ -127,6 +143,18 @@ func TestCloudSiteHTTPPrivateVersionsShareAndRevoke(t *testing.T) {
 		t.Fatal("saving a release made it public")
 	}
 	siteOwnerJSON(t, f, "GET", base, "file-other", nil, 404)
+	siteOwnerJSON(t, f, "GET", base+"/cover", "file-other", nil, 404)
+	cover := siteOwnerJSON(t, f, "GET", base+"/cover", "file-owner", nil, 200)
+	var covered struct {
+		HTML string `json:"html"`
+	}
+	if json.Unmarshal(cover, &covered) != nil || !strings.Contains(covered.HTML, "version-one") || strings.Contains(covered.HTML, "<script") {
+		t.Fatal("invalid inert site cover")
+	}
+	list := siteOwnerJSON(t, f, "GET", "/api/web-chat/sites/families/"+a.FamilyID+"/shares", "file-owner", nil, 200)
+	if !strings.Contains(string(list), `"shares":[]`) {
+		t.Fatal("cover created a sharing grant")
+	}
 	private := issueSiteFixture(t, f, a, "private")
 	share := issueSiteFixture(t, f, a, "share")
 	u, _ := url.Parse(share.URL)
@@ -136,6 +164,9 @@ func TestCloudSiteHTTPPrivateVersionsShareAndRevoke(t *testing.T) {
 		w := siteContent(t, f, "GET", g.URL, "", nil)
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "version-one") || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 			t.Fatal("canonical site page failed", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "zeroagent-site-command") || !strings.Contains(w.Body.String(), `event.origin!==appOrigin`) {
+			t.Fatal("site inspection bridge lacks origin validation")
 		}
 		if w.Header().Get("Set-Cookie") != "" || w.Header().Get("Referrer-Policy") != "no-referrer" || !strings.Contains(w.Header().Get("Content-Security-Policy"), "worker-src blob:") || !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-ancestors https://app.example.com") {
 			t.Fatal("content isolation headers missing")

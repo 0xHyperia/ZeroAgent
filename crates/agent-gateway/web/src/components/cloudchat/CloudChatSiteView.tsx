@@ -32,6 +32,8 @@ import {
 } from "@/lib/cloudChatSites";
 import { CloudChatFeedback } from "./CloudChatFeedback";
 import "../../cloud-site.css";
+import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
+import { CloudSiteWorkspace } from "./CloudSiteWorkspace";
 
 /** The owner host supplies authentication and the current immutable artifact. */
 export function CloudChatSiteView(props: {
@@ -40,6 +42,16 @@ export function CloudChatSiteView(props: {
   isCurrent: () => boolean;
   openOnMount?: boolean;
   onPreviewChange?: (open: boolean) => void;
+  workspace?: {
+    onClose: () => void;
+    onContinue?: () => void;
+    onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean>;
+    versions: CloudChatArtifactVersion[];
+    onVersion: (id: string) => void;
+    displayName?: string;
+    onRename?: (name: string) => Promise<void>;
+    initialAction?: "share" | "settings";
+  };
 }) {
   const [enabled, setEnabled] = useState(false),
     [availabilityChecked, setAvailabilityChecked] = useState(false),
@@ -257,6 +269,31 @@ export function CloudChatSiteView(props: {
     }
   }
   if (!enabled) {
+    if (props.workspace)
+      return (
+        <section className="cloud-site-host">
+          <CloudSiteWorkspace
+            {...props.workspace}
+            artifact={props.artifact}
+            release={null}
+            preview={null}
+            unavailable={availabilityChecked}
+            busy={!availabilityChecked}
+            isCurrent={props.isCurrent}
+            onOpen={openPreview}
+            onShare={openShares}
+            feedback={
+              error || availabilityChecked ? (
+                <CloudChatFeedback
+                  compact
+                  tone="warning"
+                  message={error || "站点托管尚未启用，可下载构建包。"}
+                />
+              ) : null
+            }
+          />
+        </section>
+      );
     if (error) return <CloudChatFeedback compact tone="warning" message={error} />;
     if (!props.openOnMount) return null;
     return (
@@ -268,100 +305,135 @@ export function CloudChatSiteView(props: {
     );
   }
   return (
-    <section className="cloud-site-view" aria-label="站点版本">
-      <div className="cloud-site-toolbar">
-        <div className="cloud-site-identity">
-          <Globe className="size-4" />
-          <span>{release ? `站点 · v${props.artifact.number}` : "站点预览"}</span>
-          <span className="cloud-site-private">
-            <Lock className="size-3" />
-            私人预览
-          </span>
-        </div>
-        <div className="cloud-site-actions">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || Boolean(pendingShare.current) || Boolean(pendingRevoke.current)}
-            onClick={openPreview}
-          >
-            {busy ? (
-              <LoaderCircle className="size-4 animate-spin" />
-            ) : preview ? (
-              <RefreshCw className="size-4" />
-            ) : (
-              <Globe className="size-4" />
-            )}
-            {preview ? "刷新预览" : "预览站点"}
-          </Button>
-          {release ? (
-            <Button variant="ghost" size="sm" disabled={busy} onClick={openShares}>
-              <Share2 className="size-4" />
-              分享
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      {error ? (
-        <CloudChatFeedback
-          compact
-          tone="error"
-          message={error}
-          actions={
-            unconfirmed ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const r = await props.client.get(props.artifact.id, lifetime.current?.signal);
-                    valid();
-                    setRelease(r);
-                    await loadShares();
-                    setNotice("已刷新站点和分享状态。");
-                  })
+    <section
+      className={props.workspace ? "cloud-site-host" : "cloud-site-view"}
+      aria-label="站点版本"
+    >
+      {props.workspace ? (
+        <CloudSiteWorkspace
+          {...props.workspace}
+          artifact={props.artifact}
+          release={release}
+          preview={preview}
+          busy={busy}
+          isCurrent={props.isCurrent}
+          onOpen={openPreview}
+          onShare={openShares}
+          feedback={
+            error || notice ? (
+              <CloudChatFeedback
+                compact
+                tone={error ? "warning" : undefined}
+                message={error || notice}
+                actions={
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={openPreview}>
+                    重新打开
+                  </Button>
                 }
-              >
-                刷新核对
-              </Button>
-            ) : undefined
+              />
+            ) : null
           }
         />
-      ) : null}
-      {notice ? <CloudChatFeedback compact message={notice} /> : null}
-      {preview?.url ? (
-        <div className="cloud-site-preview">
-          <div className="cloud-site-preview-top">
-            <span>
-              <Lock className="size-3" />
-              此预览未公开
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title="关闭站点预览"
-              aria-label="关闭站点预览"
-              onClick={() => {
-                setPreview(null);
-                current.current.onPreviewChange?.(false);
-              }}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-          <iframe
-            title={`${props.artifact.name} · 站点预览`}
-            src={preview.url}
-            sandbox="allow-scripts allow-same-origin allow-downloads"
-            referrerPolicy="no-referrer"
-            allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'"
-          />
-        </div>
       ) : (
-        <p className="cloud-site-caption">
-          包含 index.html 的 ZIP 可作为静态站点预览。分享由你明确开启。
-        </p>
+        <>
+          <div className="cloud-site-toolbar">
+            <div className="cloud-site-identity">
+              <Globe className="size-4" />
+              <span>{release ? `站点 · v${props.artifact.number}` : "站点预览"}</span>
+              <span className="cloud-site-private">
+                <Lock className="size-3" />
+                私人预览
+              </span>
+            </div>
+            <div className="cloud-site-actions">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || Boolean(pendingShare.current) || Boolean(pendingRevoke.current)}
+                onClick={openPreview}
+              >
+                {busy ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : preview ? (
+                  <RefreshCw className="size-4" />
+                ) : (
+                  <Globe className="size-4" />
+                )}
+                {preview ? "刷新预览" : "预览站点"}
+              </Button>
+              {release ? (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={openShares}>
+                  <Share2 className="size-4" />
+                  分享
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {error ? (
+            <CloudChatFeedback
+              compact
+              tone="error"
+              message={error}
+              actions={
+                unconfirmed ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const r = await props.client.get(
+                          props.artifact.id,
+                          lifetime.current?.signal,
+                        );
+                        valid();
+                        setRelease(r);
+                        await loadShares();
+                        setNotice("已刷新站点和分享状态。");
+                      })
+                    }
+                  >
+                    刷新核对
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : null}
+          {notice ? <CloudChatFeedback compact message={notice} /> : null}
+          {preview?.url ? (
+            <div className="cloud-site-preview">
+              <div className="cloud-site-preview-top">
+                <span>
+                  <Lock className="size-3" />
+                  此预览未公开
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title="关闭站点预览"
+                  aria-label="关闭站点预览"
+                  onClick={() => {
+                    setPreview(null);
+                    current.current.onPreviewChange?.(false);
+                  }}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <iframe
+                title={`${props.artifact.name} · 站点预览`}
+                src={preview.url}
+                sandbox="allow-scripts allow-same-origin allow-downloads"
+                referrerPolicy="no-referrer"
+                allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'"
+              />
+            </div>
+          ) : (
+            <p className="cloud-site-caption">
+              包含 index.html 的 ZIP 可作为静态站点预览。分享由你明确开启。
+            </p>
+          )}
+        </>
       )}
       <Dialog open={sharing} onOpenChange={setSharing}>
         <DialogContent

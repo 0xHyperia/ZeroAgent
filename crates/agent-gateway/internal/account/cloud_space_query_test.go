@@ -87,6 +87,37 @@ func runSpacePaginationContract(t *testing.T, store Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Recent and combined filters include resources inside folders, without
+	// leaking folders, trash or allowing a cursor to cross filter boundaries.
+	for _, query := range []CloudSpaceQuery{
+		{Category: "recent"}, {Type: "document", Origin: "uploads"},
+	} {
+		page, err := space.QueryCloudSpace(ctx, 1, query)
+		if err != nil || page.Total != 122 || len(page.Items) != 50 {
+			t.Fatalf("filtered account query lost resources: %+v %v", page, err)
+		}
+		for _, item := range page.Items {
+			if item.Kind == "folder" || item.Trashed {
+				t.Fatal("folder or trash in file results")
+			}
+		}
+		query.Cursor = page.NextCursor
+		query.Origin = "outputs"
+		if _, err := space.QueryCloudSpace(ctx, 1, query); !errors.Is(err, ErrCloudFileInvalid) {
+			t.Fatal("filter cursor reuse accepted", err)
+		}
+	}
+	for _, query := range []CloudSpaceQuery{{Type: "spreadsheet"}, {Origin: "outputs"}} {
+		page, err := space.QueryCloudSpace(ctx, 1, query)
+		if err != nil || page.Total != 0 {
+			t.Fatalf("nonmatching filter returned files: %+v %v", page, err)
+		}
+	}
+	for _, query := range []CloudSpaceQuery{{Type: "unbounded"}, {Origin: "foreign"}} {
+		if _, err := space.QueryCloudSpace(ctx, 1, query); !errors.Is(err, ErrCloudFileInvalid) {
+			t.Fatal("unknown filter accepted", err)
+		}
+	}
 	// A different account's write must not invalidate this account's cursor.
 	if _, err = files.CreateCloudFile(ctx, newCloudFileRecord(2, "")); err != nil {
 		t.Fatal(err)

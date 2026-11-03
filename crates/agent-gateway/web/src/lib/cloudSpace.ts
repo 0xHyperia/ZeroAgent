@@ -1,7 +1,9 @@
 export type CloudSpaceLocation = {
-  category: "all" | "documents" | "images" | "uploads" | "outputs" | "sites";
+  category: "all" | "recent" | "documents" | "images" | "uploads" | "outputs" | "sites";
   scope: "all" | "starred" | "trash";
   folder: string;
+  type?: string;
+  origin?: "" | "uploads" | "outputs";
 };
 export const CLOUD_SPACE_HOME: CloudSpaceLocation = { category: "all", scope: "all", folder: "" };
 export type CloudSpaceItem = {
@@ -166,6 +168,8 @@ export function createCloudSpaceClient(
         sort,
         cursor,
       });
+      if (location.type) params.set("type", location.type);
+      if (location.origin) params.set("origin", location.origin);
       const data = await json(`/api/web-chat/space?${params}`, { signal });
       if (
         !Array.isArray(data.items) ||
@@ -250,6 +254,7 @@ export function cloudSpaceTitle(location: CloudSpaceLocation) {
   if (location.scope === "starred") return "收藏";
   return {
     all: "全部资料",
+    recent: "最近",
     documents: "文档与文件",
     images: "图像",
     uploads: "我的上传",

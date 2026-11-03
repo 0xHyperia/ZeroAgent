@@ -13,18 +13,21 @@ export function CloudChatResourceWorkbench(props: {
   open: boolean;
   primaryVisible: boolean;
   readingScope?: string;
+  defaultSplitRatio?: number;
   header?: ReactNode;
   primary: ReactNode | ((readingOnly: boolean) => ReactNode);
   children: ReactNode;
 }) {
   const { t } = useLocale();
+  const defaultRatio = props.defaultSplitRatio ?? DEFAULT_READER_SPLIT_RATIO;
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [canSplit, setCanSplit] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [split, setSplit] = useState({
     scope: props.readingScope,
-    ratio: DEFAULT_READER_SPLIT_RATIO,
+    mode: defaultRatio,
+    ratio: defaultRatio,
   });
   const [resizing, setResizing] = useState(false);
   useEffect(() => {
@@ -50,12 +53,14 @@ export function CloudChatResourceWorkbench(props: {
     320 / usable,
     Math.min(
       1 - 420 / usable,
-      split.scope === props.readingScope ? split.ratio : DEFAULT_READER_SPLIT_RATIO,
+      split.scope === props.readingScope && split.mode === defaultRatio
+        ? split.ratio
+        : defaultRatio,
     ),
   );
   const primaryWidth = usable * ratio;
   const changeRatio = (_id: string, value: number) =>
-    setSplit({ scope: props.readingScope, ratio: value });
+    setSplit({ scope: props.readingScope, mode: defaultRatio, ratio: value });
   useEffect(() => {
     const end = () => setResizing(false);
     window.addEventListener("pointerup", end);
@@ -125,7 +130,7 @@ export function CloudChatResourceWorkbench(props: {
             minSizesForSplit={() => ({ firstMin: 320, secondMin: 420 })}
             onResizePreview={changeRatio}
             onResizeCommit={changeRatio}
-            onEqualize={() => changeRatio("cloud-reader", DEFAULT_READER_SPLIT_RATIO)}
+            onEqualize={() => changeRatio("cloud-reader", defaultRatio)}
           />
         </WorkbenchBody>
       </CloudChatReaderLayout.Provider>

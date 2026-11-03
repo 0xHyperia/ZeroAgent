@@ -18,6 +18,7 @@ func (h *HTTPHandler) registerCloudSites(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/web-chat/sites/config", h.withSession(h.cloudSiteConfig))
 	mux.HandleFunc("POST /api/web-chat/sites/releases/{id}", h.withSession(h.createCloudSite))
 	mux.HandleFunc("GET /api/web-chat/sites/releases/{id}", h.withSession(h.getCloudSite))
+	mux.HandleFunc("GET /api/web-chat/sites/releases/{id}/cover", h.withSession(h.cloudSiteCover))
 	mux.HandleFunc("POST /api/web-chat/sites/releases/{id}/preview", h.withSession(h.previewCloudSite))
 	mux.HandleFunc("POST /api/web-chat/sites/releases/{id}/shares", h.withSession(h.shareCloudSite))
 	mux.HandleFunc("GET /api/web-chat/sites/families/{id}/shares", h.withSession(h.listCloudSiteShares))
@@ -271,6 +272,9 @@ func (s *Service) CloudSiteContentHandler() http.Handler {
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src blob:; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors "+p.config.AppOrigin+"; sandbox allow-scripts allow-same-origin allow-downloads")
 		w.Header().Set("Content-Type", entry.MIME)
+		if strings.HasPrefix(entry.MIME, "text/html") {
+			body = sitePreviewDocument(body, p.config.AppOrigin)
+		}
 		http.ServeContent(w, r, name, time.Time{}, cloudFileDownloadReader{ReadSeeker: bytes.NewReader(body), valid: valid})
 	})
 }

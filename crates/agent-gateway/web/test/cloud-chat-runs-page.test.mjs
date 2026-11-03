@@ -17,12 +17,13 @@ const snapshot = (overrides = {}) => ({
 const fileConversation="11111111-1111-4111-8111-111111111111";
 const secondFileConversation="22222222-2222-4222-8222-222222222222";
 const fileId="33333333-3333-4333-8333-333333333333";
-const fileRecord=(overrides={})=>({id:fileId,conversation_id:fileConversation,name:"notes.md",mime:"text/markdown",size:5,sha256:"0".repeat(64),state:"ready",text_bytes:5,version:4,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",uploaded_at:"2026-10-29T00:00:00Z",...overrides});
+const fixtureBodySHA=createHash("sha256").update("hello").digest("hex");
+const fileRecord=(overrides={})=>({id:fileId,conversation_id:fileConversation,name:"notes.md",mime:"text/markdown",size:5,sha256:fixtureBodySHA,state:"ready",text_bytes:5,version:4,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",uploaded_at:"2026-10-29T00:00:00Z",...overrides});
 const artifactVersionID="44444444-4444-4444-8444-444444444444",olderArtifactID="55555555-5555-4555-8555-555555555555",artifactFamilyID="66666666-6666-4666-8666-666666666666",artifactRunID="77777777-7777-4777-8777-777777777777";
-const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFamilyID,number:2,conversation_id:fileConversation,source_run_id:artifactRunID,name:"website.html",mime:"text/html",size:5,sha256:"a".repeat(64),state:"ready",version:3,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",download_url:`/api/web-chat/artifacts/versions/${artifactVersionID}/download`,...overrides});
+const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFamilyID,number:2,conversation_id:fileConversation,source_run_id:artifactRunID,name:"website.html",mime:"text/html",size:5,sha256:fixtureBodySHA,state:"ready",version:3,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",download_url:`/api/web-chat/artifacts/versions/${artifactVersionID}/download`,...overrides});
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 
-async function mount(t, { initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false } = {}) {
+async function mount(t, { initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false,readerHarness=false } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -232,6 +233,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
       const id=url.pathname.split("/")[4];const file=files.get(id);
       if(!file)return Response.json({error:"missing"},{status:404});
       if(init.method==="DELETE"){file.state="deleted";return Response.json({file});}
+      if(url.pathname.endsWith("/download"))return new Response(fileBodies.get(id),{headers:{"Content-Type":file.mime,"Content-Length":String(new TextEncoder().encode(fileBodies.get(id)).length)}});
       if(url.pathname.endsWith("/content")){
         const lines=fileBodies.get(id).split("\n");const from=Number(url.searchParams.get("from_line"));const to=Math.min(Number(url.searchParams.get("to_line")),lines.length);
         return Response.json({file_id:id,name:file.name,sha256:file.sha256,total_lines:lines.length,from_line:from,to_line:to,lines:lines.slice(from-1,to).map((text,index)=>({line:from+index,text}))});
@@ -306,6 +308,14 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   };
 
   env = await createWebDomTestEnv({ mocks: {
+    // Keep parent integration independent of Vite's dynamic preview imports, which the VM loader cannot execute.
+    ...(readerHarness ? {
+      "@liveagent/ui/components/resource-preview/ResourcePreview": {
+        ResourceThumbnail:()=>null,
+        ResourcePreviewReadingSession:props=>props.children,
+        ResourcePreview:props=>env.React.createElement("div",{"data-reader-resource":props.resource.identity,"data-from-line":props.sourceRange?.fromLine,"data-to-line":props.sourceRange?.toLine},props.resource.name),
+      },
+    } : {}),
     ...(revisionHarness ? {
       "@/components/CloudChatFilePanel": {CloudChatFilePanel: props => {revisionPanel=props;return null;}},
       "@/components/cloudchat/CloudChatArtifactsPanel": {CloudChatArtifactsPanel: props => {revisionPanel=props;return null;}},
@@ -478,12 +488,17 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
     async finishArtifact(){await env.act(async()=>{finishArtifact();await tick();});},
     async openArtifact(id=artifactVersionID){await env.act(async()=>{transcript.onOpenFileLink({path:`cloud-artifacts/${id}`,source:"relative"});await tick();});},
     async reload(){await env.act(async()=>{root.render(null);await tick();});await render();},
-    async chooseArtifact(id){if(!host.querySelector(".za-reader-version"))await env.act(async()=>{host.querySelector('[aria-label="版本历史记录"]').click();await tick();});const button=host.querySelector(`[data-version-id="${id}"]`);assert.ok(button);await env.act(async()=>{button.click();await tick();});},
+    async chooseArtifact(id){if(!host.querySelector(".za-reader-version")){await this.clickText("版本历史记录");}const button=host.querySelector(`[data-version-id="${id}"]`);assert.ok(button);await env.act(async()=>{button.click();await tick();});},
     async edit(messageID,text,files=[]){const ref=transcript.rows.find(row=>row.key===messageID).messageRef;await env.act(async()=>{transcript.onResendFromEdit(ref,text,files,[]);await tick();});},
     async fork(messageID){const ref=transcript.rows.find(row=>row.key===messageID).messageRef;await env.act(async()=>{transcript.onBranchConversation(ref);await tick();});},
     async clickText(text){
       const find=()=>[...document.querySelectorAll('button,[role="menuitem"]')].find(element=>element.textContent.trim()===text);
       let button=find();
+      if(!button && ["引用到消息","文件信息","版本历史记录","与 AI 一起工作"].includes(text)){
+        const title=host.querySelector('[aria-label^="文件菜单："]');
+        assert.ok(title,`missing file menu for ${text}`);
+        await env.act(async()=>{title.click();await tick();});button=find();
+      }
       if(!button && text==="文件库"){await env.act(async()=>{sidebar.onOpenResourceHub();await tick();});return;}
       if(!button && text==="项目"){await env.act(async()=>{composerContextPicker.onBrowse("projects");await tick();});return;}
       assert.ok(button,`missing control ${text}`);await env.act(async()=>{button.click();await tick();});
@@ -694,17 +709,19 @@ test("a late upload is detached on conversation switch and cannot contaminate th
  assert.equal(app.files.size,1,"the original stays discoverable from the account library");
 });
 
-test("the library restores reusable originals and source citations open authenticated line excerpts",async(t)=>{
- const app=await mount(t,{fileMode:true,initialFiles:[fileRecord()]});
+test("the library restores reusable originals and small-text citations target the authenticated shared reader",async(t)=>{
+ const app=await mount(t,{fileMode:true,readerHarness:true,initialFiles:[fileRecord()]});
  await app.clickText("文件库");
  assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/notes.md/);
  await app.clickText("notes.md");
- assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/L1hello/);
+ // Opening an original now uses the shared authenticated reader instead of the legacy line excerpt.
+ assert.equal(app.host.querySelector('[data-reader-resource]').getAttribute("data-reader-resource"),`${fileId}:${fixtureBodySHA}`);
+ assert.match(app.host.querySelector('[data-cloud-resource-inline]').textContent,/notes.md/);
  await app.clickText("引用到消息");
  assert.equal(app.composer.pendingUploadedFiles[0].relativePath,fileId);
  assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);
  await app.env.act(async()=>{app.transcript.onOpenFileLink({path:`cloud-files/${fileId}`,source:"relative",line:1,endLine:1});await tick();});
- assert.ok(app.calls.some(call=>call.path===`/api/web-chat/files/${fileId}/content?from_line=1&to_line=1`));
+ assert.equal(app.host.querySelector('[data-reader-resource]').getAttribute("data-from-line"),"1");assert.equal(app.host.querySelector('[data-reader-resource]').getAttribute("data-to-line"),"1");assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);
  await app.invalidate();
  assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);
  assert.doesNotMatch(app.host.textContent,/notes.md|hello/);
@@ -924,14 +941,14 @@ test("unsupported effective cache and explicit text-only image settings are expl
 });
 test("a workspace-loadable original is attached without treating an unparsed or large source as extracted text",async(t)=>{
  const app=await mount(t,{fileMode:true,initialFiles:[fileRecord({name:"large.csv",mime:"text/csv",size:2*1024*1024,state:"ready",text_bytes:600000,workspace_loadable:true})]});await app.clickText("文件库");await app.clickText("large.csv");
- assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);await app.click('[aria-label="文件更多操作"]');await app.clickText("文件信息");assert.match(app.host.textContent,/不表示文件已完成文本解析/);await app.clickText("引用到消息");assert.match(app.host.textContent,/原件可在隔离沙箱读取/);await app.click('[data-action="send"]');
+ assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);await app.clickText("文件信息");assert.match(app.host.textContent,/CSV 文件/);assert.doesNotMatch(app.host.querySelector('[data-cloud-resource-inline]').textContent,/AI 使用|状态/);await app.clickText("引用到消息");assert.match(app.host.textContent,/原件可在隔离沙箱读取/);await app.click('[data-action="send"]');
  const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(request.content,[{type:"text",text:"新的问题"},{type:"file_reference",file_id:fileId}]);
 });
 
 test("a ZIP file is offered by the chooser and sent only as a canonical workspace-only reference",async(t)=>{
  const app=await mount(t,{fileMode:true,initialFiles:[fileRecord({name:"project.zip",mime:"application/zip",state:"uploaded",processing_stage:"workspace_only",text_bytes:0,workspace_loadable:true})]});
  assert.match(app.host.querySelector('input[type="file"]').accept,/\.zip/);await app.clickText("文件库");await app.clickText("project.zip");
- await app.click('[aria-label="文件更多操作"]');await app.clickText("文件信息");assert.match(app.host.textContent,/隔离沙箱中读取或解压/);assert.match(app.host.textContent,/不会自动运行其中的代码/);assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);
+ await app.clickText("文件信息");assert.match(app.host.textContent,/ZIP 文件/);assert.equal(app.files.get(fileId).workspace_loadable,true);assert.equal(app.calls.some(call=>call.path.includes("/content?")),false);
  await app.clickText("引用到消息");await app.click('[data-action="send"]');const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(request.content,[{type:"text",text:"新的问题"},{type:"file_reference",file_id:fileId}]);
 });
 test("the single pending artifact card opens its exact version and removes only its draft reference",async(t)=>{

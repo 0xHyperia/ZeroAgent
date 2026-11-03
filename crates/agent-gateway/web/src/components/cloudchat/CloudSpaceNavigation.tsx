@@ -1,15 +1,22 @@
 import {
-  BookOpen,
-  FileText,
+  ChevronDown,
+  Clock3,
   FolderClosed,
   Globe,
-  ImageIcon,
   Layers,
+  MoreHorizontal,
+  Plus,
   Search,
   Star,
   Trash2,
-  Upload,
 } from "@liveagent/ui/components/IconSet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@liveagent/ui/components/ui/dropdown-menu";
+import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { useEffect, useState } from "react";
 import {
   CLOUD_SPACE_HOME,
@@ -18,7 +25,7 @@ import {
   type CloudSpaceLocation,
   type CloudSpacePage,
 } from "@/lib/cloudSpace";
-import { CloudSpaceCapacity, CloudSpaceIcon } from "./CloudSpacePage";
+import { CloudSpaceCapacity } from "./CloudSpacePage";
 
 export function CloudSpaceNavigation(props: {
   client: CloudSpaceClient;
@@ -28,6 +35,7 @@ export function CloudSpaceNavigation(props: {
   onOpen: (item: CloudSpaceItem) => void;
   onOther: (resource: "projects" | "sources") => void;
   onStorage?: () => void;
+  onNewFolder?: () => void;
 }) {
   const [page, setPage] = useState<CloudSpacePage | null>(null),
     [failed, setFailed] = useState(false),
@@ -47,13 +55,10 @@ export function CloudSpaceNavigation(props: {
       });
     return () => controller.abort();
   }, [client, revision, retry]);
+  const [foldersOpen, setFoldersOpen] = useState(true);
   const categories = [
+    { id: "recent", label: "最近", Icon: Clock3 },
     { id: "all", label: "全部资料", Icon: Layers },
-    { id: "documents", label: "文档与文件", Icon: FileText },
-    { id: "images", label: "图像", Icon: ImageIcon },
-    { id: "sites", label: "站点", Icon: Globe },
-    { id: "uploads", label: "我的上传", Icon: Upload },
-    { id: "outputs", label: "工作产出", Icon: BookOpen },
   ] as const;
   return (
     <div className="cloud-space-navigation">
@@ -86,10 +91,39 @@ export function CloudSpaceNavigation(props: {
           收藏
         </button>
       </nav>
-      {page?.folders.length ? (
-        <>
-          <h3>文件夹</h3>
-          {page.folders.map((item) => (
+      <button
+        type="button"
+        className="cloud-sidebar-destination"
+        aria-current={
+          props.location.category === "sites" && props.location.scope === "all" ? "page" : undefined
+        }
+        onClick={() => props.onNavigate({ ...CLOUD_SPACE_HOME, category: "sites" })}
+      >
+        <Globe className="size-4" />
+        站点
+      </button>
+      <section className="cloud-space-folders">
+        <div className="cloud-space-folder-heading">
+          <button
+            type="button"
+            aria-expanded={foldersOpen}
+            onClick={() => setFoldersOpen((open) => !open)}
+          >
+            <ChevronDown className="size-3.5" data-open={foldersOpen} />
+            文件夹
+          </button>
+          <TooltipButton
+            title="新建文件夹"
+            aria-label="新建文件夹"
+            variant="ghost"
+            size="icon-sm"
+            onClick={props.onNewFolder}
+          >
+            <Plus className="size-4" />
+          </TooltipButton>
+        </div>
+        <div hidden={!foldersOpen}>
+          {page?.folders.map((item) => (
             <button
               type="button"
               className="cloud-sidebar-destination"
@@ -101,41 +135,18 @@ export function CloudSpaceNavigation(props: {
               <span className="truncate">{item.name}</span>
             </button>
           ))}
-        </>
-      ) : null}
-      <h3>工作上下文</h3>
-      <button
-        type="button"
-        className="cloud-sidebar-destination"
-        onClick={() => props.onOther("projects")}
-      >
-        <FolderClosed className="size-4" />
-        项目资料
-      </button>
-      <button
-        type="button"
-        className="cloud-sidebar-destination"
-        onClick={() => props.onOther("sources")}
-      >
-        <Search className="size-4" />
-        研究来源
-      </button>
-      {page?.pinned.length ? (
-        <>
-          <h3>常用资料</h3>
-          {page.pinned.slice(0, 4).map((item) => (
+          {page && !page.folders.length ? (
             <button
               type="button"
-              className="cloud-sidebar-destination"
-              key={item.id}
-              onClick={() => props.onOpen(item)}
+              className="cloud-sidebar-destination cloud-space-new-folder"
+              onClick={props.onNewFolder}
             >
-              <CloudSpaceIcon item={item} />
-              <span className="truncate">{item.name}</span>
+              <Plus className="size-4" />
+              新建文件夹
             </button>
-          ))}
-        </>
-      ) : null}
+          ) : null}
+        </div>
+      </section>
       {failed ? (
         <button
           type="button"
@@ -146,6 +157,24 @@ export function CloudSpaceNavigation(props: {
         </button>
       ) : null}
       <div className="cloud-space-navigation-footer">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<button type="button" className="cloud-sidebar-destination" />}
+          >
+            <MoreHorizontal className="size-4" />
+            更多
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" variant="soft" className="cloud-space-menu">
+            <DropdownMenuItem onClick={() => props.onOther("projects")}>
+              <FolderClosed className="size-4" />
+              项目资料
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => props.onOther("sources")}>
+              <Search className="size-4" />
+              研究来源
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           className="cloud-sidebar-destination"

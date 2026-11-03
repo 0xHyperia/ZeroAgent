@@ -32,12 +32,17 @@ type Props = {
   conversationId?: string;
   initialVersionId?: string;
   initialSite?: boolean;
+  siteAction?: "share" | "settings";
+  siteName?: string;
+  onSiteRename?: (name: string) => Promise<void>;
   isCurrent: () => boolean;
   onClose: () => void;
   onDeleted?: (familyId: string) => void;
   onOpenSourceRun?: (runId: string, conversationId: string) => void;
   // biome-ignore lint/suspicious/noConfusingVoidType: existing hosts return void; false explicitly rejects a reference.
   onContinue?: (version: CloudChatArtifactVersion) => boolean | void;
+  workFromSpace?: boolean;
+  workActive?: boolean;
   onError?: (cause: unknown) => void;
 };
 const buttonClass = buttonVariants({ variant: "outline", size: "sm" });
@@ -267,6 +272,30 @@ export function CloudChatArtifactsPanel(props: Props) {
     }
   }
 
+  if (props.initialSite && selected?.state === "ready")
+    return (
+      <CloudChatSiteView
+        key={`site:${selected.id}`}
+        client={client.sites}
+        artifact={selected}
+        openOnMount
+        isCurrent={valid}
+        workspace={{
+          onClose: props.onClose,
+          onContinue: props.onContinue ? continueWork : undefined,
+          onRequestRevision: props.onRequestRevision
+            ? (comments) =>
+                currentProps.current.onRequestRevision?.(selected, comments) ??
+                Promise.resolve(false)
+            : undefined,
+          versions: familyVersions,
+          onVersion: checkedShow,
+          displayName: props.siteName,
+          onRename: props.onSiteRename,
+          initialAction: props.siteAction,
+        }}
+      />
+    );
   return (
     <CloudChatResourcePanel
       title={
@@ -294,6 +323,15 @@ export function CloudChatArtifactsPanel(props: Props) {
           </ReaderAction>
         ) : selected ? (
           <ResourceTitleMenu name={selected.name}>
+            {props.onContinue ? (
+              <DropdownMenuItem
+                className="gap-2"
+                disabled={busy || selected.state !== "ready"}
+                onClick={continueWork}
+              >
+                与 AI 一起工作
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem className="gap-2" onClick={() => setInspector("details")}>
               <Info className="size-4" />
               文件信息
@@ -378,14 +416,16 @@ export function CloudChatArtifactsPanel(props: Props) {
                 {restoreRequest && !restoreBusy ? "核对恢复状态" : "恢复此版本"}
               </Button>
             ) : null}
-            {props.onContinue && !["docx", "pdf"].includes(resourcePreviewKind(selected)) ? (
+            {props.onContinue &&
+            !props.workActive &&
+            (props.workFromSpace || !["docx", "pdf"].includes(resourcePreviewKind(selected))) ? (
               <Button
                 size="sm"
                 className="cloud-reader-continue-action"
                 disabled={busy || selected.state !== "ready"}
                 onClick={continueWork}
               >
-                继续修改
+                {props.workFromSpace ? "与 AI 一起工作" : "继续修改"}
               </Button>
             ) : null}
             <ReaderAction

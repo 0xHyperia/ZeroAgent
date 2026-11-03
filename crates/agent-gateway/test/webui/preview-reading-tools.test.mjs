@@ -321,3 +321,21 @@ test("sent file cards use the host preview capability without removing the origi
  await app.env.act(async()=>button.click());assert.equal(opened[0],file);assert.match(app.host.textContent,/示例方案.pdf/);
  await app.render(h(UserAttachmentCards,{files:[file]}));assert.equal(app.host.querySelector('[aria-label="预览 示例方案.pdf"]'),null,'hosts without preview capabilities retain display-only cards');
 });
+
+
+test("PDF covers never scroll a parent library while full readers retain page restoration",async t=>{
+ const pdfPage={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
+ const doc={numPages:1,getPage:async()=>pdfPage};
+ const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+ const proto=window.HTMLElement.prototype,original=proto.scrollIntoView;let scrolled=0;
+ proto.scrollIntoView=function(){scrolled++;};t.after(()=>{proto.scrollIntoView=original;});
+ const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
+ const h=app.env.React.createElement,assertCurrent=()=>{};
+ await app.render(h(Reader,{bytes:new Uint8Array([1]),assertCurrent,thumbnail:true}));
+ await app.wait(()=>app.host.querySelector('canvas')?.style.visibility==="visible");
+ await app.env.act(async()=>{await new Promise(requestAnimationFrame);});
+ assert.equal(scrolled,0,"a decoded cover must not jump the outer list to its file row");
+ await app.render(h(Reader,{bytes:new Uint8Array([1]),assertCurrent,thumbnail:false}));
+ await app.env.act(async()=>{await new Promise(requestAnimationFrame);});
+ assert.ok(scrolled>0,"the full reader still restores the visible page after reflow");
+});

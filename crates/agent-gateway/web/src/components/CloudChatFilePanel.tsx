@@ -51,6 +51,8 @@ type Props = {
   toLine?: number;
   canAttach: boolean;
   attached?: boolean;
+  workFromSpace?: boolean;
+  workActive?: boolean;
   isCurrent: () => boolean;
   onClose: () => void;
   // biome-ignore lint/suspicious/noConfusingVoidType: existing hosts return void; false explicitly rejects a reference.
@@ -237,7 +239,7 @@ export function CloudChatFilePanel(props: Props) {
         setError("未能添加引用，请检查草稿中的资料数量或等待当前操作完成。");
         return;
       }
-      currentProps.current.onClose();
+      if (!currentProps.current.workFromSpace) currentProps.current.onClose();
     } catch (cause) {
       report(cause);
     }
@@ -286,12 +288,15 @@ export function CloudChatFilePanel(props: Props) {
             <DropdownMenuItem
               className="gap-2"
               disabled={
-                busy || props.attached || !props.canAttach || !cloudFileCanReference(selected)
+                busy ||
+                (props.attached && !props.workFromSpace) ||
+                !props.canAttach ||
+                !cloudFileCanReference(selected)
               }
               onClick={() => attach(selected)}
             >
               <Plus className="size-4" />
-              引用到消息
+              {props.workFromSpace ? "与 AI 一起工作" : "引用到消息"}
             </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" onClick={() => setDetailsOpen(true)}>
               <Info className="size-4" />
@@ -345,20 +350,33 @@ export function CloudChatFilePanel(props: Props) {
       }
       headerActions={
         selected ? (
-          <ReaderAction
-            variant="ghost"
-            size="icon-sm"
-            data-reader-secondary=""
-            aria-label="下载原件"
-            tooltip="下载原件"
-            disabled={
-              busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
-            }
-            onClick={() => void download(selected)}
-          >
-            <Download className="size-4" />
-            <span className="sr-only">下载原件</span>
-          </ReaderAction>
+          <>
+            {props.workFromSpace && !props.workActive ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="cloud-reader-continue-action"
+                disabled={busy || !props.canAttach || !cloudFileCanReference(selected)}
+                onClick={() => attach(selected)}
+              >
+                与 AI 一起工作
+              </Button>
+            ) : null}
+            <ReaderAction
+              variant="ghost"
+              size="icon-sm"
+              data-reader-secondary=""
+              aria-label="下载原件"
+              tooltip="下载原件"
+              disabled={
+                busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
+              }
+              onClick={() => void download(selected)}
+            >
+              <Download className="size-4" />
+              <span className="sr-only">下载原件</span>
+            </ReaderAction>
+          </>
         ) : undefined
       }
       closeLabel="关闭文件库"

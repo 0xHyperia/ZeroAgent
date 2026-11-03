@@ -30,7 +30,7 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 	q := r.URL.Query()
 	offset := 0
 	for key, values := range q {
-		if len(values) != 1 || !strings.Contains("|q|category|scope|folder|sort|offset|cursor|", "|"+key+"|") {
+		if len(values) != 1 || !strings.Contains("|q|category|scope|folder|sort|offset|cursor|type|origin|", "|"+key+"|") {
 			writeError(w, cloudSpaceAPIError(ErrCloudFileInvalid))
 			return
 		}
@@ -53,7 +53,7 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 	if order == "" {
 		order = "updated"
 	}
-	if len(q.Get("q")) > 200 || !strings.Contains("|all|uploads|outputs|images|documents|sites|", "|"+category+"|") || !strings.Contains("|all|starred|trash|", "|"+scope+"|") || !strings.Contains("|updated|name|size|", "|"+order+"|") {
+	if len(q.Get("q")) > 200 || !strings.Contains("|all|recent|uploads|outputs|images|documents|sites|", "|"+category+"|") || !strings.Contains("|all|starred|trash|", "|"+scope+"|") || !strings.Contains("|updated|name|size|", "|"+order+"|") {
 		writeError(w, cloudSpaceAPIError(ErrCloudFileInvalid))
 		return
 	}
@@ -63,7 +63,7 @@ func (h *HTTPHandler) listCloudSpace(w http.ResponseWriter, r *http.Request, ses
 			return
 		}
 	}
-	page, err := store.QueryCloudSpace(r.Context(), session.UserID, CloudSpaceQuery{Query: q.Get("q"), Category: category, Scope: scope, Folder: q.Get("folder"), Sort: order, Cursor: q.Get("cursor"), Offset: offset})
+	page, err := store.QueryCloudSpace(r.Context(), session.UserID, CloudSpaceQuery{Query: q.Get("q"), Category: category, Scope: scope, Folder: q.Get("folder"), Sort: order, Type: q.Get("type"), Origin: q.Get("origin"), Cursor: q.Get("cursor"), Offset: offset})
 	if err != nil {
 		writeError(w, cloudSpaceAPIError(err))
 		return
