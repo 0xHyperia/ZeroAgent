@@ -16,6 +16,8 @@ func (h *HTTPHandler) registerWebChat(mux *http.ServeMux) {
 	h.registerCloudMemories(mux)
 	h.registerCloudResearchSources(mux)
 	h.registerCloudFiles(mux)
+	mux.HandleFunc("GET /api/web-chat/image-settings", h.withSession(h.cloudImageSettingsResource))
+	mux.HandleFunc("PUT /api/web-chat/image-settings", h.withSession(h.cloudImageSettingsResource))
 	mux.HandleFunc("GET /api/web-settings", h.withSession(h.getWebSettings))
 	mux.HandleFunc("PATCH /api/web-settings", h.withSession(h.updateWebSettings))
 	mux.HandleFunc("GET /api/web-chat/model-limits", h.withSession(h.cloudModelLimitsResource))

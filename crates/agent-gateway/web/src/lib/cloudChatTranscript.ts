@@ -81,6 +81,8 @@ export function cloudChatProcessResources(
 
 function toolLabel(name?: string, fallback?: string) {
   const labels: Record<string, string> = {
+    read_skill: "读取创作技能",
+    generate_image: "创作图像",
     read_file: "读取文件",
     load_uploaded_file: "读取上传资料",
     write_file: "写入文件",

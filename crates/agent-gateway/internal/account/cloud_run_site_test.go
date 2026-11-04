@@ -257,7 +257,7 @@ func TestCloudSiteCapabilityGuidanceAndArtifactFingerprint(t *testing.T) {
 	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
 	tools := []map[string]any{cloudToolFunction("publish_site", "", nil)}
 	guidance := cloudCapabilityGuidance(now, CloudRunModelParameters{}, tools)
-	for _, expected := range []string{"durable publication available: true", "publish_artifact or publish_site", "private", "network egress remains denied", "user explicitly controls sharing"} {
+	for _, expected := range []string{"durable publication available: true", "unless publish_site returns", "private", "network egress remains denied", "user explicitly controls sharing"} {
 		if !strings.Contains(guidance, expected) {
 			t.Fatal("site capabilities misrepresented", expected)
 		}

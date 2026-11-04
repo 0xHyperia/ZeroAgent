@@ -3,6 +3,7 @@ import {
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
 import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
+import { AssistantVisualActivity } from "@liveagent/ui/components/chat/AssistantVisuals";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
@@ -1184,6 +1185,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 {row.deliverables?.length ? (
                   <AssistantDeliverables items={row.deliverables} onOpenFileLink={onOpenFileLink} />
                 ) : null}
+                <AssistantVisualActivity messageId={row.key}/>
                 {isLatestLiveStreaming &&
                 !shouldShowPendingLiveBubble &&
                 retryAttempts &&

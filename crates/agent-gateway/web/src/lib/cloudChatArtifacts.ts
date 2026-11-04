@@ -34,7 +34,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATES = new Set(["staging", "ready", "failed", "unknown", "deleting", "deleted"]);
 export const CLOUD_ARTIFACT_MAX_BYTES = 32 * 1024 * 1024;
 export const CLOUD_ARTIFACT_TEXT_BYTES = 512 * 1024;
-export const CLOUD_ARTIFACT_IMAGE_BYTES = 8 * 1024 * 1024;
+export const CLOUD_ARTIFACT_IMAGE_BYTES = 20 * 1024 * 1024;
 export class CloudChatArtifactError extends Error {
   constructor(
     message: string,

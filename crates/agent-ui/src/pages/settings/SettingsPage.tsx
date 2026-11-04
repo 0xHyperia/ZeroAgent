@@ -266,7 +266,12 @@ export function SettingsPage(props: SettingsPageProps) {
       context={undefined}
       saveState={saveState}
       onBack={onBack}
-      initialSection={initialSection === "image-studio" ? "providers" : initialSection}
+      initialSection={
+        initialSection === "image-studio" &&
+        !extension.sections.some((section) => section.id === "image-studio")
+          ? "providers"
+          : initialSection
+      }
       onSectionChange={(section) => onSectionChange?.(section as typeof initialSection)}
       hiddenSections={hiddenSections}
       fontScale={settings.customSettings.fontScale.settings}

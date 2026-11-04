@@ -54,13 +54,13 @@ func cloudToolResourceSelection(op *CloudToolOperation) *cloudToolResourceSelect
 			return nil
 		}
 		switch op.Name {
-		case "publish_artifact", "publish_site", "web_search", "fetch_page":
+		case "publish_artifact", "publish_site", "generate_image", "web_search", "fetch_page":
 		default:
 			return nil
 		}
 	}
 	switch op.Name {
-	case "publish_artifact", "publish_site":
+	case "publish_artifact", "publish_site", "generate_image":
 		return &cloudToolResourceSelector{kind: "artifact", id: op.ID, role: "output", byOperation: true}
 	case "web_search", "fetch_page":
 		return &cloudToolResourceSelector{kind: "source", id: op.ID, role: "source", byOperation: true}
@@ -237,7 +237,7 @@ func prepareCloudToolPresentation(run *CloudRun, op *CloudToolOperation, resourc
 	}
 	commit, hash, err := prepareCloudRunCommit(CloudRunCommit{
 		OperationID: cloudToolPresentationOperationID(op), EventType: "tool." + state,
-		Payload:               cloudJSON(map[string]any{"tool_id": op.ID, "name": op.Name, "round": round, "resources": resources}),
+		Payload:               cloudJSON(map[string]any{"tool_id": op.ID, "name": op.Name, "round": round, "resources": resources, "status": cloudImageFailureStatus(op)}),
 		presentationResources: resources,
 	})
 	if err != nil {
@@ -329,7 +329,7 @@ func reconcileCloudToolsTx(ctx context.Context, tx *sql.Tx, run *CloudRun, now t
 	if !enabled {
 		return nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id::text,user_id,run_id::text,call_key,name,state,version,created_at,updated_at,
+	rows, err := tx.QueryContext(ctx, `SELECT id::text,user_id,run_id::text,call_key,name,state,version,created_at,updated_at,error_code,
 CASE name WHEN 'read_source' THEN jsonb_build_object('source_id',input->'source_id') WHEN 'load_uploaded_file' THEN jsonb_build_object('file_id',input->'file_id','artifact_version_id',input->'artifact_version_id') ELSE NULL END,
 CASE name WHEN 'load_uploaded_file' THEN jsonb_build_object('file',jsonb_build_object('file_id',result->'file'->'file_id','artifact_version_id',result->'file'->'artifact_version_id')) ELSE NULL END
 FROM zeroagent_cloud_tool_operations WHERE user_id=$1 AND run_id=$2 ORDER BY created_at,id LIMIT 128`, run.UserID, run.ID)
@@ -340,7 +340,7 @@ FROM zeroagent_cloud_tool_operations WHERE user_id=$1 AND run_id=$2 ORDER BY cre
 	for rows.Next() {
 		var op CloudToolOperation
 		var input, result []byte
-		if err = rows.Scan(&op.ID, &op.UserID, &op.RunID, &op.CallKey, &op.Name, &op.State, &op.Version, &op.CreatedAt, &op.UpdatedAt, &input, &result); err != nil {
+		if err = rows.Scan(&op.ID, &op.UserID, &op.RunID, &op.CallKey, &op.Name, &op.State, &op.Version, &op.CreatedAt, &op.UpdatedAt, &op.ErrorCode, &input, &result); err != nil {
 			rows.Close()
 			return err
 		}

@@ -67,6 +67,8 @@ export const CLOUD_CHAT_PRESENTATION_MAX_BYTES = 16 * 1024 * 1024;
 export const CLOUD_CHAT_PRESENTATION_MAX_BLOCKS = 512;
 export const CLOUD_CHAT_REASONING_MAX_BYTES = 1024 * 1024;
 export const CLOUD_CHAT_PUBLIC_TOOLS = new Set([
+  "read_skill",
+  "generate_image",
   "execute_code",
   "execute_command",
   "read_file",

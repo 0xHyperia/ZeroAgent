@@ -595,6 +595,30 @@
       ],
       "security": "复用当前profile资源和同一安装器，目录/搜索均保留公开安全过滤；审核与限流失败不绕过。固定发布者、slug和版本下载，GitHub handoff仅接受固定提交及指定子目录，沿用归档边界和内置保护；失败/取消回收本次临时下载。不迁移或清除用户技能，不执行测试下载的第三方技能。详见ADR0044。",
       "upstream_relation": "adapt"
+    },
+    {
+      "id": "cloudchat-visual-creation",
+      "name": "CloudChat Product Design 与 ImageGen",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": [
+        "webui",
+        "gateway",
+        "android"
+      ],
+      "entrypoints": [
+        "crates/agent-gateway/internal/account/cloud_run_image.go",
+        "crates/agent-gateway/internal/account/cloud_run_skills.go",
+        "crates/agent-gateway/internal/account/cloud_image_settings.go",
+        "crates/agent-ui/src/components/chat/AssistantVisuals.tsx",
+        "crates/agent-gateway/web/src/pages/settings/CloudImageSettingsSection.tsx"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/cloud_image_test.go",
+        "crates/agent-gateway/web/test/cloud-visual-creation.test.mjs"
+      ],
+      "security": "ADR0067：默认生图模型按账户独立保存并使用版本比较更新；固定 USA-Zero Images 接口、密钥归属重验、私有成果配额及不可变编辑。未知结果不自动重发；拒绝供应商任意 URL，切号/切会话清理读取。真实外部模型与受控供应商验收分开。",
+      "upstream_relation": "adapt"
     }
   ]
 }

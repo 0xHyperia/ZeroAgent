@@ -2,6 +2,16 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "{crates/agent-gateway/internal/account/cloud_image*,crates/agent-gateway/internal/account/cloud_run_image.go,crates/agent-gateway/internal/account/cloud_run_skills.go,crates/agent-gateway/internal/account/skills/**,crates/agent-ui/src/components/chat/AssistantVisuals.tsx,crates/agent-ui/src/components/chat/assistant-visuals.css,crates/agent-gateway/web/src/lib/cloudImageSettings.ts,crates/agent-gateway/web/src/pages/settings/CloudImageSettingsSection.tsx}",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "ADR0067：账户默认模型、版本比较、托管目录与密钥归属",
+        "真实 bytes 和不可变成果、配额、未知不重发、原件与草稿保留",
+        "单图/多方案/手机、减少动态与读取释放；受控测试和真实供应商验收区分"
+      ]
+    },
+    {
       "glob": "crates/agent-ui/src/application/{WorkbenchShell.tsx,WorkbenchNavigationMount.tsx,workbenchNavigation.tsx,BrandMark.tsx,SettingsWorkspace.tsx,WorkbenchFeatureSidebar.tsx,workbenchNavigationPortal.ts}",
       "ownership": "zeroagent_owned", "risk": "medium",
       "checks": ["ADR0059 共享外框、导航和品牌，宿主保留状态、回调及独立远程工厂", "设置往返不重挂会话树，轨道单实例、inert/离开守卫及宽窄屏验收"]

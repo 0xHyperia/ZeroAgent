@@ -1,4 +1,5 @@
 export const ZH_CN_SETTINGS_TRANSLATIONS = {
+  "settings.navImageCreation": "图像创作",
   "settings.navAccount": "账号",
   "settings.aiApproval.title": "AI 智能审批",
   "settings.aiApproval.description":

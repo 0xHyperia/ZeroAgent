@@ -32,6 +32,10 @@ type cloudRunPublicSnapshot struct {
 
 func cloudPublicToolStatus(name string) string {
 	switch name {
+	case "generate_image":
+		return "正在创作图像"
+	case "read_skill":
+		return "正在准备创作"
 	case "execute_code":
 		return "正在分析与计算"
 	case "execute_command":

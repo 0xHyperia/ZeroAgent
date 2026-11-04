@@ -32,6 +32,7 @@ import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
@@ -94,6 +95,7 @@ import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPr
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
 import { GatewayTranscript, type GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
+import { CloudChatVisualProvider } from "@/components/cloudchat/CloudChatVisualProvider";
 import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import {
@@ -3498,6 +3500,30 @@ export function CloudChatPage({
     savedDraft.scheduleCapture();
     composerRef.current?.focus();
   }
+  async function editGeneratedImage(item: AssistantDeliverable) {
+    const view = viewRef.current,
+      guard = captureWorkGuard();
+    if (composerLocked || uploadingFiles || resolvingResources) return;
+    try {
+      const version = await artifactsClient.get(item.id);
+      guard();
+      if (!isCurrentView(view) || version.state !== "ready") return;
+      const draft = captureComposerDraft();
+      if (!draft.artifacts.some((artifact) => artifact.id === version.id))
+        draft.artifacts.push(version);
+      if (draft.artifacts.length + draft.files.length > 8) {
+        setContextNotice("本条消息已有 8 项资料，请先移除一项。 ");
+        return;
+      }
+      restoreComposerDraft(draft, view);
+      fillStarter("使用 ImageGen 修改这张图片：");
+      savedDraft.scheduleCapture();
+      composerRef.current?.focus();
+    } catch (cause) {
+      if (isCurrentView(view))
+        setContextNotice(cause instanceof Error ? cause.message : "图片暂不可用，请重新打开。");
+    }
+  }
   async function requestDocumentRevision(
     resource: CloudChatFile | CloudChatArtifactVersion,
     comments: readonly DocumentRevisionComment[],
@@ -4431,137 +4457,152 @@ export function CloudChatPage({
                                   viewportRef={setTranscriptViewport}
                                   className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
                                 >
-                                  <GatewayTranscript
-                                    navRef={transcriptNavigation}
-                                    onAnchorUserRowChange={(rowKey) => {
-                                      const scope = `${user.id}:${conversationId}`;
-                                      setFloorAnchor((previous) =>
-                                        previous.scope === scope && previous.rowKey === rowKey
-                                          ? previous
-                                          : { scope, rowKey },
-                                      );
+                                  <CloudChatVisualProvider
+                                    key={`visuals:${user.id}:${conversationId}`}
+                                    client={artifactsClient}
+                                    messages={messages}
+                                    running={streaming}
+                                    onConfigure={() => {
+                                      setSettingsSection("image-studio");
+                                      setAccountSettingsOpen(true);
                                     }}
-                                    showUsage
-                                    emptyState={
-                                      workingInSpace ? (
-                                        <div className="cloud-space-work-empty">
-                                          <h2>这份资料，你想如何处理？</h2>
-                                          <p>提出目标，在右侧对照原文继续工作。</p>
-                                          <div>
-                                            {[
-                                              ["总结要点", "请总结这份资料的核心内容和关键结论。"],
-                                              [
-                                                "检查并完善",
-                                                "请检查这份资料，指出需要改进的地方，并给出具体建议。",
-                                              ],
-                                              [
-                                                "提取行动项",
-                                                "请根据这份资料提取行动项，列出待确认事项。",
-                                              ],
-                                            ].map(([label, prompt]) => (
-                                              <Button
-                                                key={label}
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => fillStarter(prompt)}
-                                              >
-                                                {label}
-                                              </Button>
-                                            ))}
+                                    onEdit={(item) => void editGeneratedImage(item)}
+                                  >
+                                    <GatewayTranscript
+                                      navRef={transcriptNavigation}
+                                      onAnchorUserRowChange={(rowKey) => {
+                                        const scope = `${user.id}:${conversationId}`;
+                                        setFloorAnchor((previous) =>
+                                          previous.scope === scope && previous.rowKey === rowKey
+                                            ? previous
+                                            : { scope, rowKey },
+                                        );
+                                      }}
+                                      showUsage
+                                      emptyState={
+                                        workingInSpace ? (
+                                          <div className="cloud-space-work-empty">
+                                            <h2>这份资料，你想如何处理？</h2>
+                                            <p>提出目标，在右侧对照原文继续工作。</p>
+                                            <div>
+                                              {[
+                                                [
+                                                  "总结要点",
+                                                  "请总结这份资料的核心内容和关键结论。",
+                                                ],
+                                                [
+                                                  "检查并完善",
+                                                  "请检查这份资料，指出需要改进的地方，并给出具体建议。",
+                                                ],
+                                                [
+                                                  "提取行动项",
+                                                  "请根据这份资料提取行动项，列出待确认事项。",
+                                                ],
+                                              ].map(([label, prompt]) => (
+                                                <Button
+                                                  key={label}
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => fillStarter(prompt)}
+                                                >
+                                                  {label}
+                                                </Button>
+                                              ))}
+                                            </div>
                                           </div>
-                                        </div>
-                                      ) : null
-                                    }
-                                    hasMoreHistory={historyHasMore}
-                                    isLoadingMoreHistory={historyPageLoading}
-                                    onLoadEarlierHistory={() => void loadEarlierHistory()}
-                                    isViewportFollowing={transcriptFollow.isFollowing}
-                                    viewportFollowing={followingTranscript}
-                                    resendCreatesBranch
-                                    conversationId={conversationId}
-                                    rows={transcriptRows}
-                                    editRequest={terminalEditRequest}
-                                    onEditRequestHandled={(token) =>
-                                      setTerminalEditRequest((current) =>
-                                        current?.token === token ? null : current,
-                                      )
-                                    }
-                                    liveStartIndex={
-                                      streaming ? Math.max(0, transcriptRows.length - 1) : -1
-                                    }
-                                    activeTurnKey={streaming ? messages.at(-1)?.id : null}
-                                    footer={
-                                      <>
-                                        {historySelection ? (
-                                          <div
-                                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
-                                            role="status"
-                                          >
-                                            <span>正在查看历史消息附近</span>
-                                            <div className="flex gap-1">
-                                              {historyHasAfter ? (
+                                        ) : null
+                                      }
+                                      hasMoreHistory={historyHasMore}
+                                      isLoadingMoreHistory={historyPageLoading}
+                                      onLoadEarlierHistory={() => void loadEarlierHistory()}
+                                      isViewportFollowing={transcriptFollow.isFollowing}
+                                      viewportFollowing={followingTranscript}
+                                      resendCreatesBranch
+                                      conversationId={conversationId}
+                                      rows={transcriptRows}
+                                      editRequest={terminalEditRequest}
+                                      onEditRequestHandled={(token) =>
+                                        setTerminalEditRequest((current) =>
+                                          current?.token === token ? null : current,
+                                        )
+                                      }
+                                      liveStartIndex={
+                                        streaming ? Math.max(0, transcriptRows.length - 1) : -1
+                                      }
+                                      activeTurnKey={streaming ? messages.at(-1)?.id : null}
+                                      footer={
+                                        <>
+                                          {historySelection ? (
+                                            <div
+                                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
+                                              role="status"
+                                            >
+                                              <span>正在查看历史消息附近</span>
+                                              <div className="flex gap-1">
+                                                {historyHasAfter ? (
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    disabled={historyPageLoading}
+                                                    onClick={() => void loadLaterHistory()}
+                                                  >
+                                                    {historyPageLoading ? "正在读取…" : "后续消息"}
+                                                  </Button>
+                                                ) : null}
                                                 <Button
                                                   variant="ghost"
                                                   size="sm"
-                                                  disabled={historyPageLoading}
-                                                  onClick={() => void loadLaterHistory()}
+                                                  onClick={() => {
+                                                    setHistorySelection(null);
+                                                    transcriptFollow.stickToBottom();
+                                                  }}
                                                 >
-                                                  {historyPageLoading ? "正在读取…" : "后续消息"}
+                                                  返回最新消息
                                                 </Button>
-                                              ) : null}
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                  setHistorySelection(null);
-                                                  transcriptFollow.stickToBottom();
-                                                }}
-                                              >
-                                                返回最新消息
-                                              </Button>
+                                              </div>
                                             </div>
-                                          </div>
-                                        ) : null}
-                                        {terminalFeedback}
-                                      </>
-                                    }
-                                    toolStatus={
-                                      streaming
-                                        ? runConnection === "reconnecting"
-                                          ? "正在重新连接，任务仍在服务端保留"
-                                          : activeRun
-                                            ? cloudChatRunToolStatus(activeRun) ||
-                                              cloudChatRunStatusText(activeRun)
-                                            : "正在保存任务"
-                                        : null
-                                    }
-                                    isStreaming={streaming}
-                                    assistantLiveMode="streaming"
-                                    isLoading={historyLoading}
-                                    hasModels={modelOptions.length > 0}
-                                    onOpenSettings={() => {
-                                      setSettingsSection("providers");
-                                      setAccountSettingsOpen(true);
-                                    }}
-                                    onSuggestionSelect={(text) => {
-                                      composerRef.current?.setText(text);
-                                      savedDraft.scheduleCapture();
-                                      composerRef.current?.focus();
-                                    }}
-                                    onOpenFileLink={openCloudMessageLink}
-                                    onResendFromEdit={
-                                      branchBusy || branchUnconfirmed || streaming
-                                        ? undefined
-                                        : (ref, text, files) =>
-                                            branchConversation(ref, { text, files })
-                                    }
-                                    onBranchConversation={
-                                      branchBusy || branchUnconfirmed || streaming
-                                        ? undefined
-                                        : (ref) => branchConversation(ref)
-                                    }
-                                    branchPendingMessageId={branchPendingMessageId}
-                                  />
+                                          ) : null}
+                                          {terminalFeedback}
+                                        </>
+                                      }
+                                      toolStatus={
+                                        streaming
+                                          ? runConnection === "reconnecting"
+                                            ? "正在重新连接，任务仍在服务端保留"
+                                            : activeRun
+                                              ? cloudChatRunToolStatus(activeRun) ||
+                                                cloudChatRunStatusText(activeRun)
+                                              : "正在保存任务"
+                                          : null
+                                      }
+                                      isStreaming={streaming}
+                                      assistantLiveMode="streaming"
+                                      isLoading={historyLoading}
+                                      hasModels={modelOptions.length > 0}
+                                      onOpenSettings={() => {
+                                        setSettingsSection("providers");
+                                        setAccountSettingsOpen(true);
+                                      }}
+                                      onSuggestionSelect={(text) => {
+                                        composerRef.current?.setText(text);
+                                        savedDraft.scheduleCapture();
+                                        composerRef.current?.focus();
+                                      }}
+                                      onOpenFileLink={openCloudMessageLink}
+                                      onResendFromEdit={
+                                        branchBusy || branchUnconfirmed || streaming
+                                          ? undefined
+                                          : (ref, text, files) =>
+                                              branchConversation(ref, { text, files })
+                                      }
+                                      onBranchConversation={
+                                        branchBusy || branchUnconfirmed || streaming
+                                          ? undefined
+                                          : (ref) => branchConversation(ref)
+                                      }
+                                      branchPendingMessageId={branchPendingMessageId}
+                                    />
+                                  </CloudChatVisualProvider>
                                 </ScrollArea>
                                 {conversationId && !readingOnly ? (
                                   <FloorNavRail
@@ -4656,6 +4697,12 @@ export function CloudChatPage({
                                     }
                                     researchEnabled={runtimeControls.nativeWebSearchEnabled}
                                     onUpload={() => fileRef.current?.click()}
+                                    onCreateImage={() => fillStarter("使用 ImageGen 创建图片：")}
+                                    onProductDesign={() =>
+                                      fillStarter(
+                                        "使用 Product Design 帮我梳理用户任务与布局，探索视觉方案，再按选定方案实现。我的需求是：",
+                                      )
+                                    }
                                     onOpenFiles={(anchor) => openComposerPicker("files", anchor)}
                                     onOpenProjects={(anchor) =>
                                       openComposerPicker("projects", anchor)

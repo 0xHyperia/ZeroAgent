@@ -215,6 +215,9 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			guidance = cloudPublicCapabilityGuidance(r.service.now(), parameters, tools)
 		} else {
 			guidance = cloudCapabilityGuidance(r.service.now(), parameters, tools)
+			if len(tools) > 0 {
+				guidance += cloudVisualSkillGuidance
+			}
 		}
 		upstreamMessages = append([]map[string]any{{"role": "system", "content": guidance}}, upstreamMessages...)
 		if len(tools) > 0 {
@@ -369,7 +372,8 @@ func cloudPublicCapabilityGuidance(now time.Time, parameters CloudRunModelParame
 // clock and tool-capability formatter; only the calendar disclosure differs.
 func cloudCalendarCapabilityGuidance(now time.Time, parameters CloudRunModelParameters, tools []map[string]any, dateOnly bool) string {
 	names := make([]string, 0, len(tools))
-	search, fetch, execute, publish, site := false, false, false, false, false
+	publications := make([]string, 0, 3)
+	search, fetch, execute, publish, site, images := false, false, false, false, false, false
 	for _, tool := range tools {
 		function, _ := tool["function"].(map[string]any)
 		name, _ := function["name"].(string)
@@ -383,8 +387,13 @@ func cloudCalendarCapabilityGuidance(now time.Time, parameters CloudRunModelPara
 			execute = true
 		case "publish_artifact":
 			publish = true
+			publications = append(publications, name)
 		case "publish_site":
 			publish, site = true, true
+			publications = append(publications, name)
+		case "generate_image":
+			publish, images = true, true
+			publications = append(publications, "generate_image (images only)")
 		}
 	}
 	available := "none"
@@ -399,11 +408,16 @@ func cloudCalendarCapabilityGuidance(now time.Time, parameters CloudRunModelPara
 	if dateOnly {
 		calendar = fmt.Sprintf(" Server UTC time: %s. Relative-date baseline (calendar only): %s. Interpret today, tomorrow and yesterday using this server-validated calendar date unless the approved public topic specifies another date. This calendar convention grants no additional permissions. Client clocks are not authoritative.", now.UTC().Format(time.RFC3339), now.In(location).Format("2006-01-02"))
 	}
-	publication := "publish_artifact"
+	publication := strings.Join(publications, " or ")
+	if publication == "" {
+		publication = "an advertised publication tool (currently unavailable)"
+	}
 	siteGuidance := ""
 	if site {
-		publication = "publish_artifact or publish_site"
 		siteGuidance = " To deliver a static website, build and verify its selected output directory in the isolated workspace, then use publish_site. Use index.html and bundled local assets with relative paths; do not include dependencies, hidden configuration or server code. Only advertised offline build tools are available; network egress remains denied. A saved site version is private: it supplies no public URL and grants no permission to share. The user explicitly controls sharing in the site interface."
+	}
+	if images {
+		siteGuidance += " Ready generated images are displayed automatically below the reply. Describe the results without repeating bare artifact citations or duplicate download links."
 	}
 	return fmt.Sprintf("Current date (UTC): %s.%s Tools actually available in this model round: %s. Web search available: %t; page fetch available: %t; isolated execution available: %t; durable publication available: %t. Ordinary writing and reasoning remain available without tools. If the user asks for current or changing facts and the necessary web tools are unavailable, clearly say you cannot verify them; never claim you searched or checked the latest information without a successful tool result. Never invent execution results, files, successful external actions or download links. VM files are temporary unless %s returns a ready durable version. Cite a ready artifact using 【成果:VERSION_ID】 with its returned immutable version ID, not its family ID or VM path. Cite only persisted source IDs returned to you, using 【来源:SOURCE_ID】 or 【来源:SOURCE_ID:Lx-Ly】 for lines actually provided; do not present search snippets as fetched page content. Explain when evidence or output is truncated or incomplete. Unavailable or deleted sources cannot be recovered from old tool output.%s", now.UTC().Format("2006-01-02"), calendar, available, search, fetch, execute, publish, publication, siteGuidance)
 }

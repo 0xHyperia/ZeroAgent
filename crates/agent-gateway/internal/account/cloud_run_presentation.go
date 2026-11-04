@@ -81,6 +81,7 @@ func applyCloudPresentation(run *CloudRun, commit *CloudRunCommit, now time.Time
 		Delta  string          `json:"delta"`
 		ToolID string          `json:"tool_id"`
 		Name   string          `json:"name"`
+		Status string          `json:"status"`
 		Usage  json.RawMessage `json:"usage"`
 	}
 	if json.Unmarshal(commit.Payload, &data) != nil || data.Round < 0 || data.Round > 1024 || !utf8.ValidString(data.Delta) {
@@ -201,6 +202,9 @@ func applyCloudPresentation(run *CloudRun, commit *CloudRunCommit, now time.Time
 				state, status = CloudToolSucceeded, "已完成"
 			case "tool.failed":
 				state, status = CloudToolFailed, "执行失败"
+				if data.Name == "generate_image" && (data.Status == "请先选择默认生图模型" || data.Status == "生图模型暂不可用" || data.Status == "资料空间容量不足") {
+					status = data.Status
+				}
 			case "tool.unknown":
 				state, status = CloudToolUnknown, "结果待确认"
 			case "tool.cancelled":

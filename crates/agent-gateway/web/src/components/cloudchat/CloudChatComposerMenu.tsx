@@ -5,6 +5,8 @@ import {
   Globe,
   Paperclip,
   Plus,
+  ImageIcon,
+  Palette,
 } from "@liveagent/ui/components/IconSet";
 import {
   DropdownMenu,
@@ -26,6 +28,8 @@ export function CloudChatComposerMenu(props: {
   onOpenFiles: (anchor: HTMLElement | null) => void;
   onOpenProjects: (anchor: HTMLElement | null) => void;
   onToggleResearch: () => void;
+  onCreateImage: () => void;
+  onProductDesign: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -84,6 +88,25 @@ export function CloudChatComposerMenu(props: {
           <span>
             <span className="block">选择项目</span>
             <span className="block text-xs text-muted-foreground">使用项目资料与指令</span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="gap-3" onClick={props.onCreateImage}>
+          <ImageIcon className="size-4 shrink-0" />
+          <span>
+            <span className="block">创建图像</span>
+            <span className="block text-xs text-muted-foreground">
+              从想法生成图片，或继续修改参考图
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem className="gap-3" onClick={props.onProductDesign}>
+          <Palette className="size-4 shrink-0" />
+          <span>
+            <span className="block">Product Design</span>
+            <span className="block text-xs text-muted-foreground">
+              梳理体验、探索视觉方案并实现设计
+            </span>
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

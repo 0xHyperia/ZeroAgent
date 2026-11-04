@@ -1,4 +1,5 @@
 export const EN_US_SETTINGS_TRANSLATIONS = {
+  "settings.navImageCreation": "Image creation",
   "settings.navAccount": "Account",
   "settings.aiApproval.title": "AI approval",
   "settings.aiApproval.description":

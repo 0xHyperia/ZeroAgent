@@ -165,6 +165,7 @@ func (e *cloudRunToolExecution) schemas() []map[string]any {
 	}
 	tools = append(tools, e.researchSchemas()...)
 	tools = append(tools, e.historySchemas()...)
+	tools = append(tools, e.visualSchemas()...)
 	return tools
 }
 
@@ -715,6 +716,12 @@ func (e *cloudRunToolExecution) execute(ctx context.Context, round int, call clo
 	}
 	if call.Name == "read_history" {
 		return e.executeHistory(ctx, round, call)
+	}
+	if call.Name == "read_skill" {
+		return e.executeSkill(ctx, round, call)
+	}
+	if call.Name == "generate_image" {
+		return e.executeImage(ctx, round, call)
 	}
 	if !e.executorEnabled {
 		return nil, &cloudToolRunError{code: "cloud_tool_unavailable"}

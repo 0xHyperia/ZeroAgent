@@ -73,6 +73,7 @@ type MemoryStore struct {
 	cloudProjects        *cloudProjectMemoryState
 	cloudMemories        map[string]CloudMemory
 	cloudMemorySettings  map[int64]CloudMemorySettings
+	cloudImageSettings   map[int64]CloudImageSettings
 	sessionRefresh       *memorySessionRefreshState
 	webSettings          map[int64]WebSettings
 	conversationRoutes   map[string]ConversationRoute

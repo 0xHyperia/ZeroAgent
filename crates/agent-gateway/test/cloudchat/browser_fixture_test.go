@@ -34,6 +34,7 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	}
 	evidence := newBrowserFixtureEvidence()
 	workflow := newBrowserToolFixture(t)
+	visuals := newBrowserVisualFixture(t)
 	app := func(w http.ResponseWriter, value any) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": value})
@@ -54,7 +55,9 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		case "/api/v1/app/subscriptions":
 			app(w, []any{})
 		case "/v1/models":
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "gpt-5.1", "object": "model", "owned_by": "fixture"}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "gpt-5.1", "object": "model", "owned_by": "fixture"}, map[string]any{"id": "gpt-image-fixture", "object": "model", "owned_by": "fixture"}}})
+		case "/v1/images/generations", "/v1/images/edits":
+			visuals.serveImage(w, r)
 		case "/v1/chat/completions":
 			w.Header().Set("Content-Type", "text/event-stream")
 			if r.Header.Get("Authorization") != "Bearer fixture-model-key-only" {
@@ -71,7 +74,7 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 				http.Error(w, "invalid synthetic model request", 400)
 				return
 			}
-			if workflow.respondModel(w, body) {
+			if visuals.respondModel(w, body) || workflow.respondModel(w, body) {
 				return
 			}
 			chunks := []string{"这是一份", "本地流式验收回复。\n\n", "- 页面刷新后可以继续查看。\n", "- 任务输出保存在账户历史中。\n", "- 本次没有调用付费模型。"}
@@ -97,6 +100,11 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	}))
 	defer usa.Close()
 	store := account.NewMemoryStore()
+	if os.Getenv("ZEROAGENT_CLOUDCHAT_BROWSER_IMAGE_MODEL") == "1" {
+		if _, err := store.SetCloudImageSettings(context.Background(), 700127, 0, account.CloudImageSettings{ProviderKeyID: 41, Model: "gpt-image-fixture"}); err != nil {
+			t.Fatal("seed isolated image model preference")
+		}
+	}
 	historySeed, err := seedBrowserHistory(context.Background(), store, 700127)
 	if err != nil {
 		t.Fatal("seed synthetic bounded conversation history")
