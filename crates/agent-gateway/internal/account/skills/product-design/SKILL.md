@@ -1,17 +1,20 @@
 ---
 name: product-design
-description: Design or improve a product experience, audit a flow, explore visual directions, or implement a selected visual reference as a responsive interface. Not for unrelated code fixes.
+description: 从理解用户任务到设计、实现和核验，改进完整产品体验。
 ---
 
-# Product Design
+# 产品设计
 
-Work from the user's task and existing product. This is ZeroAgent's built-in workflow; do not imply access to ChatGPT, Figma, Mobbin or unavailable browser plugins.
+围绕用户真正要完成的任务，连接需求、视觉方案、可运行实现和体验核验。默认用用户当前语言，优先中文。基于当前产品与给定参考，不暗示拥有ChatGPT、Figma、Mobbin或当前未提供的浏览器服务。
 
-- **Understand / audit:** inspect supplied screenshots, files or accessible source. Map user tasks, navigation, page structure, desktop/phone layouts, complete journey and key states. Report concrete evidence. Distinguish inspected behavior from inference and say what cannot be verified.
-- **Explore:** for design pictures read `imagegen` and generate real visual directions. Prefer 2–3 distinct alternatives when a choice helps; a selected precise reference needs one faithful direction. Keep identity, hierarchy, typography, spacing, purposeful density and loading/empty/error/hover/focus states coherent. Include phone behavior. Let the user choose a direction when needed; continue independent work meanwhile.
-- **Implement:** inspect existing components and tokens first. Preserve working functions, state and drafts. Build semantic, responsive UI from shared components and real actions. Avoid placeholder buttons, arbitrary card collections, redundant explanations and fake loading progress. Use generated assets where they improve the product.
-- **Refine / deliver:** check actual desktop and phone rendering when tools allow. Verify alignment, typography, overflow, transitions, reduced motion, keyboard focus and full task completion. Save runnable private sites with `publish_site` or real files with `publish_artifact`. Do not claim browser verification or deployment without evidence.
+## 先识别这次工作
+用户要研究需求时读取design-research；要分析现有界面时先读取design-audit；需要视觉方向时读取design-ideate；已有明确参考要实现时读取design-implement；交付前读取design-verify；用户要求保存网站时读取design-share。通过read_skill读取同包匹配指令。创建独立技能时读取skill-creator，不把所有流程强加到每项任务。
 
-Make primary content and the next useful action obvious. Use hierarchy and whitespace before more borders, color or motion. Group controls by task; occasional actions belong in menus. Reserve result dimensions during loading. Motion explains transitions and stays interruptible. Phone is a deliberate single-column flow, not compressed desktop columns.
+## 从参考到结果
+先看实际截图、文件、可访问源码及既有设计规范，梳理用户任务、完整路径、信息结构、桌面/手机布局与关键状态。已有明确参考就忠实实现；方向确实开放时才给2–3个有差别的方案。需要真实设计图或图片资产时先读取imagegen，用generate_image生成实际图片；缺少配置时保留任务并引导设置。
 
-Follow the existing product's confirmed visual language. Reuse its previewers, tooltips, menus, scrollbars, dialogs and selection controls. Suggest improvements when useful, without imposing one style on every product. Keep implementation details out of the user's workflow.
+复用项目的字体、颜色、图标、组件、菜单、阅读器和状态控制。按钮要有真实作用，不能用占位按钮、卡片堆叠、假进度和工程诊断字幕代替产品。包括加载、空、错误、无权限、取消、悬停、焦点和忙碌状态。手机是有优先级的单列流程，键盘、输入法、字号与减少动态都需考虑。
+
+交付时区分代码检查、真实渲染和模型/外部服务运行证据。修复影响完成任务及明显布局的问题，再用同一视口和状态复验。没有浏览器工具就说明无法实看，不把构建成功说成视觉通过。真实文件用publish_artifact；用户要求保存的静态网站使用publish_site私下保存，公开分享仍由用户决定。不伪造链接、验证或部署。
+
+仅使用当前公告的隔离工作区工具，保留账户边界、原草稿、上传文件及运行状态，不授予设备或第三方访问权限。

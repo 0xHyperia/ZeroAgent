@@ -696,6 +696,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.composer.conversationSearchFailed": "Could not search conversation history",
   "chat.composer.conversationLimitReached": "You can reference up to 3 conversations",
   "chat.composer.noMatchingReferenceTypes": "No matching reference types",
+  "chat.composer.noMatchingExtensions": "No matching plugins or resources",
+  "chat.composer.capabilitiesTitle": "Plugins and resources",
   "chat.composer.mentionGroupApps": "Apps",
   "chat.composer.appsHint": "Reference an installed app for computer use",
   "chat.composer.mentionGroupFiles": "Files",

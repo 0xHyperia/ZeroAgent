@@ -4,14 +4,18 @@ import {
   AppWindow,
   ArrowLeft,
   Blend,
+  BookOpen,
   ChevronRight,
+  FolderOpen,
   MessageSquareText,
   Paperclip,
   Terminal,
 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { extensionReferencePresentation } from "@liveagent/ui/lib/extensions/presentation";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { Fragment, type RefObject, useEffect, useRef } from "react";
+import { ExtensionMark } from "../../features/extensions/ExtensionMark";
 import { Popover, PopoverContent } from "../ui/popover";
 import { PreviewCard, PreviewCardContent } from "../ui/preview-card";
 import {
@@ -43,6 +47,7 @@ export function Popup({
   anchorRef,
   trigger,
   mode,
+  capabilityMenu = false,
   suggestions,
   highlightIndex,
   isLoading,
@@ -57,6 +62,7 @@ export function Popup({
   anchorRef: RefObject<HTMLElement | null>;
   trigger: MentionContext["trigger"];
   mode: MentionMenuMode;
+  capabilityMenu?: boolean;
   suggestions: MentionSuggestion[];
   highlightIndex: number;
   isLoading: boolean;
@@ -97,12 +103,15 @@ export function Popup({
           anchorRef.current?.closest<HTMLElement>(".composer-glass-card") ?? anchorRef.current
         }
         positionMethod="fixed"
-        side="top"
+        side={capabilityMenu ? "bottom" : "top"}
         align="start"
         sideOffset={8}
         initialFocus={false}
         finalFocus={false}
-        className="flex max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-0 flex-col overflow-hidden p-1"
+        className={cn(
+          "flex max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-0 flex-col overflow-hidden p-1",
+          capabilityMenu && "composer-capability-menu",
+        )}
         onMouseDown={(event) => {
           // Any mousedown inside the popup must not blur the editor (blur closes
           // the mention session), except on the native scrollbar strip where
@@ -119,7 +128,7 @@ export function Popup({
           event.preventDefault();
         }}
       >
-        <div className="mb-0.5 shrink-0">
+        <div className={cn("mb-0.5 shrink-0", capabilityMenu && "hidden")}>
           {(trigger !== "file" && trigger !== "command") || mode === "root" ? (
             <div
               className={cn(
@@ -168,20 +177,23 @@ export function Popup({
           ref={listRef}
           role="listbox"
           aria-label={
-            trigger === "command"
-              ? t("chat.commands.title")
-              : trigger === "skill"
-                ? t("chat.composer.skillsTitle")
-                : mode === "root"
-                  ? t("chat.composer.add")
-                  : mode === "apps"
-                    ? t("chat.composer.mentionGroupApps")
-                    : mode === "files"
-                      ? t("chat.composer.filesAndFolders")
-                      : t("chat.composer.conversations")
+            capabilityMenu
+              ? t("chat.composer.capabilitiesTitle")
+              : trigger === "command"
+                ? t("chat.commands.title")
+                : trigger === "skill"
+                  ? t("chat.composer.skillsTitle")
+                  : mode === "root"
+                    ? t("chat.composer.add")
+                    : mode === "apps"
+                      ? t("chat.composer.mentionGroupApps")
+                      : mode === "files"
+                        ? t("chat.composer.filesAndFolders")
+                        : t("chat.composer.conversations")
           }
           className={cn(
             "relative flex min-h-0 max-h-60 flex-col gap-0.5 overflow-y-auto overscroll-contain",
+            capabilityMenu && "composer-capability-list",
             "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:size-0",
           )}
         >
@@ -196,12 +208,57 @@ export function Popup({
             <div className="flex h-8 items-center px-2 text-xs text-destructive">{error}</div>
           )}
           {suggestions.map((suggestion, i) => {
+            if (suggestion.type === "action" || suggestion.type === "extension") {
+              const action = suggestion.type === "action" ? suggestion.action : null;
+              const skill = suggestion.type === "extension" ? suggestion.skill : null;
+              const name = action?.name ?? skill?.displayName ?? skill?.name ?? "";
+              const description = action?.description ?? skill?.description;
+              const ActionIcon =
+                action?.icon === "library"
+                  ? BookOpen
+                  : action?.icon === "project"
+                    ? FolderOpen
+                    : Paperclip;
+              const packageId = skill?.skillFile.match(/^zeroagent-skill:([a-z0-9-]+)\//)?.[1];
+              return (
+                <button
+                  key={action ? `action:${action.id}` : `extension:${skill?.skillFile}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === highlightIndex}
+                  ref={i === highlightIndex ? hlRef : undefined}
+                  className="composer-capability-option"
+                  title={`${name}${description ? `\n${description}` : ""}`}
+                  onMouseMove={() => {
+                    if (i !== highlightIndex) {
+                      skipScrollRef.current = true;
+                      onHighlight(i);
+                    }
+                  }}
+                  onClick={() => onSelect(suggestion)}
+                >
+                  <span className="composer-capability-icon" aria-hidden="true">
+                    {action ? (
+                      <ActionIcon className="size-4" />
+                    ) : (
+                      <ExtensionMark id={packageId ?? ""} small />
+                    )}
+                  </span>
+                  <span className="composer-capability-name">{name}</span>
+                  <span className="composer-capability-description">{description}</span>
+                </button>
+              );
+            }
             if (suggestion.type === "command") {
               const { command } = suggestion;
               const previous = suggestions[i - 1];
               const showGroupHeader =
                 previous?.type !== "command" || previous.command.group !== command.group;
               const CommandIcon = command.kind === "skill" ? Blend : Terminal;
+              const brand =
+                command.kind === "skill"
+                  ? extensionReferencePresentation(command.skill.skillFile)
+                  : undefined;
               return (
                 <Fragment key={`command:${command.kind}:${command.name}`}>
                   {showGroupHeader ? (
@@ -241,11 +298,17 @@ export function Popup({
                     }}
                   >
                     <span className="flex size-4 shrink-0 items-center justify-center text-foreground/85">
-                      <CommandIcon className="size-4" />
+                      {brand ? (
+                        <img src={brand.image} alt="" className="size-4 object-contain" />
+                      ) : (
+                        <CommandIcon className="size-4" />
+                      )}
                     </span>
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="shrink-0 truncate font-normal text-foreground/95">
-                        {command.kind === "skill" ? command.name : `/${command.name}`}
+                        {command.kind === "skill"
+                          ? command.skill.displayName || command.name
+                          : `/${command.name}`}
                         {command.kind !== "skill" && command.argumentHint ? (
                           <span className="text-muted-foreground/75"> {command.argumentHint}</span>
                         ) : null}
@@ -267,6 +330,7 @@ export function Popup({
             const isApp = suggestion.type === "app";
             const entry = suggestion.type === "file" ? suggestion.entry : null;
             const skill = suggestion.type === "skill" ? suggestion.skill : null;
+            const skillBrand = skill ? extensionReferencePresentation(skill.skillFile) : undefined;
             const app = suggestion.type === "app" ? suggestion.app : null;
             const isDir = entry?.kind === "dir";
             const parts = entry ? entry.path.split("/") : [];
@@ -286,7 +350,7 @@ export function Popup({
                       ? t("chat.commands.groupCommands")
                       : category === "skills"
                         ? t("chat.composer.skillsTitle")
-                        : (conversation?.title ?? skill?.name ?? fileName));
+                        : (conversation?.title ?? skill?.displayName ?? skill?.name ?? fileName));
             const updatedAtLabel = conversationUpdatedAtLabel(conversation?.updatedAt, locale);
             const subtitle =
               category === "apps"
@@ -366,6 +430,8 @@ export function Popup({
                     ) : (
                       <AppWindow className="size-4" />
                     )
+                  ) : skillBrand ? (
+                    <img src={skillBrand.image} alt="" className="size-4 object-contain" />
                   ) : RowIcon ? (
                     <RowIcon width={16} height={16} />
                   ) : (

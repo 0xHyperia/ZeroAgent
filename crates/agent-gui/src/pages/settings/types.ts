@@ -43,6 +43,7 @@ export type SettingsPageProps = {
   setSettings: SetSettingsFn;
   saveState: SettingsSaveState;
   onBack: () => void;
+  backLabel?: string;
   initialSection?: SectionId;
   onSectionChange?: (section: SectionId) => void;
   initialProviderId?: string;

@@ -269,6 +269,11 @@ test("the real worker-backed grid survives reverse scrolling inside the shared R
     document.elementsFromPoint = () => [foreign, end];
     await env.act(async () => {
       pointer("pointerdown", start, { clientX: 60, clientY: 210 });
+      // Native pointer events arrive as separate tasks. Let the React/Preact
+      // bridge commit pointerdown before dispatching the following drag events.
+      await settle();
+    });
+    await env.act(async () => {
       pointer("pointermove", start, { clientX: 400, clientY: 220 });
       pointer("pointerup", window, { clientX: 400, clientY: 220 });
       await settle();

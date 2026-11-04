@@ -321,6 +321,19 @@ func (e *cloudRunToolExecution) saveGeneratedImage(ctx context.Context, op *Clou
 }
 
 func (e *cloudRunToolExecution) executeImage(ctx context.Context, round int, call cloudModelToolCall) (json.RawMessage, error) {
+	packages, err := e.skillCatalog(ctx)
+	if err != nil {
+		return nil, &cloudToolRunError{code: "skill_unavailable"}
+	}
+	enabled := false
+	for _, p := range packages {
+		if p.ID == "imagegen" && cloudExtensionSkillEnabled(p, "imagegen") {
+			enabled = true
+		}
+	}
+	if !enabled {
+		return nil, &cloudToolRunError{code: "skill_unavailable"}
+	}
 	v, err := parseCloudImageRequest(call.Arguments)
 	if err != nil {
 		return nil, &cloudToolRunError{code: "model_tool_invalid"}

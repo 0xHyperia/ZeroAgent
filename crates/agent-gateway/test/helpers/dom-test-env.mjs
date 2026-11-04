@@ -66,6 +66,15 @@ export async function createWebDomTestEnv(options = {}) {
     act: React.act,
     createRoot: ReactDOMClient.createRoot,
     loadModule: loader.loadModule,
+    async waitFor(check, description = "DOM condition", timeoutMs = 2000) {
+      const deadline = Date.now() + timeoutMs;
+      while (!check()) {
+        if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`);
+        await React.act(async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        });
+      }
+    },
     cleanup() {
       for (const [key, descriptor] of previous) {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);

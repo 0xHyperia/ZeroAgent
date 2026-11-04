@@ -26,6 +26,7 @@ import {
   formatFileMentionToken,
   formatMarkdownReferenceDestination,
 } from "@liveagent/ui/lib/chat/mentionReferences";
+import { extensionReferencePresentation } from "@liveagent/ui/lib/extensions/presentation";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { mentionChipClassName } from "./mentionChipStyles";
 
@@ -264,6 +265,9 @@ export function collectDraftSegments(
               skillFile,
               baseDir,
               description: el.getAttribute(SKILL_MENTION_DESCRIPTION_ATTR)?.trim() ?? "",
+              ...(el.getAttribute("data-skill-display-name")
+                ? { displayName: el.getAttribute("data-skill-display-name") ?? "" }
+                : {}),
             },
           });
           childIsLogical = true;
@@ -797,16 +801,29 @@ export function normalizeClipboardSkill(
   const baseDir = clipboardString(rawSkill, "baseDir").trim().replace(/\\/g, "/");
   if (!name || !skillFile || !baseDir) return null;
 
-  const enabledSkill = enabledSkills.find(
-    (candidate) =>
-      candidate.name === name &&
-      candidate.skillFile.trim().replace(/\\/g, "/") === skillFile &&
-      candidate.baseDir.trim().replace(/\\/g, "/") === baseDir,
-  );
+  const pinned = /^zeroagent-skill:([a-z0-9-]+)\/([1-9][0-9]{0,8})\/([a-z0-9-]+)$/.exec(skillFile);
+  const enabledSkill = enabledSkills.find((candidate) => {
+    if (candidate.name !== name || candidate.baseDir.trim().replace(/\\/g, "/") !== baseDir)
+      return false;
+    const currentFile = candidate.skillFile.trim().replace(/\\/g, "/");
+    if (currentFile === skillFile) return true;
+    const current = /^zeroagent-skill:([a-z0-9-]+)\/([1-9][0-9]{0,8})\/([a-z0-9-]+)$/.exec(
+      currentFile,
+    );
+    return (
+      baseDir === "cloud" &&
+      pinned &&
+      current &&
+      pinned[1] === current[1] &&
+      pinned[3] === name &&
+      current[3] === name &&
+      Number(pinned[2]) <= Number(current[2])
+    );
+  });
   if (!enabledSkill) {
     return { type: "text", text: `/${name}` };
   }
-  return { type: "skillMention", skill: enabledSkill };
+  return { type: "skillMention", skill: { ...enabledSkill, skillFile } };
 }
 
 export function normalizeClipboardCommit(
@@ -1521,14 +1538,19 @@ export function createFileMentionChip(path: string, kind: FileMentionKind) {
   return chip;
 }
 
-export function insertMentionChipElement(ctx: MentionContext, chip: HTMLElement) {
+export function insertMentionChipElement(
+  ctx: MentionContext,
+  chip: HTMLElement,
+  separateText = false,
+) {
   const { textNode, triggerOffset, query } = ctx;
   const text = textNode.textContent || "";
   const parent = textNode.parentNode;
   if (!parent) return;
 
   const beforeText = text.slice(0, triggerOffset);
-  const afterRaw = text.slice(triggerOffset + 1 + query.length);
+  const suffix = text.slice(triggerOffset + 1 + query.length);
+  const afterRaw = separateText && !/^\s/.test(suffix) ? ` ${suffix}` : suffix;
   const anchor = createCaretAnchorText(afterRaw);
   const afterNode = document.createTextNode(anchor.text);
 
@@ -1565,18 +1587,49 @@ export function createSkillMentionChip(skill: MentionComposerSkillMention) {
   chip.setAttribute(SKILL_MENTION_FILE_ATTR, skill.skillFile);
   chip.setAttribute(SKILL_MENTION_BASE_DIR_ATTR, skill.baseDir);
   chip.setAttribute(SKILL_MENTION_DESCRIPTION_ATTR, skill.description);
+  if (skill.displayName) chip.setAttribute("data-skill-display-name", skill.displayName);
   chip.contentEditable = "false";
-  chip.className = mentionChipClassName("skill", { selectable: false });
-  chip.title = skill.description ? `${skill.name}\n${skill.description}` : skill.name;
+  const cloudReference = /^zeroagent-skill:[a-z0-9-]+\/[1-9][0-9]*\/[a-z0-9-]+$/.test(
+    skill.skillFile,
+  );
+  chip.className = cloudReference
+    ? "mention-chip mention-extension cursor-default select-none"
+    : mentionChipClassName("skill", { selectable: false });
+  const presentation = extensionReferencePresentation(skill.skillFile);
+  const label = presentation?.name || skill.displayName || skill.name;
+  if (presentation) chip.setAttribute("data-skill-display-name", label);
+  chip.title = skill.description ? `${label}\n${skill.description}` : label;
 
-  chip.appendChild(createSkillMentionIcon());
-  chip.appendChild(document.createTextNode(skill.name));
+  const icon = cloudReference ? document.createElement("span") : chip;
+  if (cloudReference) {
+    icon.className = "extension-mention-icon";
+    icon.setAttribute("aria-hidden", "true");
+  }
+  if (presentation) {
+    const image = document.createElement("img");
+    image.src = presentation.image;
+    image.alt = "";
+    image.width = 16;
+    image.height = 16;
+    image.draggable = false;
+    image.setAttribute("aria-hidden", "true");
+    image.style.cssText = "display:block;flex-shrink:0;object-fit:contain";
+    icon.appendChild(image);
+  } else icon.appendChild(createSkillMentionIcon());
+  if (cloudReference) chip.appendChild(icon);
+  chip.appendChild(document.createTextNode(label));
   return chip;
 }
 
 export function insertSkillMentionChip(ctx: MentionContext, skill: MentionComposerSkill) {
   const chip = createSkillMentionChip(skill);
-  insertMentionChipElement(ctx, chip);
+  insertMentionChipElement(
+    ctx,
+    chip,
+    ctx.trigger === "file" &&
+      skill.baseDir === "cloud" &&
+      skill.skillFile.startsWith("zeroagent-skill:"),
+  );
 }
 
 export function createConversationMentionChip(

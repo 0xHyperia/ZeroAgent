@@ -97,25 +97,30 @@ test("a server-verified original can be loaded in an isolated workspace without 
  const client=api.createCloudChatFilesClient(async()=>Response.json({file:record({workspace_loadable:"yes"})}),safe);await assert.rejects(client.get(ID),/无效/);
 });
 
-async function mountReader(t, {fromLine, attachResult=false}={}) {
- let env,closed=0;const attached=[];
+async function mountReader(t, {fromLine, attachResult=false,recordOverrides={}}={}) {
+ let env,closed=0,sourceReads=0;const attached=[];
  const capture=()=>()=>undefined;
  const icons=new Proxy({},{get:()=>()=>null});
  const mocks={
   "@liveagent/ui/components/IconSet":icons,
   [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,
   "@/lib/accountRequest":{captureAccountRequestGuard:capture},
-  "@liveagent/ui/components/resource-preview/ResourcePreview":{ResourcePreview:()=>env.React.createElement("div",{"data-file-preview":""},"文件正文")},
+  "@liveagent/ui/components/resource-preview/ResourcePreview":{ResourcePreview:props=>env.React.createElement("div",{"data-file-preview":"","data-source-from":props.sourceRange?.fromLine},"文件正文")},
   [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.title,props.subtitle,props.headerActions),props.children,props.details)},
  };
  env=await createWebDomTestEnv({mocks});
  const {CloudChatFilePanel}=env.loadModule("src/components/CloudChatFilePanel.tsx");
- const client={get:async()=>record(),source:async()=>({from_line:fromLine??1,to_line:3,total_lines:3,lines:[{line:fromLine??1,text:"资料原文"}]}),download:async()=>{throw new Error("unexpected download");}};
+ const client={get:async()=>record(recordOverrides),source:async()=>{sourceReads++;return {from_line:fromLine??1,to_line:3,total_lines:3,lines:[{line:fromLine??1,text:"资料原文"}]};},download:async()=>{throw new Error("unexpected download");}};
  const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  await env.act(async()=>{root.render(env.React.createElement(CloudChatFilePanel,{client,initialFileId:ID,fromLine,canAttach:true,isCurrent:()=>true,onClose:()=>closed++,onAttach:file=>{attached.push(file.id);return attachResult;},onDeleted(){},onError(){}}));await flush();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
- return {env,host,client,attached,get closed(){return closed;},set attachResult(value){attachResult=value;},async click(label){const button=[...host.querySelectorAll("button")].find(item=>item.textContent===label);assert.ok(button,label);await env.act(async()=>{button.click();await flush();});}};
+ return {env,host,client,attached,get closed(){return closed;},get sourceReads(){return sourceReads;},set attachResult(value){attachResult=value;},async click(label){
+   let button=[...document.querySelectorAll('button,[role="menuitem"]')].find(item=>item.textContent.trim()===label);
+   if(!button){const trigger=host.querySelector('[aria-label^="文件菜单："]');assert.ok(trigger,'file title menu');await env.act(async()=>{trigger.click();await flush();});button=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent.trim()===label);}
+   assert.ok(button,label);const menuItem=button.getAttribute('role')==='menuitem';await env.act(async()=>{button.click();await flush();});
+   if(menuItem) await env.waitFor(()=>!document.querySelector('[role="menu"]'),'file menu to close');
+ }};
 }
 
 test("a rejected file reference stays in the reader with local feedback; a successful reference closes it",async t=>{
@@ -125,21 +130,29 @@ test("a rejected file reference stays in the reader with local feedback; a succe
  app.attachResult=undefined;await app.click("引用到消息");assert.equal(app.closed,1,"existing void-returning hosts remain compatible");
 });
 
-test("file source is collapsed for ordinary reading and opened for an explicit line citation",async t=>{
- const app=await mountReader(t);assert.equal(app.host.querySelector("details").open,false);
- await app.env.act(async()=>{app.host.querySelector('[aria-label="文件更多操作"]').click();await new Promise(resolve=>setImmediate(resolve));});
- const source=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent==="查看原文");assert.ok(source);
- await app.env.act(async()=>{source.click();await new Promise(resolve=>setImmediate(resolve));});assert.equal(app.host.querySelector("details").open,true);
+test("ordinary text uses the shared reader without a duplicate excerpt request",async t=>{
+ const app=await mountReader(t);assert.equal(app.sourceReads,0);assert.equal(Boolean(app.host.querySelector('details')),false);
+ assert.equal(app.host.querySelector('[data-file-preview]').getAttribute('data-source-from'),null);
+});
+
+test("a cited text file sends its exact line to the shared reader rather than opening a second excerpt",async t=>{
+ const app=await mountReader(t,{fromLine:2});assert.equal(app.sourceReads,0);assert.equal(Boolean(app.host.querySelector('details')),false);
+ assert.equal(app.host.querySelector('[data-file-preview]').getAttribute('data-source-from'),'2');
+});
+
+test("a server excerpt is collapsed for ordinary PDF reading and opens from its summary",async t=>{
+ const app=await mountReader(t,{recordOverrides:{name:'notes.pdf',mime:'application/pdf'}});assert.equal(app.host.querySelector("details").open,false);
+ await app.env.act(async()=>{app.host.querySelector('summary').click();await new Promise(resolve=>setImmediate(resolve));});assert.equal(app.host.querySelector("details").open,true);
 });
 
 test("opening a cited file keeps the requested original lines expanded",async t=>{
- const app=await mountReader(t,{fromLine:2});assert.equal(app.host.querySelector("details").open,true);assert.match(app.host.querySelector("summary").textContent,/第 2–3 行/);
+ const app=await mountReader(t,{fromLine:2,recordOverrides:{name:'notes.pdf',mime:'application/pdf'}});assert.equal(app.host.querySelector("details").open,true);assert.match(app.host.querySelector("summary").textContent,/第 2–3 行/);
 });
 
 
 test("file reading menu keeps contextual actions and opening details preserves the preview",async t=>{
  const app=await mountReader(t);const preview=app.host.querySelector("[data-file-preview]");
- await app.env.act(async()=>{app.host.querySelector('[aria-label="文件更多操作"]').click();await new Promise(resolve=>setImmediate(resolve));});
+ await app.env.act(async()=>{app.host.querySelector('[aria-label^="文件菜单："]').click();await new Promise(resolve=>setImmediate(resolve));});
  const items=[...document.querySelectorAll('[role="menuitem"]')];
  assert.ok(!items.some(item=>/刷新状态|全部文件/.test(item.textContent)));
  await app.env.act(async()=>{items.find(item=>item.textContent==="文件信息").click();await new Promise(resolve=>setImmediate(resolve));});

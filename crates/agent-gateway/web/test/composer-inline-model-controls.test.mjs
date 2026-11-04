@@ -54,7 +54,7 @@ test("the model area directly opens the current group; model browsing reveals th
   assert.equal(app.host.querySelectorAll("button").length, 2);
   assert.equal(app.trigger().querySelector("[data-brand-model]").getAttribute("data-brand-model"), "gpt-6.1");
   await app.click(app.trigger());
-  assert.equal(document.querySelector('input[type="range"]'), null);
+  assert.equal(Boolean(document.querySelector('input[type="range"]')), false);
   const group = () => document.querySelector('[data-model-group="b"]');
   assert.equal(group().getAttribute("aria-expanded"), "true");
   assert.equal(document.querySelector('[data-model-option][aria-pressed="true"]').getAttribute("data-model-id"), "gpt-6.1");
@@ -70,7 +70,8 @@ test("the model area directly opens the current group; model browsing reveals th
   await app.click(document.querySelector('[data-model-route="a::gpt-6.1"]'));
   assert.deepEqual(app.models, [{ customProviderId: "a", model: "gpt-6.1" }]);
   assert.deepEqual(app.patches, []);
-  assert.equal(document.querySelector("[data-model-picker-content]"), null);
+  await app.env.waitFor(()=>!document.querySelector('[data-model-picker-content]'),'model picker to finish closing after selection');
+  assert.equal(Boolean(document.querySelector("[data-model-picker-content]")), false);
 });
 
 test("the discrete slider previews while dragging, commits once on release, supports off/reset, and never invents an Ultra level", async t => {
@@ -79,7 +80,7 @@ test("the discrete slider previews while dragging, commits once on release, supp
   await app.slide(4, null);
   assert.deepEqual(app.patches, [], "dragging previews without patching every input event");
   assert.equal(document.querySelector('input[type="range"]').getAttribute("aria-valuetext"), "最高 · GPT 6.1");
-  assert.equal(document.querySelector("[data-maximum]"), null, "maximum effort does not impersonate Ultra execution");
+  assert.equal(Boolean(document.querySelector("[data-maximum]")), false, "maximum effort does not impersonate Ultra execution");
   await app.slide(4, "pointerup");
   assert.deepEqual(app.patches, [{ thinkingEnabled: true, reasoning: "max" }]);
   assert.ok(document.querySelector('input[type="range"]'), "adjustment keeps the popup open");
@@ -105,7 +106,7 @@ test("Escape cancels a slider preview; mandatory thinking omits off and touch mo
   assert.equal(slider.max, "1");
   assert.equal(slider.getAttribute("aria-valuetext"), "标准 · GPT 6.1");
   await app.slide(1, null);
-  assert.equal(document.querySelector("[data-maximum]"), null, "high is not presented as max");
+  assert.equal(Boolean(document.querySelector("[data-maximum]")), false, "high is not presented as max");
   await app.env.act(async () => { slider.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick(); });
   assert.deepEqual(app.patches, []);
   await app.click(app.trigger());
@@ -146,7 +147,7 @@ test("the two targets share one popup, switch directly while open and keep conte
   await app.click(app.effortTrigger());
   assert.equal(document.querySelectorAll('[data-slot="popover-content"]').length, 1);
   assert.ok(document.querySelector('input[type="range"]'));
-  assert.equal(document.querySelector("[data-model-picker-content]"), null);
+  assert.equal(Boolean(document.querySelector("[data-model-picker-content]")), false);
   const help = document.querySelector('.composer-reasoning-help');
   assert.equal(help.getAttribute('aria-expanded'), 'false');
   await app.click(help);
@@ -169,7 +170,7 @@ test("an external /model request opens the model list, and a preview cannot leak
   const app = await setup(t);
   await app.externalOpen();
   assert.ok(document.querySelector('[data-model-picker-content]'));
-  assert.equal(document.querySelector('input[type="range"]'), null);
+  assert.equal(Boolean(document.querySelector('input[type="range"]')), false);
   await app.click(app.effortTrigger());
   await app.slide(4, null);
   await app.replaceModel('a::gpt-6.1');

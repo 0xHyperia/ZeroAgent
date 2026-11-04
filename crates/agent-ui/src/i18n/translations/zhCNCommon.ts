@@ -649,6 +649,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.composer.conversationSearchFailed": "无法搜索历史会话",
   "chat.composer.conversationLimitReached": "每条消息最多引用 3 个历史会话",
   "chat.composer.noMatchingReferenceTypes": "未找到匹配的引用类型",
+  "chat.composer.noMatchingExtensions": "未找到匹配的插件或资料入口",
+  "chat.composer.capabilitiesTitle": "插件与资料",
   "chat.composer.mentionGroupApps": "应用",
   "chat.composer.appsHint": "引用已安装应用以便进行电脑操作",
   "chat.composer.mentionGroupFiles": "文件",

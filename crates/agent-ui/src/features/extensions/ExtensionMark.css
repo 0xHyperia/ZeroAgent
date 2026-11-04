@@ -1,0 +1,32 @@
+.za-extension-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+}
+.za-extension-mark[data-logo="true"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.za-extension-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.za-extension-mark-small {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.za-extension-mark-small svg {
+  width: 14px;
+  height: 14px;
+}

@@ -1,12 +1,12 @@
 import {
   BookOpen,
+  ChartColumn,
   Check,
   FolderOpen,
   Globe,
+  Palette,
   Paperclip,
   Plus,
-  ImageIcon,
-  Palette,
 } from "@liveagent/ui/components/IconSet";
 import {
   DropdownMenu,
@@ -18,6 +18,13 @@ import {
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { SegmentedControl } from "@liveagent/ui/components/ui/segmented-control";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { ExtensionMark } from "@liveagent/ui/features/extensions/ExtensionMark";
+import {
+  type ExtensionPackage,
+  type ExtensionSkill,
+  extensionSkillEnabled,
+} from "@liveagent/ui/features/extensions/extensionTypes";
+import { extensionDisplayName } from "@liveagent/ui/lib/extensions/presentation";
 import { useRef, useState } from "react";
 
 export function CloudChatComposerMenu(props: {
@@ -30,6 +37,10 @@ export function CloudChatComposerMenu(props: {
   onToggleResearch: () => void;
   onCreateImage: () => void;
   onProductDesign: () => void;
+  onCustomize: () => void;
+  extensions?: ExtensionPackage[];
+  onTryExtension?: (pkg: ExtensionPackage, skill: ExtensionSkill) => void;
+  onDataAnalysis?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -91,25 +102,62 @@ export function CloudChatComposerMenu(props: {
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="gap-3" onClick={props.onCreateImage}>
-          <ImageIcon className="size-4 shrink-0" />
-          <span>
-            <span className="block">创建图像</span>
-            <span className="block text-xs text-muted-foreground">
-              从想法生成图片，或继续修改参考图
-            </span>
-          </span>
-        </DropdownMenuItem>
-        <DropdownMenuItem className="gap-3" onClick={props.onProductDesign}>
-          <Palette className="size-4 shrink-0" />
-          <span>
-            <span className="block">Product Design</span>
-            <span className="block text-xs text-muted-foreground">
-              梳理体验、探索视觉方案并实现设计
-            </span>
-          </span>
+        {props.extensions ? (
+          props.extensions
+            .filter((pkg) => extensionSkillEnabled(pkg, pkg.skills[0]))
+            .map((pkg) => (
+              <DropdownMenuItem
+                key={pkg.id}
+                className="gap-3"
+                onClick={() => props.onTryExtension?.(pkg, pkg.skills[0])}
+              >
+                <ExtensionMark id={pkg.id} small />
+                <span>
+                  <span className="block">{extensionDisplayName(pkg)}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {pkg.description}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            ))
+        ) : (
+          <>
+            <DropdownMenuItem className="gap-3" onClick={props.onCreateImage}>
+              <ExtensionMark id="imagegen" small />
+              <span>
+                <span className="block">生成图像</span>
+                <span className="block text-xs text-muted-foreground">
+                  从想法生成图片，或继续修改参考图
+                </span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-3" onClick={props.onProductDesign}>
+              <ExtensionMark id="product-design" small />
+              <span>
+                <span className="block">产品设计</span>
+                <span className="block text-xs text-muted-foreground">
+                  梳理体验、探索视觉方案并实现设计
+                </span>
+              </span>
+            </DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuItem onClick={props.onCustomize}>
+          <Palette className="size-4" />
+          发现插件与技能
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        {props.onDataAnalysis && (
+          <DropdownMenuItem className="gap-3" onClick={props.onDataAnalysis}>
+            <ChartColumn className="size-4" />
+            <span>
+              <span className="block">数据分析</span>
+              <span className="block text-xs text-muted-foreground">
+                先确认数据来源、目标和交付格式
+              </span>
+            </span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           role="menuitemcheckbox"
           aria-checked={props.researchEnabled}

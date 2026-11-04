@@ -22,6 +22,7 @@ import type {
 import { useClarifySession } from "@liveagent/ui/components/chat/clarify/useClarifySession";
 import {
   MentionComposer,
+  type MentionComposerAction,
   type MentionComposerApp,
   type MentionComposerConversation,
   type MentionComposerHandle,
@@ -332,6 +333,8 @@ export type ChatComposerBarProps = {
   contextBarPosition?: "above" | "below";
   workdir: string;
   enabledSkills: MentionComposerSkill[];
+  mentionExtensions?: MentionComposerSkill[];
+  mentionActions?: MentionComposerAction[];
   /** Earlier conversations available to the structured @ reference picker. */
   mentionableConversations?: MentionComposerConversation[];
   /** Searches all persisted conversations beyond the sidebar's loaded page. */
@@ -467,6 +470,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     inputPlaceholder,
     workdir,
     enabledSkills,
+    mentionExtensions,
+    mentionActions,
     mentionableConversations = [],
     searchMentionableConversations,
     mentionApps,
@@ -1753,6 +1758,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 disabled={isInputDisabled || stt.active}
                 workdir={workdir}
                 enabledSkills={enabledSkills}
+                mentionExtensions={mentionExtensions}
+                mentionActions={mentionActions}
                 conversationMentionsEnabled={isAgentExecutionMode(executionMode)}
                 conversations={
                   isAgentExecutionMode(executionMode)

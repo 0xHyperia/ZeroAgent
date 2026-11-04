@@ -29,12 +29,26 @@ export type MentionSearchEntry = {
 
 export type MentionComposerSkill = {
   name: string;
+  /** Optional human-readable package label; the skill identity remains name/skillFile. */
+  displayName?: string;
+  /** Search aliases are presentation-only and never affect the selected identity. */
+  searchText?: string;
   description: string;
   skillFile: string;
   baseDir: string;
 };
 
 export type MentionComposerSkillMention = MentionComposerSkill;
+
+/** Host-provided actions for the @ menu; never persisted as draft references. */
+export type MentionComposerAction = {
+  id: string;
+  name: string;
+  description: string;
+  icon: "upload" | "library" | "project";
+  disabled?: boolean;
+  onSelect: (anchor: HTMLElement | null) => void;
+};
 
 export type MentionComposerConversation = ConversationMentionReference & {
   messageCount?: number;
@@ -96,6 +110,8 @@ export type MentionComposerGitFileMention = {
 export type MentionSuggestion =
   | { type: "file"; entry: MentionFileEntry }
   | { type: "skill"; skill: MentionComposerSkill }
+  | { type: "extension"; skill: MentionComposerSkill }
+  | { type: "action"; action: MentionComposerAction }
   | { type: "command"; command: ComposerCommand }
   | { type: "app"; app: MentionComposerApp }
   | { type: "conversation"; conversation: MentionComposerConversation }
@@ -211,6 +227,9 @@ export interface MentionComposerProps {
   placeholder?: string;
   workdir: string;
   enabledSkills?: MentionComposerSkill[];
+  /** Opt-in @ capability list. One primary entry per installed package, supplied by the host. */
+  mentionExtensions?: MentionComposerSkill[];
+  mentionActions?: MentionComposerAction[];
   conversations?: MentionComposerConversation[];
   /** Searches the complete persisted history when the conversation query is non-empty. */
   searchConversations?: (query: string) => Promise<MentionComposerConversation[]>;

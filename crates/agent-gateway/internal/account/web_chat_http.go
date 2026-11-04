@@ -10,6 +10,7 @@ import (
 const maxWebChatBodyBytes = 32 << 20
 
 func (h *HTTPHandler) registerWebChat(mux *http.ServeMux) {
+	h.registerCloudExtensions(mux)
 	h.registerCloudRuns(mux)
 	h.registerCloudBranches(mux)
 	h.registerCloudProjects(mux)

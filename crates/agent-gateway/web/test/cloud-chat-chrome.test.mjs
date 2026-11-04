@@ -54,7 +54,7 @@ async function clickMenu(app, label) {
 }
 for (const compact of [false,true]) test(`conversation menu exposes only five actions in ${compact?"mobile":"desktop"} layout`,async(t)=>{
   let renamed=0,pinned=0;const app=await mount(t,"src/components/cloudchat/CloudChatHeaderActions.tsx","CloudChatHeaderActions",headerProps({onRename(){renamed++;},onTogglePinned(){pinned++;}}),compact);
-  assert.equal(document.querySelector('[aria-label="对话资料与项目"]'),null);
+  assert.equal(Boolean(document.querySelector('[aria-label="对话资料与项目"]')),false);
   await app.click('[aria-label="对话选项"]');
   assert.deepEqual([...document.querySelectorAll('[role="menuitem"]')].map(node=>node.textContent.trim()),["重命名","置顶","归档","删除","移至项目"]);
   assert.doesNotMatch(document.body.textContent,/模型参数|导出 Markdown|导出 JSON|来源资料|文件库/);
@@ -81,7 +81,9 @@ test("creating a project then retrying its association never creates a duplicate
   await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set.call(input,"Zero");input.dispatchEvent(new Event("input",{bubbles:true}));await tick();});
   const submit=async()=>app.env.act(async()=>{document.querySelector('form').dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));await tick();});
   await submit();assert.equal(creates,1);assert.equal(moves,1);assert.match(document.body.textContent,/重试移入项目/);
-  await submit();assert.equal(creates,1);assert.equal(moves,2);assert.equal(document.querySelector('input[aria-label="项目名称"]'),null);
+  await submit();assert.equal(creates,1);assert.equal(moves,2);
+  await app.env.waitFor(()=>!document.querySelector('input[aria-label="项目名称"]'),'successful project dialog to finish closing');
+  assert.equal(Boolean(document.querySelector('input[aria-label="项目名称"]')),false);
 });
 
 test("an unknown project creation stays blocked after closing and reopening the dialog",async(t)=>{

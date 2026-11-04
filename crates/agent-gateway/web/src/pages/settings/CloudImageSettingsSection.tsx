@@ -1,13 +1,14 @@
-import { ChevronDown, ImageIcon, RefreshCw } from "@liveagent/ui/components/IconSet";
+import { ChevronDown, RefreshCw } from "@liveagent/ui/components/IconSet";
 import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { ExtensionMark } from "@liveagent/ui/features/extensions/ExtensionMark";
 import type { ModelPickerOption } from "@liveagent/ui/lib/models/modelPickerOptions";
 import { toModelValue } from "@liveagent/ui/lib/models/modelValue";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
-import { cloudImageSettings, type CloudImageSettings } from "@/lib/cloudImageSettings";
+import { type CloudImageSettings, cloudImageSettings } from "@/lib/cloudImageSettings";
 import { getRelayProviderModels, listRelayApiKeys } from "@/lib/relay/client";
 import { relayProviderId, relayProviderTypeForPlatform } from "@/lib/relay/providers";
 
@@ -20,7 +21,7 @@ export function CloudImageSettingsSection() {
     [notice, setNotice] = useState("");
   const [open, setOpen] = useState(false);
   const request = useRef<AbortController | null>(null);
-  async function load() {
+  const load = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -66,11 +67,11 @@ export function CloudImageSettingsSection() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }
+  }, []);
   useEffect(() => {
     void load();
     return () => request.current?.abort();
-  }, []);
+  }, [load]);
   const selected = options.find(
     (option) =>
       value && option.value === toModelValue(relayProviderId(value.provider_key_id), value.model),
@@ -112,11 +113,11 @@ export function CloudImageSettingsSection() {
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-muted/50 p-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <ImageIcon className="size-4" />
-              ImageGen
+              <ExtensionMark id="imagegen" small />
+              生成图像
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              选择支持图像生成的模型，供 ImageGen 与 Product Design 使用。
+              选择支持图像生成的模型，供生成图像与产品设计使用。
             </p>
           </div>
           <Popover open={open} onOpenChange={setOpen}>

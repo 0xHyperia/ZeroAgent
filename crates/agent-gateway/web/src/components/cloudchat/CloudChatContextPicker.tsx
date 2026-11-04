@@ -2,6 +2,7 @@ import {
   BookOpen,
   ChartColumn,
   Check,
+  ChevronRight,
   FileText,
   FolderOpen,
   Globe,
@@ -18,6 +19,17 @@ import {
   SheetTitle,
 } from "@liveagent/ui/components/ui/sheet";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { ExtensionMark } from "@liveagent/ui/features/extensions/ExtensionMark";
+import {
+  type ExtensionPackage,
+  type ExtensionSkill,
+  extensionSkillEnabled,
+} from "@liveagent/ui/features/extensions/extensionTypes";
+import {
+  extensionDisplayName,
+  extensionSearchText,
+  extensionSkillDisplayName,
+} from "@liveagent/ui/lib/extensions/presentation";
 import { useEffect, useRef, useState } from "react";
 import {
   type CloudChatFile,
@@ -52,7 +64,7 @@ export function CloudChatWorkToolbar(props: {
             icon: FolderOpen,
           },
           { id: "files", label: "文件", icon: BookOpen },
-          { id: "tools", label: "工具", icon: Globe },
+          { id: "tools", label: "插件", icon: Globe },
         ] as const
       ).map(({ id, label, icon: Icon }) => (
         <Button
@@ -98,6 +110,12 @@ export function CloudChatContextPicker(props: {
   onBrowse: (kind: "projects" | "files") => void;
   onCreateProject: () => void;
   onToggleResearch: () => void;
+  extensions: ExtensionPackage[];
+  selectedSkillFiles?: readonly string[];
+  onRemoveSkill?: (file: string) => void;
+  onTryExtension: (pkg: ExtensionPackage, skill: ExtensionSkill) => void;
+  onViewExtension?: (pkg: ExtensionPackage) => void;
+  onCustomize: () => void;
   onFillDraft: (text: string) => void;
   onFocusComposer: () => void;
 }) {
@@ -237,7 +255,11 @@ export function CloudChatContextPicker(props: {
     action();
   }
   const title =
-    visibleKind === "projects" ? "选择项目" : visibleKind === "files" ? "从资料库添加" : "选择工具";
+    visibleKind === "projects"
+      ? "选择项目"
+      : visibleKind === "files"
+        ? "从资料库添加"
+        : "插件与技能";
   const initialFocus = () =>
     props.mobile || kind === "tools" ? popupRef.current : searchRef.current;
   const finalFocus = () => {
@@ -250,6 +272,17 @@ export function CloudChatContextPicker(props: {
   const filtered = entries.filter((item) =>
     item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()),
   );
+  const matchingSkills = props.extensions
+    .filter((pkg) => pkg.installed && pkg.enabled)
+    .flatMap((pkg) =>
+      (query.trim() ? pkg.skills : pkg.kind === "plugin" ? pkg.skills.slice(0, 1) : pkg.skills)
+        .filter(
+          (skill) =>
+            extensionSkillEnabled(pkg, skill) &&
+            extensionSearchText(pkg, skill).includes(query.trim().toLocaleLowerCase()),
+        )
+        .map((skill) => ({ pkg, skill })),
+    );
   const content = (
     <div className="cloud-context-picker-body">
       {visibleKind !== "tools" ? (
@@ -385,6 +418,104 @@ export function CloudChatContextPicker(props: {
         </>
       ) : (
         <>
+          <div className="cloud-context-picker-search">
+            <Search className="size-4" aria-hidden="true" />
+            <Input
+              ref={searchRef}
+              value={query}
+              aria-label="搜索插件与技能"
+              placeholder="搜索插件与技能"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  popupRef.current
+                    ?.querySelector<HTMLButtonElement>("[data-picker-entry]:not(:disabled)")
+                    ?.focus();
+                }
+              }}
+            />
+          </div>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: Delegates keyboard navigation between the skill buttons. */}
+          <div
+            className="cloud-context-picker-results"
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+              const buttons = [
+                ...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+              ];
+              const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+              if (at < 0 || !buttons.length) return;
+              event.preventDefault();
+              buttons[
+                (at + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length
+              ]?.focus();
+            }}
+          >
+            {matchingSkills.map(({ pkg, skill }) => {
+              const selectedFile = props.selectedSkillFiles?.find(
+                (file) =>
+                  file.startsWith(`zeroagent-skill:${pkg.id}/`) && file.endsWith(`/${skill.name}`),
+              );
+              return (
+                <div className="cloud-picker-extension-row" key={`${pkg.id}:${skill.name}`}>
+                  <button
+                    type="button"
+                    data-picker-entry
+                    aria-pressed={!!selectedFile}
+                    className="cloud-picker-row"
+                    title={skill.description}
+                    disabled={props.disabled}
+                    onClick={() =>
+                      closeFor(
+                        () =>
+                          selectedFile && props.onRemoveSkill
+                            ? props.onRemoveSkill(selectedFile)
+                            : props.onTryExtension(pkg, skill),
+                        "composer",
+                      )
+                    }
+                  >
+                    <ExtensionMark id={pkg.id} small />
+                    <span className="min-w-0 flex-1 truncate">
+                      {skill.name === pkg.skills[0]?.name
+                        ? extensionDisplayName(pkg)
+                        : extensionSkillDisplayName(pkg, skill)}
+                      {query.trim() && (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {skill.description}
+                        </span>
+                      )}
+                    </span>
+                    {selectedFile && <Check className="size-4 shrink-0" aria-label="已选择" />}
+                  </button>
+                  {props.onViewExtension && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`查看${extensionDisplayName(pkg)}详情`}
+                      onClick={() => closeFor(() => props.onViewExtension?.(pkg))}
+                    >
+                      <ChevronRight className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {!matchingSkills.length && (
+              <p role="status" className="cloud-picker-status">
+                {query ? "没有匹配的插件或技能" : "还没有启用的技能，可先浏览自定义目录。"}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            className="cloud-picker-row cloud-picker-footer"
+            onClick={() => closeFor(props.onCustomize)}
+          >
+            发现插件与技能
+          </button>
+          <p className="cloud-picker-section-label">其他工具</p>
           <button
             type="button"
             className="cloud-picker-row"

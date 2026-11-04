@@ -110,6 +110,11 @@ export function parseCloudPendingComposer(
         break;
       case "skillMention":
         if (!textFields(part.skill, ["name", "description", "skillFile", "baseDir"])) invalid();
+        if (
+          part.skill.displayName !== undefined &&
+          (typeof part.skill.displayName !== "string" || part.skill.displayName.length > 160)
+        )
+          invalid();
         break;
       case "appMention":
         if (!textFields(part.app, ["name", "path"])) invalid();

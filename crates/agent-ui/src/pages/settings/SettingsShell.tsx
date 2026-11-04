@@ -27,6 +27,7 @@ type SettingsShellProps<Context> = {
   context: Context;
   saveState: SettingsSaveState;
   onBack: () => void;
+  backLabel?: string;
   canLeaveSection?: () => boolean;
   initialSection?: string;
   onSectionChange?: (section: string) => void;
@@ -204,7 +205,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   )}
                 >
                   <ArrowLeft className="size-3.5 shrink-0" />
-                  <span>{t("settings.backToChat")}</span>
+                  <span>{props.backLabel ?? t("settings.backToChat")}</span>
                 </button>
               </div>
             ) : null}
@@ -218,8 +219,8 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                     variant="ghost"
                     size="icon-sm"
                     className={web ? "max-[820px]:hidden" : undefined}
-                    title={t("settings.backToChatHint")}
-                    aria-label={t("settings.backToChat")}
+                    title={props.backLabel ?? t("settings.backToChatHint")}
+                    aria-label={props.backLabel ?? t("settings.backToChat")}
                     onClick={onBack}
                     aria-keyshortcuts="Escape"
                   >
@@ -232,14 +233,14 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   type="button"
                   onClick={onBack}
                   aria-keyshortcuts="Escape"
-                  title={t("settings.backToChatHint")}
+                  title={props.backLabel ?? t("settings.backToChatHint")}
                   className={cn(
                     "settings-back-button flex w-full cursor-pointer items-center justify-start gap-1 rounded-md px-2 py-1.5 text-left",
                     "text-sm text-muted-foreground transition-colors duration-150 hover:bg-settings-tile-hover hover:text-foreground",
                   )}
                 >
                   <ArrowLeft className="size-3.5 shrink-0" />
-                  <span>{t("settings.backToChat")}</span>
+                  <span>{props.backLabel ?? t("settings.backToChat")}</span>
                   <kbd
                     className={cn(
                       "ml-auto rounded border border-border/60 px-1.5 py-0.5",

@@ -1409,7 +1409,7 @@ html[data-zeroagent-platform="android"]
   font-weight: 400;
 }
 .cloud-composer-menu [role^="menuitem"] {
-  min-height: 56px;
+  min-height: 36px;
   gap: 12px;
   padding: 8px 12px;
   border-radius: 10px;
@@ -1420,13 +1420,13 @@ html[data-zeroagent-platform="android"]
   flex-shrink: 0;
   color: hsl(var(--muted-foreground));
 }
-.cloud-composer-menu [role^="menuitem"] > span {
+.cloud-composer-menu [role^="menuitem"] > span:not(.za-extension-mark) {
   display: flex;
   min-width: 0;
   flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 .cloud-composer-menu [role^="menuitem"] > span > span {
   display: block;
@@ -1435,9 +1435,23 @@ html[data-zeroagent-platform="android"]
   font-weight: 400;
 }
 .cloud-composer-menu [role^="menuitem"] > span > span + span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 18px;
+}
+.cloud-composer-menu [role^="menuitem"] > span:not(.za-extension-mark) > span:first-child {
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (max-width: 820px) {
+  .cloud-composer-menu [role^="menuitem"] { min-height: 44px; }
 }
 @media (hover: hover) {
   .cloud-composer-add:hover:not(:disabled):not([data-open]) {
@@ -1507,6 +1521,14 @@ html[data-zeroagent-platform="android"]
   opacity: 0.5;
   cursor: default;
 }
+.cloud-picker-extension-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.cloud-picker-extension-row > .cloud-picker-row { flex: 1; min-width: 0; width: auto; }
+.cloud-picker-extension-row > button:last-child:not(.cloud-picker-row) { flex-shrink: 0; }
+.cloud-picker-section-label { padding: 10px 10px 3px; font-size: 12px; color: hsl(var(--muted-foreground)); }
 .cloud-picker-footer {
   margin-top: 4px;
   border-top: 1px solid hsl(var(--border) / 0.7);
@@ -1526,6 +1548,10 @@ html[data-zeroagent-platform="android"]
   padding: 4px 12px 12px;
 }
 .cloud-context-picker-sheet .cloud-picker-row {
+  min-height: 44px;
+}
+.cloud-context-picker-sheet .cloud-picker-extension-row > button {
+  min-width: 44px;
   min-height: 44px;
 }
 .cloud-context-picker-sheet .cloud-context-picker-results {
@@ -1988,8 +2014,13 @@ html[data-zeroagent-platform="android"]
 .cloud-reader-actions {
   order: 3;
 }
-.cloud-reader-options-tools { order: 3; display: flex; }
-.cloud-reader-options-tools:empty { display: none; }
+.cloud-reader-options-tools {
+  order: 3;
+  display: flex;
+}
+.cloud-reader-options-tools:empty {
+  display: none;
+}
 .cloud-reader-window-actions {
   order: 4;
   gap: 0;
@@ -2070,8 +2101,10 @@ html[data-zeroagent-platform="android"]
     height: 44px;
     min-height: 44px;
   }
-  .cloud-resource-reader:has(.za-source-preview) .cloud-reader-header
-    :is(.cloud-reader-actions, .cloud-reader-options-tools, .cloud-reader-window-actions) button {
+  .cloud-resource-reader:has(.za-source-preview)
+    .cloud-reader-header
+    :is(.cloud-reader-actions, .cloud-reader-options-tools, .cloud-reader-window-actions)
+    button {
     min-width: 44px;
   }
   .cloud-reader-header {

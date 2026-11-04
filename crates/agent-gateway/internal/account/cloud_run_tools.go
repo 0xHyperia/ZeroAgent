@@ -43,6 +43,7 @@ type cloudRunToolExecution struct {
 	historyBoundary CloudMessageHead
 	historySources  map[string]string // source ID -> selected canonical message ID
 	researchScope   *cloudRunResearchScope
+	skillPackages   []CloudExtension // private execution snapshot; never sent to public research
 }
 
 func (e *cloudRunToolExecution) rememberSecrets(values ...string) {
@@ -721,6 +722,9 @@ func (e *cloudRunToolExecution) execute(ctx context.Context, round int, call clo
 		return e.executeSkill(ctx, round, call)
 	}
 	if call.Name == "generate_image" {
+		if _, err := e.resolveSkill(ctx, "imagegen", "imagegen", ""); err != nil {
+			return nil, &cloudToolRunError{code: "skill_unavailable"}
+		}
 		return e.executeImage(ctx, round, call)
 	}
 	if !e.executorEnabled {

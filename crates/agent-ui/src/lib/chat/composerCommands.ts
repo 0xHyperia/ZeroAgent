@@ -277,9 +277,13 @@ export function filterComposerCommands(
   commands.forEach((command, index) => {
     if (skillsOnly && command.kind !== "skill") return;
     const name = command.name.toLowerCase();
+    const aliases =
+      command.kind === "skill"
+        ? `${command.skill.displayName ?? ""}\n${command.skill.searchText ?? ""}`.toLowerCase()
+        : "";
     let rank: number;
     if (!query || name.startsWith(query)) rank = 0;
-    else if (`${name}\n${command.description}`.toLowerCase().includes(query)) rank = 1;
+    else if (`${name}\n${aliases}\n${command.description}`.toLowerCase().includes(query)) rank = 1;
     else return;
     scored.push({ command, rank, index });
   });

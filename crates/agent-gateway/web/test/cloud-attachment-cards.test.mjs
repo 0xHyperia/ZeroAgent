@@ -22,7 +22,7 @@ test("offscreen attachment thumbnails do not read bytes; leaving the viewport ab
  const original=globalThis.IntersectionObserver;let callback,reads=0,aborted=false;
  globalThis.IntersectionObserver=class{constructor(cb){callback=cb;}observe(){}disconnect(){}};t.after(()=>{if(original===undefined)delete globalThis.IntersectionObserver;else globalThis.IntersectionObserver=original;});
  const app=await setup(t),{ResourceThumbnail}=app.env.loadModule("../../agent-ui/src/components/resource-preview/ResourcePreview.tsx");
- const bytes=Buffer.from("document");const resource={identity:"account-a:immutable",name:"document.txt",mime:"text/plain",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")};
+ const bytes=Buffer.from("document");const resource={identity:"account-a:immutable",name:"document.md",mime:"text/markdown",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")};
  await app.render(app.env.React.createElement(ResourceThumbnail,{resource,load:signal=>{reads++;signal.addEventListener("abort",()=>aborted=true);return new Promise(()=>{});}}));
  assert.equal(reads,0);assert.ok(app.host.querySelector('[inert][aria-hidden="true"]'));
  await app.env.act(async()=>{callback([{isIntersecting:true}]);await tick();});assert.equal(reads,1);
@@ -31,7 +31,7 @@ test("offscreen attachment thumbnails do not read bytes; leaving the viewport ab
 test("large cover previews retain a format card without loading or parsing the original",async t=>{
  const app=await setup(t),{ResourcePreview}=app.env.loadModule("../../agent-ui/src/components/resource-preview/ResourcePreview.tsx");let reads=0;
  await app.render(app.env.React.createElement(ResourcePreview,{variant:"thumbnail",resource:{identity:"a:large",name:"大文件.docx",mime:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",size:5*1024*1024,sha256:"0".repeat(64)},load:async()=>{reads++;throw Error("must not read");}}));
- assert.equal(reads,0);assert.match(app.host.textContent,/DOCX/);assert.equal(app.host.querySelector("iframe"),null);
+ assert.equal(reads,0);assert.ok(app.host.querySelector('.za-resource-preview[data-kind="docx"] .za-thumbnail-fallback'));assert.equal(app.host.querySelector("iframe"),null);
 });
 
 test("original deletion is an explicit dialog decision; cancellation preserves the file",async t=>{

@@ -619,6 +619,35 @@
       ],
       "security": "ADR0067：默认生图模型按账户独立保存并使用版本比较更新；固定 USA-Zero Images 接口、密钥归属重验、私有成果配额及不可变编辑。未知结果不自动重发；拒绝供应商任意 URL，切号/切会话清理读取。真实外部模型与受控供应商验收分开。",
       "upstream_relation": "adapt"
+    },
+    {
+      "id": "cloudchat-extension-skills",
+      "name": "CloudChat 自定义与账户技能",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": [
+        "webui",
+        "gateway",
+        "android"
+      ],
+      "entrypoints": [
+        "crates/agent-ui/src/features/extensions/ExtensionsWorkspace.tsx",
+        "crates/agent-ui/src/lib/extensions/presentation.ts",
+        "crates/agent-ui/src/components/chat/extensionMentions.css",
+        "crates/agent-gateway/internal/account/skills-releases",
+        "crates/agent-gateway/web/src/lib/cloudExtensions.ts",
+        "crates/agent-gateway/internal/account/cloud_extensions.go",
+        "crates/agent-gateway/internal/account/cloud_run_skills.go"
+      ],
+      "tests": [
+        "crates/agent-gateway/web/test/cloud-extensions.test.mjs",
+        "crates/agent-gateway/web/test/cloud-chat-context-picker.test.mjs",
+        "crates/agent-gateway/web/test/composer-extension-mentions.test.mjs",
+        "crates/agent-gateway/internal/account/cloud_extensions_test.go",
+        "crates/agent-gateway/internal/account/cloud_builtin_release_test.go"
+      ],
+      "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。",
+      "upstream_relation": "adapt"
     }
   ]
 }

@@ -13,8 +13,20 @@ export async function cloudImageSettings(
     headers: { "Content-Type": "application/json" },
     ...(update ? { body: JSON.stringify(update) } : {}),
   });
-  const result = await response.json();
+  const invalidResponse = update
+    ? "保存结果尚未确认，请刷新图像设置后核对。"
+    : "暂时无法读取图像设置，请刷新后重试。";
+  let result: CloudImageSettings & { error?: { message?: string }; message?: string };
+  try {
+    result = await response.json();
+  } catch (cause) {
+    guard();
+    if (signal?.aborted) throw cause;
+    throw new Error(invalidResponse);
+  }
   guard();
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    throw new Error(invalidResponse);
   if (!response.ok)
     throw new Error(result.error?.message ?? result.message ?? "读取图像设置失败，请重试。");
   if (
@@ -24,6 +36,6 @@ export async function cloudImageSettings(
     result.version < 0 ||
     typeof result.model !== "string"
   )
-    throw new Error("图像设置响应无效");
+    throw new Error(invalidResponse);
   return result;
 }

@@ -3,6 +3,7 @@ import { resourcePreviewKind } from "@liveagent/ui/components/resource-preview/p
 import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "@liveagent/ui/components/resource-preview/ResourcePreview";
 import {
+  ResourceDeleteDialog,
   ResourceInspector,
   ResourceTitleMenu,
 } from "@liveagent/ui/components/resource-preview/ResourceReaderDetails";
@@ -66,6 +67,10 @@ export function CloudChatArtifactsPanel(props: Props) {
   );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<CloudChatArtifactVersion | null>(null);
+  const deleteLock = useRef(false);
+  const uncertainDeletions = useRef(new Set<string>());
   const [inspector, setInspector] = useState<"details" | "history" | null>(null);
   const mounted = useRef(true),
     generation = useRef(0),
@@ -133,6 +138,7 @@ export function CloudChatArtifactsPanel(props: Props) {
       guard();
       if (!valid() || generation.current !== seq) return;
       metadataGuard.current = guard;
+      uncertainDeletions.current.delete(version.family_id);
       setSelected(version);
       setFamilyVersions(family.versions.sort((left, right) => right.number - left.number));
     } catch (cause) {
@@ -154,6 +160,55 @@ export function CloudChatArtifactsPanel(props: Props) {
       abort.current.abort();
     };
   }, [client, conversationId, initialVersionId]);
+
+  async function removeConfirmedFamily() {
+    const target = confirmDelete;
+    if (
+      !target ||
+      !valid() ||
+      deleteLock.current ||
+      uncertainDeletions.current.has(target.family_id)
+    )
+      return;
+    const guard = captureAccountRequestGuard();
+    let requested = false;
+    deleteLock.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      metadataGuard.current?.();
+      guard();
+      requested = true;
+      const receipt = await client.removeFamily(target.family_id, abort.current.signal);
+      guard();
+      if (!valid()) return;
+      setConfirmDelete(null);
+      setSelected(null);
+      setInspector(null);
+      setFamilyVersions([]);
+      setVersions((current) => current.filter((version) => version.family_id !== target.family_id));
+      setNotice(
+        receipt.state === "deleting"
+          ? "删除已提交，正在清理原件。已有引用已停止访问，稍后可刷新核对。"
+          : "成果及其全部版本已删除。",
+      );
+      currentProps.current.onDeleted?.(target.family_id);
+    } catch (cause) {
+      if (!valid()) return;
+      setConfirmDelete(null);
+      if (
+        requested &&
+        !(cause instanceof CloudChatArtifactError && cause.status >= 400 && cause.status < 500)
+      ) {
+        uncertainDeletions.current.add(target.family_id);
+        report(new Error("删除结果尚未确认，请重新读取核对，暂不重复删除。"));
+      } else report(cause);
+    } finally {
+      deleteLock.current = false;
+      if (valid()) setBusy(false);
+    }
+  }
 
   async function download() {
     if (!selected || !valid()) return;
@@ -376,6 +431,16 @@ export function CloudChatArtifactsPanel(props: Props) {
                     v{selected.number} · {cloudArtifactStatus(selected)}
                   </dd>
                 </dl>
+                <Button
+                  variant="ghost"
+                  className="mt-4 text-destructive"
+                  disabled={
+                    busy || restoreBusy || uncertainDeletions.current.has(selected.family_id)
+                  }
+                  onClick={() => setConfirmDelete(selected)}
+                >
+                  删除全部版本
+                </Button>
               </>
             )}
           </ResourceInspector>
@@ -453,6 +518,29 @@ export function CloudChatArtifactsPanel(props: Props) {
       )}
       onClose={props.onClose}
     >
+      {confirmDelete && (
+        <ResourceDeleteDialog
+          open
+          busy={busy}
+          name={confirmDelete.name}
+          description="此成果的全部版本将被永久删除，已有消息中的版本引用将无法再读取。原有对话会保留。"
+          confirmLabel="确认删除成果"
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => void removeConfirmedFamily()}
+        />
+      )}
+      {notice && (
+        <CloudChatFeedback
+          tone="info"
+          compact
+          message={notice}
+          actions={
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void loadList(scope)}>
+              刷新列表
+            </Button>
+          }
+        />
+      )}
       {error ? (
         <CloudChatFeedback
           tone="error"
@@ -557,7 +645,9 @@ export function CloudChatArtifactsPanel(props: Props) {
           <p className="py-24px text-center text-sm text-muted-foreground">
             {error
               ? "暂时无法读取成果，请刷新后重试。"
-              : "还没有成果。任务正式保存的成果会显示在这里。"}
+              : notice
+                ? "所选成果已停止访问。"
+                : "还没有成果。任务正式保存的成果会显示在这里。"}
           </p>
         ) : null}
       </div>

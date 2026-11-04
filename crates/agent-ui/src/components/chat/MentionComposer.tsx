@@ -162,6 +162,7 @@ import {
   writeComposerClipboardSnapshot,
   writeTextToClipboard,
 } from "./MentionComposerInternals";
+import "./extensionMentions.css";
 
 export type {
   MentionComposerApp,
@@ -188,6 +189,7 @@ export {
   serializeComposerClipboardPayload,
   usesCustomComposerContextMenu,
 } from "./MentionComposerInternals";
+export type { MentionComposerAction } from "./MentionComposerModel";
 
 /* ------------------------------------------------------------------ */
 /*  MentionComposer                                                    */
@@ -205,6 +207,8 @@ export const MentionComposer = memo(
       placeholder = "",
       workdir,
       enabledSkills = [],
+      mentionExtensions,
+      mentionActions,
       conversations = [],
       searchConversations,
       conversationMentionsEnabled = true,
@@ -604,7 +608,8 @@ export const MentionComposer = memo(
       if (mentionCtx.trigger === "skill") {
         const next: MentionSuggestion[] = [];
         for (const skill of enabledSkills) {
-          const haystack = `${skill.name}\n${skill.description}\n${skill.baseDir}`.toLowerCase();
+          const haystack =
+            `${skill.name}\n${skill.displayName ?? ""}\n${skill.searchText ?? ""}\n${skill.description}\n${skill.baseDir}`.toLowerCase();
           if (normalizedMentionQuery && !haystack.includes(normalizedMentionQuery)) {
             continue;
           }
@@ -617,6 +622,26 @@ export const MentionComposer = memo(
       }
 
       if (mentionMenuMode === "root") {
+        if (mentionExtensions !== undefined) {
+          return [
+            ...(mentionActions ?? [])
+              .filter(
+                (action) =>
+                  !action.disabled &&
+                  `${action.name} ${action.description}`
+                    .toLocaleLowerCase()
+                    .includes(normalizedMentionQuery),
+              )
+              .map((action): MentionSuggestion => ({ type: "action", action })),
+            ...mentionExtensions
+              .filter((skill) =>
+                `${skill.displayName ?? skill.name} ${skill.searchText ?? ""} ${skill.description}`
+                  .toLocaleLowerCase()
+                  .includes(normalizedMentionQuery),
+              )
+              .map((skill): MentionSuggestion => ({ type: "extension", skill })),
+          ].slice(0, MAX_SUGGESTIONS);
+        }
         // 根级只展示引用类别，候选实体全部收进各自的二级菜单。
         const categories: MentionSuggestion[] = [
           ...(availableMentionApps.length > 0
@@ -703,6 +728,8 @@ export const MentionComposer = memo(
       conversationMentionsEnabled,
       conversationSearchResults,
       enabledSkills,
+      mentionExtensions,
+      mentionActions,
       availableMentionApps,
       mentionCtx,
       mentionMenuMode,
@@ -742,7 +769,11 @@ export const MentionComposer = memo(
                 ? t("chat.composer.conversationLimitReached")
                 : t("chat.composer.noMatchingConversations")
               : mentionMenuMode === "root"
-                ? t("chat.composer.noMatchingReferenceTypes")
+                ? t(
+                    mentionExtensions !== undefined
+                      ? "chat.composer.noMatchingExtensions"
+                      : "chat.composer.noMatchingReferenceTypes",
+                  )
                 : t("chat.composer.noMatchingFiles");
     const showEmpty =
       mentionCtx !== null && !popupLoading && !popupError && suggestions.length === 0;
@@ -769,6 +800,13 @@ export const MentionComposer = memo(
       if (!el) return;
       applyEmptyState(editorTextIsEmpty(el), editorHasNoContent(el));
     }, [applyEmptyState]);
+
+    // Range/chip edits bypass the browser editing pipeline. Publish the same
+    // bubbling input event as typing so hosts capture the completed draft.
+    // Keep this out of hydration/setDraft/setText and transient STT updates.
+    const notifyUserEdit = useCallback(() => {
+      editorRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
+    }, []);
 
     const clearTransientText = useCallback(
       (preserveLastText: boolean) => {
@@ -1346,6 +1384,16 @@ export const MentionComposer = memo(
           openMentionMenuMode(suggestion.category);
           return;
         }
+        if (suggestion.type === "action") {
+          if (suggestion.action.disabled) return;
+          replaceMentionQueryText(mentionCtx, "");
+          resetPromptHistoryRecall();
+          closeMentionSession();
+          refreshEmptyState();
+          notifyUserEdit();
+          suggestion.action.onSelect(wrapperRef.current);
+          return;
+        }
         if (suggestion.type === "command") {
           const { command } = suggestion;
           if (command.kind === "skill") {
@@ -1360,6 +1408,7 @@ export const MentionComposer = memo(
             resetPromptHistoryRecall();
             closeMentionSession();
             refreshEmptyState();
+            notifyUserEdit();
             commandHost.openModelPicker();
             return;
           } else {
@@ -1369,11 +1418,26 @@ export const MentionComposer = memo(
           resetPromptHistoryRecall();
           closeMentionSession();
           refreshEmptyState();
+          notifyUserEdit();
           editorRef.current?.focus();
           return;
         }
-        if (suggestion.type === "skill") {
-          insertSkillMentionChip(mentionCtx, suggestion.skill);
+        if (suggestion.type === "skill" || suggestion.type === "extension") {
+          const match = /^zeroagent-skill:([a-z0-9-]+)\/[1-9][0-9]*\/([a-z0-9-]+)$/.exec(
+            suggestion.skill.skillFile,
+          );
+          const existing =
+            match &&
+            Array.from(
+              editorRef.current?.querySelectorAll<HTMLElement>("[data-skill-file]") ?? [],
+            ).some((element) => {
+              const file = element.getAttribute("data-skill-file") ?? "";
+              return (
+                file.startsWith(`zeroagent-skill:${match[1]}/`) && file.endsWith(`/${match[2]}`)
+              );
+            });
+          if (existing) replaceMentionQueryText(mentionCtx, "");
+          else insertSkillMentionChip(mentionCtx, suggestion.skill);
         } else if (suggestion.type === "conversation") {
           const selectedIds = new Set(
             [
@@ -1406,12 +1470,14 @@ export const MentionComposer = memo(
         resetPromptHistoryRecall();
         closeMentionSession();
         refreshEmptyState();
+        notifyUserEdit();
         editorRef.current?.focus();
       },
       [
         closeMentionSession,
         commandHost,
         mentionCtx,
+        notifyUserEdit,
         openMentionMenuMode,
         refreshEmptyState,
         resetPromptHistoryRecall,
@@ -1473,6 +1539,7 @@ export const MentionComposer = memo(
       writeTextToClipboard(selectedText);
       closeMentionSession();
       refreshEmptyState();
+      notifyUserEdit();
       refreshMention();
       el.focus({ preventScroll: true });
       closeComposerContextMenu();
@@ -1481,6 +1548,7 @@ export const MentionComposer = memo(
       closeMentionSession,
       composerContextMenu?.selectedText,
       disabled,
+      notifyUserEdit,
       refreshEmptyState,
       refreshMention,
       resetPromptHistoryRecall,
@@ -1522,12 +1590,14 @@ export const MentionComposer = memo(
 
       if (isLargePasteText(text)) {
         insertLargePaste(text);
+        notifyUserEdit();
         refreshMention();
         closeComposerContextMenu();
         return;
       }
 
-      const serializedSegments = parseSerializedComposerText(text, enabledSkills);
+      const serializedSegments =
+        mentionExtensions === undefined ? parseSerializedComposerText(text, enabledSkills) : null;
       if (
         serializedSegments &&
         insertComposerSegmentsAtSelection(
@@ -1544,6 +1614,7 @@ export const MentionComposer = memo(
       ) {
         closeMentionSession();
         refreshEmptyState();
+        notifyUserEdit();
         refreshMention();
         closeComposerContextMenu();
         return;
@@ -1562,10 +1633,12 @@ export const MentionComposer = memo(
       currentConversationId,
       enabledSkills,
       insertLargePaste,
+      notifyUserEdit,
       refreshEmptyState,
       refreshMention,
       resetPromptHistoryRecall,
       restoreComposerContextSelection,
+      mentionExtensions,
     ]);
 
     const handleComposerContextSelectAll = useCallback(() => {
@@ -1970,6 +2043,7 @@ export const MentionComposer = memo(
             e.preventDefault();
             resetPromptHistoryRecall();
             refreshEmptyState();
+            notifyUserEdit();
             refreshMention();
             return;
           }
@@ -1982,6 +2056,7 @@ export const MentionComposer = memo(
             e.preventDefault();
             resetPromptHistoryRecall();
             refreshEmptyState();
+            notifyUserEdit();
             refreshMention();
             return;
           }
@@ -2023,6 +2098,7 @@ export const MentionComposer = memo(
         runCommandDraft,
         commandPanel,
         currentConversationId,
+        notifyUserEdit,
         refreshEmptyState,
         refreshMention,
         loadHistoryPrompts,
@@ -2056,17 +2132,22 @@ export const MentionComposer = memo(
         // so Ctrl+Z still restores the cut content — native cut was undoable
         // before this interception. Its synchronous input event runs
         // handleInput, which prunes detached large-paste map entries.
-        if (
-          !document.execCommand("delete") &&
-          !deleteComposerSelection(editor, largePastesRef.current)
-        ) {
-          return;
+        if (!document.execCommand("delete")) {
+          if (!deleteComposerSelection(editor, largePastesRef.current)) return;
+          notifyUserEdit();
         }
         closeMentionSession();
         refreshEmptyState();
         refreshMention();
       },
-      [closeMentionSession, disabled, refreshEmptyState, refreshMention, resetPromptHistoryRecall],
+      [
+        closeMentionSession,
+        disabled,
+        notifyUserEdit,
+        refreshEmptyState,
+        refreshMention,
+        resetPromptHistoryRecall,
+      ],
     );
 
     const handlePaste = useCallback(
@@ -2087,7 +2168,7 @@ export const MentionComposer = memo(
           );
           const editor = editorRef.current;
           if (editor) {
-            insertComposerSegmentsAtSelection(
+            const inserted = insertComposerSegmentsAtSelection(
               editor,
               sanitizeAppMentionSegments(
                 editor,
@@ -2098,6 +2179,7 @@ export const MentionComposer = memo(
               ),
               largePastesRef.current,
             );
+            if (inserted) notifyUserEdit();
           }
           closeMentionSession();
           refreshEmptyState();
@@ -2114,9 +2196,11 @@ export const MentionComposer = memo(
         const text = normalizeLogicalLineEndings(e.clipboardData.getData("text/plain"));
         if (isLargePasteText(text)) {
           insertLargePaste(text);
+          notifyUserEdit();
           return;
         }
-        const serializedSegments = parseSerializedComposerText(text, enabledSkills);
+        const serializedSegments =
+          mentionExtensions === undefined ? parseSerializedComposerText(text, enabledSkills) : null;
         const editor = editorRef.current;
         if (
           serializedSegments &&
@@ -2135,6 +2219,7 @@ export const MentionComposer = memo(
         ) {
           closeMentionSession();
           refreshEmptyState();
+          notifyUserEdit();
           refreshMention();
           return;
         }
@@ -2151,6 +2236,8 @@ export const MentionComposer = memo(
         enabledSkills,
         insertLargePaste,
         onPasteFiles,
+        mentionExtensions,
+        notifyUserEdit,
         refreshEmptyState,
         refreshMention,
         resetPromptHistoryRecall,
@@ -2235,6 +2322,11 @@ export const MentionComposer = memo(
               anchorRef={wrapperRef}
               trigger={mentionCtx.trigger}
               mode={mentionMenuMode}
+              capabilityMenu={
+                mentionExtensions !== undefined &&
+                mentionCtx.trigger === "file" &&
+                mentionMenuMode === "root"
+              }
               suggestions={suggestions}
               highlightIndex={highlightIdx}
               isLoading={popupLoading}

@@ -15,6 +15,7 @@ import type { MentionComposerHandle } from "@liveagent/ui/components/chat/Mentio
 import { FileDropBoundary } from "@liveagent/ui/components/files/FileDropBoundary";
 import {
   ArrowLeft,
+  Blend,
   BookOpen,
   ChevronDown,
   Globe,
@@ -31,8 +32,13 @@ import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
-import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import type {
+  ExtensionCatalog,
+  ExtensionPackage,
+  ExtensionSkill,
+} from "@liveagent/ui/features/extensions/extensionTypes";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
+import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
@@ -49,13 +55,14 @@ import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type ChangeEvent,
   type CSSProperties,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { buildTextFromComposerDraft } from "@/app/chatDraft";
 import { UserMenu } from "@/app/UserMenu";
 import { CloudChatFilePanel } from "@/components/CloudChatFilePanel";
 import { CloudChatArtifactsPanel } from "@/components/cloudchat/CloudChatArtifactsPanel";
@@ -81,6 +88,7 @@ import { CloudChatResearchConfirmation } from "@/components/cloudchat/CloudChatR
 import { CloudChatResourcePanel } from "@/components/cloudchat/CloudChatResourcePanel";
 import { CloudChatResourceWorkbench } from "@/components/cloudchat/CloudChatResourceWorkbench";
 import { CloudChatSourcesPanel } from "@/components/cloudchat/CloudChatSourcesPanel";
+import { CloudChatVisualProvider } from "@/components/cloudchat/CloudChatVisualProvider";
 import { CloudContextSidebar } from "@/components/cloudchat/CloudContextSidebar";
 import { CloudConversationBranches } from "@/components/cloudchat/CloudConversationBranches";
 import { CloudConversationMoveMenu } from "@/components/cloudchat/CloudConversationMoveMenu";
@@ -95,7 +103,6 @@ import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPr
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
 import { GatewayTranscript, type GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
-import { CloudChatVisualProvider } from "@/components/cloudchat/CloudChatVisualProvider";
 import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import {
@@ -104,6 +111,13 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import {
+  buildCloudComposerText,
+  cloudComposerExtensions,
+  cloudComposerSkills,
+  cloudPackageSkill,
+  createCloudExtensionsAdapter,
+} from "@/lib/cloudExtensions";
 import { siteRevisionText } from "@/lib/cloudSiteRevision";
 import {
   CLOUD_SPACE_HOME,
@@ -314,8 +328,19 @@ type Props = {
   onLogout: () => void;
 };
 
+const ExtensionsWorkspace = lazy(() =>
+  import("@liveagent/ui/features/extensions/ExtensionsWorkspace").then((module) => ({
+    default: module.ExtensionsWorkspace,
+  })),
+);
 const EMPTY_PATHS = new Set<string>();
-const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
+const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>([
+  "account",
+  "system",
+  "providers",
+  "devices",
+  "image-studio",
+]);
 
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const guard = captureAccountRequestGuard();
@@ -454,6 +479,67 @@ export function CloudChatPage({
     siteAction?: "share" | "settings";
   } | null>(null);
   const [workPanel, setWorkPanel] = useState<"memory" | null>(null);
+  const [customize, setCustomize] = useState({ owner: user.id, open: false, visited: false });
+  const customizeOpen = customize.owner === user.id && customize.open;
+  const [extensionTarget, setExtensionTarget] = useState<{
+    owner: number;
+    id: string;
+    key: number;
+  } | null>(null);
+  const extensionsAdapter = useMemo(
+    () => createCloudExtensionsAdapter(`cloud:${user.id}`),
+    [user.id],
+  );
+  const [extensions, setExtensions] = useState<{
+    owner: number;
+    catalog: ExtensionCatalog | null;
+    loading: boolean;
+    error: string;
+  }>({ owner: user.id, catalog: null, loading: true, error: "" });
+  const [extensionRefresh, setExtensionRefresh] = useState(0);
+  const extensionCatalog = extensions.owner === user.id ? extensions.catalog : null;
+  const enabledCloudSkills = useMemo(
+    () => cloudComposerSkills(extensionCatalog),
+    [extensionCatalog],
+  );
+  const mentionCloudExtensions = useMemo(
+    () => cloudComposerExtensions(extensionCatalog),
+    [extensionCatalog],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: extensionRefresh is an explicit catalog reconciliation request.
+  useEffect(() => {
+    const controller = new AbortController();
+    setExtensions((old) => ({
+      owner: user.id,
+      catalog: old.owner === user.id ? old.catalog : null,
+      loading: true,
+      error: "",
+    }));
+    void extensionsAdapter
+      .list(controller.signal)
+      .then((catalog) => {
+        if (!controller.signal.aborted)
+          setExtensions({ owner: user.id, catalog, loading: false, error: "" });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setExtensions((old) => ({
+            ...old,
+            loading: false,
+            error: cause instanceof Error ? cause.message : "技能目录加载失败",
+          }));
+      });
+    const retire = () => {
+      controller.abort();
+      setExtensions({ owner: 0, catalog: null, loading: false, error: "" });
+      setCustomize({ owner: 0, open: false, visited: false });
+    };
+    window.addEventListener(ACCOUNT_CHANGED_EVENT, retire);
+    return () => {
+      controller.abort();
+      window.removeEventListener(ACCOUNT_CHANGED_EVENT, retire);
+    };
+  }, [user.id, extensionsAdapter, extensionRefresh]);
   const [workspaceView, setWorkspaceView] = useState<"chat" | "library">("chat");
   const [spaceWork, setSpaceWork] = useState(false);
   const [spaceFolderRequest, setSpaceFolderRequest] = useState(0);
@@ -558,6 +644,11 @@ export function CloudChatPage({
     Boolean(requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)),
   );
   const [settingsSection, setSettingsSection] = useState<SectionId>(initialSettingsSection);
+  const customizeSettingsReturn = useRef<number | null>(null);
+  useEffect(() => {
+    if (!accountSettingsOpen || customizeSettingsReturn.current !== user.id)
+      customizeSettingsReturn.current = null;
+  }, [accountSettingsOpen, user.id]);
   const settingsHistoryOpen = useRef(accountSettingsOpen);
   const sidebarDestination = workspaceView === "library" ? "library" : "chat";
   const sidebarPreview = useCloudSidebarPreview(
@@ -579,11 +670,20 @@ export function CloudChatPage({
       const open = Boolean(requested && CLOUD_SETTINGS_SECTIONS.has(requested));
       settingsHistoryOpen.current = open;
       if (open) setSettingsSection(requested as SectionId);
+      if (!open && customizeSettingsReturn.current === user.id) {
+        customizeSettingsReturn.current = null;
+        setCustomize({ owner: user.id, open: true, visited: true });
+        requestAnimationFrame(() =>
+          sidebarPreview.rootRef.current
+            ?.querySelector<HTMLButtonElement>("[data-extension-configure-images]")
+            ?.focus(),
+        );
+      }
       setAccountSettingsOpen(open);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [user.id, sidebarPreview.rootRef]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
@@ -2630,7 +2730,7 @@ export function CloudChatPage({
     const draft = submittedDraft.composer;
     const submittedFiles = submittedDraft.files;
     const submittedArtifacts = submittedDraft.artifacts;
-    const text = draft ? buildTextFromComposerDraft(draft).trim() : "";
+    const text = draft ? buildCloudComposerText(draft).trim() : "";
     const editingItem = pendingQueue.editingItem;
     const queueInstead = streaming || Boolean(editingItem);
     if (
@@ -3483,6 +3583,62 @@ export function CloudChatPage({
       action();
     });
   }
+  function openCustomize() {
+    requestCustomize();
+  }
+  function openExtensionDetails(pkg: ExtensionPackage) {
+    requestCustomize(pkg.id);
+  }
+  function requestCustomize(packageId?: string) {
+    projectNavigation.request(() => {
+      sidebarPreview.dismiss();
+      setComposerMenu(null);
+      setAccountSettingsOpen(false);
+      setCustomize({ owner: user.id, open: true, visited: true });
+      if (packageId)
+        setExtensionTarget((current) => ({
+          owner: user.id,
+          id: packageId,
+          key: (current?.key ?? 0) + 1,
+        }));
+      if (sidebar.isMobile) setSidebarOpen(false);
+    });
+  }
+  function tryExtension(pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) {
+    const view = viewRef.current;
+    if (!isCurrentView(view) || pendingSubmissionRef.current || composerLocked) return;
+    const mention = cloudPackageSkill(pkg, skill.name);
+    if (!mention) {
+      setError("这个技能尚未启用，请在自定义中启用后使用。");
+      return;
+    }
+    setCustomize((value) => ({ ...value, open: false }));
+    setAccountSettingsOpen(false);
+    closeResources();
+    if (landing) setPresentation("work");
+    requestAnimationFrame(() => {
+      if (!isCurrentView(view)) return;
+      if (text) fillStarter(text);
+      const exists = composerRef.current
+        ?.getDraft()
+        .skillMentions.some(
+          (selected) =>
+            selected.skillFile.startsWith(`zeroagent-skill:${pkg.id}/`) &&
+            selected.skillFile.endsWith(`/${skill.name}`),
+        );
+      if (!exists) composerRef.current?.insertSkillMention(mention);
+      savedDraft.scheduleCapture();
+      composerRef.current?.focus();
+    });
+  }
+  function tryBuiltinExtension(id: string, text: string) {
+    const pkg = extensionCatalog?.packages.find((item) => item.id === id);
+    if (!pkg) {
+      openCustomize();
+      return;
+    }
+    tryExtension(pkg, pkg.skills[0], text);
+  }
   function fillStarter(text: string) {
     if (!isCurrentView(viewRef.current) || pendingSubmissionRef.current || composerLocked) return;
     const draft = composerRef.current?.getDraft();
@@ -3516,7 +3672,7 @@ export function CloudChatPage({
         return;
       }
       restoreComposerDraft(draft, view);
-      fillStarter("使用 ImageGen 修改这张图片：");
+      fillStarter("使用生成图像修改这张图片：");
       savedDraft.scheduleCapture();
       composerRef.current?.focus();
     } catch (cause) {
@@ -3953,12 +4109,25 @@ export function CloudChatPage({
           <BrandMark />
         )
       }
-      activeId={accountSettingsOpen ? "settings" : workspaceView}
+      activeId={customizeOpen ? "customize" : accountSettingsOpen ? "settings" : workspaceView}
       items={[
-        createWorkbenchNavigationItem("chat", "对话", closeResources),
-        createWorkbenchNavigationItem("library", "资料空间", () => openResource("files", true)),
+        createWorkbenchNavigationItem("chat", "对话", () => {
+          setCustomize((value) => ({ ...value, open: false }));
+          closeResources();
+        }),
+        createWorkbenchNavigationItem("library", "资料空间", () => {
+          setCustomize((value) => ({ ...value, open: false }));
+          openResource("files", true);
+        }),
+        {
+          id: "customize",
+          label: "自定义",
+          icon: <Blend className="size-5" />,
+          onSelect: openCustomize,
+        },
         createWorkbenchNavigationItem("devices", "设备", () => {
           if (mobile) setSidebarOpen(false);
+          setCustomize((value) => ({ ...value, open: false }));
           setSettingsSection("devices");
           setAccountSettingsOpen(true);
         }),
@@ -3994,6 +4163,7 @@ export function CloudChatPage({
         active={
           chatWorkspaceVisible &&
           !accountSettingsOpen &&
+          !customizeOpen &&
           !draftConflictOpen &&
           !projectSettings.open &&
           !projectCreate.open &&
@@ -4028,9 +4198,13 @@ export function CloudChatPage({
           {!sidebar.isMobile ? renderApplicationRail() : null}
           <WorkbenchCanvas
             data-cloud-conversation-workspace
-            aria-hidden={accountSettingsOpen}
-            inert={accountSettingsOpen}
-            className={accountSettingsOpen ? "hidden" : "relative flex min-h-0 min-w-0 flex-1"}
+            aria-hidden={accountSettingsOpen || customizeOpen}
+            inert={accountSettingsOpen || customizeOpen}
+            className={
+              accountSettingsOpen || customizeOpen
+                ? "hidden"
+                : "relative flex min-h-0 min-w-0 flex-1"
+            }
           >
             {!sidebar.isMobile && !sidebar.open ? (
               <div data-cloud-sidebar-hover-edge aria-hidden="true" />
@@ -4687,6 +4861,13 @@ export function CloudChatPage({
                                 }
                                 capabilityMenu={
                                   <CloudChatComposerMenu
+                                    extensions={extensionCatalog?.packages ?? []}
+                                    onTryExtension={tryExtension}
+                                    onDataAnalysis={() =>
+                                      fillStarter(
+                                        "请帮我分析数据，先与我确认数据来源、分析目标和交付格式。",
+                                      )
+                                    }
                                     disabled={composerLocked}
                                     projectDisabled={streaming}
                                     open={composerMenu === "add"}
@@ -4697,10 +4878,14 @@ export function CloudChatPage({
                                     }
                                     researchEnabled={runtimeControls.nativeWebSearchEnabled}
                                     onUpload={() => fileRef.current?.click()}
-                                    onCreateImage={() => fillStarter("使用 ImageGen 创建图片：")}
+                                    onCreateImage={() =>
+                                      tryBuiltinExtension("imagegen", "创建图片：")
+                                    }
+                                    onCustomize={openCustomize}
                                     onProductDesign={() =>
-                                      fillStarter(
-                                        "使用 Product Design 帮我梳理用户任务与布局，探索视觉方案，再按选定方案实现。我的需求是：",
+                                      tryBuiltinExtension(
+                                        "product-design",
+                                        "帮我梳理用户任务与布局，探索视觉方案，再按选定方案实现。我的需求是：",
                                       )
                                     }
                                     onOpenFiles={(anchor) => openComposerPicker("files", anchor)}
@@ -4761,7 +4946,32 @@ export function CloudChatPage({
                                   </div>
                                 }
                                 workdir=""
-                                enabledSkills={[]}
+                                enabledSkills={enabledCloudSkills}
+                                mentionExtensions={mentionCloudExtensions}
+                                mentionActions={[
+                                  {
+                                    id: "upload",
+                                    name: "添加照片和文件",
+                                    description: "从设备上传资料",
+                                    icon: "upload",
+                                    onSelect: () => fileRef.current?.click(),
+                                  },
+                                  {
+                                    id: "library",
+                                    name: "从资料库添加",
+                                    description: "引用已保存的文件",
+                                    icon: "library",
+                                    onSelect: (anchor) => openComposerPicker("files", anchor),
+                                  },
+                                  {
+                                    id: "project",
+                                    name: "选择项目",
+                                    description: "使用项目资料与指令",
+                                    icon: "project",
+                                    disabled: streaming,
+                                    onSelect: (anchor) => openComposerPicker("projects", anchor),
+                                  },
+                                ]}
                                 executionMode="text"
                                 hasModels={modelOptions.length > 0}
                                 currentModelLabel={model}
@@ -4946,6 +5156,28 @@ export function CloudChatPage({
                           nativeWebSearchEnabled: !current.nativeWebSearchEnabled,
                         }))
                       }
+                      extensions={extensionCatalog?.packages ?? []}
+                      selectedSkillFiles={
+                        composerRef.current
+                          ?.getDraft()
+                          .skillMentions.map((skill) => skill.skillFile) ?? []
+                      }
+                      onRemoveSkill={(file) => {
+                        if (composerLocked || !isCurrentView(viewRef.current)) return;
+                        const draft = composerRef.current?.getDraft();
+                        if (!draft) return;
+                        composerRef.current?.setDraft({
+                          ...draft,
+                          segments: draft.segments.filter(
+                            (segment) =>
+                              segment.type !== "skillMention" || segment.skill.skillFile !== file,
+                          ),
+                        });
+                        savedDraft.scheduleCapture();
+                      }}
+                      onTryExtension={tryExtension}
+                      onViewExtension={openExtensionDetails}
+                      onCustomize={openCustomize}
                       onFillDraft={fillStarter}
                       onFocusComposer={() => {
                         if (isCurrentView(viewRef.current)) composerRef.current?.focus();
@@ -5278,15 +5510,69 @@ export function CloudChatPage({
             </main>
           </WorkbenchCanvas>
 
-          {accountSettingsOpen ? (
+          {customize.owner === user.id && customize.visited ? (
+            <WorkbenchCanvas
+              hidden={!customizeOpen}
+              inert={!customizeOpen}
+              className={customizeOpen ? "relative flex min-h-0 min-w-0 flex-1" : "hidden"}
+            >
+              <Suspense
+                fallback={
+                  <div
+                    className="flex flex-1 flex-col gap-5 p-8"
+                    role="status"
+                    aria-label="正在加载自定义工作区"
+                  >
+                    <div className="h-7 w-24 animate-pulse rounded-lg bg-muted" />
+                    <div className="h-14 max-w-2xl animate-pulse rounded-xl bg-muted" />
+                    <div className="h-14 max-w-2xl animate-pulse rounded-xl bg-muted" />
+                  </div>
+                }
+              >
+                <ExtensionsWorkspace
+                  key={user.id}
+                  adapter={extensionsAdapter}
+                  catalog={extensionCatalog}
+                  openPackage={extensionTarget?.owner === user.id ? extensionTarget : undefined}
+                  loading={extensions.loading}
+                  error={extensions.error}
+                  onCatalog={(catalog) =>
+                    setExtensions({ owner: user.id, catalog, loading: false, error: "" })
+                  }
+                  onRefresh={() => setExtensionRefresh((value) => value + 1)}
+                  onBack={() => setCustomize((value) => ({ ...value, open: false }))}
+                  onTry={tryExtension}
+                  onConfigureImages={() => {
+                    customizeSettingsReturn.current = user.id;
+                    setCustomize((value) => ({ ...value, open: false }));
+                    setSettingsSection("image-studio");
+                    setAccountSettingsOpen(true);
+                  }}
+                />
+              </Suspense>
+            </WorkbenchCanvas>
+          ) : null}
+          {accountSettingsOpen && !customizeOpen ? (
             <SettingsWorkspace navigation="external" className="cloud-settings-page flex-1">
               <SettingsPage
                 presentation="page"
                 settings={settings}
                 setSettings={setSettings}
                 saveState={settingsSaveState}
+                backLabel={customizeSettingsReturn.current === user.id ? "返回生成图像" : undefined}
                 onBack={() => {
+                  const restoreCustomize = customizeSettingsReturn.current === user.id;
+                  customizeSettingsReturn.current = null;
                   setAccountSettingsOpen(false);
+                  if (restoreCustomize) {
+                    setCustomize({ owner: user.id, open: true, visited: true });
+                    requestAnimationFrame(() =>
+                      sidebarPreview.rootRef.current
+                        ?.querySelector<HTMLButtonElement>("[data-extension-configure-images]")
+                        ?.focus(),
+                    );
+                    return;
+                  }
                   requestAnimationFrame(() =>
                     sidebarPreview.rootRef.current
                       ?.querySelector<HTMLButtonElement>(
@@ -5300,6 +5586,8 @@ export function CloudChatPage({
                 initialSection={settingsSection}
                 onSectionChange={setSettingsSection}
                 hiddenSections={[
+                  "skills",
+                  "mcp",
                   "systemTools",
                   "stt",
                   "agents",

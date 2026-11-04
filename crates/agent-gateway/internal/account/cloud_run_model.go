@@ -205,6 +205,9 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			if _, err = r.store.CommitCloudRun(ctx, run.UserID, run.ID, owner, run.Attempt, CloudRunCommit{OperationID: fmt.Sprintf("context:%s:%d:%d", run.ID, run.Attempt, round), EventType: "context.prepared", Payload: cloudContextJSON(provenance)}); err != nil {
 				return CloudRunInterrupted, "context_persistence_failed"
 			}
+			if _, err := execution.skillCatalog(ctx); err != nil {
+				return CloudRunFailed, "skill_catalog_unavailable"
+			}
 			tools = execution.schemas()
 		}
 		if round == r.config.MaxModelRounds-1 || execution.calls >= r.config.MaxToolCalls {
@@ -216,7 +219,7 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 		} else {
 			guidance = cloudCapabilityGuidance(r.service.now(), parameters, tools)
 			if len(tools) > 0 {
-				guidance += cloudVisualSkillGuidance
+				guidance += cloudVisualSkillGuidance + execution.skillGuidance(ctx)
 			}
 		}
 		upstreamMessages = append([]map[string]any{{"role": "system", "content": guidance}}, upstreamMessages...)

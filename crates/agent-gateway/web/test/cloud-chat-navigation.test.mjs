@@ -43,7 +43,8 @@ test("project edits protect navigation and unload; a retired account cannot conf
   await app.click("继续编辑"); assert.equal(navigations, 0);
   await app.click("离开");
   await app.render(app.env.React.createElement(Harness, { account: "b" }));
-  assert.equal(document.querySelector('[role="alertdialog"]'), null);
+  await app.env.waitFor(()=>!document.querySelector('[role="alertdialog"]'),'retired account prompt to finish closing');
+  assert.equal(Boolean(document.querySelector('[role="alertdialog"]')), false);
   assert.equal(navigations, 0);
   prompt.setDirty(true);
   await app.click("离开"); await app.click("放弃修改并离开");
@@ -57,8 +58,8 @@ test("the same resource shell renders an accessible full page without a modal or
   await app.render(app.env.React.createElement(CloudChatResourcePresentation.Provider, { value: "page" },
     app.env.React.createElement(CloudChatResourcePanel, { title: "文件库", description: "账户资料", onClose: () => closed++ }, "受保护的资料内容")));
   assert.ok(app.host.querySelector('[data-cloud-resource-page]'));
-  assert.equal(document.querySelector('[role="dialog"]'), null);
-  assert.equal(document.querySelector('[data-slot="sheet-backdrop"]'), null);
+  assert.equal(Boolean(document.querySelector('[role="dialog"]')), false);
+  assert.equal(Boolean(document.querySelector('[data-slot="sheet-backdrop"]')), false);
   await app.click("返回对话"); assert.equal(closed, 1);
 });
 

@@ -85,8 +85,8 @@ test("层底部的实底条两端共用：盖住底部悬浮留白，正文不�
     region,
     /"pointer-events-none absolute bottom-0 top-\[calc\(var\(--radius\)\+var\(--radius-16px\)\)\] bg-background"/,
   );
-  // 两端共用：只允许 surface 分支决定水平内缩（桌面端给原生滚动条留槽），不许
+  // 两端共用：只允许画布 presentation 决定水平内缩（pane 给原生滚动条留槽），不许
   // 把整条退回桌面独占。
-  assert.match(region, /surface === "desktop" \? "inset-x-5" : "inset-x-0"/);
+  assert.match(region, /panePresentation \? "inset-x-5" : "inset-x-0"/);
   assert.ok(!region.includes('surface === "desktop" ? ('), "实底条不许退回桌面独占");
 });

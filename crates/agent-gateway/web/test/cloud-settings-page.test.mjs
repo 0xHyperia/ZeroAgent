@@ -31,6 +31,9 @@ test('page settings keeps real section navigation, mobile list/detail and nested
   assert.equal(host.querySelector('[data-settings-presentation]').dataset.settingsPresentation,'page');
   assert.ok(host.querySelector('.settings-page-title'));
   assert.ok(host.querySelector('.settings-mobile-back'));
+  await act(async()=>root.render(React.createElement(SettingsShell,{...props,presentation:'page',backLabel:'返回 ImageGen'})));
+  const originBack=host.querySelector('button[aria-label="返回 ImageGen"]');assert.ok(originBack);assert.equal(Boolean(host.querySelector('button[aria-label="settings.backToChat"]')),false);
+  await act(async()=>originBack.click());assert.equal(backs,2);
  }finally{await act(async()=>root.unmount());host.remove();env.cleanup();}
 });
 

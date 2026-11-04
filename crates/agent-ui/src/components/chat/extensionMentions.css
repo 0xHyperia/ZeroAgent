@@ -1,0 +1,94 @@
+/* A capability reference participates in the same text line as its surrounding draft. */
+.mention-chip.mention-extension {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #2655a0;
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.dark .mention-chip.mention-extension {
+  color: #93b8f0;
+}
+.extension-mention-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding-inline-end: 3px;
+  vertical-align: -0.125em;
+}
+.extension-mention-icon > :is(img, svg) {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  transform: none;
+}
+.composer-capability-menu {
+  padding: 6px;
+}
+.composer-capability-menu .composer-capability-list {
+  max-height: min(360px, var(--available-height));
+  gap: 0;
+  scrollbar-width: thin;
+}
+.composer-capability-option {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 10px;
+  text-align: start;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.composer-capability-option[aria-selected="true"],
+.composer-capability-option:hover {
+  background: hsl(var(--foreground) / 0.06);
+}
+.composer-capability-option:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+.composer-capability-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+.composer-capability-icon .za-extension-mark {
+  width: 16px;
+  height: 16px;
+}
+.composer-capability-name {
+  flex-shrink: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-capability-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .composer-capability-option {
+    min-height: 44px;
+  }
+}
