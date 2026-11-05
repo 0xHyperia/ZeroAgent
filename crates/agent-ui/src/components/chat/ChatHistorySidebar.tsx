@@ -1455,6 +1455,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         previewOpen={previewOpen}
         mobileRail={mobileRail}
         label={t("sidebar.navigation")}
+        data-escape-owner={selectionMode ? "sidebar-selection" : undefined}
         data-app-frame-column="sidebar"
         data-sidebar-preview-region=""
         className="chat-history-sidebar zone-font-scale bg-settings-rail group-data-[side=left]:border-r-0 [&_button:not(:disabled)]:cursor-pointer"

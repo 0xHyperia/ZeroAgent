@@ -29,6 +29,8 @@ export const CATALOG_LIVE_SCHEMA_VERSION = 1;
 
 /** Gateway 代理（同源、无需鉴权）：国内部署可经 Gateway 的出站代理回源。 */
 export const CATALOG_LIVE_GATEWAY_PATH = "/api/public/model-catalog";
+export const CATALOG_LIVE_DEFAULT_URL =
+  "https://raw.githubusercontent.com/Stack-Cairn/LiveAgent/data/model-catalog/model-catalog.v1.json";
 
 /** 默认刷新间隔与发布频率（每 6 小时）一致。 */
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -206,15 +208,15 @@ export type CatalogLiveStatus = {
 let status: CatalogLiveStatus = { origin: "bundled", snapshotDate: MODEL_CATALOG_SNAPSHOT_DATE };
 let lastFetchedAt = 0;
 let inflight: Promise<boolean> | null = null;
-let sources: readonly string[] = [];
+let sources: readonly string[] = [CATALOG_LIVE_DEFAULT_URL];
 
 export function getCatalogLiveStatus(): CatalogLiveStatus {
   return status;
 }
 
 /**
- * 设置拉取地址顺序（第一个成功且通过校验的生效）。WebUI 把同源 Gateway 代理放在
- * 由宿主显式配置；空列表禁用联网刷新。
+ * 设置拉取地址顺序（第一个成功且通过校验的生效）。
+ * 地址由宿主显式配置；空列表禁用联网刷新。
  */
 export function configureCatalogLiveSources(urls: readonly string[]): void {
   const next: string[] = [];
@@ -279,6 +281,9 @@ async function fetchDocument(url: string): Promise<unknown> {
   // 一次 304，且不加自定义请求头，跨域读取 raw 不触发预检。
   const response = await fetch(url, {
     cache: "no-cache",
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+    redirect: "error",
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -354,4 +359,31 @@ export function startCatalogLiveRefresh(intervalMs = DEFAULT_REFRESH_INTERVAL_MS
     clearInterval(timer);
     if (hasDocument) document.removeEventListener("visibilitychange", onVisibilityChange);
   };
+}
+
+/** WebUI prefers its own Gateway; every host can fall back to the public upstream directory. */
+export function startConfiguredCatalogLive(
+  value: string | undefined,
+  useGateway = false,
+): () => void {
+  const urls = useGateway ? [CATALOG_LIVE_GATEWAY_PATH] : [];
+  const url = value?.trim();
+  if (url) {
+    try {
+      const parsed = new URL(url, globalThis.location?.href);
+      const sameOriginHTTP =
+        parsed.protocol === "http:" && parsed.origin === globalThis.location?.origin;
+      if ((!sameOriginHTTP && parsed.protocol !== "https:") || parsed.username || parsed.password) {
+        throw new Error("invalid catalog URL");
+      }
+      urls.push(parsed.href);
+    } catch {
+      console.warn(
+        "ZeroAgent model catalog URL must be same-origin HTTP or HTTPS without credentials",
+      );
+    }
+  }
+  configureCatalogLiveSources([...urls, CATALOG_LIVE_DEFAULT_URL]);
+  void loadCatalogLiveSupplement();
+  return startCatalogLiveRefresh();
 }

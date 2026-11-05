@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -389,5 +390,33 @@ func TestOriginAllowedUsesForwardedProtoForSameOrigin(t *testing.T) {
 
 	if !shared.OriginAllowed(req) {
 		t.Fatal("expected forwarded https origin to be allowed")
+	}
+}
+
+func TestPublicModelCatalogRoute(t *testing.T) {
+	const body = `{"schemaVersion":1,"snapshotDate":"2026-11-02","sections":{"openai":[]},"sha256":"fixture"}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+			t.Error("account credentials reached the public catalog upstream")
+		}
+		_, _ = io.WriteString(w, body)
+	}))
+	defer upstream.Close()
+
+	server := NewHTTPServer(&config.Config{Token: "fixture", ModelCatalogURL: upstream.URL}, session.NewManager(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/public/model-catalog", nil)
+	req.Header.Set("Cookie", "session=fixture")
+	req.Header.Set("Authorization", "Bearer fixture")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != body || rec.Header().Get("ETag") == "" {
+		t.Fatalf("public model catalog = %d %q", rec.Code, rec.Body.String())
+	}
+
+	disabled := NewHTTPServer(&config.Config{}, session.NewManager(), nil)
+	rec = httptest.NewRecorder()
+	disabled.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/public/model-catalog", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("disabled model catalog = %d, want 404", rec.Code)
 	}
 }

@@ -12,6 +12,7 @@ import { fromKBrainMcpSettings, toKBrainMcpSettings } from "../kbrain/mcp";
 import { createKBrainPromptClient, type KBrainPromptSnapshot } from "../kbrain/prompts";
 import {
   appProvidersFromKBrain,
+  kBrainSettingsUpdateForCatalogRefresh,
   kBrainSettingsUpdateForMissingInputModalities,
   kBrainSettingsUpdateFromAppSettings,
   loadKBrainProviderSettings,
@@ -373,7 +374,7 @@ async function backfillKBrainInputModalities(
     const saved = await saveKBrainProviderSettings(update);
     return { document: saved, providers: appProvidersFromKBrain(saved) };
   } catch (error) {
-    console.warn("ZeroAgent engine input modality backfill failed", error);
+    console.warn("ZeroAgent engine catalog metadata backfill failed", error);
     return { document, providers };
   }
 }
@@ -387,28 +388,22 @@ async function loadCurrentKBrainProviders() {
     : backfillKBrainInputModalities(document, providers);
 }
 
-async function loadNativeConfiguration(): Promise<PersistedSettingsResponse> {
+async function loadNativeConfiguration(
+  canReconcileCatalog: () => boolean,
+): Promise<PersistedSettingsResponse> {
   const load = () =>
     invokeSettingsCommand<PersistedSettingsResponse>("load_failed", "settings_load_all");
   const snapshot = await load();
   if (!snapshot.backend || !snapshot.configurationRevision)
     throw new SettingsStorageError("load_failed", "Configuration snapshot returned no version");
-  const document = snapshot.backend.settings;
-  const selected =
-    document.defaultProvider && document.defaultModel
-      ? { customProviderId: document.defaultProvider, model: document.defaultModel }
-      : undefined;
-  const update = kBrainSettingsUpdateForMissingInputModalities(
-    appProvidersFromKBrain(document),
-    selected,
-  );
-  if (!update) return snapshot;
+  const update = kBrainSettingsUpdateForCatalogRefresh(snapshot.backend.settings);
+  if (!update || !canReconcileCatalog()) return snapshot;
   try {
     await invoke("settings_save_canonical_batch", {
       update: { expectedRevision: snapshot.configurationRevision, settings: update },
     });
   } catch (error) {
-    console.warn("ZeroAgent engine input modality backfill failed", error);
+    console.warn("ZeroAgent engine catalog metadata backfill failed", error);
   }
   // A backfill, conflict or failed write can advance the version. Read data and version together.
   return load();
@@ -426,9 +421,13 @@ function projectPromptsFromSnapshot(snapshot: KBrainPromptSnapshot): Record<stri
   return projects;
 }
 
-export async function loadPersistedSettingsWithDefaults(): Promise<PersistedSettingsLoadResult> {
+export async function loadPersistedSettingsWithDefaults(
+  canReconcileCatalog: () => boolean = () => true,
+): Promise<PersistedSettingsLoadResult> {
   const defaults = getDefaultSettings();
-  const persisted = isKBrainBrowserHost() ? undefined : await loadNativeConfiguration();
+  const persisted = isKBrainBrowserHost()
+    ? undefined
+    : await loadNativeConfiguration(canReconcileCatalog);
   let kbrainSettings: Awaited<ReturnType<typeof loadCurrentKBrainProviders>>;
   try {
     kbrainSettings = persisted?.backend
@@ -456,20 +455,12 @@ export async function loadPersistedSettingsWithDefaults(): Promise<PersistedSett
         let snapshot = await client.getConfiguration();
         if (!snapshot.configurationVersion)
           throw new Error("Configuration response returned no read version");
-        const providers = appProvidersFromKBrain(snapshot.settings);
-        const selected =
-          snapshot.settings.defaultProvider && snapshot.settings.defaultModel
-            ? {
-                customProviderId: snapshot.settings.defaultProvider,
-                model: snapshot.settings.defaultModel,
-              }
-            : undefined;
-        const backfill = kBrainSettingsUpdateForMissingInputModalities(providers, selected);
-        if (backfill) {
+        const backfill = kBrainSettingsUpdateForCatalogRefresh(snapshot.settings);
+        if (backfill && canReconcileCatalog()) {
           try {
             await client.updateConfiguration({ settings: backfill }, snapshot.configurationVersion);
           } catch (error) {
-            console.warn("ZeroAgent engine input modality backfill failed", error);
+            console.warn("ZeroAgent engine catalog metadata backfill failed", error);
           }
           snapshot = await client.getConfiguration();
           if (!snapshot.configurationVersion)

@@ -1776,6 +1776,7 @@ export function GatewayAppView({
                             ) : (
                               <section
                                 ref={transcriptStageRef}
+                                data-conversation-scope=""
                                 className="gateway-transcript-stage relative min-h-0 flex-1 overflow-hidden @container"
                                 // Preferred (persisted) width, so a fresh mount paints at
                                 // the user's width instead of the default.

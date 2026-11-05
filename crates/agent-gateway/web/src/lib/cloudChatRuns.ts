@@ -81,6 +81,7 @@ export type CloudChatRunRequest = {
   model_parameters?: CloudChatModelParameters;
   provider_key_id?: number;
   public_research?: CloudChatPublicResearch;
+  edit?: { message_id: string; expected_tail_id: string };
 };
 
 export type CloudChatRunEvent = {
@@ -133,6 +134,9 @@ export class CloudChatRunRequestError extends Error {
         ? "打开的实时页面已达上限，请关闭其他窗口后重试；任务会继续运行。"
         : undefined) ||
         (status === 400 && modelMessage) ||
+        (status === 409 && reason === "cloud_history_changed"
+          ? "会话历史已变化。请重新加载会话后再编辑。"
+          : undefined) ||
         (status === 401
           ? "登录已失效，请重新登录"
           : status === 403
@@ -149,7 +153,7 @@ export class CloudChatRunRequestError extends Error {
     this.reason =
       reason &&
       (Object.hasOwn(modelMessages, reason) ||
-        ["account_queue_full", "cloud_stream_limit"].includes(reason))
+        ["account_queue_full", "cloud_stream_limit", "cloud_history_changed"].includes(reason))
         ? reason
         : undefined;
   }
@@ -167,7 +171,7 @@ async function cloudRequestError(
   response: Response,
   admission = false,
 ): Promise<CloudChatRunRequestError> {
-  if (![400, 429].includes(response.status) || !response.body)
+  if (![400, 409, 429].includes(response.status) || !response.body)
     return new CloudChatRunRequestError(response.status);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];

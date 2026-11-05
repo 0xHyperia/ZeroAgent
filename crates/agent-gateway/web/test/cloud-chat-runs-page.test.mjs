@@ -261,13 +261,20 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
       let run = [...runs.values()].find((item) => item.client_request_id === body.client_request_id);
       if(!run&&queueIsFull){if(delayedQueueFull)await new Promise(resolve=>{finishQueueFull=resolve;});return Response.json({reason:"account_queue_full",error:"synthetic rejection"},{status:429});}
       if (!run) {
+        let prefix = history.get(body.conversation_id) ?? [];
+        if (body.edit) {
+          const index = prefix.findIndex(message => message.id === body.edit.message_id && message.role === "user");
+          if (index < 0 || prefix.at(-1)?.id !== body.edit.expected_tail_id)
+            return Response.json({ reason: "cloud_history_changed", error: "会话历史已变化" }, { status: 409 });
+          prefix = prefix.slice(0, index);
+        }
         run = snapshot({
           id: "created-run", client_request_id: body.client_request_id,
           conversation_id: body.conversation_id, user_message_id: "created-user", assistant_message_id: "created-assistant", state: "queued",
         });
         runs.set(run.id, run);
         const content=Array.isArray(body.content)?body.content.map((part)=>part.type==="file_reference"?{...part,name:files.get(part.file_id).name,size:files.get(part.file_id).size,mime:files.get(part.file_id).mime}:part.type==="artifact_reference"?artifactSnapshot(artifacts.get(part.version_id)):part):body.content;
-        history.set(body.conversation_id, [...(history.get(body.conversation_id) ?? []), { id: run.user_message_id, role: "user", content }]);
+        history.set(body.conversation_id, [...prefix, { id: run.user_message_id, role: "user", content }]);
       }
       if (delayedSubmit) await new Promise(resolve => { finishSubmit = resolve; });
       if (!online) throw new Error("response lost after acceptance");
@@ -571,7 +578,7 @@ test("real Cloud streaming changes to a readable answer after completion even if
  await app.emit("run-a","2","run.completed");const body=[...app.host.querySelectorAll(".assistant-bubble-shell [data-markdown-leaf]")].find(node=>node.textContent===text);assert.ok(body);assert.equal(body.closest("[data-chat-work-trace]"),null);assert.equal(app.host.querySelector("[data-chat-work-trace]"),null);
 });
 
-test("a zero-output failure reviews the last request in the real editor before branching, preserving original refs and the independent draft",async(t)=>{
+test("a zero-output failure reviews the last request in the real editor before replacing the failed turn, preserving original refs and the independent draft",async(t)=>{
  const source=[{id:"old-user",role:"user",content:"较早问题"},{id:"old-answer",role:"assistant",content:"较早的已完成答复"},{id:"failed-user",role:"user",content:[{type:"text",text:"请把方案精简到三步"},{type:"file_reference",file_id:fileId,name:"notes.md",mime:"text/markdown",size:5},artifactSnapshot(artifactRecord())]}];
  const app=await mount(t,{realTranscript:true,fileMode:true,initialRun:snapshot({conversation_id:fileConversation,user_message_id:"failed-user",assistant_message_id:"failed-answer",state:"failed",error_code:"model_upstream_unavailable",output:""}),initialMessages:structuredClone(source),initialFiles:[fileRecord()],initialArtifacts:[artifactRecord()]});
  const failure=app.host.querySelector('[data-terminal-run-state="failed"]');
@@ -579,7 +586,7 @@ test("a zero-output failure reviews the last request in the real editor before b
  assert.equal(failure.closest('[data-app-workbench-chrome]'),null);
  app.draft="保留独立草稿";await app.clickText("编辑并重试");const editor=app.host.querySelector('textarea[aria-label="chat.editMessage"]');assert.ok(editor);assert.equal(editor.value,"请把方案精简到三步");assert.match(app.host.querySelector("[data-editor-attachments]").textContent,/notes.md.*website.html/);assert.equal(app.calls.some(call=>call.method==="POST"),false);assert.equal(app.host.querySelector("[data-terminal-run-state]").dataset.terminalRunState,"failed");assert.equal(app.editScrolls.at(-1).index,2);
  await app.clickText("chat.cancel");assert.equal(app.host.querySelector('textarea[aria-label="chat.editMessage"]'),null);assert.equal(app.calls.some(call=>call.method==="POST"),false);
- await app.clickText("编辑并重试");await app.clickText("chat.send");const branch=app.calls.find(call=>call.path.endsWith("/branch"));assert.ok(branch);assert.equal(JSON.parse(branch.body).message_id,"failed-user");assert.equal(JSON.parse(branch.body).action,"regenerate");const sent=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.notEqual(sent.conversation_id,fileConversation);assert.deepEqual(sent.content,[{type:"text",text:"请把方案精简到三步"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);assert.equal(app.draft,"保留独立草稿");assert.deepEqual(app.history.get(fileConversation),source);
+ await app.clickText("编辑并重试");await app.clickText("chat.send");assert.equal(app.branches.size,0);const sent=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(sent.conversation_id,fileConversation);assert.equal(sent.edit.message_id,"failed-user");assert.deepEqual(sent.content,[{type:"text",text:"请把方案精简到三步"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);assert.equal(app.draft,"保留独立草稿");assert.equal(app.history.get(fileConversation).at(-1).id,"created-user");
 });
 
 test("only confirmed cancelled or failed last turns offer review; unknown outcomes and unavailable long bodies never silently retry",async(t)=>{
@@ -739,18 +746,46 @@ test("library deletion requires a concrete choice and removes draft references a
 
 const branchMessages=[{id:"source-user",role:"user",content:"原始问题"},{id:"source-assistant",role:"assistant",content:"原始回复"},{id:"later-user",role:"user",content:"后续问题"},{id:"later-assistant",role:"assistant",content:"后续回复"}];
 
-test("editing a persisted user message creates a new branch and Run while preserving the unsent draft",async(t)=>{
+test("editing a persisted user message replaces it in the current conversation while preserving the unsent draft",async(t)=>{
  const app=await mount(t,{initialMessages:structuredClone(branchMessages)});
  const ref=app.transcript.rows.find(row=>row.key==="source-user").messageRef;
  assert.deepEqual(ref,{segmentIndex:0,messageIndex:0,segmentId:defaultConversation,messageId:"source-user",role:"user",contentHash:""});
  await app.edit("source-user","改写后的问题");
- const branchCall=app.calls.find(call=>call.path.endsWith("/branch"));
- assert.deepEqual({...JSON.parse(branchCall.body),client_request_id:"stable"},{client_request_id:"stable",message_id:"source-user",action:"edit",content:"改写后的问题"});
+ assert.equal(app.branches.size,0);
  const run=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
- assert.equal(run.conversation_id,branchConversation(1));assert.equal(run.content,"改写后的问题");
+ assert.equal(run.conversation_id,defaultConversation);assert.equal(run.content,"改写后的问题");
+ assert.deepEqual(run.edit,{message_id:"source-user",expected_tail_id:"later-assistant"});
  assert.equal(app.draft,"新的问题");assert.equal(app.clearCount,0);
- assert.deepEqual(app.history.get(defaultConversation),branchMessages);
+ assert.deepEqual(app.history.get(defaultConversation),[{id:"created-user",role:"user",content:"改写后的问题"}]);
  assert.match(app.host.textContent,/改写后的问题/);assert.doesNotMatch(app.host.textContent,/后续回复/);
+});
+
+test("editing refuses a newer unseen tail and does not submit or remove messages",async(t)=>{
+ const app=await mount(t,{initialMessages:structuredClone(branchMessages)});
+ const newer={id:"newer",role:"user",content:"来自另一个窗口"};
+ app.history.get(defaultConversation).push(newer);
+ await app.edit("source-user","尝试改写");
+ assert.match(app.host.textContent,/会话历史已变化/);
+ assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
+ assert.deepEqual(app.history.get(defaultConversation),[...branchMessages,newer]);
+ assert.equal(app.draft,"新的问题");
+});
+
+test("an edit with a lost receipt keeps visible history until the same Run is reconciled",async(t)=>{
+ const app=await mount(t,{initialMessages:structuredClone(branchMessages)});
+ app.online=false;
+ await app.edit("source-user","已接受的改写");
+ assert.match(app.host.textContent,/后续回复/);
+ assert.match(app.host.textContent,/核对提交状态/);
+ app.online=true;
+ await app.clickText("核对提交状态");
+ const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");
+ assert.ok(posts.length>=1&&posts.every(post=>post.body===posts[0].body));
+ assert.equal(app.runs.size,1);
+ assert.equal(app.branches.size,0);
+ assert.match(app.host.textContent,/已接受的改写/);
+ assert.doesNotMatch(app.host.textContent,/后续回复/);
+ assert.equal(app.draft,"新的问题");
 });
 
 test("an unchanged prompt regenerates its source files and preserves independent draft attachments",async(t)=>{
@@ -761,11 +796,11 @@ test("an unchanged prompt regenerates its source files and preserves independent
  await app.clickText("文件库");await app.clickText("draft.md");await app.clickText("引用到消息");
  assert.equal(app.composer.pendingUploadedFiles[0].relativePath,draftID);
  await app.edit("source-user","阅读原件",[{relativePath:fileId,fileName:"source.md",kind:"text",sizeBytes:5}]);
- const request=JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body);assert.equal(request.action,"regenerate");assert.equal("content" in request,false);
+ assert.equal(app.branches.size,0);
  const run=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
  assert.deepEqual(run.content,[{type:"text",text:"阅读原件"},{type:"file_reference",file_id:fileId}]);assert.equal(app.draft,"新的问题");assert.equal(app.clearCount,0);
  assert.equal(app.composer.pendingUploadedFiles[0].relativePath,draftID);
- assert.deepEqual(app.history.get(fileConversation),original);
+ assert.equal(app.history.get(fileConversation).at(-1).id,"created-user");
 });
 
 test("forking an answer anchors its assistant and clones only that prefix without generating",async(t)=>{
@@ -871,11 +906,11 @@ test("editing and regenerating retain source artifact references while preservin
    await app.openArtifact();await app.clickText("继续修改");
    const sourceAttachments=app.transcript.rows.find(row=>row.key==="source-user").attachments;
    await app.edit("source-user",changed?"改成深色网页":"修改网页",sourceAttachments);
-   const branch=JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body);assert.equal(branch.action,changed?"edit":"regenerate");
+   assert.equal(app.branches.size,0);
    const run=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);
    assert.deepEqual(run.content,[{type:"text",text:changed?"改成深色网页":"修改网页"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:olderArtifactID}]);
    assert.equal(app.draft,"新的问题");assert.equal(app.clearCount,0);assert.equal(app.composer.pendingUploadedFiles[0].relativePath,`cloud-artifacts/${artifactVersionID}`);
-   assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website.html · 已保存 · v2/);assert.deepEqual(app.history.get(fileConversation),messages);
+   assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website.html · 已保存 · v2/);assert.equal(app.history.get(fileConversation).at(-1).id,"created-user");
  });
 });
 
@@ -903,10 +938,10 @@ test("saved account limits still apply to new messages after reload",async(t)=>{
  assert.equal(request.model_parameters.context_window,96000);assert.equal(request.model_parameters.max_output_tokens,12000);
 });
 
-test("fresh account facts affect a new send while unknown submissions and branch execution keep their original accepted parameters",async(t)=>{
+test("fresh account facts affect a new send while unknown submissions and edit execution keep their original accepted parameters",async(t)=>{
  await t.test("fresh read",async(child)=>{const app=await mount(child,{modelSettings:[configuredProvider()],initialModelLimits:modelLimitRecord()});app.modelLimits=modelLimitRecord({mode:"platform",version:2});await app.click('[data-action="send"]');const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(input.model_parameters.context_window,undefined);});
  await t.test("unknown retry",async(child)=>{const app=await mount(child,{modelSettings:[configuredProvider()],initialModelLimits:modelLimitRecord({mode:"platform"})});app.online=false;await app.click('[data-action="send"]');const reads=app.calls.filter(call=>call.path.includes("model-limits")).length;app.modelLimits=modelLimitRecord({mode:"custom",context_window:96000,max_output_tokens:12000,version:2});app.online=true;await app.clickText("核对提交状态");const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");assert.ok(posts.length>1);assert.ok(posts.every(call=>call.body===posts[0].body));assert.equal(JSON.parse(posts[0].body).model_parameters.context_window,undefined);assert.equal(app.calls.filter(call=>call.path.includes("model-limits")).length,reads);});
- await t.test("branch",async(child)=>{const app=await mount(child,{modelSettings:[configuredProvider()],initialMessages:structuredClone(branchMessages),initialModelLimits:modelLimitRecord({mode:"platform"}),delayedBranch:true});await app.edit("source-user","修改问题");app.modelLimits=modelLimitRecord({version:2,context_window:96000,max_output_tokens:12000});await app.finishBranch();const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(request.model_parameters.context_window,undefined);assert.equal(request.model_parameters.max_output_tokens,undefined);});
+ await t.test("edit",async(child)=>{const app=await mount(child,{modelSettings:[configuredProvider()],initialMessages:structuredClone(branchMessages),initialModelLimits:modelLimitRecord({mode:"platform"}),delayedSubmit:true});await app.edit("source-user","修改问题");app.modelLimits=modelLimitRecord({version:2,context_window:96000,max_output_tokens:12000});await app.finishSubmit();const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(request.model_parameters.context_window,undefined);assert.equal(request.model_parameters.max_output_tokens,undefined);});
 });
 
 
@@ -920,15 +955,15 @@ test("ordinary sends apply configured model parameters and every reasoning level
  assert.equal(request.reasoning_effort,"max");assert.deepEqual(request.model_parameters,{request_format:"openai-completions",context_window:64000,max_output_tokens:8000,input_modalities:["text","image"],provider_cache_mode:"none",model_cache_mode:"auto",time_zone:Intl.DateTimeFormat().resolvedOptions().timeZone,locale:navigator.language});assert.equal(request.model_parameters.now,undefined);
  assert.equal(provider.requestFormat,"openai-responses");
 });
-test("unknown submissions and delayed branches freeze the model parameter snapshot taken at the user's action",async(t)=>{
+test("unknown submissions and delayed edits freeze the model parameter snapshot taken at the user's action",async(t)=>{
  await t.test("unknown run",async(child)=>{
    const app=await mount(child,{modelSettings:[configuredProvider()],initialReasoning:"none"});app.online=false;await app.click('[data-action="send"]');
    await app.updateModels([configuredProvider({contextWindow:128000,maxOutputToken:16000,inputModalities:["text"]})]);app.online=true;await app.clickText("核对提交状态");
    const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");assert.ok(posts.every(call=>call.body===posts[0].body));const request=JSON.parse(posts[0].body);assert.equal(request.model_parameters.context_window,64000);assert.equal(request.reasoning_effort,"none");
  });
- await t.test("delayed branch",async(child)=>{
-   const app=await mount(child,{modelSettings:[configuredProvider()],initialMessages:structuredClone(branchMessages),delayedBranch:true});await app.edit("source-user","改写");
-   await app.updateModels([configuredProvider({contextWindow:128000,maxOutputToken:16000})]);await app.finishBranch();
+ await t.test("delayed edit",async(child)=>{
+   const app=await mount(child,{modelSettings:[configuredProvider()],initialMessages:structuredClone(branchMessages),delayedSubmit:true});await app.edit("source-user","改写");
+   await app.updateModels([configuredProvider({contextWindow:128000,maxOutputToken:16000})]);await app.finishSubmit();
    const request=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.equal(request.model_parameters.context_window,64000);assert.equal(request.model_parameters.max_output_tokens,8000);
  });
 });
@@ -976,7 +1011,7 @@ test("returning from a known unaccepted queue rejection permits deliberate draft
  app.draft="重新编辑的问题";app.queueFull=false;await app.click('[data-action="send"]');const last=JSON.parse(app.calls.findLast(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.notEqual(last.client_request_id,first.client_request_id);assert.equal(last.content[0].text,"重新编辑的问题");assert.equal(app.runs.size,1);
 });
 
-test("a branch queue rejection retains the independent draft when its unaccepted generation is cancelled",async(t)=>{
+test("an edit queue rejection retains the independent draft when its unaccepted generation is cancelled",async(t)=>{
  const app=await mount(t,{fileMode:true,queueFull:true,initialMessages:structuredClone(branchMessages),initialArtifacts:[artifactRecord()]});await app.openArtifact();await app.clickText("继续修改");await app.edit("source-user","修改后的源问题");
  assert.match(app.host.textContent,/账户队列已满/);assert.equal(app.runs.size,0);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].relativePath,`cloud-artifacts/${artifactVersionID}`);await app.clickText("取消本次生成");assert.equal(app.composer.isInputDisabled,false);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles.length,1);assert.deepEqual(app.history.get(fileConversation),branchMessages);
 });
@@ -1030,7 +1065,7 @@ test("omitted messages keep their identity and require an explicit safe body rea
  const row=app.transcript.rows.find(row=>row.key==="large-user");assert.equal(row.contentOmitted,true);assert.equal(row.messageRef.messageId,"large-user");assert.match(row.text,/按需加载/);assert.equal(app.calls.some(call=>call.path.includes("/messages/large-user")),false);
  await app.openMessage("large-user");assert.match(app.host.querySelector('[role="dialog"] pre').textContent,/完整原问题/);assert.equal(app.host.querySelector('[role="dialog"] script'),null);assert.equal(app.transcript.rows.find(row=>row.key==="large-user").contentOmitted,false);assert.equal(app.draft,"新的问题");
  await app.clickText("关闭消息原文");const full=app.transcript.rows.find(row=>row.key==="large-user");await app.edit("large-user",full.text,full.attachments);
- assert.equal(JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body).action,"regenerate");const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.content,[{type:"text",text:"完整原问题 <script>not executable</script>"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);
+ assert.equal(app.branches.size,0);const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.content,[{type:"text",text:"完整原问题 <script>not executable</script>"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);
 });
 
 test("an omitted answer is an explicit body link and a hard-limit response is never presented as an empty answer",async(t)=>{
@@ -1077,7 +1112,7 @@ test("a real 2 MiB body stays bounded in transcript and reader DOM, downloads in
  const reads=app.calls.filter(call=>call.path.endsWith("/messages/large-user")).length;await app.openMessage("large-user");assert.equal(app.calls.filter(call=>call.path.endsWith("/messages/large-user")).length,reads,"cached canonical body should reopen without refetching 2 MiB");assert.ok(app.host.textContent.length<16000);await app.clickText("关闭消息原文");
  await app.emit("run-a","2","run.completed");assert.equal(app.transcript.rows.find(row=>row.key==="large-user").retryText,text,"terminal page omission must not replace the cached complete body");
  const canonical=app.transcript.rows.find(row=>row.key==="large-user");await app.edit("large-user",canonical.retryText,canonical.attachments);
- const branch=JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body);assert.equal(branch.action,"regenerate");
+ assert.equal(app.branches.size,0);
  const submission=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(submission.content,[{type:"text",text},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);assert.equal(createHash("sha256").update(Buffer.from(submission.content[0].text)).digest("hex"),textSHA);assert.equal(app.draft,"保留未发送草稿");assert.ok(app.host.textContent.length<15000);
 });
 
@@ -1098,8 +1133,8 @@ test("an 8k report previews briefly but copies and edits the complete canonical 
  const row=app.transcript.rows.find(row=>row.key==="report");assert.equal(row.contentPreview,true);assert.equal(row.inlineEditText,text);assert.equal(typeof row.copyContent,"function");assert.ok(app.host.textContent.length<5000);
  await app.env.act(async()=>{assert.equal(await row.copyContent(),true);});assert.deepEqual(copied,[text]);assert.equal(app.host.querySelector("textarea"),null,"private clipboard path must not use a textarea fallback");
  await app.openMessage("report");await app.clickText("复制完整正文");assert.deepEqual(copied,[text,text]);assert.ok(app.host.textContent.length<14000);await app.clickText("关闭消息原文");
- await app.edit("report",row.inlineEditText+"修订",row.attachments);const branch=JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body);assert.equal(branch.action,"edit");const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.content,[{type:"text",text:text+"修订"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);assert.equal(app.draft,"新的问题");
- await app.env.act(async()=>{assert.equal(await row.copyContent(),false);});assert.equal(copied.length,2,"a stale row must not copy its old conversation text after branch navigation");
+ await app.edit("report",row.inlineEditText+"修订",row.attachments);assert.equal(app.branches.size,0);const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.content,[{type:"text",text:text+"修订"},{type:"file_reference",file_id:fileId},{type:"artifact_reference",version_id:artifactVersionID}]);assert.equal(app.draft,"新的问题");
+ await app.click(`[data-conversation="${secondFileConversation}"]`);await app.env.act(async()=>{assert.equal(await row.copyContent(),false);});assert.equal(copied.length,2,"a stale row must not copy its old conversation text after navigation");
 });
 
 test("Cloud work starters append to the existing draft without creating a paid Run or enabling research",async(t)=>{
@@ -1134,10 +1169,10 @@ test("public topic approval remains frozen during lost-receipt reconciliation an
  const app=await mount(t);await app.env.act(async()=>app.composer.onChatRuntimeControlsChange({nativeWebSearchEnabled:true}));await app.click('[data-action="send"]');await app.setResearchTopic("approved topic");app.online=false;await app.clickText("确认公开主题并继续");assert.match(app.host.textContent,/提交结果尚未确认/);app.draft="private changed later";app.online=true;await app.clickText("核对提交状态");const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");assert.ok(posts.length>=2);assert.ok(posts.every(call=>call.body===posts[0].body));assert.deepEqual(JSON.parse(posts[0].body).public_research,{topic:"approved topic"});assert.equal(app.host.querySelector('[role="dialog"]'),null);
 });
 
-test("editing or regenerating confirms a fresh public topic before creating a branch and preserves the independent draft",async(t)=>{
+test("editing or regenerating confirms a fresh public topic before replacing history and preserves the independent draft",async(t)=>{
  for(const action of ["edit","regenerate"])await t.test(action,async(child)=>{
   const app=await mount(child,{initialMessages:[{id:"original",role:"user",content:"old public question"},{id:"answer",role:"assistant",content:"old answer"}]});app.draft="independent private draft";await app.env.act(async()=>app.composer.onChatRuntimeControlsChange({nativeWebSearchEnabled:true}));
-  await app.edit("original",action==="edit"?"new edited question":"old public question");assert.equal(app.calls.some(call=>call.path.endsWith("/branch")),false);assert.equal(app.host.querySelector('textarea[aria-label="可用于公开检索的主题"]').value,action==="edit"?"new edited question":"old public question");await app.setResearchTopic("explicit new topic");await app.clickText("确认公开主题并继续");const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.public_research,{topic:"explicit new topic"});assert.equal(app.draft,"independent private draft");assert.equal(JSON.parse(app.calls.find(call=>call.path.endsWith("/branch")).body).action,action);
+  await app.edit("original",action==="edit"?"new edited question":"old public question");assert.equal(app.calls.some(call=>call.path.endsWith("/branch")),false);assert.equal(app.host.querySelector('textarea[aria-label="可用于公开检索的主题"]').value,action==="edit"?"new edited question":"old public question");await app.setResearchTopic("explicit new topic");await app.clickText("确认公开主题并继续");const input=JSON.parse(app.calls.find(call=>call.path==="/api/web-chat/runs"&&call.method==="POST").body);assert.deepEqual(input.public_research,{topic:"explicit new topic"});assert.equal(app.draft,"independent private draft");assert.equal(input.edit.message_id,"original");assert.equal(app.branches.size,0);
  });
 });
 
@@ -1457,13 +1492,12 @@ test("conversation drafts retain their own input presentation and explicit resea
  assert.equal(app.calls.some(call => call.path === "/api/web-chat/runs" && call.method === "POST"), false);
 });
 
-test("branch editing carries the independent structured draft without changing its original conversation snapshot", async t => {
+test("in-place editing preserves the independent structured draft across navigation", async t => {
  const app = await mount(t); const rich = richComposerDraft(); app.structuredDraft = rich;
- await app.edit("user-a", "新的分支问题");
+ await app.edit("user-a", "新的问题");
  assert.deepEqual(app.structuredDraft, rich);
- app.draft = "分支继续编辑";
+ await app.click(`[data-conversation="${alternateConversation}"]`);
  await app.click(`[data-conversation="${defaultConversation}"]`); assert.deepEqual(app.structuredDraft, rich);
- await app.click(`[data-conversation="${branchConversation(1)}"]`); assert.equal(app.draft, "分支继续编辑");
  assert.equal(app.runs.size, 1);
 });
 

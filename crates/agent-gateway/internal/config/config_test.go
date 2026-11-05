@@ -178,3 +178,21 @@ func resetFlagsForTest(t *testing.T) {
 	flag.CommandLine.SetOutput(io.Discard)
 	os.Args = []string{"gateway"}
 }
+
+func TestLoadModelCatalogURL(t *testing.T) {
+	t.Setenv("ZEROAGENT_GATEWAY_MODEL_CATALOG_URL", "")
+	resetFlagsForTest(t)
+	if cfg := Load(); cfg.ModelCatalogURL != DefaultModelCatalogURL {
+		t.Fatalf("default ModelCatalogURL = %q", cfg.ModelCatalogURL)
+	}
+	t.Setenv("ZEROAGENT_GATEWAY_MODEL_CATALOG_URL", " https://mirror.example/catalog.json ")
+	resetFlagsForTest(t)
+	if cfg := Load(); cfg.ModelCatalogURL != "https://mirror.example/catalog.json" {
+		t.Fatalf("mirror ModelCatalogURL = %q", cfg.ModelCatalogURL)
+	}
+	t.Setenv("ZEROAGENT_GATEWAY_MODEL_CATALOG_URL", " OFF ")
+	resetFlagsForTest(t)
+	if cfg := Load(); cfg.ModelCatalogURL != "" {
+		t.Fatalf("off ModelCatalogURL = %q", cfg.ModelCatalogURL)
+	}
+}

@@ -1,6 +1,16 @@
 import { useSandboxCapability } from "@liveagent/adapters/sandboxCapability";
 import type { CommandSafetyMode } from "@liveagent/app/lib/settings";
-import { Check, Hand, Lightbulb, Shield, ShieldOff, Zap } from "@liveagent/ui/components/IconSet";
+import {
+  Check,
+  Hand,
+  Lightbulb,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  SquarePen,
+  Zap,
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -33,7 +43,15 @@ const MODE_DESC_I18N_KEYS: Record<CommandSafetyMode, string> = {
   sandboxOffline: "chat.safety.sandboxOfflineDesc",
 };
 
-const SAFETY_MODES = ["ask", "autoEdit", "autoReview", "auto", "always"] as const;
+const SAFETY_MODES = [
+  "ask",
+  "autoEdit",
+  "autoReview",
+  "sandbox",
+  "sandboxOffline",
+  "auto",
+  "always",
+] as const;
 
 /**
  * 读掩蔽是平台/后端相关的能力,不能作为跨平台的肯定承诺(P2#7)。
@@ -61,6 +79,9 @@ function isCommandSafetyMode(value: unknown): value is CommandSafetyMode {
 
 function modeIcon(mode: CommandSafetyMode, className: string) {
   if (mode === "ask") return <Hand className={className} />;
+  if (mode === "autoEdit") return <SquarePen className={className} />;
+  if (mode === "autoReview") return <ShieldCheck className={className} />;
+  if (mode === "always") return <ShieldAlert className={className} />;
   if (mode === "auto") return <Zap className={className} />;
   if (mode === "sandboxOffline") return <ShieldOff className={className} />;
   return <Shield className={className} />;
@@ -85,22 +106,28 @@ export function CommandSafetyModeSelector(props: {
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const capability = useSandboxCapability();
-  // 写围栏(sandbox):平台不支持时禁用。桌面端探测返回前(null)乐观启用,由执行层
-  // fail-closed 兜底;WebUI 执行端平台未知,同样交由 fail-closed。
-  const sandboxUnavailable = capability !== null && !capability.supported;
-  // 断网(sandboxOffline):额外要求平台可断网。探测判定 network_control=false 时
-  // (如 Windows 派生不出 AppContainer SID)仅此项禁用,sandbox 仍可用。
-  const offlineUnavailable =
-    sandboxUnavailable || (capability !== null && !capability.network_control);
-  // 禁用时的说明文案:整体不可用优先,否则为“仅断网不可用”。
-  const disabledHint = sandboxUnavailable
-    ? t("chat.safety.sandboxUnavailable")
-    : t("chat.safety.sandboxOfflineUnavailable");
-  // 联网写围栏后端是否缺失读掩蔽(Windows 受限令牌);缺失时 sandbox 项换用不承诺
-  // “敏感目录不可读”的文案。探测返回前(null)以及 WebUI(永远拿不到桌面 mechanism)
-  // 保守按缺失处理,避免先给出过强承诺。
+  // Only the execution backend can confirm that it can enforce the requested isolation.
+  const sandboxUnavailable = capability?.supported !== true;
+  const offlineUnavailable = sandboxUnavailable || capability?.network_control !== true;
   const sandboxLacksReadMasking =
-    capability === null ? true : MECHANISMS_WITHOUT_READ_MASKING.has(capability.mechanism);
+    capability === null ||
+    capability.read_masking === false ||
+    MECHANISMS_WITHOUT_READ_MASKING.has(capability.mechanism);
+  const disabledHint =
+    capability === null
+      ? t("chat.safety.sandboxCapabilityUnknown")
+      : sandboxUnavailable && capability.platform === "windows"
+        ? t("chat.safety.sandboxNativeWindows")
+        : [
+            t(
+              sandboxUnavailable
+                ? "chat.safety.sandboxUnavailable"
+                : "chat.safety.sandboxOfflineUnavailable",
+            ),
+            capability.reason,
+          ]
+            .filter(Boolean)
+            .join(" · ");
   const modeDescKey = (mode: CommandSafetyMode) =>
     mode === "sandbox" && sandboxLacksReadMasking
       ? "chat.safety.sandboxDescNoReadMask"
@@ -111,10 +138,6 @@ export function CommandSafetyModeSelector(props: {
   const selectedLabel = t(
     planModeEnabled ? "chat.runtime.planModeTitle" : MODE_I18N_KEYS[selected],
   );
-  const modes: readonly CommandSafetyMode[] =
-    selected === "sandbox" || selected === "sandboxOffline"
-      ? [...SAFETY_MODES, selected]
-      : SAFETY_MODES;
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -141,14 +164,14 @@ export function CommandSafetyModeSelector(props: {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         variant="soft"
-        className="flex w-[324px] max-w-[calc(100vw-16px)] flex-col gap-0.5 overflow-hidden"
+        className="flex w-[324px] max-w-[calc(100vw-16px)] flex-col gap-0.5"
         side="top"
         align="start"
       >
         {onPlanModeChange ? (
           <DropdownMenuItem
             onSelect={() => onPlanModeChange(true)}
-            className="h-auto items-start gap-2.5 py-2 text-xs whitespace-normal"
+            className="h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal"
           >
             <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
             <span className="flex min-w-0 flex-1 flex-col">
@@ -160,7 +183,7 @@ export function CommandSafetyModeSelector(props: {
             {planModeEnabled ? <Check className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
           </DropdownMenuItem>
         ) : null}
-        {modes.map((mode) => {
+        {SAFETY_MODES.map((mode) => {
           const entryDisabled =
             mode === "sandbox"
               ? sandboxUnavailable
@@ -173,11 +196,12 @@ export function CommandSafetyModeSelector(props: {
               key={mode}
               disabled={entryDisabled}
               onSelect={() => {
+                if (entryDisabled) return;
                 onPlanModeChange?.(false);
                 onChange(mode);
               }}
               className={cn(
-                "h-auto items-start gap-2.5 py-2 text-xs whitespace-normal",
+                "h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal",
                 isSelected && "bg-accent text-accent-foreground",
               )}
             >

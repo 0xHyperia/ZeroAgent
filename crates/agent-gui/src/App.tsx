@@ -9,6 +9,7 @@ import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
+import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import {
   configureResourceHostCapabilities,
   kbrainResourceHostCapabilities,
@@ -388,21 +389,39 @@ export default function App() {
   // crypto.randomUUID() inside caller updaters) twice per call.
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const refreshCommittedConfiguration = useCallback((canApply: () => boolean = () => true) => {
-    const sequence = saveSequenceRef.current;
-    saveChainRef.current = saveChainRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const loaded = await loadPersistedSettingsWithDefaults();
-        if (!canApply() || saveSequenceRef.current !== sequence) return;
-        const next = applyRuntimeSystemDefaults(loaded.settings, loaded.defaultWorkdir);
-        settingsRef.current = next;
-        setSettingsState(next);
-      })
-      .catch((error) => {
-        console.error("Refresh committed settings failed", error);
-      });
-  }, []);
+  const refreshCommittedConfiguration = useCallback(
+    (canApply: () => boolean = () => true, publish = false) => {
+      const sequence = saveSequenceRef.current;
+      saveChainRef.current = saveChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const stillCurrent = () => canApply() && saveSequenceRef.current === sequence;
+          if (!stillCurrent()) return;
+          const loaded = await loadPersistedSettingsWithDefaults(stillCurrent);
+          if (!stillCurrent()) return;
+          const next = applyRuntimeSystemDefaults(loaded.settings, loaded.defaultWorkdir);
+          const revisionChanged =
+            settingsRef.current.configurationRevision !== next.configurationRevision;
+          settingsRef.current = next;
+          setSettingsState(next);
+          if (publish && revisionChanged) await publishGatewaySettingsSync(next);
+        })
+        .catch((error) => {
+          console.error("Refresh committed settings failed", error);
+        });
+    },
+    [],
+  );
+  const catalogVersion = useCatalogLiveVersion();
+  useEffect(() => {
+    if (!settingsReady || catalogVersion === 0) return;
+    let active = true;
+    refreshCommittedConfiguration(() => active, true);
+    return () => {
+      active = false;
+    };
+  }, [catalogVersion, settingsReady, refreshCommittedConfiguration]);
+
   const sttSettingsService = useMemo(
     () => ({
       ...desktopSttSettingsService,

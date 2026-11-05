@@ -135,10 +135,12 @@ export const EditableUserMessageBubble = memo(function EditableUserMessageBubble
         aria-label={t("chat.editMessage")}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
+            event.preventDefault();
             onCancel();
           }
         }}
       />
+      <p className="px-2 text-xs text-muted-foreground">{t("chat.editResendHistoryHint")}</p>
       <div className="mt-2 flex justify-end gap-2">
         <button
           type="button"

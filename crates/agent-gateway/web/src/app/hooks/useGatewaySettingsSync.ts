@@ -5,6 +5,7 @@ import {
   type HooksSnapshot,
   initAutomation,
 } from "@liveagent/ui/lib/automation/index";
+import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
 import { GatewaySettingsSaveLineage } from "@liveagent/ui/lib/settings/gatewaySettingsSaveLineage";
 import {
@@ -21,6 +22,7 @@ import { GatewaySettingsUpdateError } from "@/lib/gatewaySocketRpc";
 import {
   type AppSettings,
   normalizeSettings,
+  refreshCatalogDerivedModelLimits,
   resolveEffectiveTheme,
   subscribeToSystemThemePreference,
 } from "@/lib/settings";
@@ -117,6 +119,15 @@ export function useGatewaySettingsSync(params: {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [systemThemeVersion, setSystemThemeVersion] = useState(0);
+
+  const catalogVersion = useCatalogLiveVersion();
+  useEffect(() => {
+    if (catalogVersion === 0) return;
+    const refreshed = refreshCatalogDerivedModelLimits(settingsRef.current);
+    if (refreshed === settingsRef.current) return;
+    settingsRef.current = refreshed;
+    setSettingsState(refreshed);
+  }, [catalogVersion]);
 
   // Monaco reads NLS globals while the lazy editor module imports monaco-editor.
   setPreferredMonacoNlsLocale(settings.locale);

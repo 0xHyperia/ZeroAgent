@@ -32,6 +32,7 @@ var (
 // SessionRef is SHA-256(session.ID), never the browser's bearer cookie itself.
 type CloudRun struct {
 	pendingVersion     int64
+	historyEdit        *CloudRunHistoryEdit
 	ID                 string                  `json:"id"`
 	ConversationID     string                  `json:"conversation_id"`
 	UserID             int64                   `json:"-"`

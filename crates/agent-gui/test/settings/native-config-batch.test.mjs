@@ -40,7 +40,15 @@ async function fixture(run) {
       if (failure) throw failure;
       assert.ok(args.update.expectedRevision, "must carry the actual read version");
       if (args.update.expectedRevision !== version()) throw "ZEROAGENT_CONFIGURATION_CHANGED";
-      Object.assign(state, structuredClone(args.update.nativeChanges));
+      Object.assign(state, structuredClone(args.update.nativeChanges ?? {}));
+      for (const patch of args.update.settings?.providers ?? []) {
+        const provider = backend.settings.providers.find(item => item.id === patch.id);
+        provider.models = patch.models.map(model => {
+          const merged = { ...provider.models.find(existing => existing.id === model.id), ...model };
+          if (model.maxOutputToken !== undefined) merged.maxOutputTokens = model.maxOutputToken;
+          return merged;
+        });
+      }
        if (args.update.mcp) {
          backend.mcp.settings = structuredClone(args.update.mcp);
          for (const server of backend.mcp.settings.servers) for (const field of ["env","headers"]) {
@@ -50,7 +58,7 @@ async function fixture(run) {
        }
        if (args.update.templates) backend.prompts.globalTemplates = structuredClone(args.update.templates);
       revision += 1;
-      return { nativeRevision: nativeVersion(), configurationRevision: version(), backend: structuredClone(backend),stt:args.update.nativeChanges.stt ?? null };
+      return { nativeRevision: nativeVersion(), configurationRevision: version(), backend: structuredClone(backend),stt:args.update.nativeChanges?.stt ?? null };
     } },
   } });
   const settings = loader.loadModule("src/lib/settings/index.ts");
@@ -64,6 +72,7 @@ async function fixture(run) {
       clearUi: () => {uiPreferences = null;},
       changeUiElsewhere: () => {uiRevision += 1; uiPreferences = {theme:"light"};},
       state: () => state,
+      setProviders: (providers) => { backend.settings.providers = providers; },
       changeElsewhere: () => { revision += 1; },
       fail: error => { failure = error; },
     });
@@ -229,4 +238,40 @@ test("fresh Native preferences ignore old WebView data and persist current edits
   assert.equal(reopened.theme,"dark");
   assert.equal(reopened.selectedModel,undefined);
   assert.equal(f.calls.filter(c => c.command === "settings_save_ui_preferences").length,1);
+}));
+
+test("catalog metadata uses the canonical read revision and does not replace user or provider settings", async () => fixture(async f => {
+  const catalog = f.loader.loadModule("@liveagent/ui/lib/models/modelCatalog.ts");
+  const bundled = catalog.MODEL_CATALOG;
+  const model = { id:"catalog-fixture-model", contextWindow:800_000, maxOutputToken:90_000 };
+  catalog.applyRuntimeModelCatalog({
+    snapshotDate: "2026-11-06",
+    sections: { openai:[...bundled.openai, model] },
+  });
+  f.setProviders([{
+    id:"relay-key-1", name:"Managed fixture", type:"codex",
+    activeModels:["explicit"], modelOrder:["explicit",model.id],
+    models:[
+      { id:model.id, contextWindow:400_000, maxOutputTokens:142_000, limitsSource:"fallback" },
+      { id:"explicit", contextWindow:16_000, maxOutputTokens:1_000, limitsSource:"user", inputModalities:["text"] },
+      { id:"provider-declared", contextWindow:42_000, maxOutputTokens:4_000, limitsSource:"provider" },
+    ],
+  }]);
+  const initialRevision = f.version();
+  await f.storage.loadPersistedSettingsWithDefaults(() => false);
+  assert.equal(f.calls.filter(call => call.command === "settings_save_canonical_batch").length,0);
+  const { settings } = await f.storage.loadPersistedSettingsWithDefaults();
+  const writes = f.calls.filter(call => call.command === "settings_save_canonical_batch");
+  assert.equal(writes.length,1);
+  assert.equal(writes[0].args.update.expectedRevision,initialRevision);
+  assert.deepEqual(JSON.parse(JSON.stringify(writes[0].args.update.settings)), {providers:[
+    {id:"relay-key-1",models:[{...model,limitsSource:"catalog"},{id:"explicit"},{id:"provider-declared"}]},
+  ]});
+  assert.equal(settings.configurationRevision,f.version());
+  assert.deepEqual([...settings.customProviders[0].activeModels],["explicit"]);
+  assert.deepEqual([...settings.customProviders[0].modelOrder],["explicit",model.id,"provider-declared"]);
+  assert.equal(settings.customProviders[0].models.find(item => item.id === "explicit").maxOutputToken,1_000);
+  assert.equal(settings.customProviders[0].models.find(item => item.id === "provider-declared").maxOutputToken,4_000);
+  await f.storage.loadPersistedSettings();
+  assert.equal(f.calls.filter(call => call.command === "settings_save_canonical_batch").length,1);
 }));

@@ -56,6 +56,10 @@ func prepareCloudRun(input *CloudRun, now time.Time) (*CloudRun, error) {
 		return nil, err
 	}
 	run := cloneCloudRun(*input)
+	run.historyEdit, err = normalizeCloudRunHistoryEdit(input.historyEdit)
+	if err != nil {
+		return nil, err
+	}
 	run.ModelParameters = parameters
 	run.PublicResearch = publicResearch
 	conversationID, err := uuid.Parse(run.ConversationID)

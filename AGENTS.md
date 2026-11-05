@@ -26,7 +26,9 @@ Codex 右侧工具面板的使用体验，并保持 ZeroAgent 已确认的视觉
 同步上游时必须使用 `sync-liveagent-release` 技能，并且只合并 Stack-Cairn/LiveAgent 已正式
 发布的精确 Release，保留真实的 Git 合并祖先关系。每项实质性上游变化必须分类为
 `adopt`、`adapt`、`replace`、`partial`、`reject` 或 `defer`，并记录在
-`docs/upstream/vX.Y.Z.md`。
+`docs/upstream/vX.Y.Z.md`。同步须核对全部上游变更路径，并按功能验证桌面、设备 WebUI 和
+云端的可达入口。对仍为 `partial`、`reject` 或 `defer` 的能力，记录用户影响、具体差异与验收条件，
+下次同步继续核对，直到有明确处置与验证结果。
 
 需要保持的是产品契约定义的结果，而不是已经过时的本地实现。如果上游的新实现满足全部
 产品不变量、数据迁移、安全属性、支持端和回归测试，可以用它替换本地代码。禁止在没有

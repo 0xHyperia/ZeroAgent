@@ -434,6 +434,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
     "Complete the speech provider settings before using microphone input.",
   "chat.stt.configureAction": "Configure",
   "chat.send": "Send",
+  "chat.stopGenerationWithEsc": "Stop generation (Esc)",
   "chat.stopGeneration": "Stop Generation",
   "chat.stopShort": "Stop",
   "chat.thinking": "Thinking",
@@ -558,6 +559,10 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.sandboxOffline": "Offline sandbox",
   "chat.safety.sandboxOfflineDesc":
     "Commands run automatically inside the sandbox with writes kept to the workspace and no network access",
+  "chat.safety.sandboxCapabilityUnknown":
+    "Sandbox capability has not been reported by the execution host",
+  "chat.safety.sandboxNativeWindows":
+    "Native Windows K-brain does not support run sandboxes. Run K-brain in WSL2 or choose Always Ask.",
   "chat.safety.sandboxUnavailable": "ZeroAgent cannot sandbox commands on this machine",
   "chat.safety.sandboxOfflineUnavailable":
     "ZeroAgent cannot cut the sandbox off from the network on this machine",
@@ -596,8 +601,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.manualCompactFailed": "Context compaction failed. Please try again",
   "chat.manualCompactTimedOut":
     "Context compaction did not return a result. Check the desktop connection and try again",
-  "chat.editResendBranched": "Resent in a new branch; the original conversation is unchanged",
-  "chat.editResendOpenSource": "View original",
+  "chat.editResendHistoryHint":
+    "Resending replaces this message and removes the conversation after it.",
   "chat.editMessage": "Edit Message",
   "chat.cancel": "Cancel",
   "chat.queue.title": "Queue {count}",

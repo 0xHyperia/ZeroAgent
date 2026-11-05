@@ -266,7 +266,7 @@ test("cold start applies the disk cache synchronously, then refreshes in the bac
   const { catalogLive, modelCatalog } = freshModules();
   const cached = liveDocument();
   const storage = stubStorage({
-    "liveagent.catalogLive.v1": JSON.stringify({
+    "zeroagent.catalogLive.v1": JSON.stringify({
       v: 1,
       fetchedAt: Date.now() - 7 * 60 * 60 * 1000,
       url: catalogLive.CATALOG_LIVE_DEFAULT_URL,
@@ -303,7 +303,7 @@ test("cold start applies the disk cache synchronously, then refreshes in the bac
   assert.equal(catalogLive.getCatalogLiveStatus().origin, "network");
   assert.equal(modelCatalog.resolveModelLimitsAcrossProviders(ADDED_ID).contextWindow, 888_000);
   assert.equal(catalogLive.getCatalogLiveVersion(), 2);
-  const stored = JSON.parse(storage.getItem("liveagent.catalogLive.v1"));
+  const stored = JSON.parse(storage.getItem("zeroagent.catalogLive.v1"));
   assert.equal(stored.document.sha256, newer.sha256, "the newer document replaces the cache");
 });
 
@@ -316,7 +316,7 @@ test("a cache older than the bundled snapshot is ignored", async () => {
     { snapshotDate: "2026-01-01" },
   );
   const storage = stubStorage({
-    "liveagent.catalogLive.v1": JSON.stringify({ v: 1, fetchedAt: Date.now(), url: "x", document: old }),
+    "zeroagent.catalogLive.v1": JSON.stringify({ v: 1, fetchedAt: Date.now(), url: catalogLive.CATALOG_LIVE_DEFAULT_URL, document: old }),
   });
   await withGlobals(
     {
@@ -503,7 +503,7 @@ test("K-brain catalog reconcile pushes drifted catalog limits once and never tou
   const update = providerSettings.kBrainSettingsUpdateForCatalogRefresh(document);
   assert.ok(update, "a live catalog that changes a fallback model must be pushed to K-brain");
   assert.equal(update.deleteProviders, undefined);
-  assert.equal(update.defaultModel, ADDED_ID);
+  assert.equal(update.defaultModel, undefined, "does not change the selected model");
   const pushed = update.providers[0].models;
   const added = pushed.find((model) => model.id === ADDED_ID);
   assert.deepEqual(
@@ -511,11 +511,40 @@ test("K-brain catalog reconcile pushes drifted catalog limits once and never tou
     [777_000, 77_000, "catalog"],
   );
   const user = pushed.find((model) => model.id === "user-tuned");
-  assert.deepEqual([user.contextWindow, user.limitsSource], [1234, "user"]);
+  assert.deepEqual(plain(user), { id: "user-tuned" }, "keeps membership without overwriting explicit limits");
   assert.equal("apiKey" in update.providers[0], false, "never sends secrets");
 
-  const reconciled = kbrainDocument(pushed);
+  const reconciled = kbrainDocument(document.providers[0].models.map((model) => ({
+    ...model, ...pushed.find((patch) => patch.id === model.id),
+  })));
   assert.equal(providerSettings.kBrainSettingsUpdateForCatalogRefresh(reconciled), undefined);
+});
+
+test("clients start with public defaults and WebUI prefers its same-origin proxy", async () => {
+  for (const web of [false, true]) {
+    const { catalogLive } = freshModules();
+    const requested = [];
+    await withGlobals({
+      fetch: async (url, init) => {
+        assert.equal(init.credentials, "omit");
+        requested.push(url);
+        return url === catalogLive.CATALOG_LIVE_GATEWAY_PATH
+          ? new Response(null, { status: 503 })
+          : jsonResponse(liveDocument());
+      },
+    }, async () => {
+      const stop = catalogLive.startConfiguredCatalogLive(undefined, web);
+      try {
+        assert.equal(await catalogLive.loadCatalogLiveSupplement(), true);
+      } finally {
+        stop();
+      }
+    });
+    assert.deepEqual(requested, [
+      ...(web ? [catalogLive.CATALOG_LIVE_GATEWAY_PATH] : []),
+      catalogLive.CATALOG_LIVE_DEFAULT_URL,
+    ]);
+  }
 });
 
 test("startCatalogLiveRefresh retries on its interval and stops cleanly", async () => {

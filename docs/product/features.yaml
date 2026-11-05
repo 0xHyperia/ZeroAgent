@@ -127,6 +127,8 @@
         "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
         "crates/agent-gui/src-tauri/src/commands/config/settings/configuration_http.rs",
         "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+        "crates/agent-ui/src/lib/models/catalogLive.ts",
+        "crates/agent-gateway/internal/handler/model_catalog.go",
         "crates/agent-ui/src/pages/settings/ManagedProvidersView.tsx",
         "crates/agent-ui/src/pages/settings/ProvidersSection.tsx",
         "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
@@ -147,6 +149,9 @@
         "crates/agent-gui/test/settings/provider-brand-model.test.mjs",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend/managed_model_discovery_tests.rs",
         "crates/agent-gui/test/providers/kbrain-provider-settings.test.mjs",
+        "crates/agent-gui/test/models/catalog-live.test.mjs",
+        "crates/agent-gui/test/settings/native-config-batch.test.mjs",
+        "crates/agent-gateway/internal/handler/model_catalog_test.go",
         "crates/agent-gui/test/providers/fixtures/prompt-cache-runtime-probe.mjs",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend/prompt_cache_tests.rs",
         "crates/agent-gateway/internal/kbrain/settings_contract_test.go",
@@ -157,7 +162,7 @@
         "crates/agent-gui/test/settings/image-model-toggle.test.mjs",
         "crates/agent-gui/test/image-studio/image-target-toggle.test.mjs"
       ],
-      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。运行时凭据未就绪不得清空模型启用/选择偏好。ADR0045对齐供应商默认auto、模型默认继承；保留已有明确模式和旧false。固定Go补丁接通模型覆盖的保存/重启与实际请求，同ID模型按供应商隔离；Native只新增受控x-session-id转发，不开放任意请求头、外部连接或另一套执行器。",
+      "security": "Desktop 托管密钥列表和创建响应保持遮罩；指定密钥复制由 Native 按当前账户实时验证 USA-Zero 密码，不接受前端已验证标记。临时密码会话不替换 OAuth，收到的可撤销凭据在成功、失败或切号后均尝试清理。WebUI/Android 密钥流转、全部配置读取路径和真实平台验收仍按 ADR 0016 跟进。ADR0035开放平台内模型元数据/启停/排序与已有协议配置，刷新保留手调及非空目录的禁用状态。供应商身份、URL/发现地址、真实凭据、headers/proxy由平台及Native绑定强制管理；配置写入和目录发现两个入口均不接受外部连接覆盖。运行时凭据未就绪不得清空模型启用/选择偏好。ADR0045对齐供应商默认auto、模型默认继承；保留已有明确模式和旧false。固定Go补丁接通模型覆盖的保存/重启与实际请求，同ID模型按供应商隔离；Native只新增受控x-session-id转发，不开放任意请求头、外部连接或另一套执行器。ADR0075复用上游公开目录及同源代理，目录只补充元数据；K-brain 对账经版本化事务，仅更新派生限额及缺失的模态。",
       "upstream_relation": "adapt"
     },
     {

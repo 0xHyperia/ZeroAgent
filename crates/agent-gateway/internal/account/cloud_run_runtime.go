@@ -29,6 +29,7 @@ type CreateCloudRunInput struct {
 	ProviderKeyID   int64                   `json:"provider_key_id,omitempty"`
 	ModelParameters CloudRunModelParameters `json:"model_parameters,omitempty"`
 	PublicResearch  *CloudRunPublicResearch `json:"public_research,omitempty"`
+	Edit            *CloudRunHistoryEdit    `json:"edit,omitempty"`
 }
 
 type cloudRunRuntime struct {
@@ -213,6 +214,10 @@ func (s *Service) CreateCloudRun(ctx context.Context, session *Session, input Cr
 		return nil, false, ErrCloudRunInvalid
 	}
 	input.ConversationID = conversationID.String()
+	input.Edit, err = normalizeCloudRunHistoryEdit(input.Edit)
+	if err != nil {
+		return nil, false, err
+	}
 	if !validCloudReasoningEffort(input.ReasoningEffort) {
 		return nil, false, ErrCloudRunInvalid
 	}
@@ -279,7 +284,7 @@ func (s *Service) CreateCloudRun(ctx context.Context, session *Session, input Cr
 	if !ok {
 		return nil, false, ErrCloudRunInvalid
 	}
-	run, created, err := store.CreateCloudRun(ctx, &CloudRun{pendingVersion: input.pendingVersion, ConversationID: input.ConversationID, UserID: session.UserID, SessionRef: ref, ClientRequestID: input.ClientRequestID, RequestHash: hash, Model: input.Model, ReasoningEffort: input.ReasoningEffort, ProviderKeyID: input.ProviderKeyID, ModelParameters: parameters, PublicResearch: publicResearch, RequestContent: content})
+	run, created, err := store.CreateCloudRun(ctx, &CloudRun{pendingVersion: input.pendingVersion, historyEdit: input.Edit, ConversationID: input.ConversationID, UserID: session.UserID, SessionRef: ref, ClientRequestID: input.ClientRequestID, RequestHash: hash, Model: input.Model, ReasoningEffort: input.ReasoningEffort, ProviderKeyID: input.ProviderKeyID, ModelParameters: parameters, PublicResearch: publicResearch, RequestContent: content})
 	if err != nil {
 		return nil, false, err
 	}

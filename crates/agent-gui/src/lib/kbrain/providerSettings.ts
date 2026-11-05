@@ -27,10 +27,10 @@ function providerType(provider: KBrainSettingsProvider): ProviderId {
 }
 
 export function customProviderFromKBrain(provider: KBrainSettingsProvider): CustomProvider {
-  const models = provider.models.map((model) => ({
+  const models = provider.models.map(({ maxOutputTokens, ...model }) => ({
     ...model,
     displayName: model.displayName ?? model.name,
-    maxOutputToken: model.maxOutputToken ?? model.maxOutputTokens,
+    maxOutputToken: model.maxOutputToken ?? maxOutputTokens,
     inputModalities:
       model.inputModalities ?? (model.vision === true ? ["text", "image"] : undefined),
     limitsSource: model.limitsSource ?? "provider",
@@ -176,6 +176,46 @@ export function kBrainSettingsUpdateForMissingInputModalities(
   const update = settingsUpdateFromProviders(providers, providers, selectedModel);
   delete update.deleteProviders;
   return update;
+}
+
+/**
+ * The backend replaces a provider's model membership when models is present.
+ * Include every existing model ID for affected providers, and patch only the
+ * metadata derived from the directory. Explicit settings stay in the backend.
+ */
+export function kBrainSettingsUpdateForCatalogRefresh(document: KBrainSettingsDocument) {
+  const providers = appProvidersFromKBrain(document);
+  const withInputModalities = resolvePushedInputModalities(providers);
+  const updates = document.providers.flatMap((backend, index) => {
+    const models = new Map(providers[index].models.map((model) => [model.id, model]));
+    let changed = false;
+    const patches = backend.models.map((stored) => {
+      const model = models.get(stored.id);
+      if (!model) return { id: stored.id };
+      const limitsChanged =
+        (stored.limitsSource === "catalog" || stored.limitsSource === "fallback") &&
+        (stored.contextWindow !== model.contextWindow ||
+          (stored.maxOutputToken ?? stored.maxOutputTokens) !== model.maxOutputToken ||
+          stored.limitsSource !== model.limitsSource);
+      const inputModalities = !model.inputModalities?.length
+        ? withInputModalities(model).inputModalities
+        : undefined;
+      if (limitsChanged || inputModalities) changed = true;
+      return {
+        id: stored.id,
+        ...(limitsChanged
+          ? {
+              contextWindow: model.contextWindow,
+              maxOutputToken: model.maxOutputToken,
+              limitsSource: model.limitsSource,
+            }
+          : {}),
+        ...(inputModalities ? { inputModalities } : {}),
+      };
+    });
+    return changed ? [{ id: backend.id, models: patches }] : [];
+  });
+  return updates.length ? { providers: updates } : undefined;
 }
 
 /** Import only providers absent from the backend; existing backend records are untouched. */

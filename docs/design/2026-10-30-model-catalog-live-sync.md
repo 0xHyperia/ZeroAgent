@@ -1,5 +1,7 @@
 # 模型元数据运行期同步设计
 
+> ZeroAgent 的部署与写入边界见 [ADR 0075](../product/decisions/0075-upstream-model-catalog.md)。下文保留 LiveAgent 原设计供对照。
+
 日期：2026-10-30。状态：P0–P3 已在分支 `feat-model-catalog-live-sync` 实现（基线 `upstream/v2-kbrian`），P4 未做。本文设计模型目录（窗口、输出上限、输入模态、思考档位）的运行期分发方式，让上游新收录或修正的模型在几小时内到达用户，不再依赖 PR 合并和发版。
 
 实现与初稿的差异在各节以“实现”标出。

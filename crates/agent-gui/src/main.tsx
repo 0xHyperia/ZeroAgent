@@ -1,3 +1,4 @@
+import { startConfiguredCatalogLive } from "@liveagent/ui/lib/models/catalogLive";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
@@ -22,6 +23,11 @@ import { installNativeGatewaySockets } from "./lib/relay/nativeGatewaySocket";
 import { inferRuntimePlatform } from "./lib/runtimePlatform";
 import { createStartupRenderer } from "./lib/startup/render";
 import { installWebviewNavigationGuard } from "./lib/system/webviewNavigationGuard";
+
+const stopCatalogRefresh = startConfiguredCatalogLive(
+  import.meta.env.VITE_ZEROAGENT_MODEL_CATALOG_URL,
+);
+import.meta.hot?.dispose(stopCatalogRefresh);
 
 if (import.meta.env.DEV) {
   const stopReactTimelineLimit = installReactDevTimelineLimit();

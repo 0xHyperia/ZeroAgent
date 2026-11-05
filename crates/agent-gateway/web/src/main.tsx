@@ -1,3 +1,4 @@
+import { startConfiguredCatalogLive } from "@liveagent/ui/lib/models/catalogLive";
 import { GATEWAY_WEBUI_MARKER } from "@liveagent/ui/lib/runtimeEnv";
 import { installReactDevTimelineLimit } from "@liveagent/ui/lib/system/reactDevTimeline";
 import React from "react";
@@ -9,6 +10,12 @@ import "./index.css";
 import "katex/dist/katex.min.css";
 import "react-complex-tree/lib/style-modern.css";
 import "streamdown/styles.css";
+
+const stopCatalogRefresh = startConfiguredCatalogLive(
+  import.meta.env.VITE_ZEROAGENT_MODEL_CATALOG_URL,
+  true,
+);
+import.meta.hot?.dispose(stopCatalogRefresh);
 
 // 渲染前写入 WebUI 运行时标记（isGatewayWebuiRuntime 的唯一权威写入点）。
 async function start() {

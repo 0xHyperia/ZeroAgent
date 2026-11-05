@@ -65,6 +65,7 @@ func NewHTTPServerWithReadiness(
 	rootMux.HandleFunc("/t/", publicTunnelProxy(sm))
 	rootMux.HandleFunc("GET /image-proxy", handler.ImageProxy(cfg.RequestTimeout))
 	rootMux.HandleFunc("GET /api/public/history-shares/{token}", publicHistoryShare(cfg, sm))
+	rootMux.Handle("GET /api/public/model-catalog", handler.NewModelCatalogProxy(cfg.ModelCatalogURL, cfg.RequestTimeout))
 	// The hosted multi-account image adapter is intentionally unavailable until principal/grant
 	// integration is complete. Never serve SPA HTML or infer an owner from a shared bearer.
 	unavailableImages := http.Handler(&handler.ImageGateway{})

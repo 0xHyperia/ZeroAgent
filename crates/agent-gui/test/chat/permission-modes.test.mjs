@@ -73,7 +73,7 @@ test("a sandboxed run is refused, never sent unconfined, when the backend cannot
   ]);
 });
 
-test("the retired full-access mode migrates to always allow", () => {
+test("full access keeps its distinct backend permission mode", () => {
   assert.equal(normalizeCommandSafetyMode("auto"), "auto");
   assert.equal(normalizeCommandSafetyMode(" auto "), "auto");
   // The product preserves explicit full-access and always choices separately.

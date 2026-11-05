@@ -117,6 +117,7 @@ import {
   resolveComposerControls,
   resolveComposerPresentation,
 } from "../../contracts/composerPresentation";
+import { useEscapeToStopRun } from "../../lib/chat/escapeStopRun";
 import {
   getUploadedImagePreviewCacheKey,
   loadUploadedImagePreview,
@@ -702,7 +703,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const primaryActionTitle = canQueueDraftWhileSending
     ? (submitLabel ?? t("chat.queue.addToQueue"))
     : isSending
-      ? t("chat.stopGeneration")
+      ? t("chat.stopGenerationWithEsc")
       : (submitLabel ?? t("chat.sendMessage"));
   const sendShortcutHint =
     readComposerSendShortcut() === "ctrlEnter"
@@ -710,6 +711,12 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         ? "⌘+Enter"
         : "Ctrl+Enter"
       : "Enter";
+  useEscapeToStopRun({
+    enabled: isSending && !hidden && approvalBar == null,
+    onStop,
+    anchorRef: composerLayerRef,
+    composerInputRef: glassCardRef,
+  });
   const uploadTooltip = isUploadingFiles
     ? t("chat.upload.uploading")
     : !allowUploadsWithoutWorkspace && !isAgentMode
@@ -1641,6 +1648,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               ? (event) => {
                   // mention 弹层消费 Escape 时会 preventDefault，此处让路。
                   if (event.key === "Escape" && !event.defaultPrevented) {
+                    event.preventDefault();
                     setComposerExpanded(false);
                   }
                 }
@@ -2055,6 +2063,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     !isSending || canQueueDraftWhileSending ? sendShortcutHint : undefined
                   }
                   aria-label={primaryActionTitle}
+                  aria-keyshortcuts={isSending && !canQueueDraftWhileSending ? "Escape" : undefined}
                   className="composer-primary-key shrink-0"
                 >
                   {canQueueDraftWhileSending ? (

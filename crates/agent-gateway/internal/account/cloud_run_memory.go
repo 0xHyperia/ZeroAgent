@@ -154,9 +154,30 @@ func (s *MemoryStore) CreateCloudRun(ctx context.Context, input *CloudRun) (*Clo
 			return nil, false, ErrCloudRunConflict
 		}
 	}
+	messages := s.cloudMessages[run.ConversationID]
+	if run.historyEdit != nil {
+		edit := run.historyEdit
+		if len(messages) == 0 || messages[len(messages)-1].ID != edit.ExpectedTailID {
+			return nil, false, errCloudHistoryChanged
+		}
+		anchor := -1
+		for i, message := range messages {
+			if message.ID == edit.MessageID && message.Role == "user" {
+				anchor = i
+				break
+			}
+		}
+		if anchor < 0 {
+			return nil, false, errCloudHistoryChanged
+		}
+		messages = messages[:anchor]
+	}
 	if err := s.consumeCloudPendingLocked(run); err != nil {
 		return nil, false, err
 	}
+	// Keep request receipts and completed runs so transport retries remain idempotent.
+	s.cloudMessages[run.ConversationID] = messages
+	run.historyEdit = nil
 	messageAt := s.nextCloudMessageTimeLocked(run.ConversationID, run.CreatedAt)
 	s.cloudMessages[run.ConversationID] = append(s.cloudMessages[run.ConversationID], CloudMessage{
 		ID: run.UserMessageID, ConversationID: run.ConversationID, UserID: run.UserID,

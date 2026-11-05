@@ -189,6 +189,35 @@ for (const error of validateUpstreamRelease(upstreamSync)) {
 if (/^[0-9a-f]{40}$/.test(upstreamSync.commit ?? "")) {
   git(["merge-base", "--is-ancestor", upstreamSync.commit, "HEAD"]);
 }
+if (!/^[0-9a-f]{40}$/.test(upstreamSync.previous_upstream_commit ?? "")) {
+  failures.push(".github/upstream-sync.json：previous_upstream_commit 必须是完整的 40 位 Commit SHA");
+}
+if (/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(upstreamSync.tag ?? "") &&
+    /^[0-9a-f]{40}$/.test(upstreamSync.previous_upstream_commit ?? "") &&
+    /^[0-9a-f]{40}$/.test(upstreamSync.commit ?? "")) {
+  const report = "docs/upstream/" + upstreamSync.tag;
+  read(report + ".md");
+  const inventoryPath = report + "-inventory.json";
+  const inventory = parseJsonYaml(inventoryPath);
+  if (inventory.release !== upstreamSync.tag || inventory.upstream_commit !== upstreamSync.commit ||
+      inventory.previous_upstream !== upstreamSync.previous_upstream_commit) {
+    failures.push(inventoryPath + "：库存必须对应当前和前一份上游 Release。");
+  }
+  const entries = new Set();
+  const decisions = new Set(["adopt", "adapt", "replace", "partial", "reject", "defer"]);
+  for (const entry of inventory.entries ?? []) {
+    if (!entry.path || entries.has(entry.path) || !decisions.has(entry.decision) || !entry.notes?.trim()) {
+      failures.push(inventoryPath + "：变更路径需有唯一记录和明确处置：" + entry.path);
+    }
+    entries.add(entry.path);
+  }
+  const changed = git(["diff", "--name-only", "-z", upstreamSync.previous_upstream_commit, upstreamSync.commit])
+    .split("\0")
+    .filter(Boolean);
+  for (const path of changed) {
+    if (!entries.has(path)) failures.push(inventoryPath + "：遗漏上游变更路径：" + path);
+  }
+}
 if (
   /^[0-9a-f]{40}$/.test(upstreamSync.base_commit ?? "") &&
   /^[0-9a-f]{40}$/.test(upstreamSync.commit ?? "")
@@ -306,7 +335,12 @@ for (const path of trackedFiles.filter(
       path === "crates/agent-gateway/proto/v2/gateway.proto") &&
     /\.(?:ts|tsx|proto)$/.test(path),
 )) {
-  if (/LiveAgent|Live Agent/.test(read(path))) {
+  const source = read(path);
+  // ADR 0075 allows this public metadata URL; UI branding stays ZeroAgent.
+  const text = path === "crates/agent-ui/src/lib/models/catalogLive.ts"
+    ? source.replaceAll("https://raw.githubusercontent.com/Stack-Cairn/LiveAgent/data/model-catalog/model-catalog.v1.json", "")
+    : source;
+  if (/LiveAgent|Live Agent/.test(text)) {
     failures.push(`${path}：运行时源码仍包含上游产品身份 LiveAgent`);
   }
 }

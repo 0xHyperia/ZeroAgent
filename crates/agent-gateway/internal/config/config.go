@@ -17,9 +17,12 @@ const (
 	DefaultMaxTerminalConnections = 512
 )
 
+const DefaultModelCatalogURL = "https://raw.githubusercontent.com/Stack-Cairn/LiveAgent/data/model-catalog/model-catalog.v1.json"
+
 const DefaultUSAZeroOrigin = "https://usa0.top"
 
 type Config struct {
+	ModelCatalogURL            string // Public model metadata upstream; empty disables the proxy.
 	Token                      string // Test-only fallback when account auth is not configured.
 	USAZeroOrigin              string
 	USAZeroAuthorizationOrigin string
@@ -91,6 +94,7 @@ func Load() *Config {
 	flag.StringVar(&cfg.PublicOrigin, "public-origin", getenv("ZEROAGENT_GATEWAY_PUBLIC_ORIGIN", ""), "public Gateway origin used for OAuth callbacks")
 	flag.StringVar(&cfg.OAuthWebClientSecret, "oauth-web-client-secret", getenv("ZEROAGENT_WEB_OAUTH_CLIENT_SECRET", ""), "ZeroAgent Web OAuth client secret")
 	flag.StringVar(&cfg.GRPCAddr, "grpc-addr", getenv("ZEROAGENT_GATEWAY_GRPC_ADDR", ""), "deprecated, no-op (v1 gRPC removed; kept for startup-script compatibility)")
+	flag.StringVar(&cfg.ModelCatalogURL, "model-catalog-url", getenv("ZEROAGENT_GATEWAY_MODEL_CATALOG_URL", DefaultModelCatalogURL), "public model catalog upstream (off disables proxy)")
 	flag.StringVar(&cfg.HTTPAddr, "http-addr", getenv("ZEROAGENT_GATEWAY_HTTP_ADDR", defaultHTTPAddr()), "HTTP listen address")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", getenv("ZEROAGENT_GATEWAY_TLS_CERT", ""), "TLS certificate path")
 	flag.StringVar(&cfg.TLSKey, "tls-key", getenv("ZEROAGENT_GATEWAY_TLS_KEY", ""), "TLS private key path")
@@ -112,6 +116,10 @@ func Load() *Config {
 	flag.IntVar(&cfg.RelayBufferSeconds, "relay-buffer-seconds", getenvInt("ZEROAGENT_GATEWAY_RELAY_BUFFER_SECONDS", 30), "seconds of chat events to buffer for brief reconnections")
 	flag.DurationVar(&cfg.CommandQueueTimeout, "command-queue-timeout", getenvDuration("ZEROAGENT_GATEWAY_COMMAND_QUEUE_TIMEOUT", 30*time.Second), "deprecated, no-op (kept for startup-script compatibility)")
 	flag.Parse()
+	cfg.ModelCatalogURL = strings.TrimSpace(cfg.ModelCatalogURL)
+	if strings.EqualFold(cfg.ModelCatalogURL, "off") {
+		cfg.ModelCatalogURL = ""
+	}
 	for _, secret := range []struct {
 		value *string
 		env   string

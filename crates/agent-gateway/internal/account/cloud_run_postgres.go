@@ -287,6 +287,12 @@ WHERE r.user_id=$1 AND r.client_request_id=$2`, run.UserID, run.ClientRequestID)
 	if err = consumeCloudPendingTx(ctx, tx, run); err != nil {
 		return nil, false, err
 	}
+	if run.historyEdit != nil {
+		if err = truncateCloudRunHistoryTx(ctx, tx, run); err != nil {
+			return nil, false, err
+		}
+		run.historyEdit = nil
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_runs
 (id,conversation_id,user_id,session_ref,client_request_id,request_hash,model,reasoning_effort,provider_key_id,model_parameters,public_research,
 request_content,user_message_id,assistant_message_id,state,created_at,updated_at)

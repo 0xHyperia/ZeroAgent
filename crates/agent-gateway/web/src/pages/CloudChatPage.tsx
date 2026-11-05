@@ -42,6 +42,7 @@ import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
+import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
   deleteSidebarConversations,
@@ -2307,15 +2308,13 @@ export function CloudChatPage({
     }
   }
 
-  async function branchConversation(
-    messageRef: HistoryMessageRef,
-    edited?: { text: string; files: PendingUploadedFile[] },
-  ) {
+  async function branchConversation(messageRef: HistoryMessageRef) {
     const view = viewRef.current;
     if (
       !isCurrentView(view) ||
       streaming ||
       historyLoading ||
+      historyRestoreFailed ||
       uploadingFiles ||
       branchAbortRef.current ||
       pendingBranchRef.current ||
@@ -2329,111 +2328,138 @@ export function CloudChatPage({
     );
     if (index < 0 || messageRef.segmentId !== view.conversationId) return;
     const original = messages[index];
-    if (edited && original.content_omitted) {
-      void readMessageBody(original.id);
-      return;
-    }
     let anchor = original.id;
-    let action: CloudBranchRequest["action"] = "fork";
-    let content: unknown;
-    if (edited) {
-      const ids = edited.files.map((file) => file.relativePath);
-      if (
-        ids.length > 8 ||
-        ids.some(
-          (id) =>
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) &&
-            !cloudArtifactVersionFromLink(id),
-        )
-      ) {
-        setError("附件标识无效，请从文件库重新选择。");
-        return;
-      }
-      const originalIDs = [
-        ...cloudFileReferences(original.content).map((file) => file.file_id),
-        ...cloudArtifactReferences(original.content).map(
-          (version) => `cloud-artifacts/${version.version_id}`,
-        ),
-      ];
-      const unchanged =
-        edited.text === messageText(original.content) &&
-        ids.length === originalIDs.length &&
-        ids.every((id, i) => id === originalIDs[i]);
-      action = unchanged ? "regenerate" : "edit";
-      content = ids.length
-        ? [
-            ...(edited.text.trim() ? [{ type: "text", text: edited.text }] : []),
-            ...ids.map((id) => {
-              const versionId = cloudArtifactVersionFromLink(id);
-              return versionId
-                ? { type: "artifact_reference", version_id: versionId }
-                : { type: "file_reference", file_id: id };
-            }),
-          ]
-        : edited.text;
-      if (!edited.text.trim() && !ids.length) {
-        setError("编辑后的消息不能为空。");
-        return;
-      }
-    } else {
-      for (let next = index + 1; next < messages.length && messages[next].role !== "user"; next++)
-        if (messages[next].role === "assistant") anchor = messages[next].id;
-    }
-    const provider = selectedModelOption ? relayProviderKeyId(selectedModelOption.providerId) : 0;
-    if (action !== "fork" && provider <= 0) {
-      setError("请选择可用的模型分组后重试。");
-      return;
-    }
-    const draft = captureComposerDraft();
-    let parameters: CloudChatModelParameters;
-    try {
-      parameters =
-        action === "fork"
-          ? {}
-          : await prepareModelParameters(
-              view,
-              selectedModelOption?.providerId ?? "",
-              provider,
-              model,
-            );
-      if (!isCurrentView(view)) return;
-    } catch (cause) {
-      if (!isCurrentView(view)) return;
-      if (action !== "fork") {
-        setError(cause instanceof Error ? cause.message : "请检查模型参数。");
-        return;
-      }
-      parameters = {};
-    }
-    const pending: PendingBranchSubmission = {
+    for (let next = index + 1; next < messages.length && messages[next].role !== "user"; next++)
+      if (messages[next].role === "assistant") anchor = messages[next].id;
+    setBranchPendingMessageId(original.id);
+    await applyBranch({
       view,
-      request: {
-        client_request_id: createUuid(),
-        message_id: anchor,
-        action,
-        ...(action === "edit" ? { content } : {}),
-      },
-      draft,
+      request: { client_request_id: createUuid(), message_id: anchor, action: "fork" },
+      draft: captureComposerDraft(),
       execution: {
         model,
         reasoning: cloudChatReasoningEffort(reasoning),
-        providerKeyId: provider,
-        parameters,
+        providerKeyId: 0,
+        parameters: {},
       },
-    };
-    const proceed = (research?: CloudChatPublicResearch) => {
-      if (!isCurrentView(pending.view)) return;
-      pending.execution.publicResearch = research;
-      setBranchPendingMessageId(original.id);
-      void applyBranch(pending);
-    };
-    if (action !== "fork" && runtimeControls.nativeWebSearchEnabled) {
-      requestResearchConfirmation(
-        messageText(action === "edit" ? content : original.content),
-        view,
-        proceed,
-      );
-    } else proceed();
+    });
+  }
+
+  async function editAndResend(
+    messageRef: HistoryMessageRef,
+    text: string,
+    files: PendingUploadedFile[],
+  ) {
+    const view = viewRef.current;
+    if (
+      !isCurrentView(view) ||
+      streaming ||
+      historyLoading ||
+      historyRestoreFailed ||
+      uploadingFiles ||
+      branchAbortRef.current ||
+      pendingBranchRef.current ||
+      researchConfirmationRef.current ||
+      pendingSubmissionRef.current ||
+      modelPreparationAbortRef.current
+    )
+      return;
+    const index = messages.findIndex(
+      (message) => message.id === messageRef.messageId && message.role === "user",
+    );
+    if (index < 0 || messageRef.segmentId !== view.conversationId) return;
+    const original = messages[index];
+    if (original.content_omitted) {
+      void readMessageBody(original.id);
+      return;
+    }
+    if (historyHasAfter) {
+      setError("请返回最新消息后再编辑重发。");
+      return;
+    }
+    const ids = files.map((file) => file.relativePath);
+    if (
+      ids.length > 8 ||
+      ids.some(
+        (id) =>
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) &&
+          !cloudArtifactVersionFromLink(id),
+      )
+    ) {
+      setError("附件标识无效，请从文件库重新选择。");
+      return;
+    }
+    const content = ids.length
+      ? [
+          ...(text.trim() ? [{ type: "text", text: text }] : []),
+          ...ids.map((id) => {
+            const versionId = cloudArtifactVersionFromLink(id);
+            return versionId
+              ? { type: "artifact_reference", version_id: versionId }
+              : { type: "file_reference", file_id: id };
+          }),
+        ]
+      : text;
+    if (!text.trim() && !ids.length) {
+      setError("编辑后的消息不能为空。");
+      return;
+    }
+    const providerId = selectedModelOption?.providerId ?? "";
+    const providerKeyId = relayProviderKeyId(providerId);
+    if (providerKeyId <= 0) {
+      setError("请选择可用的模型分组后重试。");
+      return;
+    }
+    const requestId = createUuid();
+    const tail = messages.at(-1);
+    const lastRun = latestRunRef.current ?? restoredTerminalRun;
+    const transientReply =
+      lastRun && tail?.id === lastRun.assistant_message_id && isCloudChatRunTerminal(lastRun);
+    const reasoningEffort = cloudChatReasoningEffort(reasoning);
+    try {
+      const parameters = await prepareModelParameters(view, providerId, providerKeyId, model);
+      if (!isCurrentView(view)) return;
+      const current = await historyClient.list(view.conversationId);
+      if (!isCurrentView(view)) return;
+      const expectedTailId = current.messages.at(-1)?.id;
+      if (
+        !expectedTailId ||
+        (expectedTailId !== tail?.id &&
+          !(transientReply && expectedTailId === lastRun.user_message_id))
+      ) {
+        setError("会话历史已变化。请重新加载会话后再编辑。");
+        return;
+      }
+      const proceed = (publicResearch?: CloudChatPublicResearch) => {
+        if (!isCurrentView(view) || pendingSubmissionRef.current || pendingBranchRef.current)
+          return;
+        void submitRun(
+          {
+            request: {
+              conversation_id: view.conversationId,
+              client_request_id: requestId,
+              model,
+              content,
+              reasoning_effort: reasoningEffort,
+              provider_key_id: providerKeyId,
+              model_parameters: parameters,
+              public_research: publicResearch,
+              edit: { message_id: original.id, expected_tail_id: expectedTailId },
+            },
+            optimisticUserId: createUuid(),
+            optimisticAssistantId: createUuid(),
+            optimisticContent: content,
+            preserveDraft: true,
+          },
+          view,
+        );
+      };
+      if (runtimeControls.nativeWebSearchEnabled) {
+        requestResearchConfirmation(messageText(content), view, proceed);
+      } else proceed();
+    } catch (cause) {
+      if (isCurrentView(view)) setError(cause instanceof Error ? cause.message : "编辑重发失败。");
+    }
   }
 
   async function prepareModelParameters(
@@ -2603,7 +2629,7 @@ export function CloudChatPage({
     setRestoredTerminalRun(null);
     setSubmissionQueueFull(false);
     setMessages((current) =>
-      current.some((message) => message.id === pending.optimisticUserId)
+      pending.request.edit || current.some((message) => message.id === pending.optimisticUserId)
         ? current
         : [
             ...current,
@@ -2643,7 +2669,26 @@ export function CloudChatPage({
       if (!isCurrentView(view)) return;
       pendingSubmissionRef.current = null;
       setSubmissionUnconfirmed(false);
+      if (pending.request.edit) setHistorySelection(null);
       setMessages((current) => {
+        if (pending.request.edit) {
+          const index = current.findIndex(
+            (message) => message.id === pending.request.edit?.message_id,
+          );
+          if (index >= 0) {
+            return [
+              ...current.slice(0, index),
+              { id: run.user_message_id, role: "user", content: pending.optimisticContent },
+            ];
+          }
+          // A view reopened after a lost response may already have the canonical history.
+          if (!current.some((message) => message.id === run.user_message_id)) {
+            return [
+              ...current,
+              { id: run.user_message_id, role: "user", content: pending.optimisticContent },
+            ];
+          }
+        }
         const rebound = current.map((message) => {
           if (message.id === pending.optimisticUserId)
             return { ...message, id: run.user_message_id };
@@ -3180,13 +3225,15 @@ export function CloudChatPage({
     ],
     [attachments, artifactAttachments],
   );
+  const catalogVersion = useCatalogLiveVersion();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Catalog-only changes also invalidate model badges.
   const modelOptions = useMemo(
     () =>
       buildModelOptions(settings, { floatSelectedFirst: false }).map((option) => ({
         ...option,
         nativeWebSearchSupported: true,
       })),
-    [settings],
+    [settings, catalogVersion],
   );
   const selectedModelValue = providerKeyId
     ? toModelValue(relayProviderId(providerKeyId), model)
@@ -4645,6 +4692,7 @@ export function CloudChatPage({
                         content: (
                           <>
                             <div
+                              data-conversation-scope=""
                               onInputCapture={() => {
                                 if (!pendingQueue.editingItem && !accountInvalidatedRef.current)
                                   savedDraft.scheduleCapture();
@@ -4718,7 +4766,6 @@ export function CloudChatPage({
                                       onLoadEarlierHistory={() => void loadEarlierHistory()}
                                       isViewportFollowing={transcriptFollow.isFollowing}
                                       viewportFollowing={followingTranscript}
-                                      resendCreatesBranch
                                       conversationId={conversationId}
                                       rows={transcriptRows}
                                       editRequest={terminalEditRequest}
@@ -4793,8 +4840,7 @@ export function CloudChatPage({
                                       onResendFromEdit={
                                         branchBusy || branchUnconfirmed || streaming
                                           ? undefined
-                                          : (ref, text, files) =>
-                                              branchConversation(ref, { text, files })
+                                          : editAndResend
                                       }
                                       onBranchConversation={
                                         branchBusy || branchUnconfirmed || streaming
