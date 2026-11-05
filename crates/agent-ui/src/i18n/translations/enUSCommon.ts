@@ -227,7 +227,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.workspaceCloneSubmit": "Clone",
   "chat.workspaceCloning": "Starting clone…",
   "chat.workspaceCloneBack": "Back",
-  "chat.workspaceCloneWebDisabled": "Enable Web Git in Remote settings before cloning.",
+  "chat.workspaceCloneWebDisabled": "Enable Web Git in Remote Access settings before cloning.",
   "chat.workspaceNewConversation": "New conversation",
   "chat.workspaceMore": "More",
   "chat.workspaceConfigure": "Configure",
@@ -1146,8 +1146,9 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "projectTools.runtimeUnsupported":
     "This runtime has no access to that desktop capability: use the ZeroAgent desktop app, or connect the WebUI to a desktop host.",
   "projectTools.settingsSyncing": "Syncing desktop settings…",
-  "projectTools.webTerminalDisabled": "Desktop Remote settings do not allow WebUI terminals.",
-  "projectTools.webGitDisabled": "Desktop Remote settings do not allow WebUI Git.",
+  "projectTools.webTerminalDisabled":
+    "Desktop Remote Access settings do not allow WebUI terminals.",
+  "projectTools.webGitDisabled": "Desktop Remote Access settings do not allow WebUI Git.",
   "projectTools.close": "Close",
   "projectTools.confirmClose": "Confirm close",
   "projectTools.closeTerminal": "Close terminal",
@@ -1182,7 +1183,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "projectTools.tunnelInvalidUrl": "Enter a valid http URL without credentials or fragments.",
   "projectTools.tunnelLocalhostOnly": "Only localhost or IPv4/IPv6 addresses are supported.",
   "projectTools.tunnelWebDisabled":
-    "Desktop Remote settings do not allow WebUI tunnel create or close.",
+    "Desktop Remote Access settings do not allow WebUI tunnel create or close.",
   "projectTools.tunnelStatusActive": "Active",
   "projectTools.tunnelStatusExpired": "Expired",
   "projectTools.tunnelStatusOffline": "Offline",

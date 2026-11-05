@@ -107,13 +107,13 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "settings.remoteAgentIdPlaceholder": "例如：macbook-pro",
     "settings.remoteAgentIdHint": "本地 Agent 的唯一标识，在 WebUI 中显示，留空则自动使用主机名",
     "settings.remoteWebTerminalHint":
-      "由桌面端 Remote 设置控制。开启后，已登录 WebUI 可启动并控制本机项目终端。",
+      "由桌面端 远程访问设置控制。开启后，已登录 WebUI 可启动并控制本机项目终端。",
     "settings.remoteWebSshTerminalHint":
-      "由桌面端 Remote 设置控制。开启后，已登录 WebUI 可使用本机保存的 SSH 配置创建和控制远程交互式终端。",
+      "由桌面端 远程访问设置控制。开启后，已登录 WebUI 可使用本机保存的 SSH 配置创建和控制远程交互式终端。",
     "settings.remoteWebGitHint":
-      "由桌面端 Remote 设置控制。开启后，已登录 WebUI 可对本机项目执行分支、暂存、提交和同步操作。",
+      "由桌面端 远程访问设置控制。开启后，已登录 WebUI 可对本机项目执行分支、暂存、提交和同步操作。",
     "settings.remoteWebTunnelsHint":
-      "由桌面端 Remote 设置控制。开启后，已登录 WebUI 可为 localhost 或 IP 地址 HTTP 服务创建和关闭临时访问链接。",
+      "由桌面端 远程访问设置控制。开启后，已登录 WebUI 可为 localhost 或 IP 地址 HTTP 服务创建和关闭临时访问链接。",
     "settings.remoteHeartbeatHint":
       "与 Gateway 连接的保活心跳间隔（生效范围 10-60 秒），用于维持连接和检测在线状态",
     "settings.remoteInfoBanner":
@@ -220,13 +220,13 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "settings.remoteAgentIdHint":
       "Unique identifier for this Agent shown in WebUI. Leave empty to use hostname",
     "settings.remoteWebTerminalHint":
-      "Controlled by the desktop Remote settings. When enabled, authenticated WebUI clients can start and control local project terminals.",
+      "Controlled by the desktop Remote Access settings. When enabled, authenticated WebUI clients can start and control local project terminals.",
     "settings.remoteWebSshTerminalHint":
-      "Controlled by the desktop Remote settings. When enabled, authenticated WebUI clients can create and control remote interactive terminals using SSH profiles saved on the desktop.",
+      "Controlled by the desktop Remote Access settings. When enabled, authenticated WebUI clients can create and control remote interactive terminals using SSH profiles saved on the desktop.",
     "settings.remoteWebGitHint":
-      "Controlled by the desktop Remote settings. When enabled, authenticated WebUI clients can run branch, stage, commit, and sync operations on local projects.",
+      "Controlled by the desktop Remote Access settings. When enabled, authenticated WebUI clients can run branch, stage, commit, and sync operations on local projects.",
     "settings.remoteWebTunnelsHint":
-      "Controlled by the desktop Remote settings. When enabled, authenticated WebUI clients can create and close temporary links for localhost or IP-address HTTP services.",
+      "Controlled by the desktop Remote Access settings. When enabled, authenticated WebUI clients can create and close temporary links for localhost or IP-address HTTP services.",
     "settings.remoteHeartbeatHint":
       "Keepalive heartbeat interval for the Gateway connection (effective range 10-60 seconds), used to maintain the connection and detect online status",
     "settings.remoteInfoBanner":
