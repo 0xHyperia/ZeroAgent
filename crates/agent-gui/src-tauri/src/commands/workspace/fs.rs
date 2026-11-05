@@ -1022,7 +1022,9 @@ fn infer_workspace_preview_mime(path: &Path, bytes: &[u8]) -> Option<&'static st
         Some("txt") | Some("log") => Some("text/plain"),
         Some("csv") => Some("text/csv"),
         Some("tsv") => Some("text/tab-separated-values"),
-        Some("pptx") => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        Some("pptx") => {
+            Some("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        }
         Some("zip") => Some("application/zip"),
         Some("docx") => {
             Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
@@ -3450,7 +3452,9 @@ fn workspace_open_command(target: &Path, mode: &str) -> Command {
         // 绕过默认引号,只给路径部分加引号:`/select,"<path>"`。
         command.raw_arg(format!("/select,\"{}\"", target.display()));
     } else {
-        command.arg(target);
+        // 同一个解析器:未加引号的逗号也会把路径截断,`run.bat,a.pdf`
+        // 实际打开的是 run.bat。这里同样只给路径加引号。
+        command.raw_arg(format!("\"{}\"", target.display()));
     }
     command
 }
@@ -4856,6 +4860,20 @@ mod tests {
         assert_eq!(args, vec![r#"/select,"C:\work\Dangerous.bundle""#]);
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_open_quotes_paths_so_commas_cannot_split_them() {
+        let target = Path::new(r"C:\work\run.bat,report.pdf");
+        let command = workspace_open_command(target, "open");
+        let args = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(command.get_program(), std::ffi::OsStr::new("explorer.exe"));
+        assert_eq!(args, vec![r#""C:\work\run.bat,report.pdf""#]);
+    }
+
     // 路径含空格时引号必须保住整个路径,否则 explorer 在空格处截断参数,
     // 回退打开默认的 "文档" 目录(文件树"打开所在目录"空格路径 bug)。
     #[cfg(target_os = "windows")]
@@ -5133,8 +5151,16 @@ mod tests {
             ("docs/page.html", "text/html", b"<h1>Hello</h1>".as_slice()),
             ("docs/readme.md", "text/markdown", b"# Hello".as_slice()),
             ("docs/file.pdf", "application/pdf", b"%PDF-1.7\n".as_slice()),
-            ("docs/slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", b"PK\x03\x04".as_slice()),
-            ("docs/files.zip", "application/zip", b"PK\x03\x04".as_slice()),
+            (
+                "docs/slides.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                b"PK\x03\x04".as_slice(),
+            ),
+            (
+                "docs/files.zip",
+                "application/zip",
+                b"PK\x03\x04".as_slice(),
+            ),
         ];
 
         for (path, _mime_type, bytes) in files {

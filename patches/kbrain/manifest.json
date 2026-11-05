@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "51c827d3d56533550e67bc4f78ff7673fa7bd9a3",
+  "sourceRevision": "da27591970494ec2d1d0a066f3f65d74487cb394",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
@@ -10,15 +10,15 @@
   "patches": [
     {
       "file": "0001-native-mcp-credentials.patch",
-      "sha256": "68bb6a4a4f707d6137fefe5da9ad4462c845e28e27ca08c4edc7b554237a4f9f"
+      "sha256": "0bc6cc5f03393f8a38da9bca03a8f513f5c138ec670b2c82d6913757a0b8c956"
     },
     {
       "file": "0002-windows-selfhost-fixtures.patch",
-      "sha256": "ee90297a15b589c1eb94d4239a39d6f1c4fb8575ff0eca4fd517560ef60baf5f"
+      "sha256": "6d7af67726b2599ee0a1d27229d0f745222ffad260719f56086f3e81cbb071a8"
     },
     {
       "file": "0003-mcp-credential-history-and-legacy-sse.patch",
-      "sha256": "e3aa81aade40925aa1a1120f105ac03e8d7c7931f1acbda3943ff66b5c2f1e16"
+      "sha256": "0c79e5af36b1db89cd3f14af443d49659508b02f419d5ff663bf73282b77e977"
     },
     {
       "file": "0004-owned-mcp-lifecycle.patch",
@@ -26,19 +26,19 @@
     },
     {
       "file": "0006-host-owned-code-review-skill.patch",
-      "sha256": "7daaf6cbfe5e0ba872f9cf1b0723b91a54837ae328186a2a358954c059a70d88"
+      "sha256": "866edc7cf9560cb540a1e8230c2a28c84d3242f42c3240d6aa0cffd4977fef27"
     },
     {
       "file": "0007-concurrent-trajectory-section-publication.patch",
-      "sha256": "2932bda33401ffbc1e7168ba3504b7689d14e05487f4bf26e2d1dedd9a3024f1"
+      "sha256": "96aa096d16954b85fb6c0f3b9a6568efeb0c116566875ac864454f9a28f193c1"
     },
     {
       "file": "0008-clawhub-store-integration.patch",
-      "sha256": "7707e5da07b5edc8d3e14826440f0d8c5285015bd24b2f0c618f3886f04580d5"
+      "sha256": "153fa8c90999b8fce5c21f57e0a3dc9dd0f2889b2ffa34d362ef91192cb9ca92"
     },
     {
       "file": "0009-prompt-cache-hint-inheritance.patch",
-      "sha256": "a9f8fa7a49149b50916228f12f4380ed0c57fbf32d130995f061971201834361"
+      "sha256": "163dc6843a3c3f405cc91028522741a0aec1f4e602f853bca7f76cd59df76353"
     }
   ],
   "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, ClawHub and upstream prompt-cache provider/model settings wired through requests"

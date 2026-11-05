@@ -147,6 +147,14 @@ test("the real worker-backed grid survives reverse scrolling inside the shared R
         viewport.dispatchEvent(new window.Event("scroll"));
         await settle();
       });
+      if (top === 0) {
+        // A virtual row may mount before its cells arrive from the WASM worker.
+        for (let attempts = 0; attempts < 30; attempts++) {
+          if (host.querySelector('[data-xlsx-row="1"]')?.textContent.includes("Visible row 2"))
+            break;
+          await env.act(settle);
+        }
+      }
       const rows = [...host.querySelectorAll("tbody tr")];
       const content = rows.filter((row) => row.hasAttribute("data-xlsx-row"));
       assert.ok(content.length > 2 && content.length < 100);

@@ -1,3 +1,4 @@
+import type { KBrainHealth } from "@liveagent/ui/lib/kbrain/health";
 export type KBrainSettingsProvider = {
   id: string;
   name: string;
@@ -21,6 +22,12 @@ export type AIApprovalConfig = {
   mode: "off" | "risk_only" | "auto";
   provider?: string;
   model?: string;
+  /**
+   * Read-only, from backends with `capabilities.ai_review_per_run`: the composer's permission
+   * mode decides when to review and auto review falls back to the session's model, so hosts
+   * hide the global setting. provider/model then only override the reviewer. Never sent back.
+   */
+  perRun?: boolean;
 };
 
 /** K-brain memory master switch; absent on backends without `capabilities.memory_switch`. */
@@ -67,6 +74,31 @@ export type KBrainRuntimeConnection = {
   token: string;
 };
 
+export type PermissionRuleScope = "session" | "project" | "user";
+export type PermissionRuleEffect = "allow" | "deny";
+
+/** One remembered rule from K-brain `/v1/permissions/rules`. */
+export type PermissionRule = {
+  id: string;
+  rule: string;
+  effect: PermissionRuleEffect;
+  scope: PermissionRuleScope;
+  createdAt?: string;
+  sourceSession?: string;
+};
+
+export type PermissionRuleList = { projectRoot?: string; rules: PermissionRule[] };
+
+/** A rule to add; `workspace` names the project for project scope. */
+export type PermissionRuleInput = {
+  rule: string;
+  effect: PermissionRuleEffect;
+  scope: "project" | "user";
+  workspace?: string;
+};
+
+export type PermissionRuleRef = { id: string; scope: PermissionRuleScope; workspace?: string };
+
 export type KBrainSettingsAdapter = {
   isKbrain: true;
   runtimeConnection: () => KBrainRuntimeConnection | null;
@@ -79,6 +111,16 @@ export type KBrainSettingsAdapter = {
   getComputerStatus?: () => Promise<KBrainComputerStatus>;
   /** `/v1/health` capabilities; hosts that cannot reach it rely on the settings document. */
   getCapabilities?: () => Promise<Record<string, unknown>>;
+  /** Parsed `/v1/health` handshake for diagnostics; only hosts talking to K-brain directly provide it. */
+  getHealth?: () => Promise<KBrainHealth>;
+  /**
+   * K-brain permission rules (`capabilities.permission_rules`). Lists all-project rules and,
+   * with `workspace`, that project's rules. Hosts that cannot reach the rules API leave
+   * these out and Settings hides the page.
+   */
+  listPermissionRules?: (query: { workspace?: string }) => Promise<PermissionRuleList>;
+  addPermissionRule?: (input: PermissionRuleInput) => Promise<PermissionRule>;
+  deletePermissionRule?: (ref: PermissionRuleRef) => Promise<void>;
 };
 
 export type SettingsHostAdapter = {

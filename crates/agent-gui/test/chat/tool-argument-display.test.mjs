@@ -135,10 +135,10 @@ function createToolArgsRenderer() {
         },
       }),
     );
-  renderToolArgs.renderShell = (toolCall, result) =>
+  renderToolArgs.renderShell = (toolCall, result, liveOutput) =>
     renderToStaticMarkup(
       jsxRuntime.jsx(ShellToolDisplay, {
-        item: { toolCall, toolResult: result },
+        item: liveOutput === undefined ? { toolCall, toolResult: result } : { toolCall, toolResult: result, liveOutput },
         result,
       }),
     );
@@ -155,6 +155,9 @@ function createToolCallItemRenderer() {
         readAskUserQuestionDeadline() {
           return undefined;
         },
+        useAskUserQuestionPending() {
+          return false;
+        },
         usePlanDecisionState() {
           return { pending: false, approved: false };
         },
@@ -162,6 +165,9 @@ function createToolCallItemRenderer() {
         submitAskUserQuestionAnswers() {},
         submitPlanDecision() {},
         usePendingToolApproval() {
+          return null;
+        },
+        usePermissionAutoResolved() {
           return null;
         },
       },
@@ -317,7 +323,11 @@ function createToolCallItemRenderer() {
   return (toolCall, options = {}) =>
     renderToStaticMarkup(
       jsxRuntime.jsx(MemoToolCallItem, {
-        item: options.result ? { toolCall, toolResult: options.result } : { toolCall },
+        item: {
+          toolCall,
+          ...(options.result ? { toolResult: options.result } : {}),
+          ...(options.liveOutput !== undefined ? { liveOutput: options.liveOutput } : {}),
+        },
         isRunning: options.isRunning,
         onOpenFileLink: options.onOpenFileLink,
       }),
@@ -521,6 +531,56 @@ test("ProcessWait and ProcessStop summaries expose their session cursor", () => 
   );
 });
 
+test("lsp summaries show the operation with its file position or query", () => {
+  const summarize = (args) =>
+    uiMessages.summarizeToolCall(
+      { type: "toolCall", id: "lsp-1", name: "lsp", arguments: args },
+      { includeName: false },
+    );
+
+  assert.equal(
+    summarize({
+      operation: "definition",
+      path: "internal/tools/lsp_tool.go",
+      line: 38,
+      character: 6,
+    }),
+    "definition internal/tools/lsp_tool.go:38:6",
+  );
+  assert.equal(
+    summarize({ operation: "references", path: "src/a.go", line: 12 }),
+    "references src/a.go:12",
+  );
+  assert.equal(
+    summarize({ operation: "documentSymbol", path: "src/a.go" }),
+    "documentSymbol src/a.go",
+  );
+  assert.equal(
+    summarize({ operation: "workspaceSymbol", query: "LSPTool" }),
+    "workspaceSymbol query=LSPTool",
+  );
+  assert.equal(summarize({}), "");
+});
+
+test("web_fetch summaries lead with the URL and add paging only when requested", () => {
+  const summarize = (name, args) =>
+    uiMessages.summarizeToolCall(
+      { type: "toolCall", id: "fetch-1", name, arguments: args },
+      { includeName: false },
+    );
+
+  assert.equal(
+    summarize("web_fetch", { url: "https://go.dev/doc/effective_go" }),
+    "https://go.dev/doc/effective_go",
+  );
+  assert.equal(
+    summarize("web_fetch", { url: "https://go.dev/doc/", offset: 20_000, max_chars: 5_000 }),
+    "https://go.dev/doc/ offset=20000 maxChars=5000",
+  );
+  assert.equal(summarize("web_fetch", { url: "https://go.dev/", offset: 0 }), "https://go.dev/");
+  assert.equal(summarize("WebFetch", { uri: "https://example.com/a" }), "https://example.com/a");
+});
+
 test("shell session metadata is omitted from generic tool result details", () => {
   const renderToolDisplay = createToolArgsRenderer();
   const details = {
@@ -580,6 +640,41 @@ test("shell display combines command and output without runtime session metadata
   assert.match(html, /git diff --stat/);
   assert.match(html, /M src\/App\.tsx/);
   assert.doesNotMatch(html, /bash-private|session_id|status:|cursor:|duration_ms|shell: zsh/);
+});
+
+test("running shell shows the live output tail until the final result replaces it (#975)", () => {
+  const renderToolDisplay = createToolArgsRenderer();
+  const toolCall = { type: "toolCall", id: "bash-live", name: "Bash", arguments: { command: "cargo build" } };
+  const live = renderToolDisplay.renderShell(
+    toolCall,
+    undefined,
+    "\u001b[32m   Compiling\u001b[0m serde\r\n[=====>    ] 50%\r[==========] 100%\n",
+  );
+  assert.match(live, /data-shell-live-output=""/);
+  assert.match(live, /cargo build/);
+  assert.match(live, /Compiling serde/);
+  assert.match(live, /\[==========\] 100%/);
+  assert.doesNotMatch(live, /50%|\u001b/);
+
+  const result = {
+    role: "toolResult",
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    content: [{ type: "text", text: "Finished dev profile" }],
+    isError: false,
+  };
+  const settled = renderToolDisplay.renderShell(toolCall, result, "stale live tail");
+  assert.match(settled, /Finished dev profile/);
+  assert.doesNotMatch(settled, /data-shell-live-output|stale live tail/);
+});
+
+test("a running Bash card opens to show live output; without output it stays collapsed (#975)", () => {
+  const renderToolCallItem = createToolCallItemRenderer();
+  const toolCall = { type: "toolCall", id: "bash-live-card", name: "Bash", arguments: { command: "make" } };
+  const quiet = renderToolCallItem(toolCall, { isRunning: true });
+  const streaming = renderToolCallItem(toolCall, { isRunning: true, liveOutput: "cc -c a.c\n" });
+  assert.match(quiet, /aria-expanded="false"/);
+  assert.match(streaming, /aria-expanded="true"/);
 });
 
 test("historical shell envelopes fall back to clean stdout and stderr only", () => {

@@ -1,6 +1,14 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
+import { ASK_USER_QUESTION_TOOL_NAME } from "@liveagent/ui/lib/chat/askUserQuestion";
 import type { ComposerTurnCommand } from "@liveagent/ui/lib/chat/composerCommands";
-import { resolveKBrainPermissionMode } from "@liveagent/ui/lib/chat/permissionModes";
+import {
+  resolveKBrainPermissionMode,
+  resolveKBrainRunSandbox,
+} from "@liveagent/ui/lib/chat/permissionModes";
+import {
+  approvalPreviewFromToolCall,
+  clampApprovalText,
+} from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import { appendMessagesToConversation } from "../../../lib/chat/conversation/conversationState";
 import { buildConversationStateFromWindow } from "../../../lib/chat/history/chatHistory";
 import {
@@ -9,6 +17,7 @@ import {
   attachToolResultToRound,
   collapseThinking,
   type LiveRound,
+  setToolLiveOutputInRound,
   updateLiveRound,
   upsertHostedSearchToRound,
   upsertToolCallToRound,
@@ -22,7 +31,7 @@ import {
 import { getKBrainHistoryWindow } from "../../../lib/kbrain/history";
 import { getKBrainSessionId } from "../../../lib/kbrain/mapping";
 import { canonicalKBrainToolPolicies } from "../../../lib/kbrain/toolPolicies";
-import { runKBrainTurn } from "../../../lib/kbrain/turn";
+import { type KBrainPermissionAutoResolved, runKBrainTurn } from "../../../lib/kbrain/turn";
 import type {
   KBrainGoalState,
   KBrainQuestionAnswer,
@@ -34,15 +43,23 @@ import {
   withUploadStagingRoot,
 } from "../../../lib/kbrain/uploadStagingRoot";
 import { requestBackendQuestion } from "../../../lib/tools/askUserQuestionTools";
+import { recordPermissionAutoResolved } from "../../../lib/tools/permissionAutoResolved";
 import { projectBackendPlan } from "../../../lib/tools/planModeTools";
 import { hasPendingToolApproval, requestToolApproval } from "../../../lib/tools/toolApproval";
-import { buildGatewayToolCallPreviewArguments } from "./gatewayToolPreview";
+import {
+  buildGatewayToolCallPreviewArguments,
+  withoutApprovalSyntheticArgs,
+} from "./gatewayToolPreview";
 import type { RunAgentConversationTurnParams } from "./runAgentConversationTurn";
 import type { RunTextConversationTurnParams } from "./runTextConversationTurn";
 
+// The bar menu names the rules "allow for this session" stores; an interpreter rule can be
+// as long as the command, so the label is cut.
+const SESSION_SCOPE_LABEL_MAX_CHARS = 300;
+
 type Params = RunAgentConversationTurnParams | RunTextConversationTurnParams;
 
-function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrainRunOptions {
+export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrainRunOptions {
   const agentMode = "effectiveWorkdir" in params;
   const workspaceRoots = [
     {
@@ -60,6 +77,7 @@ function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrainRunOpt
   const policies = canonicalKBrainToolPolicies(configured);
   const safety = agentMode && "commandSafetyMode" in params ? params.commandSafetyMode : undefined;
   const reasoning = params.runtime.reasoning;
+  const sandbox = agentMode ? resolveKBrainRunSandbox(safety) : undefined;
   return {
     mode: agentMode ? "agent" : "chat",
     ...(reasoning ? { reasoning } : {}),
@@ -70,6 +88,7 @@ function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrainRunOpt
       agentMode && params.planModeEnabled === true,
     ),
     ...(roots.length ? { workspace_roots: roots } : {}),
+    ...(sandbox ? { sandbox } : {}),
     ...(Object.keys(policies).length ? { tools: { policies } } : {}),
     ...(agentMode && params.planModeEnabled !== undefined
       ? { plan_mode_enabled: params.planModeEnabled }
@@ -140,6 +159,19 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       gatewayBridgeEvents.queueToolStatus(value);
     }
   };
+  // Calls K-brain allowed without asking, keyed by tool call; the marker can arrive
+  // before or after the call itself.
+  const autoResolvedCallIds = new Set<string>();
+  const pushGatewayToolCall = (call: ToolCall) => {
+    gatewayBridgeEvents.queueEvent({
+      type: "tool_call",
+      id: call.id,
+      name: call.name,
+      arguments: buildGatewayToolCallPreviewArguments(call),
+      conversation_id: params.conversationId,
+      round: callRounds.get(call.id) ?? round,
+    });
+  };
   const onToolCall = (call: ToolCall) => {
     calls.set(call.id, call);
     callRounds.set(call.id, round);
@@ -151,10 +183,22 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       type: "tool_call",
       id: call.id,
       name: call.name,
-      arguments: call.arguments,
+      // AskUserQuestion carries the pending marker from the start, so WebUI keeps the
+      // card closed until K-brain registers the question.
+      arguments:
+        autoResolvedCallIds.has(call.id) || call.name === ASK_USER_QUESTION_TOOL_NAME
+          ? buildGatewayToolCallPreviewArguments(call)
+          : withoutApprovalSyntheticArgs(call.arguments),
       conversation_id: params.conversationId,
       round,
     });
+  };
+  const onPermissionAutoResolved = (resolved: KBrainPermissionAutoResolved) => {
+    const { toolCallId, ...marker } = resolved;
+    if (!recordPermissionAutoResolved(toolCallId, marker)) return;
+    autoResolvedCallIds.add(toolCallId);
+    const call = calls.get(toolCallId);
+    if (call) pushGatewayToolCall(call);
   };
   const projectToolResult = (call: ToolCall, result: ToolResultMessage) => {
     const prior = results.get(call.id);
@@ -165,13 +209,21 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       ...attachToolResultToRound(target, call, enriched),
       runningToolCallIds: target.runningToolCallIds.filter((id) => id !== call.id),
     }));
+    // WebUI reads `content`/`isError` and attaches the result in the call's round;
+    // an Image call also needs its display_image details to render at all.
+    const displayImage =
+      (enriched.details as { kind?: unknown } | undefined)?.kind === "display_image"
+        ? { details: enriched.details }
+        : {};
     gatewayBridgeEvents.queueEvent({
       type: "tool_result",
       id: call.id,
       name: call.name,
-      result: result.content,
+      content: result.content,
+      isError: result.isError === true,
+      ...displayImage,
       conversation_id: params.conversationId,
-      round,
+      round: callRounds.get(call.id) ?? round,
     });
   };
   const onToolResult = (call: ToolCall, result: ToolResultMessage) => {
@@ -181,6 +233,19 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         details: projectBackendPlan(params.conversationId, call),
       });
     } else projectToolResult(call, result);
+  };
+  // 运行中命令的输出快照只更新实时轮次里的工具卡，不进历史，也不转发给 WebUI。
+  const onToolOutput = (toolCallId: string, output: string) => {
+    if (results.has(toolCallId)) return;
+    const callRound = callRounds.get(toolCallId);
+    if (callRound === undefined) return;
+    params.batchLiveRoundsUpdate(
+      (previous) =>
+        updateLiveRound(previous, callRound, (target) =>
+          setToolLiveOutputInRound(target, toolCallId, output),
+        ),
+      transcriptStore,
+    );
   };
   hookLifecycle.startAgent();
   const command = "composerCommand" in params ? params.composerCommand : undefined;
@@ -207,6 +272,7 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       hookLifecycle.startTurn(round);
       latestGoalState = undefined;
       const assistant = await runKBrainTurn({
+        locale: params.locale,
         conversationId: params.conversationId,
         sessionId: params.sessionId,
         clientRequestId:
@@ -253,25 +319,36 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         },
         onToolCall,
         onToolResult,
+        onToolOutput,
         onStatus: status,
         onQuestionRequest: async (
           request: KBrainQuestionRequest,
           signal?: AbortSignal,
         ): Promise<KBrainQuestionAnswer[]> => {
-          const answers = await requestBackendQuestion({
+          const pending = requestBackendQuestion({
             toolCallId: request.tool_call_id,
             conversationId: params.conversationId,
             questions: request.questions,
             deadlineAt: request.deadline_at,
             signal,
           });
+          // Re-push the call when the question registers and when it settles: WebUI
+          // reads the pending marker and the backend deadline from its arguments.
+          const call = calls.get(request.tool_call_id);
+          if (call) pushGatewayToolCall(call);
+          let answers: Awaited<typeof pending>;
+          try {
+            answers = await pending;
+          } finally {
+            if (call) pushGatewayToolCall(call);
+          }
           return answers.map((answer) => ({
             question_id: answer.questionId,
             selected_label: answer.selectedLabel,
             ...(answer.custom ? { custom: true } : {}),
           }));
         },
-        onPermissionRequest: async (request, signal) => {
+        onPermissionRequest: async (request, signal, refusal) => {
           // Key the approval by its tool call so the Gateway preview overlays the
           // pending marker and scope on that call for WebUI; re-push the call when
           // the approval starts and settles. Without a known, free call id the
@@ -289,24 +366,44 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
               round: callRounds.get(tiedCall.id) ?? round,
             });
           };
+          // Backends with permission_rules say which rules "allow and remember" stores;
+          // the session item then names those rules instead of the prompt's first
+          // segment. K-brain waits for the answer, so the approval has no deadline.
+          const rememberRules = request.suggestion?.rules ?? [];
           const approval = requestToolApproval({
             toolCallId: tiedCall?.id ?? request.permission_id,
             toolName: request.tool,
             summary: [request.command, request.description].filter(Boolean).join("\n\n"),
             conversationId: params.conversationId,
             allowSession: request.options?.some((option) => option.id === "allow_always") === true,
-            sessionScope: request.rule,
+            sessionScope:
+              rememberRules.length > 0
+                ? clampApprovalText(rememberRules.join(", "), SESSION_SCOPE_LABEL_MAX_CHARS)
+                : request.rule,
             sessionWide: request.scope === "session",
+            rememberRules,
+            defaultScope: request.suggestion?.default_scope,
+            // The edit being approved, from the call's full arguments.
+            preview: call ? approvalPreviewFromToolCall(request.tool, call.arguments) : undefined,
+            notice: refusal,
             signal: signal
               ? AbortSignal.any([approvalController.signal, signal])
               : approvalController.signal,
+            timeoutMs: null,
           });
           syncGatewayCall();
           const settlement = await approval;
           syncGatewayCall();
-          if (settlement.kind !== "decided" || settlement.decision === "deny") return "reject";
-          return settlement.decision === "approve_session" ? "allow_always" : "allow_once";
+          if (settlement.kind !== "decided") return "reject";
+          if (settlement.decision === "deny") {
+            return settlement.reason ? { decision: "reject", reason: settlement.reason } : "reject";
+          }
+          if (settlement.decision !== "approve_session") return "allow_once";
+          // The bar's session item stays a session rule unless a scope was picked.
+          const scope = settlement.scope ?? (rememberRules.length > 0 ? "session" : undefined);
+          return scope ? { decision: "allow_always", scope } : "allow_always";
         },
+        onPermissionAutoResolved,
         onSubagent: (subagent) => {
           const id = `kbrain-subagent:${subagent.id}`;
           const call: ToolCall = {

@@ -14,6 +14,7 @@ pub mod device_credentials;
 pub mod gateway;
 pub mod gateway_bridge;
 pub mod kbrain_backend;
+pub mod kbrain_health;
 pub mod local_gateway;
 pub mod managed_model_broker;
 pub mod mcp_oauth;

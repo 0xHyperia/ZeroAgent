@@ -1,6 +1,10 @@
 import { retainRunningToolContent } from "@liveagent/adapters/assistantBubble";
 import { AssistantStatus } from "@liveagent/ui/components/chat/AssistantStatus";
 import { LazyCollapse } from "@liveagent/ui/components/chat/LazyCollapse";
+import {
+  useExpandProcessByDefault,
+  useProcessDefaultChange,
+} from "@liveagent/ui/components/chat/processDisclosure";
 import { useAttentionDisclosure } from "@liveagent/ui/components/chat/useAttentionDisclosure";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ToolTraceItem } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
@@ -9,10 +13,12 @@ import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, useMemo } from "react";
 import {
   Bot,
+  Braces,
   ChevronRight,
   Eye,
   FilePenLine,
   FolderTree,
+  Globe,
   type IconComponent,
   Search,
   Terminal,
@@ -25,6 +31,8 @@ import {
   getToolDisplayName,
   getToolTraceKey,
   hasActiveUserInteraction,
+  isWebFetchToolName,
+  LSP_TOOL_NAME,
   type ToolActivityCategory,
 } from "./assistantBubbleUtils";
 import { areToolTraceItemsEqual, MemoToolCallItem } from "./ToolCallItem";
@@ -82,6 +90,8 @@ const TOOL_BATCH_ICONS: Record<ToolActivityCategory, IconComponent> = {
   edit: FilePenLine,
   command: Terminal,
   list: FolderTree,
+  code: Braces,
+  fetch: Globe,
   agent: Bot,
   other: Wrench,
 };
@@ -113,7 +123,11 @@ function getRunningToolTarget(item: ToolTraceItem) {
               ? stringArgument(item, "name", "id", "prompt")
               : name === "SendMessage"
                 ? stringArgument(item, "to", "channel", "subject")
-                : stringArgument(item, "path", "label", "name", "query", "action", "command");
+                : name === LSP_TOOL_NAME
+                  ? stringArgument(item, "path", "query")
+                  : isWebFetchToolName(name)
+                    ? stringArgument(item, "url", "uri")
+                    : stringArgument(item, "path", "label", "name", "query", "action", "command");
 
   return compactInlineText(target, 112);
 }
@@ -175,7 +189,9 @@ function ToolTraceGroupInner(props: {
     () => hasActiveUserInteraction(items, runningToolCallIds),
     [items, runningToolCallIds],
   );
-  const [open, setOpen] = useAttentionDisclosure(attentionRequired);
+  const expandByDefault = useExpandProcessByDefault();
+  const [open, setOpen] = useAttentionDisclosure(attentionRequired, expandByDefault);
+  useProcessDefaultChange(expandByDefault, (expand) => setOpen(expand || attentionRequired));
 
   // The latest live batch drops the count prefix ("运行中" instead of
   // "1 运行中"), nothing more. Idle phases render no filler status here:
@@ -240,7 +256,10 @@ function ToolTraceGroupInner(props: {
         {showStatus ? (
           <span className="shrink-0 text-xs text-foreground/45">
             {showTurnStatus && counts.running > 0 ? (
-              <AssistantStatus className="min-h-0 text-xs text-foreground/45">
+              <AssistantStatus
+                className="min-h-0 text-xs text-foreground/45"
+                iconClassName="size-3"
+              >
                 {statusLabel}
               </AssistantStatus>
             ) : (

@@ -232,6 +232,8 @@ macro_rules! app_invoke_handler {
             commands::planning::planning_export,
             commands::planning::planning_set_labels,
             commands::planning::planning_notification_test,
+            commands::notifications::chat_notification_deliver,
+            commands::notifications::app_set_badge_count,
             commands::planning::planning_subscription,
             commands::planning::planning_import,
             commands::cron::cron_validate_expression,
@@ -1122,6 +1124,20 @@ pub fn run() {
     // 非 Windows 平台为空操作。
     runtime::windows_sandbox::run_sandbox_launcher_if_requested();
 
+    // 必须先于任何 tauri::async_runtime 调用:换成栈更大的 tokio 运行时,
+    // 否则调试版处理 Gateway 消息时会撑爆默认 2 MiB 的 worker 栈。
+    runtime::async_runtime::install_tauri_async_runtime();
+
+    let automation_store = Arc::new(
+        services::automation::AutomationStore::open()
+            .expect("failed to initialize LiveAgent automation store"),
+    );
+    let automation_scheduler = Arc::new(services::automation::AutomationScheduler::new(
+        Arc::clone(&automation_store),
+    ));
+    let memory_store = Arc::new(
+        services::memory::MemoryStore::open().expect("failed to initialize LiveAgent memory store"),
+    );
     let provider_usage_service =
         Arc::new(services::provider_usage::ProviderUsageService::default());
     let power_activity = Arc::new(services::power_activity::PowerActivityManager::default());
@@ -1235,6 +1251,7 @@ pub fn run() {
             let hide_after_fullscreen_exit = Arc::clone(&hide_after_fullscreen_exit);
             move |app| {
                 configure_system_tray(app)?;
+                services::planning::notification::install(app.handle());
                 #[cfg(target_os = "windows")]
                 configure_windows_window_chrome(app)?;
                 #[cfg(target_os = "macos")]

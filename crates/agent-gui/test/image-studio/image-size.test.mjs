@@ -137,7 +137,7 @@ test("more parameters use Chinese labels/options and retain their original wire 
   ]);
   const { env, trigger, changes, render } = await picker({ target: model, values: { quality: "low" } });
   await env.act(async () => trigger.click());
-  for (const label of ["图像质量", "图片格式", "背景", "输出压缩"]) assert.ok([...document.querySelectorAll("label")].some(l => l.textContent.trim() === label));
+  for (const label of ["图像质量", "图片格式", "背景", "输出压缩率"]) assert.ok([...document.querySelectorAll("label")].some(l => l.textContent.trim() === label));
   assert.doesNotMatch(document.body.textContent, /quality|output_format|background|Output compression/);
   const quality = [...document.querySelectorAll("label")].find(l => l.textContent.trim() === "图像质量");
   const input = document.getElementById(quality.htmlFor);

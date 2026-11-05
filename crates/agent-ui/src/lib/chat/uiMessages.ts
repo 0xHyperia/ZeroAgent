@@ -6,7 +6,10 @@ import type {
   ToolResultMessage,
   Usage,
 } from "@liveagent/ui/lib/chat/agentTypes";
-import { ASK_USER_QUESTION_DEADLINE_ARG } from "@liveagent/ui/lib/chat/askUserQuestion";
+import {
+  ASK_USER_QUESTION_DEADLINE_ARG,
+  ASK_USER_QUESTION_PENDING_ARG,
+} from "@liveagent/ui/lib/chat/askUserQuestion";
 import { estimateThinkingReplayTokenUnits } from "@liveagent/ui/lib/chat/contextUsage";
 import {
   enrichHostedSearchContentWithText,
@@ -23,10 +26,15 @@ import {
 import {
   TOOL_APPROVAL_ALLOW_SESSION_ARG,
   TOOL_APPROVAL_DEADLINE_ARG,
+  TOOL_APPROVAL_DEFAULT_SCOPE_ARG,
+  TOOL_APPROVAL_NOTICE_ARG,
   TOOL_APPROVAL_PENDING_ARG,
+  TOOL_APPROVAL_PREVIEW_ARG,
+  TOOL_APPROVAL_REMEMBER_RULES_ARG,
   TOOL_APPROVAL_SESSION_SCOPE_ARG,
   TOOL_APPROVAL_SESSION_WIDE_ARG,
   TOOL_APPROVAL_SUMMARY_ARG,
+  TOOL_PERMISSION_AUTO_RESOLVED_ARG,
 } from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import { fileToolFieldChars, LIVE_TOOL_PREVIEW_META_KEY } from "@liveagent/ui/lib/chat/toolPreview";
 import {
@@ -54,6 +62,11 @@ export type ToolTraceItem = {
     durationMs?: number;
     resources?: import("./assistantResources").AssistantResource[];
   };
+  /**
+   * 命令运行中由后端推送的输出尾部快照（K-brain tool.status，有上限）。只活在
+   * 实时轮次里：结果到达即丢弃，不写入历史或持久化消息。
+   */
+  liveOutput?: string;
 };
 
 export type UiRoundContentBlock =
@@ -502,11 +515,41 @@ export function summarizeToolCall(
                                                   : null,
                                                 args.submit === true ? "submit=true" : null,
                                               ]
-                                            : [];
+                                            : name === "lsp"
+                                              ? summarizeLspToolCall(args)
+                                              : name === "web_fetch" || name === "WebFetch"
+                                                ? summarizeWebFetchToolCall(args)
+                                                : [];
 
   const summary = parts.filter(Boolean).join(" ");
   if (!summary) return includeName ? name : "";
   return includeName ? `${name} ${summary}` : summary;
+}
+
+// K-brain lsp: `definition src/a.go:12:5`, `documentSymbol src/a.go`,
+// `workspaceSymbol query=Handler`. 行列号是 1-based，与 Read 的行号一致。
+function summarizeLspToolCall(args: Record<string, unknown>) {
+  const path = summarizeToolArg(args.path);
+  const line = typeof args.line === "number" ? args.line : undefined;
+  const character = typeof args.character === "number" ? args.character : undefined;
+  const position =
+    path && line !== undefined
+      ? `${path}:${line}${character !== undefined ? `:${character}` : ""}`
+      : path;
+  return [
+    typeof args.operation === "string" ? summarizeToolArg(args.operation) : null,
+    position,
+    typeof args.query === "string" ? `query=${summarizeToolArg(args.query)}` : null,
+  ];
+}
+
+// web_fetch 行以 URL 为主体；分页参数只在模型显式传入时出现。
+function summarizeWebFetchToolCall(args: Record<string, unknown>) {
+  return [
+    summarizeToolArg(typeof args.url === "string" ? args.url : args.uri, 120),
+    typeof args.offset === "number" && args.offset > 0 ? `offset=${args.offset}` : null,
+    typeof args.max_chars === "number" ? `maxChars=${args.max_chars}` : null,
+  ];
 }
 
 function summarizeImageSourceArg(value: unknown) {
@@ -579,7 +622,13 @@ const DISPLAY_SYNTHETIC_ARG_KEYS = new Set([
   TOOL_APPROVAL_ALLOW_SESSION_ARG,
   TOOL_APPROVAL_SESSION_SCOPE_ARG,
   TOOL_APPROVAL_SESSION_WIDE_ARG,
+  TOOL_APPROVAL_REMEMBER_RULES_ARG,
+  TOOL_APPROVAL_DEFAULT_SCOPE_ARG,
+  TOOL_PERMISSION_AUTO_RESOLVED_ARG,
+  TOOL_APPROVAL_NOTICE_ARG,
+  TOOL_APPROVAL_PREVIEW_ARG,
   ASK_USER_QUESTION_DEADLINE_ARG,
+  ASK_USER_QUESTION_PENDING_ARG,
   EXIT_PLAN_MODE_PENDING_ARG,
   EXIT_PLAN_MODE_APPROVED_ARG,
 ]);
@@ -1247,10 +1296,12 @@ function upsertToolBlock(
     const existing = baseBlocks[existingIdx];
     if (existing.kind !== "tool") return baseBlocks;
     const next = baseBlocks.slice();
+    // 结果到达后由最终输出取代运行中快照。
+    const { liveOutput: _liveOutput, ...settledItem } = existing.item;
     next[existingIdx] = {
       kind: "tool",
       item: {
-        ...existing.item,
+        ...(toolResult ? settledItem : existing.item),
         toolCall: toolCallSnapshot,
         toolResult: toolResult ?? existing.item.toolResult,
       },

@@ -143,11 +143,11 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mobileStyles, /\.gateway-chat-frame > header[\s\S]*safe-area-top/);
   assert.match(
     mobileStyles,
-    /gateway-main-shell[\s\S]*> \[data-app-workbench-chrome\][\s\S]*> header[\s\S]*safe-area-top/,
+    /\.gateway-main-shell \[data-app-workbench-chrome\] > header\s*\{[^}]*padding-top: calc\([^}]*var\(--zeroagent-safe-area-top\)/,
   );
   assert.match(
     mobileStyles,
-    /gateway-main-shell > \[data-app-workbench-chrome\][\s\S]*height: calc\(48px/,
+    /\.gateway-main-shell \[data-app-workbench-chrome\]\s*\{[^}]*height: calc\(48px \+ var\(--zeroagent-safe-area-top\)\)/,
   );
   assert.match(mobileStyles, /\.gateway-main-shell[\s\S]*safe-area-right[\s\S]*safe-area-left/);
   assert.match(

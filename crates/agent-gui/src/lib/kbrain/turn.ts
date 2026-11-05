@@ -6,18 +6,24 @@ import type {
   ToolResultMessage,
 } from "@liveagent/app/lib/agentTypes";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
-import type { HostedSearchBlock } from "@liveagent/ui/lib/chat/hostedSearch";
+import {
+  type HostedSearchBlock,
+  normalizeHostedSearchBlock,
+} from "@liveagent/ui/lib/chat/hostedSearch";
 import {
   encodeRunProgress,
   parseRunProgress,
   type RunProgress,
 } from "@liveagent/ui/lib/chat/runProgress";
 import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
+import type { Locale } from "../../i18n/config";
 import type { ConversationViewState } from "../chat/conversation/conversationState";
 import { appendMessagesToConversation } from "../chat/conversation/conversationState";
 import { createKBrainClient } from "./client";
 import { getKBrainSessionId, setKBrainSessionId } from "./mapping";
 import { questionResultDetails } from "./questions";
+import { aiReviewTitle, localizeAIReviewReason } from "./reviewNotice";
+import { displayImageResultDetails, kbrainToolImages } from "./toolImages";
 import type {
   KBrainClientToolRequest,
   KBrainClientToolResult,
@@ -133,6 +139,9 @@ export function contextToKBrainMessages(context: Context): KBrainMessage[] {
   return messages;
 }
 
+/** How many times a prompt K-brain kept waiting after a refused answer is asked again. */
+const PERMISSION_ANSWER_RETRIES = 3;
+
 /** permission.requested payload. `rule` scopes an allow_always answer, which K-brain only
  *  remembers when it lists that option; older backends offer allow_once/reject only. */
 export type KBrainPermissionRequest = {
@@ -146,9 +155,30 @@ export type KBrainPermissionRequest = {
   scope?: string;
   /** The model tool call waiting on this decision, when K-brain knows it. */
   tool_call_id?: string;
+  /** Shell the command runs in (bash, pwsh, cmd); empty for non-shell tools. */
+  shell?: string;
+  /** What allow_always would remember, from backends with permission_rules. */
+  suggestion?: { rules: string[]; default_scope?: string };
+};
+
+/** The answer to a permission request: a bare decision, or one with the remember
+ *  scope (allow_always) or the reason given to the model (reject). */
+export type KBrainPermissionAnswer =
+  | KBrainPermissionDecision
+  | { decision: KBrainPermissionDecision; scope?: string; reason?: string };
+
+export type KBrainPermissionDecision = "allow_once" | "allow_always" | "reject";
+
+/** permission.auto_resolved: the backend allowed a call without asking. */
+export type KBrainPermissionAutoResolved = {
+  toolCallId: string;
+  source: "rule" | "read_only";
+  rule?: string;
+  scope?: string;
 };
 
 export type KBrainTurnParams = {
+  locale?: Locale;
   conversationId: string;
   sessionId: string;
   cwd?: string;
@@ -158,9 +188,11 @@ export type KBrainTurnParams = {
   signal: AbortSignal;
   onTextDelta: (text: string) => void;
   onThinkingDelta: (text: string) => void;
-  onHostedSearch?: (search: KBrainHostedSearch) => void;
+  onHostedSearch?: (search: HostedSearchBlock) => void;
   onToolCall: (call: ToolCall) => void;
   onToolResult: (call: ToolCall, result: ToolResultMessage) => void;
+  /** 命令运行中的输出尾部快照（整体替换，非增量）；结果到达后不再回调。 */
+  onToolOutput?: (toolCallId: string, output: string) => void;
   onSubagent?: (subagent: KBrainSubagent) => void;
   onStatus?: (status: string | null) => void;
   content?: KBrainContentBlock[];
@@ -168,10 +200,13 @@ export type KBrainTurnParams = {
     request: KBrainQuestionRequest,
     signal?: AbortSignal,
   ) => Promise<KBrainQuestionAnswer[]>;
+  /** refusal: K-brain's reason for refusing the previous answer to this prompt (400). */
   onPermissionRequest?: (
     request: KBrainPermissionRequest,
     signal?: AbortSignal,
-  ) => Promise<"allow_once" | "allow_always" | "reject">;
+    refusal?: string,
+  ) => Promise<KBrainPermissionAnswer>;
+  onPermissionAutoResolved?: (resolved: KBrainPermissionAutoResolved) => void;
   applyConversationState?: (state: ConversationViewState) => void;
   getConversationState?: () => ConversationViewState;
   baseUrl?: string;
@@ -253,22 +288,18 @@ function toolResult(
   runId: string,
   revision: number,
 ): ToolResultMessage {
+  const isError = result.failed === true || result.cancelled === true;
+  const images = kbrainToolImages(result.content, result.output);
   return {
     role: "toolResult",
     toolCallId: result.id,
     toolName: result.name ?? "tool",
-    content: [
-      { type: "text", text: result.output },
-      ...(result.content ?? []).flatMap((block): ToolResultMessage["content"] =>
-        block.type === "image" && block.image_url
-          ? [{ type: "image", data: block.image_url, mimeType: block.mime_type || "image/png" }]
-          : [],
-      ),
-    ],
+    content: [{ type: "text", text: result.output }, ...images.content],
     details:
       questionResultDetails(result.name, result.output) ??
-      taskResultDetails(result.name, call?.arguments, result, runId, revision),
-    isError: result.failed === true || result.cancelled === true,
+      taskResultDetails(result.name, call?.arguments, result, runId, revision) ??
+      displayImageResultDetails(result.name, images.images, isError),
+    isError,
     timestamp: Date.now(),
   };
 }
@@ -286,14 +317,9 @@ function finalContent(
       content.push({ type: "thinking", thinking: block.text });
   }
   for (const search of message?.hosted_search ?? []) {
-    content.push({
-      type: "hostedSearch",
-      id: search.id,
-      provider: search.provider,
-      status: search.status,
-      queries: search.queries,
-      sources: search.sources,
-    } as HostedSearchBlock);
+    // K-brain（Go）把空切片序列化成 null，必须先归一化，否则渲染时崩溃（#1069）。
+    const block = normalizeHostedSearchBlock(search);
+    if (block) content.push(block);
   }
   for (const call of message?.tool_calls ?? []) content.push(toolCall(call));
   const hasThinking = content.some(
@@ -618,6 +644,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   let thinking = "";
   let finalMessage: KBrainMessage | undefined;
   const calls = new Map<string, ToolCall>();
+  // 已出结果的调用：之后到达的运行中输出一律忽略。
+  const settledCalls = new Set<string>();
   let afterSeq = accepted.accepted_seq;
   let terminal: "stop" | "error" | "aborted" = "stop";
   let errorMessage: string | undefined;
@@ -686,8 +714,9 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         break;
       }
       case "assistant.sources": {
-        const search = eventPayload<KBrainHostedSearch>(event);
-        if (search?.type === "hostedSearch" && search.id) params.onHostedSearch?.(search);
+        // 搜索刚开始时 queries/sources 尚为空，K-brain 会发 null；归一化后再进 UI（#1069）。
+        const search = normalizeHostedSearchBlock(eventPayload<KBrainHostedSearch>(event));
+        if (search) params.onHostedSearch?.(search);
         break;
       }
       case "tool.call": {
@@ -714,6 +743,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
           name: result.toolName,
           arguments: {},
         };
+        settledCalls.add(result.toolCallId);
         params.onToolResult(call, result);
         break;
       }
@@ -757,8 +787,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
           review &&
           Object.entries(review.report).some(([key, value]) => key !== "reason" && value !== "low")
         ) {
-          toast.warning(`AI review · ${review.tool}`, {
-            description: review.report.reason,
+          toast.warning(aiReviewTitle(review.tool, params.locale), {
+            description: localizeAIReviewReason(review.report.reason, params.locale),
             id: `ai-review-${params.conversationId}`,
             duration: 15000,
           });
@@ -767,9 +797,20 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       }
       case "tool.status": {
         const payload = eventPayload<{
+          tool_call_id?: string | null;
           status?: string | null;
           text?: string | null;
+          message?: string | null;
         }>(event);
+        // 带 tool_call_id 的 running 状态是命令运行中的输出快照（#975）：交给对应
+        // 工具卡展示，不能当作整轮的状态文字覆盖运行进度。
+        const toolCallId = typeof payload?.tool_call_id === "string" ? payload.tool_call_id : "";
+        if (toolCallId && payload?.status === "running" && typeof payload.message === "string") {
+          if (calls.has(toolCallId) && !settledCalls.has(toolCallId)) {
+            params.onToolOutput?.(toolCallId, payload.message);
+          }
+          break;
+        }
         reportStatus(payload?.status ?? payload?.text ?? null);
         break;
       }
@@ -900,25 +941,42 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         }
         const permissionController = new AbortController();
         pendingPermissions.set(request.permission_id, permissionController);
-        let decisionPromise: Promise<"allow_once" | "allow_always" | "reject">;
-        try {
-          decisionPromise = Promise.resolve(
-            params.onPermissionRequest(request, permissionController.signal),
-          );
-        } catch (error) {
-          decisionPromise = Promise.reject(error);
-        }
-        void decisionPromise
-          .then((decision) => {
+        const onPermissionRequest = params.onPermissionRequest;
+        const answerPermission = async () => {
+          let refusal: string | undefined;
+          for (let attempt = 0; ; attempt += 1) {
+            const answer = await onPermissionRequest(request, permissionController.signal, refusal);
             if (permissionController.signal.aborted) return;
-            return client
-              .resolvePermission(kbrainSessionId, request.permission_id, decision, accepted.run_id)
-              .catch((error) => {
-                // A concurrent session grant can consume this waiter before its SSE resolution arrives.
-                if ((error as { status?: number }).status === 404) return;
-                throw error;
-              });
-          })
+            const { decision, scope, reason } = permissionAnswerFields(answer);
+            try {
+              await client.resolvePermission(
+                kbrainSessionId,
+                request.permission_id,
+                decision,
+                accepted.run_id,
+                reason,
+                scope,
+              );
+              return;
+            } catch (error) {
+              const status = (error as { status?: number }).status;
+              // A concurrent session grant can consume this waiter before its SSE resolution arrives.
+              if (status === 404) return;
+              // K-brain answers 400 and keeps the prompt waiting when it cannot store the
+              // remembered rules (a scope it cannot keep, a failed write): ask again.
+              if (
+                status === 400 &&
+                attempt < PERMISSION_ANSWER_RETRIES &&
+                !permissionController.signal.aborted
+              ) {
+                refusal = error instanceof Error ? error.message : String(error);
+                continue;
+              }
+              throw error;
+            }
+          }
+        };
+        void answerPermission()
           .catch((error) => {
             if (permissionController.signal.aborted) return;
             permissionFailure = error instanceof Error ? error : new Error(String(error));
@@ -930,6 +988,25 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
               pendingPermissions.delete(request.permission_id);
             }
           });
+        break;
+      }
+      case "permission.auto_resolved": {
+        const resolved = eventPayload<{
+          tool_call_id?: string;
+          source?: string;
+          rule?: string;
+          scope?: string;
+        }>(event);
+        const toolCallId = resolved?.tool_call_id?.trim();
+        const source = resolved?.source;
+        if (toolCallId && (source === "rule" || source === "read_only")) {
+          params.onPermissionAutoResolved?.({
+            toolCallId,
+            source,
+            ...(resolved?.rule ? { rule: resolved.rule } : {}),
+            ...(resolved?.scope ? { scope: resolved.scope } : {}),
+          });
+        }
         break;
       }
       case "permission.resolved": {
@@ -998,7 +1075,9 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     }
   } catch (error) {
     terminal = params.signal.aborted ? "aborted" : "error";
-    errorMessage = error instanceof Error ? error.message : String(error);
+    // Stop aborts the event stream fetch, so its AbortError text ("Fetch is aborted" in
+    // WKWebView) is not a run failure and must not reach the transcript.
+    if (terminal === "error") errorMessage = error instanceof Error ? error.message : String(error);
     streamAbortController.abort();
     cancelPendingPermissions();
     await client.cancelRun(kbrainSessionId, accepted.run_id).catch(() => undefined);
@@ -1023,17 +1102,9 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     terminal = "error";
     errorMessage ??= "ZeroAgent engine run completed without an assistant result";
   }
-  if (content.length === 0 && (terminal === "error" || terminal === "aborted")) {
-    content = [
-      {
-        type: "text",
-        text:
-          errorMessage ??
-          (terminal === "aborted"
-            ? "ZeroAgent engine turn aborted"
-            : "ZeroAgent engine run failed"),
-      },
-    ];
+  // A stopped turn keeps whatever it streamed; the transcript renders the stopped state.
+  if (content.length === 0 && terminal === "error") {
+    content = [{ type: "text", text: errorMessage ?? "K-brain run failed" }];
   }
 
   const message: AssistantMessage = {
@@ -1055,4 +1126,21 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     );
   }
   return message;
+}
+
+// Scope only goes with allow_always and a reason only with reject, so a stray field
+// cannot widen or explain a different decision.
+function permissionAnswerFields(answer: KBrainPermissionAnswer): {
+  decision: KBrainPermissionDecision;
+  scope?: string;
+  reason?: string;
+} {
+  if (typeof answer === "string") return { decision: answer };
+  const scope = answer.decision === "allow_always" ? answer.scope?.trim() : undefined;
+  const reason = answer.decision === "reject" ? answer.reason?.trim() : undefined;
+  return {
+    decision: answer.decision,
+    ...(scope ? { scope } : {}),
+    ...(reason ? { reason } : {}),
+  };
 }

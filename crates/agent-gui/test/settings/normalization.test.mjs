@@ -6,7 +6,20 @@ const loader = createTsModuleLoader();
 const settings = loader.loadModule("src/lib/settings/index.ts");
 const normalize = loader.loadModule("@liveagent/ui/lib/settings/normalize.ts");
 const sync = loader.loadModule("@liveagent/ui/lib/settings/sync.ts");
+const modelCatalog = loader.loadModule("@liveagent/ui/lib/models/modelCatalog.ts");
 const RIGHT_DOCK_TAB_IDS = settings.RIGHT_DOCK_SINGLETON_TAB_IDS;
+
+// 目录每日自动刷新会改动上游限额：断言"取到目录真值"的用例对照快照条目，
+// 不写死数值。
+function catalogLimits(section, modelId) {
+  const entry = modelCatalog.MODEL_CATALOG[section].find((model) => model.id === modelId);
+  assert.ok(entry, `${section}/${modelId} missing from the catalog snapshot`);
+  return { contextWindow: entry.contextWindow, maxOutputToken: entry.maxOutputToken };
+}
+
+function pickLimits(limits) {
+  return { contextWindow: limits.contextWindow, maxOutputToken: limits.maxOutputToken };
+}
 
 async function withNavigator(value, task) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -315,8 +328,11 @@ test("DeepSeek provider normalization keeps native routing and native search", (
   assert.equal(provider.promptCachingEnabled, false);
   assert.equal(provider.promptCacheHintMode, undefined);
   assert.equal(provider.nativeWebSearchEnabled, true);
-  assert.equal(provider.models[0].contextWindow, 1_000_000);
-  assert.equal(provider.models[0].maxOutputToken, 393_216);
+  assert.deepEqual(pickLimits(provider.models[0]), catalogLimits("deepseek", "deepseek-v4-flash"));
+  assert.notDeepEqual(
+    pickLimits(provider.models[0]),
+    modelCatalog.PROVIDER_FALLBACK_LIMITS.deepseek,
+  );
 });
 
 test("legacy Codex-group DeepSeek configs stay untouched — migration is user-driven", () => {
@@ -1848,7 +1864,7 @@ test("settings reload uses persisted right dock state only", () => {
 test("gateway settings sync keeps right dock width local and syncs project state", () => {
   const current = settings.normalizeSettings({
     customSettings: {
-      chatTranscript: { width: 920 },
+      chatTranscript: { width: 920, expandProcessByDefault: true },
       rightDock: {
         width: 612,
         projects: {
@@ -1894,7 +1910,7 @@ test("gateway settings sync keeps right dock width local and syncs project state
   });
   const incoming = settings.normalizeSettings({
     customSettings: {
-      chatTranscript: { width: 1100 },
+      chatTranscript: { width: 1100, expandProcessByDefault: false },
       rightDock: {
         width: 360,
         projects: {
@@ -1943,6 +1959,8 @@ test("gateway settings sync keeps right dock width local and syncs project state
 
   assert.equal(payload.customSettings.chatTranscript.width, 768);
   assert.equal(synced.customSettings.chatTranscript.width, 920);
+  assert.equal(payload.customSettings.chatTranscript.expandProcessByDefault, false);
+  assert.equal(synced.customSettings.chatTranscript.expandProcessByDefault, true);
   assert.equal(synced.customSettings.rightDock.width, 612);
   assert.deepEqual(Object.keys(synced.customSettings.rightDock.projects).sort(), [
     "/desktop/project",
@@ -2792,15 +2810,46 @@ test("font scale settings normalize invalid values to 1 and clamp out-of-range v
 });
 
 test("chat transcript width defaults, clamps, and updates locally", () => {
-  assert.deepEqual(settings.normalizeChatTranscriptSettings(undefined), { width: 768 });
-  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 400 }), { width: 560 });
-  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 1400 }), { width: 1200 });
-  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 920.4 }), { width: 920 });
+  const width = (value) => ({ width: value, expandProcessByDefault: false });
+  assert.deepEqual(settings.normalizeChatTranscriptSettings(undefined), width(768));
+  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 400 }), width(560));
+  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 1400 }), width(1200));
+  assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 920.4 }), width(920));
 
   const current = settings.normalizeSettings({ customSettings: { chatTranscript: { width: 768 } } });
   const updated = settings.updateChatTranscriptWidth(current, 960);
   assert.equal(updated.customSettings.chatTranscript.width, 960);
   assert.equal(settings.updateChatTranscriptWidth(updated, 960), updated);
+});
+
+test("expand-process-by-default is opt-in, local, and survives width updates (#1154)", () => {
+  assert.equal(settings.normalizeChatTranscriptSettings({}).expandProcessByDefault, false);
+  assert.equal(
+    settings.normalizeChatTranscriptSettings({ expandProcessByDefault: "yes" })
+      .expandProcessByDefault,
+    false,
+  );
+  assert.equal(
+    settings.normalizeChatTranscriptSettings({ expandProcessByDefault: true })
+      .expandProcessByDefault,
+    true,
+  );
+
+  const current = settings.normalizeSettings({});
+  assert.equal(current.customSettings.chatTranscript.expandProcessByDefault, false);
+  const enabled = settings.updateExpandProcessByDefault(current, true);
+  assert.equal(enabled.customSettings.chatTranscript.expandProcessByDefault, true);
+  assert.equal(enabled.customSettings.chatTranscript.width, 768);
+  assert.equal(settings.updateExpandProcessByDefault(enabled, true), enabled);
+
+  // Resizing the transcript must not drop the preference.
+  const resized = settings.updateChatTranscriptWidth(enabled, 960);
+  assert.equal(resized.customSettings.chatTranscript.expandProcessByDefault, true);
+  assert.equal(
+    settings.normalizeSettings(JSON.parse(JSON.stringify(resized))).customSettings.chatTranscript
+      .expandProcessByDefault,
+    true,
+  );
 });
 
 test("close window behavior defaults to minimize and only accepts exit", () => {
@@ -3060,8 +3109,14 @@ test("cross-provider models resolve real catalog limits instead of provider fall
     "claude_code",
     "deepseek-v4-flash",
   );
-  assert.equal(deepseekUnderClaude.contextWindow, 1_000_000);
-  assert.equal(deepseekUnderClaude.maxOutputToken, 393_216);
+  assert.deepEqual(
+    pickLimits(deepseekUnderClaude),
+    catalogLimits("deepseek", "deepseek-v4-flash"),
+  );
+  assert.notDeepEqual(
+    pickLimits(deepseekUnderClaude),
+    modelCatalog.PROVIDER_FALLBACK_LIMITS.claude_code,
+  );
   const glmUnderCodex = settings.getProviderModelDefaults("codex", "glm-4.7");
   assert.equal(glmUnderCodex.contextWindow, 204_800);
   assert.equal(glmUnderCodex.maxOutputToken, 131_072);

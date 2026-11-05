@@ -60,6 +60,7 @@ import { skillMentionInjection } from "../../../lib/chat/skills/mentionInjection
 import { createStreamDebugLogger } from "../../../lib/debug/agentDebug";
 import { isTauriHost, liveAgentRuntimeCapabilities } from "../../../lib/host";
 import { showGoalProgress } from "../../../lib/kbrain/goalNotice";
+import { kBrainSidebarSync } from "../../../lib/kbrain/sidebarSync";
 import { createModelFromConfig, createProviderRuntimeConfig } from "../../../lib/providers/llm";
 import {
   type AppSettings,
@@ -114,7 +115,10 @@ import {
   type GatewayRuntimeSnapshotState,
 } from "../gateway/chatRuntimeSnapshot";
 import type { ActiveGatewayBridgeRequest } from "../gateway/gatewayBridgeTypes";
-import { createLocalGatewayChatRunId } from "../gateway/gatewayRuntimeStatusModel";
+import {
+  createLocalGatewayChatRunId,
+  mirrorsLocalRunsToGateway,
+} from "../gateway/gatewayRuntimeStatusModel";
 import type { useGatewayRunMirrorCoordinator } from "../gateway/useGatewayRunMirrorCoordinator";
 import type { PersistConversationAction } from "../history/useConversationHistoryActions";
 import type { useChatPageRuntimeStore } from "../hooks/useChatPageRuntimeStore";
@@ -130,6 +134,7 @@ import {
   finalizeChatRunInOrder,
   releaseChatRunUi,
   settleChatRunFinalization,
+  shouldKeepPendingRowAfterAbort,
   trackTerminalHistoryPersist,
 } from "./chatRunFinalization";
 import { buildPreparedContext as buildPreparedConversationContext } from "./conversationContextBuilders";
@@ -409,11 +414,10 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     const selectedSkillNames = effectiveSkillsEnabled ? workspaceResources.skillNames : [];
     const getEffectiveMcpSettings = () =>
       filterMcpSettingsForWorkspace(getMcpSettings(), workspaceResources);
-    const hasRemoteGatewayTarget =
-      capabilities.gatewayMirror &&
-      settings.remote.enabled &&
-      settings.remote.gatewayUrl.trim() !== "" &&
-      settings.remote.token.trim() !== "";
+    const hasRemoteGatewayTarget = mirrorsLocalRunsToGateway(
+      settings.remote,
+      capabilities.gatewayMirror,
+    );
     const mirrorsLocalRunToGateway = !gatewayBridgeRequest && hasRemoteGatewayTarget;
     const gatewayBridgeRequestId =
       gatewayBridgeRequest?.requestId ?? createLocalGatewayChatRunId(conversationId);
@@ -684,17 +688,19 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     }
 
     if (shouldCreatePendingHistoryItem) {
-      sidebarStore.upsertLocal(
-        createPendingHistoryItem({
-          conversationId,
-          title: pendingConversationTitle,
-          providerId,
-          model,
-          sessionId,
-          cwd: historyCwd,
-          createdAt,
-        }),
-      );
+      const pendingItem = createPendingHistoryItem({
+        conversationId,
+        title: pendingConversationTitle,
+        providerId,
+        model,
+        sessionId,
+        cwd: historyCwd,
+        createdAt,
+      });
+      sidebarStore.upsertLocal(pendingItem);
+      // K-brain lists the session only after its first message is saved; until then the
+      // Gateway list serves this row so a WebUI can open the run (e.g. to approve a tool).
+      kBrainSidebarSync.markRunning(pendingItem);
     }
 
     clearAbortSnapshot(transcriptStore);
@@ -815,6 +821,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     }
 
     function releaseConversationRunUi() {
+      if (shouldCreatePendingHistoryItem) kBrainSidebarSync.clearRunning(conversationId);
       if (!conversationRunStarted || conversationUiReleased) return;
       conversationUiReleased = true;
       releaseChatRunUi({
@@ -1472,6 +1479,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         await chatRuntimeHost.runTurn({
           mode: "agent",
           params: {
+            locale: settings.locale,
             providerId,
             model,
             runtime: providerConfig,
@@ -1572,6 +1580,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         await chatRuntimeHost.runTurn({
           mode: "text",
           params: {
+            locale: settings.locale,
             providerId,
             model,
             runtime: providerConfig,
@@ -1625,7 +1634,10 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         runCleanupPromise = (async () => {
           commitVisibleAbortedConversation();
           if (shouldCreatePendingHistoryItem && !abortedConversationCommitted) {
-            sidebarStore.removeLocal(conversationId);
+            // 首次落库已发起时，提问可能已经写入历史；只有确认没落成，占位行才是幻影。
+            // 否则删掉后会被落库的 upsert 推回来，表现为「先消失、约 1 秒后又出现」。
+            const persisted = await shouldKeepPendingRowAfterAbort(initialPersistPromise);
+            if (!persisted) sidebarStore.removeLocal(conversationId);
           }
         })();
       } else {

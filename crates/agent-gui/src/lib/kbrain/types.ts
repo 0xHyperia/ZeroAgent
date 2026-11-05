@@ -134,12 +134,15 @@ export type KBrainHostedSearch = {
   id: string;
   provider?: string;
   status: "searching" | "completed" | "failed";
-  queries: string[];
-  sources: {
-    url: string;
-    title?: string;
-    sourceType?: "source" | "citation";
-  }[];
+  // Go 端 nil 切片会序列化为 null。
+  queries: string[] | null;
+  sources:
+    | {
+        url: string;
+        title?: string;
+        sourceType?: "source" | "citation";
+      }[]
+    | null;
   error?: string;
 };
 
@@ -311,9 +314,13 @@ export type KBrainRunOptions = {
   search?: "disabled" | "enabled";
   approval_policy?: "ask" | "auto" | "deny";
   permission_mode?: import("@liveagent/ui/lib/chat/permissionModes").KBrainPermissionMode;
+  /** Sent by the client only when K-brain advertises capability ai_review_per_run. */
+  review_scope?: "per_run";
   workspace_roots?: Array<{ path: string; access: "read" | "write" }>;
   tools?: { policies?: Record<string, "ask" | "allow" | "deny"> };
   plan_mode_enabled?: boolean;
+  /** OS confinement for the run's commands; sent only when capability run_sandbox allows it. */
+  sandbox?: import("@liveagent/ui/lib/chat/permissionModes").KBrainRunSandbox;
   /** Desktop-executed tools offered to the model for this run (e.g. Browser). */
   client_tools?: KBrainClientToolDefinition[];
 };

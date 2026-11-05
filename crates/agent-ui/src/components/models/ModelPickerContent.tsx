@@ -100,7 +100,7 @@ export function ModelPickerContent(props: {
     const viewport = list.getBoundingClientRect();
     list.scrollTop = Math.max(
       0,
-      list.scrollTop + item.top - viewport.top - (list.clientHeight - item.height) / 2,
+      list.scrollTop + item.top - viewport.top - (viewport.height - item.height) / 2,
     );
     scrollPendingRef.current = false;
   }, [expanded, props.revealSelected, selectedGroupId, searching, pendingModel]);

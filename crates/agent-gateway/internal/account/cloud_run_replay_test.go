@@ -403,17 +403,22 @@ func TestCloudRunReplayRechecksLogoutAfterLookup(t *testing.T) {
 	ctx := context.Background()
 	cid := historyConversation(t, f.cloudRunTestFixture, 7)
 	input := CreateCloudRunInput{ConversationID: cid, ClientRequestID: "logout-during-replay", Model: "test-model", ProviderKeyID: 41, Content: cloudJSON("work")}
+	// Install the wrapper before the first run can start a title worker.
+	// Arm the logout hook only for the explicit replay under test.
+	var revokeOnLookup atomic.Bool
+	f.service.store = &cloudReplayLookupHookStore{MemoryStore: f.store.(*MemoryStore), beforeReturn: func() {
+		if revokeOnLookup.Swap(false) {
+			if err := f.store.DeleteSession(ctx, f.session.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}}
 	run, _, err := f.service.CreateCloudRun(ctx, f.session, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.wait(t, run.ID)
-	hook := &cloudReplayLookupHookStore{MemoryStore: f.store.(*MemoryStore), beforeReturn: func() {
-		if err := f.store.DeleteSession(ctx, f.session.ID); err != nil {
-			t.Fatal(err)
-		}
-	}}
-	f.service.store = hook
+	revokeOnLookup.Store(true)
 	keyReads := f.keyReads.Load()
 	replayed, _, err := f.service.CreateCloudRun(ctx, f.session, input)
 	var api *APIError

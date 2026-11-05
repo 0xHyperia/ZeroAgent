@@ -68,7 +68,7 @@ export function Tooltip<Payload = unknown>(props: TooltipPrimitive.Root.Props<Pa
 export const createTooltipHandle = TooltipPrimitive.createHandle;
 
 export function TooltipTrigger(
-  props: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>,
+  props: React.ComponentPropsWithRef<typeof TooltipPrimitive.Trigger>,
 ) {
   const generatedId = React.useId();
   const description = React.useContext(TooltipDescriptionContext);

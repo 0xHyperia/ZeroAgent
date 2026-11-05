@@ -51,10 +51,12 @@ const env = await createDomTestEnv({
     },
     "../../IconSet": {
       Bot: EmptyIcon,
+      Braces: EmptyIcon,
       ChevronRight: EmptyIcon,
       Eye: EmptyIcon,
       FilePenLine: EmptyIcon,
       FolderTree: EmptyIcon,
+      Globe: EmptyIcon,
       Search: EmptyIcon,
       Terminal: EmptyIcon,
       Wrench: EmptyIcon,
@@ -76,6 +78,8 @@ const env = await createDomTestEnv({
       getToolActivityCategory: (name) => (name === "Bash" ? "command" : "read"),
       getToolDisplayName: (name) => name,
       getToolTraceKey: (item, index) => item.toolCall.id ?? String(index),
+      isWebFetchToolName: (name) => name === "web_fetch" || name === "WebFetch",
+      LSP_TOOL_NAME: "lsp",
       hasActiveUserInteraction: (items, runningToolCallIds) =>
         items.some(
           (item) =>
@@ -203,6 +207,16 @@ test("an empty running work trace shows the plain processing header, not a butto
 
   assert.match(container.textContent, /处理中/);
   assert.ok(container.querySelector("[data-chat-work-grid]"));
+  // The pixels cycle in a staggered wave while the turn runs.
+  const pixels = [...container.querySelectorAll("[data-chat-work-grid] span span")];
+  assert.equal(pixels.length, 9);
+  for (const pixel of pixels) {
+    assert.match(pixel.className, /(?:^|\s)animate-chat-work-pixel(?:\s|$)/);
+    assert.match(pixel.className, /(?:^|\s)motion-reduce:animate-none(?:\s|$)/);
+    assert.equal(pixel.hasAttribute("data-paused"), false);
+  }
+  const delays = pixels.map((pixel) => pixel.style.getPropertyValue("--chat-work-delay"));
+  assert.ok(new Set(delays).size > 1, `delays should differ: ${delays}`);
   assert.equal(container.querySelector("button"), null);
   assert.equal(container.querySelector("[data-chat-work-collapsed-tail]"), null);
 

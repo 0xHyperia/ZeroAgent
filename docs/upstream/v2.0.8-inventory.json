@@ -1,0 +1,3750 @@
+{
+  "release": "v2.0.8",
+  "previous_upstream": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "upstream_commit": "514ec76d6b1fa2e4dfa70a167c2bae9a7897a3fd",
+  "zeroagent_baseline": "68e331ead9c1f622125bfa17ac6009d7ac498d8f",
+  "text_conflicts": 75,
+  "counts": {
+    "adapt": 135,
+    "adopt": 301,
+    "defer": 18,
+    "partial": 64,
+    "reject": 13
+  },
+  "entries": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": ".github/workflows/desktop-release.yml",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": ".github/workflows/publish-model-catalog.yml",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "no automatic publication or public runtime catalog endpoint"
+    },
+    {
+      "path": ".github/workflows/update-model-catalog.yml",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "Makefile",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/config/config.go",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/config/config_test.go",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/model_catalog.go",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "no automatic publication or public runtime catalog endpoint"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/model_catalog_review_test.go",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "no automatic publication or public runtime catalog endpoint"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/model_catalog_test.go",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "no automatic publication or public runtime catalog endpoint"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue_client.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/client.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/commands.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/composer_command_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_adversarial_r2_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_adversarial_r3_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_adversarial_r4_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_adversarial_r5_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_adversarial_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_delete_sync_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_sync.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_sync_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_sync_unlisted_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/permission_modes_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/permission_rules.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/permission_rules_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/queue_http_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/review_la3b_permission_rules_r2_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/review_la3b_permission_rules_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/review_scope_queue_review_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/review_scope_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/run_sandbox_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings_error_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings_sync_client_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/capabilities.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway.pb.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_local.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/permission_modes_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http.go",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http_test.go",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_settings_sync_acks_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway.proto",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/test/helpers/load-web-module.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/review_la3b_permission_rules_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_kbrain_permission_rules_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_kbrain_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/web-settings.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/aiApprovalReadiness.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/assistantBubble.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/imageStudio.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/sandboxCapability.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/settingsEcho.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayChatConfiguration.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayChatPresentation.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/workbench/GatewayConversationPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/GatewayTranscript.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/i18n/config.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/toolApprovalBridge.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketRpc.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/webStyleClasses.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/LoginPage.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/SharedHistoryPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/ask-user-question-pending.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/assistant-bubble-utils.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/assistant-status.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo-agent-switch.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo-detection.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo-first-ack.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-v2-adapters.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/image-studio-host.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/permission-rules-settings.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/review-la3b-permission-rules-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/review-la3b-permission-rules.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/settings-overlay-settled-position.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/user-message-content.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/Cargo.toml",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/data_dir.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "settings no automatic product-directory migration"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/mod.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/notifications.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/system.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/automation/hook.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/db.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/system.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/tests.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/browser.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/gateway.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/mcp.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/mod.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/chat_file_links.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/checkpoint.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/fs.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/git.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/async_runtime.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/data_home.rs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "settings no automatic product-directory migration"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/mod.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/sandbox.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/tests.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/windows_sandbox.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/launcher.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/connection.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_ai_approval.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_history.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_memory.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/tests.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/ws_transport.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_health.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/mod.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/memory/paths.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mod.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/planning/notification.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.conf.json",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.conf.json",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tauri.windows.release.conf.json",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tests/kbrain_health_adversarial.rs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/tests/kbrain_health_adversarial_r2.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/windows/README.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/windows/installer-hooks.nsh",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "keep current installer identity and do not delete another product’s data"
+    },
+    {
+      "path": "crates/agent-gui/src/App.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/aiApprovalReadiness.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/assistantBubble.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/sandboxCapability.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/settingsExtension.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/systemSettings.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/components/MacOsTitleBarSpacer.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/components/WindowsSettingsHeader.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/i18n/config.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/messages/uiMessages.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/host.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/bootstrap.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/history.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigrationFailures.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/reviewNotice.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sessionSync.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/toolImages.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/notifications/runAttention.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/messageUtils.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/remoteGateway.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/storage.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/shortcuts/globalShortcuts.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/system/dataDir.ts",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "settings no automatic product-directory migration"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/system/webviewNavigationGuard.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/system/windowPin.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/askUserQuestionTools.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/permissionAutoResolved.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/toolApproval.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tray/trayMenu.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/AssistantBubble.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/PendingToolApprovalBar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/conversations/createConversationSurfaceController.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/conversations/useBlockedConversationIds.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayBridgeTypes.ts",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "retain ZeroAgent branch semantics for edit and resend"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayRuntimeStatusModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/useGatewayBridgeListeners.ts",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "retain ZeroAgent branch semantics for edit and resend"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/hooks/useEditResend.ts",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "retain ZeroAgent branch semantics for edit and resend"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/notifications/RunAttentionNotifier.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/queue/useChatTurnQueue.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/chatRunFinalization.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/sidebar/ChatSidebarContainer.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/surfaces/ConversationPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/surfaces/ConversationPaneHostEnvironment.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/AssistantRenderUnit.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/ChatTranscript.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/TranscriptList.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/UserAttachmentCards.tsx",
+      "upstream_change": "D",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/UserMessageRow.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/measureRowLive.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/transcriptFindEntries.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/transcriptTypes.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/gatewayToolPreview.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runAgentConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runKBrainConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runTextConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/AboutSection.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/DataDirectorySection.tsx",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "settings no automatic product-directory migration"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/GlobalShortcutsSection.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/KBrainBackendRow.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/backend/cargo-smoke.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/activity-disclosure-state.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/ai-review-failure-reasons.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/ask-user-question-card.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/ask-user-question-pending.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/assistant-status.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-file-link-context-menu.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-file-link-menu-intent.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-file-link-menu-pane-switch.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-file-links.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-react-performance.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-stop-timing.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/chat-transcript-scroller.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/command-palette.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/command-safety-mode-selector.test.mjs",
+      "upstream_change": "A",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-approval-focus-return.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-mode-cycle-bar.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-mode-cycle.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-model-picker-scroll-to-active.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/composer-overlay-metrics.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/edge-measure-exit.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/edit-resend-atomic.test.mjs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "retain ZeroAgent branch semantics for edit and resend"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/escape-stop-run.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/find-in-conversation.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-run-mirror-target.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-runtime-snapshot.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-approval-remember.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-approval-ui.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-bootstrap.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-adversarial-r2-vectors.json",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-adversarial-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-adversarial-r3.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-adversarial-vectors.json",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-adversarial.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-health-contract.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-host-boundary.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-image-tool-results.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-live-tool-output.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sharing-ui.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-local-running.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-unlisted-new-session.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/markdown-citations.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/markdown-image-policy.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/messages.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/native-file-drop-routing.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/permission-modes-backend.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/permission-modes.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/process-disclosure-default.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/reply-share.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-approval-cc-focus-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-approval-cc-focus.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-approval-cc-keys.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-chat-file-link-default-app-comma.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-chat-url-menu-confirmation.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-kbrain-image-webui-live.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la1-mode-cycle-pane-guard.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la1-mode-cycle-queued-notice.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2a-approval-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2a-approval.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2b-approval-card-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2b-approval-card-r3.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2b-approval-card-r4.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2b-approval-card.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la4-sidebar-delete.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la4-sidebar-resync-delete.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la4-sidebar-unlisted-delete.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-scope-review.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-loop.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-round-block.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-shown.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-split.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-stall.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-streaming-reveal-throttle.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review5-auto-review-readiness.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review6-auto-review-readiness-refresh.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/streaming-reveal.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/surface-controller-strict-mode.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/surface-controller-strictmode-review.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/thinking-disclosure.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/thinking-trace.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-approval-bar-multi.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-approval-card-wiring.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-approval-card.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-approval-session-wide.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-argument-display.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/transcript-measure-live.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/transcript-quote-selection.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/user-message-collapse.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/user-message-content.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/windows-header.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/edge-measure.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/helpers/load-ts-module.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/i18n/shared-translations.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/adversarial-gpt-image-beta26-r3.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/adversarial-image-studio-i18n-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/adversarial-image-studio-i18n.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/adversarial-interface-language.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/failure-kind.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/framing.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/interface-language.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/localized-parameters.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/output-compression.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-failure-panel.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-filter-chips-edge.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-slow-download-guards.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-slow-download-recheck.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-slow-download.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review-verified-guards.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/review7-regressions.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/studio-controller.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/image-studio/workbench-layout.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/models/catalog-live-review.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/models/catalog-live.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/models/model-catalog.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/notifications/run-attention.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-attachment-read.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-failures.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-integrity.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-regressions.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker-stale-cache.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-marker.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-permission-answer.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-planning-lazy-migration.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-question-answer.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-review-notice-tool-output.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/ai-approval-per-run-readiness.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/ai-approval-per-run-review.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/ai-approval.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/app-shortcuts.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/data-dir.test.mjs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "settings no automatic product-directory migration"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/gateway-settings-sync-acks-app.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/gateway-settings-sync-acks.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "account configuration uses committed revisions and CAS"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/input-modalities.test.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/kbd-shortcut-tooltip.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/kbrain-backend-row.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/local-gateway-error-coverage.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/local-gateway-error.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/normalization.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/permission-rules-registration.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "ZeroAgent retains the existing composer navigation and policy UI"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/permission-rules.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-modal-stored-key-autofetch.test.mjs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "keep installed model bindings and credential destination checks"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/provider-models-stored-key-webui-desktop.test.mjs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "keep installed model bindings and credential destination checks"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review-la3a-permission-rules-r2.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review-la3a-permission-rules.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/review2-memory-switch-verified.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/shortcut-commands.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/shortcut-controls.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/shortcut-format.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/stt-settings.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/system-proxy-input.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/tools/ask-user-question-tools.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/tools/git-diff-line-comments.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/tools/sandbox-policy.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-gui/test/tools/tool-approval-remember.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/package.json",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/IconSet.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/Markdown.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/AskUserQuestionCard.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/AssistantStatus.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/AssistantWorkTrace.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatEmptyState.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatFileLinkContextMenu.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarRows.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarTypes.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/CommandSafetyModeSelector.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerGoalBar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ConversationSearchDialog.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/HistoryShareModal.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposer.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerInputUtils.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerModel.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/RunProgressStatus.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/StreamingSplitMarkdown.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ToolApprovalBar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ToolSurfaces.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/TranscriptFindBar.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/TranscriptMessageActions.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/TranscriptQuoteSelection.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/UserMessageBubbleBody.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/RoundContent.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ThinkingDisclosure.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolCallItem.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolPermissionMarker.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolResultDisplay.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolTraceGroup.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/assistantBubbleUtils.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/processDisclosure.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/ProjectToolsPanelToggle.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/RightDockContext.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/RightDockPanel.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/XTermViewport.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/CommitComposer.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/DiffView.css",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/DiffView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/HistoryView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/StatusView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/git-review/Toolbar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/kbd.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/shortcut-tooltip.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/sidebar.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/ui/tooltip.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/components/workbench/ProjectToolPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/SftpPathNavigator.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceCodeEditorOverlay.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/AssetImage.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/AssetLightbox.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/FailurePanel.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageCompareView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageComposer.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageDetailPane.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageModelPicker.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageProjectRail.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageSizePicker.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageStudioPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ImageTargetSettings.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/InputImageStack.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/JobDetailPane.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/ResultGallery.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/TargetParameterForm.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/drafts.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/framing.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/imageEventStreams.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/parameterModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/studioController.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/studioModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/studioText.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/features/image-studio/useImageStudio.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSCommon.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/askUserQuestion.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/assistantStatus.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/chatFileLinkContextMenuStore.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/chatFileLinks.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/commandPalette.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/commandPaletteActions.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/composerOverlayMetrics.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/diffLineComments.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/escapeStopRun.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/liveShellOutput.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/openChatFileLink.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/permissionModes.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/streamingReveal.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/streamingSplit.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/toolApprovalArgs.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/transcriptQuote.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/uiMessages.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/useComposerActions.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/userMessageContent.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/imaging/errors.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/imaging/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/kbrain/health-contract-vectors.json",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/kbrain/health.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/markdownCitations.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/catalog.generated.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/catalogLive.ts",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/modelCatalog.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/useThinkingLive.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providerCitationMarkers.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/aiApprovalReadiness.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/localGatewayError.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/normalizers.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/shared/platform.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/shortcuts/shortcutCommands.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/shortcuts/shortcutKeys.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/shortcuts/useComposerShortcuts.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-find/transcriptFind.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-find/transcriptFindDom.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-find/transcriptFindSource.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-find/useTranscriptFind.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/planning/PlanningToolbar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/planning/ShortcutHelp.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/AIApprovalSection.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/PermissionRulesSection.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProviderModal.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ProvidersSection.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/RemoteSection.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsShell.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/ShortcutCommandsSection.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SttSection.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SystemSettingsForm.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/providerUtils.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/systemProxyInput.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/styles/animations.css",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "crates/agent-ui/src/styles/base.css",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "docs/architecture/protocols.md",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "docs/design/2026-10-26-kbrain-decoupled-updates.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/design/2026-10-30-model-catalog-live-sync.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/kbrain-permission-modes.md",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/plans/2026-10-11-image-studio/design.md",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/plans/2026-10-28-kbrain-contract-s1/verification.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/plans/2026-11-03-chat-bottom-reserve.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/plans/2026-11-03-chat-citation-markers/progress.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "docs/plans/2026-11-03-image-studio-generation.md",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "scripts/check-biome-changed.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "scripts/check-biome-changed.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/fixtures/installer-lock.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/generate-model-catalog.mjs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
+    },
+    {
+      "path": "scripts/release/build-kbrain-source-adversarial.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/release/build-kbrain-source.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Includes the upstream change with ZeroAgent product differences; see the feature boundary in the sync report."
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/run-node-tests.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/run-node-tests.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Release result retained; identical paths may already exist on the product baseline."
+    },
+    {
+      "path": "scripts/test-windows-installer-hooks.ps1",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "keep current installer identity and do not delete another product’s data"
+    }
+  ],
+  "additional_integration_paths": [
+    ".github/upstream-ownership.yaml",
+    "crates/agent-gateway/internal/account/cloud_run_replay_test.go",
+    "crates/agent-gateway/test/webui/sheet-scroll.test.mjs",
+    "crates/agent-gui/test/backend/release-android.test.mjs",
+    "crates/agent-gui/test/image-studio/image-size.test.mjs",
+    "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
+    "crates/agent-ui/src/features/image-studio/parameterLabels.ts",
+    "patches/kbrain/0001-native-mcp-credentials.patch",
+    "patches/kbrain/0002-windows-selfhost-fixtures.patch",
+    "patches/kbrain/0003-mcp-credential-history-and-legacy-sse.patch",
+    "patches/kbrain/0006-host-owned-code-review-skill.patch",
+    "patches/kbrain/0007-concurrent-trajectory-section-publication.patch",
+    "patches/kbrain/0008-clawhub-store-integration.patch",
+    "patches/kbrain/0009-prompt-cache-hint-inheritance.patch",
+    "patches/kbrain/manifest.json"
+  ]
+}

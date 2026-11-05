@@ -1046,6 +1046,48 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
   useEffect(() => () => expandAnimationRef.current?.cancel(), []);
 
+  const showsApprovalBar = approvalBar != null;
+  const showedApprovalBar = useRef(showsApprovalBar);
+  const approvalSlotRef = useRef<HTMLDivElement | null>(null);
+  const caretOnApproval = useRef(false);
+  useEffect(() => {
+    const slot = approvalSlotRef.current;
+    if (!showsApprovalBar || !slot) return;
+    // The bar focuses itself in its own mount effect, which runs before this one, so
+    // start from where the caret is now; then follow it with native listeners (a focus
+    // moved from inside an effect does not reach React's onFocus). A focused element
+    // that is removed reports no next target, so only a move elsewhere clears the flag,
+    // and a click elsewhere counts even when it lands on nothing focusable.
+    caretOnApproval.current = slot.contains(document.activeElement);
+    const onFocusIn = () => {
+      caretOnApproval.current = true;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget as Node | null;
+      if (next && !slot.contains(next)) caretOnApproval.current = false;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!slot.contains(event.target as Node | null)) caretOnApproval.current = false;
+    };
+    slot.addEventListener("focusin", onFocusIn);
+    slot.addEventListener("focusout", onFocusOut);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      slot.removeEventListener("focusin", onFocusIn);
+      slot.removeEventListener("focusout", onFocusOut);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [showsApprovalBar]);
+  useEffect(() => {
+    const wasShowing = showedApprovalBar.current;
+    showedApprovalBar.current = showsApprovalBar;
+    if (!wasShowing || showsApprovalBar) return;
+    const hadCaret = caretOnApproval.current;
+    caretOnApproval.current = false;
+    const active = document.activeElement;
+    if (hadCaret && (!active || active === document.body)) composerRef.current?.focus();
+  }, [composerRef, showsApprovalBar]);
+
   const toggleComposerExpanded = useCallback(() => {
     setComposerExpanded(!isComposerExpandedRef.current);
     composerRef.current?.focus();
@@ -1551,7 +1593,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
           </div>
         ) : null}
 
-        {approvalBar}
+        <div ref={approvalSlotRef} className="contents">
+          {approvalBar}
+        </div>
         {/* 澄清面板浮在输入卡片正上方（原先是卡片内嵌段）：与队列面板同级，
             直接顶在卡片上缘。审批面板接管输入区时同样让位。 */}
         {clarifyOpen && runClarifyTurn && approvalBar == null ? (
@@ -1577,6 +1621,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         <div
           key="composer-card"
           hidden={approvalBar != null}
+          data-composer-draft={composerIsEmpty ? undefined : ""}
           ref={glassCardRef}
           data-composer-single-line={singleLineInput ? "true" : "false"}
           data-composer-expanded-input={props.expandedInput || undefined}

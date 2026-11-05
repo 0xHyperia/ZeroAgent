@@ -15,6 +15,7 @@ export type SectionId =
   | "skills"
   | "mcp"
   | "systemTools"
+  | "permissions"
   | "stt"
   | "providers"
   | "model-preferences"

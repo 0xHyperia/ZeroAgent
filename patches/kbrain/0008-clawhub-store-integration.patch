@@ -1,376 +1,74 @@
-diff --git a/internal/skills/managed.go b/internal/skills/managed.go
---- a/internal/skills/managed.go
-+++ b/internal/skills/managed.go
-@@ -111,15 +111,18 @@
- 	Errors  []string        `json:"errors"`
- }
- type ClawHubCard struct {
--	Slug          string `json:"slug"`
--	DisplayName   string `json:"displayName"`
--	Summary       string `json:"summary"`
--	LatestVersion string `json:"latestVersion,omitempty"`
--	Downloads     int64  `json:"downloads"`
--	Stars         int64  `json:"stars"`
--	OwnerHandle   string `json:"ownerHandle,omitempty"`
--	WebURL        string `json:"webUrl,omitempty"`
--	DownloadURL   string `json:"downloadUrl"`
-+	Topics          []string `json:"topics"`
-+	InstallsCurrent int64    `json:"installsCurrent"`
-+	UpdatedAt       *int64   `json:"updatedAt"`
-+	Slug            string   `json:"slug"`
-+	DisplayName     string   `json:"displayName"`
-+	Summary         string   `json:"summary"`
-+	LatestVersion   string   `json:"latestVersion,omitempty"`
-+	Downloads       int64    `json:"downloads"`
-+	Stars           int64    `json:"stars"`
-+	OwnerHandle     string   `json:"ownerHandle,omitempty"`
-+	WebURL          string   `json:"webUrl,omitempty"`
-+	DownloadURL     string   `json:"downloadUrl"`
- }
- type ManagerResponse struct {
- 	Action            string          `json:"action"`
-@@ -570,6 +573,9 @@
- 	return InstallResult{Name: name, Target: target, SkillFile: name + "/SKILL.md", Backup: backup}, nil
- }
- func (m *Manager) zipSource(src string) (string, error) {
-+	return m.zipSourceFolder(src, "")
-+}
-+func (m *Manager) zipSourceFolder(src, folder string) (string, error) {
- 	r, err := zip.OpenReader(src)
- 	if err != nil {
- 		return "", err
-@@ -590,8 +596,31 @@
- 	if len(r.File) > maxArchiveFiles {
- 		return "", errors.New("too many archive entries")
- 	}
-+	prefix := ""
-+	if folder != "" {
-+		if len(r.File) == 0 {
-+			return "", errors.New("empty GitHub archive")
-+		}
-+		root := strings.SplitN(r.File[0].Name, "/", 2)[0]
-+		if _, err := childPath(root); err != nil {
-+			return "", err
-+		}
-+		prefix = root + "/"
-+		if folder != "." {
-+			prefix += strings.Trim(folder, "/") + "/"
-+		}
-+	}
- 	for _, f := range r.File {
- 		name := strings.TrimSuffix(f.Name, "/")
-+		if prefix != "" {
-+			if !strings.HasPrefix(name, prefix) {
-+				continue
-+			}
-+			name = strings.TrimPrefix(name, prefix)
-+			if name == "" {
-+				continue
-+			}
-+		}
- 		rel, e := childPath(name)
- 		if e != nil {
- 			return "", e
-@@ -665,6 +694,11 @@
- 			return InstallResult{}, err
- 		}
- 		defer os.Remove(source)
-+		if meta != nil && meta.Registry == "clawhub" {
-+			if result, handled, err := m.installClawHubHandoff(ctx, source, name, conflict, meta, progress); handled || err != nil {
-+				return result, err
-+			}
-+		}
- 	}
- 	st, err := os.Lstat(source)
- 	if err != nil {
-@@ -1092,8 +1126,11 @@
- 			if slug == "" || owner == "" {
- 				err = errors.New("clawhub_install requires ownerHandle and slug")
- 			} else {
--				args["source"] = fmt.Sprintf("https://clawhub.ai/api/v1/download?slug=%s&tag=%s&ownerHandle=%s", url.QueryEscape(slug), url.QueryEscape(versionOrLatest(stringArg(args, "version"))), url.QueryEscape(owner))
--			}
-+				args["source"] = m.clawHubDownloadURL(slug, owner, stringArg(args, "version"))
-+			}
-+		}
-+		if err != nil {
-+			return r, err
- 		}
- 		v, e := m.installArgs(ctx, args, nil)
- 		r.Installed = []InstallResult{v}
-@@ -1274,13 +1311,19 @@
- 	}
- 	defer resp.Body.Close()
- 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
--		return "", fmt.Errorf("download returned HTTP %d", resp.StatusCode)
-+		return "", remoteHTTPError(resp, "download")
- 	}
- 	f, e := os.CreateTemp(m.root, ".staging-download-")
- 	if e != nil {
- 		return "", e
- 	}
--	defer f.Close()
-+	complete := false
-+	defer func() {
-+		_ = f.Close()
-+		if !complete {
-+			_ = os.Remove(f.Name())
-+		}
-+	}()
- 	var total int64 = -1
- 	if resp.ContentLength >= 0 {
- 		total = resp.ContentLength
-@@ -1311,6 +1354,10 @@
- 			return "", er
- 		}
- 	}
-+	if e = f.Close(); e != nil {
-+		return "", e
-+	}
-+	complete = true
- 	return f.Name(), nil
- }
- func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress func(int64, int64)) (InstallResult, error) {
-@@ -1320,14 +1367,12 @@
- 		meta.OwnerHandle = owner
- 		meta.Slug = stringArg(a, "slug")
- 		meta.Version = stringArg(a, "version")
-+		if meta.Slug != "" {
-+			// Registry identity, not a caller-supplied download URL, selects the bytes.
-+			a["source"] = m.clawHubDownloadURL(meta.Slug, owner, meta.Version)
-+		}
- 	}
- 	return m.Install(ctx, stringArg(a, "source"), stringArg(a, "name"), stringArg(a, "conflict"), metaIf(meta), progress)
--}
--func versionOrLatest(v string) string {
--	if strings.TrimSpace(v) == "" {
--		return "latest"
--	}
--	return v
- }
- func metaIf(m *SourceMetadata) *SourceMetadata {
- 	if m.Registry == "" {
-@@ -1335,42 +1380,6 @@
- 	}
- 	return m
- }
--func (m *Manager) searchStore(ctx context.Context, a map[string]any) ([]ClawHubCard, string, error) {
--	base := strings.TrimRight(m.storeURL, "/") + "/api/v1/search"
--	q := url.Values{}
--	q.Set("q", stringArg(a, "query"))
--	q.Set("limit", "20")
--	if owner := stringArg(a, "ownerHandle"); owner != "" {
--		q.Set("ownerHandle", owner)
--	}
--	req, e := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+q.Encode(), nil)
--	if e != nil {
--		return nil, "", e
--	}
--	resp, e := m.client.Do(req)
--	if e != nil {
--		return nil, "", fmt.Errorf("ClawHub search: %w", e)
--	}
--	defer resp.Body.Close()
--	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
--		return nil, "", fmt.Errorf("ClawHub search returned HTTP %d", resp.StatusCode)
--	}
--	var root struct {
--		Results []struct {
--			Slug, DisplayName, Summary, LatestVersion, OwnerHandle, WebURL, DownloadURL string
--			Downloads, Stars                                                            int64
--		} `json:"results"`
--		NextCursor string `json:"nextCursor"`
--	}
--	if e = json.NewDecoder(io.LimitReader(resp.Body, maxReadBytes)).Decode(&root); e != nil {
--		return nil, "", e
--	}
--	out := make([]ClawHubCard, 0, len(root.Results))
--	for _, x := range root.Results {
--		out = append(out, ClawHubCard{Slug: x.Slug, DisplayName: x.DisplayName, Summary: x.Summary, LatestVersion: x.LatestVersion, OwnerHandle: x.OwnerHandle, WebURL: x.WebURL, DownloadURL: x.DownloadURL, Downloads: x.Downloads, Stars: x.Stars})
--	}
--	return out, root.NextCursor, nil
--}
- func (m *Manager) externalMCP() []any { return []any{} }
- func scanMCPFile(path string) (map[string]any, error) {
- 	p, err := filepath.Abs(path)
-diff --git a/internal/skills/store.go b/internal/skills/store.go
---- a/internal/skills/store.go
-+++ b/internal/skills/store.go
-@@ -1,8 +1,14 @@
- package skills
- 
- import (
+diff --git a/internal/backend/clawhub_http_test.go b/internal/backend/clawhub_http_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..faef68b21fd25212e146221b001e051bbf10fecf
+--- /dev/null
++++ b/internal/backend/clawhub_http_test.go
+@@ -0,0 +1,60 @@
++package backend
++
++import (
 +	"context"
-+	"encoding/json"
- 	"errors"
 +	"fmt"
-+	"io"
 +	"net/http"
- 	"net/url"
-+	"strconv"
- 	"strings"
- )
- 
-@@ -17,3 +23,156 @@
- 	managedWriteMu.Unlock()
- 	return nil
- }
++	"net/http/httptest"
++	"strings"
++	"testing"
 +
-+func (m *Manager) registryBase() string {
-+	managedWriteMu.Lock()
-+	defer managedWriteMu.Unlock()
-+	return m.storeURL
-+}
++	"github.com/Stack-Cairn/K-brain/internal/agent"
++	"github.com/Stack-Cairn/K-brain/internal/datapath"
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++	"github.com/Stack-Cairn/K-brain/internal/session"
++	"github.com/Stack-Cairn/K-brain/internal/skills"
++)
 +
-+const maxClawHubResponse = 2 << 20
-+
-+type clawHubItem struct {
-+	Slug, DisplayName, Summary, OwnerHandle, Version string
-+	Topics                                           []string
-+	UpdatedAt                                        *int64
-+	LatestVersion                                    json.RawMessage
-+	Tags                                             struct{ Latest string }
-+	Owner                                            struct{ Handle string }
-+	Stats                                            struct{ Downloads, Stars, InstallsCurrent, Installs int64 }
-+	Downloads, Stars, InstallsCurrent                int64
-+}
-+
-+func (m *Manager) clawHubDownloadURL(slug, owner, version string) string {
-+	q := url.Values{"slug": {slug}, "ownerHandle": {owner}}
-+	if version == "" || version == "latest" {
-+		q.Set("tag", "latest")
-+	} else {
-+		q.Set("version", version)
-+	}
-+	return m.registryBase() + "/api/v1/download?" + q.Encode()
-+}
-+
-+func remoteHTTPError(resp *http.Response, label string) error {
-+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-+	detail := strings.TrimSpace(string(body))
-+	if retry := resp.Header.Get("Retry-After"); resp.StatusCode == 429 && retry != "" {
-+		detail += " (Retry-After: " + retry + ")"
-+	}
-+	return fmt.Errorf("%s returned HTTP %d: %s", label, resp.StatusCode, detail)
-+}
-+
-+func (m *Manager) searchStore(ctx context.Context, a map[string]any) ([]ClawHubCard, string, error) {
-+	query := strings.TrimSpace(stringArg(a, "query"))
-+	endpoint := "/api/v1/skills"
-+	q := url.Values{"nonSuspiciousOnly": {"true"}}
-+	limit := intArg(a, "limit", 24)
-+	maximum := 200
-+	if query != "" {
-+		endpoint = "/api/v1/search"
-+		q.Set("q", query)
-+		maximum = 100
-+	} else {
-+		order := stringArg(a, "sort")
-+		if order == "" {
-+			order = "downloads"
++func TestClawHubHTTPForwardsCatalogParameters(t *testing.T) {
++	t.Setenv(datapath.LiveAgentHomeEnv, t.TempDir())
++	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path != "/api/v1/skills" || r.URL.Query().Get("sort") != "stars" || r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("cursor") != "next+/=" {
++			t.Errorf("request parameters lost: %s", r.URL)
 +		}
-+		switch order {
-+		case "downloads", "stars", "installs", "updated", "newest":
-+		default:
-+			return nil, "", errors.New("invalid ClawHub sort")
-+		}
-+		q.Set("sort", order)
-+		if cursor := stringArg(a, "cursor"); cursor != "" {
-+			q.Set("cursor", cursor)
-+		}
-+	}
-+	if limit < 1 || limit > maximum {
-+		return nil, "", fmt.Errorf("ClawHub limit must be between 1 and %d", maximum)
-+	}
-+	q.Set("limit", strconv.Itoa(limit))
-+	if owner := stringArg(a, "ownerHandle"); owner != "" {
-+		q.Set("ownerHandle", owner)
-+	}
-+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.registryBase()+endpoint+"?"+q.Encode(), nil)
++		fmt.Fprint(w, `{"items":[{"slug":"fixture","ownerHandle":"publisher","latestVersion":{"version":"1.0.0"}}],"nextCursor":"third"}`)
++	}))
++	defer registry.Close()
++	m, err := skills.NewManager()
 +	if err != nil {
-+		return nil, "", err
++		t.Fatal(err)
 +	}
-+	req.Header.Set("Accept", "application/json")
-+	resp, err := m.client.Do(req)
++	_ = m.SetHTTPClient(registry.Client())
++	_ = m.SetStoreURL(registry.URL)
++	store, err := session.Open(t.TempDir())
 +	if err != nil {
-+		return nil, "", fmt.Errorf("ClawHub: %w", err)
++		t.Fatal(err)
 +	}
-+	defer resp.Body.Close()
-+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-+		return nil, "", remoteHTTPError(resp, "ClawHub request")
-+	}
-+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxClawHubResponse+1))
++	s, err := New(Options{Store: store, Factory: func(_ context.Context, _ string, model protocol.ModelRef) (*agent.Agent, error) {
++		return agent.New(&scriptedClient{response: "ok"}, model.Model, 100, "system"), nil
++	}, EventDir: t.TempDir(), Token: "fixture-token"})
 +	if err != nil {
-+		return nil, "", fmt.Errorf("ClawHub: %w", err)
++		t.Fatal(err)
 +	}
-+	if len(body) > maxClawHubResponse {
-+		return nil, "", errors.New("ClawHub response is too large")
++	defer s.Close()
++	req := httptest.NewRequest(http.MethodGet, "/v1/skills/store/search?sort=stars&limit=2&cursor=next%2B%2F%3D", nil)
++	req.Header.Set("Authorization", "Bearer fixture-token")
++	res := httptest.NewRecorder()
++	s.ServeHTTP(res, req)
++	if res.Code != 200 || !strings.Contains(res.Body.String(), `"nextCursor":"third"`) || !strings.Contains(res.Body.String(), `"latestVersion":"1.0.0"`) {
++		t.Fatalf("catalog response %d: %s", res.Code, res.Body)
 +	}
-+	var root struct {
-+		Items, Results *[]clawHubItem
-+		NextCursor     string
++	for _, limit := range []string{"bad", "0", "201"} {
++		req = httptest.NewRequest(http.MethodGet, "/v1/skills/store/search?limit="+limit, nil)
++		req.Header.Set("Authorization", "Bearer fixture-token")
++		res = httptest.NewRecorder()
++		s.ServeHTTP(res, req)
++		if res.Code != 400 {
++			t.Fatalf("invalid limit accepted: %s (%d)", limit, res.Code)
++		}
 +	}
-+	if err = json.Unmarshal(body, &root); err != nil {
-+		return nil, "", fmt.Errorf("ClawHub response: %w", err)
-+	}
-+	items, cursor := root.Items, root.NextCursor
-+	if query != "" {
-+		items, cursor = root.Results, ""
-+	}
-+	if items == nil {
-+		return nil, "", errors.New("ClawHub response is missing its item array")
-+	}
-+	out := make([]ClawHubCard, 0, len(*items))
-+	for _, item := range *items {
-+		if item.Slug == "" {
-+			return nil, "", errors.New("ClawHub response has an empty skill slug")
-+		}
-+		version := item.Version
-+		if len(item.LatestVersion) > 0 && string(item.LatestVersion) != "null" {
-+			var latest struct{ Version string }
-+			if json.Unmarshal(item.LatestVersion, &latest) == nil {
-+				version = latest.Version
-+			} else {
-+				_ = json.Unmarshal(item.LatestVersion, &version)
-+			}
-+		}
-+		if version == "" {
-+			version = item.Tags.Latest
-+		}
-+		owner := item.OwnerHandle
-+		if owner == "" {
-+			owner = item.Owner.Handle
-+		}
-+		if item.DisplayName == "" {
-+			item.DisplayName = item.Slug
-+		}
-+		if item.Topics == nil {
-+			item.Topics = []string{}
-+		}
-+		downloads, stars, installs := item.Stats.Downloads, item.Stats.Stars, item.Stats.InstallsCurrent
-+		if downloads == 0 {
-+			downloads = item.Downloads
-+		}
-+		if stars == 0 {
-+			stars = item.Stars
-+		}
-+		if installs == 0 {
-+			installs = item.Stats.Installs
-+		}
-+		if installs == 0 {
-+			installs = item.InstallsCurrent
-+		}
-+		web := ""
-+		if owner != "" {
-+			web = m.registryBase() + "/" + url.PathEscape(owner) + "/skills/" + url.PathEscape(item.Slug)
-+		}
-+		out = append(out, ClawHubCard{Slug: item.Slug, DisplayName: item.DisplayName, Summary: item.Summary, LatestVersion: version, OwnerHandle: owner, Downloads: downloads, Stars: stars, InstallsCurrent: installs, UpdatedAt: item.UpdatedAt, Topics: item.Topics, WebURL: web, DownloadURL: m.clawHubDownloadURL(item.Slug, owner, version)})
-+	}
-+	return out, cursor, nil
 +}
 diff --git a/internal/backend/skills_http.go b/internal/backend/skills_http.go
+index 6f12f4fadead0043018b2e7f1d0ce821a007366b..c765f019f377c517e92b95d1a17ace703d36e2b7 100644
 --- a/internal/backend/skills_http.go
 +++ b/internal/backend/skills_http.go
-@@ -5,6 +5,7 @@
+@@ -5,6 +5,7 @@ import (
  	"errors"
  	"fmt"
  	"net/http"
@@ -378,7 +76,7 @@ diff --git a/internal/backend/skills_http.go b/internal/backend/skills_http.go
  
  	"github.com/Stack-Cairn/K-brain/internal/skills"
  )
-@@ -73,7 +74,15 @@
+@@ -73,7 +74,15 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
  		return
  	}
  	if r.URL.Path == "/v1/skills/store/search" && r.Method == http.MethodGet {
@@ -397,6 +95,7 @@ diff --git a/internal/backend/skills_http.go b/internal/backend/skills_http.go
  			writeJSONError(w, http.StatusBadGateway, "ClawHub search failed: "+e.Error())
 diff --git a/internal/skills/clawhub_download.go b/internal/skills/clawhub_download.go
 new file mode 100644
+index 0000000000000000000000000000000000000000..53320141a7f5979df8c2c2b48eb8b92c9d20b136
 --- /dev/null
 +++ b/internal/skills/clawhub_download.go
 @@ -0,0 +1,65 @@
@@ -467,6 +166,7 @@ new file mode 100644
 +}
 diff --git a/internal/skills/clawhub_store_test.go b/internal/skills/clawhub_store_test.go
 new file mode 100644
+index 0000000000000000000000000000000000000000..bf96e4e8aee779346815c72b75019b48fa7c8e7a
 --- /dev/null
 +++ b/internal/skills/clawhub_store_test.go
 @@ -0,0 +1,311 @@
@@ -781,68 +481,374 @@ new file mode 100644
 +		})
 +	}
 +}
-diff --git a/internal/backend/clawhub_http_test.go b/internal/backend/clawhub_http_test.go
-new file mode 100644
---- /dev/null
-+++ b/internal/backend/clawhub_http_test.go
-@@ -0,0 +1,60 @@
-+package backend
-+
-+import (
+diff --git a/internal/skills/managed.go b/internal/skills/managed.go
+index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5039eb77b 100644
+--- a/internal/skills/managed.go
++++ b/internal/skills/managed.go
+@@ -111,15 +111,18 @@ type ExternalScan struct {
+ 	Errors  []string        `json:"errors"`
+ }
+ type ClawHubCard struct {
+-	Slug          string `json:"slug"`
+-	DisplayName   string `json:"displayName"`
+-	Summary       string `json:"summary"`
+-	LatestVersion string `json:"latestVersion,omitempty"`
+-	Downloads     int64  `json:"downloads"`
+-	Stars         int64  `json:"stars"`
+-	OwnerHandle   string `json:"ownerHandle,omitempty"`
+-	WebURL        string `json:"webUrl,omitempty"`
+-	DownloadURL   string `json:"downloadUrl"`
++	Topics          []string `json:"topics"`
++	InstallsCurrent int64    `json:"installsCurrent"`
++	UpdatedAt       *int64   `json:"updatedAt"`
++	Slug            string   `json:"slug"`
++	DisplayName     string   `json:"displayName"`
++	Summary         string   `json:"summary"`
++	LatestVersion   string   `json:"latestVersion,omitempty"`
++	Downloads       int64    `json:"downloads"`
++	Stars           int64    `json:"stars"`
++	OwnerHandle     string   `json:"ownerHandle,omitempty"`
++	WebURL          string   `json:"webUrl,omitempty"`
++	DownloadURL     string   `json:"downloadUrl"`
+ }
+ type ManagerResponse struct {
+ 	Action            string          `json:"action"`
+@@ -570,6 +573,9 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
+ 	return InstallResult{Name: name, Target: target, SkillFile: name + "/SKILL.md", Backup: backup}, nil
+ }
+ func (m *Manager) zipSource(src string) (string, error) {
++	return m.zipSourceFolder(src, "")
++}
++func (m *Manager) zipSourceFolder(src, folder string) (string, error) {
+ 	r, err := zip.OpenReader(src)
+ 	if err != nil {
+ 		return "", err
+@@ -590,8 +596,31 @@ func (m *Manager) zipSource(src string) (string, error) {
+ 	if len(r.File) > maxArchiveFiles {
+ 		return "", errors.New("too many archive entries")
+ 	}
++	prefix := ""
++	if folder != "" {
++		if len(r.File) == 0 {
++			return "", errors.New("empty GitHub archive")
++		}
++		root := strings.SplitN(r.File[0].Name, "/", 2)[0]
++		if _, err := childPath(root); err != nil {
++			return "", err
++		}
++		prefix = root + "/"
++		if folder != "." {
++			prefix += strings.Trim(folder, "/") + "/"
++		}
++	}
+ 	for _, f := range r.File {
+ 		name := strings.TrimSuffix(f.Name, "/")
++		if prefix != "" {
++			if !strings.HasPrefix(name, prefix) {
++				continue
++			}
++			name = strings.TrimPrefix(name, prefix)
++			if name == "" {
++				continue
++			}
++		}
+ 		rel, e := childPath(name)
+ 		if e != nil {
+ 			return "", e
+@@ -665,6 +694,11 @@ func (m *Manager) Install(ctx context.Context, source, name, conflict string, me
+ 			return InstallResult{}, err
+ 		}
+ 		defer os.Remove(source)
++		if meta != nil && meta.Registry == "clawhub" {
++			if result, handled, err := m.installClawHubHandoff(ctx, source, name, conflict, meta, progress); handled || err != nil {
++				return result, err
++			}
++		}
+ 	}
+ 	st, err := os.Lstat(source)
+ 	if err != nil {
+@@ -1092,9 +1126,12 @@ func (m *Manager) Manage(ctx context.Context, args map[string]any) (ManagerRespo
+ 			if slug == "" || owner == "" {
+ 				err = errors.New("clawhub_install requires ownerHandle and slug")
+ 			} else {
+-				args["source"] = fmt.Sprintf("https://clawhub.ai/api/v1/download?slug=%s&tag=%s&ownerHandle=%s", url.QueryEscape(slug), url.QueryEscape(versionOrLatest(stringArg(args, "version"))), url.QueryEscape(owner))
++				args["source"] = m.clawHubDownloadURL(slug, owner, stringArg(args, "version"))
+ 			}
+ 		}
++		if err != nil {
++			return r, err
++		}
+ 		v, e := m.installArgs(ctx, args, nil)
+ 		r.Installed = []InstallResult{v}
+ 		if err == nil {
+@@ -1274,13 +1311,19 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
+ 	}
+ 	defer resp.Body.Close()
+ 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+-		return "", fmt.Errorf("download returned HTTP %d", resp.StatusCode)
++		return "", remoteHTTPError(resp, "download")
+ 	}
+ 	f, e := os.CreateTemp(m.root, ".staging-download-")
+ 	if e != nil {
+ 		return "", e
+ 	}
+-	defer f.Close()
++	complete := false
++	defer func() {
++		_ = f.Close()
++		if !complete {
++			_ = os.Remove(f.Name())
++		}
++	}()
+ 	var total int64 = -1
+ 	if resp.ContentLength >= 0 {
+ 		total = resp.ContentLength
+@@ -1311,6 +1354,10 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
+ 			return "", er
+ 		}
+ 	}
++	if e = f.Close(); e != nil {
++		return "", e
++	}
++	complete = true
+ 	return f.Name(), nil
+ }
+ func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress func(int64, int64)) (InstallResult, error) {
+@@ -1320,57 +1367,19 @@ func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress fu
+ 		meta.OwnerHandle = owner
+ 		meta.Slug = stringArg(a, "slug")
+ 		meta.Version = stringArg(a, "version")
++		if meta.Slug != "" {
++			// Registry identity, not a caller-supplied download URL, selects the bytes.
++			a["source"] = m.clawHubDownloadURL(meta.Slug, owner, meta.Version)
++		}
+ 	}
+ 	return m.Install(ctx, stringArg(a, "source"), stringArg(a, "name"), stringArg(a, "conflict"), metaIf(meta), progress)
+ }
+-func versionOrLatest(v string) string {
+-	if strings.TrimSpace(v) == "" {
+-		return "latest"
+-	}
+-	return v
+-}
+ func metaIf(m *SourceMetadata) *SourceMetadata {
+ 	if m.Registry == "" {
+ 		return nil
+ 	}
+ 	return m
+ }
+-func (m *Manager) searchStore(ctx context.Context, a map[string]any) ([]ClawHubCard, string, error) {
+-	base := strings.TrimRight(m.storeURL, "/") + "/api/v1/search"
+-	q := url.Values{}
+-	q.Set("q", stringArg(a, "query"))
+-	q.Set("limit", "20")
+-	if owner := stringArg(a, "ownerHandle"); owner != "" {
+-		q.Set("ownerHandle", owner)
+-	}
+-	req, e := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+q.Encode(), nil)
+-	if e != nil {
+-		return nil, "", e
+-	}
+-	resp, e := m.client.Do(req)
+-	if e != nil {
+-		return nil, "", fmt.Errorf("ClawHub search: %w", e)
+-	}
+-	defer resp.Body.Close()
+-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+-		return nil, "", fmt.Errorf("ClawHub search returned HTTP %d", resp.StatusCode)
+-	}
+-	var root struct {
+-		Results []struct {
+-			Slug, DisplayName, Summary, LatestVersion, OwnerHandle, WebURL, DownloadURL string
+-			Downloads, Stars                                                            int64
+-		} `json:"results"`
+-		NextCursor string `json:"nextCursor"`
+-	}
+-	if e = json.NewDecoder(io.LimitReader(resp.Body, maxReadBytes)).Decode(&root); e != nil {
+-		return nil, "", e
+-	}
+-	out := make([]ClawHubCard, 0, len(root.Results))
+-	for _, x := range root.Results {
+-		out = append(out, ClawHubCard{Slug: x.Slug, DisplayName: x.DisplayName, Summary: x.Summary, LatestVersion: x.LatestVersion, OwnerHandle: x.OwnerHandle, WebURL: x.WebURL, DownloadURL: x.DownloadURL, Downloads: x.Downloads, Stars: x.Stars})
+-	}
+-	return out, root.NextCursor, nil
+-}
+ func (m *Manager) externalMCP() []any { return []any{} }
+ func scanMCPFile(path string) (map[string]any, error) {
+ 	p, err := filepath.Abs(path)
+diff --git a/internal/skills/store.go b/internal/skills/store.go
+index e3c1369a1c9cb1f0dcaae19fa11cede96d9ee402..bbb41ffc34f4aea235f5d48edc922fa5b2313d80 100644
+--- a/internal/skills/store.go
++++ b/internal/skills/store.go
+@@ -1,8 +1,14 @@
+ package skills
+ 
+ import (
 +	"context"
++	"encoding/json"
+ 	"errors"
 +	"fmt"
++	"io"
 +	"net/http"
-+	"net/http/httptest"
-+	"strings"
-+	"testing"
+ 	"net/url"
++	"strconv"
+ 	"strings"
+ )
+ 
+@@ -17,3 +23,156 @@ func (m *Manager) SetStoreURL(raw string) error {
+ 	managedWriteMu.Unlock()
+ 	return nil
+ }
 +
-+	"github.com/Stack-Cairn/K-brain/internal/agent"
-+	"github.com/Stack-Cairn/K-brain/internal/datapath"
-+	"github.com/Stack-Cairn/K-brain/internal/protocol"
-+	"github.com/Stack-Cairn/K-brain/internal/session"
-+	"github.com/Stack-Cairn/K-brain/internal/skills"
-+)
++func (m *Manager) registryBase() string {
++	managedWriteMu.Lock()
++	defer managedWriteMu.Unlock()
++	return m.storeURL
++}
 +
-+func TestClawHubHTTPForwardsCatalogParameters(t *testing.T) {
-+	t.Setenv(datapath.LiveAgentHomeEnv, t.TempDir())
-+	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		if r.URL.Path != "/api/v1/skills" || r.URL.Query().Get("sort") != "stars" || r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("cursor") != "next+/=" {
-+			t.Errorf("request parameters lost: %s", r.URL)
++const maxClawHubResponse = 2 << 20
++
++type clawHubItem struct {
++	Slug, DisplayName, Summary, OwnerHandle, Version string
++	Topics                                           []string
++	UpdatedAt                                        *int64
++	LatestVersion                                    json.RawMessage
++	Tags                                             struct{ Latest string }
++	Owner                                            struct{ Handle string }
++	Stats                                            struct{ Downloads, Stars, InstallsCurrent, Installs int64 }
++	Downloads, Stars, InstallsCurrent                int64
++}
++
++func (m *Manager) clawHubDownloadURL(slug, owner, version string) string {
++	q := url.Values{"slug": {slug}, "ownerHandle": {owner}}
++	if version == "" || version == "latest" {
++		q.Set("tag", "latest")
++	} else {
++		q.Set("version", version)
++	}
++	return m.registryBase() + "/api/v1/download?" + q.Encode()
++}
++
++func remoteHTTPError(resp *http.Response, label string) error {
++	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
++	detail := strings.TrimSpace(string(body))
++	if retry := resp.Header.Get("Retry-After"); resp.StatusCode == 429 && retry != "" {
++		detail += " (Retry-After: " + retry + ")"
++	}
++	return fmt.Errorf("%s returned HTTP %d: %s", label, resp.StatusCode, detail)
++}
++
++func (m *Manager) searchStore(ctx context.Context, a map[string]any) ([]ClawHubCard, string, error) {
++	query := strings.TrimSpace(stringArg(a, "query"))
++	endpoint := "/api/v1/skills"
++	q := url.Values{"nonSuspiciousOnly": {"true"}}
++	limit := intArg(a, "limit", 24)
++	maximum := 200
++	if query != "" {
++		endpoint = "/api/v1/search"
++		q.Set("q", query)
++		maximum = 100
++	} else {
++		order := stringArg(a, "sort")
++		if order == "" {
++			order = "downloads"
 +		}
-+		fmt.Fprint(w, `{"items":[{"slug":"fixture","ownerHandle":"publisher","latestVersion":{"version":"1.0.0"}}],"nextCursor":"third"}`)
-+	}))
-+	defer registry.Close()
-+	m, err := skills.NewManager()
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	_ = m.SetHTTPClient(registry.Client())
-+	_ = m.SetStoreURL(registry.URL)
-+	store, err := session.Open(t.TempDir())
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	s, err := New(Options{Store: store, Factory: func(_ context.Context, _ string, model protocol.ModelRef) (*agent.Agent, error) {
-+		return agent.New(&scriptedClient{response: "ok"}, model.Model, 100, "system"), nil
-+	}, EventDir: t.TempDir(), Token: "fixture-token"})
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	defer s.Close()
-+	req := httptest.NewRequest(http.MethodGet, "/v1/skills/store/search?sort=stars&limit=2&cursor=next%2B%2F%3D", nil)
-+	req.Header.Set("Authorization", "Bearer fixture-token")
-+	res := httptest.NewRecorder()
-+	s.ServeHTTP(res, req)
-+	if res.Code != 200 || !strings.Contains(res.Body.String(), `"nextCursor":"third"`) || !strings.Contains(res.Body.String(), `"latestVersion":"1.0.0"`) {
-+		t.Fatalf("catalog response %d: %s", res.Code, res.Body)
-+	}
-+	for _, limit := range []string{"bad", "0", "201"} {
-+		req = httptest.NewRequest(http.MethodGet, "/v1/skills/store/search?limit="+limit, nil)
-+		req.Header.Set("Authorization", "Bearer fixture-token")
-+		res = httptest.NewRecorder()
-+		s.ServeHTTP(res, req)
-+		if res.Code != 400 {
-+			t.Fatalf("invalid limit accepted: %s (%d)", limit, res.Code)
++		switch order {
++		case "downloads", "stars", "installs", "updated", "newest":
++		default:
++			return nil, "", errors.New("invalid ClawHub sort")
++		}
++		q.Set("sort", order)
++		if cursor := stringArg(a, "cursor"); cursor != "" {
++			q.Set("cursor", cursor)
 +		}
 +	}
++	if limit < 1 || limit > maximum {
++		return nil, "", fmt.Errorf("ClawHub limit must be between 1 and %d", maximum)
++	}
++	q.Set("limit", strconv.Itoa(limit))
++	if owner := stringArg(a, "ownerHandle"); owner != "" {
++		q.Set("ownerHandle", owner)
++	}
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.registryBase()+endpoint+"?"+q.Encode(), nil)
++	if err != nil {
++		return nil, "", err
++	}
++	req.Header.Set("Accept", "application/json")
++	resp, err := m.client.Do(req)
++	if err != nil {
++		return nil, "", fmt.Errorf("ClawHub: %w", err)
++	}
++	defer resp.Body.Close()
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		return nil, "", remoteHTTPError(resp, "ClawHub request")
++	}
++	body, err := io.ReadAll(io.LimitReader(resp.Body, maxClawHubResponse+1))
++	if err != nil {
++		return nil, "", fmt.Errorf("ClawHub: %w", err)
++	}
++	if len(body) > maxClawHubResponse {
++		return nil, "", errors.New("ClawHub response is too large")
++	}
++	var root struct {
++		Items, Results *[]clawHubItem
++		NextCursor     string
++	}
++	if err = json.Unmarshal(body, &root); err != nil {
++		return nil, "", fmt.Errorf("ClawHub response: %w", err)
++	}
++	items, cursor := root.Items, root.NextCursor
++	if query != "" {
++		items, cursor = root.Results, ""
++	}
++	if items == nil {
++		return nil, "", errors.New("ClawHub response is missing its item array")
++	}
++	out := make([]ClawHubCard, 0, len(*items))
++	for _, item := range *items {
++		if item.Slug == "" {
++			return nil, "", errors.New("ClawHub response has an empty skill slug")
++		}
++		version := item.Version
++		if len(item.LatestVersion) > 0 && string(item.LatestVersion) != "null" {
++			var latest struct{ Version string }
++			if json.Unmarshal(item.LatestVersion, &latest) == nil {
++				version = latest.Version
++			} else {
++				_ = json.Unmarshal(item.LatestVersion, &version)
++			}
++		}
++		if version == "" {
++			version = item.Tags.Latest
++		}
++		owner := item.OwnerHandle
++		if owner == "" {
++			owner = item.Owner.Handle
++		}
++		if item.DisplayName == "" {
++			item.DisplayName = item.Slug
++		}
++		if item.Topics == nil {
++			item.Topics = []string{}
++		}
++		downloads, stars, installs := item.Stats.Downloads, item.Stats.Stars, item.Stats.InstallsCurrent
++		if downloads == 0 {
++			downloads = item.Downloads
++		}
++		if stars == 0 {
++			stars = item.Stars
++		}
++		if installs == 0 {
++			installs = item.Stats.Installs
++		}
++		if installs == 0 {
++			installs = item.InstallsCurrent
++		}
++		web := ""
++		if owner != "" {
++			web = m.registryBase() + "/" + url.PathEscape(owner) + "/skills/" + url.PathEscape(item.Slug)
++		}
++		out = append(out, ClawHubCard{Slug: item.Slug, DisplayName: item.DisplayName, Summary: item.Summary, LatestVersion: version, OwnerHandle: owner, Downloads: downloads, Stars: stars, InstallsCurrent: installs, UpdatedAt: item.UpdatedAt, Topics: item.Topics, WebURL: web, DownloadURL: m.clawHubDownloadURL(item.Slug, owner, version)})
++	}
++	return out, cursor, nil
 +}

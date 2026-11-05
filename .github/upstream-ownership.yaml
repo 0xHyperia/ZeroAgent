@@ -2,6 +2,16 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "{crates/agent-gateway/internal/kbrain/health.go,crates/agent-ui/src/lib/kbrain/health.ts,crates/agent-gui/src-tauri/src/services/kbrain_health.rs,crates/agent-ui/src/lib/chat/permissionModes.ts}",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "Go、Rust、TS 结构化健康契约；矛盾、损坏或不支持的沙箱能力拒绝执行",
+        "保留现有 full_access 与 always 语义区别；未知持久化权限收敛为 ask",
+        "健康或能力响应不能替代账号、设备租约、原生宿主或凭据来源验证"
+      ]
+    },
+    {
       "glob": "{crates/agent-gateway/internal/account/cloud_generation_settings.go,crates/agent-gateway/internal/account/cloud_title*.go,crates/agent-gateway/web/src/lib/cloudGenerationSettings.ts,crates/agent-gateway/web/src/pages/settings/CloudModelPreferencesSection.tsx,crates/agent-ui/src/pages/settings/DeviceImageModelPreferences.tsx}",
       "ownership": "zeroagent_owned",
       "risk": "high",

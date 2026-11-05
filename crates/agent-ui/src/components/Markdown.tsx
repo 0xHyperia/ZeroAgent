@@ -1,6 +1,11 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { ChevronDown, ChevronUp, Copy, ExternalLink } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import {
+  showChatFileLinkContextMenu,
+  showChatUrlContextMenu,
+  withChatFileLinkMenuIntent,
+} from "@liveagent/ui/lib/chat/chatFileLinkContextMenuStore";
 import { math } from "@streamdown/math";
 import {
   type ComponentProps,
@@ -36,6 +41,7 @@ import {
   shouldSkipExternalLinkConfirmation,
 } from "../lib/externalLinkPreference";
 import { parseChatMarkdownBlocks } from "../lib/markdownBlocks";
+import { stripMarkdownCitationMarkers } from "../lib/markdownCitations";
 import {
   getCollapsedCodeBlockPreview,
   resolveCodeBlockRenderPolicy,
@@ -207,6 +213,7 @@ export type MarkdownProps = {
   // the flip never invalidates Streamdown's memoized blocks; the caret slot
   // itself stays mounted for the whole life of a streaming-mode block.
   showCaret?: boolean;
+  citationAtDocumentEnd?: boolean;
   readOnly?: boolean;
   // Extra component overrides merged over the built-in map. Used by the
   // workspace file preview to render images and links against workspace
@@ -345,7 +352,8 @@ export function MarkdownFileLink(props: MarkdownFileLinkProps) {
       )}
       data-liveagent-file-link="true"
       title={label}
-      onClick={() => onOpenFileLink(parsed)}
+      onClick={() => onOpenFileLink(withChatFileLinkMenuIntent(parsed))}
+      onContextMenu={(event) => showChatFileLinkContextMenu(event, parsed)}
     >
       {children}
     </button>
@@ -418,6 +426,9 @@ function MarkdownExternalLink(props: MarkdownAnchorFallbackProps) {
         data-incomplete={incomplete}
         data-streamdown="link"
         title={title}
+        onContextMenu={(event) => {
+          if (!incomplete) showChatUrlContextMenu(event, href);
+        }}
         onClick={() => {
           if (incomplete) return;
           if (shouldSkipExternalLinkConfirmation()) {
@@ -658,37 +669,54 @@ export function CollapsibleCodePre({
   );
 }
 
-const streamdownTranslations = {
-  close: "关闭",
-  copied: "已复制",
-  copyCode: "复制代码",
-  copyLink: "复制链接",
-  copyTable: "复制表格",
-  copyTableAsCsv: "复制为 CSV",
-  copyTableAsMarkdown: "复制为 Markdown",
-  copyTableAsTsv: "复制为 TSV",
-  downloadDiagram: "下载图表",
-  downloadDiagramAsMmd: "下载为 Mermaid",
-  downloadDiagramAsPng: "下载为 PNG",
-  downloadDiagramAsSvg: "下载为 SVG",
-  downloadFile: "下载文件",
-  downloadImage: "下载图片",
-  downloadTable: "下载表格",
-  downloadTableAsCsv: "下载为 CSV",
-  downloadTableAsMarkdown: "下载为 Markdown",
-  exitFullscreen: "退出全屏",
-  externalLinkWarning: "请确认目标站点可信后再继续。",
-  imageNotAvailable: "图片暂不可用",
-  mermaidFormatMmd: "Mermaid 源码",
-  mermaidFormatPng: "PNG 图片",
-  mermaidFormatSvg: "SVG 图片",
-  openExternalLink: "打开外部链接",
-  openLink: "打开链接",
+const STREAMDOWN_TRANSLATION_KEYS = {
+  close: "chat.markdown.streamdown.close",
+  copied: "chat.markdown.streamdown.copied",
+  copyCode: "chat.markdown.streamdown.copyCode",
+  copyLink: "chat.markdown.streamdown.copyLink",
+  copyTable: "chat.markdown.streamdown.copyTable",
+  copyTableAsCsv: "chat.markdown.streamdown.copyTableAsCsv",
+  copyTableAsMarkdown: "chat.markdown.streamdown.copyTableAsMarkdown",
+  copyTableAsTsv: "chat.markdown.streamdown.copyTableAsTsv",
+  downloadDiagram: "chat.markdown.streamdown.downloadDiagram",
+  downloadDiagramAsMmd: "chat.markdown.streamdown.downloadDiagramAsMmd",
+  downloadDiagramAsPng: "chat.markdown.streamdown.downloadDiagramAsPng",
+  downloadDiagramAsSvg: "chat.markdown.streamdown.downloadDiagramAsSvg",
+  downloadFile: "chat.markdown.streamdown.downloadFile",
+  downloadImage: "chat.markdown.streamdown.downloadImage",
+  downloadTable: "chat.markdown.streamdown.downloadTable",
+  downloadTableAsCsv: "chat.markdown.streamdown.downloadTableAsCsv",
+  downloadTableAsMarkdown: "chat.markdown.streamdown.downloadTableAsMarkdown",
+  exitFullscreen: "chat.markdown.streamdown.exitFullscreen",
+  externalLinkWarning: "chat.markdown.streamdown.externalLinkWarning",
+  imageNotAvailable: "chat.markdown.streamdown.imageNotAvailable",
+  mermaidFormatMmd: "chat.markdown.streamdown.mermaidFormatMmd",
+  mermaidFormatPng: "chat.markdown.streamdown.mermaidFormatPng",
+  mermaidFormatSvg: "chat.markdown.streamdown.mermaidFormatSvg",
+  openExternalLink: "chat.markdown.streamdown.openExternalLink",
+  openLink: "chat.markdown.streamdown.openLink",
+  viewFullscreen: "chat.markdown.streamdown.viewFullscreen",
+} as const satisfies Partial<Record<keyof StreamdownTranslations, string>>;
+
+const STREAMDOWN_STATIC_TRANSLATIONS = {
   tableFormatCsv: "CSV",
   tableFormatMarkdown: "Markdown",
   tableFormatTsv: "TSV",
-  viewFullscreen: "全屏查看",
 } satisfies Partial<StreamdownTranslations>;
+
+type LocalizedStreamdownTranslations = Record<keyof typeof STREAMDOWN_TRANSLATION_KEYS, string> &
+  typeof STREAMDOWN_STATIC_TRANSLATIONS;
+
+function useStreamdownTranslations(): LocalizedStreamdownTranslations {
+  const { t } = useLocale();
+  return useMemo(() => {
+    const localized = { ...STREAMDOWN_STATIC_TRANSLATIONS } as LocalizedStreamdownTranslations;
+    for (const [name, key] of Object.entries(STREAMDOWN_TRANSLATION_KEYS)) {
+      localized[name as keyof typeof STREAMDOWN_TRANSLATION_KEYS] = t(key);
+    }
+    return localized;
+  }, [t]);
+}
 
 async function openExternalLink(url: string, fallback: () => void) {
   try {
@@ -707,6 +735,8 @@ export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafet
 }
 
 function ExternalLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, "isOpen">) {
+  const { t } = useLocale();
+  const streamdownTranslations = useStreamdownTranslations();
   const [dontRemind, setDontRemind] = useState(false);
   const checkboxId = useId();
 
@@ -764,7 +794,7 @@ function ExternalLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalPro
               className="mr-auto flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
             >
               <Checkbox id={checkboxId} checked={dontRemind} onCheckedChange={setDontRemind} />
-              <span>不再提醒</span>
+              <span>{t("chat.markdown.externalLinkDontRemind")}</span>
             </label>
             <Button
               type="button"
@@ -829,16 +859,22 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
     className,
     renderMode = "static",
     showCaret = false,
+    citationAtDocumentEnd = true,
     readOnly = false,
     componentOverrides,
     preserveRelativeUrls = false,
     workdir,
     onOpenFileLink,
   } = props;
+  const streamdownTranslations = useStreamdownTranslations();
   const streaming = renderMode === "streaming";
   const normalizedContent = useMemo(
-    () => normalizeLatexDelimiters(content, streaming && showCaret),
-    [content, showCaret, streaming],
+    () =>
+      normalizeLatexDelimiters(
+        stripMarkdownCitationMarkers(content, citationAtDocumentEnd, streaming),
+        streaming && showCaret,
+      ),
+    [citationAtDocumentEnd, content, showCaret, streaming],
   );
   const components = useMemo(() => {
     const baseComponents = readOnly ? markdownReadOnlyComponents : markdownComponents;

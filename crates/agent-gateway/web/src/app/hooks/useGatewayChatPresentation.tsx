@@ -204,7 +204,9 @@ export function useGatewayChatPresentation({
     pendingToolApprovals.length > 0 ? (
       <ToolApprovalBar
         pending={pendingToolApprovals}
-        onDecide={(toolCallId, decision) => submitToolApprovalDecision(toolCallId, decision)}
+        onDecide={(toolCallId, decision, options) =>
+          submitToolApprovalDecision(toolCallId, decision, undefined, options)
+        }
         onDecideAll={async (decision) => {
           for (const item of pendingToolApprovals) {
             await submitToolApprovalDecision(item.toolCallId, decision);
@@ -298,7 +300,7 @@ export function useGatewayChatPresentation({
     : composerCompactionBlocked
       ? translate("chat.compactingContextWait", settings.locale)
       : historyDetailLoading
-        ? "正在加载会话历史，请稍候..."
+        ? translate("chat.gatewayHistory.loadingPlaceholder", settings.locale)
         : enabledComposerSkills.length > 0
           ? translate("chat.inputHintWithSkills", settings.locale)
           : translate("chat.inputHint", settings.locale);

@@ -317,15 +317,27 @@ mod tests {
         tempfile::tempdir().expect("create temp workdir")
     }
 
+    // Windows picks Git Bash when it is installed and PowerShell otherwise, so the script has
+    // to follow the shell the runner actually chose.
+    fn hook_shell_is_powershell(registry: &HookScopeRegistry, dir: &tempfile::TempDir) -> bool {
+        let probe = run_hook_script_sync(
+            registry,
+            Some(dir.path().display().to_string()),
+            "echo probe".to_string(),
+            None,
+            None,
+            Vec::new(),
+        )
+        .expect("probe hook shell");
+        matches!(probe.shell.as_str(), "pwsh" | "powershell")
+    }
+
     #[test]
     fn run_hook_script_sync_executes_and_injects_context() {
         let registry = HookScopeRegistry::default();
         let dir = temp_workdir();
-        let script = if cfg!(windows)
-            && crate::runtime::shell_runner::default_platform_shell_profile().shell_family
-                != "posix"
-        {
-            "Write-Output \"event=$env:ZEROAGENT_HOOK_EVENT\""
+        let script = if hook_shell_is_powershell(&registry, &dir) {
+            "Write-Output \"event=$env:LIVEAGENT_HOOK_EVENT\""
         } else {
             "printf \"event=$ZEROAGENT_HOOK_EVENT\""
         };
@@ -352,10 +364,7 @@ mod tests {
     fn run_hook_script_sync_rejects_failed_script() {
         let registry = HookScopeRegistry::default();
         let dir = temp_workdir();
-        let script = if cfg!(windows)
-            && crate::runtime::shell_runner::default_platform_shell_profile().shell_family
-                != "posix"
-        {
+        let script = if hook_shell_is_powershell(&registry, &dir) {
             "Write-Output hook-out; Write-Error hook-err; exit 7"
         } else {
             "printf hook-out; printf hook-err >&2; exit 7"

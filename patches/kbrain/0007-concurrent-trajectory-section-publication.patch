@@ -1,8 +1,8 @@
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index 3464a2e..5b86c89 100644
+index aeb968e5e1cf95e92a2732a83e92a0e011b27105..2a6291a782f69bcfe18b190a97712f8f1dcc994a 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
-@@ -111,30 +111,31 @@ type permissionWaiter struct {
+@@ -133,30 +133,31 @@ type permissionWaiter struct {
  }
  
  type runtimeSession struct {
@@ -60,7 +60,7 @@ index 3464a2e..5b86c89 100644
  	computerAllowAll bool
 diff --git a/internal/backend/trajectory_concurrent_sections_test.go b/internal/backend/trajectory_concurrent_sections_test.go
 new file mode 100644
-index 0000000..620dace
+index 0000000000000000000000000000000000000000..620daceb79116db3c1c8fbbfa31aa1f46b39c9ca
 --- /dev/null
 +++ b/internal/backend/trajectory_concurrent_sections_test.go
 @@ -0,0 +1,58 @@
@@ -123,7 +123,7 @@ index 0000000..620dace
 +	}
 +}
 diff --git a/internal/backend/trajectory_recording.go b/internal/backend/trajectory_recording.go
-index d257856..1365edb 100644
+index d257856decb2170cc3a6091207e3a1a6f17a79ba..1365edb73e7bd98455d97760f2bf65c2c7785106 100644
 --- a/internal/backend/trajectory_recording.go
 +++ b/internal/backend/trajectory_recording.go
 @@ -44,6 +44,11 @@ func sectionDigest(content string) string {

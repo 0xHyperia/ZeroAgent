@@ -4,7 +4,15 @@ import { useSyncExternalStore } from "react";
 import {
   answerAskUserQuestion,
   getAskUserQuestionDeadlineAt,
+  getAskUserQuestionVersion,
+  hasPendingAskUserQuestion,
+  subscribeAskUserQuestions,
 } from "../lib/tools/askUserQuestionTools";
+import {
+  getPermissionAutoResolved,
+  getPermissionAutoResolvedVersion,
+  subscribePermissionAutoResolved,
+} from "../lib/tools/permissionAutoResolved";
 import {
   answerPlanDecision,
   getPlanDecisionVersion,
@@ -27,6 +35,32 @@ export function usePendingToolApproval(
 ) {
   useSyncExternalStore(subscribeToolApprovals, getToolApprovalVersion, getToolApprovalVersion);
   return Boolean(getPendingToolApproval(toolCallId));
+}
+
+export function usePermissionAutoResolved(
+  toolCallId: string,
+  _toolArguments: Record<string, unknown>,
+) {
+  useSyncExternalStore(
+    subscribePermissionAutoResolved,
+    getPermissionAutoResolvedVersion,
+    getPermissionAutoResolvedVersion,
+  );
+  return getPermissionAutoResolved(toolCallId);
+}
+
+// The card is answerable only while the question is registered: the tool call arrives
+// first, and K-brain may still be reviewing or waiting for approval before it asks.
+export function useAskUserQuestionPending(
+  toolCallId: string,
+  _toolArguments: Record<string, unknown>,
+) {
+  useSyncExternalStore(
+    subscribeAskUserQuestions,
+    getAskUserQuestionVersion,
+    getAskUserQuestionVersion,
+  );
+  return hasPendingAskUserQuestion(toolCallId);
 }
 
 export function readAskUserQuestionDeadline(

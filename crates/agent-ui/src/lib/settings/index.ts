@@ -1068,6 +1068,41 @@ export function normalizeProviderModelConfigs(
   return out;
 }
 
+/**
+ * 运行期模型目录生效后，按生效目录重解析 catalog/fallback 来源的模型限额，结果与
+ * 重新加载设置时 normalizeProviderModelConfig 的重解析一致；user/provider 来源
+ * 原样保留。没有任何变化时返回同一个对象，调用方据此跳过 setState 与写入。
+ */
+export function refreshCatalogDerivedModelLimits(settings: AppSettings): AppSettings {
+  let changed = false;
+  const customProviders = settings.customProviders.map((provider) => {
+    let providerChanged = false;
+    const models = provider.models.map((model) => {
+      if (model.limitsSource !== "catalog" && model.limitsSource !== "fallback") return model;
+      const next = normalizeProviderModelConfig(model, provider.type);
+      if (
+        !next ||
+        (next.contextWindow === model.contextWindow &&
+          next.maxOutputToken === model.maxOutputToken &&
+          next.limitsSource === model.limitsSource)
+      ) {
+        return model;
+      }
+      providerChanged = true;
+      return {
+        ...model,
+        contextWindow: next.contextWindow,
+        maxOutputToken: next.maxOutputToken,
+        limitsSource: next.limitsSource,
+      };
+    });
+    if (!providerChanged) return provider;
+    changed = true;
+    return { ...provider, models };
+  });
+  return changed ? { ...settings, customProviders } : settings;
+}
+
 export function findProviderModelConfig(
   provider: Pick<CustomProvider, "models" | "type"> & { baseUrl?: string },
   modelId: string,
@@ -1506,7 +1541,7 @@ export function normalizeSystemProxyConfig(input: unknown): SystemProxyConfig {
 /**
  * 命令安全模式归一。
  *
- * - 缺失 / null / 空串:沿用默认 `auto`(全新配置与旧快照的正常形态)。
+ * - 缺失 / null / 空串:默认 `auto`(全新配置与旧快照的正常形态)。
  * - **存在但无法识别:收敛到最严格的 `ask`**(P2#6)。该设置全部意义在于约束,
  *   未来新增的模式值、回退到旧版本、手改配置的笔误若静默降级成最宽松的非 ask 值,
  *   等于悄悄放宽用户的约束选择;Rust 侧 normalize_command_safety_mode_value 同语义。
@@ -1850,6 +1885,8 @@ export function normalizeCustomSettings(
     },
     sidebarShortcuts: normalizeSidebarShortcuts(obj.sidebarShortcuts),
     chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
+    // 缺省开启：老配置无此字段时启用后台对话通知。
+    runNotifications: obj.runNotifications !== false,
     rightDock: normalizeRightDockSettings(obj.rightDock),
     // 三档枚举：历史配置无此字段或值不合法（含曾设想过的 "auto"）一律落回默认的统计状态栏。
     composerContextDisplay:
@@ -2424,7 +2461,21 @@ export function getRightDockProjectState(
 export function updateChatTranscriptWidth(prev: AppSettings, width: number): AppSettings {
   const nextWidth = normalizeChatTranscriptSettings({ width }).width;
   if (prev.customSettings.chatTranscript.width === nextWidth) return prev;
-  return updateCustomSettings(prev, { chatTranscript: { width: nextWidth } });
+  return updateCustomSettings(prev, {
+    chatTranscript: { ...prev.customSettings.chatTranscript, width: nextWidth },
+  });
+}
+
+export function updateExpandProcessByDefault(prev: AppSettings, enabled: boolean): AppSettings {
+  if (prev.customSettings.chatTranscript.expandProcessByDefault === enabled) return prev;
+  return updateCustomSettings(prev, {
+    chatTranscript: { ...prev.customSettings.chatTranscript, expandProcessByDefault: enabled },
+  });
+}
+
+export function updateRunNotifications(prev: AppSettings, enabled: boolean): AppSettings {
+  if (prev.customSettings.runNotifications === enabled) return prev;
+  return updateCustomSettings(prev, { runNotifications: enabled });
 }
 
 export function updateRightDockWidth(prev: AppSettings, width: number): AppSettings {

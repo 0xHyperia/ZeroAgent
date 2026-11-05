@@ -1,13 +1,18 @@
-import { CompactingText, LiveAssistantStatus } from "@liveagent/ui/components/chat/AssistantStatus";
+import {
+  CompactingText,
+  GenerationStoppedNotice,
+  LiveAssistantStatus,
+} from "@liveagent/ui/components/chat/AssistantStatus";
 import { AssistantWorkTrace } from "@liveagent/ui/components/chat/AssistantWorkTrace";
 import { HostedSearchGroupView } from "@liveagent/ui/components/chat/HostedSearchGroupView";
 import { LiveSparkle } from "@liveagent/ui/components/chat/LiveSparkle";
 import { StreamingSplitMarkdown } from "@liveagent/ui/components/chat/StreamingSplitMarkdown";
 import { Markdown } from "@liveagent/ui/components/Markdown";
 import type { UiRound } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
-import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
+import { isStoppedReply, normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { parseRunProgress } from "@liveagent/ui/lib/chat/runProgress";
+import { useStreamingReveal } from "@liveagent/ui/lib/chat/streamingReveal";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, type ReactNode, useMemo } from "react";
 import {
@@ -27,6 +32,13 @@ import { ToolTraceGroup } from "./ToolTraceGroup";
 
 const EMPTY_RUNNING_TOOL_CALL_IDS: string[] = [];
 
+function RevealedStreamingMarkdown(
+  props: { reveal: boolean } & Parameters<typeof StreamingSplitMarkdown>[0],
+) {
+  const { reveal, content, ...rest } = props;
+  return <StreamingSplitMarkdown content={useStreamingReveal(content, reveal)} {...rest} />;
+}
+
 export const RoundBlockContent = memo(function RoundBlockContent(props: {
   block: GroupedRoundBlock;
   isLive: boolean;
@@ -37,6 +49,8 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
   /** Transcript-stable entry key; block ids alone repeat across rounds. */
   traceKey?: string;
   showTurnStatus?: boolean;
+  /** The turn is still streaming: type newly arrived reply text out character by character. */
+  revealText?: boolean;
   readOnly?: boolean;
   redactToolContent?: boolean;
   workdir?: string;
@@ -46,6 +60,7 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     block,
     isLive,
     renderMode,
+    revealText = false,
     runningToolCallIds,
     thinkingOpen,
     isLatestThinking,
@@ -126,8 +141,9 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     // 切分状态不再变化，成本为零。
     content =
       renderMode === "streaming" ? (
-        <StreamingSplitMarkdown
+        <RevealedStreamingMarkdown
           content={block.text}
+          reveal={revealText}
           className="font-chat"
           readOnly={readOnly}
           workdir={workdir}
@@ -154,6 +170,9 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     <div
       className={cn(!isLive && "w-full")}
       data-assistant-operation={isOperationBlock ? "" : undefined}
+      // Reply prose is quotable into the composer; tool traces, thinking and
+      // other operation blocks are not (see lib/chat/transcriptQuote).
+      data-quote-source={isOperationBlock ? undefined : "assistant"}
     >
       {content}
     </div>
@@ -243,8 +262,10 @@ export const AssistantTurnContent = memo(function AssistantTurnContent(props: {
   const activeThinkingKey = running ? resolveActiveThinkingEntryKey(layout.work) : null;
   const collapsedTailEntry = running ? resolveActiveWorkEntry(layout.work) : null;
   const showWorkTrace = running || layout.work.length > 0;
+  const stopped = !running && isStoppedReply(rounds);
 
-  if (!showWorkTrace && layout.interaction.length === 0 && layout.answer.length === 0) return null;
+  if (!showWorkTrace && !stopped && layout.interaction.length === 0 && layout.answer.length === 0)
+    return null;
 
   const renderEntry = (
     entry: AssistantTurnLayoutEntry,
@@ -261,6 +282,7 @@ export const AssistantTurnContent = memo(function AssistantTurnContent(props: {
       isLatestThinking={entry.key === activeThinkingKey}
       traceKey={entry.key}
       showTurnStatus={insideWorkTrace && running && entry.key === latestToolGroupKey}
+      revealText={running}
       readOnly={readOnly}
       redactToolContent={redactToolContent}
       workdir={workdir}
@@ -292,6 +314,7 @@ export const AssistantTurnContent = memo(function AssistantTurnContent(props: {
 
       {layout.interaction.map((entry) => renderEntry(entry, false, true))}
       {layout.answer.map((entry) => renderEntry(entry, false))}
+      {stopped ? <GenerationStoppedNotice /> : null}
       {running ? (
         !attentionRequired && parseRunProgress(normalizedToolStatus) ? (
           <LiveAssistantStatus status={normalizedToolStatus} />

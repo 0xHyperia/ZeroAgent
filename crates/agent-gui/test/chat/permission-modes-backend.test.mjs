@@ -77,7 +77,10 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
   }
   const loader = createTsModuleLoader();
   const { createKBrainClient } = loader.loadModule("src/lib/kbrain/client");
-  const { resolveKBrainPermissionMode } = loader.loadModule("@liveagent/ui/lib/chat/permissionModes");
+  const { resolveKBrainPermissionMode, resolveKBrainRunSandbox } = loader.loadModule("@liveagent/ui/lib/chat/permissionModes");
+  // Sandbox cases need a backend that can enforce one (capabilities.run_sandbox).
+  const sandboxed = health.capabilities?.run_sandbox?.supported === true;
+  await mkdir(path.join(workdir, ".liveagent"));
   const client = createKBrainClient({ baseUrl, token: "modes-token" });
   const cases = [
     { name: "confirm-reject", mode: "ask", permission: true, changed: false },
@@ -89,10 +92,15 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
     { name: "always", mode: "always", bash: true, permission: false, changed: true },
     { name: "review-low", mode: "autoReview", permission: false, changed: true, reviewed: true },
     { name: "review-unknown", mode: "autoReview", review: { ...low, risk: "unknown" }, permission: true, changed: false, reviewed: true },
+    // Commands run without asking inside the sandbox, and cannot write where it forbids.
+    { name: "sandbox-command", mode: "sandbox", bash: true, permission: false, changed: true },
+    { name: "sandbox-protected", mode: "sandbox", bash: true, target: ".liveagent/sandbox-protected.txt", permission: false, changed: false },
+    { name: "outside-sandbox-protected", mode: "always", bash: true, target: ".liveagent/unsandboxed.txt", permission: false, changed: true },
   ];
   for (const tc of cases) {
-    await t.test(tc.name, async () => {
-      const target = path.join(workdir, `${tc.name}.txt`);
+    const sandbox = resolveKBrainRunSandbox(tc.mode);
+    await t.test(tc.name, { skip: sandbox && !sandboxed && "backend cannot sandbox runs here" }, async () => {
+      const target = path.join(workdir, tc.target ?? `${tc.name}.txt`);
       // The Windows backend executes commands with PowerShell. Use its literal-path API so
       // permission tests exercise tool execution instead of failing on a missing POSIX printf.
       const command = process.platform === "win32"
@@ -101,7 +109,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
       current = { tool: tc.bash ? "Bash" : "Write", args: tc.bash ? { command } : { path: target, content: "changed" }, review: tc.review ?? low };
       const before = reviews;
       const session = await client.createSession({ cwd: workdir, model: { provider: "fixture", model: "fixture-model" } });
-      const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `modes-${tc.name}`, prompt: "Write changed to the fixture marker in this workspace", options: { mode: "agent", approval_policy: "ask", permission_mode: resolveKBrainPermissionMode(tc.mode, tc.plan), workspace_roots: [{ path: workdir, access: "write" }] } });
+      const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `modes-${tc.name}`, prompt: "Write changed to the fixture marker in this workspace", options: { mode: "agent", approval_policy: "ask", permission_mode: resolveKBrainPermissionMode(tc.mode, tc.plan), workspace_roots: [{ path: workdir, access: "write" }], ...(sandbox ? { sandbox } : {}) } });
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15_000);
       const events = [];

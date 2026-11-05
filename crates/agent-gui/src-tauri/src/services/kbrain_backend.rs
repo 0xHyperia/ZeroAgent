@@ -20,6 +20,7 @@ use crate::services::account_identity::VerifiedProfile;
 use crate::services::account_session::AccountSessionState;
 use crate::services::backend_facade::BackendFacade;
 use crate::services::backend_profile::BackendProfile;
+use crate::services::kbrain_health::parse_health;
 use crate::services::managed_model_broker::{
     configured_origin, ManagedBinding, ManagedCredential, ManagedModelBroker,
 };
@@ -79,12 +80,6 @@ pub struct ActivatedProfileConnection {
     #[serde(flatten)]
     connection: PublicBackendConnection,
     account_scope: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HealthResponse {
-    status: String,
-    version: String,
 }
 
 struct BackendProcess {
@@ -1619,19 +1614,14 @@ fn wait_for_health(
             .header(AUTHORIZATION, format!("Bearer {}", connection.token))
             .send()
             .and_then(|response| response.error_for_status())
-            .and_then(|response| response.json::<HealthResponse>());
+            .and_then(|response| response.json::<serde_json::Value>());
         check_startup_process(child, events, cancelled)?;
         if Instant::now() >= deadline {
             return Err("ZeroAgent engine health check timed out".into());
         }
-        if let Ok(health) = result {
-            if health.status == "ok" && health.version == PROTOCOL_VERSION {
-                return Ok(());
-            }
-            return Err(format!(
-                "ZeroAgent engine protocol mismatch (reported version {})",
-                health.version
-            ));
+        // 传输或 JSON 错误继续等待；拿到 JSON 后按契约判定，矛盾或类型错误立即失败。
+        if let Ok(body) = result {
+            return parse_health(&body).map(|_| ());
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
         thread::sleep(remaining.min(Duration::from_millis(100)));

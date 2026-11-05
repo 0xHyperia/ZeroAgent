@@ -86,7 +86,29 @@ export type GatewaySettingsSyncPayload = {
   systemProxyPasswordUpdate?: string;
   /** WebUI → 桌面端的一次性 STT 凭据更新；任何公开广播前必须移除。 */
   sttSecretUpdate?: GatewaySttSecretUpdate;
+  /** WebUI → 桌面端：本次更新的标签页标识与递增序号；桌面端取出后不入快照。 */
+  syncClient?: GatewaySettingsSyncClient;
+  /** 桌面端 → WebUI：每个标签页已处理到的最高序号。键存在即表示桌面端支持回执。 */
+  appliedClientSeqs?: GatewaySettingsAppliedClientSeqs;
+  /** 桌面端 → WebUI：快照对应的缓存版本；epoch 每个桌面进程一个，generation 单调递增。 */
+  settingsSyncVersion?: GatewaySettingsSyncVersion;
 };
+export type GatewaySettingsSyncVersion = { epoch: string; generation: number };
+export type GatewaySettingsSyncClient = { id: string; seq: number };
+export type GatewaySettingsSyncAck = GatewaySettingsSyncClient & { error?: string };
+export type GatewaySettingsAppliedClientSeqs = Record<string, { seq: number; error?: string }>;
+
+/** 桌面端转来的 WebUI 更新所带的标签页序号；格式不对一律当作没有。 */
+export function readGatewaySettingsSyncClient(payload: unknown): GatewaySettingsSyncClient | null {
+  const marker = (payload as { syncClient?: unknown } | null)?.syncClient as
+    | Partial<GatewaySettingsSyncClient>
+    | undefined;
+  if (!marker || typeof marker.id !== "string" || !marker.id.trim()) return null;
+  if (typeof marker.seq !== "number" || !Number.isSafeInteger(marker.seq) || marker.seq <= 0) {
+    return null;
+  }
+  return { id: marker.id, seq: marker.seq };
+}
 export type GatewaySettingsSyncUpdatePayload = Partial<GatewaySettingsSyncPayload>;
 export type GatewaySettingsUpdateReceipt = {
   protocol: "zeroagent.settings-sync.v1";
@@ -526,7 +548,8 @@ function syncableCustomSettings(
     interfaceFontFamily: "",
     chatFontFamily: "",
     codeFontFamily: "",
-    chatTranscript: { width: DEFAULT_CHAT_TRANSCRIPT_WIDTH },
+    chatTranscript: { width: DEFAULT_CHAT_TRANSCRIPT_WIDTH, expandProcessByDefault: false },
+    runNotifications: true,
     fontScale: { sidebar: 1, chat: 1, rightDock: 1, settings: 1 },
   };
 }
@@ -1412,6 +1435,7 @@ export function applyGatewaySettingsSyncPayload(
       chatFontFamily: current.customSettings.chatFontFamily,
       codeFontFamily: current.customSettings.codeFontFamily,
       chatTranscript: current.customSettings.chatTranscript,
+      runNotifications: current.customSettings.runNotifications,
       fontScale: current.customSettings.fontScale,
     },
     skills: (source.skills as AppSettings["skills"] | undefined) ?? current.skills,

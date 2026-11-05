@@ -107,7 +107,12 @@ desktop-build-macos-release: check-rust-target-$(DESKTOP_MACOS_TARGET) check-mac
 	codesign --verify --deep --strict --verbose=4 "$$app_path"; \
 	codesign --force --timestamp --sign "$(APPLE_SIGNING_IDENTITY)" "$$dmg_path"; \
 	xcrun notarytool submit "$$dmg_path" --keychain-profile "$(DESKTOP_MACOS_NOTARY_PROFILE)" --wait; \
-	xcrun stapler staple "$$dmg_path"; \
+	for attempt in 1 2 3 4 5; do \
+		xcrun stapler staple "$$dmg_path" && break; \
+		if [ "$$attempt" -eq 5 ]; then echo "stapler failed after $$attempt attempts"; exit 1; fi; \
+		echo "stapler failed (attempt $$attempt); retrying in $$((attempt * 20))s"; \
+		sleep $$((attempt * 20)); \
+	done; \
 	xcrun stapler validate -v "$$dmg_path"; \
 	spctl --assess --type execute --verbose=4 "$$app_path"; \
 	spctl --assess --type open --context context:primary-signature --verbose=4 "$$dmg_path"; \
@@ -258,7 +263,12 @@ desktop-staple-macos:
 	@set -e; \
 	dmg_path="$$(find "target/$(DESKTOP_MACOS_TARGET)/release/bundle/dmg" -maxdepth 1 -name '$(DESKTOP_MACOS_APP_NAME)_*.dmg' -print -quit)"; \
 	if [ -z "$$dmg_path" ] || [ ! -f "$$dmg_path" ]; then echo "macOS dmg not found under target/$(DESKTOP_MACOS_TARGET)/release/bundle/dmg"; exit 1; fi; \
-	xcrun stapler staple "$$dmg_path"; \
+	for attempt in 1 2 3 4 5; do \
+		xcrun stapler staple "$$dmg_path" && break; \
+		if [ "$$attempt" -eq 5 ]; then echo "stapler failed after $$attempt attempts"; exit 1; fi; \
+		echo "stapler failed (attempt $$attempt); retrying in $$((attempt * 20))s"; \
+		sleep $$((attempt * 20)); \
+	done; \
 	$(MAKE) desktop-verify-macos
 
 desktop-verify-macos:

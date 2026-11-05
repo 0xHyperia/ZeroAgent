@@ -140,7 +140,7 @@ index 9d5013bfad336a76f60642b7e65e70b3ef9474fd..caa0b8219ab84e3680ef4b6fa20f9b12
  	t.Cleanup(m.Close)
  	s := m.servers["self"]
 diff --git a/internal/mcp/serve_test.go b/internal/mcp/serve_test.go
-index fa456b8e33c2ac4f12de24bc4efad49d2ab23d32..d90ed3788f77efc641e12b5ee1a47feee3e10d93 100644
+index fca0bb617fda7bc482f12adcd9b0182bf95725ca..efa78a64a799b98c5bedbb6f722bdc6f1041d90a 100644
 --- a/internal/mcp/serve_test.go
 +++ b/internal/mcp/serve_test.go
 @@ -29,12 +29,16 @@ func TestServeInProcess(t *testing.T) {

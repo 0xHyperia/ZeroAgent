@@ -1853,6 +1853,23 @@ mod win {
         names
     }
 
+    /// 普通 Git Bash 还在运行时,msys 目录和里面的对象都是它的:中完整性、不给全部权限。
+    /// 沙箱不能改写这些对象(否则沙箱内进程能写沙箱外进程的共享内存),所以这时 Git Bash
+    /// 进不了沙箱,由 shell runner 回退到下一个 shell。
+    #[cfg(test)]
+    pub(super) fn msys_namespace_held_outside_sandbox(program: &Path) -> bool {
+        let Some(name) = msys_object_dir_names(program).into_iter().next() else {
+            return false;
+        };
+        let access = DIRECTORY_ALL_ACCESS
+            | DIRECTORY_CREATE_OBJECT
+            | DIRECTORY_CREATE_SUBDIRECTORY
+            | READ_CONTROL
+            | WRITE_DAC;
+        create_directory_object(&name, access, null_mut()).is_err()
+            && open_directory_object(&name, access).is_err()
+    }
+
     #[cfg(test)]
     pub(super) fn msys_object_dir_names_for_test(program: &Path) -> Vec<String> {
         msys_object_dir_names(program)
@@ -2902,6 +2919,22 @@ mod tests {
                 after,
                 "append_sid_to_default_dacl did not add the logon SID"
             );
+        }
+
+        /// Git Bash 能进沙箱时返回路径。本机有普通 Git Bash 在运行时不能,见
+        /// `msys_namespace_held_outside_sandbox`。
+        fn sandboxable_git_bash() -> Option<&'static std::path::Path> {
+            let bash = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
+            if !bash.is_file() {
+                return None;
+            }
+            if win::msys_namespace_held_outside_sandbox(bash) {
+                eprintln!(
+                    "skipped: a Git Bash running outside the sandbox holds the msys namespace"
+                );
+                return None;
+            }
+            Some(bash)
         }
 
         fn sandbox_exec(program: &std::path::Path, args: &[String]) -> Result<i32, String> {

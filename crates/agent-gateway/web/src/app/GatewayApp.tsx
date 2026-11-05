@@ -18,6 +18,7 @@ import {
   resolveSearchJumpRowKey,
   subscribeSearchJumpTarget,
 } from "@liveagent/ui/lib/chat/searchJumpTarget";
+import { buildToolApprovalRequestJson } from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
@@ -867,26 +868,28 @@ function useGatewayAppController() {
       registerToolApprovalDecisionHandler(null);
       return;
     }
-    registerToolApprovalDecisionHandler(async (toolCallId, decision, targetConversationId) => {
-      // 背景 Pane 显式携带自己的会话 id;主视图缺省仍按当前展示会话路由。
-      const conversationIdValue = (
-        targetConversationId?.trim() ||
-        resolveVisibleConversationId(selectedHistoryIdRef.current, conversationIdRef.current)
-      ).trim();
-      if (!conversationIdValue) {
-        return { ok: false, message: "No active conversation." };
-      }
-      try {
-        const response = await api.chatQueueToolApproval(
-          conversationIdValue,
-          toolCallId,
-          JSON.stringify({ decision }),
-        );
-        return { ok: response.accepted, message: response.message || undefined };
-      } catch (error) {
-        return { ok: false, message: asErrorMessage(error, "Failed to submit the decision.") };
-      }
-    });
+    registerToolApprovalDecisionHandler(
+      async (toolCallId, decision, targetConversationId, options) => {
+        // 背景 Pane 显式携带自己的会话 id;主视图缺省仍按当前展示会话路由。
+        const conversationIdValue = (
+          targetConversationId?.trim() ||
+          resolveVisibleConversationId(selectedHistoryIdRef.current, conversationIdRef.current)
+        ).trim();
+        if (!conversationIdValue) {
+          return { ok: false, message: "No active conversation." };
+        }
+        try {
+          const response = await api.chatQueueToolApproval(
+            conversationIdValue,
+            toolCallId,
+            buildToolApprovalRequestJson(decision, options),
+          );
+          return { ok: response.accepted, message: response.message || undefined };
+        } catch (error) {
+          return { ok: false, message: asErrorMessage(error, "Failed to submit the decision.") };
+        }
+      },
+    );
     return () => registerToolApprovalDecisionHandler(null);
   }, [api]);
 
@@ -1619,6 +1622,7 @@ function useGatewayAppController() {
     setProjectPickerOpen,
     setRightDockOpen,
     setSharedManagerOpen,
+    setSidebarOpen,
     setWorkspaceCreateModalOpen,
     settingsOpen,
     shareConversation,

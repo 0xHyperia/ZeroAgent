@@ -29,10 +29,7 @@ export type ChatTranscriptProps = {
   liveTranscriptStore: LiveTranscriptStore;
   isCompactionRunning: boolean;
   bottomReservePx?: number;
-  // Composer chrome floating above the reserve line (queue panel, task
-  // progress pill). Deliberately excluded from bottomReservePx so the
-  // transcript reserve stays put; overlays anchored above the composer must
-  // clear it or they end up hidden underneath.
+  /** Queue and task progress chrome floating above the transcript reserve. */
   floatingOverhangPx?: number;
   // Horizontal offset of the composer card's center from the pane center
   // (positive = right). The desktop card is shifted to align with the
@@ -53,4 +50,6 @@ export type ChatTranscriptProps = {
   branchPendingMessageId?: string | null;
   onOpenSettings: (section?: SectionId) => void;
   onSuggestionSelect?: (text: string) => void;
+  /** Selected message text → composer blockquote. Omit to disable the quote button. */
+  onQuoteSelection?: (text: string) => void;
 };

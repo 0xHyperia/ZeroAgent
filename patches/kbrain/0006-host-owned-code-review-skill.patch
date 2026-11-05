@@ -1,5 +1,5 @@
 diff --git a/internal/skills/managed.go b/internal/skills/managed.go
-index 752bbf3..228a6c0 100644
+index 752bbf33141119f188e0ed1ec3563500faa66bd5..228a6c01ae3b97f3d1c56795ed900b78f12f7140 100644
 --- a/internal/skills/managed.go
 +++ b/internal/skills/managed.go
 @@ -250,7 +250,28 @@ func (m *Manager) ensureBuiltins() error {
@@ -87,7 +87,7 @@ index 752bbf3..228a6c0 100644
  	}
 diff --git a/internal/skills/zeroagent_builtin_test.go b/internal/skills/zeroagent_builtin_test.go
 new file mode 100644
-index 0000000..f09867c
+index 0000000000000000000000000000000000000000..f09867c826cdbdadd2d1d4ae2b27adda08782878
 --- /dev/null
 +++ b/internal/skills/zeroagent_builtin_test.go
 @@ -0,0 +1,100 @@

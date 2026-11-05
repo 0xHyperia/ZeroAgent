@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,16 @@ type Client struct {
 	BaseURL string
 	Token   string
 	HTTP    *http.Client
+
+	handshakeMu  sync.Mutex
+	handshake    Health
+	handshakeErr error
+	// handshakeGen increments on every observed contract violation; a probe
+	// started before the newest violation may not repopulate the cache.
+	handshakeGen   uint64
+	handshakeURL   string
+	handshakeToken string
+	handshakeAt    time.Time
 }
 
 type ModelRef struct {
@@ -139,15 +150,26 @@ type Usage struct {
 }
 
 type RunOptions struct {
-	Reasoning       string          `json:"reasoning,omitempty"`
-	Mode            string          `json:"mode,omitempty"`
-	Search          string          `json:"search,omitempty"`
-	ApprovalPolicy  string          `json:"approval_policy,omitempty"`
-	PermissionMode  string          `json:"permission_mode,omitempty"`
+	Reasoning      string `json:"reasoning,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	Search         string `json:"search,omitempty"`
+	ApprovalPolicy string `json:"approval_policy,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// ReviewScope is set by StartRun from capability ai_review_per_run; callers leave it empty.
+	ReviewScope     string          `json:"review_scope,omitempty"`
 	WorkspaceRoots  []WorkspaceRoot `json:"workspace_roots,omitempty"`
 	Tools           *ToolSelection  `json:"tools,omitempty"`
 	PlanModeEnabled bool            `json:"plan_mode_enabled,omitempty"`
 	MCPServerIDs    []string        `json:"mcp_server_ids,omitempty"`
+	// Sandbox confines the run's commands with the backend's OS sandbox
+	// (capability run_sandbox). Runs asking for it are refused, never started
+	// unconfined, when the backend cannot enforce it.
+	Sandbox *RunSandbox `json:"sandbox,omitempty"`
+}
+
+type RunSandbox struct {
+	Mode    string `json:"mode"`
+	Network bool   `json:"network"`
 }
 
 type WorkspaceRoot struct {
@@ -359,31 +381,32 @@ func (c *Client) CreateSession(ctx context.Context, cwd string, model ModelRef) 
 	return out.ID, nil
 }
 
+// withReviewScope copies the run options with review_scope "per_run" on backends with
+// capability ai_review_per_run, so the permission mode alone decides AI review. Older
+// backends reject unknown run options, so the (capability-fresh) handshake must prove it.
+// Every path that submits a run (StartRun, the backend queue) goes through it.
+func (c *Client) withReviewScope(ctx context.Context, in PromptRequest) PromptRequest {
+	if in.Options == nil {
+		return in
+	}
+	health, err := c.verifiedHealth(ctx, handshakeCapabilityMaxAge)
+	if err != nil || !health.FrozenCapability("ai_review_per_run") {
+		return in
+	}
+	options := *in.Options
+	options.ReviewScope = "per_run"
+	in.Options = &options
+	return in
+}
+
 func (c *Client) StartRun(ctx context.Context, sessionID string, in PromptRequest) (RunAccepted, int, error) {
 	var out RunAccepted
-	if in.Options != nil {
-		mode := in.Options.PermissionMode
-		if mode == "always" || mode == "auto_edit" || mode == "auto_review" {
-			var health struct {
-				Capabilities struct {
-					PermissionModes []string `json:"permission_modes"`
-				} `json:"capabilities"`
-			}
-			resp, err := c.request(ctx, http.MethodGet, "/v1/health", nil, &health)
-			if err != nil {
-				return out, 0, err
-			}
-			found := false
-			for _, supported := range health.Capabilities.PermissionModes {
-				if supported == mode {
-					found = true
-				}
-			}
-			if resp.StatusCode != http.StatusOK || !found {
-				return out, 0, fmt.Errorf("kbrain does not support permission mode %s; update the backend", mode)
-			}
-		}
+	// Every run needs a valid handshake: a backend that contradicts
+	// kbrain.agent.v1 must not accept work in any permission mode.
+	if err := c.requireRunOptions(ctx, in.Options); err != nil {
+		return out, 0, err
 	}
+	in = c.withReviewScope(ctx, in)
 	resp, err := c.request(ctx, http.MethodPost, "/v1/sessions/"+sessionID+"/runs", in, &out)
 	if err != nil {
 		return out, 0, err
@@ -431,6 +454,13 @@ func (c *Client) settingsRequest(ctx context.Context, method, path string, input
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		// K-brain explains a rejected request in {"error": ...}; keep that text.
+		var failure struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil && strings.TrimSpace(failure.Error) != "" {
+			return nil, fmt.Errorf("kbrain settings request: %s: %s", resp.Status, strings.TrimSpace(failure.Error))
+		}
 		return nil, fmt.Errorf("kbrain settings request: %s", resp.Status)
 	}
 	var out json.RawMessage
@@ -502,6 +532,37 @@ func (c *Client) CancelRun(ctx context.Context, sessionID, runID string) error {
 
 // CronManage exposes the shipped backend cron API through one Gateway action
 // boundary. The K-brain backend remains the owner of task and run state.
+// cronOpsAdvanceWork reports whether a cron_apply payload can add or re-enable
+// scheduled work. Only delete, reorder and `{"enabled": false}` updates are
+// work-reducing; anything else, including payloads it cannot read, fails closed.
+func cronOpsAdvanceWork(input any) bool {
+	body, ok := input.(map[string]any)
+	if !ok {
+		return true
+	}
+	ops, ok := body["ops"].([]any)
+	if !ok {
+		return true
+	}
+	for _, raw := range ops {
+		op, ok := raw.(map[string]any)
+		if !ok {
+			return true
+		}
+		switch op["op"] {
+		case "delete", "reorder":
+			continue
+		case "update":
+			patch, ok := op["patch"].(map[string]any)
+			if ok && len(patch) == 1 && patch["enabled"] == false {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string) (json.RawMessage, error) {
 	action = strings.TrimSpace(action)
 	taskID = strings.TrimSpace(taskID)
@@ -509,6 +570,14 @@ func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string
 	if strings.TrimSpace(taskJSON) != "" {
 		if err := json.Unmarshal([]byte(taskJSON), &input); err != nil {
 			return nil, fmt.Errorf("invalid cron payload: %w", err)
+		}
+	}
+	// Starting or scheduling agent work needs a valid handshake; reads, cancels,
+	// clears and changes that only remove or disable tasks stay available on a
+	// broken backend so users can still stop scheduled work.
+	if action == "run_now" || action == "cron_apply" && cronOpsAdvanceWork(input) {
+		if err := c.requireHandshake(ctx, ""); err != nil {
+			return nil, err
 		}
 	}
 	var method, path string

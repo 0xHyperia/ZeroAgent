@@ -1,8 +1,14 @@
 import type { AskUserQuestionAnswer } from "@liveagent/ui/lib/chat/askUserQuestion";
-import { readAskUserQuestionDeadlineAt } from "@liveagent/ui/lib/chat/askUserQuestion";
+import {
+  readAskUserQuestionDeadlineAt,
+  readAskUserQuestionPendingMarker,
+} from "@liveagent/ui/lib/chat/askUserQuestion";
 import type { PlanDecisionAnswer } from "@liveagent/ui/lib/chat/planMode";
 import { readPlanApprovedMarker, readPlanPendingMarker } from "@liveagent/ui/lib/chat/planMode";
-import { readToolApprovalPending } from "@liveagent/ui/lib/chat/toolApprovalArgs";
+import {
+  readToolApprovalPending,
+  readToolPermissionAutoResolved,
+} from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import { useSyncExternalStore } from "react";
 import { submitAskUserQuestionAnswer } from "../lib/chat/askUserQuestionBridge";
 import {
@@ -20,6 +26,22 @@ export function usePendingToolApproval(
   toolArguments: Record<string, unknown>,
 ) {
   return readToolApprovalPending(toolArguments);
+}
+
+export function usePermissionAutoResolved(
+  _toolCallId: string,
+  toolArguments: Record<string, unknown>,
+) {
+  return readToolPermissionAutoResolved(toolArguments);
+}
+
+// The desktop stamps whether the question is registered. A desktop that predates the
+// marker sends none, and the card stays answerable as before.
+export function useAskUserQuestionPending(
+  _toolCallId: string,
+  toolArguments: Record<string, unknown>,
+) {
+  return readAskUserQuestionPendingMarker(toolArguments) !== false;
 }
 
 export function readAskUserQuestionDeadline(

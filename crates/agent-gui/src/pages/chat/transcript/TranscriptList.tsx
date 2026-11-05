@@ -5,6 +5,7 @@ import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentio
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { useCommitDetailsLoader } from "@liveagent/ui/lib/chat/useCommitDetailsLoader";
 import type { GitClient } from "@liveagent/ui/lib/git/types";
+import type { TranscriptFindSource } from "@liveagent/ui/lib/transcript-find/transcriptFindSource";
 import { createLiveRowScrollAdjustPolicy } from "@liveagent/ui/lib/transcript-virtual/liveScrollAdjustPolicy";
 import {
   buildTranscriptLayoutKey,
@@ -45,10 +46,12 @@ import {
   readTranscriptScrollPosition,
   saveTranscriptScrollPosition,
 } from "./initialTranscriptLayout";
+import { measureRowLive } from "./measureRowLive";
 import { extractRenderUnitRange } from "./renderUnitRangeExtractor";
 import { createReplyHoverStore } from "./replyHoverStore";
 import { ReplyHoverProvider } from "./rowInteraction";
 import { createTranscriptRowModel } from "./rowModel";
+import { buildTranscriptFindEntries } from "./transcriptFindEntries";
 import { UserMessageRow } from "./UserMessageRow";
 
 const TRANSCRIPT_MEASUREMENT_LAYOUT_VERSION = "assistant-activity-v3";
@@ -132,6 +135,9 @@ export type TranscriptListProps = {
   // ChatTranscript keeps the transcript hidden behind the loading overlay
   // until then, so estimate→measure corrections never show as jumps.
   onFirstLayoutSettled?: () => void;
+  // Find in conversation searches the row model, so it covers rows the
+  // virtualizer has not mounted.
+  findSource?: TranscriptFindSource;
 };
 
 // The whole transcript lives in one virtualized container. Assistant replies
@@ -163,6 +169,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     onResendFromEdit,
     onBranchConversation,
     onFirstLayoutSettled,
+    findSource,
   } = props;
 
   const liveState = useSyncExternalStore(
@@ -198,6 +205,9 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  useEffect(() => {
+    findSource?.publish(() => buildTranscriptFindEntries(rows));
+  }, [findSource, rows]);
   const liveStartIndexRef = useRef(liveStartIndex);
   liveStartIndexRef.current = liveStartIndex;
   const getScrollElement = useCallback(() => scrollViewport, [scrollViewport]);
@@ -288,6 +298,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     },
     // Defer measurement-driven DOM writes out of WebKit's resize delivery.
     useAnimationFrameWithResizeObserver: true,
+    measureElement: measureRowLive,
     // Pixel overscan covers the next paint; avoid synchronously rendering
     // Markdown inside every native scroll event.
     useFlushSync: false,

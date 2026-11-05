@@ -10,6 +10,7 @@ import * as React from "react";
 import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { cn } from "../../lib/shared/utils";
+import { getShortcutBinding, useShortcutOverrides } from "../../lib/shortcuts/shortcutCommands";
 import { Input } from "./input";
 import { Separator } from "./separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./sheet";
@@ -47,6 +48,10 @@ function useSidebar() {
 }
 
 /** A hint exists only when this provider actually installs the keyboard binding. */
+export function useSidebarToggleShortcut(): string | null {
+  return getShortcutBinding("toggleSidebar", useShortcutOverrides()) || null;
+}
+
 export function useSidebarShortcutHint() {
   const context = React.useContext(SidebarContext);
   if (!context?.keyboardShortcutEnabled) return undefined;

@@ -1,5 +1,6 @@
 import type { Message } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
+import { hasFrozenCapability } from "@liveagent/ui/lib/kbrain/health";
 import { isTauriHost } from "../host";
 import { createKBrainClient } from "./client";
 import {
@@ -7,6 +8,7 @@ import {
   type HistoryMigrationFailureKind,
   type HistoryMigrationFailureRecord,
   knownDeterministicFailure,
+  LEGACY_IMPORT_MAX_BODY_BYTES,
   mergeHistoryMigrationFailures,
   readHistoryMigrationFailures,
   writeHistoryMigrationFailures,
@@ -173,7 +175,13 @@ export function createSessionExistenceCheck(
   const batch = () => {
     batched ??= (async () => {
       try {
-        if ((await client.getCapabilities(signal)).session_exists !== 1) return null;
+        if (
+          !hasFrozenCapability(
+            { capabilities: await client.getCapabilities(signal) },
+            "session_exists",
+          )
+        )
+          return null;
         const asked = new Set(candidates());
         const ids = [...asked];
         const existing = new Set<string>();
@@ -678,6 +686,7 @@ export async function migrateLegacyHistoryPage(
           fingerprint: sourceFingerprint,
           kind,
           bytes: bodyBytes,
+          ...(kind === "too_large" ? { limitBytes: LEGACY_IMPORT_MAX_BODY_BYTES } : {}),
           message,
           failedAt: Date.now(),
         });
@@ -804,7 +813,13 @@ async function migratedSessionsStillExist(
 ): Promise<boolean> {
   try {
     const client = createKBrainClient({ fetch: options.fetch });
-    if ((await client.getCapabilities(options.signal)).session_exists !== 1) return false;
+    if (
+      !hasFrozenCapability(
+        { capabilities: await client.getCapabilities(options.signal) },
+        "session_exists",
+      )
+    )
+      return false;
     const ids = [...new Set(backendIds)];
     for (let start = 0; start < ids.length; start += MAX_EXISTS_IDS) {
       const chunk = ids.slice(start, start + MAX_EXISTS_IDS);

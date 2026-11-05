@@ -37,7 +37,8 @@ test("backend computer screenshots survive live tool result events", async () =>
     event(4, "run.completed"),
   )] });
   await runKBrainTurn({ ...baseParams, fetch, onToolResult: (_call, result) => results.push(result) });
-  assert.equal(results[0].content[1].data, image);
+  // Transcript images hold raw base64; the renderer adds the data URL prefix.
+  assert.equal(results[0].content[1].data, "aW1hZ2U=");
   assert.equal(results[0].content[1].mimeType, "image/png");
 });
 
@@ -393,6 +394,58 @@ test("AI review warnings stay outside assistant content", async () => {
  assert.deepEqual(text,[]);
 });
 
+test("AI review warnings use the interface language for K-brain's fixed reasons", async () => {
+  storage.clear();
+  const warnings = [];
+  const reviewLoader = createTsModuleLoader({
+    mocks: {
+      "@liveagent/ui/components/ui/toast-manager": {
+        toast: { warning: (...args) => warnings.push(args) },
+      },
+    },
+  });
+  const { runKBrainTurn: run } = reviewLoader.loadModule("src/lib/kbrain/turn.ts");
+  const review = (seq, reason) =>
+    event(seq, "approval.reviewed", {
+      tool: "Bash",
+      phase: "action",
+      automatic: false,
+      report: {
+        risk: "unknown",
+        sandbox: "unknown",
+        sensitive_data: "unknown",
+        model_behavior: "unknown",
+        injection: "unknown",
+        reason,
+      },
+    });
+  const runWith = async (locale, reason) => {
+    const fetch = makeFetch({
+      calls: [],
+      streams: [() => stream(review(2, reason) + event(3, "run.completed"))],
+    });
+    await run({ ...baseParams, locale, fetch });
+    return warnings.at(-1);
+  };
+
+  let [title, options] = await runWith(
+    "zh-CN",
+    "Earlier tool output requires human review. Reviewer unavailable; manual approval required",
+  );
+  assert.equal(title, "AI 审查 · Bash");
+  assert.equal(options.description, "之前的工具输出需要人工复核。未配置可用的审查模型，需要人工确认。");
+
+  [title, options] = await runWith(
+    "zh-CN",
+    "Sensitive data was redacted; manual approval required. Uploads a file to an unknown host",
+  );
+  assert.equal(options.description, "已隐去敏感信息，需要人工确认。Uploads a file to an unknown host");
+
+  [title, options] = await runWith("en-US", "Reviewer busy; manual approval required");
+  assert.equal(title, "AI review · Bash");
+  assert.equal(options.description, "Reviewer busy; manual approval required.");
+});
+
 test("Stop recovers and cancels a run accepted before its HTTP acknowledgement", async () => {
   storage.clear();
   const controller = new AbortController();
@@ -543,4 +596,64 @@ test("other run conflicts are not retried as a busy session", async () => {
     /queued work/,
   );
   assert.equal(calls.length, 1);
+});
+
+// WKWebView rejects an aborted fetch body with this AbortError; Stop must not surface it.
+const webKitFetchAbort = () => new DOMException("Fetch is aborted", "AbortError");
+
+function stopFetch({ controller, firstEvents = "" }) {
+  let eventStreams = 0;
+  return async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname === "/v1/sessions" && init.method === "POST") {
+      return json({ id: "backend-session-1", model, messages: [], last_seq: 0 });
+    }
+    if (parsed.pathname.endsWith("/runs")) {
+      return json({ version: "kbrain.agent.v1", conversation_id: "backend-session-1", run_id: "run-1", accepted_seq: 1 }, 202);
+    }
+    if (parsed.pathname.includes("/cancel")) return json({ ok: true });
+    if (!parsed.pathname.endsWith("/events")) throw new Error(`unexpected K-brain URL ${parsed.pathname}`);
+    eventStreams += 1;
+    if (eventStreams > 1) {
+      // After Stop the turn waits for the backend to confirm the cancellation.
+      const seq = Number(parsed.searchParams.get("after_seq")) + 1;
+      return new Response(stream(event(seq, "run.cancelled")));
+    }
+    const body = new ReadableStream({
+      start(stream) {
+        if (firstEvents) stream.enqueue(new TextEncoder().encode(firstEvents));
+        init.signal?.addEventListener("abort", () => stream.error(webKitFetchAbort()), { once: true });
+        // The user presses Stop while the reply is still streaming.
+        setTimeout(() => controller.abort(), 20);
+      },
+    });
+    return new Response(body, { headers: { "content-type": "text/event-stream" } });
+  };
+}
+
+test("Stop mid-stream keeps the partial reply without the fetch AbortError text", async () => {
+  storage.clear();
+  const controller = new AbortController();
+  const result = await runKBrainTurn({
+    ...baseParams,
+    fetch: stopFetch({ controller, firstEvents: event(2, "assistant.text.delta", { text: "partial reply" }) }),
+    signal: controller.signal,
+  });
+  assert.equal(result.stopReason, "aborted");
+  assert.equal(result.errorMessage, undefined);
+  assert.deepEqual(result.content, [{ type: "text", text: "partial reply" }]);
+  assert.doesNotMatch(JSON.stringify(result), /Fetch is aborted/);
+});
+
+test("Stop before any output settles as an empty stopped turn, not raw abort text", async () => {
+  storage.clear();
+  const controller = new AbortController();
+  const result = await runKBrainTurn({
+    ...baseParams,
+    fetch: stopFetch({ controller }),
+    signal: controller.signal,
+  });
+  assert.equal(result.stopReason, "aborted");
+  assert.equal(result.errorMessage, undefined);
+  assert.deepEqual(result.content, []);
 });

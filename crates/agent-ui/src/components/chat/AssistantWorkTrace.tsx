@@ -3,8 +3,9 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { chatTimestamp, workDuration } from "@liveagent/ui/lib/chat/workTiming";
 import { isDocumentHidden } from "@liveagent/ui/lib/shared/documentVisibility";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { LazyCollapse } from "./LazyCollapse";
+import { useExpandProcessByDefault, useProcessDefaultChange } from "./processDisclosure";
 import { useAttentionDisclosure } from "./useAttentionDisclosure";
 
 const PIXEL_KEYS = [
@@ -19,6 +20,15 @@ const PIXEL_KEYS = [
   "bottom-end",
 ] as const;
 
+// Diagonal wave from the left column outward: 90ms per step away from the middle row.
+const PIXEL_DELAYS = PIXEL_KEYS.map((_, index) => {
+  const row = Math.floor(index / 3);
+  const column = index % 3;
+  return (column + Math.abs(row - 1)) * 90;
+});
+
+type WorkPixelStyle = CSSProperties & { "--chat-work-delay": `${number}ms` };
+
 function WorkPixelGrid({ active }: { active: boolean }) {
   return (
     // 3×4px + 2×1.5px = 15px，比下方活动行的 12px 图标列宽：居中溢出到图标列
@@ -29,11 +39,16 @@ function WorkPixelGrid({ active }: { active: boolean }) {
       data-chat-work-grid=""
     >
       <span className="grid shrink-0 grid-cols-activity-dots gap-1p5px">
-        {PIXEL_KEYS.map((key) => (
+        {PIXEL_KEYS.map((key, index) => (
           <span
             key={key}
-            className={cn("size-1 bg-foreground opacity-15", "data-paused:opacity-45")}
+            // Frozen while the turn waits on the user: still legible, visibly not cycling.
+            className={cn(
+              "size-1 bg-foreground opacity-15 animate-chat-work-pixel motion-reduce:animate-none",
+              "data-paused:animate-none data-paused:opacity-45",
+            )}
             data-paused={active ? undefined : ""}
+            style={{ "--chat-work-delay": `${PIXEL_DELAYS[index] ?? 0}ms` } as WorkPixelStyle}
           />
         ))}
       </span>
@@ -96,17 +111,24 @@ export function AssistantWorkTrace({
   const validDuration = workDuration(durationMs);
   // 没有总结文案的回合（被打断、失败、只有过程）挂载时展开：折叠后只剩标题，
   // 用户看不到已经执行过的步骤。有文案的历史回合仍折叠，只露出回答。
+  // 设置里开了「默认展开执行过程」时，过程区块始终以展开态挂载，且回合结束后不再自动折叠。
+  const expandProcessByDefault = useExpandProcessByDefault();
   const [expanded, setExpanded] = useAttentionDisclosure(
     attentionRequired,
-    running || !collapseAfterAnswer,
+    running || !collapseAfterAnswer || expandProcessByDefault,
   );
 
   // 有总结文案时，回合完成（running 变 false）后自动折叠「处理中」区块一次；
   // 之后 disclosure 所有权交还给用户，手动展开/折叠不再被强制收回，
   // 也不会和 attentionRequired（待用户交互的卡片）的强制展开打架。
   useEffect(() => {
-    if (!running && !attentionRequired && collapseAfterAnswer) setExpanded(false);
-  }, [running, attentionRequired, collapseAfterAnswer, setExpanded]);
+    if (!running && !attentionRequired && collapseAfterAnswer && !expandProcessByDefault) {
+      setExpanded(false);
+    }
+  }, [running, attentionRequired, collapseAfterAnswer, expandProcessByDefault, setExpanded]);
+  useProcessDefaultChange(expandProcessByDefault, (expand) =>
+    setExpanded(expand || running || !collapseAfterAnswer || attentionRequired),
+  );
   const [elapsedMs, setElapsedMs] = useState(
     () =>
       validDuration ??

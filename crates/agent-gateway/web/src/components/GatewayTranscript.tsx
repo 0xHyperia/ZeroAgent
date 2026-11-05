@@ -5,6 +5,7 @@ import {
 import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
 import { AssistantVisualActivity } from "@liveagent/ui/components/chat/AssistantVisuals";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
+import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
 import { RetryDetailsBlock } from "@liveagent/ui/components/chat/RetryDetailsBlock";
@@ -1185,7 +1186,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 {row.deliverables?.length ? (
                   <AssistantDeliverables items={row.deliverables} onOpenFileLink={onOpenFileLink} />
                 ) : null}
-                <AssistantVisualActivity messageId={row.key}/>
+                <AssistantVisualActivity messageId={row.key} />
                 {isLatestLiveStreaming &&
                 !shouldShowPendingLiveBubble &&
                 retryAttempts &&
@@ -1405,6 +1406,7 @@ export function GatewayTranscript({
         {footer}
       </div>
       <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
+      <ChatFileLinkContextMenuHost />
     </div>
   );
 }

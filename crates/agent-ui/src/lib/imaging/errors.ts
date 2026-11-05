@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   IMAGE_UNAVAILABLE: "Image module unavailable",
   IMAGE_NO_IMAGE_OUTPUT: "Provider returned no image output",
   IMAGE_RESULT_UNKNOWN: "Image execution result is unknown",
+  IMAGE_OUTPUT_SAVE_FAILED: "Generated image could not be saved",
   IMAGE_METHOD_NOT_ALLOWED: "Image method is not allowed",
   IMAGE_TOO_LARGE: "Image upload is too large",
   IMAGE_PROTOCOL_ERROR: "Invalid image server response",
@@ -23,6 +24,24 @@ const messages: Record<string, string> = {
   IMAGE_STREAM_ENDED: "Image event stream ended before completion",
   IMAGE_EXPORT_FAILED: "Image export failed",
 };
+/** Codes with a fixed client message; the UI localizes each by code. */
+export const IMAGE_ERROR_CODES = Object.keys(messages);
+export const IMAGE_ERROR_FALLBACK_MESSAGE = "Image operation failed";
+
+const MAX_REASON_LENGTH = 200;
+/** The backend sanitizes reasons; this keeps a misbehaving server from sending a wall of text. */
+function safeReason(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // Control and bidi-override characters could garble or reorder the surrounding text.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: strips control characters from server text
+  const text = value.replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]+/g, " ").trim();
+  if (!text) return undefined;
+  // Count code points so the cut never splits a surrogate pair.
+  const points = Array.from(text);
+  return points.length > MAX_REASON_LENGTH
+    ? `${points.slice(0, MAX_REASON_LENGTH - 1).join("")}…`
+    : text;
+}
 
 /** Never attaches response bodies, request inputs, native URLs or an upstream cause. */
 export class ImageClientError extends Error implements ImageError {
@@ -30,6 +49,7 @@ export class ImageClientError extends Error implements ImageError {
   readonly status: number;
   readonly retryable: boolean;
   readonly requestId: string;
+  readonly reason?: string;
   readonly details?: ImageErrorDetails;
   constructor(
     code: string,
@@ -37,14 +57,16 @@ export class ImageClientError extends Error implements ImageError {
     retryable = false,
     requestId = "",
     details?: ImageErrorDetails,
+    reason?: unknown,
   ) {
     const safeCode = /^IMAGE_[A-Z0-9_]{1,80}$/.test(code) ? code : "IMAGE_UNAVAILABLE";
-    super(messages[safeCode] ?? "Image operation failed");
+    super(messages[safeCode] ?? IMAGE_ERROR_FALLBACK_MESSAGE);
     this.name = "ImageClientError";
     this.code = safeCode;
     this.status = status;
     this.retryable = retryable;
     this.requestId = safeLabel(requestId);
+    this.reason = safeReason(reason);
     this.details = details === undefined ? undefined : parseDetails(details);
   }
 }
@@ -99,12 +121,14 @@ export function parseImageError(value: unknown): ImageError {
     value.retryable,
     value.requestId,
     value.details === undefined ? undefined : parseDetails(value.details),
+    value.reason,
   );
   return {
     code: error.code,
     message: error.message,
     retryable: error.retryable,
     requestId: error.requestId,
+    ...(error.reason === undefined ? {} : { reason: error.reason }),
     ...(error.details === undefined ? {} : { details: error.details }),
   };
 }
@@ -129,6 +153,7 @@ export async function responseError(response: Response): Promise<ImageClientErro
         error.retryable,
         error.requestId,
         error.details,
+        error.reason,
       );
     } catch {
       return protocolError(status);

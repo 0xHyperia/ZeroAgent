@@ -1,3 +1,4 @@
+import { readKBrainHealthResponse } from "@liveagent/ui/lib/kbrain/health";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriHost } from "../host";
 import type { NativeProfileCredential } from "./profile";
@@ -116,21 +117,16 @@ async function verifyBrowserHealth(
       },
       signal: requestController.signal,
     });
-    if (!response.ok) throw new Error(`ZeroAgent engine health check failed (${response.status})`);
-    return (await response.json()) as { status?: unknown; version?: unknown };
+    if (!response.ok) throw new Error(`K-brain backend health check failed (${response.status})`);
+    return readKBrainHealthResponse(response);
   })();
   try {
-    const health = await withTimeout(
+    await withTimeout(
       healthRequest,
       options.timeoutMs ?? DEFAULT_BROWSER_BOOTSTRAP_TIMEOUT_MS,
       options.signal,
       (error) => requestController.abort(error),
     );
-    if (health.status !== "ok" || health.version !== "kbrain.agent.v1") {
-      throw new Error(
-        `ZeroAgent engine protocol mismatch (reported version ${String(health.version)})`,
-      );
-    }
   } finally {
     options.signal?.removeEventListener("abort", abortRequest);
   }

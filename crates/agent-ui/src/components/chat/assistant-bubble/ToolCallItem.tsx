@@ -3,7 +3,9 @@ import {
   retainRunningToolContent,
   submitAskUserQuestionAnswers,
   submitPlanDecision,
+  useAskUserQuestionPending,
   usePendingToolApproval,
+  usePermissionAutoResolved,
   usePlanDecisionState,
 } from "@liveagent/adapters/assistantBubble";
 import { AskUserQuestionCard } from "@liveagent/ui/components/chat/AskUserQuestionCard";
@@ -28,6 +30,10 @@ import {
   type ToolTraceItem,
   toolResultMessageToText,
 } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
+import {
+  showChatFileLinkContextMenu,
+  withChatFileLinkMenuIntent,
+} from "@liveagent/ui/lib/chat/chatFileLinkContextMenuStore";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import {
   EXIT_PLAN_MODE_TOOL_NAME,
@@ -53,6 +59,7 @@ import {
   isSubagentCardToolCall,
 } from "./assistantBubbleUtils";
 import { PublicToolActivity } from "./PublicToolActivity";
+import { ToolPermissionMarker } from "./ToolPermissionMarker";
 import { ShellToolDisplay, ToolArgsDisplay, ToolResultDisplay } from "./ToolResultDisplay";
 
 // 折叠摘要里行内命令的展示上限:远超任何实际窗口一行可容纳的字符数,视觉
@@ -97,7 +104,8 @@ function FileOperationTarget({
       )}
       title={operation.path}
       aria-label={`${actionLabel} ${operation.path}`}
-      onClick={() => onOpenFileLink(fileLink)}
+      onClick={() => onOpenFileLink(withChatFileLinkMenuIntent(fileLink))}
+      onContextMenu={(event) => showChatFileLinkContextMenu(event, fileLink)}
     >
       {operation.fileName}
     </button>
@@ -145,11 +153,14 @@ function ToolCallItem({
   // 提问卡运行期强制展开等待作答；应答落定后自动收起。
   const shouldKeepAskOpen = !readOnly && isAskUser && (Boolean(isRunning) || !result);
   const shouldCloseAnsweredAsk = isAskUser && Boolean(result);
-  // 截止时间和提交动作由宿主适配器提供，确保两端都使用各自的权威服务。
-  const askDeadlineAt =
-    isAskUser && isRunning && !result
-      ? readAskUserQuestionDeadline(item.toolCall.id, item.toolCall.arguments)
-      : undefined;
+  // 截止时间、挂起状态和提交动作由宿主适配器提供，确保两端都使用各自的权威服务。
+  // 工具调用先于提问登记到达（K-brain 的 AI 审查或审批门夹在中间），未登记时
+  // 卡片不可作答，否则提交只会得到“提问未挂起”。
+  const askPending = useAskUserQuestionPending(item.toolCall.id, item.toolCall.arguments);
+  const askAnswerable = isAskUser && Boolean(isRunning) && !result && !readOnly && askPending;
+  const askDeadlineAt = askAnswerable
+    ? readAskUserQuestionDeadline(item.toolCall.id, item.toolCall.arguments)
+    : undefined;
   const submitAskAnswers = useCallback(
     (answers: AskUserQuestionAnswer[]) => submitAskUserQuestionAnswers(item.toolCall.id, answers),
     [item.toolCall.id],
@@ -171,11 +182,23 @@ function ToolCallItem({
   // 工具审批由宿主适配器读取。审批发生在工具执行前，不能用 isRunning 作门。
   const pendingApproval = usePendingToolApproval(item.toolCall.id, item.toolCall.arguments);
   const isApprovalPending = !readOnly && !isRedactedToolContent && !result && pendingApproval;
+  // 后端没有询问就放行(只读或已记住的规则)时,工具行带一个小标记说明原因。
+  const permissionAutoResolved = usePermissionAutoResolved(
+    item.toolCall.id,
+    item.toolCall.arguments,
+  );
+  // 命令运行中收到输出（#975）就展开卡片显示实时输出；成功结束后再自动收起，
+  // 失败时保持展开以便查看错误。用户手动开合过则不再干预。
+  const hasLiveOutput = isBash && !result && Boolean(item.liveOutput);
   const shouldAutoOpen =
     !isRedactedToolContent &&
-    (item.toolCall.name === "Image" || builtinResultKind === "display_image" || shouldKeepAskOpen);
+    (item.toolCall.name === "Image" ||
+      builtinResultKind === "display_image" ||
+      shouldKeepAskOpen ||
+      hasLiveOutput);
   const [open, setOpen] = useState(readOnly || isRedactedToolContent ? false : shouldAutoOpen);
   const userInteractedRef = useRef(false);
+  const liveAutoOpenedRef = useRef(false);
   const isSubagentCard = isSubagentCardToolCall(item.toolCall);
   const hasArgs = Object.keys(item.toolCall.arguments || {}).length > 0;
   const isStreamingFilePreviewTool = FILE_TOOL_TEXT_FIELDS[item.toolCall.name] !== undefined;
@@ -270,7 +293,7 @@ function ToolCallItem({
     ? t("chat.toolApproval.waitingStatus")
     : isRunning
       ? isAskUser
-        ? askQuestions.length > 0
+        ? askQuestions.length > 0 && askPending
           ? t("chat.askUser.waiting")
           : t("chat.askUser.preparing")
         : isPlanCard
@@ -293,6 +316,7 @@ function ToolCallItem({
   const statusTextClass =
     result?.isError || shellSessionFailed ? "text-[hsl(var(--chat-error))]" : "text-foreground/45";
 
+  const liveOutputSettledOk = Boolean(result) && !result?.isError && !shellSessionFailed;
   useEffect(() => {
     if (readOnly || isRedactedToolContent) return;
     if (userInteractedRef.current) return;
@@ -301,9 +325,21 @@ function ToolCallItem({
     } else if (shouldCloseAnsweredAsk) {
       setOpen(false);
     } else if (shouldAutoOpen) {
+      if (hasLiveOutput) liveAutoOpenedRef.current = true;
       setOpen(true);
+    } else if (liveAutoOpenedRef.current && liveOutputSettledOk) {
+      liveAutoOpenedRef.current = false;
+      setOpen(false);
     }
-  }, [isRedactedToolContent, readOnly, shouldAutoOpen, shouldCloseAnsweredAsk, shouldKeepAskOpen]);
+  }, [
+    hasLiveOutput,
+    isRedactedToolContent,
+    liveOutputSettledOk,
+    readOnly,
+    shouldAutoOpen,
+    shouldCloseAnsweredAsk,
+    shouldKeepAskOpen,
+  ]);
 
   const canExpand =
     !isRedactedToolContent &&
@@ -356,6 +392,7 @@ function ToolCallItem({
           />
         ) : null}
       </span>
+      <ToolPermissionMarker marker={permissionAutoResolved} />
     </>
   ) : compactChip ? (
     <>
@@ -402,6 +439,7 @@ function ToolCallItem({
         <span className="min-w-0 flex-1" />
       )}
 
+      <ToolPermissionMarker marker={permissionAutoResolved} />
       {displayIsRunning || result?.isError || shellSessionFailed ? (
         <span className={cn("shrink-0 text-tiny", statusTextClass)}>{statusLabel}</span>
       ) : null}
@@ -443,6 +481,7 @@ function ToolCallItem({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <ToolPermissionMarker marker={permissionAutoResolved} />
         {displayIsRunning ? (
           <AssistantStatus
             className="min-h-0 gap-1.5 text-xs text-foreground/45"
@@ -544,7 +583,7 @@ function ToolCallItem({
               answers={askDetails?.answers}
               cancelled={askDetails?.cancelled === true}
               timedOut={askDetails?.timedOut === true}
-              interactive={Boolean(isRunning) && !result && !readOnly}
+              interactive={askAnswerable}
               deadlineAt={askDeadlineAt}
               onSubmit={submitAskAnswers}
             />
@@ -647,6 +686,7 @@ export function areToolTraceItemsEqual(previous: ToolTraceItem, next: ToolTraceI
     previous.toolCall.id === next.toolCall.id &&
     previous.toolCall.name === next.toolCall.name &&
     areStableValuesEqual(previous.publicStatus, next.publicStatus) &&
+    previous.liveOutput === next.liveOutput &&
     areStableValuesEqual(previous.toolCall.arguments, next.toolCall.arguments) &&
     areToolResultsEqual(previous.toolResult, next.toolResult)
   );

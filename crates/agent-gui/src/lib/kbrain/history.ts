@@ -5,7 +5,10 @@ import type {
   Message,
   TextContent,
 } from "@liveagent/app/lib/agentTypes";
-import type { HostedSearchBlock } from "@liveagent/ui/lib/chat/hostedSearch";
+import {
+  type HostedSearchBlock,
+  normalizeHostedSearchBlock,
+} from "@liveagent/ui/lib/chat/hostedSearch";
 import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
 import { parseUserMessageContentWithUploads } from "@liveagent/ui/lib/chat/uploadedFiles";
 import {
@@ -34,6 +37,7 @@ import {
 import { questionResultDetails } from "./questions";
 import { getConfiguredKBrainConnection } from "./runtimeConnection";
 import { confirmKBrainMutation, hasKBrainMutationSync } from "./sessionSyncState";
+import { displayImageResultDetails, kbrainToolImages } from "./toolImages";
 import { contextToKBrainMessages } from "./turn";
 import type {
   KBrainHistoryResponse,
@@ -112,14 +116,11 @@ function historyStopReason(reason: string | undefined): AssistantMessage["stopRe
 }
 
 function toHostedSearch(value: KBrainMessage["hosted_search"]): HostedSearchBlock[] {
-  return (value ?? []).map((search) => ({
-    type: "hostedSearch" as const,
-    id: search.id,
-    provider: search.provider,
-    status: search.status,
-    queries: search.queries,
-    sources: search.sources,
-  }));
+  // 已落库的旧记录里 queries/sources 可能是 null，回读时同样归一化（#1069）。
+  return (value ?? []).flatMap((search) => {
+    const block = normalizeHostedSearchBlock(search);
+    return block ? [block] : [];
+  });
 }
 
 function toMessage(
@@ -163,8 +164,16 @@ function toMessage(
   }
   if (message.role === "tool") {
     const converted = userContent(message);
-    const content =
-      typeof converted === "string" ? [{ type: "text" as const, text: converted }] : converted;
+    const textAndFiles = (
+      typeof converted === "string" ? [{ type: "text" as const, text: converted }] : converted
+    ).filter((part) => part.type !== "image");
+    const output = textAndFiles
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("");
+    const isError = message.stop_reason === "error" || message.stop_reason === "cancelled";
+    const images = kbrainToolImages(message.content, output);
+    const content = [...textAndFiles, ...images.content];
     return {
       role: "toolResult",
       toolCallId: message.tool_call_id || `kbrain-tool-${index}`,
@@ -190,8 +199,9 @@ function toMessage(
           },
           taskRunId ?? "history",
           index,
-        ),
-      isError: message.stop_reason === "error" || message.stop_reason === "cancelled",
+        ) ??
+        displayImageResultDetails(message.name, images.images, isError),
+      isError,
       timestamp,
     };
   }
