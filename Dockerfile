@@ -10,6 +10,9 @@ COPY crates/virtual-core/package.json crates/virtual-core/package.json
 COPY crates/agent-ui/package.json crates/agent-ui/package.json
 COPY crates/agent-gui/package.json crates/agent-gui/package.json
 COPY crates/agent-gateway/web/package.json crates/agent-gateway/web/package.json
+COPY crates/cloud-executor/package.json crates/cloud-executor/package.json
+# Frozen installation reads the workspace patch before resolving any packages.
+COPY patches/@extend-ai__react-xlsx@0.19.0.patch patches/
 RUN pnpm install --frozen-lockfile --filter @liveagent/gateway-webui...
 
 # The vendored @tanstack/virtual-core ships TypeScript source (exports point
@@ -18,6 +21,7 @@ COPY crates/virtual-core crates/virtual-core
 COPY crates/agent-ui crates/agent-ui
 COPY crates/agent-gateway/web crates/agent-gateway/web
 COPY scripts/vite-resource-preview-assets.mjs scripts/vite-resource-preview-assets.d.mts scripts/
+COPY docs/licenses/duke-sheets-MIT.txt docs/licenses/
 ARG ZEROAGENT_APP_VERSION
 RUN ZEROAGENT_APP_VERSION="$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
 

@@ -29,12 +29,10 @@ test("missing safety modes preserve the existing unsandboxed default", () => {
 
 // P2#6:未识别的模式值必须向严格侧收敛,不能静默降级成最宽松的非 ask 值。
 test("unrecognized command safety modes fail closed to ask", () => {
-  // Missing values take the default "always"; the retired "auto" migrates to it.
-  assert.equal(normalizeCommandSafetyMode(undefined), "always");
-  assert.equal(normalizeCommandSafetyMode(null), "always");
-  assert.equal(normalizeCommandSafetyMode("  "), "always");
-  assert.equal(normalizeCommandSafetyMode("auto"), "always");
-  for (const mode of ["ask", "always", "sandbox", "sandboxOffline"]) {
+  assert.equal(normalizeCommandSafetyMode(undefined), "auto");
+  assert.equal(normalizeCommandSafetyMode(null), "auto");
+  assert.equal(normalizeCommandSafetyMode("  "), "auto");
+  for (const mode of ["ask", "auto", "sandbox", "sandboxOffline"]) {
     assert.equal(normalizeCommandSafetyMode(` ${mode} `), mode);
   }
   assert.equal(normalizeCommandSafetyMode("sandboxStrictest"), "ask");

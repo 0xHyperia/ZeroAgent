@@ -6,9 +6,9 @@
   "text_conflicts": 75,
   "counts": {
     "adapt": 135,
-    "adopt": 301,
+    "adopt": 300,
     "defer": 18,
-    "partial": 64,
+    "partial": 65,
     "reject": 13
   },
   "entries": [
@@ -2591,9 +2591,9 @@
     {
       "path": "crates/agent-gui/test/tools/sandbox-policy.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
-      "notes": "Release result retained; identical paths may already exist on the product baseline."
+      "notes": "Keep the ZeroAgent implementation at this path; see the feature boundary in the sync report."
     },
     {
       "path": "crates/agent-gui/test/tools/tool-approval-remember.test.mjs",
@@ -3732,6 +3732,8 @@
   ],
   "additional_integration_paths": [
     ".github/upstream-ownership.yaml",
+    ".github/upstream-sync.json",
+    "Dockerfile",
     "crates/agent-gateway/internal/account/cloud_run_replay_test.go",
     "crates/agent-gateway/test/webui/sheet-scroll.test.mjs",
     "crates/agent-gui/test/backend/release-android.test.mjs",

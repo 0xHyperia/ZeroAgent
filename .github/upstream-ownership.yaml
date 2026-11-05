@@ -2,6 +2,38 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "crates/agent-gui/test/design-system-browser/.gitignore",
+      "ownership": "zeroagent_owned",
+      "risk": "low",
+      "checks": [
+        "保留独立设计浏览器验证的产物隔离，避免提交生成文件和本地截图"
+      ]
+    },
+    {
+      "glob": "crates/cloud-executor/sandbox/template/.dockerignore",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "隔离执行镜像的构建上下文，禁止宿主依赖缓存、配置及凭据进入镜像"
+      ]
+    },
+    {
+      "glob": "design-qa.md",
+      "ownership": "zeroagent_owned",
+      "risk": "low",
+      "checks": [
+        "保留 ZeroAgent 界面设计验收记录和本地验证入口"
+      ]
+    },
+    {
+      "glob": "patches/@extend-ai__react-xlsx@0.19.0.patch",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "锁定并应用表格预览补丁，冻结安装、离线渲染和生产镜像包含对应许可证"
+      ]
+    },
+    {
       "glob": "{crates/agent-gateway/internal/kbrain/health.go,crates/agent-ui/src/lib/kbrain/health.ts,crates/agent-gui/src-tauri/src/services/kbrain_health.rs,crates/agent-ui/src/lib/chat/permissionModes.ts}",
       "ownership": "adapted",
       "risk": "high",

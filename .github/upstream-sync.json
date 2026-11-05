@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.0-beta.24",
-  "base_commit": "3e6960ea3968b58ce36163bc22731b82a046d6ec",
-  "commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
-  "integration_commit": "5fc68941829b15ff13a4d7cb17cd67dded97816d",
-  "previous_tag": "v2.0.0-beta.23",
-  "previous_upstream_commit": "b2049905a89462e766b4aa7d6aa76b3a4cbef144",
-  "prerelease": true,
-  "validation_status": "local merge validated: GUI/WebUI/Windows Native, explicit real-backend runtime, Linux Gateway full/race and backend full/affected-race, plus isolated PostgreSQL18/Redis8 runtime image smoke passed; production Dockerfile build blocked by Go image pull; macOS/Android/signing/real-account acceptance pending",
-  "channel": "preview",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.0-beta.24",
-  "published_at": "2026-10-28T09:54:26Z"
+  "tag": "v2.0.8",
+  "base_commit": "68e331ead9c1f622125bfa17ac6009d7ac498d8f",
+  "commit": "514ec76d6b1fa2e4dfa70a167c2bae9a7897a3fd",
+  "integration_commit": "798908cbd09434a90b96d2f57521a7b6f965219a",
+  "previous_tag": "v2.0.0-beta.24",
+  "previous_upstream_commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "prerelease": false,
+  "validation_status": "local integration: Windows native and patched backend, GUI and WebUI, Gateway unit/race/vet and production image dependency recovery; macOS/Android device/signing and real-account acceptance pending",
+  "channel": "stable",
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.8",
+  "published_at": "2026-11-05T06:03:51Z"
 }
