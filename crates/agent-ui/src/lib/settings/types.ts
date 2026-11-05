@@ -169,6 +169,8 @@ export type ComposerContextDisplayMode = "statsBar" | "both" | "ring";
 export type CustomSettings = {
   sidebarShortcuts: SidebarShortcuts;
   conversationTitleModel?: SelectedModel;
+  /** Default target for new image drafts in this backend; existing drafts retain their target. */
+  imageGenerationTargetId?: string;
   // AI commit-message generation in the Git review dock. Unset means "follow
   // the current conversation model"; a stored selection whose provider/model
   // is no longer active normalizes back to unset, restoring that fallback.

@@ -25,6 +25,16 @@ const builtins: Record<
       "把产品想法变成清楚的用户流程、可比较的视觉方案和可运行的界面。可以从需求研究、体验审查、设计探索或已有参考开始，沿用你的品牌与组件规范，完成桌面和手机布局，并核对实际交互。提供截图、需求或项目文件，即可继续当前工作。",
     skills: {
       "product-design": "产品设计",
+      index: "产品设计",
+      "get-context": "明确设计任务",
+      "user-context": "产品上下文",
+      research: "研究需求",
+      audit: "审查体验",
+      ideate: "探索设计",
+      "image-to-code": "从设计图实现",
+      "url-to-code": "从网页实现",
+      "design-qa": "验证设计",
+      share: "保存与分享",
       "design-research": "研究需求",
       "design-audit": "审查体验",
       "design-ideate": "探索设计",
@@ -48,7 +58,12 @@ const builtins: Record<
     image: createPlugin,
     overview:
       "把经常重复的一组工作整理成个人插件。从你的目标和现有工作说明开始，梳理主流程、辅助技能与交付标准，生成可以检查和导入的插件包。也可以完善自己创建的插件，保留已经有效的方法。",
-    skills: { "plugin-creator": "创建插件", "update-plugin": "完善插件" },
+    skills: {
+      "plugin-creator": "创建插件",
+      "create-plugin": "创建插件",
+      "update-plugin": "完善插件",
+      "prepare-plugin-submission": "准备插件提交",
+    },
   },
   "skill-creator": {
     name: "创建技能",

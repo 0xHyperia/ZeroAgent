@@ -51,6 +51,7 @@ import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
 import { FloorNavRail } from "@liveagent/ui/pages/chat/transcript/FloorNavRail";
+import { ProviderSettingsDialog } from "@liveagent/ui/pages/settings/ProvidersSection";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type ChangeEvent,
@@ -111,6 +112,7 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import { waitForCloudChatRetry } from "@/lib/cloudChatRuns";
 import {
   buildCloudComposerText,
   cloudComposerExtensions,
@@ -118,6 +120,7 @@ import {
   cloudPackageSkill,
   createCloudExtensionsAdapter,
 } from "@/lib/cloudExtensions";
+import { cloudGenerationSettings } from "@/lib/cloudGenerationSettings";
 import { siteRevisionText } from "@/lib/cloudSiteRevision";
 import {
   CLOUD_SPACE_HOME,
@@ -126,6 +129,7 @@ import {
   type CloudSpaceLocation,
   createCloudSpaceClient,
 } from "@/lib/cloudSpace";
+import { CloudModelPreferencesSection } from "./settings/CloudModelPreferencesSection";
 import "../cloud-space.css";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import type { TranscriptRow } from "@/lib/chat/transcript/types";
@@ -334,13 +338,7 @@ const ExtensionsWorkspace = lazy(() =>
   })),
 );
 const EMPTY_PATHS = new Set<string>();
-const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>([
-  "account",
-  "system",
-  "providers",
-  "devices",
-  "image-studio",
-]);
+const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
 
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const guard = captureAccountRequestGuard();
@@ -644,11 +642,20 @@ export function CloudChatPage({
     Boolean(requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)),
   );
   const [settingsSection, setSettingsSection] = useState<SectionId>(initialSettingsSection);
-  const customizeSettingsReturn = useRef<number | null>(null);
-  useEffect(() => {
-    if (!accountSettingsOpen || customizeSettingsReturn.current !== user.id)
-      customizeSettingsReturn.current = null;
-  }, [accountSettingsOpen, user.id]);
+  const [modelPreferencesOwner, setModelPreferencesOwner] = useState<number | null>(null);
+  const openModelPreferences = useCallback(() => setModelPreferencesOwner(user.id), [user.id]);
+  const openComposerSettings = useCallback(
+    (section?: SectionId) => {
+      if (section === "model-preferences" || section === "image-studio") {
+        openModelPreferences();
+        return;
+      }
+      if (section) setSettingsSection(section);
+      setCustomize((value) => ({ ...value, open: false }));
+      setAccountSettingsOpen(true);
+    },
+    [openModelPreferences],
+  );
   const settingsHistoryOpen = useRef(accountSettingsOpen);
   const sidebarDestination = workspaceView === "library" ? "library" : "chat";
   const sidebarPreview = useCloudSidebarPreview(
@@ -670,20 +677,11 @@ export function CloudChatPage({
       const open = Boolean(requested && CLOUD_SETTINGS_SECTIONS.has(requested));
       settingsHistoryOpen.current = open;
       if (open) setSettingsSection(requested as SectionId);
-      if (!open && customizeSettingsReturn.current === user.id) {
-        customizeSettingsReturn.current = null;
-        setCustomize({ owner: user.id, open: true, visited: true });
-        requestAnimationFrame(() =>
-          sidebarPreview.rootRef.current
-            ?.querySelector<HTMLButtonElement>("[data-extension-configure-images]")
-            ?.focus(),
-        );
-      }
       setAccountSettingsOpen(open);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [user.id, sidebarPreview.rootRef]);
+  }, []);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
@@ -692,6 +690,9 @@ export function CloudChatPage({
     listenerRoot: transcriptViewport?.parentElement,
     trackKeys: true,
   });
+  const titleRefreshAbort = useRef<AbortController | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes must stop the previous title refresh.
+  useEffect(() => () => titleRefreshAbort.current?.abort(), [conversationId, user.id]);
   const abortRef = useRef<AbortController | null>(null);
   const submissionAbortRef = useRef<AbortController | null>(null);
   const pendingSubmissionRef = useRef<PendingRunSubmission | null>(null);
@@ -1520,7 +1521,7 @@ export function CloudChatPage({
               setStreamNotice(cause.message);
           },
         })
-        .then(async () => {
+        .then(async (terminal) => {
           if (!isCurrentView(view) || attachedRunIdRef.current !== run.id) return;
           // The terminal event is committed with the final message; replace optimistic rows by its IDs.
           const response = await historyClient.list(view.conversationId, {
@@ -1529,6 +1530,37 @@ export function CloudChatPage({
           if (isCurrentView(view) && attachedRunIdRef.current === run.id)
             setMessages((current) => mergeCloudChatHistory(current, response.messages));
           await refreshConversations();
+          if (
+            terminal.state === "completed" &&
+            response.messages.filter((message) => message.role === "user").length === 1
+          ) {
+            titleRefreshAbort.current?.abort();
+            const titleController = new AbortController();
+            titleRefreshAbort.current = titleController;
+            // Read-only bounded refresh: it never starts or retries model generation.
+            void (async () => {
+              const preferences = await cloudGenerationSettings(undefined, titleController.signal);
+              if (!preferences.title.enabled || !isCurrentView(view)) return;
+              const original = await conversationClient.get(
+                view.conversationId,
+                titleController.signal,
+              );
+              for (const delay of [500, 1500, 3000, 5000, 10000]) {
+                await waitForCloudChatRetry(delay, titleController.signal);
+                if (!isCurrentView(view)) return;
+                const next = await conversationClient.get(
+                  view.conversationId,
+                  titleController.signal,
+                );
+                if (!isCurrentView(view)) return;
+                setSelectedConversation(next);
+                if (next.title !== original.title) {
+                  await refreshConversations();
+                  return;
+                }
+              }
+            })().catch(() => undefined);
+          }
         })
         .catch((cause) => {
           if (
@@ -1551,7 +1583,14 @@ export function CloudChatPage({
           setRunConnection(null);
         });
     },
-    [displayRun, isCurrentView, refreshConversations, runsClient, historyClient],
+    [
+      displayRun,
+      isCurrentView,
+      refreshConversations,
+      runsClient,
+      historyClient,
+      conversationClient,
+    ],
   );
 
   const pendingQueue = useCloudChatQueueController({
@@ -4079,14 +4118,8 @@ export function CloudChatPage({
       onDismissNavigation={() => {
         if (sidebar.isMobile) setSidebarOpen(false);
       }}
-      onOpenAccount={() => {
-        setSettingsSection("account");
-        setAccountSettingsOpen(true);
-      }}
-      onOpenSettings={() => {
-        setSettingsSection("system");
-        setAccountSettingsOpen(true);
-      }}
+      onOpenAccount={() => openComposerSettings("account")}
+      onOpenSettings={() => openComposerSettings("system")}
       onLogout={onLogout}
     />
   );
@@ -4565,10 +4598,7 @@ export function CloudChatPage({
                       }
                       settings={settings}
                       sidebarOpen={sidebarOpen}
-                      onOpenSettings={(section) => {
-                        if (section) setSettingsSection(section);
-                        setAccountSettingsOpen(true);
-                      }}
+                      onOpenSettings={openComposerSettings}
                       onToggleTheme={() =>
                         setSettings((current) => ({
                           ...current,
@@ -4636,10 +4666,7 @@ export function CloudChatPage({
                                     client={artifactsClient}
                                     messages={messages}
                                     running={streaming}
-                                    onConfigure={() => {
-                                      setSettingsSection("image-studio");
-                                      setAccountSettingsOpen(true);
-                                    }}
+                                    onConfigure={openModelPreferences}
                                     onEdit={(item) => void editGeneratedImage(item)}
                                   >
                                     <GatewayTranscript
@@ -4997,10 +5024,7 @@ export function CloudChatPage({
                                   ).catch((cause) => setError(String(cause)));
                                 }}
                                 onSelectExecutionMode={() => undefined}
-                                onOpenSettings={(section) => {
-                                  if (section) setSettingsSection(section);
-                                  setAccountSettingsOpen(true);
-                                }}
+                                onOpenSettings={openComposerSettings}
                                 onChatRuntimeControlsChange={(patch) => {
                                   const next = patchCloudChatRuntimeControls(
                                     runtimeControls,
@@ -5542,12 +5566,7 @@ export function CloudChatPage({
                   onRefresh={() => setExtensionRefresh((value) => value + 1)}
                   onBack={() => setCustomize((value) => ({ ...value, open: false }))}
                   onTry={tryExtension}
-                  onConfigureImages={() => {
-                    customizeSettingsReturn.current = user.id;
-                    setCustomize((value) => ({ ...value, open: false }));
-                    setSettingsSection("image-studio");
-                    setAccountSettingsOpen(true);
-                  }}
+                  onConfigureImages={openModelPreferences}
                 />
               </Suspense>
             </WorkbenchCanvas>
@@ -5559,20 +5578,9 @@ export function CloudChatPage({
                 settings={settings}
                 setSettings={setSettings}
                 saveState={settingsSaveState}
-                backLabel={customizeSettingsReturn.current === user.id ? "返回生成图像" : undefined}
+                onOpenModelPreferences={openModelPreferences}
                 onBack={() => {
-                  const restoreCustomize = customizeSettingsReturn.current === user.id;
-                  customizeSettingsReturn.current = null;
                   setAccountSettingsOpen(false);
-                  if (restoreCustomize) {
-                    setCustomize({ owner: user.id, open: true, visited: true });
-                    requestAnimationFrame(() =>
-                      sidebarPreview.rootRef.current
-                        ?.querySelector<HTMLButtonElement>("[data-extension-configure-images]")
-                        ?.focus(),
-                    );
-                    return;
-                  }
                   requestAnimationFrame(() =>
                     sidebarPreview.rootRef.current
                       ?.querySelector<HTMLButtonElement>(
@@ -5607,6 +5615,24 @@ export function CloudChatPage({
             </SettingsWorkspace>
           ) : null}
         </WorkbenchShell>
+        {modelPreferencesOwner === user.id ? (
+          <ProviderSettingsDialog
+            settings={settings}
+            setSettings={setSettings}
+            providerType="codex"
+            onClose={() => setModelPreferencesOwner(null)}
+            singleColumn
+            description="标题设置保存后生效；其他偏好修改自动保存。"
+            content={
+              <CloudModelPreferencesSection
+                key={user.id}
+                settings={settings}
+                setSettings={setSettings}
+                ownerId={user.id}
+              />
+            }
+          />
+        ) : null}
         {researchConfirmation && isCurrentView(researchConfirmation.view) ? (
           <CloudChatResearchConfirmation
             key={researchConfirmation.id}

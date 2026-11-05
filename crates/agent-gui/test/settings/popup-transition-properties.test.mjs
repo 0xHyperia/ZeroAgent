@@ -5,32 +5,19 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 const require = createRequire(new URL("../../package.json", import.meta.url));
 
-test("popup transitions include Tailwind v4's independent scale and translate properties", async () => {
-  const sources = [
-    ["../../../agent-ui/src/components/ui/popover.tsx", ["scale", "opacity"]],
-  ];
-  for (const [path, properties] of sources) {
-    const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    const candidates = source.match(/transition-\[[^\]]+\]/g) ?? [];
-    const result = await require("postcss")([
-      require("@tailwindcss/postcss")({ optimize: false }),
-    ]).process(
-      '@import "tailwindcss" source(none);\n@source inline(' + JSON.stringify(candidates.join(" ")) + ');',
-      { from: fileURLToPath(new URL("../../src/popup-transition-check.css", import.meta.url)) },
-    );
-    const transitions = [];
-    result.root.walkDecls("transition-property", (decl) => transitions.push(decl.value.split(",").map((v) => v.trim())));
-    assert.ok(transitions.some((values) => properties.every((p) => values.includes(p))),
-      `${path}: exiting popup must transition ${properties.join(", ")}`);
-  }
+test("shared popup primitives use a quiet opacity transition with reduced-motion support", () => {
+ for (const name of ["popover", "dropdown-menu"]) {
+  const source=readFileSync(new URL(`../../../agent-ui/src/components/ui/${name}.tsx`,import.meta.url),"utf8");
+  assert.match(source,/transition-opacity/);assert.match(source,/data-\[starting-style\]:opacity-0/);assert.match(source,/data-\[ending-style\]:opacity-0/);assert.match(source,/motion-reduce:transition-none/);
+  assert.doesNotMatch(source,/zoom-in|zoom-out|scale-95/);
+ }
 });
-
 
 test("branch menu inherits shared dropdown animation without a second transition", () => {
   const source = readFileSync(new URL("../../../agent-ui/src/components/git/GitBranchSelector.tsx", import.meta.url), "utf8");
   const popup = source.slice(source.indexOf("<DropdownMenuContent"), source.indexOf("</DropdownMenuContent>"));
   assert.doesNotMatch(popup, /data-\[starting-style\]|data-\[ending-style\]/);
   const primitive = readFileSync(new URL("../../../agent-ui/src/components/ui/dropdown-menu.tsx", import.meta.url), "utf8");
-  assert.match(primitive, /data-\[open\]:animate-in/);
-  assert.match(primitive, /data-\[closed\]:animate-out/);
+  assert.match(primitive, /data-\[starting-style\]:opacity-0/);
+  assert.match(primitive, /data-\[ending-style\]:opacity-0/);
 });

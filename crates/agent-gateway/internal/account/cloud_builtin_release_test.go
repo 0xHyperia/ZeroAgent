@@ -64,7 +64,7 @@ func TestBuiltinRedesignRetainsPinnedReleaseSources(t *testing.T) {
 			}
 			execution.run.RequestContent = cloudJSON("continue")
 			latest, err := execution.resolveSkill(ctx, entry.id, entry.id, "")
-			if err != nil || latest["instructions"] != current["instructions"] {
+			if err != nil || latest["version"] != int64(3) || !strings.Contains(latest["instructions"].(string), entry.title) {
 				t.Fatal("un-pinned invocation did not select current workflow", err)
 			}
 		})
@@ -85,5 +85,31 @@ func TestPluginPrimaryReferencePinsItsBundledWorkflows(t *testing.T) {
 	execution.run.RequestContent = cloudJSON("zeroagent-skill:plugin-creator/1/plugin-creator zeroagent-skill:plugin-creator/2/update-plugin")
 	if _, err := execution.resolveSkill(context.Background(), "plugin-creator", "update-plugin", ""); !errors.Is(err, ErrCloudRunConflict) {
 		t.Fatal("conflicting package releases were accepted", err)
+	}
+}
+
+func TestArchivedSecondBuiltinWorkflowBytes(t *testing.T) {
+	expected := map[string]string{
+		"imagegen/SKILL.md":                  "46242df548a556a2f0080ba0c91c1f9cb8cb27e843898dcf75c9abfdfd1a549d",
+		"plugin-creator/SKILL.md":            "5e094ccb1d034ecdad24b994f378905709be7666980503e209d7dba2d7492fc8",
+		"plugin-creator/update-plugin.md":    "ca0cc379ee36a636f4edab5fdedc22edb5a54dc2e27050100120a648b5dff8d5",
+		"product-design/SKILL.md":            "d0ede3eb39880e3d214eb98b4ee68451a8a20d4380543058e0a3562f4d2e5468",
+		"product-design/design-audit.md":     "66c1a125ea008e4772772187f84b241eeef7006568b03de5e10b49d0fdfc4e6f",
+		"product-design/design-ideate.md":    "6248ef849838f57dfc98991aa525dc1d594820d734d2a438eb479b6d0b6646de",
+		"product-design/design-implement.md": "5d5d52eddfdecbe175ed16af51dfc1ee40d65ea1b713df6c2012929740e7b366",
+		"product-design/design-research.md":  "bef748e00d0e68052bc95a0d4f45ce732bf87531bddcf5a966068696d4ebaf26",
+		"product-design/design-share.md":     "e4e1d5f82e7b94f54ce24ac5a195b267519e0ece59696e22ae92110d454a0be1",
+		"product-design/design-verify.md":    "dc686eec527890eafc843ef5a7926c1c0a65d34f60a654d1a8194a4247ce96ab",
+		"product-design/skill-creator.md":    "f6eb470df34d1a900b78fa72b636e4e12ca73ecaa9ce2773e974f60946f167bb",
+		"skill-creator/SKILL.md":             "f6eb470df34d1a900b78fa72b636e4e12ca73ecaa9ce2773e974f60946f167bb",
+	}
+	for name, hash := range expected {
+		content, err := cloudBuiltinSkills.ReadFile("skills-releases/v2/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual := fmt.Sprintf("%x", sha256.Sum256(content)); actual != hash {
+			t.Fatalf("immutable second release changed: %s", name)
+		}
 	}
 }

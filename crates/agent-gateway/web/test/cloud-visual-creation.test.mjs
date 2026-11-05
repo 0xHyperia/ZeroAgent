@@ -82,14 +82,15 @@ test("default image setting uses its own CAS preference and preserves selected g
   env=await surface(t,{
     "@/lib/cloudImageSettings":{cloudImageSettings:settings},
     "@/lib/relay/client":{listRelayApiKeys:async()=>[{id:41,name:"图像分组",status:"active",key_configured:true,group:{name:"设计",platform:"openai"}}],getRelayProviderModels:async()=>({data:[{id:"gpt-image-test"}]})},
-    "@liveagent/ui/components/models/ModelPickerContent":{ModelPickerContent:props=>env.React.createElement("button",{onClick:()=>props.onSelect(props.options[0].value)},"选择测试模型")},
+    "@liveagent/ui/components/models/ModelPickerContent":{ModelPickerContent:props=>env.React.createElement("div",null,env.React.createElement("button",{onClick:()=>props.onSelect(props.options[0].value)},"选择测试模型"),env.React.createElement("button",{onClick:()=>props.onSelect("")},props.noneLabel))},
   });
   const {CloudImageSettingsSection}=env.loadModule("src/pages/settings/CloudImageSettingsSection.tsx");
   await env.act(async()=>{env.root.render(env.React.createElement(CloudImageSettingsSection));await tick();});
-  await env.act(async()=>[...env.host.querySelectorAll("button")].find(x=>x.textContent.includes("选择生图模型")).click());
+  await env.act(async()=>[...env.host.querySelectorAll("button")].find(x=>x.getAttribute("aria-label")==="生图模型").click());
   await env.act(async()=>[...document.querySelectorAll("button")].find(x=>x.textContent==="选择测试模型").click());
   assert.deepEqual(writes,[{expected_version:0,provider_key_id:41,model:"gpt-image-test"}]);
   assert.match(env.host.textContent,/gpt-image-test/);
-  await env.act(async()=>[...env.host.querySelectorAll("button")].find(x=>x.textContent==="清除默认模型").click());
+  await env.act(async()=>env.host.querySelector('[aria-label="生图模型"]').click());
+  await env.act(async()=>[...document.querySelectorAll("button")].find(x=>x.textContent==="未配置").click());
   assert.deepEqual(writes[1],{expected_version:1,provider_key_id:0,model:""});
 });

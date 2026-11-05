@@ -858,6 +858,8 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.deleteConfirmDesc": "此操作不可撤销。",
   "settings.deleteConfirmYes": "确定删除",
   "settings.customSettings": "高级设置",
+  "settings.modelPreferences": "模型与高级设置",
+  "settings.modelPreferencesMore": "显示、请求与故障转移",
   "settings.openCustomSettings": "打开高级设置",
   "settings.closeCustomSettings": "关闭高级设置",
   "settings.customSettingsModelsTitle": "生成模型",

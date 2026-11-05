@@ -13,7 +13,7 @@ const job = { id: 'j', projectId: 'p', revision: 1, lastEventSeq: 0, status: 'ca
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 function storage() { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; }
 function fake(overrides = {}) { return { capabilities: async () => ({ supported: true }), listTargets: async () => [target], listProjects: async () => ({ items: [{ id: 'p', title: 'P' }, { id: 'q', title: 'Q' }] }), listJobs: async () => ({ items: [] }), getJob: async () => job, subscribe: async () => {}, readAsset: async () => new Blob(), ...overrides }; }
-async function setup(overrides = {}, store = storage(), owner = 'o', backend = 'b') { const c = new ImageStudioController(fake(overrides), owner, backend, store); await c.start(); return c; }
+async function setup(overrides = {}, store = storage(), owner = 'o', backend = 'b') { const c = new ImageStudioController(fake(overrides), owner, backend, store, target.id); await c.start(); return c; }
 
 // Render the real composer through the existing TS/JSX fixture loader. Hooks persist across rerenders.
 function composer(c) {
@@ -89,7 +89,7 @@ test('review7: submitting snapshot is durable before dispatch and recovers as un
 
 test('review7: history failure cannot drop a successfully restored draft', async () => {
   const store = storage(); store.setItem(draftKey('o', 'b', 'p'), serializeDraft(scope, draft, [target]));
-  const asset = deferred(); const c = new ImageStudioController(fake({ listJobs: async () => { throw Error('503'); }, readAsset: () => asset.promise }), 'o', 'b', store);
+  const asset = deferred(); const c = new ImageStudioController(fake({ listJobs: async () => { throw Error('503'); }, readAsset: () => asset.promise }), 'o', 'b', store, target.id);
   const starting = c.start(); await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(c.view.draftReady, false);
   asset.resolve(new Blob()); await starting;

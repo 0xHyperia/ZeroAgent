@@ -84,6 +84,7 @@ import {
   CHAT_TRANSCRIPT_WIDTH_CSS_VAR,
   TranscriptWidthControls,
 } from "@liveagent/ui/pages/chat/transcript/TranscriptWidthControls";
+import { DeviceModelPreferencesDialog } from "@liveagent/ui/pages/settings/DeviceModelPreferencesDialog";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type CSSProperties,
@@ -389,6 +390,8 @@ export function GatewayAppView({
     switchExecutionTarget,
     settings,
     settingsOpen,
+    modelPreferencesOpen,
+    setModelPreferencesOpen,
     settingsProviderId,
     settingsSaveState,
     settingsSection,
@@ -2325,6 +2328,7 @@ export function GatewayAppView({
                 }
               >
                 <SettingsPage
+                  onOpenModelPreferences={() => setModelPreferencesOpen(true)}
                   imageClient={imageStudio.host?.client}
                   registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
                   settings={{
@@ -2350,6 +2354,14 @@ export function GatewayAppView({
                 />
               </SettingsWorkspace>
             </div>
+          ) : null}
+          {modelPreferencesOpen ? (
+            <DeviceModelPreferencesDialog
+              settings={settings}
+              setSettings={setSettings}
+              client={imageStudio.host?.client}
+              onClose={() => setModelPreferencesOpen(false)}
+            />
           ) : null}
           {relayUser ? (
             <FirstRunOnboarding

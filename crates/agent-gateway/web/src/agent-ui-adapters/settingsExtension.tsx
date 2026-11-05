@@ -1,5 +1,4 @@
-import { ImageIcon, MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
-import { CloudImageSettingsSection } from "../pages/settings/CloudImageSettingsSection";
+import { MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
 import {
   configureResourceHostCapabilities,
@@ -38,23 +37,10 @@ export function createSettingsExtension(props: SettingsPageProps): {
         settings={props.settings}
         setSettings={props.setSettings}
         cloudChatMode={props.runtimeKind === "web_chat"}
+        onOpenModelPreferences={props.onOpenModelPreferences}
       />
     ),
     sections: [
-      ...(props.runtimeKind === "web_chat"
-        ? [
-            {
-              id: "image-studio",
-              groupKey: "settings.groupGeneral",
-              groupOrder: 10,
-              order: 25,
-              labelKey: "settings.navImageCreation",
-              icon: <ImageIcon className="size-4" />,
-              showSaveIndicator: false,
-              render: () => <CloudImageSettingsSection />,
-            },
-          ]
-        : []),
       {
         id: "account",
         groupKey: "settings.groupGeneral",

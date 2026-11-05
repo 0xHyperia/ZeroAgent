@@ -47,7 +47,13 @@ test("settings surfaces preserve native nodes, props, refs and shared class sets
       assert.equal(node.getAttribute("aria-label"), "Example");
       assert.equal(node.childElementCount, 1);
       assert.equal(node.textContent, "Content");
-      assert.deepEqual([...node.classList].sort(), [...new Set((classes + " mt-3").split(" "))].sort());
+      if (Component === SettingsNotice) {
+        assert.ok(node.classList.contains("app-notice"));
+        assert.ok(node.classList.contains("mt-3"));
+        assert.equal(node.dataset.tone, variantProps.variant.includes("warning") ? "warning" : "error");
+        assert.equal(node.dataset.density, variantProps.variant === "inline-error" ? "compact" : undefined);
+        for (const token of (variantProps.className ?? "").split(" ").filter(Boolean)) assert.ok(node.classList.contains(token));
+      } else assert.deepEqual([...node.classList].sort(), [...new Set((classes + " mt-3").split(" "))].sort());
       for (const prop of ["variant", "kind", "selected"]) assert.equal(node.hasAttribute(prop), false);
       await act(async () => node.click());
       assert.equal(clicks, 1);

@@ -40,7 +40,7 @@ function client(overrides = {}) {
   };
 }
 function controller(overrides = {}, store = storage(), owner = 'o', backend = 'b') {
-  return new ImageStudioController(client(overrides), owner, backend, store);
+  return new ImageStudioController(client(overrides), owner, backend, store, target.id);
 }
 
 test('empty start creates one fixed-title archive and can submit immediately; restart reuses it', async () => {
@@ -190,14 +190,14 @@ test('editing legacy result supports reference fallback and ignores a superseded
   } finally { c.dispose(); }
 });
 
-test('new model configuration auto-selects an enabled model after an empty start and preserves prompt', async () => {
+test('new models remain unconfigured after refresh until explicitly selected, preserving the prompt', async () => {
   const c = controller({ listTargets: async () => [] });
   try {
     await c.start(); c.updateDraft({ prompt: 'keep me' }); assert.equal(c.view.draft.targetId, '');
     const enabled = { ...target, parameters: [{ key: 'size', label: '尺寸', type: 'string', default: 'large' }] };
     c.client.listTargets = async () => [{ ...target, id: 'disabled', enabled: false }, enabled];
-    await c.refreshTargets(); assert.equal(c.view.draft.targetId, 't'); assert.equal(c.view.draft.prompt, 'keep me'); assert.deepEqual(c.view.draft.parameters, { size: 'large' });
-    assert.deepEqual(c.validation(), []); c.setTarget('t'); assert.equal(c.view.draft.targetId, 't');
+    await c.refreshTargets(); assert.equal(c.view.draft.targetId, ''); assert.equal(c.view.draft.prompt, 'keep me');
+    assert.notDeepEqual(c.validation(), []); c.setTarget('t'); assert.equal(c.view.draft.targetId, 't'); assert.deepEqual(c.view.draft.parameters, { size: 'large' }); assert.deepEqual(c.validation(), []);
   } finally { c.dispose(); }
 });
 
@@ -549,4 +549,37 @@ test('review fixes: restoring a plain job clears draft framing; network failures
     await c.upload(new Blob(['image'], { type: 'image/png' }), 'cat.png', 'source');
     assert.match(c.view.notice, /无法连接/);
   } finally { c.dispose(); }
+});
+
+
+test('configured default affects new drafts while restored drafts and active controllers keep their selected targets', async()=>{
+ const other={...target,id:'second'},third={...target,id:'third'};
+ const api=client({listTargets:async()=>[target,other,third]});
+ const store=storage();
+ const c=new ImageStudioController(api,'o','b',store,'second');
+ try {
+  await c.start();assert.equal(c.view.draft.targetId,'second');
+  c.updateDraft({prompt:'preserved work'});c.setDefaultTargetId('third');
+  assert.equal(c.view.draft.targetId,'second');assert.equal(c.view.draft.prompt,'preserved work');
+  await c.selectProject('old');assert.equal(c.view.draft.targetId,'third');
+ } finally {c.dispose();}
+ const restored=new ImageStudioController(api,'o','b',store,'t');
+ try {await restored.start();assert.equal(restored.view.draft.targetId,'third');} finally {restored.dispose();}
+ const unavailable=new ImageStudioController(api,'other','b',storage(),'not-enabled');
+ try {await unavailable.start();assert.equal(unavailable.view.draft.targetId,'');} finally {unavailable.dispose();}
+});
+
+
+test('unconfigured defaults never fall back on startup, new archives, refresh or draft restoration', async()=>{
+ let calls=0; const store=storage(); const api=client({createJob:async()=>{calls++;return job('archive','j');}});
+ const c=new ImageStudioController(api,'unconfigured','b',store);
+ try {
+  await c.start();assert.equal(c.view.draft.targetId,'');c.updateDraft({prompt:'keep me'});
+  await c.submit();assert.equal(calls,0);assert.notDeepEqual(c.validation(),[]);
+  await c.refreshTargets();assert.equal(c.view.draft.targetId,'');
+  await c.selectProject('old');assert.equal(c.view.draft.targetId,'');
+  c.setTarget('t');c.updateDraft({prompt:'explicit selection'});
+  await c.selectProject('archive');assert.equal(c.view.draft.targetId,'');
+  await c.selectProject('old');assert.equal(c.view.draft.targetId,'t');assert.equal(c.view.draft.prompt,'explicit selection');
+ } finally {c.dispose();}
 });

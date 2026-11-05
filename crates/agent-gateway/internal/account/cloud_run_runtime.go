@@ -41,6 +41,7 @@ type cloudRunRuntime struct {
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	active   map[string]context.CancelFunc
+	titles   map[int64]bool
 	config   CloudRuntimeConfig
 }
 
@@ -374,6 +375,9 @@ func (r *cloudRunRuntime) execute(run *CloudRun, owner string) {
 	_, err = r.store.CommitCloudRun(finishCtx, run.UserID, run.ID, owner, run.Attempt, CloudRunCommit{OperationID: "terminal-" + uuid.NewString(), State: state, ErrorCode: code, EventType: "run." + state, Payload: cloudJSON(payload)})
 	if err != nil && !errors.Is(err, ErrCloudRunLeaseLost) && !errors.Is(err, ErrNotFound) {
 		slog.Warn("cloud task terminal persistence failed", "run_id", run.ID)
+	}
+	if err == nil && state == CloudRunCompleted {
+		r.startCloudTitle(run)
 	}
 }
 

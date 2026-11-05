@@ -44,6 +44,7 @@ type CloudExtensionRevision struct {
 	Description string                `json:"description"`
 	Files       map[string]string     `json:"files"`
 	Skills      []CloudExtensionSkill `json:"skills"`
+	Aliases     map[string]string     `json:"aliases,omitempty"`
 	CreatedAt   time.Time             `json:"created_at"`
 }
 type CloudExtension struct {
@@ -185,9 +186,16 @@ type cloudExtensionCard struct {
 	Enabled        bool                  `json:"enabled"`
 	Builtin        bool                  `json:"builtin"`
 	Skills         []CloudExtensionSkill `json:"skills"`
+	LegacySkills   []cloudLegacySkill    `json:"legacy_skills,omitempty"`
 	DisabledSkills []string              `json:"disabled_skills"`
 	Examples       []string              `json:"examples"`
 	UpdatedAt      time.Time             `json:"updated_at"`
+}
+
+type cloudLegacySkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     int64  `json:"version"`
 }
 
 func cloudExtensionBuiltin(id string) bool {
@@ -195,6 +203,9 @@ func cloudExtensionBuiltin(id string) bool {
 }
 
 func cloudExtensionKind(p CloudExtension) string {
+	if p.Kind == "plugin" || p.Kind == "skill" {
+		return p.Kind
+	}
 	if p.Kind != "" {
 		return p.Kind
 	}
@@ -208,15 +219,17 @@ func cloudExtensionKind(p CloudExtension) string {
 }
 
 func builtinCloudExtensions() []CloudExtension {
-	current := builtinCloudExtensionRelease("skills", 2)
+	current := builtinCloudExtensionRelease("skills", 3)
 	legacy := builtinCloudExtensionRelease("skills-releases/v1", 1)
+	legacy = append(legacy, builtinCloudExtensionRelease("skills-releases/v2", 2)...)
 	for i := range current {
+		revisions := []CloudExtensionRevision{}
 		for _, old := range legacy {
 			if old.ID == current[i].ID {
-				current[i].Revisions = append(old.Revisions, current[i].Revisions...)
-				break
+				revisions = append(revisions, old.Revisions...)
 			}
 		}
+		current[i].Revisions = append(revisions, current[i].Revisions...)
 	}
 	return current
 }
@@ -224,6 +237,9 @@ func builtinCloudExtensions() []CloudExtension {
 // Release sources are embedded independently so an explicit old reference always
 // resolves the bytes that existed when that release was selected.
 func builtinCloudExtensionRelease(root string, number int64) []CloudExtension {
+	if root == "skills" {
+		return declaredBuiltinCloudExtensions(root, number)
+	}
 	result := []CloudExtension{}
 	for _, meta := range []struct{ id, name, description string }{
 		{"product-design", "Product Design", "从理解用户任务到设计、实现和验证，让产品体验完整落地。"},
@@ -320,7 +336,29 @@ func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
 		if builtin {
 			publisher = "ZeroAgent"
 		}
-		result = append(result, cloudExtensionCard{ID: p.ID, Kind: cloudExtensionKind(p), Visibility: visibility, Owned: !builtin, Name: rev.Name, Description: rev.Description, Publisher: publisher, Version: rev.Number, Installed: p.Installed, Enabled: p.Enabled, Builtin: builtin, Skills: rev.Skills, DisabledSkills: p.DisabledSkills, Examples: examples, UpdatedAt: rev.CreatedAt})
+		disabled := []string{}
+		disabledSet := map[string]bool{}
+		for _, name := range p.DisabledSkills {
+			if !disabledSet[name] {
+				disabledSet[name] = true
+				disabled = append(disabled, name)
+			}
+		}
+		for _, skill := range rev.Skills {
+			if !cloudExtensionSkillEnabled(p, skill.Name) && p.Installed && p.Enabled && !disabledSet[skill.Name] {
+				disabledSet[skill.Name] = true
+				disabled = append(disabled, skill.Name)
+			}
+		}
+		legacy := []cloudLegacySkill{}
+		for _, old := range p.Revisions[:len(p.Revisions)-1] {
+			for _, skill := range old.Skills {
+				if cloudExtensionSkillEnabled(p, skill.Name) {
+					legacy = append(legacy, cloudLegacySkill{Name: skill.Name, Description: skill.Description, Version: old.Number})
+				}
+			}
+		}
+		result = append(result, cloudExtensionCard{ID: p.ID, Kind: cloudExtensionKind(p), Visibility: visibility, Owned: !builtin, Name: rev.Name, Description: rev.Description, Publisher: publisher, Version: rev.Number, Installed: p.Installed, Enabled: p.Enabled, Builtin: builtin, Skills: rev.Skills, LegacySkills: legacy, DisabledSkills: disabled, Examples: examples, UpdatedAt: rev.CreatedAt})
 	}
 	return result
 }
@@ -331,7 +369,7 @@ func cloudExtensionRevisionValid(v CloudExtensionRevision) bool {
 	}
 	seen := map[string]bool{}
 	for key, body := range v.Files {
-		if !validCloudToolPath(key) || strings.HasPrefix(key, ".") || len(body) > 64<<10 || !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
+		if !validCloudToolPath(key) || (strings.HasPrefix(key, ".") && key != ".codex-plugin/plugin.json") || len(body) > 64<<10 || !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
 			return false
 		}
 	}
@@ -340,6 +378,14 @@ func cloudExtensionRevisionValid(v CloudExtensionRevision) bool {
 			return false
 		}
 		seen[sk.Name] = true
+	}
+	if len(v.Aliases) > 20 {
+		return false
+	}
+	for alias, target := range v.Aliases {
+		if !cloudSkillName.MatchString(alias) || seen[alias] || !seen[target] {
+			return false
+		}
 	}
 	return true
 }
@@ -470,8 +516,10 @@ func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Req
 				return
 			}
 			valid := false
+			aliases := map[string]string{}
 			for _, entry := range effectiveCloudExtensions(doc) {
 				if entry.ID == input.ID && len(entry.Revisions) > 0 {
+					aliases = entry.Revisions[len(entry.Revisions)-1].Aliases
 					for _, skill := range entry.Revisions[len(entry.Revisions)-1].Skills {
 						if skill.Name == input.Skill {
 							valid = true
@@ -485,7 +533,7 @@ func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Req
 			}
 			filtered := []string{}
 			for _, name := range p.DisabledSkills {
-				if name != input.Skill {
+				if name != input.Skill && aliases[name] != input.Skill {
 					filtered = append(filtered, name)
 				}
 			}
@@ -567,7 +615,7 @@ func readCloudSkillArchive(raw []byte) (CloudExtensionRevision, error) {
 		if len(v.Files) >= 64 || f.UncompressedSize64 > 64<<10 {
 			return v, ErrCloudRunLimit
 		}
-		if !f.Mode().IsRegular() || !validCloudToolPath(f.Name) || strings.HasPrefix(f.Name, ".") {
+		if !f.Mode().IsRegular() || !validCloudToolPath(f.Name) || (strings.HasPrefix(f.Name, ".") && f.Name != ".codex-plugin/plugin.json") {
 			return v, ErrCloudRunInvalid
 		}
 		if _, ok := v.Files[f.Name]; ok {
@@ -587,6 +635,10 @@ func readCloudSkillArchive(raw []byte) (CloudExtensionRevision, error) {
 			return v, ErrCloudRunLimit
 		}
 		v.Files[f.Name] = string(body)
+	}
+	if v.Files["plugin.json"] != "" || v.Files[".codex-plugin/plugin.json"] != "" {
+		declared, _, err := cloudRevisionFromManifest(v.Files)
+		return declared, err
 	}
 	keys := []string{}
 	for key := range v.Files {
@@ -701,8 +753,16 @@ func cloudExtensionSkillEnabled(p CloudExtension, name string) bool {
 	if !p.Installed || !p.Enabled {
 		return false
 	}
+	canonical := func(value string) string {
+		if len(p.Revisions) > 0 {
+			if target := p.Revisions[len(p.Revisions)-1].Aliases[value]; target != "" {
+				return target
+			}
+		}
+		return value
+	}
 	for _, n := range p.DisabledSkills {
-		if n == name {
+		if canonical(n) == canonical(name) {
 			return false
 		}
 	}
@@ -794,8 +854,21 @@ func (e *cloudRunToolExecution) resolveSkill(ctx context.Context, packageID, nam
 				return nil, ErrNotFound
 			}
 		}
+		resolvedName := name
+		if alias := v.Aliases[name]; alias != "" {
+			resolvedName = alias
+		}
+		if resolvedName == name && name == p.ID && len(v.Skills) > 0 {
+			found := false
+			for _, skill := range v.Skills {
+				found = found || skill.Name == name
+			}
+			if !found {
+				resolvedName = v.Skills[0].Name
+			}
+		}
 		for _, sk := range v.Skills {
-			if sk.Name != name {
+			if sk.Name != resolvedName || !cloudExtensionSkillEnabled(p, sk.Name) {
 				continue
 			}
 			selected := file

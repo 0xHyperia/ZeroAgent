@@ -204,7 +204,14 @@ export function RemoteDeviceWorkbench(props: Props) {
             windowTarget,
           )
         : null}
-      {updateTarget ? createPortal(props.navigationUpdate, updateTarget) : null}
+      {updateTarget
+        ? createPortal(
+            <div data-desktop-remote-chrome-slot="update" className="contents">
+              {props.navigationUpdate}
+            </div>,
+            updateTarget,
+          )
+        : null}
     </div>
   );
 }

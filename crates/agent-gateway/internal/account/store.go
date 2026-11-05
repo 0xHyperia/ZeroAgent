@@ -50,37 +50,38 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu                   sync.RWMutex
-	sessions             map[string]Session
-	devices              map[string]Device
-	deviceSessions       map[string]string
-	leases               map[string]SelectionLease
-	cloudConversations   map[string]CloudConversation
-	cloudModelLimits     map[cloudModelLimitKey]CloudModelLimits
-	cloudMessages        map[string][]CloudMessage
-	cloudRuns            *cloudRunMemoryState
-	cloudPending         map[string]*CloudPendingQueue
-	cloudPrivateDrafts   map[int64]*cloudPrivateDraftAccount
-	cloudFiles           map[string]CloudFile
-	cloudSpace           map[int64]map[string]CloudSpaceMetadata
-	cloudSpaceLimits     map[int64]int64
-	cloudSpacePolicies   map[int64]CloudSpaceLimits
-	cloudSites           *cloudSiteMemoryState
-	cloudBranches        map[string]cloudBranchReceipt
-	cloudTools           *cloudToolMemoryState
-	cloudArtifacts       *cloudArtifactMemoryState
-	cloudResearchSources *cloudResearchSourceMemoryState
-	cloudProjects        *cloudProjectMemoryState
-	cloudMemories        map[string]CloudMemory
-	cloudMemorySettings  map[int64]CloudMemorySettings
-	cloudExtensions      map[int64]CloudExtensions
-	cloudImageSettings   map[int64]CloudImageSettings
-	sessionRefresh       *memorySessionRefreshState
-	webSettings          map[int64]WebSettings
-	conversationRoutes   map[string]ConversationRoute
-	handoffs             map[string]DesktopHandoff
-	oauthTransactions    map[string]OAuthTransaction
-	now                  func() time.Time
+	mu                      sync.RWMutex
+	sessions                map[string]Session
+	devices                 map[string]Device
+	deviceSessions          map[string]string
+	leases                  map[string]SelectionLease
+	cloudConversations      map[string]CloudConversation
+	cloudModelLimits        map[cloudModelLimitKey]CloudModelLimits
+	cloudMessages           map[string][]CloudMessage
+	cloudRuns               *cloudRunMemoryState
+	cloudPending            map[string]*CloudPendingQueue
+	cloudPrivateDrafts      map[int64]*cloudPrivateDraftAccount
+	cloudFiles              map[string]CloudFile
+	cloudSpace              map[int64]map[string]CloudSpaceMetadata
+	cloudSpaceLimits        map[int64]int64
+	cloudSpacePolicies      map[int64]CloudSpaceLimits
+	cloudSites              *cloudSiteMemoryState
+	cloudBranches           map[string]cloudBranchReceipt
+	cloudTools              *cloudToolMemoryState
+	cloudArtifacts          *cloudArtifactMemoryState
+	cloudResearchSources    *cloudResearchSourceMemoryState
+	cloudProjects           *cloudProjectMemoryState
+	cloudMemories           map[string]CloudMemory
+	cloudMemorySettings     map[int64]CloudMemorySettings
+	cloudExtensions         map[int64]CloudExtensions
+	cloudImageSettings      map[int64]CloudImageSettings
+	cloudGenerationSettings map[int64]CloudGenerationSettings
+	sessionRefresh          *memorySessionRefreshState
+	webSettings             map[int64]WebSettings
+	conversationRoutes      map[string]ConversationRoute
+	handoffs                map[string]DesktopHandoff
+	oauthTransactions       map[string]OAuthTransaction
+	now                     func() time.Time
 }
 
 func NewMemoryStore() *MemoryStore {

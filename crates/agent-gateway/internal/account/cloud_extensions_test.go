@@ -194,7 +194,7 @@ func TestCloudExtensionsHTTPAuthorityAndLifecycle(t *testing.T) {
 	t.Cleanup(f.server.Close)
 	path := "/api/web-chat/extensions"
 	status, body, headers := f.request(t, "GET", path, "file-owner", nil, nil)
-	if status != 200 || headers.Get("Cache-Control") != "no-store" || !strings.Contains(string(body), "design-verify") {
+	if status != 200 || headers.Get("Cache-Control") != "no-store" || !strings.Contains(string(body), "design-qa") {
 		t.Fatal(status, string(body))
 	}
 	mutation := cloudJSON(map[string]any{"expected_version": 0, "action": "save", "revision": extensionTestRevision("private user workflow")})

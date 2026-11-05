@@ -63,7 +63,7 @@ test("Windows workbench has one header with live native controls and a marked dr
   assert.ok(calls.includes("unlisten-focus"));
 });
 
-test("Windows settings reuses the workbench frame and native controls across navigation", async () => {
+test("Windows settings retains native controls while page navigation owns its back action", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   let backs = 0;
@@ -78,8 +78,8 @@ test("Windows settings reuses the workbench frame and native controls across nav
     const frameClass = frame.className;
     const frameHeight = frame.style.height;
     await act(async () => root.render(React.createElement(WindowsSettingsHeader, { onBack: () => backs++ })));
-    assert.equal(host.firstElementChild.className, frameClass);
-    assert.equal(host.firstElementChild.style.height, frameHeight);
+    assert.equal(host.firstElementChild.className, "settings-window-chrome");
+    assert.equal(host.firstElementChild.style.height, "");
     assert.equal(host.querySelectorAll("header").length, 1);
     assert.ok(host.querySelector("[data-windows-settings-header][data-tauri-drag-region]"));
     assert.ok(host.querySelector("header > div.flex-1[data-tauri-drag-region]"));
@@ -94,8 +94,7 @@ test("Windows settings reuses the workbench frame and native controls across nav
     assert.equal(controls[1].getAttribute("aria-label"), label);
     await act(async () => controls[2].click());
     assert.deepEqual(calls.slice(before), ["minimize", "maximize", "maximize", "close"]);
-    await act(async () => host.querySelector("header > button").click());
-    assert.equal(backs, 1);
+    assert.equal(host.querySelector("header > button"), null, "page navigation supplies the single back action");
     await act(async () => root.render(chat));
     assert.equal(host.querySelectorAll("[data-windows-window-controls]").length, 1);
     assert.equal(host.querySelector("[data-windows-settings-header]"), null);

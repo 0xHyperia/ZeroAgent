@@ -1025,6 +1025,7 @@ export function ExtensionsWorkspace(props: {
           busy={writeBlocked}
           onInstall={() => void mutate({ action: "install", id: selected.pkg.id })}
           onClose={() => setSelected(null)}
+          onConfigureImages={props.onConfigureImages}
           onTry={() => {
             props.onTry(selectedPackage ?? selected.pkg, selected.skill);
             setSelected(null);
@@ -1127,6 +1128,7 @@ function SkillReader({
   onTry,
   onInstall,
   busy,
+  onConfigureImages,
 }: {
   adapter: ExtensionsAdapter;
   selection: SkillSelection;
@@ -1134,6 +1136,7 @@ function SkillReader({
   onTry: () => void;
   onInstall: () => void;
   busy: boolean;
+  onConfigureImages?: () => void;
 }) {
   const [revision, setRevision] = useState<ExtensionRevision | null>(null),
     [file, setFile] = useState(selection.skill.entry),
@@ -1267,6 +1270,16 @@ function SkillReader({
             {selection.pkg.publisher}
             {selection.pkg.kind === "plugin" ? ` · ${extensionDisplayName(selection.pkg)}` : ""}
           </span>
+          {selection.pkg.id === "imagegen" && onConfigureImages ? (
+            <Button
+              data-extension-configure-images
+              variant="outline"
+              className="ml-auto rounded-full"
+              onClick={onConfigureImages}
+            >
+              配置生图模型
+            </Button>
+          ) : null}
           <Button
             className="rounded-full"
             disabled={

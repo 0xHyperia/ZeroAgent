@@ -268,8 +268,7 @@ export function SettingsPage(props: SettingsPageProps) {
       onBack={onBack}
       backLabel={props.backLabel}
       initialSection={
-        initialSection === "image-studio" &&
-        !extension.sections.some((section) => section.id === "image-studio")
+        initialSection === "image-studio" || initialSection === "model-preferences"
           ? "providers"
           : initialSection
       }

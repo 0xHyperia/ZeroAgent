@@ -172,6 +172,9 @@ export interface TargetSnapshot {
   workflowMapping?: WorkflowMapping;
 }
 export interface ImageTarget extends TargetSnapshot {
+  source?: string;
+  providerId?: string;
+  modelId?: string;
   enabled: boolean;
   disabledReason?: string;
 }

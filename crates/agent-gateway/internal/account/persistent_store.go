@@ -212,6 +212,9 @@ CREATE TABLE IF NOT EXISTS zerobox_web_settings (
 	if _, err := tx.ExecContext(ctx, CloudImageSettingsSchema); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, CloudGenerationSettingsSchema); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, CloudModelLimitsSchema); err != nil {
 		return fmt.Errorf("migrate ZeroAgent cloud model preference schema: %w", err)
 	}

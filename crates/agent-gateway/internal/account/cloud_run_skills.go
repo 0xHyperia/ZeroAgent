@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-//go:embed skills/*/*.md skills-releases/v1/*/*.md
+//go:embed skills skills-releases
 var cloudBuiltinSkills embed.FS
 
 const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`

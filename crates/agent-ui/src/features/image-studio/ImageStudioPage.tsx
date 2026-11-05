@@ -37,6 +37,7 @@ export interface ImageStudioPageProps {
   backendId: string;
   exportDestinations?: readonly ExportDestination[];
   storage?: DraftStorage;
+  defaultTargetId?: string;
   onOpenSettings?: () => void;
   /** Host-level controls for the title bar, e.g. the app theme toggle. */
   headerActions?: ReactNode;
@@ -117,10 +118,11 @@ function ImageStudioWorkbench({
   backendId,
   exportDestinations = [],
   storage,
+  defaultTargetId,
   onOpenSettings,
   headerActions,
 }: ImageStudioPageProps) {
-  const { controller, view } = useImageStudio(client, ownerId, backendId, storage);
+  const { controller, view } = useImageStudio(client, ownerId, backendId, storage, defaultTargetId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   useEffect(

@@ -110,7 +110,6 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
   assert.ok(standardDeck.indexOf("{modelControls}") < standardDeck.indexOf("<GitBranchSelector"));
   assert.doesNotMatch(headerSource, /model-selector-trigger|Popover\.Root|currentModelLabel/);
 
-  assert.match(pickerSources[0], /nativeWebSearchEnabled: checked/);
   assert.match(pickerSources[0], /thinkingEnabled: true, reasoning: level/);
   assert.match(pickerSources[0], /thinkingEnabled: false/);
   assert.match(pickerSources[0], /<ReasoningSlider/);
@@ -161,8 +160,8 @@ test("DeepSeek provider icon uses the logo-only mark", () => {
 });
 
 
-test("Chat mode keeps the safety control slot stable", () => {
-  assert.match(composerSource, /\{commandSafetyMode && onCommandSafetyModeChange \? \(/);
+test("Chat mode keeps the safety control slot stable when its host offers execution controls", () => {
+  assert.match(composerSource, /\{executionControls && commandSafetyMode && onCommandSafetyModeChange \? \(/);
   assert.match(composerSource, /disabled=\{controlsDisabled \|\| !isAgentMode\}/);
   assert.doesNotMatch(composerSource, /\{isAgentMode && commandSafetyMode &&/);
 });

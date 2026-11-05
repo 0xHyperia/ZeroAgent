@@ -13,6 +13,7 @@ export type ExtensionPackage = {
   enabled: boolean;
   builtin: boolean;
   skills: ExtensionSkill[];
+  legacy_skills?: { name: string; description: string; version: number }[];
   disabled_skills: string[] | null;
   examples: string[];
   updated_at: string;
@@ -23,6 +24,7 @@ export type ExtensionRevision = {
   description: string;
   files: Record<string, string>;
   skills: ExtensionSkill[];
+  aliases?: Record<string, string>;
   created_at: string;
 };
 export type ExtensionCatalog = { version: number; packages: ExtensionPackage[] };

@@ -386,7 +386,10 @@ export type ChatComposerBarProps = {
   onSelectModel: (selection: SelectedModel) => void;
   onRefreshModels?: () => void | Promise<void>;
   onSelectExecutionMode: (mode: "text" | "tools") => void;
-  onOpenSettings: (section?: "providers" | "stt", providerId?: string) => void;
+  onOpenSettings: (
+    section?: "providers" | "stt" | "model-preferences",
+    providerId?: string,
+  ) => void;
   onChatRuntimeControlsChange: (patch: Partial<ChatRuntimeControls>) => void;
   onPickReadableFiles: () => void;
   /** Select a folder to mount as a read-only project root. */

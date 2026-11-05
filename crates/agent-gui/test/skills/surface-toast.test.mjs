@@ -14,7 +14,9 @@ test("root result notices remain persistent, announce details, and run undo exac
     }));
     await act(async () => new Promise(resolve => setTimeout(resolve, 180)));
     const card = document.querySelector('[role="alertdialog"]');
-    assert.ok(card.classList.contains("bg-background"));
+    assert.ok(card.classList.contains("app-notice"));
+    assert.ok(card.classList.contains("za-floating-surface"));
+    assert.ok(card.classList.contains("bg-popover"));
     assert.equal(card.classList.contains("shadow-lg"), false);
     assert.match(card.textContent, /file A: unavailable/);
     assert.equal(document.getElementById(card.getAttribute("aria-labelledby")).textContent, "Import failed");

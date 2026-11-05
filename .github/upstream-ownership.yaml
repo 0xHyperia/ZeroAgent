@@ -2,7 +2,17 @@
   "schema_version": 1,
   "rules": [
     {
-      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtensions.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go}",
+      "glob": "{crates/agent-gateway/internal/account/cloud_generation_settings.go,crates/agent-gateway/internal/account/cloud_title*.go,crates/agent-gateway/web/src/lib/cloudGenerationSettings.ts,crates/agent-gateway/web/src/pages/settings/CloudModelPreferencesSection.tsx,crates/agent-ui/src/pages/settings/DeviceImageModelPreferences.tsx}",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "ADR0072：账户 CAS、模型归属、CSRF、未知写入只读核对与账户草稿隔离",
+        "标题辅助任务一次调用、有界无工具输入、注销取消、手动改名及状态比较写回",
+        "设备默认图像目标不覆盖草稿和执行；无视频能力不提供伪配置"
+      ]
+    },
+    {
+      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtensions.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_extension_manifest*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
@@ -10,7 +20,8 @@
         "账户 CAS、包路径/体积及不可变修订、同名包拒绝猜测；界面无版本管理",
         "未知写入只读核对、旧读取不解锁、草稿及跨账户回填隔离",
         "按需技能读取不提权、实际工具启停、桌面与手机完整流程",
-        "ADR0071：@按包主入口选择、旧引用及包内指令发布一致、结构化剪贴板不升级引用"
+        "ADR0071：@按包主入口选择、旧引用及包内指令发布一致、结构化剪贴板不升级引用",
+        "ADR0073：显式技能入口与辅助资料分离、10/3/1/1 成员关系和归档白名单兼容"
       ]
     },
     {
@@ -25,170 +36,278 @@
     },
     {
       "glob": "crates/agent-ui/src/application/{WorkbenchShell.tsx,WorkbenchNavigationMount.tsx,workbenchNavigation.tsx,BrandMark.tsx,SettingsWorkspace.tsx,WorkbenchFeatureSidebar.tsx,workbenchNavigationPortal.ts}",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["ADR0059 共享外框、导航和品牌，宿主保留状态、回调及独立远程工厂", "设置往返不重挂会话树，轨道单实例、inert/离开守卫及宽窄屏验收"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "ADR0059 共享外框、导航和品牌，宿主保留状态、回调及独立远程工厂",
+        "设置往返不重挂会话树，轨道单实例、inert/离开守卫及宽窄屏验收"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/contracts/composerPresentation.ts",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["布局 presentation 与 UI capabilities 分离，不授予执行或认证权限", "云端不能被 visibility 放大能力，本机/远程保留原发送、停止、草稿及队列控制器"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "布局 presentation 与 UI capabilities 分离，不授予执行或认证权限",
+        "云端不能被 visibility 放大能力，本机/远程保留原发送、停止、草稿及队列控制器"
+      ]
     },
     {
       "glob": "crates/agent-gui/test/design-system-browser/**",
-      "ownership": "zeroagent_owned", "risk": "low",
-      "checks": ["ADR0058 真实共享组件样板，不挂载账户和执行客户端", "独立类型/构建及浏览器主题字号焦点验收，不替代原生和在线工作台"]
+      "ownership": "zeroagent_owned",
+      "risk": "low",
+      "checks": [
+        "ADR0058 真实共享组件样板，不挂载账户和执行客户端",
+        "独立类型/构建及浏览器主题字号焦点验收，不替代原生和在线工作台"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/styles/design-system.css",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["ADR0058 跨端语义角色、浅深主题、减少动态及44px触控", "Web/GUI/mobile/remote构建与实际渲染，不侵入平台数据和执行边界"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "ADR0058 跨端语义角色、浅深主题、减少动态及44px触控",
+        "Web/GUI/mobile/remote构建与实际渲染，不侵入平台数据和执行边界"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/application/{WorkbenchNavigationRail.tsx,useNavigationPreview.ts,NavigationUpdateButton.tsx}",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["预览不改固定状态，菜单/焦点/切号/触屏清理", "导航只调用宿主回调，不自行选择执行目标或创建会话"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "预览不改固定状态，菜单/焦点/切号/触屏清理",
+        "导航只调用宿主回调，不自行选择执行目标或创建会话"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/{status-notice,segmented-control,account-identity}.tsx",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["纯呈现、文本转义和明确回调，错误保留真实角色和恢复动作", "键盘、禁用、焦点、表单和跨宿主回归"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "纯呈现、文本转义和明确回调，错误保留真实角色和恢复动作",
+        "键盘、禁用、焦点、表单和跨宿主回归"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ConversationStarter.tsx",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["只向宿主建议草稿，不发送请求或启用工具", "Cloud/桌面同源卡片、键盘与窄屏"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "只向宿主建议草稿，不发送请求或启用工具",
+        "Cloud/桌面同源卡片、键盘与窄屏"
+      ]
     },
     {
       "glob": "{crates/agent-gateway/internal/account/cloud_run_site*.go,crates/agent-gateway/internal/cloudexecutor/site_bundle*.go,crates/cloud-executor/sandbox/site_bundle.py}",
-      "ownership": "zeroagent_owned", "risk": "critical",
-      "checks": ["选定目录和服务端派生输出绑定原操作，Linux 描述符检查与原子无覆盖打包", "站点清单在 canonical ready 前落库，未知结果保留同标识且不重复执行", "AI 不创建分享，Memory/PostgreSQL、实际打包和真实 S3 验证分别记录"]
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "选定目录和服务端派生输出绑定原操作，Linux 描述符检查与原子无覆盖打包",
+        "站点清单在 canonical ready 前落库，未知结果保留同标识且不重复执行",
+        "AI 不创建分享，Memory/PostgreSQL、实际打包和真实 S3 验证分别记录"
+      ]
     },
     {
       "glob": "{crates/agent-gateway/internal/cloudsite/**,crates/agent-gateway/internal/account/cloud_site*.go}",
-      "ownership": "zeroagent_owned", "risk": "critical",
-      "checks": ["不可变成果清单与有界 ZIP 校验，不复制正文或执行用户后端", "独立站点来源、按版本授权、私人会话失效、显式分享与 CAS 撤销", "缓存命中仍检查授权和原件，数据库并发及备份恢复范围"]
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "不可变成果清单与有界 ZIP 校验，不复制正文或执行用户后端",
+        "独立站点来源、按版本授权、私人会话失效、显式分享与 CAS 撤销",
+        "缓存命中仍检查授权和原件，数据库并发及备份恢复范围"
+      ]
     },
     {
       "glob": "{crates/agent-gateway/web/src/lib/cloudChatSites.ts,crates/agent-gateway/web/src/components/cloudchat/CloudChatSiteView.tsx,crates/agent-gateway/web/src/cloud-site.css}",
-      "ownership": "zeroagent_owned", "risk": "critical",
-      "checks": ["只接受绑定版本的服务端地址，跨账户迟到结果不能装入 iframe", "分享只能明确创建，未确认写入保留同请求标识，撤销后核对", "公共弹窗/提示/按钮规范、触控及实际浏览器站点闭环"]
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "只接受绑定版本的服务端地址，跨账户迟到结果不能装入 iframe",
+        "分享只能明确创建，未确认写入保留同请求标识，撤销后核对",
+        "公共弹窗/提示/按钮规范、触控及实际浏览器站点闭环"
+      ]
     },
     {
       "glob": "crates/agent-gateway/internal/account/cloud_space*.go",
       "ownership": "zeroagent_owned",
       "risk": "critical",
-      "checks": ["账户范围的原件/成果只读投影，元数据CAS和回收站不复活原件", "Memory/PostgreSQL隔离与并发、真实额度统计/双类预留、独立上传及备份范围", "数据库有界投影与账户/查询/代次绑定游标，额度不由浏览器或模型修改"]
+      "checks": [
+        "账户范围的原件/成果只读投影，元数据CAS和回收站不复活原件",
+        "Memory/PostgreSQL隔离与并发、真实额度统计/双类预留、独立上传及备份范围",
+        "数据库有界投影与账户/查询/代次绑定游标，额度不由浏览器或模型修改"
+      ]
     },
     {
       "glob": "{crates/agent-gateway/cmd/cloud-space-*/**,scripts/cloud-space/**,deploy/cloudchat/seaweedfs.compose.yaml}",
-      "ownership": "zeroagent_owned", "risk": "critical",
-      "checks": ["默认只读，显式初始化/额度修改，不打印密钥或重定向现有数据", "真实签名、条件写、持久化、隔离恢复及测试资源所有权"]
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "默认只读，显式初始化/额度修改，不打印密钥或重定向现有数据",
+        "真实签名、条件写、持久化、隔离恢复及测试资源所有权"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/resource-preview/**",
-      "ownership": "zeroagent_owned", "risk": "critical",
-      "checks": ["纯公共预览契约，宿主授权读取与账户/版本/取消边界", "摘要、大小、解压与像素限制，隔离活动内容，不自动加载外部资源"]
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "纯公共预览契约，宿主授权读取与账户/版本/取消边界",
+        "摘要、大小、解压与像素限制，隔离活动内容，不自动加载外部资源"
+      ]
     },
     {
       "glob": "scripts/vite-resource-preview-assets.{mjs,d.mts}",
-      "ownership": "zeroagent_owned", "risk": "medium",
-      "checks": ["各构建使用相同的本地版本化 PDF 资源", "固定目录白名单，无运行时 CDN 或任意路径读取"]
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "各构建使用相同的本地版本化 PDF 资源",
+        "固定目录白名单，无运行时 CDN 或任意路径读取"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ReasoningSlider.tsx",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["连续视觉位置与离散参数提交分离，悬停不保存", "指针捕获、取消、键盘整档、按模型重置与减少动态"]
+      "checks": [
+        "连续视觉位置与离散参数提交分离，悬停不保存",
+        "指针捕获、取消、键盘整档、按模型重置与减少动态"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ComposerInlineModelControls.tsx",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["复用宿主模型/思考状态和共享选择器，明确路由不换密钥", "一个视觉胶囊的两个直达区域与单弹层、预览隔离/取消、键盘/触屏/禁用、三端类型与浏览器验收"]
+      "checks": [
+        "复用宿主模型/思考状态和共享选择器，明确路由不换密钥",
+        "一个视觉胶囊的两个直达区域与单弹层、预览隔离/取消、键盘/触屏/禁用、三端类型与浏览器验收"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/styles/composer-inline.css",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["模型/思考及发送停止跨宿主共用，主题/焦点/减少动态和44px触控保持", "长模型名、窄屏与停止状态不溢出"]
+      "checks": [
+        "模型/思考及发送停止跨宿主共用，主题/焦点/减少动态和44px触控保持",
+        "长模型名、窄屏与停止状态不溢出"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/models/ModelPickerContent.tsx",
       "ownership": "adapted",
       "risk": "high",
-      "checks": ["revealSelected 显式 opt-in，默认折叠与厂商/分组具体路由保留", "只滚动模型列表，手动折叠/搜索/排序/刷新/键盘回归"]
+      "checks": [
+        "revealSelected 显式 opt-in，默认折叠与厂商/分组具体路由保留",
+        "只滚动模型列表，手动折叠/搜索/排序/刷新/键盘回归"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/styles/base.css",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["语义交互控件默认手型，文本/禁用/拖拽缩放专用光标保持", "共享菜单及两宿主构建、真实浏览器 computed cursor 验证"]
+      "checks": [
+        "语义交互控件默认手型，文本/禁用/拖拽缩放专用光标保持",
+        "共享菜单及两宿主构建、真实浏览器 computed cursor 验证"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ChatHeader.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["CloudChat 新对话导航模式显式 opt-in", "ADR0058 桌面/设备账户迁至轨道，原生窗口/主题及宽窄屏保持"]
+      "checks": [
+        "CloudChat 新对话导航模式显式 opt-in",
+        "ADR0058 桌面/设备账户迁至轨道，原生窗口/主题及宽窄屏保持"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ChatHistorySidebar*",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["历史菜单、搜索、批量选择保留；ADR0058 各宿主接入 mobileRail", "预览固定交给宿主，不反向切换当前固定状态"]
+      "checks": [
+        "历史菜单、搜索、批量选择保留；ADR0058 各宿主接入 mobileRail",
+        "预览固定交给宿主，不反向切换当前固定状态"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/sidebar.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["悬停预览显式 opt-in，不写固定状态、不占布局宽度", "mobileRail 与面板共用一个手机模态，inert/焦点/关闭及默认设备行为回归"]
+      "checks": [
+        "悬停预览显式 opt-in，不写固定状态、不占布局宽度",
+        "mobileRail 与面板共用一个手机模态，inert/焦点/关闭及默认设备行为回归"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/MentionComposer.tsx",
       "ownership": "adapted",
       "risk": "high",
-      "checks": ["富文本、IME、光标选择和原发送判定保持", "可访问名称与宿主输入用途一致，不引入另一份草稿"]
+      "checks": [
+        "富文本、IME、光标选择和原发送判定保持",
+        "可访问名称与宿主输入用途一致，不引入另一份草稿"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
       "ownership": "adapted",
       "risk": "high",
-      "checks": ["默认桌面/Agent 命令安全、队列、Git 与语音契约保持", "inline 显式 opt-in，单一编辑器/模型、草稿/引用及窄屏回归", "可选 feedback 插槽计入原高度测量；不重建编辑器，不改变默认宿主行为"]
+      "checks": [
+        "默认桌面/Agent 命令安全、队列、Git 与语音契约保持",
+        "inline 显式 opt-in，单一编辑器/模型、草稿/引用及窄屏回归",
+        "可选 feedback 插槽计入原高度测量；不重建编辑器，不改变默认宿主行为"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["紧凑标签不另建模型状态，完整可访问名称保持", "模型/推理/参数、触控焦点与两宿主回归"]
+      "checks": [
+        "紧凑标签不另建模型状态，完整可访问名称保持",
+        "模型/推理/参数、触控焦点与两宿主回归"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/useInlineComposerLayout.ts",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["不克隆编辑器，测量字体/真实宽度及附件并清理观察器", "模式/手机重排保持节点、选择范围和草稿"]
+      "checks": [
+        "不克隆编辑器，测量字体/真实宽度及附件并清理观察器",
+        "模式/手机重排保持节点、选择范围和草稿"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/chat/useComposerShapeMotion.ts",
       "ownership": "zeroagent_owned",
       "risk": "medium",
-      "checks": ["快速反向从当前高度接续，退出取消动画", "降低动态效果、默认布局与控件稳定定位"]
+      "checks": [
+        "快速反向从当前高度接续，退出取消动画",
+        "降低动态效果、默认布局与控件稳定定位"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/*tooltip*.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["Base UI 定位、菜单复合、ref 与单次点击保持", "统一语义表面、焦点描述/Escape、复制与受控触屏回归"]
+      "checks": [
+        "Base UI 定位、菜单复合、ref 与单次点击保持",
+        "统一语义表面、焦点描述/Escape、复制与受控触屏回归"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/application/ApplicationRail.tsx",
       "ownership": "adapted",
       "risk": "medium",
-      "checks": ["宿主提供真实导航与可访问名称，不自行选择执行目标", "CloudChat 宽窄屏、主题和共享 UI 类型检查"]
+      "checks": [
+        "宿主提供真实导航与可访问名称，不自行选择执行目标",
+        "CloudChat 宽窄屏、主题和共享 UI 类型检查"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/application/useUnsavedChangesPrompt.tsx",
       "ownership": "zeroagent_owned",
       "risk": "high",
-      "checks": ["项目草稿、刷新与离开保护，确认动作绑定原账户", "切号撤销待执行导航，菜单/Sheet 焦点与关闭语义"]
+      "checks": [
+        "项目草稿、刷新与离开保护，确认动作绑定原账户",
+        "切号撤销待执行导航，菜单/Sheet 焦点与关闭语义"
+      ]
     },
     {
       "glob": "crates/agent-ui/src/components/ui/sheet.tsx",

@@ -30,8 +30,12 @@ const switchTrackClassName =
 const switchThumbClassName =
   "pointer-events-none block translate-x-0.5 rounded-full bg-white shadow-sm transition-transform";
 
-/** Decorative state for a menu row that owns the checkbox interaction. */
-export function SwitchIndicator({ checked, className }: { checked: boolean; className?: string }) {
+/** Decorative state for a control that owns the switch interaction. */
+export function SwitchIndicator({
+  checked,
+  className,
+  size = "default",
+}: Pick<SwitchProps, "size"> & { checked: boolean; className?: string }) {
   return (
     <span
       aria-hidden="true"
@@ -39,13 +43,13 @@ export function SwitchIndicator({ checked, className }: { checked: boolean; clas
       className={cn(
         switchTrackClassName,
         "inline-flex items-center",
-        SWITCH_SIZES.default.track,
+        SWITCH_SIZES[size].track,
         className,
       )}
     >
       <span
         data-checked={checked ? "" : undefined}
-        className={cn(switchThumbClassName, SWITCH_SIZES.default.thumb)}
+        className={cn(switchThumbClassName, SWITCH_SIZES[size].thumb)}
       />
     </span>
   );

@@ -10,6 +10,8 @@ import (
 const maxWebChatBodyBytes = 32 << 20
 
 func (h *HTTPHandler) registerWebChat(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/web-chat/generation-settings", h.withSession(h.cloudGenerationSettingsResource))
+	mux.HandleFunc("PUT /api/web-chat/generation-settings", h.withSession(h.cloudGenerationSettingsResource))
 	h.registerCloudExtensions(mux)
 	h.registerCloudRuns(mux)
 	h.registerCloudBranches(mux)

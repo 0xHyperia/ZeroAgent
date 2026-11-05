@@ -166,6 +166,9 @@ const targetShape = {
 const snapshot: Decoder<TargetSnapshot> = object(targetShape);
 export const parseTarget: Decoder<ImageTarget> = object({
   ...targetShape,
+  source: optional(text),
+  providerId: optional(text),
+  modelId: optional(text),
   enabled: bool,
   disabledReason: optional(text),
 });

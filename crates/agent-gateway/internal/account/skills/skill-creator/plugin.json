@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "skill-creator",
+  "version": "0.3.0",
+  "description": "为重复任务创建或完善一个有清楚触发与交付的独立技能。",
+  "author": {
+    "name": "ZeroAgent"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "创建技能",
+        "shortDescription": "为重复任务创建或完善一个有清楚触发与交付的独立技能。"
+      }
+    },
+    "top.usa0": {
+      "primarySkill": "skill-creator",
+      "kind": "skill",
+      "adaptedFrom": {
+        "package": "system/skill-creator",
+        "version": "local"
+      }
+    }
+  }
+}

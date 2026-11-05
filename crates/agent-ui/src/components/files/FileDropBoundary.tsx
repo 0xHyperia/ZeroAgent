@@ -194,7 +194,9 @@ export function FileDropBoundary({
       }}
     >
       {children}
-      {coverage === "viewport" && prompt ? createPortal(prompt, document.body) : prompt}
+      {coverage === "viewport" && prompt
+        ? createPortal(<div className="layer-critical fixed inset-0">{prompt}</div>, document.body)
+        : prompt}
     </section>
   );
 }

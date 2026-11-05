@@ -103,3 +103,23 @@ test('structured paste and atomic deletion notify the host, while draft hydratio
  internals.placeCaretAfterChip(app.editor.querySelector('[data-skill-file]'));
  await app.key('Backspace');assert.equal(captured.length,2);assert.equal(captured[1].isEmpty,true);assert.equal(app.sent,0);
 });
+
+
+test('renamed manifest entries retain only explicitly archived clipboard references without advertising retired workflows',async t=>{
+ const app=await mount(t); const internals=app.env.loadModule('@liveagent/ui/components/chat/MentionComposerInternals.tsx');
+ const currentCatalog={version:4,packages:[pkg('product-design',['index','audit'],{version:3,legacy_skills:[{name:'product-design',description:'Old main',version:2},{name:'skill-creator',description:'Old bundled skill',version:2}]})]};
+ const {cloudComposerSkills,cloudComposerExtensions}=app.env.loadModule('src/lib/cloudExtensions.ts');
+ const skills=cloudComposerSkills(currentCatalog);
+ assert.deepEqual(skills.map(skill=>skill.name),['index','audit']);
+ assert.equal(cloudComposerExtensions(currentCatalog)[0].skillFile,'zeroagent-skill:product-design/3/index');
+ for(const name of ['product-design','skill-creator']) {
+  const old={name,skillFile:`zeroagent-skill:product-design/2/${name}`,baseDir:'cloud',description:'old'};
+  const restored=internals.normalizeClipboardSkill(old,skills);
+  assert.equal(restored.type,'skillMention');assert.equal(restored.skill.name,name);assert.equal(restored.skill.skillFile,old.skillFile);
+  assert.equal(internals.normalizeClipboardSkill({...old,skillFile:`zeroagent-skill:product-design/3/${name}`},skills).type,'text');
+  assert.equal(internals.normalizeClipboardSkill({...old,skillFile:`zeroagent-skill:foreign/2/${name}`},skills).type,'text');
+ }
+ assert.equal(internals.normalizeClipboardSkill({name:'not-archived',description:'unavailable',baseDir:'cloud',skillFile:'zeroagent-skill:product-design/2/not-archived'},skills).type,'text');
+ const disabled=cloudComposerSkills({...currentCatalog,packages:currentCatalog.packages.map(p=>({...p,enabled:false}))});
+ assert.notEqual(internals.normalizeClipboardSkill({name:'product-design',skillFile:'zeroagent-skill:product-design/2/product-design'},disabled)?.type,'skillMention');
+});

@@ -125,16 +125,18 @@ export async function measureInEdge(pages, expression) {
       const file = join(dir, `page-${index}.html`);
       writeFileSync(
         file,
-        `<!doctype html><html ${web ? 'data-liveagent-webui="gateway"' : ""}><head><meta charset="utf-8"><link rel="stylesheet" href="${web ? WEB_CSS : GUI_CSS}"></head><body style="margin:0"><div class="${web ? "gateway-chat-frame" : ""}" style="position:relative;width:100vw;height:100vh">${page.html}</div></body></html>`,
+        `<!doctype html><html ${web ? 'data-liveagent-webui="gateway"' : ""}><head><meta charset="utf-8"><link rel="stylesheet" href="${web ? WEB_CSS : GUI_CSS}"></head><body style="margin:0"><div class="${web ? "gateway-chat-frame" : ""}" style="position:relative;width:100%;height:100vh">${page.html}</div></body></html>`,
       );
       await send("Emulation.setDeviceMetricsOverride", { width: page.width, height: 900, deviceScaleFactor: 1, mobile: false }, sid);
       const url = pathToFileURL(file).href;
       await send("Page.navigate", { url }, sid);
+      let stylesheetReady = false;
       for (let i = 0; i < 100; i += 1) {
         const ready = await send("Runtime.evaluate", { expression: `location.href === ${JSON.stringify(url)} && document.readyState === 'complete' && document.styleSheets.length > 0`, returnByValue: true }, sid);
-        if (ready.result?.result?.value) break;
+        if (ready.result?.result?.value) { stylesheetReady = true; break; }
         await sleep(50);
       }
+      if (!stylesheetReady) throw new Error(`${page.key}: built stylesheet unavailable; finish the frontend build before measuring geometry`);
       const out = await send("Runtime.evaluate", { expression, returnByValue: true }, sid);
       if (out.result?.exceptionDetails) {
         throw new Error(`${page.key}: ${out.result.exceptionDetails.exception?.description ?? "evaluate failed"}`);

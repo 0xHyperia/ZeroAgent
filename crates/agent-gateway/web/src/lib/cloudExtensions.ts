@@ -29,7 +29,11 @@ function revisionValid(value: unknown): value is ExtensionRevision {
     record(value.files) &&
     Object.values(value.files).every((body) => typeof body === "string") &&
     Array.isArray(value.skills) &&
-    value.skills.every(skillValid)
+    value.skills.every(skillValid) &&
+    (value.aliases === undefined ||
+      (record(value.aliases) &&
+        Object.keys(value.aliases).length <= 20 &&
+        Object.values(value.aliases).every((target) => typeof target === "string")))
   );
 }
 function skillValid(value: unknown) {
@@ -66,6 +70,18 @@ export function parseExtensionCatalog(value: unknown): ExtensionCatalog {
         pkg.skills.length > 0 &&
         (pkg.kind !== "skill" || pkg.skills.length === 1) &&
         pkg.skills.every(skillValid) &&
+        (pkg.legacy_skills === undefined ||
+          (Array.isArray(pkg.legacy_skills) &&
+            pkg.legacy_skills.length <= 4096 &&
+            pkg.legacy_skills.every(
+              (legacy: unknown) =>
+                record(legacy) &&
+                typeof legacy.name === "string" &&
+                typeof legacy.description === "string" &&
+                Number.isSafeInteger(legacy.version) &&
+                (legacy.version as number) > 0 &&
+                (legacy.version as number) < (pkg.version as number),
+            ))) &&
         (pkg.disabled_skills === null ||
           (Array.isArray(pkg.disabled_skills) &&
             pkg.disabled_skills.every((name: unknown) => typeof name === "string"))) &&
@@ -166,6 +182,7 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
                 description: input.revision.description,
                 files: input.revision.files,
                 skills: input.revision.skills,
+                ...(input.revision.aliases ? { aliases: input.revision.aliases } : {}),
               },
             }
           : input;
@@ -210,6 +227,11 @@ export function cloudComposerSkills(catalog: ExtensionCatalog | null): MentionCo
           description: skill.description,
           skillFile: `zeroagent-skill:${pkg.id}/${pkg.version}/${skill.name}`,
           baseDir: "cloud",
+          legacyReferences: (pkg.legacy_skills ?? []).map((legacy) => ({
+            name: legacy.name,
+            description: legacy.description,
+            skillFile: `zeroagent-skill:${pkg.id}/${legacy.version}/${legacy.name}`,
+          })),
         })),
     );
 }

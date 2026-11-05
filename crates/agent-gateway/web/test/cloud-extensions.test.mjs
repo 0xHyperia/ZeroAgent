@@ -88,7 +88,7 @@ async function mount(t,overrides={}) {
  const host=document.body.appendChild(document.createElement('div')),root=env.createRoot(host),calls=[];
  const adapter={scope:'test-account',list:async()=>catalog,read:async()=>({revision,version:4}),mutate:async(version,input)=>{calls.push({version,input});return catalog;},importArchive:async()=>catalog,download:async()=>new Blob(['archive']),...overrides};
  const {ExtensionsWorkspace}=env.loadModule('@liveagent/ui/features/extensions/ExtensionsWorkspace.tsx');
- let props={adapter,catalog:overrides.catalog??catalog,loading:false,error:'',onRefresh(){calls.push({refresh:true});},onBack(){},onTry(...args){calls.push({try:args});},onCatalog(next){props={...props,catalog:next};root.render(env.React.createElement(ExtensionsWorkspace,props));}};
+ let props={adapter,onConfigureImages:overrides.onConfigureImages,catalog:overrides.catalog??catalog,loading:false,error:'',onRefresh(){calls.push({refresh:true});},onBack(){},onTry(...args){calls.push({try:args});},onCatalog(next){props={...props,catalog:next};root.render(env.React.createElement(ExtensionsWorkspace,props));}};
  const render=()=>env.act(async()=>{root.render(env.React.createElement(ExtensionsWorkspace,props));await tick();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});await render();
  const click=async(name)=>{const el=[...document.querySelectorAll('button,[role^="menuitem"]')].find(el=>(el.getAttribute('aria-label')??el.textContent).trim()===name);assert.ok(el,name);await env.act(async()=>{el.click();await tick();});};
@@ -255,4 +255,18 @@ test('long plugin details progressively disclose skills without losing the rest 
  assert.equal(document.querySelectorAll('.za-extension-skill-link').length,5);
  await app.click('查看其余 3 项技能');assert.equal(document.querySelectorAll('.za-extension-skill-link').length,8);
  await app.click('收起技能');assert.equal(document.querySelectorAll('.za-extension-skill-link').length,5);
+});
+
+
+test('configuring images keeps the selected skill reader mounted behind the settings modal',async t=>{
+ let opened=0;
+ const image={...publicSkill,id:'imagegen',name:'imagegen',skills:[{name:'imagegen',description:'Generate images',entry:'SKILL.md'}]};
+ const app=await mount(t,{catalog:{version:4,packages:[image]},onConfigureImages:()=>opened++});
+ await app.click('技能');
+ await app.env.act(async()=>{document.querySelector('[data-extension-open="imagegen"]').click();await tick();});
+ const reader=document.querySelector('[role="dialog"]');assert.ok(reader);
+ await app.click('配置生图模型');
+ assert.equal(opened,1);
+ assert.equal(document.querySelector('[role="dialog"]'),reader,'the reader and its current file must survive advanced settings');
+ assert.ok(reader.querySelector('[data-extension-configure-images]'));
 });

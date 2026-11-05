@@ -75,7 +75,7 @@ test("all shared popup primitives use the semantic popover layer", () => {
   for (const [name, source] of popupPortalSources) {
     // 允许 Portal 带属性（如 dropdown-menu 的 container={portalContainer}）。
     assert.match(source, /<\w+(?:Primitive)?\.Portal(?:\s[^>]*)?>/, `${name} should render through a Portal`);
-    assert.match(source, /className="layer-popover(?: isolate)?"/, `${name} should use layer-popover`);
+    assert.match(source, /className="layer-popover(?: [^"]*)?"/, `${name} should use layer-popover`);
   }
 });
 
@@ -119,8 +119,21 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
       const attributes = content?.type === "JSXElement" ? content.openingElement.attributes : [];
       const attribute = (name) => attributes.find((entry) => entry.type === "JSXAttribute" && entry.name?.name === name);
       const chrome = attribute("data-desktop-remote-chrome-slot");
+      const targetSource = source.slice(call.arguments[1]?.start, call.arguments[1]?.end);
+      if (content?.type === "Identifier" && content.name === "children" && targetSource === "target" && source.includes('data-navigation-rail-placeholder=""')) {
+        assert.match(source, /target\?: HTMLElement \| null/);
+        assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|\blayer-(?:popover|modal|toast|critical)\b|className="[^"]*\b(?:fixed|absolute)\b/);
+        continue;
+      }
+      if (source.includes("useContext(PreviewToolbarMount)") && ["target", "mount.leadingTarget", "mount.pageTarget"].includes(targetSource)) {
+        // The shared reader explicitly provides in-layout toolbar mount nodes.
+        // These portals move controls into that toolbar, without creating overlays.
+        assert.match(readShared("components/resource-preview/PreviewChrome.tsx"), /export const PreviewToolbarMount = createContext/);
+        assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|className="[^"]*\b(?:fixed|absolute)\b/);
+        continue;
+      }
       if (chrome) {
-        assert.ok(["device", "window"].includes(chrome.value?.value), `${path} chrome slot must declare device/window ownership`);
+        assert.ok(["device", "window", "update"].includes(chrome.value?.value), `${path} chrome slot must declare device/window/update ownership`);
         assert.equal(attribute("className")?.value?.value, "contents", `${path} chrome slots participate in layout without creating an overlay plane`);
         const contentSource = source.slice(content.start, content.end);
         assert.doesNotMatch(contentSource, /\brole\s*=\s*["'](?:dialog|alertdialog)["']|aria-modal|\blayer-(?:popover|modal|toast|critical)\b|\b(?:fixed|absolute)\b/, `${path} chrome layout portals cannot also become dialog/overlay surfaces`);

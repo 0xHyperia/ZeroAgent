@@ -1,0 +1,19 @@
+@media (max-width: 820px) {
+  [data-model-preferences] button:not([role="switch"]),
+  [data-model-preferences]
+    input:not([type="checkbox"]):not([type="hidden"]):not([aria-hidden="true"]) {
+    min-height: 44px;
+  }
+  [data-model-preferences] summary {
+    min-height: 44px;
+    align-content: center;
+  }
+  [data-model-preferences] [role="switch"] {
+    position: relative;
+  }
+  [data-model-preferences] [role="switch"]::after {
+    content: "";
+    position: absolute;
+    inset: -12px -8px;
+  }
+}

@@ -28,7 +28,7 @@ export type ComposerModelControlsProps = {
   onRefreshModels?: () => void | Promise<void>;
   onSelectModel: (selection: SelectedModel) => void;
   onSelectExecutionMode: (mode: "text" | "tools") => void;
-  onOpenSettings: (section?: "providers", providerId?: string) => void;
+  onOpenSettings: (section?: "providers" | "model-preferences", providerId?: string) => void;
   onChatRuntimeControlsChange: (patch: Partial<ChatRuntimeControls>) => void;
   /** 受控开关（/model 指令从外部打开）；缺省时弹层自管开关。 */
   open?: boolean;

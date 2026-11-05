@@ -122,6 +122,8 @@ async function mounted(run, options = {}) {
     await env.act(async () => root.render(env.React.createElement(ImageStudioPage, {
       client, ownerId: "owner", backendId: "backend", storage, exportDestinations: ["download"],
       onOpenSettings: options.onOpenSettings,
+      // These flows start with an explicitly configured model. Empty defaults are tested separately.
+      defaultTargetId: options.defaultTargetId ?? options.targets?.[0]?.id ?? target().id,
     })));
     await run({ env, host, client, calls, byLabel, button, submit, click, change, importFile, storageData });
   } finally {
@@ -541,4 +543,13 @@ test("clicking the preview opens the large-image viewer at the selected result o
     await click([...viewer.querySelectorAll("button")].find((b) => b.textContent === "关闭大图"));
     assert.equal(host.querySelector('[aria-label="大图查看器"]'), null);
   }, { jobs: [multi] });
+});
+
+
+test("an unconfigured model stays empty and generation requires an explicit choice",async()=>{
+ await mounted(async({byLabel,change,submit})=>{
+  const models=byLabel("图像模型"); assert.equal(models.value,"");
+  await change(byLabel("提示词"),"preserved prompt"); assert.equal(submit().disabled,true);
+  await change(models,"model-edit"); assert.equal(submit().disabled,false);
+ },{defaultTargetId:""});
 });

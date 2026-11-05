@@ -121,48 +121,53 @@
   translate: calc(var(--segment-index) * -100%) 0;
 }
 
-.composer-runtime-controls {
-  display: grid;
-  flex-shrink: 0;
-  gap: 10px;
-  border-top: 1px solid var(--za-border);
-  margin-top: 8px;
-  padding: 12px 4px 4px;
-}
-.composer-runtime-row {
+/* The model list owns the space; secondary controls share one compact footer. */
+.composer-model-toolbar {
+  --composer-model-control-height: 32px;
   display: flex;
-  min-height: 36px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: calc(12px * var(--zone-font-scale, 1));
-  color: hsl(var(--muted-foreground));
+  gap: 8px;
+  border-top: 1px solid var(--za-border);
+  margin-top: 4px;
+  padding-top: 6px;
 }
-.composer-runtime-row .za-segmented-control {
-  width: 140px;
-  height: 26px;
-}
-.composer-runtime-row .za-segment {
-  min-height: 34px;
-  padding-inline: 10px;
+.composer-model-toolbar .composer-model-settings,
+.composer-model-toolbar .composer-model-web {
+  height: var(--composer-model-control-height);
+  min-width: 0;
+  gap: 6px;
+  padding: 0 7px;
+  border-radius: 8px;
   font-size: calc(12px * var(--zone-font-scale, 1));
+  font-weight: 400;
+  white-space: nowrap;
+}
+.composer-model-settings {
+  margin-inline-end: auto;
 }
 .composer-runtime-radio {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(max-content, 1fr));
+  flex-shrink: 0;
   border: 0;
-  padding: 3px;
 }
 .composer-runtime-radio > label {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 56px;
+  min-height: var(--composer-model-control-height);
+  border: 2px solid transparent;
+  padding: 0 7px;
+  font-size: calc(12px * var(--zone-font-scale, 1));
   cursor: pointer;
 }
 .composer-runtime-radio > label:has(:checked) {
   background: hsl(var(--background));
+  background-clip: padding-box;
   color: hsl(var(--foreground));
-  box-shadow: 0 1px 5px rgb(0 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.10);
 }
 .composer-runtime-radio > label:has(:focus-visible) {
   outline: 2px solid hsl(var(--ring));
@@ -171,6 +176,11 @@
 .composer-runtime-radio > label:has(:disabled) {
   opacity: 0.5;
   cursor: default;
+}
+@media (hover: none) and (pointer: coarse), (max-width: 720px) {
+  .composer-model-toolbar {
+    --composer-model-control-height: 44px;
+  }
 }
 [data-composer-layout] .composer-glass-card {
   border-color: hsl(var(--foreground) / 0.075);

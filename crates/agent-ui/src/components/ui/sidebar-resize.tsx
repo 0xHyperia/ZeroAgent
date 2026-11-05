@@ -215,7 +215,10 @@ function ResizeHandle({ layout }: { layout: ReturnType<typeof useSidebarWidthLay
         }
       />
       {dragging
-        ? createPortal(<div className="sidebar-resize-shield" aria-hidden="true" />, document.body)
+        ? createPortal(
+            <div className="sidebar-resize-shield layer-critical" aria-hidden="true" />,
+            document.body,
+          )
         : null}
     </>
   );

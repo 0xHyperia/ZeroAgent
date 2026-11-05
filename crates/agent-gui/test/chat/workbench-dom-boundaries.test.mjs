@@ -73,7 +73,7 @@ test("application chrome is a shell row above both sidebars and the resizable wo
   assert.match(chatPageSource, /data-app-frame="three-column"/);
   assert.match(
     chatPageSource,
-    /data-app-frame="three-column"[\s\S]*?<AppWorkbenchChrome[\s\S]*?data-app-workbench-body[\s\S]*?<WorkspacePanelGroup[\s\S]*?<ApplicationView/,
+    /data-app-frame="three-column"[\s\S]*?<AppWorkbenchChrome[\s\S]*?<WorkbenchBody[\s\S]*?<WorkspacePanelGroup[\s\S]*?<ApplicationView/,
   );
   assert.match(chatPageSource, /<AppWorkbenchChrome/);
   assert.ok(chatPageSource.indexOf("<AppWorkbenchChrome") < chatPageSource.indexOf("<ApplicationView"));
@@ -101,7 +101,7 @@ test("conversation view switcher stays in the main header region on the shared t
   assert.ok(tabsIndex > chromeIndex);
   assert.match(headerSource, /data-conversation-header/);
   assert.match(headerSource, /data-app-header-navigation/);
-  assert.match(headerSource, /var\(--sidebar-width\)-1rem/);
+  assert.match(headerSource, /var\(--sidebar-width\)\+var\(--app-rail-width,0px\)-1rem/);
   assert.doesNotMatch(chatPageSource, /<header\s+data-conversation-header/);
   assert.ok(tabsIndex < applicationViewIndex);
   assert.equal(chatPageSource.match(/<ConversationViewTabs/g)?.length, 1);

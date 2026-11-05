@@ -47,7 +47,9 @@ func TestCloudRunViewerScopesAndRelease(t *testing.T) {
 }
 
 func TestCloudRunHTTPViewerLimitDoesNotCancelTaskAndAllowsReconnect(t *testing.T) {
+	started := make(chan struct{})
 	f := newCloudHTTPFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		close(started)
 		emitCloudDelta(w, "任务进行中")
 		<-r.Context().Done()
 	})
@@ -56,6 +58,13 @@ func TestCloudRunHTTPViewerLimitDoesNotCancelTaskAndAllowsReconnect(t *testing.T
 	}
 	run, _ := f.create(t, "viewer-budget", "持续工作")
 	f.wait(t, run.ID, func(run *CloudRun) bool { return run.State == CloudRunRunning })
+	// Claiming a durable run precedes dispatching its HTTP request. Observe the
+	// actual provider entry before asserting that viewer changes did not replay it.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background model request never started")
+	}
 	attach := func(cookie string) (*http.Response, error) {
 		r, err := http.NewRequest(http.MethodGet, f.server.URL+"/api/web-chat/runs/"+run.ID+"/events", nil)
 		if err != nil {

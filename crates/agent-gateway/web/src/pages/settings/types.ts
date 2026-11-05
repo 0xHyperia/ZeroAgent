@@ -14,6 +14,7 @@ export type SectionId =
   | "systemTools"
   | "stt"
   | "providers"
+  | "model-preferences"
   | "agents"
   | "ssh"
   | "memory"
@@ -32,6 +33,7 @@ export type SettingsPageProps = {
   settings: AppSettings;
   settingsHost?: SettingsHostAdapter;
   imageClient?: ImageStudioClient;
+  onOpenModelPreferences?: () => void;
   registerLeaveGuard?: (guard: () => boolean) => () => void;
   setSettings: SetSettingsFn;
   saveState: WebSettingsSaveState;

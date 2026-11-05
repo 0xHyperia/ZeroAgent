@@ -94,9 +94,11 @@ test("lightweight floating components share one border, radius, and shadow", () 
   const surface = readFileSync(new URL("ui/menu-surface.ts", uiRoot), "utf8");
   assert.match(
     surface,
-    /rounded-xl border border-border\/70 bg-popover text-popover-foreground shadow-xs/,
+    /za-floating-surface border border-border\/70 bg-popover text-popover-foreground/,
   );
 
+  const tokens = readFileSync(new URL("../styles/design-system.css",uiRoot),"utf8");
+  assert.match(tokens,/\.za-floating-surface\s*\{[^}]*border-radius: var\(--za-radius-floating\);[^}]*box-shadow: var\(--za-shadow-floating\);/);
   for (const path of [
     "ui/dropdown-menu.tsx",
     "ui/popover.tsx",

@@ -906,6 +906,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.deleteConfirmDesc": "This action cannot be undone.",
   "settings.deleteConfirmYes": "Delete",
   "settings.customSettings": "Advanced Settings",
+  "settings.modelPreferences": "Models and advanced settings",
+  "settings.modelPreferencesMore": "Display, requests and failover",
   "settings.openCustomSettings": "Open advanced settings",
   "settings.closeCustomSettings": "Close advanced settings",
   "settings.customSettingsModelsTitle": "Generation Models",

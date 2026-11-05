@@ -29,6 +29,8 @@ export type MentionSearchEntry = {
 
 export type MentionComposerSkill = {
   name: string;
+  /** Exact installed historical references, available only for clipboard restoration. */
+  legacyReferences?: { name: string; skillFile: string; description: string }[];
   /** Optional human-readable package label; the skill identity remains name/skillFile. */
   displayName?: string;
   /** Search aliases are presentation-only and never affect the selected identity. */

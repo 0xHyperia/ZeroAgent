@@ -26,7 +26,8 @@ test("Desktop and WebUI chat surfaces use the ZeroAgent logo", () => {
 test("Desktop chat sidebar uses the ZeroAgent brand", () => {
   const source = readRepoFile("crates/agent-gui/src/agent-ui-adapters/sidebarChrome.tsx");
 
-  assert.match(source, /src="\/zeroagent-logo\.png"/);
+  assert.match(source, /<BrandMark\b/);
+  assert.match(readRepoFile("crates/agent-ui/src/application/BrandMark.tsx"), /ZEROAGENT_BRAND_MARK = "\/zeroagent-logo\.png"/);
   assert.match(source, />ZeroAgent<\/div>/);
   assert.doesNotMatch(source, /Live Agent|iconSimpleUrl/);
 });

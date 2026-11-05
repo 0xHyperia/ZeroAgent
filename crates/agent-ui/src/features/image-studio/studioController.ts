@@ -83,6 +83,10 @@ function uploadFailureNotice(error: unknown): string {
 }
 
 export class ImageStudioController {
+  setDefaultTargetId(value?: string) {
+    // Preference changes apply to future blank drafts, never reset a running job or current draft.
+    this.defaultTargetId = value;
+  }
   view: StudioView;
   private listeners = new Set<() => void>();
   private disposed = false;
@@ -104,6 +108,7 @@ export class ImageStudioController {
     private ownerId: string,
     private backendId: string,
     private storage?: DraftStorage,
+    private defaultTargetId?: string,
   ) {
     this.view = {
       state: initialStudioState(ownerId, backendId),
@@ -396,9 +401,8 @@ export class ImageStudioController {
       } else if (this.view.draft.targetId) {
         this.patch({ notice: "当前模型已删除，请重新选择模型；草稿与原提交记录已保留。" });
       } else {
-        const available = targets.find((target) => target.enabled);
-        if (available) this.applyTarget(available, undefined);
-        else this.patch({ notice: "" });
+        // Refresh must not choose a model for an unconfigured draft.
+        this.patch({ notice: "" });
       }
     } catch {
       if (this.valid(epoch) && refresh === this.targetRefresh)
@@ -463,7 +467,7 @@ export class ImageStudioController {
     this.historyPage = undefined;
     // History is shared across archives; only the editable draft and submission change scope.
     const state = { ...this.view.state, selectedAssetId: undefined, selectedJobId: undefined };
-    const target = this.view.targets.find((item) => item.enabled) ?? this.view.targets[0];
+    const target = this.view.targets.find((item) => item.id === this.defaultTargetId);
     this.patch({
       projectId,
       state,
@@ -523,10 +527,6 @@ export class ImageStudioController {
             ? { draft: restored.draft, unverifiedAssetIds: restored.unverifiedAssetIds }
             : {}),
         });
-        if (!this.view.draft.targetId) {
-          const available = this.view.targets.find((target) => target.enabled);
-          if (available) this.applyTarget(available, undefined);
-        }
         try {
           this.storage?.setItem(this.archiveKey(), projectId);
         } catch {

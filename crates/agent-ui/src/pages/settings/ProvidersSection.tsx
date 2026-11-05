@@ -1,3 +1,4 @@
+import "./modelPreferences.css";
 import {
   ProviderCopyConfigButton,
   ProviderSettingsExtension,
@@ -70,7 +71,8 @@ import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import { ConfirmDeletePopover } from "@liveagent/ui/pages/settings/shared";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { GenerationModelsCard, ModelPreferenceField } from "./ModelPreferenceFields";
 import { ProviderModal } from "./ProviderModal";
 import {
   DrawerGroupLabel,
@@ -398,28 +400,29 @@ function CustomSettingsModelField(props: {
       : modelOptions;
 
   return (
-    <div className="space-y-2">
-      <div className="space-y-1">
-        <div className="text-sm font-medium">{label}</div>
-        <p className="text-xs leading-5 text-muted-foreground">{hint}</p>
-      </div>
-      <ModelPicker
-        options={options}
-        value={selectedValue}
-        onChange={onChange}
-        placeholder={followCurrentLabel}
-        noneLabel={followCurrentLabel}
-        ariaLabel={label}
-        variant="plain"
-      />
-    </div>
+    <ModelPreferenceField
+      label={label}
+      hint={hint}
+      options={options}
+      value={selectedValue}
+      onChange={onChange}
+      placeholder={followCurrentLabel}
+      noneLabel={followCurrentLabel}
+    />
   );
 }
 
-export function ProviderSettingsDialog(
-  props: SettingsSectionProps & { providerType: ProviderId; onClose: () => void },
-) {
-  const { settings, setSettings, providerType, onClose } = props;
+export type ModelPreferencesContentProps = SettingsSectionProps & {
+  providerType: ProviderId;
+  scopeLabel?: string;
+  generationModels?: ReactNode;
+  media?: ReactNode;
+  clarifyControls?: ReactNode;
+  showRequestPreferences?: boolean;
+};
+
+export function ModelPreferencesContent(props: ModelPreferencesContentProps) {
+  const { settings, setSettings, providerType } = props;
   const { t } = useLocale();
   const [selectedProtocol, setSelectedProtocol] = useState(providerType);
   const modelOptions = useMemo(() => buildModelOptions(settings), [settings]);
@@ -443,159 +446,218 @@ export function ProviderSettingsDialog(
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <div
+      className={cn(
+        "grid min-h-0 flex-1 gap-5 overflow-hidden max-[720px]:block max-[720px]:overflow-y-auto",
+        props.showRequestPreferences !== false ? "grid-cols-2" : "grid-cols-1",
+      )}
+      data-model-preferences
+    >
+      <div className="min-h-0 space-y-3 overflow-y-auto pr-1 max-[720px]:overflow-visible">
+        <h2 className="text-sm font-semibold">{t("settings.providerGlobalPreferences")}</h2>
+        {props.scopeLabel ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">{props.scopeLabel}</p>
+        ) : null}
+        {props.generationModels ?? (
+          <GenerationModelsCard>
+            <CustomSettingsModelField
+              label={t("settings.conversationTitleModel")}
+              hint={t("settings.conversationTitleModelHint")}
+              followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
+              selected={settings.customSettings.conversationTitleModel}
+              modelOptions={modelOptions}
+              onChange={(value) => handleModelSettingChange("conversationTitleModel", value)}
+            />
+            <CustomSettingsModelField
+              label={t("settings.commitMessageModel")}
+              hint={t("settings.commitMessageModelHint")}
+              followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
+              selected={settings.customSettings.commitMessageModel}
+              modelOptions={modelOptions}
+              onChange={(value) => handleModelSettingChange("commitMessageModel", value)}
+            />
+            {modelOptions.length === 0 ? (
+              <SettingsNotice variant="warning">
+                {t("settings.customSettingsModelEmpty")}
+              </SettingsNotice>
+            ) : null}
+          </GenerationModelsCard>
+        )}
+        {props.clarifyControls !== undefined ? (
+          props.clarifyControls
+        ) : (
+          <section className="rounded-xl bg-settings-tile p-4">
+            <DrawerSectionHeader
+              icon={<WandSparkles className="size-3.5" />}
+              title={t("settings.promptClarifyTitle")}
+              hint={t("settings.promptClarifyToggleHint")}
+              action={
+                <Switch
+                  checked={settings.customSettings.promptClarifyEnabled}
+                  onCheckedChange={(checked) =>
+                    setSettings((prev) =>
+                      updateCustomSettings(prev, { promptClarifyEnabled: checked === true }),
+                    )
+                  }
+                  aria-label={t("settings.promptClarifyTitle")}
+                />
+              }
+            />
+            <div
+              className="grid"
+              style={{
+                gridTemplateRows: settings.customSettings.promptClarifyEnabled ? "1fr" : "0fr",
+              }}
+            >
+              <div
+                className="min-h-0 overflow-hidden"
+                inert={!settings.customSettings.promptClarifyEnabled}
+                aria-hidden={!settings.customSettings.promptClarifyEnabled}
+              >
+                <div className="space-y-3 pt-3.5">
+                  <CustomSettingsModelField
+                    label={t("settings.promptClarifyModel")}
+                    hint={t("settings.promptClarifyModelHint")}
+                    followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
+                    selected={settings.customSettings.promptClarifyModel}
+                    modelOptions={modelOptions}
+                    onChange={(value) => handleModelSettingChange("promptClarifyModel", value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+        {props.media}
+        <section className="rounded-xl bg-settings-tile p-4">
+          <DrawerSectionHeader
+            icon={<Activity className="size-3.5" />}
+            title={t("settings.composerContextDisplay")}
+            hint={t("settings.composerContextDisplayHint")}
+          />
+          <div className="mt-3.5 space-y-2">
+            <SettingsToggleGroup
+              value={[settings.customSettings.composerContextDisplay]}
+              onValueChange={(values) => {
+                const mode = values[0];
+                if (mode === "statsBar" || mode === "both" || mode === "ring")
+                  setSettings((prev) =>
+                    updateCustomSettings(prev, { composerContextDisplay: mode }),
+                  );
+              }}
+              aria-label={t("settings.composerContextDisplay")}
+            >
+              <SettingsToggleGroupItem value="statsBar">
+                {t("settings.composerContextDisplayStatsBar")}
+              </SettingsToggleGroupItem>
+              <SettingsToggleGroupItem value="both">
+                {t("settings.composerContextDisplayBoth")}
+              </SettingsToggleGroupItem>
+              <SettingsToggleGroupItem value="ring">
+                {t("settings.composerContextDisplayRing")}
+              </SettingsToggleGroupItem>
+            </SettingsToggleGroup>
+            <p className="text-xs leading-relaxed text-muted-foreground/70">
+              {contextDisplayModeDesc[settings.customSettings.composerContextDisplay]}
+            </p>
+          </div>
+        </section>
+        {props.showRequestPreferences !== false ? (
+          <RetryErrorSection settings={settings} setSettings={setSettings} />
+        ) : null}
+      </div>
+      {props.showRequestPreferences !== false ? (
+        <div className="min-h-0 space-y-3 overflow-y-auto pr-1 max-[720px]:mt-6 max-[720px]:overflow-visible">
+          <h2 className="text-sm font-semibold">{t("settings.providerProtocolPreferences")}</h2>
+          <Select
+            value={selectedProtocol}
+            onValueChange={(value) => {
+              const next = PROVIDER_TABS.find((type) => type === value);
+              if (next) setSelectedProtocol(next);
+            }}
+          >
+            <SelectTrigger variant="plain" aria-label={t("settings.providerServiceType")}>
+              <SelectValue>{getProviderLabel(selectedProtocol)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {PROVIDER_TABS.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {getProviderLabel(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FailoverSettingsCard
+            key={selectedProtocol}
+            settings={settings}
+            setSettings={setSettings}
+            providerType={selectedProtocol}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Menu entries unmount before the dialog opens. Restore the visible source control
+// rather than returning focus to that removed entry or to an inert workspace.
+function advancedSettingsReturnFocus() {
+  return (
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "[data-model-preferences-trigger], [data-extension-configure-images], [data-composer-model-trigger]",
+      ),
+    ).find((element) => element.getClientRects().length > 0 && !element.closest("[inert]")) ?? false
+  );
+}
+
+export function ProviderSettingsDialog(
+  props: ModelPreferencesContentProps & {
+    onClose: () => void;
+    content?: ReactNode;
+    description?: string;
+    singleColumn?: boolean;
+  },
+) {
+  const { t } = useLocale();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [source] = useState(() => document.activeElement);
+  return (
+    <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent
-        className="flex h-[min(850px,90dvh)] max-w-5xl flex-col"
+        className={cn(
+          "flex h-[min(850px,90dvh)] flex-col",
+          props.singleColumn ? "max-w-2xl" : "max-w-5xl",
+        )}
+        style={
+          { "--zone-font-scale": props.settings.customSettings.fontScale.settings } as CSSProperties
+        }
         layout="fullscreen-mobile"
         showCloseButton
         closeLabel={t("settings.closeCustomSettings")}
+        initialFocus={() => titleRef.current}
+        finalFocus={() =>
+          source instanceof HTMLElement &&
+          source.isConnected &&
+          source.getClientRects().length > 0 &&
+          !source.closest("[inert]")
+            ? source
+            : advancedSettingsReturnFocus()
+        }
       >
         <DialogHeader>
-          <DialogTitle>{t("settings.customSettings")}</DialogTitle>
-          <p className="text-xs text-muted-foreground">{t("settings.providerSettingsAutosave")}</p>
+          <DialogTitle ref={titleRef} tabIndex={-1} className="outline-none">
+            {t("settings.customSettings")}
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground">
+            {props.description ?? t("settings.providerSettingsAutosave")}
+          </p>
         </DialogHeader>
-        <DialogBody className="grid grid-cols-2 gap-5 overflow-hidden max-[720px]:block max-[720px]:overflow-y-auto">
-          <div className="min-h-0 space-y-3 overflow-y-auto pr-1 max-[720px]:overflow-visible">
-            <h2 className="text-sm font-semibold">{t("settings.providerGlobalPreferences")}</h2>
-            <section className="rounded-xl bg-settings-tile p-4">
-              <DrawerSectionHeader
-                icon={<WandSparkles className="size-3.5" />}
-                title={t("settings.customSettingsModelsTitle")}
-              />
-              <div className="mt-3.5 space-y-3">
-                <CustomSettingsModelField
-                  label={t("settings.conversationTitleModel")}
-                  hint={t("settings.conversationTitleModelHint")}
-                  followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
-                  selected={settings.customSettings.conversationTitleModel}
-                  modelOptions={modelOptions}
-                  onChange={(value) => handleModelSettingChange("conversationTitleModel", value)}
-                />
-                <CustomSettingsModelField
-                  label={t("settings.commitMessageModel")}
-                  hint={t("settings.commitMessageModelHint")}
-                  followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
-                  selected={settings.customSettings.commitMessageModel}
-                  modelOptions={modelOptions}
-                  onChange={(value) => handleModelSettingChange("commitMessageModel", value)}
-                />
-                {modelOptions.length === 0 ? (
-                  <SettingsNotice variant="warning">
-                    {t("settings.customSettingsModelEmpty")}
-                  </SettingsNotice>
-                ) : null}
-              </div>
-            </section>
-            {/* 澄清提示词（composer clarify）：总开关直接控制两端输入框魔杖按钮
-                的显隐；展开区选澄清对话用的模型，未选跟随当前对话模型（与
-                commitMessageModel 同一回退契约）。开关-展开模式同 failover。 */}
-            <section className="rounded-xl bg-settings-tile p-4">
-              <DrawerSectionHeader
-                icon={<WandSparkles className="size-3.5" />}
-                title={t("settings.promptClarifyTitle")}
-                hint={t("settings.promptClarifyToggleHint")}
-                action={
-                  <Switch
-                    checked={settings.customSettings.promptClarifyEnabled}
-                    onCheckedChange={(checked) =>
-                      setSettings((prev) =>
-                        updateCustomSettings(prev, { promptClarifyEnabled: checked === true }),
-                      )
-                    }
-                    aria-label={t("settings.promptClarifyTitle")}
-                  />
-                }
-              />
-              <div
-                className="grid"
-                style={{
-                  gridTemplateRows: settings.customSettings.promptClarifyEnabled ? "1fr" : "0fr",
-                }}
-              >
-                <div
-                  className="min-h-0 overflow-hidden"
-                  inert={!settings.customSettings.promptClarifyEnabled}
-                  aria-hidden={!settings.customSettings.promptClarifyEnabled}
-                >
-                  <div className="space-y-3 pt-3.5">
-                    <CustomSettingsModelField
-                      label={t("settings.promptClarifyModel")}
-                      hint={t("settings.promptClarifyModelHint")}
-                      followCurrentLabel={t("settings.conversationTitleModelFollowCurrent")}
-                      selected={settings.customSettings.promptClarifyModel}
-                      modelOptions={modelOptions}
-                      onChange={(value) => handleModelSettingChange("promptClarifyModel", value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-xl bg-settings-tile p-4">
-              <DrawerSectionHeader
-                icon={<Activity className="size-3.5" />}
-                title={t("settings.composerContextDisplay")}
-                hint={t("settings.composerContextDisplayHint")}
-              />
-              <div className="mt-3.5 space-y-2">
-                <SettingsToggleGroup
-                  value={[settings.customSettings.composerContextDisplay]}
-                  onValueChange={(values) => {
-                    const mode = values[0];
-                    if (mode === "statsBar" || mode === "both" || mode === "ring")
-                      setSettings((prev) =>
-                        updateCustomSettings(prev, { composerContextDisplay: mode }),
-                      );
-                  }}
-                  aria-label={t("settings.composerContextDisplay")}
-                >
-                  <SettingsToggleGroupItem value="statsBar">
-                    {t("settings.composerContextDisplayStatsBar")}
-                  </SettingsToggleGroupItem>
-                  <SettingsToggleGroupItem value="both">
-                    {t("settings.composerContextDisplayBoth")}
-                  </SettingsToggleGroupItem>
-                  <SettingsToggleGroupItem value="ring">
-                    {t("settings.composerContextDisplayRing")}
-                  </SettingsToggleGroupItem>
-                </SettingsToggleGroup>
-                <p className="text-xs leading-relaxed text-muted-foreground/70">
-                  {contextDisplayModeDesc[settings.customSettings.composerContextDisplay]}
-                </p>
-              </div>
-            </section>
-            <RetryErrorSection settings={settings} setSettings={setSettings} />
-          </div>
-          <div className="min-h-0 space-y-3 overflow-y-auto pr-1 max-[720px]:mt-6 max-[720px]:overflow-visible">
-            <h2 className="text-sm font-semibold">{t("settings.providerProtocolPreferences")}</h2>
-            <Select
-              value={selectedProtocol}
-              onValueChange={(value) => {
-                const next = PROVIDER_TABS.find((type) => type === value);
-                if (next) setSelectedProtocol(next);
-              }}
-            >
-              <SelectTrigger variant="plain" aria-label={t("settings.providerServiceType")}>
-                <SelectValue>{getProviderLabel(selectedProtocol)}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDER_TABS.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {getProviderLabel(type)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FailoverSettingsCard
-              key={selectedProtocol}
-              settings={settings}
-              setSettings={setSettings}
-              providerType={selectedProtocol}
-            />
-          </div>
+        <DialogBody className="flex min-h-0 flex-1 overflow-hidden">
+          {props.content ?? <ModelPreferencesContent {...props} />}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={props.onClose}>
             {t("settings.close")}
           </Button>
         </DialogFooter>
@@ -658,6 +720,7 @@ function ProviderActionGroup(props: {
           customSettingsOpen &&
             "bg-background text-foreground shadow-[0_var(--spacing-1px)_var(--spacing-2px)_hsl(var(--foreground)/0.06)]",
         )}
+        data-model-preferences-trigger
         onClick={onOpenCustomSettings}
         title={t("settings.openCustomSettings")}
         aria-label={t("settings.openCustomSettings")}

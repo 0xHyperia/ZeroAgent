@@ -1828,6 +1828,12 @@ export function normalizeCustomSettings(
       normalizeSelectedModel(obj.conversationTitleModel),
       customProviders,
     ),
+    imageGenerationTargetId:
+      typeof obj.imageGenerationTargetId === "string" &&
+      obj.imageGenerationTargetId.length <= 160 &&
+      !Array.from(obj.imageGenerationTargetId).some((character) => character.charCodeAt(0) < 32)
+        ? obj.imageGenerationTargetId.trim() || undefined
+        : undefined,
     commitMessageModel: normalizeSelectedModelForProviders(
       normalizeSelectedModel(obj.commitMessageModel),
       customProviders,

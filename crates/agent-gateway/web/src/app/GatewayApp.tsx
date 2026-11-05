@@ -342,6 +342,8 @@ function useGatewayAppController() {
     resetSettingsOverlay,
     settingsSection,
     settingsProviderId,
+    modelPreferencesOpen,
+    setModelPreferencesOpen,
   } = useGatewaySettingsOverlay(setSidebarOpen);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const {
@@ -2732,6 +2734,8 @@ function useGatewayAppController() {
     setWorkspaceCreateModalOpen,
     settings,
     settingsOpen,
+    modelPreferencesOpen,
+    setModelPreferencesOpen,
     settingsProviderId,
     settingsSaveState,
     settingsSection,

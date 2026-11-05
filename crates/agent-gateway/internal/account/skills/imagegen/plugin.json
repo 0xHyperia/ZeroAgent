@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "imagegen",
+  "version": "0.3.0",
+  "description": "生成或修改真实位图，按用途和参考约束保存成果。",
+  "author": {
+    "name": "ZeroAgent"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "生成图像",
+        "shortDescription": "生成或修改真实位图，按用途和参考约束保存成果。"
+      }
+    },
+    "top.usa0": {
+      "primarySkill": "imagegen",
+      "kind": "skill",
+      "adaptedFrom": {
+        "package": "system/imagegen",
+        "version": "local"
+      }
+    }
+  }
+}

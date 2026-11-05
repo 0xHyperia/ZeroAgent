@@ -16,7 +16,12 @@ export function ExtensionDirectoryItem({
 }) {
   return (
     <li className="za-extension-row">
-      <button type="button" className="za-extension-row-main" onClick={onOpen}>
+      <button
+        type="button"
+        data-extension-open={item.id}
+        className="za-extension-row-main"
+        onClick={onOpen}
+      >
         <ExtensionMark id={item.id} />
         <span>
           <LabelTooltip

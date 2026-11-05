@@ -802,6 +802,24 @@ export function normalizeClipboardSkill(
   if (!name || !skillFile || !baseDir) return null;
 
   const pinned = /^zeroagent-skill:([a-z0-9-]+)\/([1-9][0-9]{0,8})\/([a-z0-9-]+)$/.exec(skillFile);
+  if (pinned && baseDir === "cloud" && pinned[3] === name) {
+    for (const candidate of enabledSkills) {
+      const current = /^zeroagent-skill:([a-z0-9-]+)\/([1-9][0-9]{0,8})\/([a-z0-9-]+)$/.exec(
+        candidate.skillFile,
+      );
+      if (
+        candidate.baseDir !== "cloud" ||
+        !current ||
+        current[1] !== pinned[1] ||
+        Number(pinned[2]) >= Number(current[2])
+      )
+        continue;
+      const legacy = candidate.legacyReferences?.find(
+        (entry) => entry.name === name && entry.skillFile === skillFile,
+      );
+      if (legacy) return { type: "skillMention", skill: { ...legacy, baseDir } };
+    }
+  }
   const enabledSkill = enabledSkills.find((candidate) => {
     if (candidate.name !== name || candidate.baseDir.trim().replace(/\\/g, "/") !== baseDir)
       return false;

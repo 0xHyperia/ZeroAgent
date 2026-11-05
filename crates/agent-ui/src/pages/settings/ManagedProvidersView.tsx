@@ -83,7 +83,12 @@ export function ManagedProvidersView(props: {
         </p>
         <div className="flex items-center gap-2">
           {props.onOpenPreferences ? (
-            <Button variant="outline" size="sm" onClick={props.onOpenPreferences}>
+            <Button
+              data-model-preferences-trigger
+              variant="outline"
+              size="sm"
+              onClick={props.onOpenPreferences}
+            >
               <Settings className="size-4" />
               高级设置
             </Button>

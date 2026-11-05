@@ -65,7 +65,11 @@ export function ApplicationView(props: ApplicationViewProps) {
   let content: ReactNode;
   if (activeView === "image-studio-hub") {
     content = imageStudioHost ? (
-      <ImageStudioPage key={imageStudioHost.scopeKey} {...imageStudioHost} />
+      <ImageStudioPage
+        key={imageStudioHost.scopeKey}
+        {...imageStudioHost}
+        defaultTargetId={settings.customSettings?.imageGenerationTargetId}
+      />
     ) : (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <h1 className="text-lg font-semibold">{t("settings.navImageStudio")}</h1>

@@ -10,11 +10,12 @@ import {
   CircleHelp,
   Layers,
   RotateCcw,
+  Settings2,
 } from "@liveagent/ui/components/IconSet";
 import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
-import { Switch } from "@liveagent/ui/components/ui/switch";
+import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { parseModelValue } from "../../lib/models/modelValue";
@@ -102,6 +103,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
     : ["off", ...props.reasoningOptions.filter((level) => level !== "off")];
   const canAdjust = supported && choices.length > 1;
   const nativeSearchSupported = option?.nativeWebSearchSupported === true;
+  const nativeSearchOn = nativeSearchSupported && props.chatRuntimeControls.nativeWebSearchEnabled;
   const [preview, setPreview] = useState<ReasoningLevel | null>(null);
   const previewRef = useRef<{ level: ReasoningLevel; model?: string } | null>(null);
   const displayed =
@@ -246,6 +248,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
               <TooltipButton
                 variant="ghost"
                 disabled={props.disabled || !props.hasModels}
+                data-composer-model-trigger
                 aria-label={`${t("chat.selectModel")}: ${modelLabel}`}
                 title={open ? undefined : `${t("chat.selectModel")}: ${modelLabel}`}
                 className="composer-inline-model-trigger"
@@ -339,6 +342,93 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                   props.onOpenSettings("providers", providerId);
                 }}
               />
+              <div className="composer-model-toolbar">
+                <TooltipButton
+                  variant="ghost"
+                  className="composer-model-settings"
+                  aria-label={zh ? "高级设置" : "Advanced settings"}
+                  onClick={() => {
+                    cancelPreview();
+                    setOpen(false);
+                    props.onOpenSettings("model-preferences");
+                  }}
+                >
+                  <Settings2 className="size-3.5" />
+                  <span>{zh ? "高级设置" : "Settings"}</span>
+                </TooltipButton>
+                {props.showExecutionControls ? (
+                  <>
+                    <div
+                      role="radiogroup"
+                      aria-label={t("settings.executionMode")}
+                      className="composer-runtime-radio za-segmented"
+                    >
+                      <label
+                        className="za-segment"
+                        data-segment="text"
+                        title={zh ? "对话" : "Chat"}
+                      >
+                        <input
+                          type="radio"
+                          name={`${id}-execution`}
+                          value="text"
+                          checked={!isAgentExecutionMode(props.executionMode)}
+                          disabled={props.disabled}
+                          onChange={() => props.onSelectExecutionMode("text")}
+                          className="sr-only"
+                        />
+                        Chat
+                      </label>
+                      <label
+                        className="za-segment"
+                        data-segment="tools"
+                        title={zh ? "执行任务" : "Run tasks"}
+                      >
+                        <input
+                          type="radio"
+                          name={`${id}-execution`}
+                          value="tools"
+                          checked={isAgentExecutionMode(props.executionMode)}
+                          disabled={props.disabled}
+                          onChange={() => props.onSelectExecutionMode("tools")}
+                          className="sr-only"
+                        />
+                        {isAgentDevMode(props.executionMode) ? "Agent·dev" : "Agent"}
+                      </label>
+                    </div>
+                    <TooltipButton
+                      variant="ghost"
+                      role="switch"
+                      className="composer-model-web"
+                      aria-label={t("chat.runtime.webSearch")}
+                      aria-checked={nativeSearchOn}
+                      title={
+                        !nativeSearchSupported
+                          ? zh
+                            ? "当前模型不支持联网"
+                            : "Web search is unavailable for this model"
+                          : nativeSearchOn
+                            ? zh
+                              ? "联网已开启"
+                              : "Web search on"
+                            : zh
+                              ? "联网已关闭"
+                              : "Web search off"
+                      }
+                      disabled={props.disabled || !nativeSearchSupported}
+                      onClick={() => {
+                        if (!props.disabled && nativeSearchSupported)
+                          props.onChatRuntimeControlsChange({
+                            nativeWebSearchEnabled: !nativeSearchOn,
+                          });
+                      }}
+                    >
+                      <span>{zh ? "联网" : "Web"}</span>
+                      <SwitchIndicator checked={nativeSearchOn} size="sm" />
+                    </TooltipButton>
+                  </>
+                ) : null}
+              </div>
             </>
           ) : (
             <>
@@ -416,57 +506,6 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
               </p>
             </>
           )}
-          {props.showExecutionControls ? (
-            <div className="composer-runtime-controls">
-              <div className="composer-runtime-row">
-                <span>{t("settings.executionMode")}</span>
-                <div
-                  role="radiogroup"
-                  aria-label={t("settings.executionMode")}
-                  className="composer-runtime-radio za-segmented"
-                >
-                  <label className="za-segment" data-segment="text">
-                    <input
-                      type="radio"
-                      name={`${id}-execution`}
-                      value="text"
-                      checked={!isAgentExecutionMode(props.executionMode)}
-                      disabled={props.disabled}
-                      onChange={() => props.onSelectExecutionMode("text")}
-                      className="sr-only"
-                    />
-                    Chat
-                  </label>
-                  <label className="za-segment" data-segment="tools">
-                    <input
-                      type="radio"
-                      name={`${id}-execution`}
-                      value="tools"
-                      checked={isAgentExecutionMode(props.executionMode)}
-                      disabled={props.disabled}
-                      onChange={() => props.onSelectExecutionMode("tools")}
-                      className="sr-only"
-                    />
-                    {isAgentDevMode(props.executionMode) ? "Agent·dev" : "Agent"}
-                  </label>
-                </div>
-              </div>
-              <label className="composer-runtime-row" htmlFor={`${id}-web`}>
-                <span>{t("chat.runtime.webSearch")}</span>
-                <Switch
-                  id={`${id}-web`}
-                  aria-label={t("chat.runtime.webSearch")}
-                  checked={
-                    nativeSearchSupported && props.chatRuntimeControls.nativeWebSearchEnabled
-                  }
-                  disabled={props.disabled || !nativeSearchSupported}
-                  onCheckedChange={(checked) =>
-                    props.onChatRuntimeControlsChange({ nativeWebSearchEnabled: checked })
-                  }
-                />
-              </label>
-            </div>
-          ) : null}
         </PopoverContent>
       </Popover>
     </div>

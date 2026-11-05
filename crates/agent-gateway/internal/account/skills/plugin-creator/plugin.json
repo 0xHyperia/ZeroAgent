@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "plugin-creator",
+  "version": "0.3.0",
+  "description": "将相关技能和资源组织为可检查、可导入的插件包。",
+  "author": {
+    "name": "ZeroAgent"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "创建插件",
+        "shortDescription": "将相关技能和资源组织为可检查、可导入的插件包。"
+      }
+    },
+    "top.usa0": {
+      "primarySkill": "create-plugin",
+      "aliases": { "plugin-creator": "create-plugin" },
+      "kind": "plugin",
+      "adaptedFrom": {
+        "package": "plugin-creator",
+        "version": "0.1.28"
+      }
+    }
+  }
+}

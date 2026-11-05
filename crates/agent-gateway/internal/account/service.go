@@ -709,6 +709,11 @@ func (s *Service) RenameCloudConversation(
 	if len([]rune(title)) > 120 {
 		return nil, &APIError{Status: http.StatusBadRequest, Message: "conversation title is too long"}
 	}
+	if store, ok := s.store.(interface {
+		renameCloudTitle(context.Context, int64, string, string) (*CloudConversation, error)
+	}); ok {
+		return store.renameCloudTitle(ctx, userID, conversation.ID, title)
+	}
 	conversation.Title = title
 	conversation.UpdatedAt = time.Now().UTC()
 	if err := s.store.PutCloudConversation(ctx, conversation); err != nil {

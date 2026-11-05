@@ -8,6 +8,7 @@ export function useImageStudio(
   ownerId: string,
   backendId: string,
   storage?: DraftStorage,
+  defaultTargetId?: string,
 ) {
   const controller = useMemo(
     () => new ImageStudioController(client, ownerId, backendId, storage),
@@ -18,6 +19,9 @@ export function useImageStudio(
     controller.getSnapshot,
     controller.getSnapshot,
   );
+  useEffect(() => {
+    controller.setDefaultTargetId(defaultTargetId);
+  }, [controller, defaultTargetId]);
   useEffect(() => {
     void controller.start();
     return () => controller.dispose();

@@ -18,6 +18,7 @@ import { buildGatewaySettingsSyncPayload } from "@liveagent/ui/lib/settings/sync
 import { useSettingsOverlay } from "@liveagent/ui/lib/settings/useSettingsOverlay";
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { DeviceModelPreferencesDialog } from "@liveagent/ui/pages/settings/DeviceModelPreferencesDialog";
 import {
   lazy,
   type ReactNode,
@@ -246,6 +247,7 @@ export default function App() {
     closeSettingsOverlay,
     handleSettingsOverlayTransitionEnd,
   } = useSettingsOverlay();
+  const [modelPreferencesOpen, setModelPreferencesOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId>("system");
   const [settingsProviderId, setSettingsProviderId] = useState<string>();
   const [settingsReady, setSettingsReady] = useState(false);
@@ -809,6 +811,10 @@ export default function App() {
   }, []);
   const openSettings = useCallback(
     (section: SectionId = "system", providerId?: string) => {
+      if (section === "model-preferences" || section === "image-studio") {
+        setModelPreferencesOpen(true);
+        return;
+      }
       if (settingsLeaveGuard.current && !settingsLeaveGuard.current()) return;
       setSettingsSection(section);
       setSettingsProviderId(section === "providers" ? providerId : undefined);
@@ -1204,6 +1210,7 @@ export default function App() {
                     onRelayStatsChange={setRelayStats}
                     settings={settings}
                     settingsHost={settingsHostAdapter}
+                    onOpenModelPreferences={() => setModelPreferencesOpen(true)}
                     imageClient={imageStudioHost?.client}
                     registerLeaveGuard={registerSettingsLeaveGuard}
                     setSettings={setSettings}
@@ -1239,6 +1246,14 @@ export default function App() {
             {translate("app.windowPinned", settings.locale)}
           </button>
         )}
+        {modelPreferencesOpen ? (
+          <DeviceModelPreferencesDialog
+            settings={settings}
+            setSettings={setSettings}
+            client={imageStudioHost?.client}
+            onClose={() => setModelPreferencesOpen(false)}
+          />
+        ) : null}
         <ReleaseAnnouncementDialog controller={releaseAnnouncement} />
         {restartConfirmDialog}
       </AppChrome>

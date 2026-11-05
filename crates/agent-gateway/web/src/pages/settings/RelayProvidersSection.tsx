@@ -41,7 +41,8 @@ export function RelayProvidersSection({
   settings,
   setSettings,
   cloudChatMode = false,
-}: SettingsSectionProps & { cloudChatMode?: boolean }) {
+  onOpenModelPreferences,
+}: SettingsSectionProps & { cloudChatMode?: boolean; onOpenModelPreferences?: () => void }) {
   const [user, setUser] = useState<RelayUser | null>(null);
   const [keys, setKeys] = useState<RelayApiKey[]>([]);
   const [groups, setGroups] = useState<RelayGroup[]>([]);
@@ -199,7 +200,9 @@ export function RelayProvidersSection({
         onCopy={(keyId) => setCopyTarget(keys.find((key) => key.id === keyId) ?? null)}
         onOpenModels={(keyId) => setEditingProviderId(relayProviderId(keyId))}
         onRefresh={() => void loadData()}
-        onOpenPreferences={cloudChatMode ? undefined : () => setPreferencesOpen(true)}
+        onOpenPreferences={
+          onOpenModelPreferences ?? (cloudChatMode ? undefined : () => setPreferencesOpen(true))
+        }
       />
       {preferencesOpen && (
         <ProviderSettingsDialog

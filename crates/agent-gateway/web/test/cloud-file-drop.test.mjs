@@ -57,14 +57,14 @@ test("viewport coverage is portalled above the whole application and retires wit
  const app=await mount(t,{coverage:"viewport"});
  await app.drag("dragenter",transfer());
  const overlay=document.querySelector('[data-coverage="viewport"]');
- assert.ok(overlay);assert.equal(app.host.contains(overlay),false);assert.equal(overlay.parentElement,document.body);
+ assert.ok(overlay);assert.equal(app.host.contains(overlay),false);assert.ok(overlay.parentElement?.classList.contains("layer-critical"),"the viewport prompt uses the shared critical overlay plane");assert.ok(overlay.parentElement.parentElement===document.body,"the overlay plane is portalled to body");
  // The body portal replaces the native target. Leave can precede enter and have
  // a null relatedTarget even though the pointer remains inside the viewport.
  await app.drag("dragleave",transfer(),app.host.querySelector("section"));
- assert.equal(document.querySelector('[data-coverage="viewport"]'),overlay);
+ assert.ok(document.querySelector('[data-coverage="viewport"]')===overlay,"the drag portal keeps the same prompt node");
  await app.drag("dragenter",transfer(),overlay);
  await app.drag("dragleave",transfer(),overlay,null,{x:0,y:200});
- assert.equal(document.querySelector('[data-coverage="viewport"]'),overlay,"portal target swaps can report zero coordinates");
+ assert.ok(document.querySelector('[data-coverage="viewport"]')===overlay,"portal target swaps can report zero coordinates");
  await app.drag("dragleave",transfer(),document.documentElement,null,{x:0,y:200});
  assert.equal(document.querySelector('[data-coverage="viewport"]'),null);
  await app.drag("dragenter",transfer());

@@ -33,6 +33,8 @@ export function ModelPicker({
   searchPlaceholder,
   emptyLabel,
   selectionKind = "model",
+  onRefresh,
+  refreshing,
 }: {
   options: ModelPickerOption[];
   value: string;
@@ -46,6 +48,8 @@ export function ModelPicker({
   searchPlaceholder?: string;
   emptyLabel?: string;
   selectionKind?: "model" | "provider";
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const { t } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
@@ -107,6 +111,8 @@ export function ModelPicker({
             emptyLabel={emptyLabel}
             collapsibleGroups={collapsibleGroups}
             selectionKind={selectionKind}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
             onSelect={(next) => {
               onChange(next);
               setIsOpen(false);

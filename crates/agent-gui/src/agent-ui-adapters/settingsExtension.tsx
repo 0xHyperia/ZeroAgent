@@ -40,7 +40,13 @@ export function createSettingsExtension(props: SettingsPageProps): {
       ) : null,
       mainLeading: <MacOsTitleBarSpacer />,
     },
-    renderProviders: () => <RelayProvidersSection settings={settings} setSettings={setSettings} />,
+    renderProviders: () => (
+      <RelayProvidersSection
+        settings={settings}
+        setSettings={setSettings}
+        onOpenModelPreferences={props.onOpenModelPreferences}
+      />
+    ),
     sections: [
       {
         id: "account",

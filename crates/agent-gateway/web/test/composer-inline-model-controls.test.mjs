@@ -22,7 +22,7 @@ async function setup(t, { coarse = false, alwaysOn = false, reasoningOptions = [
     { value: "b::gpt-6.1", model: "gpt-6.1", label: "GPT 6.1", providerId: "b", providerName: "Group B", providerType: "codex" },
     { value: "c::claude-sonnet-4.6", model: "claude-sonnet-4.6", label: "Sonnet", providerId: "c", providerName: "Group C", providerType: "claude_code" },
   ];
-  const models = [], patches = [];
+  const models = [], patches = [], settingsRoutes = [];
   let disabled = false, requestExternalOpen, replaceModel;
   function Harness() {
     const [open, setOpen] = env.React.useState(false);
@@ -31,7 +31,7 @@ async function setup(t, { coarse = false, alwaysOn = false, reasoningOptions = [
     replaceModel = setValue;
     const [controls, setControls] = env.React.useState({ reasoning: "medium", thinkingEnabled: true, nativeWebSearchEnabled: false });
     return env.React.createElement(ComposerModelControls, { presentation: "inline", open, onOpenChange: setOpen, executionMode: "text", hasModels: true, currentModelLabel: "GPT 6.1", selectedValue: value, modelOptions: options, chatRuntimeControls: controls, reasoningOptions, thinkingAlwaysOn: alwaysOn, disabled,
-      onSelectModel: next => { models.push(next); setValue(`${next.customProviderId}::${next.model}`); }, onSelectExecutionMode: () => assert.fail("inline controls must not change execution mode"), onOpenSettings: () => {}, onChatRuntimeControlsChange: patch => { patches.push(patch); setControls(old => ({ ...old, ...patch })); },
+      onSelectModel: next => { models.push(next); setValue(`${next.customProviderId}::${next.model}`); }, onSelectExecutionMode: () => assert.fail("inline controls must not change execution mode"), onOpenSettings: section => settingsRoutes.push(section), onChatRuntimeControlsChange: patch => { patches.push(patch); setControls(old => ({ ...old, ...patch })); },
     });
   }
   async function render() { await env.act(async () => { root.render(env.React.createElement(Harness)); await tick(); }); }
@@ -46,7 +46,7 @@ async function setup(t, { coarse = false, alwaysOn = false, reasoningOptions = [
     if (event) await env.act(async () => { document.querySelector('input[type="range"]').dispatchEvent(event === "keyup" ? new window.KeyboardEvent(event, { key, bubbles: true }) : new window.Event(event, { bubbles: true })); await tick(); });
   }
   await render();
-  return { env, host, models, patches, click, render, slide, disable() { disabled = true; }, async externalOpen() { await env.act(async () => { requestExternalOpen(true); await tick(); }); }, async replaceModel(value) { await env.act(async () => { replaceModel(value); await tick(); }); }, trigger: () => host.querySelector('[aria-label^="chat.selectModel:"]'), effortTrigger: () => host.querySelector('[aria-label^="chat.runtime.reasoning:"]'), modelLink: () => document.querySelector(".composer-reasoning-model") };
+  return { env, host, models, patches, settingsRoutes, click, render, slide, disable() { disabled = true; }, async externalOpen() { await env.act(async () => { requestExternalOpen(true); await tick(); }); }, async replaceModel(value) { await env.act(async () => { replaceModel(value); await tick(); }); }, trigger: () => host.querySelector('[aria-label^="chat.selectModel:"]'), effortTrigger: () => host.querySelector('[aria-label^="chat.runtime.reasoning:"]'), modelLink: () => document.querySelector(".composer-reasoning-model") };
 }
 
 test("the model area directly opens the current group; model browsing reveals the current group and vendor route without changing either selection", async t => {
@@ -180,4 +180,18 @@ test("an external /model request opens the model list, and a preview cannot leak
   });
   assert.deepEqual(app.patches, []);
   assert.match(document.querySelector('input[type="range"]').getAttribute('aria-valuetext'), /^标准/);
+});
+
+
+test("advanced entry closes the model menu without selecting a model or committing an effort preview", async t => {
+ const app=await setup(t);
+ await app.click(app.trigger());
+ const advanced=[...document.querySelectorAll('button')].find(button=>button.textContent==='高级设置');
+ await app.click(advanced);
+ assert.deepEqual(app.settingsRoutes,['model-preferences']);
+ assert.deepEqual(app.models,[]);assert.deepEqual(app.patches,[]);
+ assert.equal(app.trigger().getAttribute('aria-expanded'),'false');
+ await app.click(app.trigger());
+ assert.ok(document.querySelector('[aria-pressed="true"]'));
+ assert.deepEqual(app.models,[]);
 });

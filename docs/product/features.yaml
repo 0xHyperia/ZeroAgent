@@ -637,16 +637,46 @@
         "crates/agent-gateway/internal/account/skills-releases",
         "crates/agent-gateway/web/src/lib/cloudExtensions.ts",
         "crates/agent-gateway/internal/account/cloud_extensions.go",
-        "crates/agent-gateway/internal/account/cloud_run_skills.go"
+        "crates/agent-gateway/internal/account/cloud_run_skills.go",
+        "crates/agent-gateway/internal/account/cloud_extension_manifest.go"
       ],
       "tests": [
         "crates/agent-gateway/web/test/cloud-extensions.test.mjs",
         "crates/agent-gateway/web/test/cloud-chat-context-picker.test.mjs",
         "crates/agent-gateway/web/test/composer-extension-mentions.test.mjs",
         "crates/agent-gateway/internal/account/cloud_extensions_test.go",
-        "crates/agent-gateway/internal/account/cloud_builtin_release_test.go"
+        "crates/agent-gateway/internal/account/cloud_builtin_release_test.go",
+        "crates/agent-gateway/internal/account/cloud_extension_manifest_test.go"
       ],
-      "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。",
+      "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。 ADR0073：按本机定义组织显式 manifest 技能入口和辅助文件；产品设计不含创建技能，生图与创建技能独立。归档白名单保留改名和移出成员的旧固定引用，不注册为当前候选。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "model-preferences-entry",
+      "name": "模型菜单统一高级设置",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": [
+        "desktop",
+        "webui",
+        "gateway",
+        "android"
+      ],
+      "entrypoints": [
+        "crates/agent-ui/src/components/chat/ComposerInlineModelControls.tsx",
+        "crates/agent-ui/src/pages/settings/ProvidersSection.tsx",
+        "crates/agent-ui/src/pages/settings/DeviceImageModelPreferences.tsx",
+        "crates/agent-ui/src/pages/settings/ModelPreferenceFields.tsx",
+        "crates/agent-gateway/web/src/pages/settings/CloudModelPreferencesSection.tsx",
+        "crates/agent-gateway/internal/account/cloud_generation_settings.go",
+        "crates/agent-gateway/internal/account/cloud_title.go"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/cloud_title_test.go",
+        "crates/agent-gateway/web/test/cloud-model-preferences.test.mjs",
+        "crates/agent-gui/test/image-studio/studio-controller.test.mjs"
+      ],
+      "security": "ADR0072：高级配置沿用双列弹窗，设置侧栏不增加分类，关闭保持原工作区、焦点与草稿。设备保持标题、Commit、澄清真实消费者，生图默认未配置，候选读取有效模型目录，不静默选择首个目标；共享生成模型与媒体字段，默认值不覆盖草稿或中断任务。账户标题配置默认关闭、CAS、归属及 CSRF 校验，首次完成后一次辅助调用，无工具与文件权限；比较标题/时间/管理/设置版本再写回，注销取消、不确定结果不重放。编辑草稿按账户隔离；视频没有执行链路时显示不可用。",
       "upstream_relation": "adapt"
     }
   ]

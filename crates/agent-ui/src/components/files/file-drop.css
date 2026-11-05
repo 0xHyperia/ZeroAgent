@@ -21,12 +21,14 @@
 .za-file-drop-overlay[data-coverage="viewport"] {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--layer-critical);
   border-radius: 0;
-  background: hsl(var(--background) / .88);
+  background: hsl(var(--background) / 0.88);
   pointer-events: auto;
 }
-.za-file-drop-overlay[data-coverage="viewport"] > * { pointer-events: none; }
+.za-file-drop-overlay[data-coverage="viewport"] > * {
+  pointer-events: none;
+}
 .za-file-drop-art {
   position: relative;
   width: 132px;
@@ -96,10 +98,6 @@
   height: 44px;
   border-radius: 14px;
 }
-.za-file-drop-overlay[data-compact="true"] strong {
-  font-size: 14px;
-  text-align: left;
-}
 .za-file-drop-overlay[data-compact="true"] > span {
   display: none;
 }
@@ -126,9 +124,6 @@
 .cloud-space-reference-drop .za-file-drop-art {
   display: none;
 }
-.cloud-space-reference-drop .za-file-drop-overlay strong {
-  font-size: 14px;
-}
 @keyframes za-drop-enter {
   from {
     opacity: 0;
@@ -143,4 +138,12 @@
   .za-file-drop-overlay {
     animation: none;
   }
+}
+
+.za-file-drop-overlay[data-compact="true"] strong {
+  font-size: 14px;
+  text-align: left;
+}
+.cloud-space-reference-drop .za-file-drop-overlay strong {
+  font-size: 14px;
 }

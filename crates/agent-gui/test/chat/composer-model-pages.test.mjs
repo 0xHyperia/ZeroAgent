@@ -33,13 +33,14 @@ test("desktop uses the shared model/effort surface and preserves explicit execut
     assert.ok(document.querySelector('input[placeholder="chat.searchModel"]'), "model target opens the list directly");
     assert.equal(document.querySelector('[data-model-group="one"]').getAttribute('aria-expanded'), 'true');
     assert.deepEqual(modes, []); assert.deepEqual(patches, []);
-    await env.act(async () => document.querySelector('.composer-runtime-row [data-segment="text"]').click());
+    await env.act(async () => document.querySelector('.composer-model-toolbar [data-segment="text"]').click());
     assert.deepEqual(modes, ["text"]); assert.deepEqual(selections, []); assert.deepEqual(patches, []);
     await env.act(async () => document.querySelector('[role="switch"]').click());
     assert.deepEqual(patches, [{ nativeWebSearchEnabled: true }]);
     await env.act(async () => document.querySelector('.composer-inline-effort-trigger').click());
     assert.ok(document.querySelector('input[type="range"]'), "effort uses the same continuous shared slider");
     assert.equal(document.querySelectorAll('.composer-config-popup').length, 1);
+    assert.equal(document.querySelector('.composer-model-toolbar'), null, "effort only presents reasoning controls");
     assert.deepEqual(modes, ["text"], "opening effort never changes execution mode");
     assert.deepEqual(selections, [], "opening effort never changes model or provider");
   } finally { await env.act(async () => root.unmount()); env.cleanup(); }
@@ -76,7 +77,7 @@ test("composer reflects selected protocol capability without rewriting the searc
       const control = document.querySelector('[role="switch"][aria-label="chat.runtime.webSearch"]');
       assert.ok(control);
       assert.equal(control.getAttribute("aria-checked"), index === 0 ? "false" : "true");
-      assert.equal(control.hasAttribute("data-disabled"), index === 0);
+      assert.equal(control.disabled, index === 0);
       if (index === 0) await env.act(async () => control.click());
       assert.equal(controls.nativeWebSearchEnabled, true);
       assert.deepEqual(patches, []);

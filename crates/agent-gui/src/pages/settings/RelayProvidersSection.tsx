@@ -47,7 +47,11 @@ function platformLabel(platform: string) {
   }
 }
 
-export function RelayProvidersSection({ settings, setSettings }: SettingsSectionProps) {
+export function RelayProvidersSection({
+  settings,
+  setSettings,
+  onOpenModelPreferences,
+}: SettingsSectionProps & { onOpenModelPreferences?: () => void }) {
   const [user, setUser] = useState<RelayUser | null>(null);
   const [keys, setKeys] = useState<RelayApiKey[]>([]);
   const [groups, setGroups] = useState<RelayGroup[]>([]);
@@ -191,7 +195,7 @@ export function RelayProvidersSection({ settings, setSettings }: SettingsSection
         onCopy={(keyId) => setCopyTarget(keys.find((key) => key.id === keyId) ?? null)}
         onOpenModels={(keyId) => setEditingProviderId(relayProviderId(keyId))}
         onRefresh={() => void loadData()}
-        onOpenPreferences={() => setPreferencesOpen(true)}
+        onOpenPreferences={onOpenModelPreferences ?? (() => setPreferencesOpen(true))}
       />
       {preferencesOpen && (
         <ProviderSettingsDialog
