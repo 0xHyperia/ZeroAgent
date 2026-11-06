@@ -54,7 +54,7 @@
       ]
     },
     {
-      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtensions.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_extension_manifest*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go}",
+      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtensions.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_extension_manifest*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go,crates/agent-gateway/internal/account/cloud_codex_originals*.go,crates/agent-gateway/internal/account/cloud_extension_drafts*.go,crates/agent-gateway/internal/account/cloud_native_workflows.go,crates/agent-gateway/internal/account/skills-native/**,crates/agent-gateway/internal/account/skills-native-releases/**,crates/agent-gateway/internal/account/codex-packages/**,scripts/import-codex-originals.mjs}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [

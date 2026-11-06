@@ -111,7 +111,11 @@ test('Chinese and original names find builtin skills while details never insert 
  await app.update({kind:'tools'});
  const input=document.querySelector('input');
  await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'审查体验');input.dispatchEvent(new Event('input',{bubbles:true}));await tick();});
- assert.equal(document.querySelectorAll('[data-picker-entry]').length,1);await app.click('审查体验核对产品界面');assert.deepEqual(selected,['design-audit']);
+ assert.equal(document.querySelectorAll('[data-picker-entry]').length,0);
+ await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'Product Design');input.dispatchEvent(new Event('input',{bubbles:true}));await tick();});
+ const rows=document.querySelectorAll('[data-picker-entry]');
+ assert.equal(rows.length,1);assert.match(rows[0].textContent,/研究产品问题、探索设计方向/);
+ await app.env.act(async()=>{rows[0].click();await tick();});assert.deepEqual(selected,['product-design']);
 });
 
 test('the add menu presents the installed capability catalog with stable identities',async t=>{

@@ -23,12 +23,14 @@ import { ExtensionMark } from "@liveagent/ui/features/extensions/ExtensionMark";
 import {
   type ExtensionPackage,
   type ExtensionSkill,
-  extensionSkillEnabled,
+  extensionComposerEntry,
 } from "@liveagent/ui/features/extensions/extensionTypes";
+import { useLocale } from "@liveagent/ui/i18n";
 import {
+  extensionDescription,
   extensionDisplayName,
   extensionSearchText,
-  extensionSkillDisplayName,
+  parseExtensionReference,
 } from "@liveagent/ui/lib/extensions/presentation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -120,6 +122,7 @@ export function CloudChatContextPicker(props: {
   onFocusComposer: () => void;
 }) {
   const { kind, scope, revision, projectsClient, filesClient, captureGuard } = props;
+  const { locale } = useLocale();
   const lastKind = useRef<CloudComposerPicker>("files");
   if (kind) lastKind.current = kind;
   const visibleKind = kind ?? lastKind.current;
@@ -272,17 +275,13 @@ export function CloudChatContextPicker(props: {
   const filtered = entries.filter((item) =>
     item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()),
   );
-  const matchingSkills = props.extensions
-    .filter((pkg) => pkg.installed && pkg.enabled)
-    .flatMap((pkg) =>
-      (query.trim() ? pkg.skills : pkg.kind === "plugin" ? pkg.skills.slice(0, 1) : pkg.skills)
-        .filter(
-          (skill) =>
-            extensionSkillEnabled(pkg, skill) &&
-            extensionSearchText(pkg, skill).includes(query.trim().toLocaleLowerCase()),
-        )
-        .map((skill) => ({ pkg, skill })),
-    );
+  const extensionQuery = query.trim().toLocaleLowerCase();
+  const matchingSkills = props.extensions.flatMap((pkg) => {
+    const skill = extensionComposerEntry(pkg);
+    return skill && extensionSearchText(pkg, skill).includes(extensionQuery)
+      ? [{ pkg, skill }]
+      : [];
+  });
   const content = (
     <div className="cloud-context-picker-body">
       {visibleKind !== "tools" ? (
@@ -453,9 +452,10 @@ export function CloudChatContextPicker(props: {
             }}
           >
             {matchingSkills.map(({ pkg, skill }) => {
+              const name = extensionDisplayName(pkg, locale);
+              const description = extensionDescription(pkg, locale);
               const selectedFile = props.selectedSkillFiles?.find(
-                (file) =>
-                  file.startsWith(`zeroagent-skill:${pkg.id}/`) && file.endsWith(`/${skill.name}`),
+                (file) => parseExtensionReference(file)?.packageId === pkg.id,
               );
               return (
                 <div className="cloud-picker-extension-row" key={`${pkg.id}:${skill.name}`}>
@@ -464,7 +464,7 @@ export function CloudChatContextPicker(props: {
                     data-picker-entry
                     aria-pressed={!!selectedFile}
                     className="cloud-picker-row"
-                    title={skill.description}
+                    title={description}
                     disabled={props.disabled}
                     onClick={() =>
                       closeFor(
@@ -478,12 +478,10 @@ export function CloudChatContextPicker(props: {
                   >
                     <ExtensionMark id={pkg.id} small />
                     <span className="min-w-0 flex-1 truncate">
-                      {skill.name === pkg.skills[0]?.name
-                        ? extensionDisplayName(pkg)
-                        : extensionSkillDisplayName(pkg, skill)}
+                      {name}
                       {query.trim() && (
                         <span className="block truncate text-xs text-muted-foreground">
-                          {skill.description}
+                          {description}
                         </span>
                       )}
                     </span>
@@ -493,7 +491,7 @@ export function CloudChatContextPicker(props: {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={`查看${extensionDisplayName(pkg)}详情`}
+                      aria-label={locale === "en-US" ? `View ${name} details` : `查看${name}详情`}
                       onClick={() => closeFor(() => props.onViewExtension?.(pkg))}
                     >
                       <ChevronRight className="size-3.5" />

@@ -116,9 +116,27 @@ func cloudCanonicalResource(kind, id, name, mime, family string, version int64, 
 	return CloudPresentationResource{Kind: kind, ID: id, Name: cloudPublicResourceName(name), MIME: mime, FamilyID: family, Version: version, Role: role}
 }
 
+func cloudExtensionDraftResources(op *CloudToolOperation) []CloudPresentationResource {
+	if op.Name != prepareExtensionTool || op.State != CloudToolSucceeded {
+		return nil
+	}
+	var draft struct {
+		Revision struct{ Name string } `json:"revision"`
+	}
+	if json.Unmarshal(op.Result, &draft) != nil || !cloudSkillName.MatchString(draft.Revision.Name) {
+		return nil
+	}
+	return []CloudPresentationResource{
+		cloudCanonicalResource("extension-draft", op.ID, draft.Revision.Name, "", "", 0, "output"),
+	}
+}
+
 // Called under the account store mutex. Metadata comes from owned canonical
 // records, never names/URLs returned by the model or a sandbox process.
 func (s *MemoryStore) cloudToolResourcesLocked(op *CloudToolOperation) []CloudPresentationResource {
+	if op.Name == prepareExtensionTool {
+		return cloudExtensionDraftResources(op)
+	}
 	selector := cloudToolResourceSelection(op)
 	if selector == nil {
 		return nil
@@ -175,6 +193,9 @@ func (s *MemoryStore) cloudToolResourcesLocked(op *CloudToolOperation) []CloudPr
 
 // Narrow SQL reads avoid loading original file bytes, page bodies or manifests.
 func cloudToolResourcesTx(ctx context.Context, tx *sql.Tx, op *CloudToolOperation) ([]CloudPresentationResource, error) {
+	if op.Name == prepareExtensionTool {
+		return cloudExtensionDraftResources(op), nil
+	}
 	selector := cloudToolResourceSelection(op)
 	if selector == nil {
 		return nil, nil

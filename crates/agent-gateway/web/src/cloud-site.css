@@ -127,6 +127,17 @@
   width: 100%;
   height: 100%;
 }
+.cloud-site-canvas:is([data-viewport="phone"], [data-viewport="desktop"]) {
+  overflow: auto;
+}
+.cloud-site-canvas[data-viewport="phone"] .cloud-site-frame-host {
+  width: 390px;
+  margin-inline: auto;
+}
+.cloud-site-canvas[data-viewport="desktop"] .cloud-site-frame-host {
+  width: 1280px;
+  margin-inline: auto;
+}
 .cloud-site-frame-host > iframe {
   display: block;
   width: 100%;

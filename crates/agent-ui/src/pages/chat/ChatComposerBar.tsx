@@ -28,6 +28,7 @@ import {
   type MentionComposerHandle,
   type MentionComposerSkill,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import type { MentionComposerProps } from "@liveagent/ui/components/chat/MentionComposerModel";
 import { useComposerShapeMotion } from "@liveagent/ui/components/chat/useComposerShapeMotion";
 import { useInlineComposerLayout } from "@liveagent/ui/components/chat/useInlineComposerLayout";
 import { GitBranchSelector } from "@liveagent/ui/components/git/GitBranchSelector";
@@ -334,7 +335,10 @@ export type ChatComposerBarProps = {
   contextBarPosition?: "above" | "below";
   workdir: string;
   enabledSkills: MentionComposerSkill[];
+  slashSkills?: MentionComposerSkill[];
   mentionExtensions?: MentionComposerSkill[];
+  resolveExtensionMention?: MentionComposerProps["resolveExtensionMention"];
+  onOpenExtensionMention?: (reference: string) => void;
   mentionActions?: MentionComposerAction[];
   /** Earlier conversations available to the structured @ reference picker. */
   mentionableConversations?: MentionComposerConversation[];
@@ -474,7 +478,10 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     inputPlaceholder,
     workdir,
     enabledSkills,
+    slashSkills,
     mentionExtensions,
+    resolveExtensionMention,
+    onOpenExtensionMention,
     mentionActions,
     mentionableConversations = [],
     searchMentionableConversations,
@@ -1814,7 +1821,10 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 disabled={isInputDisabled || stt.active}
                 workdir={workdir}
                 enabledSkills={enabledSkills}
+                slashSkills={slashSkills}
                 mentionExtensions={mentionExtensions}
+                resolveExtensionMention={resolveExtensionMention}
+                onOpenExtensionMention={onOpenExtensionMention}
                 mentionActions={mentionActions}
                 conversationMentionsEnabled={isAgentExecutionMode(executionMode)}
                 conversations={

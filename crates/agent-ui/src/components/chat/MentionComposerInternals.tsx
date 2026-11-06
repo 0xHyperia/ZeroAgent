@@ -1611,11 +1611,10 @@ export function createSkillMentionChip(skill: MentionComposerSkillMention) {
     skill.skillFile,
   );
   chip.className = cloudReference
-    ? "mention-chip mention-extension cursor-default select-none"
+    ? "mention-chip mention-extension"
     : mentionChipClassName("skill", { selectable: false });
   const presentation = extensionReferencePresentation(skill.skillFile);
-  const label = presentation?.name || skill.displayName || skill.name;
-  if (presentation) chip.setAttribute("data-skill-display-name", label);
+  const label = skill.displayName || skill.name;
   chip.title = skill.description ? `${label}\n${skill.description}` : label;
 
   const icon = cloudReference ? document.createElement("span") : chip;

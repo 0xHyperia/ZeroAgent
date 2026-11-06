@@ -88,7 +88,7 @@ async function mount(t,overrides={}) {
  const host=document.body.appendChild(document.createElement('div')),root=env.createRoot(host),calls=[];
  const adapter={scope:'test-account',list:async()=>catalog,read:async()=>({revision,version:4}),mutate:async(version,input)=>{calls.push({version,input});return catalog;},importArchive:async()=>catalog,download:async()=>new Blob(['archive']),...overrides};
  const {ExtensionsWorkspace}=env.loadModule('@liveagent/ui/features/extensions/ExtensionsWorkspace.tsx');
- let props={adapter,onConfigureImages:overrides.onConfigureImages,catalog:overrides.catalog??catalog,loading:false,error:'',onRefresh(){calls.push({refresh:true});},onBack(){},onTry(...args){calls.push({try:args});},onCatalog(next){props={...props,catalog:next};root.render(env.React.createElement(ExtensionsWorkspace,props));}};
+ let props={adapter,openPackage:overrides.openPackage,onConfigureImages:overrides.onConfigureImages,catalog:overrides.catalog??catalog,loading:false,error:'',onRefresh(){calls.push({refresh:true});},onBack:overrides.onBack??(()=>{}),onTry(...args){calls.push({try:args});},onCatalog(next){props={...props,catalog:next};root.render(env.React.createElement(ExtensionsWorkspace,props));}};
  const render=()=>env.act(async()=>{root.render(env.React.createElement(ExtensionsWorkspace,props));await tick();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});await render();
  const click=async(name)=>{const el=[...document.querySelectorAll('button,[role^="menuitem"]')].find(el=>(el.getAttribute('aria-label')??el.textContent).trim()===name);assert.ok(el,name);await env.act(async()=>{el.click();await tick();});};
@@ -98,8 +98,39 @@ async function mount(t,overrides={}) {
 test('directory, actual source reading and explicit try use the same selected identity',async t=>{
  const app=await mount(t);await app.click('技能');await app.click('个人');await app.click('weekly-reviewReview a week');await app.flush();
  assert.match(document.querySelector('[role="dialog"]').textContent,/# Private workflow/);
- await app.click('references/notes.md');assert.match(document.querySelector('[role="dialog"]').textContent,/# Reference/);
+ await app.click('浏览包内资料');await app.click('references/notes.md');assert.match(document.querySelector('[role="dialog"]').textContent,/# Reference/);
+ await app.click('返回技能正文');assert.match(document.querySelector('[role="dialog"]').textContent,/# Private workflow/);
  await app.click('在对话中使用');assert.equal(app.calls[0].try[0].id,'abc');assert.equal(app.calls[0].try[1].entry,'SKILL.md');
+});
+
+test('opening a standalone skill from the composer goes to its reader and closing returns to chat',async t=>{
+ let returned=0;
+ const app=await mount(t,{openPackage:{id:'abc',key:1},onBack(){returned++;}});
+ const reader=document.querySelector('[role="dialog"]');
+ assert.ok(reader);assert.match(reader.textContent,/# Private workflow/);
+ await app.click('关闭技能详情');
+ assert.equal(document.querySelector('[role="dialog"]'),null);
+ assert.equal(returned,1);
+ assert.deepEqual(app.calls,[]);
+});
+
+test('the skill tree opens nested scripts and copies the entire unmodified source',async t=>{
+ const script='#!/usr/bin/env python3\r\ntext = """\r\n```markdown\r\n"""\r\n';
+ const app=await mount(t,{
+  read:async()=>({version:4,revision:{...revision,files:{...revision.files,'scripts/python/init_skill.py':script}}}),
+ });
+ const clipboard=[];
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>clipboard.push(text)}});
+ await app.click('技能');await app.click('个人');await app.click('weekly-reviewReview a week');await app.flush();
+ const tree=document.querySelector('nav[aria-label="技能文件"]');
+ assert.equal(tree.querySelector('[aria-current="true"]').textContent,'SKILL.md');
+ await app.click('python');await app.click('init_skill.py');
+ assert.equal(tree.querySelector('[aria-current="true"]').textContent,'init_skill.py');
+ assert.match(document.querySelector('.za-skill-source-card header').textContent,/Python/);
+ await app.click('复制文件内容');
+ assert.deepEqual(clipboard,[script]);
+ await app.click('SKILL.md');
+ assert.match(document.querySelector('[role="dialog"]').textContent,/# Private workflow/);
 });
 
 test('customization navigation uses shared menu rows and exposes one current category',async t=>{
@@ -124,13 +155,33 @@ test('editing retains the draft after a failed save and only saves through expli
 const publicPlugin={...pkg,id:'product-design',kind:'plugin',visibility:'public',owned:false,builtin:true,name:'Product Design',skills:[{name:'product-design',description:'Design',entry:'SKILL.md'},{name:'bundled-audit',description:'Private to plugin',entry:'audit.md'}]};
 const publicSkill={...pkg,id:'skill-creator',visibility:'public',owned:false,builtin:true,name:'skill-creator',skills:[{name:'skill-creator',description:'Create a skill',entry:'SKILL.md'}]};
 
+test('a bundled skill opens its own body and keeps sibling skills out of the supporting file menu',async t=>{
+ const audit=publicPlugin.skills[1];
+ const app=await mount(t,{
+  catalog:{version:4,packages:[publicPlugin]},
+  read:async()=>({version:4,revision:{...revision,skills:publicPlugin.skills,files:{...revision.files,[audit.entry]:'# Audit workflow\nCollect the evidence.'}}}),
+ });
+ await app.click('产品设计');
+ await app.env.act(async()=>{[...document.querySelectorAll('.za-extension-skill-link')].find(link=>link.textContent.includes(audit.name)).click();await tick();});
+ const dialog=document.querySelector('[role="dialog"]');
+ assert.match(dialog.textContent,/技能正文.*Audit workflow/s);
+ assert.doesNotMatch(dialog.textContent,/Private workflow/);
+ await app.click('浏览包内资料');
+ const files=document.querySelector('[role="menu"]');
+ assert.match(files.textContent,/references\/notes.md/);
+ assert.doesNotMatch(files.textContent,/SKILL\.md|audit\.md/);
+});
+
 test('kind, source and installation filters are independent and bundled skills stay in their plugin',async t=>{
  const uninstalled={...pkg,id:'uninstalled',name:'uninstalled-review',installed:false};
  const app=await mount(t,{catalog:{version:4,packages:[publicPlugin,publicSkill,pkg,uninstalled]}});
- const directory=()=>document.querySelector('.za-extension-directory').textContent;
+ const directory=()=>[...document.querySelectorAll('.za-extension-directory')].map(node=>node.textContent).join(' ');
  assert.match(directory(),/产品设计/);assert.doesNotMatch(directory(),/bundled-audit|weekly-review|创建技能/);
  await app.click('技能');assert.match(directory(),/创建技能/);assert.doesNotMatch(directory(),/bundled-audit|产品设计/);
  await app.click('个人');assert.match(directory(),/weekly-review/);assert.match(directory(),/uninstalled-review/);
+ const sections=[...document.querySelectorAll('.za-extension-directory-section')];
+ assert.deepEqual(sections.map(section=>section.querySelector('h2').textContent),['已安装','未安装']);
+ assert.match(sections[0].textContent,/weekly-review/);assert.doesNotMatch(sections[0].textContent,/uninstalled-review/);
  await app.click('安装状态');await app.click('未安装');assert.doesNotMatch(directory(),/weekly-review/);assert.match(directory(),/uninstalled-review/);
  assert.notEqual(document.querySelector('button[aria-label="安装状态"]').getAttribute('aria-expanded'),'true');
  await app.click('安装 uninstalled-review');assert.equal(app.calls.at(-1).input.action,'install');assert.equal(app.calls.at(-1).input.id,'uninstalled');
@@ -211,18 +262,20 @@ test('Chinese builtin presentation preserves personal names and both language se
  const display=loader.loadModule('@liveagent/ui/lib/extensions/presentation.ts');
  assert.equal(display.extensionDisplayName(publicPlugin),'产品设计');
  assert.equal(display.extensionDisplayName({...publicPlugin,builtin:false,visibility:'personal',name:'My own design'}),'My own design');
+ assert.equal(display.extensionDescription({...publicPlugin,builtin:false,visibility:'personal',description:'Authored description'},'zh-CN'),'Authored description');
  assert.match(display.extensionSearchText(publicPlugin),/产品设计/);assert.match(display.extensionSearchText(publicPlugin),/product design/);
+ assert.match(display.extensionSearchText(publicPlugin),/研究产品问题.*research, design/);
  const mention=cloudComposerSkills({version:4,packages:[publicPlugin]})[0];
  assert.equal(mention.name,'product-design');assert.equal(mention.skillFile,'zeroagent-skill:product-design/3/product-design');assert.equal(mention.displayName,'产品设计');
  assert.match(mention.searchText,/product design/);
 });
 
-test('a legacy English reference renders Chinese without changing its immutable target or surrounding text',async t=>{
+test('rendering a saved reference preserves its label, target and surrounding text until the host supplies a locale',async t=>{
  const env=await createWebDomTestEnv();t.after(()=>env.cleanup());
  const {createSkillMentionChip,collectDraftSegments}=env.loadModule('@liveagent/ui/components/chat/MentionComposerInternals.tsx');
  const mention={name:'product-design',displayName:'Product Design',description:'Design',baseDir:'cloud',skillFile:'zeroagent-skill:product-design/2/product-design'};
  const editor=document.createElement('div');editor.append('Existing draft ',createSkillMentionChip(mention),' remains');
- const segments=collectDraftSegments(editor,new Map());assert.equal(editor.textContent,'Existing draft 产品设计 remains');
+ const segments=collectDraftSegments(editor,new Map());assert.equal(editor.textContent,'Existing draft Product Design remains');
  assert.equal(segments.find(segment=>segment.type==='skillMention').skill.skillFile,mention.skillFile);assert.equal(segments.find(segment=>segment.type==='skillMention').skill.name,'product-design');
  assert.equal(editor.querySelector('img').getAttribute('src').endsWith('product-design.webp'),true);
 });
@@ -269,4 +322,84 @@ test('configuring images keeps the selected skill reader mounted behind the sett
  assert.equal(opened,1);
  assert.equal(document.querySelector('[role="dialog"]'),reader,'the reader and its current file must survive advanced settings');
  assert.ok(reader.querySelector('[data-extension-configure-images]'));
+});
+
+
+test('the installed sidebar search is independent of discovery and opens the shared management menu',async t=>{
+ const creator={...publicPlugin,id:'plugin-creator',name:'Plugin Creator'};
+ const available={...publicPlugin,id:'available',name:'Available design',installed:false};
+ const app=await mount(t,{catalog:{version:4,packages:[publicPlugin,creator,available]}});
+ await app.click('搜索已安装的插件');await app.fill('筛选已安装的插件','Plugin Creator');
+ const rail=document.querySelector('.za-extensions-sidebar-container');
+ assert.match(rail.textContent,/创建插件/);assert.doesNotMatch(rail.textContent,/产品设计|Available design/);
+ assert.match(document.querySelector('.za-extension-directory').textContent,/Available design/);
+ await app.click('已安装插件 创建插件的操作');
+ assert.match(document.querySelector('[role="menu"]').textContent,/管理.*停用.*卸载/);
+ assert.doesNotMatch(document.querySelector('[role="menu"]').textContent,/编辑插件|下载插件包/);
+ await app.click('管理');assert.match(document.querySelector('nav[aria-label="当前位置"]').textContent,/创建插件.*管理/);
+});
+
+test('a plugin app opens the real editor without executing the plugin or making a write',async t=>{
+ const creator={...publicPlugin,id:'plugin-creator',name:'Plugin Creator'};
+ const app=await mount(t,{catalog:{version:4,packages:[creator,publicPlugin]}});
+ const openPackage=async id=>app.env.act(async()=>{document.querySelector(`[data-extension-open="${id}"]`).click();await tick();});
+ await openPackage('product-design');assert.equal(document.querySelector('.za-extension-apps'),null);
+ await app.click('插件');await openPackage('plugin-creator');
+ const appSection=document.querySelector('.za-extension-apps');
+ assert.equal(appSection.querySelector('h2').textContent,'应用 1');
+ assert.ok(appSection.compareDocumentPosition(document.querySelector('.za-extension-skills')) & 4);
+ await app.click('打开');assert.ok(document.querySelector('[aria-label="编辑插件文件"]'));
+ await app.click('返回插件');assert.match(document.querySelector('nav[aria-label="当前位置"]').textContent,/创建插件/);
+ assert.deepEqual(app.calls,[]);
+});
+
+test('original Codex metadata survives the catalog, plugin detail, and composer',async t=>{
+ const original={...publicPlugin,id:'plugin-creator',version:4,publisher:'OpenAI',
+  name:'Plugin Creator',description:'Create and edit plugins',overview:'Create a reusable workflow.',
+  examples:['Create a plugin for a task I do often'],
+  skills:[{name:'create-plugin',display_name:'Create Plugin',description:'Create local or cloud plugins.',entry:'skills/create-plugin/SKILL.md'}],
+  unavailable_apps:[{name:'Plugin Creator',description:'Create and improve plugins.'}]};
+ const payload=parseExtensionCatalog({version:4,packages:[original]});
+ const [mention]=cloudComposerSkills(payload);
+ assert.equal(mention.displayName,'创建插件');
+ assert.match(mention.description,/工作流程整理成个人插件/);
+ assert.equal(cloudComposerSkills(payload,'en-US')[0].displayName,'Plugin Creator');
+ assert.equal(cloudComposerSkills(payload,'en-US')[0].description,'Create local or cloud plugins.');
+ const {extensionOverview}=loader.loadModule('@liveagent/ui/lib/extensions/presentation.ts');
+ assert.equal(extensionOverview(payload.packages[0],'en-US'),original.overview);
+ assert.equal(mention.skillFile,'zeroagent-skill:plugin-creator/4/create-plugin');
+ const app=await mount(t,{catalog:payload});
+ await app.env.act(async()=>{document.querySelector('[data-extension-open="plugin-creator"]').click();await tick();});
+ assert.match(document.querySelector('.za-extension-intro').textContent,/把经常重复的一组工作整理成个人插件/);
+ assert.match(document.querySelector('.za-extension-skills .za-extension-skill-link').textContent,/工作流程整理成个人插件/);
+ assert.match(document.querySelector('.za-extension-starters').textContent,/Create a plugin for a task I do often/);
+ const apps=document.querySelector('.za-extension-apps');
+ assert.match(apps.textContent,/Plugin Creator.*托管应用未连接/);
+ await app.env.act(async()=>{apps.querySelector('button').click();await tick();});
+ assert.match(document.querySelector('[role="dialog"]').textContent,/Create and improve plugins.*托管应用未连接/);
+ assert.deepEqual(app.calls,[]);
+ assert.equal(document.querySelector('[role="dialog"]').querySelector('button:not([aria-label])')?.textContent,'关闭');
+ const {createSkillMentionChip}=app.env.loadModule('@liveagent/ui/components/chat/MentionComposerInternals.tsx');
+ assert.equal(createSkillMentionChip(mention).textContent,'创建插件');
+});
+
+test('prepared plugin opens for review and saves only on an explicit action',async t=>{
+ const id='36e2b5c0-8c13-4f81-825c-f5d8a9a1d021';
+ const child={name:'check-output',description:'Check output',entry:'skills/check-output/SKILL.md'};
+ const app=await mount(t,{
+  openPackage:{id,key:1,draft:true},
+  readDraft:async observed=>{
+   assert.equal(observed,id);
+   return {kind:'plugin',revision:{...revision,files:{...revision.files,[child.entry]:'---\nname: check-output\ndescription: Check output\n---\nReview the result.'},skills:[skill,child]}};
+  },
+ });
+ assert.match(document.querySelector('.za-skill-editor h1').textContent,/审阅草稿/);
+ assert.equal(app.calls.length,0);
+ await app.click(child.entry);
+ assert.match(document.querySelector('textarea').value,/Review the result/);
+ await app.click('保存');
+ assert.equal(app.calls.length,1);
+ assert.equal(app.calls[0].input.draft_id,id);
+ assert.equal(app.calls[0].input.kind,'plugin');
+ assert.equal(app.calls[0].input.revision.skills.length,2);
 });

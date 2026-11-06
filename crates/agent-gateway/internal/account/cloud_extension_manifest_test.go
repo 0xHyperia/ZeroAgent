@@ -23,7 +23,7 @@ func TestBuiltinManifestMembership(t *testing.T) {
 			t.Fatal(pkg.ID)
 		}
 		latest := pkg.Revisions[len(pkg.Revisions)-1]
-		if cloudExtensionKind(pkg) != expect.kind || len(latest.Skills) != expect.count || latest.Skills[0].Name != expect.primary || latest.Number != 3 || len(pkg.Revisions) != 3 {
+		if cloudExtensionKind(pkg) != expect.kind || len(latest.Skills) != expect.count || latest.Skills[0].Name != expect.primary || len(pkg.Revisions) < 3 || pkg.Revisions[2].Number != 3 {
 			t.Fatal("incorrect builtin membership", pkg.ID, latest.Skills)
 		}
 		for _, skill := range latest.Skills {

@@ -42,6 +42,7 @@ import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
+import { parseExtensionReference } from "@liveagent/ui/lib/extensions/presentation";
 import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
@@ -118,8 +119,12 @@ import {
   buildCloudComposerText,
   cloudComposerExtensions,
   cloudComposerSkills,
+  cloudComposerSlashSkills,
+  cloudExtensionMention,
   cloudPackageSkill,
   createCloudExtensionsAdapter,
+  extensionDraftFromLink,
+  linkExtensionDraftCitations,
 } from "@/lib/cloudExtensions";
 import { cloudGenerationSettings } from "@/lib/cloudGenerationSettings";
 import { siteRevisionText } from "@/lib/cloudSiteRevision";
@@ -484,6 +489,8 @@ export function CloudChatPage({
     owner: number;
     id: string;
     key: number;
+    draft?: boolean;
+    skillName?: string;
   } | null>(null);
   const extensionsAdapter = useMemo(
     () => createCloudExtensionsAdapter(`cloud:${user.id}`),
@@ -498,12 +505,20 @@ export function CloudChatPage({
   const [extensionRefresh, setExtensionRefresh] = useState(0);
   const extensionCatalog = extensions.owner === user.id ? extensions.catalog : null;
   const enabledCloudSkills = useMemo(
-    () => cloudComposerSkills(extensionCatalog),
-    [extensionCatalog],
+    () => cloudComposerSkills(extensionCatalog, settings.locale),
+    [extensionCatalog, settings.locale],
   );
   const mentionCloudExtensions = useMemo(
-    () => cloudComposerExtensions(extensionCatalog),
-    [extensionCatalog],
+    () => cloudComposerExtensions(extensionCatalog, settings.locale),
+    [extensionCatalog, settings.locale],
+  );
+  const slashCloudSkills = useMemo(
+    () => cloudComposerSlashSkills(extensionCatalog, settings.locale),
+    [extensionCatalog, settings.locale],
+  );
+  const resolveExtensionMention = useCallback(
+    (reference: string) => cloudExtensionMention(extensionCatalog, reference, settings.locale),
+    [extensionCatalog, settings.locale],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: extensionRefresh is an explicit catalog reconciliation request.
   useEffect(() => {
@@ -2078,6 +2093,11 @@ export function CloudChatPage({
 
   function openCloudMessageLink(link: ChatFileLink) {
     if (!isCurrentView(viewRef.current)) return;
+    const extensionDraft = extensionDraftFromLink(link.path);
+    if (extensionDraft) {
+      requestCustomize(extensionDraft, true);
+      return;
+    }
     const message = /^cloud-messages\/([A-Za-z0-9_-]{1,128})$/.exec(link.path);
     if (message) {
       void readMessageBody(message[1]);
@@ -3117,7 +3137,9 @@ export function CloudChatPage({
           };
         }
         const mapText = (value: string) =>
-          linkCloudArtifactCitations(linkCloudSourceCitations(linkCloudFileCitations(value)));
+          linkExtensionDraftCitations(
+            linkCloudArtifactCitations(linkCloudSourceCitations(linkCloudFileCitations(value))),
+          );
         const fallbackText = message.content_omitted
           ? `正文按需加载。[查看消息正文](cloud-messages/${message.id})`
           : preview.truncated
@@ -3675,7 +3697,11 @@ export function CloudChatPage({
   function openExtensionDetails(pkg: ExtensionPackage) {
     requestCustomize(pkg.id);
   }
-  function requestCustomize(packageId?: string) {
+  function openExtensionMention(reference: string) {
+    const target = resolveExtensionMention(reference);
+    if (target) requestCustomize(target.packageId, false, target.skillName);
+  }
+  function requestCustomize(packageId?: string, draft = false, skillName?: string) {
     projectNavigation.request(() => {
       sidebarPreview.dismiss();
       setComposerMenu(null);
@@ -3686,6 +3712,8 @@ export function CloudChatPage({
           owner: user.id,
           id: packageId,
           key: (current?.key ?? 0) + 1,
+          draft,
+          skillName,
         }));
       if (sidebar.isMobile) setSidebarOpen(false);
     });
@@ -3693,7 +3721,7 @@ export function CloudChatPage({
   function tryExtension(pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) {
     const view = viewRef.current;
     if (!isCurrentView(view) || pendingSubmissionRef.current || composerLocked) return;
-    const mention = cloudPackageSkill(pkg, skill.name);
+    const mention = cloudPackageSkill(pkg, skill.name, settings.locale);
     if (!mention) {
       setError("这个技能尚未启用，请在自定义中启用后使用。");
       return;
@@ -3708,9 +3736,7 @@ export function CloudChatPage({
       const exists = composerRef.current
         ?.getDraft()
         .skillMentions.some(
-          (selected) =>
-            selected.skillFile.startsWith(`zeroagent-skill:${pkg.id}/`) &&
-            selected.skillFile.endsWith(`/${skill.name}`),
+          (selected) => parseExtensionReference(selected.skillFile)?.packageId === pkg.id,
         );
       if (!exists) composerRef.current?.insertSkillMention(mention);
       savedDraft.scheduleCapture();
@@ -3723,7 +3749,11 @@ export function CloudChatPage({
       openCustomize();
       return;
     }
-    tryExtension(pkg, pkg.skills[0], text);
+    tryExtension(
+      pkg,
+      pkg.skills[0],
+      pkg.native || pkg.publisher === "OpenAI" ? pkg.examples?.[0] : text,
+    );
   }
   function fillStarter(text: string) {
     if (!isCurrentView(viewRef.current) || pendingSubmissionRef.current || composerLocked) return;
@@ -5020,7 +5050,10 @@ export function CloudChatPage({
                                 }
                                 workdir=""
                                 enabledSkills={enabledCloudSkills}
+                                slashSkills={slashCloudSkills}
                                 mentionExtensions={mentionCloudExtensions}
+                                resolveExtensionMention={resolveExtensionMention}
+                                onOpenExtensionMention={openExtensionMention}
                                 mentionActions={[
                                   {
                                     id: "upload",
@@ -5610,7 +5643,14 @@ export function CloudChatPage({
                     setExtensions({ owner: user.id, catalog, loading: false, error: "" })
                   }
                   onRefresh={() => setExtensionRefresh((value) => value + 1)}
-                  onBack={() => setCustomize((value) => ({ ...value, open: false }))}
+                  onBack={() => {
+                    setCustomize((value) => ({ ...value, open: false }));
+                    if (!sidebar.isMobile) {
+                      requestAnimationFrame(() =>
+                        composerRef.current?.focus({ restoreSelection: true }),
+                      );
+                    }
+                  }}
                   onTry={tryExtension}
                   onConfigureImages={openModelPreferences}
                 />

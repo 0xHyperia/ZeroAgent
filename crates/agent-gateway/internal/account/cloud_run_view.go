@@ -36,6 +36,8 @@ func cloudPublicToolStatus(name string) string {
 		return "正在创作图像"
 	case "read_skill":
 		return "正在准备创作"
+	case prepareExtensionTool:
+		return "正在校验草稿"
 	case "execute_code":
 		return "正在分析与计算"
 	case "execute_command":

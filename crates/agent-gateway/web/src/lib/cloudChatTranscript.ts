@@ -18,6 +18,7 @@ const resourceRoutes = {
   artifact: "cloud-artifacts",
   site: "cloud-sites",
   source: "cloud-sources",
+  "extension-draft": "cloud-extension-drafts",
 } as const;
 function sharedResource(resource: CloudChatPresentationResource): AssistantResource | undefined {
   // The host resolves this immutable identity with its authenticated resource API.
@@ -46,7 +47,13 @@ export function cloudChatAssistantDeliverables(message: CloudChatMessage): Assis
   for (const block of message.presentation?.blocks ?? []) {
     if (block.type !== "tool") continue;
     for (const resource of block.resources ?? []) {
-      if (resource.role !== "output" || (resource.kind !== "artifact" && resource.kind !== "site"))
+      if (
+        resource.role !== "output" ||
+        (resource.kind !== "artifact" &&
+          resource.kind !== "site" &&
+          resource.kind !== "extension-draft") ||
+        (resource.kind === "extension-draft" && block.state !== "succeeded")
+      )
         continue;
       const safe = sharedResource(resource);
       if (!safe) continue;
@@ -54,7 +61,12 @@ export function cloudChatAssistantDeliverables(message: CloudChatMessage): Assis
         ...safe,
         kind: resource.kind,
         role: "output",
-        status: block.state === "succeeded" ? "saved" : "unconfirmed",
+        status:
+          resource.kind === "extension-draft"
+            ? "draft"
+            : block.state === "succeeded"
+              ? "saved"
+              : "unconfirmed",
       };
       const key = `${item.kind}:${item.id}`;
       if (items.get(key)?.status !== "saved") items.set(key, item);
@@ -82,6 +94,7 @@ export function cloudChatProcessResources(
 function toolLabel(name?: string, fallback?: string) {
   const labels: Record<string, string> = {
     read_skill: "读取创作技能",
+    prepare_extension: "校验自定义草稿",
     generate_image: "创作图像",
     read_file: "读取文件",
     load_uploaded_file: "读取上传资料",

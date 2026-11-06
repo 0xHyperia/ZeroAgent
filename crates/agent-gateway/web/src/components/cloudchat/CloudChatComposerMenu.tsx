@@ -22,9 +22,13 @@ import { ExtensionMark } from "@liveagent/ui/features/extensions/ExtensionMark";
 import {
   type ExtensionPackage,
   type ExtensionSkill,
-  extensionSkillEnabled,
+  extensionComposerEntry,
 } from "@liveagent/ui/features/extensions/extensionTypes";
-import { extensionDisplayName } from "@liveagent/ui/lib/extensions/presentation";
+import { useLocale } from "@liveagent/ui/i18n";
+import {
+  extensionDescription,
+  extensionDisplayName,
+} from "@liveagent/ui/lib/extensions/presentation";
 import { useRef, useState } from "react";
 
 export function CloudChatComposerMenu(props: {
@@ -44,6 +48,7 @@ export function CloudChatComposerMenu(props: {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { locale } = useLocale();
   const triggerRef = useRef<HTMLElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [localOpen, setLocalOpen] = useState(false);
@@ -103,23 +108,25 @@ export function CloudChatComposerMenu(props: {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {props.extensions ? (
-          props.extensions
-            .filter((pkg) => extensionSkillEnabled(pkg, pkg.skills[0]))
-            .map((pkg) => (
+          props.extensions.flatMap((pkg) => {
+            const skill = extensionComposerEntry(pkg);
+            if (!skill) return [];
+            return (
               <DropdownMenuItem
                 key={pkg.id}
                 className="gap-3"
-                onClick={() => props.onTryExtension?.(pkg, pkg.skills[0])}
+                onClick={() => props.onTryExtension?.(pkg, skill)}
               >
                 <ExtensionMark id={pkg.id} small />
                 <span>
-                  <span className="block">{extensionDisplayName(pkg)}</span>
+                  <span className="block">{extensionDisplayName(pkg, locale)}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {pkg.description}
+                    {extensionDescription(pkg, locale)}
                   </span>
                 </span>
               </DropdownMenuItem>
-            ))
+            );
+          })
         ) : (
           <>
             <DropdownMenuItem className="gap-3" onClick={props.onCreateImage}>

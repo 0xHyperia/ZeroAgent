@@ -3,6 +3,7 @@
 # Embedded workflow releases are immutable payloads; keep their exact source bytes.
 crates/agent-gateway/internal/account/skills/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 crates/agent-gateway/internal/account/skills-releases/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+crates/agent-gateway/internal/account/codex-packages/** -text -whitespace
 
 # Unified-diff context prefixes are payload, including blank context lines and tabs.
 # Keep patch bytes intact; applied K-brain source has its own formatting and tests.

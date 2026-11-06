@@ -1,0 +1,22 @@
+{
+  "product-design": {
+    "source": "plugins/cache/openai-curated-remote/product-design/0.1.56",
+    "local": true,
+    "sha256": "cba09eba2f594f042909ff894f71d3fb302a418e5bc5214a1188bcf4974d7f84"
+  },
+  "plugin-creator": {
+    "source": "plugins/cache/openai-curated-remote/plugin-creator/0.1.28",
+    "local": true,
+    "sha256": "4ed379d6e864eecc52f20fff490d24e08bfc9c699023c6e24113d775847643aa"
+  },
+  "imagegen": {
+    "source": "skills/.system/imagegen",
+    "local": false,
+    "sha256": "19093b8c468518b32915f76c82c555c10bd5f729a7ae16acb0bc0b67fc48e95b"
+  },
+  "skill-creator": {
+    "source": "skills/.system/skill-creator",
+    "local": false,
+    "sha256": "ae223f8f14c88029f8725f5cd021c6d64df60f5ca8e181499ead1a0564ce4ffb"
+  }
+}

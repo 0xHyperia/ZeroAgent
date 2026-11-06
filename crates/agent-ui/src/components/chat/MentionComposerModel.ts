@@ -30,7 +30,12 @@ export type MentionSearchEntry = {
 export type MentionComposerSkill = {
   name: string;
   /** Exact installed historical references, available only for clipboard restoration. */
-  legacyReferences?: { name: string; skillFile: string; description: string }[];
+  legacyReferences?: {
+    name: string;
+    skillFile: string;
+    description: string;
+    displayName?: string;
+  }[];
   /** Optional human-readable package label; the skill identity remains name/skillFile. */
   displayName?: string;
   /** Search aliases are presentation-only and never affect the selected identity. */
@@ -170,7 +175,7 @@ export interface MentionComposerHandle {
    */
   runCommandDraft: () => boolean;
   clear: () => void;
-  focus: () => void;
+  focus: (options?: { restoreSelection?: boolean }) => void;
   /**
    * Appends draft segments as their own paragraph at the end of the draft,
    * then focuses the composer with the caret after them. Returns false when
@@ -241,8 +246,14 @@ export interface MentionComposerProps {
   placeholder?: string;
   workdir: string;
   enabledSkills?: MentionComposerSkill[];
+  /** Optional slash candidates when the host keeps additional skills for draft restoration. */
+  slashSkills?: MentionComposerSkill[];
   /** Opt-in @ capability list. One primary entry per installed package, supplied by the host. */
   mentionExtensions?: MentionComposerSkill[];
+  resolveExtensionMention?: (
+    reference: string,
+  ) => { label: string; description?: string } | undefined;
+  onOpenExtensionMention?: (reference: string) => void;
   mentionActions?: MentionComposerAction[];
   conversations?: MentionComposerConversation[];
   /** Searches the complete persisted history when the conversation query is non-empty. */

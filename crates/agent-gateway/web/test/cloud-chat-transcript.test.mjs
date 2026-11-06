@@ -10,6 +10,16 @@ const options={live:false,fallbackText:"CANONICAL",mapText:text=>text};
 const message=(blocks,more={})=>({id:"message-a",role:"assistant",content:"CANONICAL",created_at:start,presentation:{version:1,model:"prior-model",state:"completed",reasoning_effort:"high",blocks,...more}});
 const prose={id:"text:1",type:"text",round:1,text:"CANONICAL"};
 
+test("a verified extension draft remains actionable even without a model-written citation",()=>{
+ const id="36e2b5c0-8c13-4f81-825c-f5d8a9a1d021";
+ const api=load(), block={id:"tool:t1",type:"tool",round:0,name:"prepare_extension",state:"succeeded",
+  resources:[{kind:"extension-draft",id,name:"review-helper",role:"output"}]};
+ const [draft]=api.cloudChatAssistantDeliverables(message([block,prose]));
+ assert.equal(draft.status,"draft");
+ assert.equal(draft.link.path,`cloud-extension-drafts/${id}`);
+ assert.deepEqual(api.cloudChatAssistantDeliverables(message([{...block,state:"unknown"},prose])),[]);
+});
+
 test("cloud projection preserves ordered rounds, real process status and per-round usage without fabricated cost",()=>{
   const api=load(),m=message([
     {id:"reasoning:0",type:"reasoning",round:0,text:"PUBLIC_REASONING",started_at:start,completed_at:end},

@@ -50,6 +50,7 @@ import {
   formatFileMentionToken,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import { buildComposerQuoteInsertion } from "@liveagent/ui/lib/chat/transcriptQuote";
+import { parseExtensionReference } from "@liveagent/ui/lib/extensions/presentation";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
@@ -64,6 +65,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -148,6 +150,7 @@ import {
   normalizeSerializedText,
   Popup,
   parseSerializedComposerText,
+  placeCaretAfterChip,
   placeComposerCaretFromPoint,
   readComposerClipboardSegments,
   rebuildClipboardSegmentsForPaste,
@@ -211,7 +214,10 @@ export const MentionComposer = memo(
       placeholder = "",
       workdir,
       enabledSkills = [],
+      slashSkills = enabledSkills,
       mentionExtensions,
+      resolveExtensionMention,
+      onOpenExtensionMention,
       mentionActions,
       conversations = [],
       searchConversations,
@@ -227,6 +233,54 @@ export const MentionComposer = memo(
     const { locale, t } = useLocale();
     const editorRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const extensionPointerStart = useRef<{ x: number; y: number } | null>(null);
+    const extensionLinksEnabled = !!onOpenExtensionMention;
+    useLayoutEffect(() => {
+      const editor = editorRef.current;
+      if (!editor || !resolveExtensionMention) return;
+      const refreshLinks = () => {
+        for (const chip of editor.querySelectorAll<HTMLElement>(
+          ".mention-extension[data-skill-file]",
+        )) {
+          const reference = chip.getAttribute("data-skill-file") ?? "";
+          const details = resolveExtensionMention(reference);
+          const label = details?.label;
+          const text = chip.lastChild;
+          if (label && text?.nodeType === Node.TEXT_NODE && text.nodeValue !== label) {
+            text.nodeValue = label;
+            chip.setAttribute("data-skill-display-name", label);
+          }
+          if (details && extensionLinksEnabled) {
+            chip.setAttribute("role", "link");
+            chip.tabIndex = 0;
+            chip.title = [details.description, t("chat.composer.openExtensionDetails")]
+              .filter(Boolean)
+              .join("\n");
+          } else {
+            chip.removeAttribute("role");
+            chip.removeAttribute("tabindex");
+            chip.removeAttribute("title");
+          }
+        }
+      };
+      refreshLinks();
+      const observer = new MutationObserver(refreshLinks);
+      observer.observe(editor, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    }, [extensionLinksEnabled, resolveExtensionMention, t]);
+
+    const activateExtensionLink = useCallback(
+      (target: EventTarget | null) => {
+        if (!onOpenExtensionMention || !(target instanceof Element)) return false;
+        const chip = target.closest<HTMLElement>('.mention-extension[role="link"]');
+        const reference = chip?.getAttribute("data-skill-file");
+        if (!chip || !reference) return false;
+        placeCaretAfterChip(chip);
+        onOpenExtensionMention(reference);
+        return true;
+      },
+      [onOpenExtensionMention],
+    );
     const commandOwnerRef = useRef(currentConversationId);
     const commandPanelOwnerRef = useRef(currentConversationId);
     commandOwnerRef.current = currentConversationId;
@@ -366,10 +420,10 @@ export const MentionComposer = memo(
         buildComposerCommands({
           host: commandHost,
           catalog: commandCatalog,
-          skills: enabledSkills,
+          skills: slashSkills,
           t,
         }),
-      [commandHost, commandCatalog, enabledSkills, t],
+      [commandHost, commandCatalog, slashSkills, t],
     );
     const refreshCommandCatalog = useCallback(() => {
       const seq = ++commandCatalogSeqRef.current;
@@ -612,7 +666,7 @@ export const MentionComposer = memo(
 
       if (mentionCtx.trigger === "skill") {
         const next: MentionSuggestion[] = [];
-        for (const skill of enabledSkills) {
+        for (const skill of slashSkills) {
           const haystack =
             `${skill.name}\n${skill.displayName ?? ""}\n${skill.searchText ?? ""}\n${skill.description}\n${skill.baseDir}`.toLowerCase();
           if (normalizedMentionQuery && !haystack.includes(normalizedMentionQuery)) {
@@ -732,7 +786,7 @@ export const MentionComposer = memo(
       conversationMentionLimitReached,
       conversationMentionsEnabled,
       conversationSearchResults,
-      enabledSkills,
+      slashSkills,
       mentionExtensions,
       mentionActions,
       availableMentionApps,
@@ -1002,17 +1056,17 @@ export const MentionComposer = memo(
         }
       };
 
-      applyContext(detectMention(el, enabledSkills.length > 0, commandsEnabled));
+      applyContext(detectMention(el, slashSkills.length > 0, commandsEnabled));
       window.requestAnimationFrame(() => {
         const nextEl = editorRef.current;
         if (!nextEl || document.activeElement !== nextEl) return;
-        applyContext(detectMention(nextEl, enabledSkills.length > 0, commandsEnabled));
+        applyContext(detectMention(nextEl, slashSkills.length > 0, commandsEnabled));
       });
     }, [
       cancelMentionRefetch,
       closeMentionSession,
       commandsEnabled,
-      enabledSkills.length,
+      slashSkills.length,
       scheduleMentionRefetch,
       startMentionSession,
     ]);
@@ -1360,7 +1414,10 @@ export const MentionComposer = memo(
           closeMentionSession();
           refreshEmptyState();
         },
-        focus: () => editorRef.current?.focus(),
+        focus: (options) => {
+          if (options?.restoreSelection) focusEditorAtSavedSelection();
+          else editorRef.current?.focus();
+        },
         appendSegments: (segments: MentionComposerDraftSegment[]) => {
           const el = editorRef.current;
           if (!el || disabled || segments.length === 0) return false;
@@ -1469,18 +1526,16 @@ export const MentionComposer = memo(
           return;
         }
         if (suggestion.type === "skill" || suggestion.type === "extension") {
-          const match = /^zeroagent-skill:([a-z0-9-]+)\/[1-9][0-9]*\/([a-z0-9-]+)$/.exec(
-            suggestion.skill.skillFile,
-          );
+          const reference = parseExtensionReference(suggestion.skill.skillFile);
           const existing =
-            match &&
+            reference &&
             Array.from(
               editorRef.current?.querySelectorAll<HTMLElement>("[data-skill-file]") ?? [],
             ).some((element) => {
-              const file = element.getAttribute("data-skill-file") ?? "";
-              return (
-                file.startsWith(`zeroagent-skill:${match[1]}/`) && file.endsWith(`/${match[2]}`)
+              const selected = parseExtensionReference(
+                element.getAttribute("data-skill-file") ?? "",
               );
+              return selected?.packageId === reference.packageId;
             });
           if (existing) replaceMentionQueryText(mentionCtx, "");
           else insertSkillMentionChip(mentionCtx, suggestion.skill);
@@ -1931,11 +1986,19 @@ export const MentionComposer = memo(
 
     const handleKeyDown = useCallback(
       (e: KeyboardEvent<HTMLDivElement>) => {
+        const isEnter = isEnterKeyboardEvent(e);
+        if (
+          !isActiveImeKeyboardEvent(e) &&
+          (isEnter || e.key === " ") &&
+          activateExtensionLink(e.target)
+        ) {
+          e.preventDefault();
+          return;
+        }
         if (disabled) {
           e.preventDefault();
           return;
         }
-        const isEnter = isEnterKeyboardEvent(e);
         const isActiveCompositionKey = isComposingRef.current || isActiveImeKeyboardEvent(e);
         const hasLegacyImeSignal = hasLegacyImeKeyboardSignal(e);
 
@@ -2146,6 +2209,7 @@ export const MentionComposer = memo(
         }
       },
       [
+        activateExtensionLink,
         popupVisible,
         suggestions,
         highlightIdx,
@@ -2469,6 +2533,20 @@ export const MentionComposer = memo(
           onMouseLeave={scheduleCommitTooltipClose}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onPointerDown={(event) => {
+            extensionPointerStart.current = { x: event.clientX, y: event.clientY };
+          }}
+          onClick={(event) => {
+            const start = extensionPointerStart.current;
+            extensionPointerStart.current = null;
+            const selection = window.getSelection();
+            // A click on an atomic token selects the token in Chromium. Only
+            // treat the selection as a drag when the pointer moved.
+            const moved =
+              !start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6;
+            if (event.detail > 1 || (moved && selection && !selection.isCollapsed)) return;
+            if (activateExtensionLink(event.target)) event.preventDefault();
+          }}
           onCopy={handleCopy}
           onCut={handleCut}
           onPaste={handlePaste}

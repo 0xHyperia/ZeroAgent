@@ -4,7 +4,7 @@ import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useContext, useState } from "react";
 import { AssistantImageGallery, AssistantVisualContext } from "./AssistantVisuals";
-import { ArrowUpRight, CircleHelp, Globe } from "../IconSet";
+import { ArrowUpRight, CircleHelp, Globe, SquarePen } from "../IconSet";
 import { getFileTypeIcon } from "./fileTypeIcons";
 
 /** Confirmed outputs live beside the reply, outside collapsible tool activity. */
@@ -42,10 +42,19 @@ export function AssistantDeliverables({
       {files.length ? (
         <ul className="grid list-none gap-2 p-0 [grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr))]">
           {files.slice(offset, offset + pageSize).map((item) => {
-            const Icon = item.kind === "site" ? Globe : getFileTypeIcon(item.name, "file");
+            const draft = item.status === "draft";
+            const Icon = draft
+              ? SquarePen
+              : item.kind === "site"
+                ? Globe
+                : getFileTypeIcon(item.name, "file");
             const confirmed = item.status === "saved";
             const kind = t(
-              item.kind === "site" ? "chat.deliverables.site" : "chat.deliverables.file",
+              draft
+                ? "chat.deliverables.extensionDraft"
+                : item.kind === "site"
+                  ? "chat.deliverables.site"
+                  : "chat.deliverables.file",
             );
             return (
               <li key={`${item.kind}:${item.id}`} className="min-w-0">
@@ -76,8 +85,16 @@ export function AssistantDeliverables({
                         <span className="tabular-nums">v{item.version}</span>
                       ) : null}
                       <span className="inline-flex items-center gap-1">
-                        {!confirmed ? <CircleHelp aria-hidden="true" className="size-3" /> : null}
-                        {t(confirmed ? "chat.deliverables.saved" : "chat.tool.unknown")}
+                        {!confirmed && !draft ? (
+                          <CircleHelp aria-hidden="true" className="size-3" />
+                        ) : null}
+                        {t(
+                          draft
+                            ? "chat.deliverables.reviewDraft"
+                            : confirmed
+                              ? "chat.deliverables.saved"
+                              : "chat.tool.unknown",
+                        )}
                       </span>
                     </span>
                   </span>

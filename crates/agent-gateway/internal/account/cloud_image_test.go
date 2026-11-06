@@ -304,3 +304,31 @@ func TestCloudImageRejectsUntrustedResultsWithoutFetchingURLs(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudImageTransparencyRequestVerifiesReturnedPixels(t *testing.T) {
+	for _, transparent := range []bool{false, true} {
+		img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+		if !transparent {
+			img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+		}
+		var encoded bytes.Buffer
+		if err := png.Encode(&encoded, img); err != nil {
+			t.Fatal(err)
+		}
+		peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var input map[string]any
+			if json.NewDecoder(r.Body).Decode(&input) != nil || input["background"] != "transparent" || input["output_format"] != "png" {
+				t.Error("transparency was not requested from the configured model")
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"b64_json": base64.StdEncoding.EncodeToString(encoded.Bytes())}}})
+		}))
+		client := NewUSAClientWithHTTPClient(peer.URL, peer.Client())
+		data, err := client.createCloudImage(context.Background(), "test-key", uuid.NewString(), CloudImageSettings{Model: "gpt-image-test"}, cloudImageRequest{Prompt: "logo", Name: "logo.png", Background: "transparent"}, nil)
+		peer.Close()
+		var failure *cloudToolRunError
+		if transparent && (err != nil || !bytes.Equal(data, encoded.Bytes())) ||
+			!transparent && (!errors.As(err, &failure) || failure.code != "image_transparency_missing" || failure.unknown) {
+			t.Fatal("incorrect transparency result", transparent, err)
+		}
+	}
+}

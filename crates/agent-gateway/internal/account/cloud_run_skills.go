@@ -10,7 +10,9 @@ import (
 //go:embed skills skills-releases
 var cloudBuiltinSkills embed.FS
 
-const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
+const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. When read_skill returns host_guidance, use that CloudChat mapping for the original Codex workflow. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
+
+const cloudCodexHostGuidance = "The attached source is an original Codex workflow. In CloudChat use only the tools advertised in this run. Use generate_image for the workflow's image_gen generation and edits; do not invoke an external image API or the bundled image CLI. Read bundled text with read_skill. Run code only in an advertised isolated workspace. Codex app connectors, host files, and credentials referenced in the source are unavailable; do not simulate a successful connection, publish, or write."
 
 func (e *cloudRunToolExecution) visualSchemas() []map[string]any {
 	result := []map[string]any{
@@ -20,6 +22,7 @@ func (e *cloudRunToolExecution) visualSchemas() []map[string]any {
 			"name":       map[string]any{"type": "string", "description": "Descriptive PNG filename."},
 			"size":       map[string]any{"type": "string", "enum": []string{"auto", "1024x1024", "1536x1024", "1024x1536"}},
 			"quality":    map[string]any{"type": "string", "enum": []string{"auto", "low", "medium", "high"}},
+			"background": map[string]any{"type": "string", "enum": []string{"auto", "transparent"}, "description": "Use transparent only when requested; the returned PNG is checked for transparent pixels."},
 			"references": map[string]any{"type": "array", "maxItems": 4, "items": map[string]any{"type": "object", "properties": map[string]any{"file_id": map[string]any{"type": "string"}, "artifact_version_id": map[string]any{"type": "string"}}, "additionalProperties": false}},
 			"family_id":  map[string]any{"type": "string", "description": "Owned generated image family only for a new version of the same image."},
 		}, "prompt", "name"),

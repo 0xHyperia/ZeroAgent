@@ -62,10 +62,10 @@ func TestBuiltinRedesignRetainsPinnedReleaseSources(t *testing.T) {
 			if err != nil || current["version"] != int64(2) || !strings.Contains(current["instructions"].(string), entry.title) || current["instructions"] == old["instructions"] {
 				t.Fatal("redesigned workflow did not use its independent Chinese release", err)
 			}
-			execution.run.RequestContent = cloudJSON("continue")
-			latest, err := execution.resolveSkill(ctx, entry.id, entry.id, "")
-			if err != nil || latest["version"] != int64(3) || !strings.Contains(latest["instructions"].(string), entry.title) {
-				t.Fatal("un-pinned invocation did not select current workflow", err)
+			execution.run.RequestContent = cloudJSON("zeroagent-skill:" + entry.id + "/3/" + entry.id)
+			third, err := execution.resolveSkill(ctx, entry.id, entry.id, "")
+			if err != nil || third["version"] != int64(3) || !strings.Contains(third["instructions"].(string), entry.title) {
+				t.Fatal("third release is no longer readable from a pinned reference", err)
 			}
 		})
 	}
@@ -85,6 +85,26 @@ func TestPluginPrimaryReferencePinsItsBundledWorkflows(t *testing.T) {
 	execution.run.RequestContent = cloudJSON("zeroagent-skill:plugin-creator/1/plugin-creator zeroagent-skill:plugin-creator/2/update-plugin")
 	if _, err := execution.resolveSkill(context.Background(), "plugin-creator", "update-plugin", ""); !errors.Is(err, ErrCloudRunConflict) {
 		t.Fatal("conflicting package releases were accepted", err)
+	}
+}
+
+func TestProductDesignQAReleaseKeepsPriorWorkflowAndPublishesRubric(t *testing.T) {
+	_, execution := imageExecutionFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("reading QA called a provider") })
+	ctx := context.Background()
+	execution.run.RequestContent = cloudJSON("zeroagent-skill:product-design/5/design-qa")
+	previous, err := execution.resolveSkill(ctx, "product-design", "design-qa", "")
+	oldFile, fileErr := cloudNativeWorkflows.ReadFile("skills-native/product-design/skills/design-qa/SKILL.md")
+	if err != nil || fileErr != nil || previous["instructions"] != string(oldFile) {
+		t.Fatal("fixed reference changed", err, fileErr)
+	}
+	execution.run.RequestContent = cloudJSON("continue")
+	current, err := execution.resolveSkill(ctx, "product-design", "design-qa", "")
+	if err != nil || current["version"] != int64(cloudProductDesignQARevision) || !strings.Contains(current["instructions"].(string), "final result: blocked") {
+		t.Fatal("latest Design QA has no handoff gate", err)
+	}
+	rubric, err := execution.resolveSkill(ctx, "product-design", "design-qa", "references/design-qa-rubric.md")
+	if err != nil || rubric["version"] != current["version"] {
+		t.Fatal("rubric did not resolve from the same package release", err)
 	}
 }
 

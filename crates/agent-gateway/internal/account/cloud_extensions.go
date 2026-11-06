@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"path"
 	"regexp"
@@ -37,15 +38,18 @@ type CloudExtensionSkill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Entry       string `json:"entry"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 type CloudExtensionRevision struct {
-	Number      int64                 `json:"number"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	Files       map[string]string     `json:"files"`
-	Skills      []CloudExtensionSkill `json:"skills"`
-	Aliases     map[string]string     `json:"aliases,omitempty"`
-	CreatedAt   time.Time             `json:"created_at"`
+	Number      int64                      `json:"number"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description"`
+	Files       map[string]string          `json:"files"`
+	Skills      []CloudExtensionSkill      `json:"skills"`
+	Aliases     map[string]string          `json:"aliases,omitempty"`
+	CreatedAt   time.Time                  `json:"created_at"`
+	Codex       *codexOriginalInterface    `json:"-"`
+	Native      *cloudWorkflowPresentation `json:"-"`
 }
 type CloudExtension struct {
 	ID             string                   `json:"id"`
@@ -174,22 +178,25 @@ func (s *PersistentStore) SetCloudExtensions(ctx context.Context, uid, expected 
 }
 
 type cloudExtensionCard struct {
-	ID             string                `json:"id"`
-	Kind           string                `json:"kind"`
-	Visibility     string                `json:"visibility"`
-	Owned          bool                  `json:"owned"`
-	Name           string                `json:"name"`
-	Description    string                `json:"description"`
-	Publisher      string                `json:"publisher"`
-	Version        int64                 `json:"version"`
-	Installed      bool                  `json:"installed"`
-	Enabled        bool                  `json:"enabled"`
-	Builtin        bool                  `json:"builtin"`
-	Skills         []CloudExtensionSkill `json:"skills"`
-	LegacySkills   []cloudLegacySkill    `json:"legacy_skills,omitempty"`
-	DisabledSkills []string              `json:"disabled_skills"`
-	Examples       []string              `json:"examples"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	ID              string                `json:"id"`
+	Kind            string                `json:"kind"`
+	Visibility      string                `json:"visibility"`
+	Owned           bool                  `json:"owned"`
+	Name            string                `json:"name"`
+	Description     string                `json:"description"`
+	Publisher       string                `json:"publisher"`
+	Version         int64                 `json:"version"`
+	Installed       bool                  `json:"installed"`
+	Enabled         bool                  `json:"enabled"`
+	Builtin         bool                  `json:"builtin"`
+	Skills          []CloudExtensionSkill `json:"skills"`
+	LegacySkills    []cloudLegacySkill    `json:"legacy_skills,omitempty"`
+	DisabledSkills  []string              `json:"disabled_skills"`
+	Examples        []string              `json:"examples"`
+	Overview        string                `json:"overview,omitempty"`
+	UnavailableApps []cloudExtensionApp   `json:"unavailable_apps,omitempty"`
+	Native          bool                  `json:"native,omitempty"`
+	UpdatedAt       time.Time             `json:"updated_at"`
 }
 
 type cloudLegacySkill struct {
@@ -222,7 +229,9 @@ func builtinCloudExtensions() []CloudExtension {
 	current := builtinCloudExtensionRelease("skills", 3)
 	legacy := builtinCloudExtensionRelease("skills-releases/v1", 1)
 	legacy = append(legacy, builtinCloudExtensionRelease("skills-releases/v2", 2)...)
+	originals := cachedCodexOriginals()
 	for i := range current {
+		base := current[i].Revisions[0]
 		revisions := []CloudExtensionRevision{}
 		for _, old := range legacy {
 			if old.ID == current[i].ID {
@@ -230,6 +239,15 @@ func builtinCloudExtensions() []CloudExtension {
 			}
 		}
 		current[i].Revisions = append(revisions, current[i].Revisions...)
+		if original, ok := originals[current[i].ID]; ok {
+			original.Aliases = base.Aliases
+			current[i].Revisions = append(current[i].Revisions, original)
+		}
+		native := cloudNativeWorkflow(current[i].ID, current[i].Kind, base)
+		current[i].Revisions = append(current[i].Revisions, native)
+		if current[i].ID == "product-design" {
+			current[i].Revisions = append(current[i].Revisions, cloudProductDesignQA(native))
+		}
 	}
 	return current
 }
@@ -336,6 +354,15 @@ func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
 		if builtin {
 			publisher = "ZeroAgent"
 		}
+		var overview string
+		var apps []cloudExtensionApp
+		if rev.Codex != nil {
+			publisher = "OpenAI"
+			examples, overview, apps = rev.Codex.Examples, rev.Codex.Overview, rev.Codex.Apps
+		}
+		if rev.Native != nil {
+			examples, overview = rev.Native.Examples, rev.Native.Overview
+		}
 		disabled := []string{}
 		disabledSet := map[string]bool{}
 		for _, name := range p.DisabledSkills {
@@ -358,7 +385,7 @@ func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
 				}
 			}
 		}
-		result = append(result, cloudExtensionCard{ID: p.ID, Kind: cloudExtensionKind(p), Visibility: visibility, Owned: !builtin, Name: rev.Name, Description: rev.Description, Publisher: publisher, Version: rev.Number, Installed: p.Installed, Enabled: p.Enabled, Builtin: builtin, Skills: rev.Skills, LegacySkills: legacy, DisabledSkills: disabled, Examples: examples, UpdatedAt: rev.CreatedAt})
+		result = append(result, cloudExtensionCard{ID: p.ID, Kind: cloudExtensionKind(p), Visibility: visibility, Owned: !builtin, Name: rev.Name, Description: rev.Description, Publisher: publisher, Version: rev.Number, Installed: p.Installed, Enabled: p.Enabled, Builtin: builtin, Skills: rev.Skills, LegacySkills: legacy, DisabledSkills: disabled, Examples: examples, Overview: overview, UnavailableApps: apps, Native: rev.Native != nil, UpdatedAt: rev.CreatedAt})
 	}
 	return result
 }
@@ -413,6 +440,7 @@ func (h *HTTPHandler) registerCloudExtensions(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/web-chat/extensions", h.withSession(h.cloudExtensionsResource))
 	mux.HandleFunc("POST /api/web-chat/extensions/import", h.withSession(h.cloudExtensionsImport))
 	mux.HandleFunc("GET /api/web-chat/extensions/{id}", h.withSession(h.cloudExtensionDetail))
+	mux.HandleFunc("GET /api/web-chat/extensions/drafts/{id}", h.withSession(h.cloudExtensionDraftDetail))
 }
 func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Request, session *Session) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -431,13 +459,15 @@ func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Req
 			return
 		}
 		var input struct {
-			Expected int64                  `json:"expected_version"`
-			Action   string                 `json:"action"`
-			ID       string                 `json:"id"`
-			Kind     string                 `json:"kind"`
-			Enabled  bool                   `json:"enabled"`
-			Skill    string                 `json:"skill"`
-			Revision CloudExtensionRevision `json:"revision"`
+			Expected     int64                  `json:"expected_version"`
+			Action       string                 `json:"action"`
+			ID           string                 `json:"id"`
+			Kind         string                 `json:"kind"`
+			Enabled      bool                   `json:"enabled"`
+			Skill        string                 `json:"skill"`
+			Revision     CloudExtensionRevision `json:"revision"`
+			BaseRevision int64                  `json:"base_revision,omitempty"`
+			DraftID      string                 `json:"draft_id,omitempty"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 512<<10)
 		decoder := json.NewDecoder(r.Body)
@@ -472,6 +502,43 @@ func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Req
 				cloudExtensionError(w, ErrCloudRunInvalid)
 				return
 			}
+			newID := ""
+			if input.DraftID != "" {
+				draftID, parseErr := uuid.Parse(input.DraftID)
+				if parseErr != nil || draftID.String() != input.DraftID {
+					cloudExtensionError(w, ErrCloudRunInvalid)
+					return
+				}
+				draft, err := loadCloudExtensionDraft(r.Context(), h.service.store, session.UserID, input.DraftID)
+				if err != nil || draft.Kind != input.Kind || draft.TargetID != input.ID || draft.BaseRevision != input.BaseRevision {
+					cloudExtensionError(w, ErrNotFound)
+					return
+				}
+				if input.ID == "" {
+					newID = input.DraftID
+					for _, entry := range doc.Packages {
+						if entry.ID == newID {
+							cloudExtensionError(w, ErrCloudRunConflict)
+							return
+						}
+					}
+					if input.Kind == "plugin" {
+						setGeneratedPluginManifest(&input.Revision)
+					}
+				}
+				if input.Kind == "plugin" && (input.Revision.Files["plugin.json"] != "" || input.Revision.Files[".codex-plugin/plugin.json"] != "") {
+					parsed, _, parseErr := cloudRevisionFromManifest(input.Revision.Files)
+					if parseErr != nil || len(parsed.Skills) != len(input.Revision.Skills) {
+						cloudExtensionError(w, ErrCloudRunInvalid)
+						return
+					}
+					input.Revision.Skills = parsed.Skills
+				}
+			}
+			if input.BaseRevision != 0 && (p == nil || len(p.Revisions) == 0 || p.Revisions[len(p.Revisions)-1].Number != input.BaseRevision) {
+				cloudExtensionError(w, ErrCloudRunConflict)
+				return
+			}
 			if p == nil {
 				if input.ID != "" {
 					cloudExtensionError(w, ErrNotFound)
@@ -481,7 +548,10 @@ func (h *HTTPHandler) cloudExtensionsResource(w http.ResponseWriter, r *http.Req
 				if kind == "" {
 					kind = "skill"
 				}
-				doc.Packages = append(doc.Packages, CloudExtension{ID: uuid.NewString(), Kind: kind, Installed: true, Enabled: true, DisabledSkills: []string{}})
+				if newID == "" {
+					newID = uuid.NewString()
+				}
+				doc.Packages = append(doc.Packages, CloudExtension{ID: newID, Kind: kind, Installed: true, Enabled: true, DisabledSkills: []string{}})
 				p = &doc.Packages[len(doc.Packages)-1]
 			}
 			if (input.Kind != "" && input.Kind != cloudExtensionKind(*p)) || (cloudExtensionKind(*p) == "skill" && len(input.Revision.Skills) != 1) {
@@ -874,6 +944,12 @@ func (e *cloudRunToolExecution) resolveSkill(ctx context.Context, packageID, nam
 			selected := file
 			if selected == "" {
 				selected = sk.Entry
+			} else if (v.Codex != nil || v.Native != nil) && fs.ValidPath(strings.TrimPrefix(file, "./")) {
+				selected = strings.TrimPrefix(file, "./")
+				relative := path.Join(path.Dir(sk.Entry), selected)
+				if _, ok := v.Files[relative]; ok {
+					selected = relative
+				}
 			}
 			body, ok := v.Files[selected]
 			if !ok {
@@ -888,6 +964,9 @@ func (e *cloudRunToolExecution) resolveSkill(ctx context.Context, packageID, nam
 				return nil, ErrCloudRunConflict
 			}
 			result = map[string]any{"name": name, "package_id": p.ID, "version": v.Number, "path": selected, "files": keys, "instructions": body}
+			if v.Codex != nil {
+				result["host_guidance"] = cloudCodexHostGuidance
+			}
 		}
 	}
 	if result == nil {

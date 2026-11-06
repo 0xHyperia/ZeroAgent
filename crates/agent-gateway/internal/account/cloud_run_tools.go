@@ -167,6 +167,7 @@ func (e *cloudRunToolExecution) schemas() []map[string]any {
 	tools = append(tools, e.researchSchemas()...)
 	tools = append(tools, e.historySchemas()...)
 	tools = append(tools, e.visualSchemas()...)
+	tools = append(tools, e.extensionDraftSchema()...)
 	return tools
 }
 
@@ -720,6 +721,9 @@ func (e *cloudRunToolExecution) execute(ctx context.Context, round int, call clo
 	}
 	if call.Name == "read_skill" {
 		return e.executeSkill(ctx, round, call)
+	}
+	if call.Name == prepareExtensionTool {
+		return e.executeExtensionDraft(ctx, round, call)
 	}
 	if call.Name == "generate_image" {
 		if _, err := e.resolveSkill(ctx, "imagegen", "imagegen", ""); err != nil {

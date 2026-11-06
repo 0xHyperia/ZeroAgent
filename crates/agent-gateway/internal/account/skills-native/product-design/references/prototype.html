@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interactive prototype</title>
+<style>
+  :root { color-scheme: light dark; font: 100%/1.55 system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: CanvasText; background: Canvas; }
+  header, main { max-inline-size: 72rem; margin-inline: auto; padding: 1.5rem clamp(1rem, 4vw, 3rem); }
+  header { border-block-end: 1px solid color-mix(in srgb, CanvasText 14%, Canvas); }
+  .workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, .7fr); gap: clamp(1rem, 4vw, 3rem); }
+  h1 { line-height: 1.12; max-inline-size: 20ch; }
+  summary { cursor: pointer; padding-block: .65rem; }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid Highlight; outline-offset: 4px; }
+  @media (max-width: 42rem) { .workbench { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<header><a href="#main">Prototype overview</a></header>
+<main id="main" class="workbench">
+  <section aria-labelledby="task">
+    <h1 id="task">Describe the primary task</h1>
+    <p>Replace this starter with the user's real content and interface states.</p>
+  </section>
+  <section aria-labelledby="details">
+    <h2 id="details">Supporting information</h2>
+    <details><summary>View details</summary><p>Replace this interaction with the task's actual behavior.</p></details>
+  </section>
+</main>
+</html>

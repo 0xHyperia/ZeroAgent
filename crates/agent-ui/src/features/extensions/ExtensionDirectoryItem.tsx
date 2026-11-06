@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { LabelTooltip } from "../../components/ui/label-tooltip";
-import { extensionDisplayName } from "../../lib/extensions/presentation";
+import { useLocale } from "../../i18n";
+import { extensionDescription, extensionDisplayName } from "../../lib/extensions/presentation";
 import { ExtensionMark } from "./ExtensionMark";
 import type { ExtensionPackage } from "./extensionTypes";
 
@@ -14,6 +15,9 @@ export function ExtensionDirectoryItem({
   onOpen: () => void;
   children: ReactNode;
 }) {
+  const { locale } = useLocale();
+  const name = extensionDisplayName(item, locale);
+  const description = extensionDescription(item, locale);
   return (
     <li className="za-extension-row">
       <button
@@ -24,11 +28,8 @@ export function ExtensionDirectoryItem({
       >
         <ExtensionMark id={item.id} />
         <span>
-          <LabelTooltip
-            label={extensionDisplayName(item)}
-            render={<strong>{extensionDisplayName(item)}</strong>}
-          />
-          <span title={item.description}>{item.description}</span>
+          <LabelTooltip label={name} render={<strong>{name}</strong>} />
+          <span title={description}>{description}</span>
         </span>
       </button>
       {children}

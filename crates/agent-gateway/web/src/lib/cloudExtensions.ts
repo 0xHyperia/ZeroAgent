@@ -8,12 +8,19 @@ import type {
   ExtensionRevision,
   ExtensionsAdapter,
 } from "@liveagent/ui/features/extensions/extensionTypes";
-import { extensionSkillEnabled } from "@liveagent/ui/features/extensions/extensionTypes";
+import {
+  extensionComposerEntry,
+  extensionSkillEnabled,
+} from "@liveagent/ui/features/extensions/extensionTypes";
+import type { Locale } from "@liveagent/ui/i18n/hostTranslations";
 import { buildTextFromComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import {
+  extensionDescription,
   extensionDisplayName,
   extensionSearchText,
+  extensionSkillDescription,
   extensionSkillDisplayName,
+  parseExtensionReference,
 } from "@liveagent/ui/lib/extensions/presentation";
 import { accountFetch, captureAccountRequestGuard } from "./accountRequest";
 
@@ -41,7 +48,8 @@ function skillValid(value: unknown) {
     record(value) &&
     typeof value.name === "string" &&
     typeof value.description === "string" &&
-    typeof value.entry === "string"
+    typeof value.entry === "string" &&
+    (value.display_name === undefined || typeof value.display_name === "string")
   );
 }
 export function parseExtensionCatalog(value: unknown): ExtensionCatalog {
@@ -62,10 +70,18 @@ export function parseExtensionCatalog(value: unknown): ExtensionCatalog {
         typeof pkg.name === "string" &&
         typeof pkg.description === "string" &&
         typeof pkg.publisher === "string" &&
+        (pkg.overview === undefined || typeof pkg.overview === "string") &&
+        (pkg.unavailable_apps === undefined ||
+          (Array.isArray(pkg.unavailable_apps) &&
+            pkg.unavailable_apps.every(
+              (app: unknown) =>
+                record(app) && typeof app.name === "string" && typeof app.description === "string",
+            ))) &&
         Number.isSafeInteger(pkg.version) &&
         typeof pkg.installed === "boolean" &&
         typeof pkg.enabled === "boolean" &&
         typeof pkg.builtin === "boolean" &&
+        (pkg.native === undefined || typeof pkg.native === "boolean") &&
         Array.isArray(pkg.skills) &&
         pkg.skills.length > 0 &&
         (pkg.kind !== "skill" || pkg.skills.length === 1) &&
@@ -169,6 +185,26 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
         throw new Error("技能文件响应无效。");
       return { revision: value.revision, version: value.version as number };
     },
+    async readDraft(id, signal) {
+      const value = await request(`/drafts/${encodeURIComponent(id)}`, { signal });
+      if (
+        !record(value) ||
+        (value.kind !== "plugin" && value.kind !== "skill") ||
+        !revisionValid(value.revision) ||
+        (value.target_id !== undefined &&
+          (typeof value.target_id !== "string" ||
+            typeof value.base_revision !== "number" ||
+            !Number.isSafeInteger(value.base_revision) ||
+            value.base_revision < 1))
+      )
+        throw new Error("对话草稿暂不可用。");
+      return {
+        kind: value.kind,
+        revision: value.revision,
+        target_id: typeof value.target_id === "string" ? value.target_id : undefined,
+        base_revision: typeof value.base_revision === "number" ? value.base_revision : undefined,
+      };
+    },
     async mutate(expected, input) {
       if (input.action === "save" && !input.revision) throw new Error("请填写技能内容。");
       // Revision numbers and timestamps are assigned by the server. In particular,
@@ -211,7 +247,20 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
     },
   };
 }
-export function cloudComposerSkills(catalog: ExtensionCatalog | null): MentionComposerSkill[] {
+const draftUUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+export function extensionDraftFromLink(path: string) {
+  return new RegExp(`^cloud-extension-drafts/(${draftUUID})$`, "i").exec(path)?.[1];
+}
+export function linkExtensionDraftCitations(text: string) {
+  return text.replace(
+    new RegExp(`【自定义草稿:(${draftUUID})】`, "gi"),
+    "[审阅草稿](cloud-extension-drafts/$1)",
+  );
+}
+export function cloudComposerSkills(
+  catalog: ExtensionCatalog | null,
+  locale: Locale = "zh-CN",
+): MentionComposerSkill[] {
   return [...(catalog?.packages ?? [])]
     .sort((a, b) => Number(b.id === "skill-creator") - Number(a.id === "skill-creator"))
     .flatMap((pkg) =>
@@ -220,16 +269,17 @@ export function cloudComposerSkills(catalog: ExtensionCatalog | null): MentionCo
         .map((skill) => ({
           name: skill.name,
           displayName:
-            pkg.kind === "plugin" && skill.name === pkg.skills[0]?.name
-              ? extensionDisplayName(pkg)
-              : extensionSkillDisplayName(pkg, skill),
+            skill.name === pkg.skills[0]?.name
+              ? extensionDisplayName(pkg, locale)
+              : extensionSkillDisplayName(pkg, skill, locale),
           searchText: extensionSearchText(pkg, skill),
-          description: skill.description,
+          description: extensionSkillDescription(pkg, skill, locale),
           skillFile: `zeroagent-skill:${pkg.id}/${pkg.version}/${skill.name}`,
           baseDir: "cloud",
           legacyReferences: (pkg.legacy_skills ?? []).map((legacy) => ({
             name: legacy.name,
-            description: legacy.description,
+            description: extensionSkillDescription(pkg, legacy, locale),
+            displayName: extensionSkillDisplayName(pkg, legacy, locale),
             skillFile: `zeroagent-skill:${pkg.id}/${legacy.version}/${legacy.name}`,
           })),
         })),
@@ -249,19 +299,55 @@ export function buildCloudComposerText(draft: MentionComposerDraft) {
     ),
   });
 }
-/** @ selects packages; explicit slash workflows and clipboard validation retain all enabled skills. */
-export function cloudComposerExtensions(catalog: ExtensionCatalog | null): MentionComposerSkill[] {
+export function cloudComposerSlashSkills(
+  catalog: ExtensionCatalog | null,
+  locale: Locale = "zh-CN",
+) {
+  return cloudComposerExtensions(catalog, locale, "skill");
+}
+
+/** The @ menu lists one entry per package; slash uses only standalone skills. */
+export function cloudComposerExtensions(
+  catalog: ExtensionCatalog | null,
+  locale: Locale = "zh-CN",
+  kind?: ExtensionPackage["kind"],
+): MentionComposerSkill[] {
   return (catalog?.packages ?? []).flatMap((pkg) => {
-    const primary = pkg.skills[0];
-    if (!primary || !extensionSkillEnabled(pkg, primary)) return [];
-    const skill = cloudPackageSkill(pkg, primary.name);
-    return skill
-      ? [{ ...skill, displayName: extensionDisplayName(pkg), description: pkg.description }]
-      : [];
+    const primary = extensionComposerEntry(pkg);
+    if (!primary || (kind && pkg.kind !== kind)) return [];
+    const skill = cloudPackageSkill(pkg, primary.name, locale);
+    return skill ? [{ ...skill, description: extensionDescription(pkg, locale) }] : [];
   });
 }
-export function cloudPackageSkill(pkg: ExtensionPackage, name?: string) {
-  return cloudComposerSkills({ version: 0, packages: [pkg] }).find(
+export function cloudPackageSkill(pkg: ExtensionPackage, name?: string, locale?: Locale) {
+  return cloudComposerSkills({ version: 0, packages: [pkg] }, locale).find(
     (skill) => !name || skill.name === name,
   );
+}
+
+export function cloudExtensionMention(
+  catalog: ExtensionCatalog | null,
+  reference: string,
+  locale: Locale,
+) {
+  const target = parseExtensionReference(reference);
+  const pkg = catalog?.packages.find((item) => item.id === target?.packageId);
+  if (!target || !pkg || target.version > pkg.version) return undefined;
+  const skill = pkg.skills.find((item) => item.name === target.skillName);
+  const legacy = pkg.legacy_skills?.find(
+    (item) => item.name === target.skillName && item.version === target.version,
+  );
+  const named = skill ?? legacy;
+  if (!named) return undefined;
+  const primary = named === pkg.skills[0];
+  return {
+    packageId: pkg.id,
+    skillName: skill && skill !== pkg.skills[0] ? skill.name : undefined,
+    label: primary
+      ? extensionDisplayName(pkg, locale)
+      : extensionSkillDisplayName(pkg, named, locale),
+    description: primary
+      ? extensionDescription(pkg, locale)
+      : extensionSkillDescription(pkg, named, locale),
+  };
 }

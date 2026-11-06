@@ -8,6 +8,7 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  MonitorSmartphone,
   RefreshCw,
   Settings2,
   Share2,
@@ -32,6 +33,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
@@ -97,6 +100,7 @@ function SiteWorkspaceContent(props: Props) {
   const latest = useRef(props);
   latest.current = props;
   const [page, setPage] = useState("");
+  const [viewport, setViewport] = useState("fit");
   const [history, setHistory] = useState<string[]>([]),
     [position, setPosition] = useState(0);
   const [reload, setReload] = useState(0),
@@ -349,6 +353,28 @@ function SiteWorkspaceContent(props: Props) {
           )}
         </div>
         <div className="cloud-site-browser-actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Action
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!url || manage}
+                  tooltip="预览尺寸"
+                  aria-label="预览尺寸"
+                />
+              }
+            >
+              <MonitorSmartphone className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" variant="soft">
+              <DropdownMenuRadioGroup value={viewport} onValueChange={setViewport}>
+                <DropdownMenuRadioItem value="fit">适合窗口</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="phone">手机 · 390 px</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="desktop">桌面 · 1280 px</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Action
             variant="ghost"
             disabled={!props.release || props.busy}
@@ -586,7 +612,7 @@ function SiteWorkspaceContent(props: Props) {
           </div>
         </ScrollArea>
       ) : null}
-      <div className="cloud-site-canvas" hidden={manage} inert={manage}>
+      <div className="cloud-site-canvas" data-viewport={viewport} hidden={manage} inert={manage}>
         <div ref={canvas} className="cloud-site-frame-host" />
         {!url || !loaded ? (
           <div className="cloud-site-opening">

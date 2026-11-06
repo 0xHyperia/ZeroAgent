@@ -23,7 +23,7 @@ export type CloudChatUsage = Partial<
 >;
 /** Display identity only; opening still resolves the resource under the current account. */
 export type CloudChatPresentationResource = {
-  kind: "file" | "artifact" | "site" | "source";
+  kind: "file" | "artifact" | "site" | "source" | "extension-draft";
   id: string;
   name: string;
   mime?: string;
@@ -68,6 +68,7 @@ export const CLOUD_CHAT_PRESENTATION_MAX_BLOCKS = 512;
 export const CLOUD_CHAT_REASONING_MAX_BYTES = 1024 * 1024;
 export const CLOUD_CHAT_PUBLIC_TOOLS = new Set([
   "read_skill",
+  "prepare_extension",
   "generate_image",
   "execute_code",
   "execute_command",
@@ -210,7 +211,7 @@ export function parseCloudChatPresentationResources(
   return value.map((input) => {
     if (
       !record(input) ||
-      !["file", "artifact", "site", "source"].includes(String(input.kind)) ||
+      !["file", "artifact", "site", "source", "extension-draft"].includes(String(input.kind)) ||
       !["input", "output", "source"].includes(String(input.role))
     )
       invalid();

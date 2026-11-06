@@ -63,6 +63,24 @@ test("opening a known space site previews its immutable version without creating
  await app.click("分享");assert.equal(app.calls.share.length,0);
 });
 
+for(const [label,viewport] of [["手机","phone"],["桌面","desktop"]]){
+ test(`${viewport} preview resizes the existing private frame without requesting another grant`,async t=>{
+  const app=await mount(t,{}, {openOnMount:true,workspace:{versions:[],onVersion(){},onClose(){}}});
+  const frame=document.querySelector(".cloud-site-frame-host iframe");
+  assert.ok(frame);
+  await app.env.act(async()=>document.querySelector('button[aria-label="预览尺寸"]').click());
+  await app.flush();
+  const item=[...document.querySelectorAll('[role="menuitemradio"]')].find(item=>item.textContent.includes(label));
+  assert.ok(item,label);
+  await app.env.act(async()=>item.click());
+  await app.flush();
+  assert.equal(document.querySelector(".cloud-site-canvas").dataset.viewport,viewport);
+  assert.equal(document.querySelector(".cloud-site-frame-host iframe"),frame);
+  assert.equal(app.calls.preview.length,1);
+  assert.equal(app.calls.share.length,0);
+ });
+}
+
 test("a disabled site host explains the unavailable preview without issuing grants",async t=>{
  const app=await mount(t,{enabled:async()=>false},{openOnMount:true});
  assert.match(document.body.textContent,/托管尚未启用/);

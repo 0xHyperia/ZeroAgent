@@ -12,12 +12,15 @@ async function mount(t,overrides={}){
  window.Range.prototype.getClientRects=()=>[];
  window.Range.prototype.getBoundingClientRect=()=>({left:0,top:0,right:0,bottom:0,width:0,height:0});
  const {MentionComposer}=env.loadModule('@liveagent/ui/components/chat/MentionComposer.tsx');
- const {cloudComposerSkills,cloudComposerExtensions}=env.loadModule('src/lib/cloudExtensions.ts');
+ const {cloudComposerSkills,cloudComposerExtensions,cloudComposerSlashSkills,cloudExtensionMention}=env.loadModule('src/lib/cloudExtensions.ts');
+ const {LocaleContext}=env.loadModule('@liveagent/ui/i18n/LocaleContext.tsx');
+ const {t:translate}=env.loadModule('@liveagent/ui/i18n/index.ts');
  const host=document.body.appendChild(document.createElement('div')),root=env.createRoot(host),ref=env.React.createRef();
  let sent=0,actions=0,anchor;
- let props={workdir:'',enabledSkills:cloudComposerSkills(catalog),mentionExtensions:cloudComposerExtensions(catalog),mentionActions:[{id:'library',name:'从资料库添加',description:'引用已保存文件',icon:'library',onSelect(value){actions++;anchor=value;}}],onSend(){sent++;},...overrides};
+ let props={workdir:'',enabledSkills:cloudComposerSkills(catalog),slashSkills:cloudComposerSlashSkills(catalog),mentionExtensions:cloudComposerExtensions(catalog),resolveExtensionMention:reference=>cloudExtensionMention(catalog,reference,locale),mentionActions:[{id:'library',name:'从资料库添加',description:'引用已保存文件',icon:'library',onSelect(value){actions++;anchor=value;}}],onSend(){sent++;},...overrides};
+ let locale='zh-CN';
  const flush=()=>env.act(async()=>{await tick();});
- const render=()=>env.act(async()=>{root.render(env.React.createElement(MentionComposer,{...props,ref}));await tick();});
+ const render=()=>env.act(async()=>{root.render(env.React.createElement(LocaleContext.Provider,{value:{locale,t:key=>translate(key,locale)}},env.React.createElement(MentionComposer,{...props,ref})));await tick();});
  await render();
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
  const editor=host.querySelector('[contenteditable="true"]');
@@ -29,7 +32,7 @@ async function mount(t,overrides={}){
   });await flush();
  }
  async function key(key){await env.act(async()=>{editor.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true}));await tick();});}
- return {env,editor,ref,input,key,flush,cloudComposerExtensions,get sent(){return sent;},get actions(){return actions;},get anchor(){return anchor;},async update(next){props={...props,...next};await render();},async choose(name){const item=[...document.querySelectorAll('[role="option"]')].find(el=>el.textContent.includes(name));assert.ok(item,name);await env.act(async()=>{item.click();await tick();});}};
+ return {env,editor,ref,input,key,flush,cloudComposerExtensions,get sent(){return sent;},get actions(){return actions;},get anchor(){return anchor;},async update(next){props={...props,...next};await render();},async setLocale(next){locale=next;await this.update({enabledSkills:cloudComposerSkills(catalog,locale),slashSkills:cloudComposerSlashSkills(catalog,locale),mentionExtensions:cloudComposerExtensions(catalog,locale),resolveExtensionMention:reference=>cloudExtensionMention(catalog,reference,locale)});},async choose(name){const item=[...document.querySelectorAll('[role="option"]')].find(el=>el.textContent.includes(name));assert.ok(item,name);await env.act(async()=>{item.click();await tick();});}};
 }
 
 test('@ lists one primary per package, including personal and independent content, without bundled child skills',async t=>{
@@ -55,9 +58,59 @@ test('@ does not replace or duplicate an existing reference pinned to an older p
  await app.input(' @创建插件',{append:true});await app.key('Enter');
  const selected=app.ref.current.getDraft().skillMentions;assert.equal(selected.length,1);assert.equal(selected[0].skillFile,'zeroagent-skill:plugin-creator/1/plugin-creator');assert.equal(app.sent,0);
 });
-test('catalog changes remove unavailable @ candidates while slash can still explicitly select bundled workflows',async t=>{
+test('a saved bundled reference prevents adding a second release of its package',async t=>{
+ const app=await mount(t);
+ const old={name:'design-audit',displayName:'审查体验',description:'old',skillFile:'zeroagent-skill:product-design/1/design-audit',baseDir:'cloud'};
+ await app.env.act(async()=>app.ref.current.insertSkillMention(old));
+ await app.input(' @Product',{append:true});await app.key('Enter');
+ assert.deepEqual(app.ref.current.getDraft().skillMentions.map(skill=>skill.skillFile),[old.skillFile]);
+ const {cloudExtensionMention}=app.env.loadModule('src/lib/cloudExtensions.ts');
+ assert.deepEqual(cloudExtensionMention(catalog,old.skillFile,'zh-CN'),{packageId:'product-design',skillName:'design-audit',label:'审查体验',description:'依据界面证据核对完整流程，并按影响排序。'});
+ assert.equal(app.sent,0);
+});
+test('slash only selects standalone skills even when the resolver retains bundled workflows',async t=>{
  const app=await mount(t);await app.input('@产品');await app.update({mentionExtensions:[]});assert.equal(document.querySelectorAll('[role="option"]').length,0);
- await app.input('/审查体验');await app.key('Enter');assert.equal(app.ref.current.getDraft().skillMentions[0].name,'design-audit');assert.equal(app.sent,0);
+ await app.input('/审查体验');assert.equal(document.querySelectorAll('[role="option"]').length,0);
+ await app.input('/');assert.equal(document.querySelectorAll('[role="option"]').length,1);
+ await app.key('Enter');
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,'zeroagent-skill:skill-creator/2/skill-creator');
+ assert.equal(app.sent,0);
+});
+test('inline references open details by click and keyboard while a selection stays editable',async t=>{
+ const opened=[];
+ const app=await mount(t,{onOpenExtensionMention:reference=>opened.push(reference)});
+ await app.input('保留原文 @Product');await app.key('Enter');
+ const chip=app.editor.querySelector('[role="link"]');
+ const reference='zeroagent-skill:product-design/2/product-design';
+ assert.ok(chip);assert.equal(chip.tabIndex,0);assert.equal(chip.textContent,'产品设计');
+ await app.env.act(async()=>{
+  const selection=window.getSelection();
+  const range=document.createRange();range.selectNode(chip);selection.removeAllRanges();selection.addRange(range);
+  chip.dispatchEvent(new MouseEvent('pointerdown',{clientX:10,bubbles:true}));
+  chip.dispatchEvent(new MouseEvent('click',{clientX:30,detail:1,bubbles:true}));
+  assert.deepEqual(opened,[]);
+  chip.dispatchEvent(new MouseEvent('pointerdown',{clientX:10,bubbles:true}));
+  chip.dispatchEvent(new MouseEvent('click',{clientX:10,detail:1,bubbles:true}));
+  chip.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+ });
+ assert.deepEqual(opened,[reference,reference]);
+ assert.match(app.editor.textContent,/保留原文 产品设计/);
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,reference);
+ assert.equal(app.sent,0);
+});
+test('switching UI language updates saved inline references without replacing their DOM or revision',async t=>{
+ const app=await mount(t,{onOpenExtensionMention(){}});
+ const pinned={name:'product-design',displayName:'Product Design',description:'Design',baseDir:'cloud',skillFile:'zeroagent-skill:product-design/1/product-design'};
+ await app.env.act(async()=>app.ref.current.insertSkillMention(pinned));
+ const chip=app.editor.querySelector('[data-skill-file]');
+ assert.equal(chip.textContent,'产品设计');
+ assert.match(chip.title,/研究产品问题/);
+ await app.setLocale('en-US');
+ assert.equal(app.editor.querySelector('[data-skill-file]'),chip);
+ assert.equal(chip.textContent,'Product Design');
+ assert.match(chip.title,/Research, design, and build interactive prototypes/);
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,pinned.skillFile);
+ await app.input('@创建技能');assert.match(document.querySelector('[role="option"]').textContent,/Skill Creator.*Create or update a reusable personal skill/);
 });
 test('primary disabled, uninstalled and disabled packages never enter @, and default device @ remains available',async t=>{
  const app=await mount(t,{mentionExtensions:undefined,mentionActions:undefined});

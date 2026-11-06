@@ -35,6 +35,10 @@ func cloudImageFailureStatus(op *CloudToolOperation) string {
 		return "生图模型暂不可用"
 	case "image_storage_full":
 		return "资料空间容量不足"
+	case "image_background_rejected":
+		return "当前模型拒绝了透明图像请求"
+	case "image_transparency_missing":
+		return "返回的图像没有透明背景"
 	}
 	return ""
 }
@@ -48,6 +52,7 @@ type cloudImageRequest struct {
 	Name       string                `json:"name"`
 	Size       string                `json:"size,omitempty"`
 	Quality    string                `json:"quality,omitempty"`
+	Background string                `json:"background,omitempty"`
 	References []cloudImageReference `json:"references,omitempty"`
 	FamilyID   string                `json:"family_id,omitempty"`
 }
@@ -71,6 +76,11 @@ func parseCloudImageRequest(raw string) (cloudImageRequest, error) {
 	}
 	switch v.Quality {
 	case "", "auto", "low", "medium", "high":
+	default:
+		return v, ErrCloudRunInvalid
+	}
+	switch v.Background {
+	case "", "auto", "transparent":
 	default:
 		return v, ErrCloudRunInvalid
 	}
@@ -166,6 +176,9 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 	if v.Quality != "" {
 		fields["quality"] = v.Quality
 	}
+	if v.Background == "transparent" {
+		fields["background"] = v.Background
+	}
 	// GPT image models return base64 by default and reject response_format.
 	if strings.Contains(strings.ToLower(setting.Model), "gpt-image") || strings.Contains(strings.ToLower(setting.Model), "chatgpt-image") {
 		fields["output_format"] = "png"
@@ -224,6 +237,9 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 		if response.StatusCode >= 500 || response.StatusCode == 408 {
 			return nil, &cloudToolRunError{code: "image_outcome_unknown", unknown: true}
 		}
+		if v.Background == "transparent" {
+			return nil, &cloudToolRunError{code: "image_background_rejected"}
+		}
 		return nil, &cloudToolRunError{code: "image_generation_rejected"}
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 30<<20))
@@ -249,6 +265,12 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 	decoded, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, &cloudToolRunError{code: "image_result_invalid", unknown: true}
+	}
+	if v.Background == "transparent" {
+		alpha, ok := decoded.(interface{ Opaque() bool })
+		if format != "png" || !ok || alpha.Opaque() {
+			return nil, &cloudToolRunError{code: "image_transparency_missing"}
+		}
 	}
 	if format != "png" {
 		var normalized bytes.Buffer
