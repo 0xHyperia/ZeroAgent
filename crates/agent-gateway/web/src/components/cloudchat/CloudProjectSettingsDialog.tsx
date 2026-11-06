@@ -35,6 +35,7 @@ type Props = {
   client: CloudChatProjectsClient;
   filesClient: CloudChatFilesClient;
   captureGuard: CloudAccountGuard;
+  onDirtyChange?: (dirty: boolean) => void;
   onClose: () => void;
   onSelect: (projectId: string) => void;
   onCreate: () => void;
@@ -570,6 +571,11 @@ function ProjectSettings(
 
 export function CloudProjectSettingsDialog(props: Props) {
   const [dirty, setDirty] = useState(false);
+  const { onDirtyChange } = props;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
   const afterCloseRef = useRef<(() => void) | undefined>(undefined);

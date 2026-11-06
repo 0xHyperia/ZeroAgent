@@ -31,6 +31,8 @@ type SettingsShellProps<Context> = {
   canLeaveSection?: () => boolean;
   initialSection?: string;
   onSectionChange?: (section: string) => void;
+  mobileDetail?: boolean;
+  onMobileDetailChange?: (detail: boolean) => void;
   hiddenSections?: readonly string[];
   fontScale?: number;
 };
@@ -76,16 +78,15 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState(initialSection);
   const [previousInitialSection, setPreviousInitialSection] = useState(initialSection);
-  useEffect(() => {
-    onSectionChange?.(section);
-  }, [section, onSectionChange]);
   // Synchronize before children commit, so a deep link never paints the old section.
   if (previousInitialSection !== initialSection) {
     setPreviousInitialSection(initialSection);
     setSection(initialSection);
   }
   const [navQuery, setNavQuery] = useState("");
-  const [mobileDetail, setMobileDetail] = useState(initialSection !== "system");
+  const [localMobileDetail, setLocalMobileDetail] = useState(initialSection !== "system");
+  const mobileDetail = props.mobileDetail ?? localMobileDetail;
+  const setMobileDetail = props.onMobileDetailChange ?? setLocalMobileDetail;
   useEffect(() => {
     if (presentation === "page")
       shellRef.current
@@ -130,9 +131,11 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
 
   useEffect(() => {
     if (!sections.some((definition) => definition.id === section)) {
-      setSection(sections[0]?.id ?? "system");
+      const fallback = sections[0]?.id ?? "system";
+      setSection(fallback);
+      onSectionChange?.(fallback);
     }
-  }, [section, sections]);
+  }, [onSectionChange, section, sections]);
 
   // Above the early return below: hooks cannot be called conditionally.
   useSettingsEscapeToClose(onBack);
@@ -151,7 +154,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     };
     window.addEventListener(PLATFORM_BACK_EVENT, handleBack, { capture: true });
     return () => window.removeEventListener(PLATFORM_BACK_EVENT, handleBack, { capture: true });
-  }, [canLeaveSection, mobileDetail, onBack]);
+  }, [canLeaveSection, mobileDetail, onBack, setMobileDetail]);
 
   const activeSection = sections.find((definition) => definition.id === section) ?? sections[0];
   if (!activeSection) return null;
@@ -295,6 +298,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                           onClick={() => {
                             if (definition.id === section || (canLeaveSection?.() ?? true)) {
                               setSection(definition.id);
+                              onSectionChange?.(definition.id);
                               setMobileDetail(true);
                             }
                           }}

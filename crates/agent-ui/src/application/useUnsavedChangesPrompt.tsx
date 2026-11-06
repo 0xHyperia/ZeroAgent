@@ -34,6 +34,7 @@ export function useUnsavedChangesPrompt(scope: string | number) {
   const setDirty = useCallback((value: boolean) => {
     dirty.current = value;
   }, []);
+  const isDirty = useCallback(() => dirty.current, []);
   const request = useCallback((action: () => void) => {
     if (!dirty.current) {
       action();
@@ -44,6 +45,7 @@ export function useUnsavedChangesPrompt(scope: string | number) {
   }, []);
   return {
     setDirty,
+    isDirty,
     request,
     dialog: (
       <AlertDialog

@@ -51,6 +51,58 @@ test("project edits protect navigation and unload; a retired account cannot conf
   assert.equal(navigations, 1);
 });
 
+test("deep links retain library filters and skill identity while normalizing legacy chat links", async t => {
+  const app = await setup(t);
+  const { readCloudChatRoute, cloudChatRouteHref } = app.env.loadModule("src/lib/cloudChatRoute.ts");
+  const normalize = path => {
+    const url = new URL(path,"http://localhost");
+    return cloudChatRouteHref(readCloudChatRoute(url),url);
+  };
+  assert.equal(normalize("/?conversation=chat-123&oauth=success"),"/c/chat-123");
+  assert.equal(normalize("/?conversation=chat-123&settings=system"),"/settings/system");
+  assert.equal(normalize("/space/sites/version-1?folder=folder-1&scope=starred"),
+    "/space/sites/version-1?folder=folder-1&scope=starred");
+  assert.equal(normalize("/skills?skill_id=skill-creator"),"/skills?skill_id=skill-creator");
+  assert.equal(normalize("/plugins/product-design/manage?skill_id=design-qa"),
+    "/plugins/product-design/manage?skill_id=design-qa");
+  assert.equal(normalize("/c/%2fprivate"),"/");
+  const { readCloudChatLocation } = app.env.loadModule("src/lib/useCloudChatHistory.ts");
+  window.history.replaceState({ zeroagentCloudRoute: { owner: 1, index: 1, conversation: "private" } }, "", "/c/private");
+  assert.deepEqual(readCloudChatLocation(2), { route: { page: "chat", id: "" }, conversation: "" });
+});
+
+test("Back from dirty project settings keeps its URL until navigation is confirmed", async t => {
+  const app = await setup(t);
+  const { useCloudChatHistory } = app.env.loadModule("src/lib/useCloudChatHistory.ts");
+  const { useUnsavedChangesPrompt } = app.env.loadModule("../../agent-ui/src/application/useUnsavedChangesPrompt.tsx");
+  let guard;
+  function Harness() {
+    const [route,setRoute] = app.env.React.useState({ page: "chat", id: "" });
+    guard = useUnsavedChangesPrompt(1);
+    useCloudChatHistory({
+      owner: 1, active: true, route, conversation: "",
+      apply: ({route}) => setRoute(route),
+      isDirty: guard.isDirty, confirm: guard.request,
+    });
+    return app.env.React.createElement("div", null,
+      app.env.React.createElement("button", { onClick: () => setRoute({ page: "projects", id: "p1" }) }, "项目设置"),
+      guard.dialog,
+    );
+  }
+  await app.render(app.env.React.createElement(Harness));
+  await app.click("项目设置");
+  guard.setDirty(true);
+  window.history.back();
+  await app.env.waitFor(() => document.querySelector('[role="alertdialog"]'),"history leave prompt");
+  assert.equal(window.location.pathname,"/projects/p1");
+  await app.click("继续编辑");
+  assert.equal(window.location.pathname,"/projects/p1");
+  window.history.back();
+  await app.env.waitFor(() => document.querySelector('[role="alertdialog"]'),"second history leave prompt");
+  await app.click("放弃修改并离开");
+  await app.env.waitFor(() => window.location.pathname === "/","confirmed history destination");
+});
+
 test("the same resource shell renders an accessible full page without a modal or backdrop", async (t) => {
   const app = await setup(t);
   const { CloudChatResourcePanel, CloudChatResourcePresentation } = app.env.loadModule("src/components/cloudchat/CloudChatResourcePanel.tsx");

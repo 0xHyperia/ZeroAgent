@@ -23,7 +23,7 @@ const artifactVersionID="44444444-4444-4444-8444-444444444444",olderArtifactID="
 const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFamilyID,number:2,conversation_id:fileConversation,source_run_id:artifactRunID,name:"website.html",mime:"text/html",size:5,sha256:fixtureBodySHA,state:"ready",version:3,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",download_url:`/api/web-chat/artifacts/versions/${artifactVersionID}/download`,...overrides});
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 
-async function mount(t, { initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false,readerHarness=false } = {}) {
+async function mount(t, { initialURL, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false,readerHarness=false } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -420,7 +420,7 @@ async function mount(t, { initialRun = null, uncertain = false, delayedCancel = 
   const formGlobals=["HTMLInputElement","HTMLTextAreaElement","HTMLSelectElement"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]);
   for(const [key]of formGlobals)Object.defineProperty(globalThis,key,{value:env.dom.window[key],configurable:true,writable:true});
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  window.history.replaceState({}, "", newDraft ? "/" : `/?conversation=${firstConversation}`);
+  window.history.replaceState({}, "", initialURL ?? (newDraft ? "/" : `/?conversation=${firstConversation}`));
   const { CloudChatPage } = env.loadModule("src/pages/CloudChatPage.tsx");
   const container = document.body.appendChild(document.createElement("div"));
   const host = document.body;
@@ -809,7 +809,7 @@ test("forking an answer anchors its assistant and clones only that prefix withou
  assert.equal(input.action,"fork");assert.equal(input.message_id,"source-assistant");
  assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
  assert.deepEqual(app.history.get(branchConversation(1)).map(message=>message.content),["原始问题","原始回复"]);
- assert.equal(app.draft,"新的问题");assert.equal(new URLSearchParams(window.location.search).get("conversation"),branchConversation(1));
+ assert.equal(app.draft,"新的问题");assert.equal(window.location.pathname,`/c/${branchConversation(1)}`);
 });
 
 test("an unknown branch retains one request through offline reconciliation and uses its receipt",async(t)=>{
@@ -819,7 +819,7 @@ test("an unknown branch retains one request through offline reconciliation and u
  app.branchOnline=true;await app.clickText("核对分支状态");
  const posts=app.calls.filter(call=>call.path.endsWith("/branch")&&call.method==="POST");assert.equal(posts.length,1);
  const request=JSON.parse(posts[0].body);assert.ok(app.calls.some(call=>call.path===`/api/web-chat/branches/${request.client_request_id}`));
- assert.equal(app.branches.size,1);assert.equal(new URLSearchParams(window.location.search).get("conversation"),branchConversation(1));assert.equal(app.draft,"新的问题");
+ assert.equal(app.branches.size,1);assert.equal(window.location.pathname,`/c/${branchConversation(1)}`);assert.equal(app.draft,"新的问题");
 });
 
 test("late branch receipts cannot navigate after a conversation switch or account invalidation",async(t)=>{
@@ -829,7 +829,7 @@ test("late branch receipts cannot navigate after a conversation switch or accoun
    assert.equal(app.transcript.onResendFromEdit,undefined,"busy operations disable duplicate callbacks");
    if(invalidate)await app.invalidate();else await app.click(`[data-conversation="${alternateConversation}"]`);
    await app.finishBranch();
-   assert.doesNotMatch(window.location.search,/branch-/);assert.doesNotMatch(app.host.textContent,/原始回复/);
+   assert.doesNotMatch(window.location.pathname,/branch-/);assert.doesNotMatch(app.host.textContent,/原始回复/);
    assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
    });
  }
@@ -1043,7 +1043,7 @@ test("a failed initial history read offers an explicit same-conversation retry w
  assert.equal(historyReads().length,2);assert.equal(metadataReads().length,metadataBefore+1);
  assert.equal(app.composer.isInputDisabled,false);assert.deepEqual(app.structuredDraft,rich);
  assert.equal(app.transcript.rows[0].key,"user-a");assert.match(app.host.querySelector('[data-transcript]').textContent,/原问题/);
- assert.equal(new URL(window.location.href).searchParams.get("conversation"),defaultConversation);
+ assert.equal(window.location.pathname,`/c/${defaultConversation}`);
  assert.doesNotMatch(app.host.textContent,/暂时无法读取对话消息|重试加载历史/);
  assert.deepEqual(workWrites(),[]);assert.equal(app.clearCount,0);assert.equal(app.runs.size,0);
 });
@@ -1242,7 +1242,7 @@ test('new conversation only opens a blank draft and repeated clicks never create
   app.draft='应在新对话中清空的草稿';
   await app.click('[data-new-conversation]');
   assert.equal(app.draft,'');assert.equal(app.transcript.rows.length,0);assert.ok(app.host.querySelector('.cloud-mode-switch'));
-  assert.equal(new URLSearchParams(window.location.search).has('conversation'),false);
+  assert.equal(window.location.pathname,"/");
   assert.equal(app.host.querySelectorAll('[data-conversation]').length,conversations);
  }
  assert.equal(app.composer.selectedValue,model);
@@ -1531,9 +1531,40 @@ test("acceptance clears the submitted snapshot but never newer text typed while 
  });
 });
 
+test("canonical conversation history supports Back and Forward without dropping either draft", async t => {
+ const app = await mount(t);
+ assert.equal(window.location.pathname,`/c/${defaultConversation}`);
+ await app.typeDraft("第一个草稿");
+ await app.click(`[data-conversation="${alternateConversation}"]`);
+ await app.typeDraft("第二个草稿");
+ const traverse = direction => app.env.act(async () => {
+   const changed = new Promise(resolve => window.addEventListener("popstate",resolve,{once:true}));
+   window.history[direction]();
+   await changed;
+   await tick();
+ });
+ await traverse("back");
+ assert.equal(window.location.pathname,`/c/${defaultConversation}`);
+ assert.equal(app.draft,"第一个草稿");
+ await traverse("forward");
+ assert.equal(window.location.pathname,`/c/${alternateConversation}`);
+ assert.equal(app.draft,"第二个草稿");
+ assert.equal(app.runs.size,0);
+});
+
+test("an existing project opens from a cold deep link and back returns to the underlying view", async t => {
+ const app = await mount(t,{initialURL:"/projects/project-a"});
+ assert.equal(app.projectPanel.projectId,"project-a");
+ assert.ok(app.host.querySelector("[data-project-panel]"));
+ await app.env.act(async()=>{app.projectPanel.onClose();await tick();});
+ assert.equal(window.location.pathname,"/");
+ assert.equal(app.host.querySelector("[data-project-panel]"),null);
+});
+
 test("a rejected first send transfers its complete blank draft to the created conversation for retry", async t => {
  const app = await mount(t, { newDraft: true, queueFull: true }); const rich = richComposerDraft(); app.structuredDraft = rich;
- await app.click('[data-action="send"]'); const created = new URLSearchParams(window.location.search).get("conversation");
+ await app.click('[data-action="send"]'); const created = window.location.pathname.split("/").at(-1);
+ assert.equal(window.history.length,1,"the first send replaces the blank draft URL");
  assert.ok(created); assert.deepEqual(app.structuredDraft, rich); assert.match(app.host.textContent, /账户队列已满/);
  await app.click(`[data-conversation="${defaultConversation}"]`); assert.equal(app.draft, "");
  await app.click(`[data-conversation="${created}"]`); assert.deepEqual(app.structuredDraft, rich); assert.match(app.host.textContent, /账户队列已满/);

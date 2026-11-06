@@ -273,6 +273,8 @@ export function SettingsPage(props: SettingsPageProps) {
           : initialSection
       }
       onSectionChange={(section) => onSectionChange?.(section as typeof initialSection)}
+      mobileDetail={props.mobileDetail}
+      onMobileDetailChange={props.onMobileDetailChange}
       hiddenSections={hiddenSections}
       fontScale={settings.customSettings.fontScale.settings}
     />

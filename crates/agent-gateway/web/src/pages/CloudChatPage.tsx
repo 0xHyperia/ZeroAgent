@@ -36,6 +36,7 @@ import type {
   ExtensionCatalog,
   ExtensionPackage,
   ExtensionSkill,
+  ExtensionWorkspaceLocation,
 } from "@liveagent/ui/features/extensions/extensionTypes";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
@@ -114,6 +115,13 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import {
+  type CloudChatRoute,
+  type CloudReaderRoute,
+  type CloudSettingsSection,
+  cloudSettingsSection,
+  DEFAULT_EXTENSION_LOCATION,
+} from "@/lib/cloudChatRoute";
 import { waitForCloudChatRetry } from "@/lib/cloudChatRuns";
 import {
   buildCloudComposerText,
@@ -135,6 +143,7 @@ import {
   type CloudSpaceLocation,
   createCloudSpaceClient,
 } from "@/lib/cloudSpace";
+import { readCloudChatLocation, useCloudChatHistory } from "@/lib/useCloudChatHistory";
 import { CloudModelPreferencesSection } from "./settings/CloudModelPreferencesSection";
 import "../cloud-space.css";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
@@ -344,8 +353,6 @@ const ExtensionsWorkspace = lazy(() =>
   })),
 );
 const EMPTY_PATHS = new Set<string>();
-const CLOUD_SETTINGS_SECTIONS = new Set<SectionId>(["account", "system", "providers", "devices"]);
-
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const guard = captureAccountRequestGuard();
   const response = await accountFetch(path, {
@@ -421,13 +428,12 @@ export function CloudChatPage({
     }),
     [settings.stt],
   );
-  const requestedSettingsSection = new URLSearchParams(window.location.search).get(
-    "settings",
-  ) as SectionId | null;
-  const initialSettingsSection =
-    requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)
-      ? requestedSettingsSection
-      : "account";
+  const [initialLocation] = useState(() => readCloudChatLocation(user.id));
+  const initialRoute = initialLocation.route;
+  const initialReader =
+    initialRoute.page === "chat" || initialRoute.page === "library"
+      ? initialRoute.reader
+      : undefined;
   const [accountStats, setAccountStats] = useState<RelayDashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -443,9 +449,7 @@ export function CloudChatPage({
   const [conversationMutations, setConversationMutations] = useState<
     ReadonlyMap<string, ChatHistorySidebarMutationKind>
   >(() => new Map());
-  const [conversationId, setConversationId] = useState(
-    () => new URLSearchParams(window.location.search).get("conversation")?.trim() ?? "",
-  );
+  const [conversationId, setConversationId] = useState(initialLocation.conversation);
   const [messages, setMessages] = useState<Message[]>([]);
   const [model, setModel] = useState("gpt-5.1");
   const [providerKeyId, setProviderKeyId] = useState(0);
@@ -474,24 +478,30 @@ export function CloudChatPage({
   const resourceDropRef = useRef<symbol | null>(null);
   const draftResourcesRef = useRef({ files: attachments, artifacts: artifactAttachments });
   draftResourcesRef.current = { files: attachments, artifacts: artifactAttachments };
-  const [filePanel, setFilePanel] = useState<FilePanel | null>(null);
+  const [filePanel, setFilePanel] = useState<FilePanel | null>(
+    initialReader?.kind === "file" ? { fileId: initialReader.id } : null,
+  );
   const [sourcePanel, setSourcePanel] = useState<SourcePanel | null>(null);
   const [artifactPanel, setArtifactPanel] = useState<{
     versionId?: string;
     site?: boolean;
     item?: CloudSpaceItem;
     siteAction?: "share" | "settings";
-  } | null>(null);
+  } | null>(
+    initialReader && initialReader.kind !== "file"
+      ? { versionId: initialReader.id, site: initialReader.kind === "site" }
+      : null,
+  );
   const [workPanel, setWorkPanel] = useState<"memory" | null>(null);
-  const [customize, setCustomize] = useState({ owner: user.id, open: false, visited: false });
+  const [customize, setCustomize] = useState({
+    owner: user.id,
+    open: initialRoute.page === "extensions",
+    visited: initialRoute.page === "extensions",
+  });
   const customizeOpen = customize.owner === user.id && customize.open;
-  const [extensionTarget, setExtensionTarget] = useState<{
-    owner: number;
-    id: string;
-    key: number;
-    draft?: boolean;
-    skillName?: string;
-  } | null>(null);
+  const [extensionLocation, setExtensionLocation] = useState<ExtensionWorkspaceLocation>(
+    initialRoute.page === "extensions" ? initialRoute.location : DEFAULT_EXTENSION_LOCATION,
+  );
   const extensionsAdapter = useMemo(
     () => createCloudExtensionsAdapter(`cloud:${user.id}`),
     [user.id],
@@ -554,12 +564,16 @@ export function CloudChatPage({
       window.removeEventListener(ACCOUNT_CHANGED_EVENT, retire);
     };
   }, [user.id, extensionsAdapter, extensionRefresh]);
-  const [workspaceView, setWorkspaceView] = useState<"chat" | "library">("chat");
+  const [workspaceView, setWorkspaceView] = useState<"chat" | "library">(
+    initialRoute.page === "library" ? "library" : "chat",
+  );
   const [spaceWork, setSpaceWork] = useState(false);
   const [spaceFolderRequest, setSpaceFolderRequest] = useState(0);
-  const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(CLOUD_SPACE_HOME);
+  const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(
+    initialRoute.page === "library" ? initialRoute.location : CLOUD_SPACE_HOME,
+  );
   const [spaceRevision, setSpaceRevision] = useState(0);
-  const [spaceVisited, setSpaceVisited] = useState(false);
+  const [spaceVisited, setSpaceVisited] = useState(initialRoute.page === "library");
   const [spaceStorageOpen, setSpaceStorageOpen] = useState(false);
   const [presentation, setPresentation] = useState<CloudChatPresentation>("work");
   const draftPresentationRef = useRef({
@@ -598,7 +612,11 @@ export function CloudChatPage({
     owner: number;
     id?: string;
     open: boolean;
-  }>({ owner: user.id, open: false });
+  }>({
+    owner: user.id,
+    id: initialRoute.page === "projects" ? initialRoute.id : undefined,
+    open: initialRoute.page === "projects",
+  });
   const [contextNotice, setContextNotice] = useState("");
   const [draftConflictOpen, setDraftConflictOpen] = useState(false);
   const [draftConflictLocal, setDraftConflictLocal] = useState<CloudChatSavedDraft | null>(null);
@@ -654,10 +672,17 @@ export function CloudChatPage({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: moving the trigger or changing its account closes the old menu.
   useEffect(() => setUserMenuOpen(false), [sidebar.isMobile, user.id]);
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(() =>
-    Boolean(requestedSettingsSection && CLOUD_SETTINGS_SECTIONS.has(requestedSettingsSection)),
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(initialRoute.page === "settings");
+  const [settingsSection, setActiveSettingsSection] = useState<CloudSettingsSection>(
+    initialRoute.page === "settings" ? (initialRoute.section ?? "system") : "account",
   );
-  const [settingsSection, setSettingsSection] = useState<SectionId>(initialSettingsSection);
+  const [settingsDetail, setSettingsDetail] = useState(
+    initialRoute.page !== "settings" || !!initialRoute.section,
+  );
+  const setSettingsSection = useCallback((section: CloudSettingsSection) => {
+    setActiveSettingsSection(section);
+    setSettingsDetail(true);
+  }, []);
   const [modelPreferencesOwner, setModelPreferencesOwner] = useState<number | null>(null);
   const openModelPreferences = useCallback(() => setModelPreferencesOwner(user.id), [user.id]);
   const openComposerSettings = useCallback(
@@ -666,13 +691,14 @@ export function CloudChatPage({
         openModelPreferences();
         return;
       }
-      if (section) setSettingsSection(section);
+      const target = cloudSettingsSection(section);
+      if (target) setSettingsSection(target);
+      if (target === "system" && sidebar.isMobile) setSettingsDetail(false);
       setCustomize((value) => ({ ...value, open: false }));
       setAccountSettingsOpen(true);
     },
-    [openModelPreferences],
+    [openModelPreferences, setSettingsSection, sidebar.isMobile],
   );
-  const settingsHistoryOpen = useRef(accountSettingsOpen);
   const sidebarDestination = workspaceView === "library" ? "library" : "chat";
   const sidebarPreview = useCloudSidebarPreview(
     !sidebar.isMobile && !accountSettingsOpen,
@@ -685,19 +711,6 @@ export function CloudChatPage({
   useEffect(() => {
     if (accountSettingsOpen) sidebar.setOpenMobile(false);
   }, [accountSettingsOpen, sidebar.setOpenMobile]);
-  useEffect(() => {
-    const onPopState = () => {
-      const requested = new URL(window.location.href).searchParams.get(
-        "settings",
-      ) as SectionId | null;
-      const open = Boolean(requested && CLOUD_SETTINGS_SECTIONS.has(requested));
-      settingsHistoryOpen.current = open;
-      if (open) setSettingsSection(requested as SectionId);
-      setAccountSettingsOpen(open);
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
@@ -1035,6 +1048,11 @@ export function CloudChatPage({
       resourceDropRef.current = null;
       setResolvingResources(false);
       setWorkspaceView("chat");
+      setAccountSettingsOpen(false);
+      setCustomize({ owner: user.id, open: false, visited: false });
+      setExtensionLocation(DEFAULT_EXTENSION_LOCATION);
+      setSpaceLocation(CLOUD_SPACE_HOME);
+      setSpaceVisited(false);
       setProjectSettings({ owner: user.id, open: false });
       setRuntimeControls((current) => ({ ...current, nativeWebSearchEnabled: false }));
       viewRef.current = { userId: user.id, conversationId: "" };
@@ -1154,17 +1172,30 @@ export function CloudChatPage({
     };
   }, [detachRun, user.id]);
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (conversationId) url.searchParams.set("conversation", conversationId);
-    else url.searchParams.delete("conversation");
-    if (accountSettingsOpen) url.searchParams.set("settings", settingsSection);
-    else url.searchParams.delete("settings");
-    const method =
-      accountSettingsOpen && !settingsHistoryOpen.current ? "pushState" : "replaceState";
-    settingsHistoryOpen.current = accountSettingsOpen;
-    window.history[method](window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [accountSettingsOpen, conversationId, settingsSection]);
+  const readerRoute: CloudReaderRoute | undefined = filePanel?.fileId
+    ? { kind: "file", id: filePanel.fileId }
+    : artifactPanel?.versionId
+      ? { kind: artifactPanel.site ? "site" : "artifact", id: artifactPanel.versionId }
+      : undefined;
+  const cloudRoute: CloudChatRoute =
+    projectSettings.open && projectSettings.owner === user.id
+      ? { page: "projects", id: projectSettings.id }
+      : customizeOpen
+        ? { page: "extensions", location: extensionLocation }
+        : accountSettingsOpen
+          ? { page: "settings", section: settingsDetail ? settingsSection : undefined }
+          : workspaceView === "library"
+            ? { page: "library", location: spaceLocation, reader: readerRoute }
+            : { page: "chat", id: conversationId, reader: readerRoute };
+  const replaceNextCloudRoute = useCloudChatHistory({
+    owner: user.id,
+    active: viewRef.current.userId === user.id && !accountInvalidatedRef.current,
+    route: cloudRoute,
+    conversation: conversationId,
+    apply: applyCloudLocation,
+    isDirty: projectNavigation.isDirty,
+    confirm: projectNavigation.request,
+  });
   useEffect(() => {
     const restore = draftRestoreRef.current;
     if (restore && isCurrentView(restore.view) && composerRef.current) {
@@ -2152,6 +2183,7 @@ export function CloudChatPage({
     // Creation assigns an identity to this draft; edits made while awaiting it still belong here.
     const savedDraft = captureComposerDraft();
     setConversations((current) => [response.conversation, ...current]);
+    replaceNextCloudRoute.current = true;
     selectConversationView(response.conversation.id, true, savedDraft);
     draftsRef.current.remove(previousView);
     setSidebarOpen(window.matchMedia("(min-width: 821px)").matches);
@@ -2172,6 +2204,7 @@ export function CloudChatPage({
     setConversations((current) => current.filter((item) => item.id !== id));
     setNavigationRevision((revision) => revision + 1);
     if (conversationId === id) {
+      replaceNextCloudRoute.current = true;
       selectConversationView("");
     }
     draftsRef.current.remove({ userId: user.id, conversationId: id });
@@ -3429,6 +3462,41 @@ export function CloudChatPage({
     setWorkPanel(null);
     setWorkspaceView("chat");
   }
+  function applyCloudLocation({ route, conversation }: ReturnType<typeof readCloudChatLocation>) {
+    if (conversation !== viewRef.current.conversationId) {
+      pendingQueue.pause();
+      selectConversationView(conversation);
+    }
+    clearResources();
+    setCustomize((current) => ({
+      owner: user.id,
+      open: route.page === "extensions",
+      visited: (current.owner === user.id && current.visited) || route.page === "extensions",
+    }));
+    setProjectSettings({
+      owner: user.id,
+      id: route.page === "projects" ? route.id : undefined,
+      open: route.page === "projects",
+    });
+    if (route.page === "settings") {
+      setActiveSettingsSection(route.section ?? "system");
+      setSettingsDetail(!!route.section);
+      setAccountSettingsOpen(true);
+    } else if (route.page === "extensions") {
+      setExtensionLocation(route.location);
+    } else if (route.page === "library" || route.page === "chat") {
+      if (route.page === "library") {
+        setSpaceVisited(true);
+        setSpaceLocation(route.location);
+        setWorkspaceView("library");
+      }
+      if (route.reader?.kind === "file") setFilePanel({ fileId: route.reader.id });
+      else if (route.reader) {
+        setArtifactPanel({ versionId: route.reader.id, site: route.reader.kind === "site" });
+      }
+    }
+    if (sidebar.isMobile) setSidebarOpen(false);
+  }
   function closeResources() {
     projectNavigation.request(() => {
       clearResources();
@@ -3707,14 +3775,21 @@ export function CloudChatPage({
       setComposerMenu(null);
       setAccountSettingsOpen(false);
       setCustomize({ owner: user.id, open: true, visited: true });
-      if (packageId)
-        setExtensionTarget((current) => ({
-          owner: user.id,
-          id: packageId,
-          key: (current?.key ?? 0) + 1,
-          draft,
-          skillName,
-        }));
+      if (packageId) {
+        const pkg = extensionCatalog?.packages.find((item) => item.id === packageId);
+        const reader =
+          !draft && (pkg?.kind === "skill" || skillName)
+            ? { id: packageId, skillName, returnToChat: true }
+            : undefined;
+        setExtensionLocation({
+          route: draft
+            ? { page: "editor", draftId: packageId }
+            : pkg?.kind === "skill"
+              ? { page: "skills" }
+              : { page: "plugin", id: packageId },
+          reader,
+        });
+      }
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
@@ -5636,7 +5711,8 @@ export function CloudChatPage({
                   key={user.id}
                   adapter={extensionsAdapter}
                   catalog={extensionCatalog}
-                  openPackage={extensionTarget?.owner === user.id ? extensionTarget : undefined}
+                  location={extensionLocation}
+                  onNavigate={setExtensionLocation}
                   loading={extensions.loading}
                   error={extensions.error}
                   onCatalog={(catalog) =>
@@ -5678,7 +5754,12 @@ export function CloudChatPage({
                   );
                 }}
                 initialSection={settingsSection}
-                onSectionChange={setSettingsSection}
+                onSectionChange={(section) => {
+                  const target = cloudSettingsSection(section);
+                  if (target) setActiveSettingsSection(target);
+                }}
+                mobileDetail={settingsDetail}
+                onMobileDetailChange={setSettingsDetail}
                 hiddenSections={[
                   "skills",
                   "mcp",
@@ -5736,6 +5817,7 @@ export function CloudChatPage({
             client={projectsClient}
             filesClient={filesClient}
             captureGuard={captureAccountRequestGuard}
+            onDirtyChange={projectNavigation.setDirty}
             onClose={() => setProjectSettings({ owner: user.id, open: false })}
             onSelect={(id) => setProjectSettings({ owner: user.id, id, open: true })}
             onCreate={() => {

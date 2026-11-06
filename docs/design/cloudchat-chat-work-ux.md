@@ -1,5 +1,22 @@
 # ZeroAgent CloudChat：对话与工作体验规范
 
+## 浏览器路由与刷新恢复
+
+在已登录的 ChatGPT Web 核对了 `/c/:id`、项目会话 `/g/:project/c/:id`、`/space?tab=suggested`、`/plugins` 和 `/skills?skill_id=:id`。设置分类参考 ADR 0053 记录的 `/settings/general-settings`。ZeroAgent 给可独立打开的内容分配稳定地址，会话统一使用 `/c/:id`，项目移动后仍可用原链接。公开分享使用独立入口，访问权限继续由账户或分享规则决定。
+
+| 用户打开的内容 | ZeroAgent 地址 |
+| --- | --- |
+| 新对话、已有对话 | `/`、`/c/:conversationId` |
+| 项目列表、项目详情 | `/projects`、`/projects/:projectId` |
+| 资料空间、文件夹、文件、成果、站点 | `/space`、`/space/folders/:id`、`/space/files/:id`、`/space/artifacts/:id`、`/space/sites/:id` |
+| 插件及管理、技能和包内技能 | `/plugins`、`/plugins/:id`、`/plugins/:id/manage`、`/skills`、`/skills?skill_id=:id`、`/plugins/:id/skills/:name` |
+| 个人扩展编辑器与待审阅草稿 | `/customize/edit/:id`、`/customize/new/:kind`、`/customize/drafts/:id` |
+| 设置总览与分类 | `/settings`、`/settings/:section` |
+
+筛选和会话内打开的阅读器使用查询参数。地址只包含路由用标识，不写入草稿、正文、凭据或执行租约。同一标签用账户绑定的浏览器历史记录恢复底层会话。冷启动按 URL 打开目标，保持现有加载、无权限与错误状态。旧会话和设置查询链接仍可打开并规范化。公开分享和设备授权沿用各自的入口。
+
+用户进入另一页面时新增历史记录，回退和前进恢复对应视图。首次发送后以新建会话的地址替换当前草稿地址。桌面保留会话画布和 Run 订阅，窄屏沿用现有单列、阅读器和返回入口。项目编辑离开仍经原有确认，个人扩展编辑由已有草稿恢复机制保留。短暂菜单、二次确认及高级设置弹窗留在当前页面。
+
 版本：1.13。日期：2026-10-30。适用范围：CloudChat Web、嵌入 Web 的 Android。
 实现决策：[ADR0052](../product/decisions/0052-chat-work-interaction-spec.md)。
 本规范是后续功能的共同验收依据；实际验收结果单独记录在仓库根目录 `design-qa.md`。

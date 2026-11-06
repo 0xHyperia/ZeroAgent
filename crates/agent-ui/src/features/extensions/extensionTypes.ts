@@ -5,6 +5,14 @@ export type ExtensionSkill = {
   display_name?: string;
 };
 export type ExtensionKind = "plugin" | "skill";
+export type ExtensionWorkspaceRoute =
+  | { page: "plugins" | "skills" }
+  | { page: "plugin" | "manage"; id: string }
+  | { page: "editor"; id?: string; draftId?: string; kind?: ExtensionKind; returnTo?: string };
+export type ExtensionWorkspaceLocation = {
+  route: ExtensionWorkspaceRoute;
+  reader?: { id: string; skillName?: string; returnToChat?: boolean };
+};
 export type ExtensionPackage = {
   id: string;
   kind: ExtensionKind;

@@ -77,16 +77,15 @@ import {
   type ExtensionRevision,
   type ExtensionSkill,
   type ExtensionsAdapter,
+  type ExtensionWorkspaceLocation,
+  type ExtensionWorkspaceRoute,
   extensionOwned,
   extensionSkillEnabled,
 } from "./extensionTypes";
 import { SkillFileIcon, SkillReaderFileTree, SkillSourceCard } from "./SkillReaderFiles";
 import "./extensions.css";
 
-type Route =
-  | { page: "plugins" | "skills" }
-  | { page: "plugin" | "manage"; id: string }
-  | { page: "editor"; id?: string; draftId?: string; kind?: ExtensionKind; returnTo?: string };
+type Route = ExtensionWorkspaceRoute;
 type SkillSelection = { pkg: ExtensionPackage; skill: ExtensionSkill; returnToChat?: boolean };
 type AppSelection = { name: string; description: string; packageId: string; local?: boolean };
 function restoredRoute(scope: string): Route {
@@ -116,12 +115,15 @@ export function ExtensionsWorkspace(props: {
   onTry: (pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) => void;
   onConfigureImages?: () => void;
   openPackage?: { id: string; key: number; draft?: boolean; skillName?: string };
+  location?: ExtensionWorkspaceLocation;
+  onNavigate?: (location: ExtensionWorkspaceLocation) => void;
 }) {
   const { adapter, catalog } = props;
   const { locale } = useLocale();
   const host = useRef<HTMLDivElement>(null);
   const sidebarLayout = useSidebarWidthLayout(host, false, 720);
-  const [route, setRoute] = useState<Route>(() => restoredRoute(adapter.scope));
+  const [localRoute, setRoute] = useState<Route>(() => restoredRoute(adapter.scope));
+  const route = props.location?.route ?? localRoute;
   const [query, setQuery] = useState("");
   const [installedSearchOpen, setInstalledSearchOpen] = useState(false);
   const [installedQuery, setInstalledQuery] = useState("");
@@ -129,7 +131,37 @@ export function ExtensionsWorkspace(props: {
   const installedSearchButton = useRef<HTMLButtonElement>(null);
   const [source, setSource] = useState<"public" | "personal">("public");
   const [installation, setInstallation] = useState("all");
-  const [selected, setSelected] = useState<SkillSelection | null>(null);
+  const [localSelection, setLocalSelection] = useState<SkillSelection | null>(null);
+  const reader = props.location?.reader;
+  const readerPackage = reader && catalog?.packages.find((item) => item.id === reader.id);
+  const readerSkill =
+    readerPackage &&
+    (reader?.skillName
+      ? readerPackage.skills.find((item) => item.name === reader.skillName)
+      : readerPackage.kind === "skill"
+        ? readerPackage.skills[0]
+        : undefined);
+  const selected: SkillSelection | null = props.location
+    ? readerPackage && readerSkill
+      ? { pkg: readerPackage, skill: readerSkill, returnToChat: reader?.returnToChat }
+      : null
+    : localSelection;
+  const setSelected = (selection: SkillSelection | null) => {
+    if (!props.onNavigate) {
+      setLocalSelection(selection);
+      return;
+    }
+    props.onNavigate({
+      route,
+      reader: selection
+        ? {
+            id: selection.pkg.id,
+            skillName: selection.pkg.kind === "plugin" ? selection.skill.name : undefined,
+            returnToChat: selection.returnToChat,
+          }
+        : undefined,
+    });
+  };
   const [selectedApp, setSelectedApp] = useState<AppSelection | null>(null);
   const pluginEditorApp = {
     name: locale === "en-US" ? "Plugin editor" : "插件编辑器",
@@ -181,7 +213,7 @@ export function ExtensionsWorkspace(props: {
       setQuery("");
       setError("");
       setNotice("");
-      setSelected(reader ?? null);
+      setLocalSelection(reader ?? null);
       setSelectedApp(null);
       setExpandedSkills(false);
       if (reader) return;
@@ -192,6 +224,7 @@ export function ExtensionsWorkspace(props: {
     }
   }, [props.openPackage, catalog]);
   useEffect(() => {
+    if (props.location) return;
     try {
       extensionSessionStorage()?.setItem(
         `zeroagent:extensions-view:${adapter.scope}`,
@@ -200,7 +233,7 @@ export function ExtensionsWorkspace(props: {
     } catch {
       /* Navigation remains available without session storage. */
     }
-  }, [adapter.scope, route]);
+  }, [adapter.scope, props.location, route]);
   const packages = catalog?.packages ?? [];
   const selectedPackage = selected
     ? (packages.find((item) => item.id === selected.pkg.id) ?? selected.pkg)
@@ -211,7 +244,8 @@ export function ExtensionsWorkspace(props: {
       setPendingRoute({ route: next });
       return;
     }
-    setRoute(next);
+    if (props.onNavigate) props.onNavigate({ route: next });
+    else setRoute(next);
     setQuery("");
     setError("");
     setNotice("");
@@ -1223,6 +1257,19 @@ export function ExtensionsWorkspace(props: {
           正在保存
         </span>
       )}
+      {reader && catalog && !props.loading && !selected && (
+        <Dialog open onOpenChange={(open) => !open && setSelected(null)}>
+          <DialogContent className="max-w-sm p-6" showCloseButton closeLabel="关闭技能详情">
+            <DialogTitle>技能不可用</DialogTitle>
+            <DialogDescription className="mt-2">
+              此技能已移除，或当前账户没有访问权限。
+            </DialogDescription>
+            <Button className="mt-4 justify-self-end" onClick={() => setSelected(null)}>
+              返回目录
+            </Button>
+          </DialogContent>
+        </Dialog>
+      )}
       {selected && (
         <SkillReader
           key={`${adapter.scope}:${selected.pkg.id}:${selected.skill.entry}`}
@@ -1290,7 +1337,7 @@ export function ExtensionsWorkspace(props: {
               onClick={() => {
                 if (pendingRoute) {
                   navigate(pendingRoute.route, true);
-                  setSelected(pendingRoute.reader ?? null);
+                  if (!props.onNavigate) setSelected(pendingRoute.reader ?? null);
                 }
                 setPendingRoute(null);
               }}

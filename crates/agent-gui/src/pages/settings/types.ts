@@ -49,6 +49,8 @@ export type SettingsPageProps = {
   backLabel?: string;
   initialSection?: SectionId;
   onSectionChange?: (section: SectionId) => void;
+  mobileDetail?: boolean;
+  onMobileDetailChange?: (detail: boolean) => void;
   initialProviderId?: string;
   hiddenSections?: SectionId[];
   appUpdate: AppUpdateController;
