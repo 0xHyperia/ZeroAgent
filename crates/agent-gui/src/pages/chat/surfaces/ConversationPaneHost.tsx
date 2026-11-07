@@ -1,6 +1,7 @@
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
+import { ScheduledReplyPreview } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -53,6 +54,7 @@ export type ConversationPaneHostProps = {
 export type RestorableConversationPaneHostProps = ConversationPaneHostProps & {
   title?: string;
   deferHydration?: boolean;
+  historyRefresh?: { version: string; reload: () => Promise<unknown> };
 };
 
 export const RestorableConversationPaneHost = forwardRef<
@@ -68,6 +70,7 @@ export const RestorableConversationPaneHost = forwardRef<
       registration={registration}
       title={props.title}
       deferHydration={props.deferHydration ?? false}
+      historyRefresh={props.historyRefresh}
       forwardedRef={forwardedRef}
     />
   );
@@ -82,12 +85,43 @@ function RegisteredRestorableConversationPaneHostContent(props: {
   registration: ConversationPaneRegistration;
   title?: string;
   deferHydration: boolean;
+  historyRefresh?: RestorableConversationPaneHostProps["historyRefresh"];
   forwardedRef: ForwardedRef<ConversationPaneHostHandle>;
 }) {
-  const { registration, title, deferHydration, forwardedRef } = props;
+  const { registration, title, deferHydration, forwardedRef, historyRefresh } = props;
   const { t } = useLocale();
   const { controller } = registration.binding;
   const snapshot = useConversationSurfaceSnapshot(controller);
+  const refreshVersion = historyRefresh?.version;
+  const reloadHistoryRef = useRef(historyRefresh?.reload);
+  reloadHistoryRef.current = historyRefresh?.reload;
+  const [readyVersion, setReadyVersion] = useState<string>();
+  const isRunning = snapshot.runtime?.isSending || registration.binding.isConversationRunning;
+  const hasRuntime = Boolean(snapshot.runtime);
+
+  useEffect(() => {
+    if (!refreshVersion || readyVersion === refreshVersion || !hasRuntime || isRunning) return;
+    let retired = false;
+    let timer: number;
+    async function reload(version: string) {
+      try {
+        const snapshot = await reloadHistoryRef.current?.();
+        if (retired) return;
+        if (snapshot) {
+          setReadyVersion(version);
+          return;
+        }
+      } catch {
+        // Keep the preview until the native history is readable.
+      }
+      if (!retired) timer = window.setTimeout(() => void reload(version), 4000);
+    }
+    void reload(refreshVersion);
+    return () => {
+      retired = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasRuntime, isRunning, readyVersion, refreshVersion]);
 
   useEffect(() => {
     if (snapshot.runtime || snapshot.lifecycle.hydrating || snapshot.lifecycle.hydrationFailed) {
@@ -147,7 +181,14 @@ function RegisteredRestorableConversationPaneHostContent(props: {
     );
   }
 
-  return <RegisteredConversationPaneHost ref={forwardedRef} registration={registration} />;
+  return (
+    <RegisteredConversationPaneHost
+      ref={forwardedRef}
+      registration={registration}
+      suspendMessageJump={Boolean(refreshVersion && refreshVersion !== readyVersion)}
+      scheduledHistoryReady={Boolean(refreshVersion && refreshVersion === readyVersion)}
+    />
+  );
 }
 
 export const ConversationPaneHost = forwardRef<
@@ -163,7 +204,11 @@ export const ConversationPaneHost = forwardRef<
 
 const RegisteredConversationPaneHostContent = forwardRef<
   ConversationPaneHostHandle,
-  { registration: ConversationPaneRegistration }
+  {
+    registration: ConversationPaneRegistration;
+    suspendMessageJump?: boolean;
+    scheduledHistoryReady?: boolean;
+  }
 >(function RegisteredConversationPaneHost(props, forwardedRef) {
   const { identity, binding } = props.registration;
   const { paneId, conversationId } = identity;
@@ -174,6 +219,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
     changedFilesActions,
     checkpointRewind,
     isConversationRunning,
+    scheduledRun,
     fileDrop,
     trajectory,
     sendDraft,
@@ -218,6 +264,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
     return beginPaneComposerDraftSession(composer, {
       getDraft: () => controller.getSnapshot().draft,
       setDraft: (draft) => controller.setDraft(draft),
+      clearDraft: controller.composerScopeId ? () => controller.clearDraft() : undefined,
     });
   }, [conversationId]);
 
@@ -245,7 +292,33 @@ const RegisteredConversationPaneHostContent = forwardRef<
       renderContent={(snapshot) => {
         const runtime = snapshot.runtime;
         const historyItems = runtime?.state.transcript.items ?? [];
-        const isSending = runtime?.isSending ?? false;
+        const scheduleActive = Boolean(scheduledRun?.active);
+        const isSending = Boolean(runtime?.isSending || scheduleActive);
+        const preview = scheduledRun?.preview;
+        const previewStreaming = scheduleActive && !preview?.done;
+        const scheduledReply =
+          scheduledRun &&
+          preview &&
+          (previewStreaming ||
+            ((preview.text || preview.prompt) && !props.scheduledHistoryReady))
+            ? {
+                key: `scheduled-preview:${scheduledRun.run.id}`,
+                content: (
+                  <ScheduledReplyPreview
+                    preview={preview}
+                    startedAt={scheduledRun.run.startedAt}
+                    streaming={previewStreaming}
+                    showPrompt={
+                      !historyItems.some(
+                        (item) =>
+                          item.kind === "user" &&
+                          item.messageRef?.messageId === preview.prompt?.messageId,
+                      )
+                    }
+                  />
+                ),
+              }
+            : undefined;
         const isCompactionRunning = snapshot.compaction.phase === "running";
         const queuedTurns = snapshot.queue.map((item) => ({
           id: item.id,
@@ -268,11 +341,13 @@ const RegisteredConversationPaneHostContent = forwardRef<
               >
                 <ChatTranscript
                   {...transcript}
+                  messageJump={props.suspendMessageJump ? undefined : transcript.messageJump}
                   conversationId={snapshot.conversationId}
                   followRef={scrollFollowRef}
                   historyItems={historyItems}
                   hasMoreHistory={runtime?.state.transcript.hasMoreBefore ?? false}
-                  isSending={isSending}
+                  isSending={Boolean(runtime?.isSending || (previewStreaming && !scheduledReply))}
+                  pendingReply={scheduledReply}
                   isCompactionRunning={isCompactionRunning}
                   bottomReservePx={composerOverlayHeight}
                   floatingOverhangPx={composerFloatingOverhang}
@@ -301,7 +376,9 @@ const RegisteredConversationPaneHostContent = forwardRef<
                   enabled={isKBrainBackendEnabled()}
                 />
               }
-              onStop={controller.stop}
+              onStop={scheduledRun?.active ? () => scheduledRun.cancel?.() : controller.stop}
+              stopDisabled={Boolean(scheduledRun?.active && !scheduledRun.cancel)}
+              queueRunDisabled={scheduleActive || composer.queueRunDisabled}
               onManualCompactConfirm={controller.compact}
               manualCompactBlocked={isCompactionRunning}
               onHeightChange={setComposerOverlayHeight}
@@ -363,9 +440,13 @@ const RegisteredRestorableConversationPaneHost = memo(
     sameConversationPaneRegistration(previous.registration, next.registration) &&
     previous.title === next.title &&
     previous.deferHydration === next.deferHydration &&
+    previous.historyRefresh?.version === next.historyRefresh?.version &&
     previous.forwardedRef === next.forwardedRef,
 );
 const RegisteredConversationPaneHost = memo(
   RegisteredConversationPaneHostContent,
-  (previous, next) => sameConversationPaneRegistration(previous.registration, next.registration),
+  (previous, next) =>
+    previous.suspendMessageJump === next.suspendMessageJump &&
+    previous.scheduledHistoryReady === next.scheduledHistoryReady &&
+    sameConversationPaneRegistration(previous.registration, next.registration),
 );

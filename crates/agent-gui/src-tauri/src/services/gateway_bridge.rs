@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
 use crate::commands::{
@@ -14,25 +14,23 @@ use crate::commands::{
         fs_read_editable_text_sync, fs_read_workspace_image_sync, fs_rename_sync, fs_roots_sync,
         fs_write_text_sync,
     },
-    git::{git_gateway_clone_task_action_sync, GitCloneTaskRegistry},
+    git::{GitCloneTaskRegistry, git_gateway_clone_task_action_sync},
     root_grants::{
-        workspace_root_grants_apply, workspace_root_grants_list, workspace_root_grants_revoke,
         WorkspaceRootAccess, WorkspaceRootGrant, WorkspaceRootGrantDraft,
+        workspace_root_grants_apply, workspace_root_grants_list, workspace_root_grants_revoke,
     },
     settings::{load_providers, open_db},
     system::{
+        SystemImportDirectoryInputFile, SystemReadableFileUploadInput,
         system_create_project_folder_sync, system_import_directory_abort_sync,
         system_import_directory_chunk_sync, system_import_directory_commit_sync,
         system_import_directory_start_sync, system_import_directory_sync,
         system_import_uploaded_readable_files_sync, system_list_skill_files_sync,
         system_read_skill_metadata_sync, system_read_skill_text_sync,
-        system_read_uploaded_image_preview_sync, SystemImportDirectoryInputFile,
-        SystemReadableFileUploadInput,
+        system_read_uploaded_image_preview_sync,
     },
 };
-use crate::services::automation::{
-    validate_cron_expression, AutomationApplyInput, AutomationStore,
-};
+use crate::services::automation::AutomationApplyInput;
 use crate::services::gateway::proto;
 use crate::services::kbrain_backend::{
     KBrainBackendConnection, KBrainBackendState, PublicBackendConnection,
@@ -118,85 +116,108 @@ struct HistorySharedListArgs {
     page_size: i64,
 }
 
-/// Gateway relay for the automation domain. Web clients speak the same
-/// versioned apply protocol as the desktop webview and the LLM tool; the
-/// legacy per-task create/update/delete actions no longer exist.
+/// The device relay uses the active profile's scheduler, just like the desktop webview.
 pub async fn handle_cron_manage(
     app: AppHandle,
-    store: Arc<AutomationStore>,
     request: proto::CronManageRequest,
 ) -> Result<proto::CronManageResponse, String> {
+    let connection = ensure_kbrain_connection(&app).await?;
+    kbrain_cron_manage(&connection, request).await
+}
+
+async fn kbrain_cron_manage(
+    connection: &KBrainBackendConnection,
+    request: proto::CronManageRequest,
+) -> Result<proto::CronManageResponse, String> {
+    use reqwest::Method;
+
     let action = request.action.trim().to_string();
-    let result_json = match action.as_str() {
+    let payload = match action.as_str() {
         "snapshot" => {
-            let store = Arc::clone(&store);
-            let snapshot = tauri::async_runtime::spawn_blocking(move || store.snapshot())
-                .await
-                .map_err(|e| format!("gateway automation snapshot join failed: {e}"))??;
-            serialize_cron_manage_result(&snapshot)?
+            let (cron, hooks) = tokio::try_join!(
+                kbrain_prompt_request(connection, Method::GET, "/v1/cron", None),
+                kbrain_prompt_request(connection, Method::GET, "/v1/hooks", None),
+            )?;
+            json!({ "cron": cron, "hooks": hooks })
         }
-        "cron_apply" => {
+        "cron_apply" | "hooks_apply" => {
             let input = parse_apply_input(&request.task_json)?;
-            let store = Arc::clone(&store);
-            let response = tauri::async_runtime::spawn_blocking(move || store.cron_apply(input))
-                .await
-                .map_err(|e| format!("gateway cron apply join failed: {e}"))??;
-            serialize_cron_manage_result(&response)?
-        }
-        "hooks_apply" => {
-            let input = parse_apply_input(&request.task_json)?;
-            let store = Arc::clone(&store);
-            let response = tauri::async_runtime::spawn_blocking(move || store.hooks_apply(input))
-                .await
-                .map_err(|e| format!("gateway hooks apply join failed: {e}"))??;
-            serialize_cron_manage_result(&response)?
-        }
-        "list_runs" => {
-            let task_id = parse_required_cron_task_id(&request, "list_runs")?;
-            let limit = parse_runs_limit(&request.task_json)?;
-            let store = Arc::clone(&store);
-            let runs =
-                tauri::async_runtime::spawn_blocking(move || store.list_runs(&task_id, limit))
-                    .await
-                    .map_err(|e| format!("gateway list_runs join failed: {e}"))??;
-            serialize_cron_manage_result(&json!({ "runs": runs }))?
-        }
-        "clear_runs" => {
-            let task_id = parse_required_cron_task_id(&request, "clear_runs")?;
-            let store = Arc::clone(&store);
-            let cleared = tauri::async_runtime::spawn_blocking(move || store.clear_runs(&task_id))
-                .await
-                .map_err(|e| format!("gateway clear_runs join failed: {e}"))??;
-            serialize_cron_manage_result(&json!({ "clearedCount": cleared }))?
-        }
-        "run_now" => {
-            let task_id = parse_required_cron_task_id(&request, "run_now")?;
-            let store = Arc::clone(&store);
-            let response =
-                tauri::async_runtime::spawn_blocking(move || store.run_cron_task_now(&task_id))
-                    .await
-                    .map_err(|e| format!("gateway run_now join failed: {e}"))??;
-            serialize_cron_manage_result(&response)?
+            let path = if action == "cron_apply" {
+                "/v1/cron"
+            } else {
+                "/v1/hooks"
+            };
+            kbrain_prompt_request(connection, Method::PUT, path, Some(json!(input))).await?
         }
         "occurrences" => {
             let query = parse_occurrence_query(&request.task_json)?;
-            let response =
-                crate::services::automation::kbrain_occurrences::query(app, query).await?;
-            serialize_cron_manage_result(&response)?
+            let mut dates = crate::services::planning::backend::send(
+                connection,
+                "cron.occurrences",
+                json!({ "from": query.from, "to": query.to }),
+            )
+            .await?;
+            if dates.get("timeZone").and_then(Value::as_str) == Some("Local") {
+                if let Ok(zone) = iana_time_zone::get_timezone() {
+                    dates["timeZone"] = Value::String(zone);
+                }
+            }
+            dates
         }
         "validate" => {
             let expression = parse_validate_expression(&request.task_json)?;
-            tauri::async_runtime::spawn_blocking(move || validate_cron_expression(&expression))
-                .await
-                .map_err(|e| format!("gateway cron validate join failed: {e}"))??;
-            serialize_cron_manage_result(&json!({ "valid": true }))?
+            kbrain_prompt_request(
+                connection,
+                Method::POST,
+                "/v1/cron/validate",
+                Some(json!({ "expression": expression })),
+            )
+            .await?;
+            json!({ "valid": true })
+        }
+        "list_runs" | "clear_runs" | "run_now" | "cancel_run" | "run_anchor" | "run_progress" => {
+            let task_id = parse_required_cron_task_id(&request, &action)?;
+            let path = format!("/v1/cron/{}", urlencoding::encode(&task_id));
+            let (method, path) = match action.as_str() {
+                "list_runs" => {
+                    let limit = parse_runs_limit(&request.task_json)?;
+                    (Method::GET, format!("{path}/runs?limit={limit}"))
+                }
+                "clear_runs" => (Method::DELETE, format!("{path}/runs")),
+                "run_now" => (Method::POST, format!("{path}/run-now")),
+                "run_anchor" | "run_progress" => {
+                    let args: Value = serde_json::from_str(&request.task_json)
+                        .map_err(|e| format!("invalid cron execution payload: {e}"))?;
+                    let id = args["executionId"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|id| !matches!(*id, "" | "." | ".."))
+                        .ok_or_else(|| {
+                            format!("cron {action} requires a valid executionId")
+                        })?;
+                    let execution_path = format!("{path}/runs/{}", urlencoding::encode(id));
+                    let path = if action == "run_progress" {
+                        let cursor = args["cursor"]
+                            .as_u64()
+                            .filter(|cursor| *cursor <= (1_u64 << 53) - 1)
+                            .ok_or("cron run_progress requires a valid cursor")?;
+                        format!("{execution_path}/progress?after={cursor}")
+                    } else {
+                        format!("{execution_path}/anchor")
+                    };
+                    (Method::GET, path)
+                }
+                _ => (Method::POST, cron_cancel_path(&path, &request.task_json)?),
+            };
+            kbrain_prompt_request(connection, method, &path, None).await?
         }
         other => return Err(format!("unsupported cron action: {other}")),
     };
 
     Ok(proto::CronManageResponse {
         action,
-        result_json,
+        result_json: serde_json::to_string(&payload)
+            .map_err(|e| format!("serialize cron manage response failed: {e}"))?,
     })
 }
 
@@ -1937,7 +1958,32 @@ fn parse_required_cron_task_id(
     if task_id.is_empty() {
         return Err(format!("cron {action} requires task_id"));
     }
+    if matches!(task_id, "." | "..") {
+        return Err("invalid cron task_id".into());
+    }
     Ok(task_id.to_string())
+}
+
+fn cron_cancel_path(path: &str, raw: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CancelArgs {
+        execution_id: Option<String>,
+    }
+
+    let raw = raw.trim();
+    let execution_id = if raw.is_empty() {
+        None
+    } else {
+        serde_json::from_str::<CancelArgs>(raw)
+            .map_err(|e| format!("invalid cron cancel payload: {e}"))?
+            .execution_id
+    };
+    match execution_id.as_deref() {
+        Some(id) if matches!(id.trim(), "" | "." | "..") => Err("invalid executionId".into()),
+        Some(id) => Ok(format!("{path}/runs/{}/cancel", urlencoding::encode(id))),
+        None => Ok(format!("{path}/cancel")),
+    }
 }
 
 fn parse_runs_limit(raw: &str) -> Result<usize, String> {
@@ -1974,11 +2020,6 @@ fn parse_validate_expression(raw: &str) -> Result<String, String> {
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .ok_or_else(|| "validate requires expression".to_string())
-}
-
-fn serialize_cron_manage_result(payload: &impl serde::Serialize) -> Result<String, String> {
-    serde_json::to_string(payload)
-        .map_err(|e| format!("serialize cron manage response failed: {e}"))
 }
 
 fn is_builtin_share_tool_name(name: &str) -> bool {
@@ -2365,19 +2406,20 @@ fn sanitize_provider_summary(provider: &Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::{
-        decode_kbrain_terminal_response, flatten_history_messages_json,
-        flatten_history_messages_json_window, is_builtin_share_tool_name, is_kbrain_memory_command,
-        kbrain_memory_manage, kbrain_provider_models, kbrain_slash_commands,
-        kbrain_terminal_request, parse_occurrence_query, parse_runs_limit, prompt_workdir_query,
-        proto, redact_builtin_tool_content_json, resolve_stored_provider_models_config,
-        sanitize_provider_summaries, KBrainBackendConnection, KBRAIN_MEMORY_COMMANDS,
+        KBRAIN_MEMORY_COMMANDS, KBrainBackendConnection, decode_kbrain_terminal_response,
+        flatten_history_messages_json, flatten_history_messages_json_window,
+        is_builtin_share_tool_name, is_kbrain_memory_command, kbrain_memory_manage,
+        kbrain_provider_models, kbrain_slash_commands, kbrain_terminal_request,
+        parse_occurrence_query, parse_runs_limit, prompt_workdir_query, proto,
+        redact_builtin_tool_content_json, resolve_stored_provider_models_config,
+        sanitize_provider_summaries,
     };
     use crate::commands::chat_history::{
-        self, history_message_content_hash, ChatHistoryMessageRef, ChatHistorySegmentRecord,
+        self, ChatHistoryMessageRef, ChatHistorySegmentRecord, history_message_content_hash,
     };
 
     fn make_segment(
@@ -2522,13 +2564,102 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn kbrain_cron_manage_reads_the_device_scheduler_and_targets_one_run() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = prompt_fixture_connection(listener.local_addr().unwrap());
+        let snapshot_request = proto::CronManageRequest {
+            action: "snapshot".into(),
+            ..Default::default()
+        };
+        let server = tokio::spawn(async move {
+            let (first, _) =
+                serve_one_prompt_request(&listener, "200 OK", r#"{"revision":7}"#).await;
+            let (second, _) =
+                serve_one_prompt_request(&listener, "200 OK", r#"{"revision":7}"#).await;
+            [first, second]
+        });
+        let response = super::kbrain_cron_manage(&connection, snapshot_request)
+            .await
+            .unwrap();
+        let paths = server.await.unwrap();
+        for path in ["GET /v1/cron ", "GET /v1/hooks "] {
+            assert!(paths.iter().any(|request| request.starts_with(path)));
+        }
+        assert!(paths.iter().all(|request| {
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer fixture-token")
+        }));
+        assert_eq!(
+            serde_json::from_str::<Value>(&response.result_json).unwrap(),
+            json!({"cron": {"revision": 7}, "hooks": {"revision": 7}})
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = prompt_fixture_connection(listener.local_addr().unwrap());
+        let server = tokio::spawn(serve_one_prompt_request(
+            listener,
+            "200 OK",
+            r#"{"ok":true}"#,
+        ));
+        super::kbrain_cron_manage(
+            &connection,
+            proto::CronManageRequest {
+                action: "cancel_run".into(),
+                task_id: "task/1".into(),
+                task_json: r#"{"executionId":"run/2"}"#.into(),
+            },
+        )
+        .await
+        .unwrap();
+        let (headers, _) = server.await.unwrap();
+        assert!(headers.starts_with("POST /v1/cron/task%2F1/runs/run%2F2/cancel "));
+        assert!(super::cron_cancel_path("/v1/cron/task", r#"{"executionId":".."}"#).is_err());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = prompt_fixture_connection(listener.local_addr().unwrap());
+        let server = tokio::spawn(serve_one_prompt_request(
+            listener,
+            "200 OK",
+            r#"{"sessionId":"session","runId":"run","messageId":"message"}"#,
+        ));
+        let request = proto::CronManageRequest {
+            action: "run_anchor".into(),
+            task_id: "task/1".into(),
+            task_json: r#"{"executionId":"run/2"}"#.into(),
+        };
+        let response = super::kbrain_cron_manage(&connection, request.clone())
+            .await
+            .unwrap();
+        let (headers, _) = server.await.unwrap();
+        assert!(headers.starts_with("GET /v1/cron/task%2F1/runs/run%2F2/anchor "));
+        assert_eq!(
+            serde_json::from_str::<Value>(&response.result_json).unwrap()["messageId"],
+            "message"
+        );
+        let invalid = proto::CronManageRequest {
+            task_json: r#"{"executionId":".."}"#.into(),
+            ..request
+        };
+        assert!(
+            super::kbrain_cron_manage(&connection, invalid)
+                .await
+                .is_err()
+        );
+    }
+
     /// 单次请求的本地 ZeroAgent engine 替身：返回请求头与 JSON 正文，并回写给定响应。
     async fn serve_one_prompt_request(
-        listener: tokio::net::TcpListener,
+        listener: impl std::borrow::Borrow<tokio::net::TcpListener>,
         status: &'static str,
         payload: &'static str,
     ) -> (String, Option<Value>) {
-        let (mut socket, _) = listener.accept().await.expect("accept prompt request");
+        let (mut socket, _) = listener
+            .borrow()
+            .accept()
+            .await
+            .expect("accept prompt request");
         let mut request = Vec::new();
         let mut buffer = [0_u8; 4096];
         let header_end = loop {
@@ -2772,7 +2903,8 @@ mod tests {
             let payload = r#"{"settings":{"servers":[{"id":"backend-docs","enabled":true,"transport":"stdio","command":"server"}]},"statuses":[]}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                payload.len(), payload
+                payload.len(),
+                payload
             );
             socket.write_all(response.as_bytes()).await.unwrap();
         });

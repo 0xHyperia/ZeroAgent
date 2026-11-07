@@ -691,6 +691,32 @@
       ],
       "security": "ADR0072：高级配置沿用双列弹窗，设置侧栏不增加分类，关闭保持原工作区、焦点与草稿。设备保持标题、Commit、澄清真实消费者，生图默认未配置，候选读取有效模型目录，不静默选择首个目标；共享生成模型与媒体字段，默认值不覆盖草稿或中断任务。账户标题配置默认关闭、CAS、归属及 CSRF 校验，首次完成后一次辅助调用，无工具与文件权限；比较标题/时间/管理/设置版本再写回，注销取消、不确定结果不重放。编辑草稿按账户隔离；视频没有执行链路时显示不可用。",
       "upstream_relation": "adapt"
+    },
+    {
+      "id": "unified-workbench-schedules",
+      "name": "云端与设备工作台及定时触发",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui", "android", "gateway"],
+      "entrypoints": [
+        "crates/agent-gui/src/pages/DesktopCloudWorkbench.tsx",
+        "crates/agent-gui/src/pages/DesktopScheduledTasks.tsx",
+        "crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs",
+        "crates/agent-gateway/internal/account/desktop_cloud_session.go",
+        "crates/agent-gateway/internal/account/cloud_schedule_http.go",
+        "crates/agent-gateway/internal/account/cloud_schedule_worker.go",
+        "crates/agent-gateway/internal/account/workbench_device_schedules.go",
+        "crates/agent-gateway/internal/account/cloud_execution_account.go",
+        "crates/agent-gateway/internal/handler/workspace_handoff.go",
+        "crates/agent-gateway/web/src/components/cloudchat/CloudScheduleWorkspace.tsx",
+        "crates/agent-gateway/web/src/components/cloudchat/WorkspaceHandoffDialog.tsx"
+      ],
+      "tests": [
+        "crates/agent-gateway/internal/account/cloud_schedule_test.go",
+        "crates/agent-gateway/web/test/cloud-chat-navigation.test.mjs"
+      ],
+      "security": "ADR0078：桌面请求直接使用经 USA-Zero 验证的现有桌面访问令牌，原生传输限制目标、路由、头部和流量。桌面与 Web 的云计划复用账户登录和 Cloud Run 私有会话引用。仅有桌面登录时，服务端复用该登录的受限交换会话，原生刷新凭据不传给 Gateway。定时触发校验账户归属、租约和幂等请求，继续执行现有公开主题及私有资料检查。需审批的触发冻结运行配置，准入前按账户确认。设备汇总只投影计划摘要。文件交接使用账户读取、设备工作区租约及稳定的原生写入回执。",
+      "upstream_relation": "adapt"
     }
   ]
 }

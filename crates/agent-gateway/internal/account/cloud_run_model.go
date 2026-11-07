@@ -101,6 +101,20 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 	if parameterErr != nil || !validCloudReasoningEffort(run.ReasoningEffort) {
 		return CloudRunFailed, "model_parameters_invalid"
 	}
+	scheduledProject := ""
+	if store, ok := r.service.store.(*PersistentStore); ok && strings.HasPrefix(run.ClientRequestID, "schedule:") {
+		settings, err := cloudScheduleRunSettings(ctx, store.db, run)
+		if err != nil {
+			return CloudRunInterrupted, "schedule_project_unavailable"
+		}
+		scheduledProject = settings.ProjectID
+		if scheduledProject != "" {
+			binding, err := store.GetCloudConversationProject(ctx, run.UserID, run.ConversationID)
+			if err != nil || binding.ProjectID != scheduledProject {
+				return CloudRunFailed, "schedule_project_unavailable"
+			}
+		}
+	}
 	toolStore, _ := r.service.store.(CloudToolStore)
 	execution := &cloudRunToolExecution{runtime: r, run: run, owner: owner, store: toolStore, client: r.service.CloudExecutor()}
 	defer execution.endPublicResearch()
@@ -197,6 +211,9 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			upstreamMessages, provenance, contextCode = r.service.prepareCloudContext(ctx, run.UserID, run.ConversationID, messages)
 			if contextCode != "" {
 				return CloudRunFailed, contextCode
+			}
+			if scheduledProject != "" && (provenance.Project == nil || provenance.Project.ID != scheduledProject) {
+				return CloudRunFailed, "schedule_project_unavailable"
 			}
 			execution.rememberHistoryResources(provenance.historyResources)
 			if notice := cloudHistorySelectionNotice(historySelection); notice != "" {

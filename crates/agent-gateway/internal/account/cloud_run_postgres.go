@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_run_events (
 ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS model_parameters JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS public_research JSONB NOT NULL DEFAULT 'null'::jsonb;
 ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS presentation JSONB NULL;
-ALTER TABLE zerobox_cloud_messages ADD COLUMN IF NOT EXISTS presentation JSONB NULL;` + cloudRunAdmissionSchema + CloudPendingQueueSchema + CloudConversationManagementSchema + CloudPrivateDraftSchema
+ALTER TABLE zerobox_cloud_messages ADD COLUMN IF NOT EXISTS presentation JSONB NULL;` + cloudRunAdmissionSchema + CloudPendingQueueSchema + CloudConversationManagementSchema + CloudPrivateDraftSchema + cloudScheduleSchema
 
 const cloudRunColumns = `r.id::text,r.conversation_id::text,r.user_id,r.session_ref,r.client_request_id,
 r.request_hash,r.model,r.reasoning_effort,r.provider_key_id,r.model_parameters,r.public_research,r.request_content,r.user_message_id::text,
@@ -211,7 +211,17 @@ VALUES ($1,$2,$3,'assistant',$4,$5,$6,$7)`, run.AssistantMessageID, run.Conversa
 		}
 		now = messageAt
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE zerobox_cloud_conversations SET updated_at=$3 WHERE id=$1 AND user_id=$2`, run.ConversationID, run.UserID, now); err != nil {
+	archive := false
+	if run.State == CloudRunCompleted {
+		settings, err := cloudScheduleRunSettings(ctx, tx, run)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		archive = err == nil && settings.NewConversation && settings.ArchiveSuccess
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE zerobox_cloud_conversations SET updated_at=$3,
+management_version=management_version+CASE WHEN $4 AND NOT archived THEN 1 ELSE 0 END,
+archived=archived OR $4 WHERE id=$1 AND user_id=$2`, run.ConversationID, run.UserID, now, archive); err != nil {
 		return err
 	}
 	run.LeaseOwner, run.LeaseUntil = "", time.Time{}

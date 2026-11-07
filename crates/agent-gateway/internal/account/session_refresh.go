@@ -25,6 +25,9 @@ func sessionStorageError() error {
 // other request through Session or the cloud-session reference index.
 func (s *Service) SessionForLogout(ctx context.Context, id string) (*Session, error) {
 	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, desktopCloudAccessPrefix) {
+		return nil, sessionMissingError()
+	}
 	state, err := s.store.ReadSessionAuthority(ctx, id)
 	if err != nil {
 		return nil, sessionStorageError()
@@ -351,6 +354,10 @@ func (s *Service) finishSessionRevocation(ctx context.Context, id string, record
 		return nil
 	}
 	for _, session := range record.Sessions {
+		// Native owns desktop authorization and revocation of its token family.
+		if isDesktopCloudPurpose(session.Purpose) {
+			continue
+		}
 		if session.IsOAuth() {
 			if session.RefreshToken != "" {
 				if err := s.usa.RevokeApp(ctx, session.RefreshToken, "refresh_token"); err != nil {

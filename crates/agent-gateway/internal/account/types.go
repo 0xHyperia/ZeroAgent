@@ -26,18 +26,20 @@ type Session struct {
 	SessionExpiresAt time.Time       `json:"session_expires_at"`
 	AuthKind         string          `json:"auth_kind,omitempty"`
 	OAuthClientID    string          `json:"oauth_client_id,omitempty"`
+	Purpose          string          `json:"purpose,omitempty"`
 }
 
 func (s *Session) IsOAuth() bool { return s != nil && s.AuthKind == AuthKindOAuth }
 
 type OAuthTransaction struct {
-	State       string    `json:"state"`
-	Verifier    string    `json:"verifier"`
-	ClientID    string    `json:"client_id"`
-	RedirectURI string    `json:"redirect_uri"`
-	ReturnPath  string    `json:"return_path"`
-	Surface     string    `json:"surface"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	State         string    `json:"state"`
+	Verifier      string    `json:"verifier"`
+	ClientID      string    `json:"client_id"`
+	RedirectURI   string    `json:"redirect_uri"`
+	ReturnPath    string    `json:"return_path"`
+	Surface       string    `json:"surface"`
+	ScheduleOwner int64     `json:"schedule_owner,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 type Workspace struct {

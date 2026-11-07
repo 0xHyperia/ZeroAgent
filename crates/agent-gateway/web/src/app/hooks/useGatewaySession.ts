@@ -1,6 +1,7 @@
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bindAccountRequests } from "@/lib/accountRequest";
+import { readCloudChatRoute } from "@/lib/cloudChatRoute";
 import {
   type DesktopRemoteHost,
   getDesktopRemoteHost,
@@ -77,7 +78,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     setToken(next);
   }, []);
 
-  const loadEnvironments = useCallback(async () => {
+  const loadEnvironments = useCallback(async (refreshOnly = false) => {
     const epoch = sessionEpochRef.current;
     const params = new URLSearchParams(window.location.search);
     const desktopEmbedded = params.get("controller_surface") === "desktop_embed";
@@ -88,6 +89,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     );
     if (epoch !== sessionEpochRef.current) return [];
     setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
+    if (refreshOnly) return items;
     const handoffLease = params.get("selection_lease")?.trim() ?? "";
     const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
     const handoffWorkspace = params.get("workspace_id")?.trim() ?? "";
@@ -133,7 +135,14 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       }
       persistHistorySelection(null);
     }
-    const restored = readHistorySelection();
+    const route = readCloudChatRoute(new URL(window.location.href));
+    const explicitCloudRoute = route.page !== "chat" || !!route.id;
+    const deviceRouteTarget = route.page === "tasks" && route.deviceView ? route.target : undefined;
+    const previous = readHistorySelection();
+    const restored =
+      !explicitCloudRoute || (deviceRouteTarget && previous?.device_id === deviceRouteTarget)
+        ? previous
+        : null;
     if (restored) {
       const environment = items.find(
         (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
@@ -150,8 +159,9 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       }
       persistHistorySelection(null);
     }
+    if (explicitCloudRoute) applyToken("");
     setSelection((current) => {
-      if (current) return current;
+      if (current && !explicitCloudRoute) return current;
       const web = items.find((item) => item.runtime_kind === "web_chat");
       const workspace = web?.workspaces[0];
       return web && workspace
@@ -203,11 +213,11 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
   useEffect(() => {
     if (!enabled || !accountUser || historyShareToken) return;
     const timer = window.setInterval(() => {
-      void loadEnvironments().catch(() => undefined);
+      void loadEnvironments(true).catch(() => undefined);
     }, EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS);
     const refreshVisible = () => {
       if (document.visibilityState === "visible") {
-        void loadEnvironments().catch(() => undefined);
+        void loadEnvironments(true).catch(() => undefined);
       }
     };
     window.addEventListener("online", refreshVisible);

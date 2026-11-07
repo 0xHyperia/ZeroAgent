@@ -46,6 +46,7 @@ import {
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Textarea } from "@liveagent/ui/components/ui/textarea";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { CloudChatArtifactsClient } from "@/lib/cloudChatArtifacts";
 import {
@@ -184,6 +185,7 @@ type Props = {
   location: CloudSpaceLocation;
   onNavigate: (location: CloudSpaceLocation) => void;
   onOpen: (item: CloudSpaceItem, action?: "share" | "settings") => void;
+  onHandoff?: (item: CloudSpaceItem) => void;
   onReference: (
     items: readonly Pick<CloudSpaceItem, "kind" | "id" | "target_id" | "site_version_id">[],
   ) => Promise<void>;
@@ -195,6 +197,7 @@ type Props = {
 };
 
 export function CloudSpacePage(props: Props) {
+  const { locale } = useLocale();
   const siteView = props.location.category === "sites";
   const [workKind, setWorkKind] = useState("文档");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -359,7 +362,13 @@ export function CloudSpacePage(props: Props) {
             try {
               guard();
               if (seq !== sequence.current) return;
-              setError(cause instanceof Error ? cause.message : "资料加载失败");
+              setError(
+                cause instanceof TypeError
+                  ? "暂时无法读取资料，请检查连接后重试。"
+                  : cause instanceof Error
+                    ? cause.message
+                    : "资料加载失败",
+              );
               current.current.onError(cause);
             } catch {
               /* retired account */
@@ -647,6 +656,14 @@ export function CloudSpacePage(props: Props) {
           <ArrowUpRight className="size-4" />
           {item.site_version_id ? "打开站点" : `打开${item.kind === "folder" ? "文件夹" : "预览"}`}
         </DropdownMenuItem>
+        {props.onHandoff &&
+          item.kind !== "folder" &&
+          !item.trashed &&
+          ["ready", "vision_ready"].includes(item.state) && (
+            <DropdownMenuItem onClick={() => props.onHandoff?.(item)}>
+              {locale === "zh-CN" ? "发送到工作区" : "Send to workspace"}
+            </DropdownMenuItem>
+          )}
         {item.site_version_id && !item.trashed ? (
           <>
             <DropdownMenuItem onClick={() => props.onOpen(item, "share")}>

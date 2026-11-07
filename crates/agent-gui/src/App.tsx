@@ -2,6 +2,12 @@ import type { Context } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
+import { useWorkbenchAccountDestination } from "@liveagent/ui/application/useWorkbenchAccountSurface";
+import {
+  createWorkbenchAccountNavigation,
+  type WorkbenchAccountSurface,
+  type WorkbenchAccountDestination,
+} from "@liveagent/ui/application/workbenchAccountSurface";
 import { createWorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { Pin } from "@liveagent/ui/components/IconSet";
@@ -30,6 +36,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import { readCloudChatRoute } from "@/lib/cloudChatRoute";
+import type { DesktopTaskConversation } from "@/lib/desktopRemoteHost";
 import { useDesktopImageStudioHost } from "./agent-ui-adapters/imageStudio";
 import { settingsHostAdapter } from "./agent-ui-adapters/kbrainSettings";
 import { kbrainSkillsAdapter } from "./agent-ui-adapters/kbrainSkills";
@@ -43,7 +52,7 @@ import { RelayAccessGate } from "./components/relay/RelayAccessGate";
 import { WindowsSettingsHeader } from "./components/WindowsSettingsHeader";
 import { WindowsTitleBar } from "./components/WindowsTitleBar";
 import { useAppUpdateController } from "./lib/appUpdates";
-import { isKBrainBrowserHost } from "./lib/host";
+import { isKBrainBrowserHost, isTauriHost } from "./lib/host";
 import { backendProfileMatchesAccount } from "./lib/kbrain/profile";
 import { requestPlanning } from "./lib/planning/kbrain";
 import { TimeZoneNoticeBanner } from "./lib/planning/TimeZoneNoticeBanner";
@@ -58,12 +67,15 @@ import {
   type RelayDashboardStats,
   type RelayUser,
 } from "./lib/relay/client";
+import { desktopCloudNavigate } from "./lib/relay/desktopCloudHost";
 import {
   type DesktopEnvironment,
   getDesktopEnvironments,
   switchDesktopDevice,
 } from "./lib/relay/desktopExecution";
+import { sendDesktopWorkspaceHandoff } from "./lib/relay/desktopWorkspaceHandoff";
 import { registerDesktopDevice } from "./lib/relay/deviceRegistration";
+import { nativeSessionSummary } from "./lib/relay/nativeSession";
 import { enforceRelayProviderConstraint } from "./lib/relay/providers";
 import {
   type DesktopExecutionState,
@@ -95,6 +107,7 @@ import {
   type SettingsSaveState,
 } from "./lib/settings/storage";
 import { desktopSttSettingsService } from "./lib/stt/desktopSttSettingsService";
+import { DesktopCloudWorkbench } from "./pages/DesktopCloudWorkbench";
 import { RemoteDeviceWorkbench } from "./pages/RemoteDeviceWorkbench";
 import type { SectionId } from "./pages/settings/types";
 
@@ -106,12 +119,22 @@ configureResourceHostCapabilities(guiResourceHostCapabilities);
 
 let chatPageModule: Promise<typeof import("./pages/ChatPage")> | null = null;
 
+function accountDestinationFor(href: string): WorkbenchAccountDestination {
+  const route = readCloudChatRoute(new URL(href, "http://workbench.invalid"));
+  if (route.page === "library") return "library";
+  if (route.page === "extensions") return "customize";
+  return "chat";
+}
+
 function loadChatPage() {
   chatPageModule ??= import("./pages/ChatPage");
   return chatPageModule;
 }
 
 const ChatPage = lazy(async () => ({ default: (await loadChatPage()).ChatPage }));
+const DesktopScheduledTasks = lazy(async () => ({
+  default: (await import("./pages/DesktopScheduledTasks")).DesktopScheduledTasks,
+}));
 const SettingsPage = lazy(async () => ({
   default: (await import("@liveagent/ui/pages/settings/SettingsPage")).SettingsPage,
 }));
@@ -254,6 +277,33 @@ export default function App() {
   const [settingsReady, setSettingsReady] = useState(false);
   const [relayReady, setRelayReady] = useState(false);
   const [relayUser, setRelayUser] = useState<RelayUser | null>(null);
+  const accountOwner = relayUser?.id;
+  const [localAccountSurface, setLocalAccountSurface] = useState<WorkbenchAccountSurface | null>(
+    null,
+  );
+  const [remoteAccountSurface, setRemoteAccountSurface] = useState<WorkbenchAccountSurface | null>(
+    null,
+  );
+  const accountNavigation = useMemo(
+    () =>
+      createWorkbenchAccountNavigation((href) => {
+        const account = nativeSessionSummary();
+        if (account && account.user.id === accountOwner)
+          desktopCloudNavigate(account.accountScope, href);
+        return accountDestinationFor(href);
+      }),
+    [accountOwner],
+  );
+  const accountDestination = useWorkbenchAccountDestination(accountNavigation);
+  const [visitedAccountNavigation, setVisitedAccountNavigation] = useState<
+    typeof accountNavigation | null
+  >(null);
+  useEffect(() => {
+    if (accountDestination) setVisitedAccountNavigation(accountNavigation);
+  }, [accountDestination, accountNavigation]);
+  const [scheduledTasksRequest, setScheduledTasksRequest] = useState(0);
+  const rememberedExecutionOwner = useRef<number | null>(null);
+  const [openRemoteTasks, setOpenRemoteTasks] = useState(false);
   const acceptRelayUser = useCallback((user: RelayUser) => {
     if (!backendProfileMatchesAccount(RELAY_ORIGIN, user.id)) {
       window.location.reload();
@@ -273,6 +323,23 @@ export default function App() {
     selectedDeviceId: selectedExecutionDeviceId,
   } = executionState;
   const executionSessionEpochRef = useRef(0);
+  useEffect(() => {
+    if (
+      !relayUser ||
+      !isTauriHost() ||
+      !desktopEnvironments.length ||
+      rememberedExecutionOwner.current === relayUser.id
+    )
+      return;
+    const target = localStorage.getItem(`zeroagent.workbench.target:${relayUser.id}`);
+    if (target?.startsWith("device:")) {
+      const environment = desktopEnvironments.find((item) => item.device_id === target.slice(7));
+      if (environment) {
+        rememberedExecutionOwner.current = relayUser.id;
+        setExecutionState((current) => selectDesktopExecutionState(current, environment));
+      }
+    } else rememberedExecutionOwner.current = relayUser.id;
+  }, [desktopEnvironments, relayUser]);
   const [remoteSelectionLeases, setRemoteSelectionLeases] = useState<
     Map<string, RemoteSelectionLease>
   >(() => new Map());
@@ -549,6 +616,10 @@ export default function App() {
   useEffect(() => {
     const handleSessionChanged = () => {
       executionSessionEpochRef.current++;
+      rememberedExecutionOwner.current = null;
+      setVisitedAccountNavigation(null);
+      setScheduledTasksRequest(0);
+      setOpenRemoteTasks(false);
       setExecutionState({ environments: [], localDeviceId: "", selectedDeviceId: "" });
       setRemoteSelectionLeases(new Map());
       setRelayReady(false);
@@ -1065,8 +1136,21 @@ export default function App() {
 
   const visible = settingsOpen;
   const active = overlay === "open";
+  const accountPageMounted = !!accountDestination || visitedAccountNavigation === accountNavigation;
+  const accountPageOpen = !!accountDestination;
+  const openAccountPage = accountNavigation.open;
+  const closeAccountPage = accountNavigation.close;
 
-  async function handleExecutionSwitch(environment: DesktopEnvironment, renew = false) {
+  async function openRemoteTaskPage(environment: { device_id?: string }) {
+    const device = desktopEnvironments.find((item) => item.device_id === environment.device_id);
+    if (device) await handleExecutionSwitch(device, false, true);
+  }
+
+  async function handleExecutionSwitch(
+    environment: DesktopEnvironment,
+    renew = false,
+    showTasks = false,
+  ) {
     const sessionEpoch = executionSessionEpochRef.current;
     const isLocal = environment.device_id === localDeviceId;
     const existingLease = remoteSelectionLeases.get(environment.device_id);
@@ -1086,7 +1170,16 @@ export default function App() {
     }
     if (sessionEpoch !== executionSessionEpochRef.current)
       throw new Error("账号已变更，请重新选择设备。");
+    setOpenRemoteTasks(showTasks);
     setExecutionState((current) => selectDesktopExecutionState(current, environment));
+    if (relayUser) {
+      rememberedExecutionOwner.current = relayUser.id;
+      localStorage.setItem(
+        `zeroagent.workbench.target:${relayUser.id}`,
+        isLocal ? "local" : `device:${environment.device_id}`,
+      );
+      closeAccountPage();
+    }
   }
 
   function handleRemoteSelectionInvalid(deviceId: string, selectionLease: string, reason: string) {
@@ -1105,6 +1198,7 @@ export default function App() {
       (environment) => environment.device_id === selectedExecutionDeviceId,
     ) ?? null;
   const localExecutionSelected = selectedExecutionEnvironment?.device_id === localDeviceId;
+  const accountSurface = localExecutionSelected ? localAccountSurface : remoteAccountSurface;
   const selectedRemoteLease = selectedExecutionEnvironment
     ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)
     : undefined;
@@ -1124,6 +1218,86 @@ export default function App() {
         onSwitch={handleExecutionSwitch}
       />
     ) : null;
+
+  function renderAccountWorkbench(
+    accountId: number,
+    active: boolean,
+    taskConversation?: DesktopTaskConversation,
+  ) {
+    return (
+      <DesktopCloudWorkbench
+        key={accountId}
+        accountId={accountId}
+        active={active}
+        taskConversation={taskConversation}
+        settings={settings}
+        accountLayout={taskConversation ? undefined : accountSurface?.layout}
+        onLocationChange={
+          taskConversation
+            ? undefined
+            : (href) => accountNavigation.followRoute(accountDestinationFor(href))
+        }
+        onOpenScheduledTasks={() => {
+          closeAccountPage();
+          if (accountSurface?.openTasks) accountSurface.openTasks();
+          else setScheduledTasksRequest((value) => value + 1);
+        }}
+        onOpenDeviceSettings={(section) => openSettings(section)}
+        getHandoffEnvironments={() =>
+          desktopEnvironments.map((environment) => ({
+            ...environment,
+            name:
+              environment.device_id === localDeviceId
+                ? settings.locale === "zh-CN"
+                  ? "此电脑"
+                  : "This computer"
+                : environment.name,
+            capabilities: ["files"],
+          }))
+        }
+        sendWorkspaceHandoff={(request) =>
+          sendDesktopWorkspaceHandoff(request, settings, desktopEnvironments, localDeviceId)
+        }
+        updateClientPreferences={(preferences) =>
+          setSettings((current) => ({ ...current, ...preferences }))
+        }
+        getEnvironments={() => [
+          {
+            runtime_kind: "web_chat",
+            name: "云端",
+            online: true,
+            capabilities: ["chat"],
+            workspaces: [{ id: "cloud", name: "云端" }],
+          },
+          ...desktopEnvironments
+            .filter((environment) => environment.device_id !== localDeviceId)
+            .map((environment) => ({ ...environment, capabilities: ["agent"] })),
+        ]}
+        onSwitch={async (environment) => {
+          const target = desktopEnvironments.find(
+            (item) => item.device_id === environment.device_id,
+          );
+          if (target) await handleExecutionSwitch(target);
+        }}
+        onOpenDeviceTasks={async (environment) => {
+          if (environment.runtime_kind === "web_chat") return;
+          const target = desktopEnvironments.find(
+            (item) => item.device_id === environment.device_id,
+          );
+          if (!target) return;
+          if (target.device_id === localDeviceId) {
+            openSettings("cron");
+            return;
+          }
+          await openRemoteTaskPage(environment);
+        }}
+        onLogout={() => {
+          void import("./lib/relay/client").then(({ logoutRelay }) => logoutRelay());
+        }}
+        onUserChange={acceptRelayUser}
+      />
+    );
+  }
 
   return (
     <LocaleContext.Provider value={localeContextValue}>
@@ -1158,6 +1332,50 @@ export default function App() {
                   relayStats={relayStats}
                   onRefreshRelayAccount={refreshRelayAccount}
                   headerLeadingActions={executionSwitcher}
+                  accountNavigation={isTauriHost() ? accountNavigation : undefined}
+                  onAccountSurface={isTauriHost() ? setLocalAccountSurface : undefined}
+                  scheduledTasksRequest={scheduledTasksRequest}
+                  renderScheduledTasks={
+                    isTauriHost()
+                      ? (navigation) => (
+                          <Suspense
+                            fallback={
+                              navigation.sidebarOnly ? null : (
+                                <div
+                                  className="grid flex-1 place-items-center text-sm text-muted-foreground"
+                                  role="status"
+                                >
+                                  {translate("app.loading", settings.locale)}
+                                </div>
+                              )
+                            }
+                          >
+                            <DesktopScheduledTasks
+                              key={relayUser.id}
+                              owner={relayUser.id}
+                              settings={settings}
+                              environments={desktopEnvironments
+                                .filter((environment) => environment.device_id !== localDeviceId)
+                                .map((environment) => ({
+                                  ...environment,
+                                  capabilities: ["agent"],
+                                }))}
+                              {...navigation}
+                              onOpenRemoteTasks={openRemoteTaskPage}
+                              onOpenAccountResult={openAccountPage}
+                              renderTaskConversation={(conversation) =>
+                                renderAccountWorkbench(
+                                  relayUser.id,
+                                  !accountPageOpen && !settingsOpen,
+                                  conversation,
+                                )
+                              }
+                            />
+                          </Suspense>
+                        )
+                      : undefined
+                  }
+                  onOpenDevices={isTauriHost() ? () => openSettings("account") : undefined}
                   settings={settings}
                   setSettings={setSettings}
                   resourceHost={guiResourceHostCapabilities}
@@ -1173,12 +1391,21 @@ export default function App() {
                   appUpdate={appUpdate}
                   onRunningConversationCountChange={handleRunningConversationCountChange}
                 />
+                {accountPageMounted &&
+                  accountSurface &&
+                  createPortal(
+                    renderAccountWorkbench(relayUser.id, accountPageOpen && !settingsOpen),
+                    accountSurface.target,
+                  )}
                 {!localExecutionSelected &&
                   (selectedExecutionEnvironment ? (
                     <RemoteDeviceWorkbench
                       settingsNavigation={settingsNavigation}
+                      accountNavigation={accountNavigation}
+                      onAccountSurface={setRemoteAccountSurface}
                       navigationUpdate={<AppUpdateButton appUpdate={appUpdate} rail />}
                       key={selectedExecutionEnvironment.device_id}
+                      initialView={openRemoteTasks ? "cron-hub" : undefined}
                       settings={settings}
                       environment={selectedExecutionEnvironment}
                       environments={desktopEnvironments}
@@ -1191,7 +1418,9 @@ export default function App() {
                           reason,
                         )
                       }
-                      onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
+                      onReconnect={() =>
+                        handleExecutionSwitch(selectedExecutionEnvironment, true, openRemoteTasks)
+                      }
                       selectionLease={selectedRemoteLease?.lease ?? ""}
                       headerLeadingActions={executionSwitcher}
                     />

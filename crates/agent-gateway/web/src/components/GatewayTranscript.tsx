@@ -9,6 +9,7 @@ import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatF
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
 import { RetryDetailsBlock } from "@liveagent/ui/components/chat/RetryDetailsBlock";
+import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import {
   TranscriptAssistantMessageActions,
   TranscriptUserMessageActions,
@@ -77,12 +78,21 @@ import {
 } from "../lib/webStyleClasses";
 import type { SectionId } from "../pages/settings/types";
 
+type GatewayScheduledTurn = {
+  key: string;
+  promptHistoryKey?: string;
+  replyHistoryKey?: string;
+  prompt?: ReactNode;
+  reply?: ReactNode;
+};
+
 type GatewayTranscriptProps = {
   editRequest?: { token: string; messageId: string } | null;
   onEditRequestHandled?: (token: string) => void;
   emptyState?: ReactNode;
   /** Host-owned feedback follows the final turn inside the same reading column. */
   footer?: ReactNode;
+  scheduledTurn?: GatewayScheduledTurn;
   conversationId?: string;
   // The whole transcript as one row list, rendered by one virtualizer. Rows
   // come from one store assembly, so a row can never render twice.
@@ -182,7 +192,8 @@ const transcriptMeasurementsLru = createTranscriptMeasurementsLru({
 type GatewayTranscriptVirtualItem =
   | { key: string; kind: "loadRemoteHistory" }
   | { key: string; kind: "row"; row: TranscriptRow }
-  | { key: string; kind: "pendingBubble" };
+  | { key: string; kind: "pendingBubble" }
+  | (ScheduledPreviewRow & { kind: "scheduledPreview" });
 
 function resolveNearestScrollViewport(element: HTMLElement | null) {
   return element?.closest("[data-scroll-viewport]") as HTMLDivElement | null;
@@ -646,6 +657,7 @@ function estimateRowHeight(row: TranscriptRow): number {
 function estimateVirtualItemHeight(item: GatewayTranscriptVirtualItem): number {
   if (item.kind === "loadRemoteHistory") return 44;
   if (item.kind === "pendingBubble") return 56;
+  if (item.kind === "scheduledPreview") return 132;
   return estimateRowHeight(item.row);
 }
 
@@ -654,6 +666,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   onEditRequestHandled?: (token: string) => void;
   conversationId?: string;
   rows: readonly TranscriptRow[];
+  scheduledTurn?: GatewayScheduledTurn;
   liveStartIndex: number;
   activeTurnKey?: string | null;
   contentWidth: number;
@@ -693,6 +706,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     onEditRequestHandled,
     conversationId,
     rows,
+    scheduledTurn,
     liveStartIndex,
     activeTurnKey,
     contentWidth,
@@ -792,14 +806,27 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     if (!readOnly && hasMoreHistory) {
       next.push({ key: "load-remote-history", kind: "loadRemoteHistory" });
     }
+    const promptKey = scheduledTurn ? `${scheduledTurn.key}:prompt` : undefined;
     for (const row of rows) {
-      next.push({ key: row.key, kind: "row", row });
+      // The replacement inherits the measured preview's key. Detached
+      // readers keep their offset inside the same turn across the handoff.
+      const key =
+        row.key === scheduledTurn?.replyHistoryKey
+          ? scheduledTurn.key
+          : row.key === scheduledTurn?.promptHistoryKey && promptKey
+            ? promptKey
+            : row.key;
+      next.push({ key, kind: "row", row });
     }
     if (shouldShowPendingLiveBubble) {
       next.push({ key: "live-pending-bubble", kind: "pendingBubble" });
     }
+    if (scheduledTurn?.prompt && promptKey)
+      next.push({ key: promptKey, content: scheduledTurn.prompt, kind: "scheduledPreview" });
+    if (scheduledTurn?.reply)
+      next.push({ key: scheduledTurn.key, content: scheduledTurn.reply, kind: "scheduledPreview" });
     return next;
-  }, [hasMoreHistory, rows, readOnly, shouldShowPendingLiveBubble]);
+  }, [hasMoreHistory, scheduledTurn, rows, readOnly, shouldShowPendingLiveBubble]);
 
   const leadingOffset = !readOnly && hasMoreHistory ? 1 : 0;
   // Everything at or after the live boundary (including the pending bubble)
@@ -807,11 +834,34 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   const forceMountStart =
     liveStartIndex >= 0
       ? liveStartIndex + leadingOffset
-      : shouldShowPendingLiveBubble
-        ? virtualItems.length - 1
+      : shouldShowPendingLiveBubble || scheduledTurn?.reply
+        ? virtualItems.length - (scheduledTurn?.prompt ? 2 : 1)
         : -1;
   const forceMountStartRef = useRef(forceMountStart);
   forceMountStartRef.current = forceMountStart;
+  const pendingScheduledKeyRef = useRef<string | undefined>(undefined);
+  const scheduledHandoffKeyRef = useRef<string | undefined>(undefined);
+  const settledScheduledKey = scheduledTurn?.replyHistoryKey ? scheduledTurn.key : undefined;
+  if (scheduledTurn?.reply) {
+    pendingScheduledKeyRef.current = scheduledTurn.key;
+    scheduledHandoffKeyRef.current = undefined;
+  } else if (settledScheduledKey && pendingScheduledKeyRef.current === settledScheduledKey) {
+    pendingScheduledKeyRef.current = undefined;
+    scheduledHandoffKeyRef.current = settledScheduledKey;
+  } else if (!settledScheduledKey) {
+    scheduledHandoffKeyRef.current = undefined;
+  }
+  useLayoutEffect(() => {
+    if (!settledScheduledKey || scheduledHandoffKeyRef.current !== settledScheduledKey) return;
+    // Keep the initial ResizeObserver delivery in the handoff window.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        if (scheduledHandoffKeyRef.current === settledScheduledKey)
+          scheduledHandoffKeyRef.current = undefined;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [settledScheduledKey]);
   const virtualItemsRef = useRef(virtualItems);
   virtualItemsRef.current = virtualItems;
   const getVirtualItemRenderCost = useCallback((index: number) => {
@@ -910,11 +960,17 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   // not an option; reassigning per render keeps the closure's inputs current.
   // While following it rejects every virtualizer correction; while detached
   // it retains estimate/measurement anchoring for rows above the viewport.
-  transcriptVirtualizer.shouldAdjustScrollPositionOnItemSizeChange =
-    createLiveRowScrollAdjustPolicy({
-      getLiveStartIndex: () => forceMountStartRef.current,
-      isFollowing: () => isViewportFollowing?.() ?? false,
-    });
+  const shouldAdjustForResize = createLiveRowScrollAdjustPolicy<HTMLDivElement, Element>({
+    getLiveStartIndex: () => forceMountStartRef.current,
+    isFollowing: () => isViewportFollowing?.() ?? false,
+  });
+  transcriptVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    const top = instance.scrollOffset ?? 0;
+    // The settled footer changes the height below a reader inside this reply.
+    if (item.key === scheduledHandoffKeyRef.current && item.start < top && item.end > top)
+      return false;
+    return shouldAdjustForResize(item, delta, instance);
+  };
 
   // Every mounted row is already tracked by the virtualizer's ResizeObserver,
   // which updates its measured height as the centered transcript reflows.
@@ -932,7 +988,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   // 含底部保留区），避免与 getTotalSize 的列表局部坐标错位。
   useTranscriptNavigation({
     items: virtualItems,
-    getItemKey: (item) => item.key,
+    getItemKey: (item) => (item.kind === "row" ? item.row.key : item.key),
     getAnchorKey: (itemList, anchorIndex) => {
       for (let index = anchorIndex; index >= 0; index -= 1) {
         const item = itemList[index];
@@ -1073,6 +1129,20 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                     : "加载更早历史"}
               </button>
             </div>
+          );
+        }
+
+        if (virtualItem.kind === "scheduledPreview") {
+          return (
+            <article
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={transcriptVirtualizer.measureElement}
+              className="absolute inset-x-0 top-0"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              {virtualItem.content}
+            </article>
           );
         }
 
@@ -1262,6 +1332,7 @@ export function GatewayTranscript({
   onEditRequestHandled,
   emptyState,
   footer,
+  scheduledTurn,
   conversationId,
   rows,
   liveStartIndex = -1,
@@ -1320,7 +1391,7 @@ export function GatewayTranscript({
     return <HistoryLoadingState title={loadingTitle} />;
   }
 
-  if (rowCount === 0 && !isStreaming) {
+  if (rowCount === 0 && !isStreaming && !scheduledTurn?.reply) {
     const showNoModelsState = !hasModels;
     return (
       <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
@@ -1364,6 +1435,7 @@ export function GatewayTranscript({
           editRequest={editRequest}
           onEditRequestHandled={onEditRequestHandled}
           rows={rows}
+          scheduledTurn={scheduledTurn}
           liveStartIndex={liveStartIndex}
           activeTurnKey={activeTurnKey}
           contentWidth={contentWidth}

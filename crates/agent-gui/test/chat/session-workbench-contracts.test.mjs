@@ -326,6 +326,35 @@ test("two surface controllers isolate runtime and composer draft snapshots", () 
   assert.equal(controllerB.getSnapshot().draft.text, "draft-b");
 });
 
+test("a scheduled result shares conversation runtime while owning its composer draft and uploads", async () => {
+  const registry = createConversationRuntimeRegistry();
+  const conversationId = "scheduled-conversation";
+  const composerScopeId = "task-result:scheduled-conversation";
+  const regular = surfaceController(registry, conversationId);
+  const events = [];
+  const result = createConversationSurfaceController({
+    conversationId,
+    composerScopeId,
+    project: regular.project,
+    registry,
+    actions: controllerActions(events),
+  });
+  regular.setDraft(createTextComposerDraft("Regular draft"));
+  result.setDraft(createTextComposerDraft("Task follow-up"));
+  registry.uploads.set(conversationId, [{ relativePath: "regular.txt" }]);
+  registry.uploads.set(composerScopeId, [{ relativePath: "task.txt" }]);
+  registry.set(conversationId, runtimeEntry(conversationId));
+
+  assert.equal(result.getSnapshot().runtime, regular.getSnapshot().runtime);
+  assert.equal(result.getSnapshot().draft.text, "Task follow-up");
+  assert.equal(result.getSnapshot().uploads[0].relativePath, "task.txt");
+  await result.send(result.getSnapshot().draft);
+  result.clearDraft();
+  assert.deepEqual(events, [["send", conversationId, "Task follow-up"]]);
+  assert.equal(regular.getSnapshot().draft.text, "Regular draft");
+  assert.equal(regular.getSnapshot().uploads[0].relativePath, "regular.txt");
+});
+
 test("two surface controllers isolate upload and queue snapshots", () => {
   const registry = createConversationRuntimeRegistry([
     ["conversation-a", runtimeEntry("conversation-a")],

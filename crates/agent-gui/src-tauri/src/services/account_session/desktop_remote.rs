@@ -124,7 +124,7 @@ fn component(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
 }
 
-fn session_cookie(headers: &reqwest::header::HeaderMap) -> Result<String, String> {
+pub(super) fn session_cookie(headers: &reqwest::header::HeaderMap) -> Result<String, String> {
     let mut cookie = None;
     for value in headers.get_all(SET_COOKIE) {
         let raw = value
@@ -320,7 +320,7 @@ async fn open_remote(
 fn resource_route(method: &str, path: &str) -> bool {
     matches!(
         (method, path),
-        ("GET", "/api/status") | ("POST", "/api/files/import" | "/api/files/import-directory")
+        ("GET", "/api/status") | ("POST", "/api/files/import" | "/api/files/import-directory" | "/api/files/handoff")
     )
 }
 

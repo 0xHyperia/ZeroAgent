@@ -8,7 +8,7 @@ import type { HistoryMessageRef } from "../../../lib/chat/conversation/conversat
 import { isKBrainBackendEnabled, isTauriHost } from "../../../lib/host";
 import { createKBrainClient } from "../../../lib/kbrain/client";
 import { publishGoalState } from "../../../lib/kbrain/goalStore";
-import { getKBrainSessionId } from "../../../lib/kbrain/mapping";
+import { getKBrainConversationId, getKBrainSessionId } from "../../../lib/kbrain/mapping";
 import { type ChatRuntimeControls, normalizeChatRuntimeControls } from "../../../lib/settings";
 import { createTextComposerDraft } from "../composer/composerDraftText";
 import { createClarifyDeltaForwarder } from "./clarifyDeltaForwarder";
@@ -41,8 +41,10 @@ type UseGatewayBridgeListenersParams = GatewayBridgeRuntimeRefs & {
   enqueueGatewayChatRequest: (
     claimed: GatewayChatClaimedRequest,
     conversationId: string,
+    markQueued: () => Promise<void>,
   ) => Promise<boolean>;
   isConversationRunning: (conversationId: string) => boolean;
+  isBackendSessionBusy?: (conversationId: string) => Promise<boolean>;
   /**
    * 桌面输入框正在编辑这个会话的排队项。指令轮次此时按忙拒绝：直跑会清空输入框，
    * 正在编辑的排队项就丢了；桌面输入框在编辑排队项时同样不执行指令。
@@ -363,13 +365,14 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
       const queued = await latestParamsRef.current.enqueueGatewayChatRequest(
         claimed,
         conversationId,
+        () =>
+          invoke("gateway_chat_mark_queued_in_gui", {
+            request_id: requestId,
+            conversation_id: conversationId,
+            worker_id: workerId,
+          }),
       );
       if (!queued) return false;
-      await invoke("gateway_chat_mark_queued_in_gui", {
-        request_id: requestId,
-        conversation_id: conversationId,
-        worker_id: workerId,
-      });
       stopHeartbeat(requestId);
       return true;
     };
@@ -380,7 +383,9 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
       const clientRequestId = payload.clientRequestId?.trim() ?? "";
       const message = payload.message.trim();
       const uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
-      const targetConversationId = payload.conversationId.trim();
+      const requestedConversationId = payload.conversationId.trim();
+      const targetConversationId =
+        getKBrainConversationId(requestedConversationId) ?? requestedConversationId;
       const queuePolicy = normalizeQueuePolicy(payload.queuePolicy);
       let resolvedConversationId = targetConversationId;
       let gatewayBridgeRequest: ActiveGatewayBridgeRequest | null = null;
@@ -482,7 +487,8 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         if (targetConversationId && payload.rebased !== true) {
           const running = Boolean(
             latestParamsRef.current.isConversationRunning(targetConversationId) ||
-              latestParamsRef.current.getConversationAbortController(targetConversationId),
+              latestParamsRef.current.getConversationAbortController(targetConversationId) ||
+              (await latestParamsRef.current.isBackendSessionBusy?.(targetConversationId)),
           );
           const editOpen =
             latestParamsRef.current.isQueuedTurnEditOpen?.(targetConversationId) === true;
@@ -523,7 +529,9 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         const resolvedRunning = Boolean(
           runningRequest ||
             latestParamsRef.current.isConversationRunning(resolvedConversationId) ||
-            latestParamsRef.current.getConversationAbortController(resolvedConversationId),
+          latestParamsRef.current.getConversationAbortController(resolvedConversationId) ||
+          (targetConversationId !== resolvedConversationId &&
+            (await latestParamsRef.current.isBackendSessionBusy?.(resolvedConversationId))),
         );
         if (
           composerCommand &&
@@ -581,6 +589,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
           ),
           uploadedFilesOverride: uploadedFiles,
           conversationIdOverride: resolvedConversationId,
+          preserveComposerOnStart: payload.rebased !== true,
           executionModeOverride: gatewayBridgeRequest.executionModeOverride,
           workdirOverride: gatewayBridgeRequest.workdirOverride,
           commandSafetyModeOverride: gatewayBridgeRequest.commandSafetyModeOverride,

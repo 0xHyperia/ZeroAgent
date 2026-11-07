@@ -1,0 +1,73 @@
+diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
+index 35e7720..3e59cf5 100644
+--- a/internal/backend/cron_canonical_test.go
++++ b/internal/backend/cron_canonical_test.go
+@@ -206,10 +206,18 @@ func TestCronCanonicalCancelPersistsTerminalBeforeNextRun(t *testing.T) {
+ 		t.Fatal(code)
+ 	}
+ 	runs := waitCronRuns(t, server.URL, "cancel", func(r []CronRunRecord) bool { return len(r) == 1 && r[0].RunID != "" })
++	activity := server.URL + "/v1/sessions/" + runs[0].SessionID + "/runs/activity"
++	var state struct{ Busy bool }
++	if code := doCronJSON(t, activity, http.MethodGet, nil, &state); code != http.StatusOK || !state.Busy {
++		t.Fatalf("leased run: status=%d busy=%v", code, state.Busy)
++	}
+ 	if code := doCronJSON(t, server.URL+"/v1/cron/cancel/cancel", http.MethodPost, nil, nil); code != 200 {
+ 		t.Fatal(code)
+ 	}
+ 	waitCronRuns(t, server.URL, "cancel", func(r []CronRunRecord) bool { return len(r) == 1 && cronRunCancelled(r[0]) })
++	if code := doCronJSON(t, activity, http.MethodGet, nil, &state); code != http.StatusOK || state.Busy {
++		t.Fatalf("cancelled run: status=%d busy=%v", code, state.Busy)
++	}
+ 	response, err := http.Get(server.URL + "/v1/sessions/" + runs[0].SessionID + "/events")
+ 	if err != nil {
+ 		t.Fatal(err)
+diff --git a/internal/backend/run_lookup.go b/internal/backend/run_lookup.go
+index 1170d92..57ea4da 100644
+--- a/internal/backend/run_lookup.go
++++ b/internal/backend/run_lookup.go
+@@ -8,6 +8,30 @@ import (
+ 	"github.com/Stack-Cairn/K-brain/internal/session"
+ )
+ 
++// Report the same busy predicate used to admit a prompt, without loading a
++// model or exposing run content. Scheduled prompts use this session runtime.
++func (s *Server) sessionRunActivity(w http.ResponseWriter, id string) {
++	rt, err := s.historyRuntime(id)
++	if err != nil {
++		mutationError(w, err)
++		return
++	}
++	defer s.releaseRuntime(rt)
++	rt.mu.Lock()
++	defer rt.mu.Unlock()
++	if rt.deleted {
++		mutationError(w, session.ErrNotFound)
++		return
++	}
++	if rt.runtimeErr != nil {
++		writeJSONError(w, http.StatusInternalServerError, "session runtime is quarantined")
++		return
++	}
++	writeJSON(w, http.StatusOK, struct {
++		Busy bool `json:"busy"`
++	}{Busy: rt.activeLocked()})
++}
++
+ func (s *Server) lookupRun(w http.ResponseWriter, r *http.Request, id string) {
+ 	requestID := r.URL.Query().Get("client_request_id")
+ 	if strings.TrimSpace(requestID) == "" {
+diff --git a/internal/backend/server.go b/internal/backend/server.go
+index 2a6291a..d2cf5eb 100644
+--- a/internal/backend/server.go
++++ b/internal/backend/server.go
+@@ -574,6 +574,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 		s.lookupRun(w, r, id)
+ 		return
+ 	}
++	if len(parts) == 3 && parts[1] == "runs" && parts[2] == "activity" && r.Method == http.MethodGet {
++		s.sessionRunActivity(w, id)
++		return
++	}
+ 	if len(parts) == 4 && parts[1] == "checkpoints" && r.Method == http.MethodPost && (parts[3] == "preview" || parts[3] == "rewind") {
+ 		seq, parseErr := strconv.Atoi(parts[2])
+ 		if parseErr != nil || seq < 0 {

@@ -112,7 +112,9 @@ export function useNavigationPreview<Destination extends string>(
       const active = document.activeElement;
       if (active instanceof Element && active.closest(REGION)) {
         rootRef.current
-          ?.querySelector<HTMLButtonElement>("[data-app-header-navigation] button")
+          ?.querySelector<HTMLButtonElement>(
+            "[data-app-header-navigation] button, [data-rail-item][aria-current=page]",
+          )
           ?.focus();
       }
       inside = false;

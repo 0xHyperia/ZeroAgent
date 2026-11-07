@@ -1,17 +1,14 @@
-// Web transport for the automation store: every call is relayed through the
-// gateway's generic cron.manage RPC to the desktop-authoritative
-// AutomationStore. Change events arrive via the settings-sync snapshot
-// (automationCron / automationHooks fields), which useGatewaySettingsSync
-// feeds into the store — so subscribe() has nothing to wire up here. This
-// file is the per-platform adapter — the desktop frontend ships its own copy
-// speaking Tauri invoke.
+// The Gateway relays cron.manage to the selected device's K-brain scheduler.
+// The task workbench refreshes snapshots and runs through this same transport.
 
 import type {
   AutomationApplyInput,
   AutomationSnapshot,
   CronApplyResponse,
   CronOccurrencesResponse,
+  CronRunAnchor,
   CronRunNowResponse,
+  CronRunProgress,
   CronRunRecord,
   CronSnapshot,
   HooksApplyResponse,
@@ -60,6 +57,14 @@ export const backend = {
       limit: limit ?? 100,
     });
     return Array.isArray(payload.runs) ? payload.runs : [];
+  },
+
+  runAnchor(taskId: string, executionId: string) {
+    return cronManage<Partial<CronRunAnchor>>("run_anchor", taskId, { executionId });
+  },
+
+  runProgress(taskId: string, executionId: string, cursor: number) {
+    return cronManage<CronRunProgress>("run_progress", taskId, { executionId, cursor });
   },
 
   cronOccurrences(from: number, to: number): Promise<CronOccurrencesResponse> {

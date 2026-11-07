@@ -285,6 +285,122 @@ func TestAccountHTTPImportsRespectSelectionScope(t *testing.T) {
 	}
 }
 
+func TestAccountWorkspaceHandoffKeepsBytesAndScope(t *testing.T) {
+	fixture := newSelectionDispatchFixture(t, account.SelectionScopeWorkspace)
+	sm := session.NewManager()
+	sm.RecordAuthentication(fixture.device.ID, "1", "owned")
+	agent := session.NewAgentSession(sm.LatestAuthSnapshot(fixture.device.ID))
+	sm.SetSession(agent)
+	defer agent.Close()
+	handler := gatewayserver.NewHTTPServer(newV2TestConfig(), sm, fixture.service)
+	id := "c1e38fb0-5387-4e4b-9802-ebaeecbfcc96"
+	data := []byte{0x00, 0xFF, 0x03}
+	request := func(workspace string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/files/handoff?workspace_id="+workspace+"&name=fixture.pdf&operation_id="+id, bytes.NewReader(data))
+		fixture.authorizeHTTP(t, req)
+		return req
+	}
+
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, request("workspace-2"))
+	if rejected.Code != http.StatusForbidden {
+		t.Fatalf("outside selection: %d", rejected.Code)
+	}
+	select {
+	case env := <-agent.Outbound():
+		t.Fatalf("outside selection forwarded %T", env.GetPayload())
+	default:
+	}
+
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(recorder, request("workspace-1"))
+	}()
+	path := "ZA-" + id + "/ZA-fixture.pdf"
+	select {
+	case env := <-agent.Outbound():
+		handoff := env.GetWorkspaceHandoff()
+		if handoff == nil || handoff.GetOperationId() != id || handoff.GetWorkspaceId() != "workspace-1" || !bytes.Equal(handoff.GetContent(), data) {
+			t.Fatalf("incorrect workspace transfer: %v", handoff)
+		}
+		env.Ack(nil)
+		sm.DispatchFromAgentForSession(agent, &gatewayv2.AgentEnvelope{
+			RequestId: env.GetRequestId(),
+			Payload: &gatewayv2.AgentEnvelope_WorkspaceHandoffResp{WorkspaceHandoffResp: &gatewayv2.WorkspaceHandoffResponse{
+				RelativePath: path,
+			}},
+		})
+	case <-time.After(time.Second):
+		t.Fatal("handoff was not forwarded")
+	}
+	select {
+	case <-done:
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), path) {
+			t.Fatalf("incorrect handoff receipt: %d %s", recorder.Code, recorder.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handoff receipt timed out")
+	}
+}
+
+func TestAccountDeviceScheduleSummaryIsScopedAndRedacted(t *testing.T) {
+	fixture := newSelectionDispatchFixture(t, account.SelectionScopeWorkspace)
+	sm := session.NewManager()
+	sm.RecordAuthentication(fixture.device.ID, "1", "owned")
+	agent := session.NewAgentSession(sm.LatestAuthSnapshot(fixture.device.ID))
+	sm.SetSession(agent)
+	defer agent.Close()
+	handler := gatewayserver.NewHTTPServer(newV2TestConfig(), sm, fixture.service)
+	request := func(id string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/api/web-chat/device-schedules/"+id, nil)
+		req.AddCookie(&http.Cookie{Name: account.SessionCookieName, Value: fixture.controller.ID})
+		return req
+	}
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, request("unregistered"))
+	if rejected.Code != http.StatusNotFound {
+		t.Fatalf("unregistered device was not rejected: %d", rejected.Code)
+	}
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(recorder, request(fixture.device.ID))
+	}()
+	for _, item := range []struct{ action, result string }{
+		{"snapshot", `{"cron":{"tasks":[{"id":"daily","name":"Daily","enabled":true,"prompt":"private-device-prompt"}]}}`},
+		{"occurrences", fmt.Sprintf(`{"occurrences":[{"taskId":"daily","at":%d}]}`, time.Now().Add(time.Hour).UnixMilli())},
+	} {
+		select {
+		case env := <-agent.Outbound():
+			if env.GetCronManage().GetAction() != item.action {
+				t.Fatalf("expected read-only action %s, got %v", item.action, env.GetPayload())
+			}
+			env.Ack(nil)
+			sm.DispatchFromAgentForSession(agent, &gatewayv2.AgentEnvelope{
+				RequestId: env.GetRequestId(),
+				Payload: &gatewayv2.AgentEnvelope_CronManageResp{CronManageResp: &gatewayv2.CronManageResponse{
+					ResultJson: item.result,
+				}},
+			})
+		case <-time.After(time.Second):
+			t.Fatalf("schedule summary did not request %s", item.action)
+		}
+	}
+	select {
+	case <-done:
+		body := recorder.Body.String()
+		if recorder.Code != http.StatusOK || !strings.Contains(body, `"status":"enabled"`) ||
+			!strings.Contains(body, `"next_at"`) || strings.Contains(body, "private-device-prompt") {
+			t.Fatalf("incorrect summary projection: %d %s", recorder.Code, body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device schedule summary timed out")
+	}
+}
+
 func requireNoControllerOutput(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))

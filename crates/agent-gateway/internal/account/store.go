@@ -124,6 +124,9 @@ func (s *MemoryStore) ConsumeOAuthTransaction(_ context.Context, stateHash strin
 func (s *MemoryStore) PutSession(_ context.Context, session *Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if current, ok := s.sessions[session.ID]; ok && session.Purpose == desktopCloudAccessPurpose && !session.AccessExpiresAt.After(current.AccessExpiresAt) {
+		return nil
+	}
 	s.sessions[session.ID] = cloneSession(*session)
 	return nil
 }

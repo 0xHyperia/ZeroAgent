@@ -1,13 +1,32 @@
 import type { ExtensionWorkspaceLocation } from "@liveagent/ui/features/extensions/extensionTypes";
 import { CLOUD_SPACE_HOME, type CloudSpaceLocation } from "./cloudSpace";
 
-const settingsSections = ["account", "system", "providers", "planning", "devices"] as const;
+const settingsSections = [
+  "account",
+  "system",
+  "providers",
+  "planning",
+  "devices",
+] as const;
 export type CloudSettingsSection = (typeof settingsSections)[number];
 export type CloudReaderRoute = { kind: "file" | "artifact" | "site"; id: string };
+export const taskStatuses = ["enabled", "paused", "completed"] as const;
+export type TaskStatus = (typeof taskStatuses)[number];
+
 export type CloudChatRoute =
   | { page: "chat"; id: string; reader?: CloudReaderRoute }
   | { page: "settings"; section?: CloudSettingsSection }
   | { page: "projects"; id?: string }
+  | {
+      page: "tasks";
+      id?: string;
+      status?: TaskStatus;
+      statuses?: TaskStatus[];
+      run?: string;
+      target?: string;
+      scope?: string;
+      deviceView?: true;
+    }
   | { page: "library"; location: CloudSpaceLocation; reader?: CloudReaderRoute }
   | { page: "extensions"; location: ExtensionWorkspaceLocation };
 
@@ -30,6 +49,11 @@ const queryKeys = [
   "site",
   "skill_id",
   "fromPlugin",
+  "task_status",
+  "task_run",
+  "task_target",
+  "task_scope",
+  "task_device",
 ];
 const objectId = /^[a-z0-9_-]{1,128}$/i;
 
@@ -58,6 +82,25 @@ export function readCloudChatRoute(url: URL): CloudChatRoute {
     return { page: "settings", section: cloudSettingsSection(object) };
   }
   if (page === "projects" && !action) return { page: "projects", id: key };
+  if (page === "tasks" && !action) {
+    const statusQuery = query.get("task_status");
+    const target = id(query.get("task_target"));
+    const selectedStatuses = taskStatuses.filter((status) =>
+      statusQuery?.split(",").includes(status),
+    );
+    return {
+      page: "tasks",
+      id: key,
+      status: selectedStatuses.length === 1 ? selectedStatuses[0] : undefined,
+      ...(statusQuery === "none" || selectedStatuses.length === 2
+        ? { statuses: selectedStatuses }
+        : {}),
+      run: key ? id(query.get("task_run")) : undefined,
+      target,
+      ...(id(query.get("task_scope")) ? { scope: id(query.get("task_scope")) } : {}),
+      ...(target && query.get("task_device") === "1" ? { deviceView: true as const } : {}),
+    };
+  }
   if ((page === "space" || page === "library") && !sub) {
     const resource = id(action);
     const location: CloudSpaceLocation = {
@@ -154,6 +197,18 @@ export function cloudChatRouteHref(route: CloudChatRoute, url: URL) {
       break;
     case "projects":
       path = route.id ? `/projects/${encodeURIComponent(route.id)}` : "/projects";
+      break;
+    case "tasks":
+      path = route.id ? `/tasks/${encodeURIComponent(route.id)}` : "/tasks";
+      if (route.statuses) {
+        const statuses = taskStatuses.filter((status) => route.statuses?.includes(status));
+        if (statuses.length < taskStatuses.length)
+          query.set("task_status", statuses.join(",") || "none");
+      } else if (route.status) query.set("task_status", route.status);
+      if (route.id && route.run) query.set("task_run", route.run);
+      if (route.target) query.set("task_target", route.target);
+      if (route.scope) query.set("task_scope", route.scope);
+      if (route.target && route.deviceView) query.set("task_device", "1");
       break;
     case "library": {
       const { location, reader } = route;

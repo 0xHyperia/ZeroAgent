@@ -8,6 +8,7 @@ import type { ConversationRuntimeRegistry } from "./createConversationRuntimeReg
 
 type CreateConversationSurfaceControllerParams = {
   conversationId: string;
+  composerScopeId?: string;
   project: ProjectRef;
   registry: ConversationRuntimeRegistry;
   actions: ConversationControllerActions;
@@ -30,6 +31,7 @@ export function createConversationSurfaceController(
   params: CreateConversationSurfaceControllerParams,
 ): ConversationSurfaceController {
   const conversationId = params.conversationId.trim();
+  const composerScopeId = params.composerScopeId ?? conversationId;
   if (!conversationId) {
     throw new Error("ConversationSurfaceController requires a conversationId.");
   }
@@ -49,8 +51,8 @@ export function createConversationSurfaceController(
       conversationId,
       project: params.project,
       runtime,
-      draft: params.registry.drafts.getSnapshot(conversationId),
-      uploads: params.registry.uploads.getSnapshot(conversationId),
+      draft: params.registry.drafts.getSnapshot(composerScopeId),
+      uploads: params.registry.uploads.getSnapshot(composerScopeId),
       queue: params.registry.queue.getSnapshot(conversationId),
       approvals: params.registry.approvals.getSnapshot(conversationId),
       model: runtime?.selectedModel ?? null,
@@ -83,8 +85,8 @@ export function createConversationSurfaceController(
   function connect() {
     if (unsubscribeRuntime) return;
     unsubscribeRuntime = params.registry.subscribe(conversationId, () => refresh(true));
-    unsubscribeDraft = params.registry.drafts.subscribe(conversationId, () => refresh(true));
-    unsubscribeUploads = params.registry.uploads.subscribe(conversationId, () => refresh(true));
+    unsubscribeDraft = params.registry.drafts.subscribe(composerScopeId, () => refresh(true));
+    unsubscribeUploads = params.registry.uploads.subscribe(composerScopeId, () => refresh(true));
     unsubscribeQueue = params.registry.queue.subscribe(conversationId, () => refresh(true));
     unsubscribeApprovals = params.registry.approvals.subscribe(conversationId, () => refresh(true));
     unsubscribeHydration = params.registry.hydration.subscribe(conversationId, () => refresh(true));
@@ -107,6 +109,7 @@ export function createConversationSurfaceController(
 
   return {
     conversationId,
+    composerScopeId: params.composerScopeId,
     project: params.project,
     getSnapshot() {
       refresh(false);
@@ -125,13 +128,13 @@ export function createConversationSurfaceController(
     },
     setDraft(draft) {
       if (draft.isEmpty) {
-        params.registry.drafts.delete(conversationId);
+        params.registry.drafts.delete(composerScopeId);
         return;
       }
-      params.registry.drafts.set(conversationId, draft);
+      params.registry.drafts.set(composerScopeId, draft);
     },
     clearDraft() {
-      params.registry.drafts.delete(conversationId);
+      params.registry.drafts.delete(composerScopeId);
     },
     hydrate() {
       return params.actions.hydrate({ conversationId, project: params.project });

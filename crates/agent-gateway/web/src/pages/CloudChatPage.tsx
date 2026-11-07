@@ -52,21 +52,28 @@ import {
 } from "@liveagent/ui/lib/sidebar/batchDelete";
 import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
 import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
+import {
+  type TranscriptMessageJump,
+  useTranscriptMessageJump,
+} from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { ChatComposerBar } from "@liveagent/ui/pages/chat/ChatComposerBar";
 import { FloorNavRail } from "@liveagent/ui/pages/chat/transcript/FloorNavRail";
 import { ProviderSettingsDialog } from "@liveagent/ui/pages/settings/ProvidersSection";
 import { SettingsPage } from "@liveagent/ui/pages/settings/SettingsPage";
 import {
   type ChangeEvent,
+  type ComponentPropsWithoutRef,
   type CSSProperties,
   lazy,
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { UserMenu } from "@/app/UserMenu";
 import { CloudChatFilePanel } from "@/components/CloudChatFilePanel";
 import { CloudChatArtifactsPanel } from "@/components/cloudchat/CloudChatArtifactsPanel";
@@ -100,10 +107,15 @@ import { CloudConversationTitle } from "@/components/cloudchat/CloudConversation
 import { CloudDraftConflictDialog } from "@/components/cloudchat/CloudDraftConflictDialog";
 import { CloudProjectCreateDialog } from "@/components/cloudchat/CloudProjectCreateDialog";
 import { CloudProjectSettingsDialog } from "@/components/cloudchat/CloudProjectSettingsDialog";
+import { CloudScheduleWorkspace } from "@/components/cloudchat/CloudScheduleWorkspace";
 import { CloudSpacePage } from "@/components/cloudchat/CloudSpacePage";
 import { useCloudChatQueueController } from "@/components/cloudchat/useCloudChatQueueController";
 import { useCloudSavedDraft } from "@/components/cloudchat/useCloudSavedDraft";
 import { useCloudSidebarPreview } from "@/components/cloudchat/useCloudSidebarPreview";
+import {
+  WorkspaceHandoffDialog,
+  type WorkspaceHandoffSource,
+} from "@/components/cloudchat/WorkspaceHandoffDialog";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayBrand } from "@/components/GatewayBrand";
 import { GatewayTranscript, type GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
@@ -115,6 +127,7 @@ import {
   captureAccountRequestGuard,
 } from "@/lib/accountRequest";
 import { buildModelOptions } from "@/lib/chat/chatPageHelpers";
+import type { CloudChatPresentationResource } from "@/lib/cloudChatPresentation";
 import {
   type CloudChatRoute,
   type CloudReaderRoute,
@@ -135,6 +148,7 @@ import {
   linkExtensionDraftCitations,
 } from "@/lib/cloudExtensions";
 import { cloudGenerationSettings } from "@/lib/cloudGenerationSettings";
+import type { CloudTaskConversationSelection } from "@/lib/cloudSchedules";
 import { siteRevisionText } from "@/lib/cloudSiteRevision";
 import {
   CLOUD_SPACE_HOME,
@@ -143,7 +157,9 @@ import {
   type CloudSpaceLocation,
   createCloudSpaceClient,
 } from "@/lib/cloudSpace";
+import type { DesktopCloudHost, DesktopTaskConversation } from "@/lib/desktopRemoteHost";
 import { readCloudChatLocation, useCloudChatHistory } from "@/lib/useCloudChatHistory";
+import { sendBrowserWorkspaceHandoff } from "@/lib/workspaceHandoff";
 import { CloudModelPreferencesSection } from "./settings/CloudModelPreferencesSection";
 import "../cloud-space.css";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
@@ -344,7 +360,16 @@ type Props = {
   setSettings: (updater: (previous: AppSettings) => AppSettings) => void;
   settingsSaveState: WebSettingsSaveState;
   onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
+  onOpenDeviceTasks?: (
+    environment: ExecutionEnvironment,
+    workspace: ExecutionWorkspace,
+    taskRoute?: Extract<CloudChatRoute, { page: "tasks" }>,
+  ) => Promise<unknown>;
   onLogout: () => void;
+  desktopCloudHost?: DesktopCloudHost;
+  desktopAccountLayout?: import("@/lib/desktopRemoteHost").DesktopAccountLayout;
+  workbenchActive?: boolean;
+  embeddedTaskConversation?: DesktopTaskConversation;
 };
 
 const ExtensionsWorkspace = lazy(() =>
@@ -353,6 +378,14 @@ const ExtensionsWorkspace = lazy(() =>
   })),
 );
 const EMPTY_PATHS = new Set<string>();
+function CloudConversationMain({
+  mount,
+  ...props
+}: ComponentPropsWithoutRef<"main"> & { mount?: HTMLDivElement | null }) {
+  const surface = <main {...props} />;
+  return mount ? createPortal(surface, mount) : surface;
+}
+
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const guard = captureAccountRequestGuard();
   const response = await accountFetch(path, {
@@ -414,8 +447,21 @@ export function CloudChatPage({
   setSettings,
   settingsSaveState,
   onSwitch,
+  onOpenDeviceTasks,
   onLogout,
+  desktopCloudHost,
+  workbenchActive = true,
+  embeddedTaskConversation,
+  desktopAccountLayout,
 }: Props) {
+  const embeddedTaskId = embeddedTaskConversation?.id;
+  const embeddedTaskRun = embeddedTaskConversation?.runId;
+  const embeddedTaskJump = embeddedTaskConversation?.jump;
+  const embeddedTaskFollowLatest = embeddedTaskConversation?.followLatest;
+  const embeddedTaskResource = embeddedTaskConversation?.resource;
+  const embeddedTask = Boolean(embeddedTaskId);
+  const embeddedAccount = Boolean(desktopAccountLayout);
+  const embeddedWorkbench = embeddedTask || embeddedAccount;
   const disabledSttSettingsService = useMemo<SttSettingsService>(
     () => ({
       runtimeLabel: "Cloud Chat",
@@ -428,8 +474,25 @@ export function CloudChatPage({
     }),
     [settings.stt],
   );
-  const [initialLocation] = useState(() => readCloudChatLocation(user.id));
-  const initialRoute = initialLocation.route;
+  const [initialLocation] = useState(() =>
+    embeddedTaskId
+      ? {
+          route: { page: "chat", id: embeddedTaskId } satisfies CloudChatRoute,
+          conversation: embeddedTaskId,
+        }
+      : readCloudChatLocation(user.id),
+  );
+  const [workspaceHandoff, setWorkspaceHandoff] = useState<{
+    owner: number;
+    source: WorkspaceHandoffSource;
+  }>();
+  const initialRoute: CloudChatRoute = initialLocation.route;
+  const [scheduleRoute, setScheduleRoute] = useState<
+    Extract<CloudChatRoute, { page: "tasks" }> | undefined
+  >(initialRoute.page === "tasks" ? initialRoute : undefined);
+  const [taskConversationMount, setTaskConversationMount] = useState<HTMLDivElement | null>(null);
+  const taskReturnConversation = useRef<string | undefined>(undefined);
+  const taskRunSelection = useRef<CloudTaskConversationSelection | null>(null);
   const initialReader =
     initialRoute.page === "chat" || initialRoute.page === "library"
       ? initialRoute.reader
@@ -646,6 +709,10 @@ export function CloudChatPage({
     messageId: string;
     token: string;
   } | null>(null);
+  const [taskMessageJump, setTaskMessageJump] = useState<{
+    conversationId: string;
+    jump: TranscriptMessageJump;
+  }>();
   const historyJumpedToken = useRef("");
   const transcriptNavigation = useRef<GatewayTranscriptNavHandle | null>(null);
   const cloudChatFrameRef = useRef<HTMLDivElement | null>(null);
@@ -699,15 +766,30 @@ export function CloudChatPage({
     },
     [openModelPreferences, setSettingsSection, sidebar.isMobile],
   );
-  const sidebarDestination = workspaceView === "library" ? "library" : "chat";
+  const sidebarDestination = scheduleRoute
+    ? "cron-hub"
+    : customizeOpen
+      ? "customize"
+      : workspaceView === "library"
+        ? "library"
+        : "chat";
   const sidebarPreview = useCloudSidebarPreview(
-    !sidebar.isMobile && !accountSettingsOpen,
+    !embeddedWorkbench && !sidebar.isMobile && !accountSettingsOpen,
     user.id,
     { pinnedOpen: sidebar.open, destination: sidebarDestination },
   );
   const shownSidebarDestination = sidebarPreview.open
     ? sidebarPreview.destination
     : sidebarDestination;
+  const previewTasks = sidebarPreview.open && shownSidebarDestination === "cron-hub";
+  const previewCustomize = sidebarPreview.open && shownSidebarDestination === "customize";
+  const contextDestination =
+    shownSidebarDestination === "cron-hub" || shownSidebarDestination === "customize"
+      ? undefined
+      : shownSidebarDestination;
+  const [taskPreviewRoute, setTaskPreviewRoute] = useState<
+    Extract<CloudChatRoute, { page: "tasks" }>
+  >({ page: "tasks" });
   useEffect(() => {
     if (accountSettingsOpen) sidebar.setOpenMobile(false);
   }, [accountSettingsOpen, sidebar.setOpenMobile]);
@@ -993,6 +1075,7 @@ export function CloudChatPage({
     setHistoryAfter("");
     setHistoryHasAfter(false);
     setHistorySelection(null);
+    setTaskMessageJump(undefined);
     setHistoryPageLoading(false);
     setHistoryError("");
     setMessageReader(null);
@@ -1184,14 +1267,22 @@ export function CloudChatPage({
         ? { page: "extensions", location: extensionLocation }
         : accountSettingsOpen
           ? { page: "settings", section: settingsDetail ? settingsSection : undefined }
-          : workspaceView === "library"
-            ? { page: "library", location: spaceLocation, reader: readerRoute }
-            : { page: "chat", id: conversationId, reader: readerRoute };
+          : (scheduleRoute ??
+            (workspaceView === "library"
+              ? { page: "library", location: spaceLocation, reader: readerRoute }
+              : { page: "chat", id: conversationId, reader: readerRoute }));
   const replaceNextCloudRoute = useCloudChatHistory({
     owner: user.id,
-    active: viewRef.current.userId === user.id && !accountInvalidatedRef.current,
+    active:
+      !embeddedTask &&
+      workbenchActive &&
+      viewRef.current.userId === user.id &&
+      !accountInvalidatedRef.current,
+    listen: !embeddedTask,
     route: cloudRoute,
-    conversation: conversationId,
+    conversation: scheduleRoute
+      ? (taskReturnConversation.current ?? conversationId)
+      : conversationId,
     apply: applyCloudLocation,
     isDirty: projectNavigation.isDirty,
     confirm: projectNavigation.request,
@@ -1408,6 +1499,10 @@ export function CloudChatPage({
       if (current()) setModelsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (desktopCloudHost && workbenchActive) void refreshModels();
+  }, [desktopCloudHost, refreshModels, workbenchActive]);
 
   const saveWebSettings = useCallback(
     async (nextModel: string, nextReasoning: ReasoningLevel, nextProviderKeyId = providerKeyId) => {
@@ -3204,6 +3299,24 @@ export function CloudChatPage({
       }),
     [messages, streaming, conversationId, copyMessageText],
   );
+  const taskJump =
+    taskMessageJump?.conversationId === conversationId ? taskMessageJump.jump : undefined;
+  useTranscriptMessageJump({
+    target: taskJump,
+    rowKey: taskJump && transcriptRows.find((row) => row.key === taskJump.messageId)?.key,
+    historyBoundary: historyBefore,
+    hasMoreHistory: historyHasMore,
+    loadEarlier: loadEarlierHistory,
+    ready:
+      Boolean(transcriptViewport) &&
+      !historyLoading &&
+      !historyPageLoading &&
+      !historyRestoreFailed,
+    jumpToRow: (key) => {
+      transcriptFollow.restoreFollowing(false);
+      transcriptNavigation.current?.scrollToRowKey(key);
+    },
+  });
 
   const sidebarItems = useMemo<SidebarConversation[]>(() => {
     const cloud: SidebarConversation[] = conversations.map((conversation) => ({
@@ -3452,6 +3565,11 @@ export function CloudChatPage({
     setWorkPanel(null);
   }
   function clearResources() {
+    setScheduleRoute(undefined);
+    taskReturnConversation.current = undefined;
+    taskRunSelection.current = null;
+    setTaskMessageJump(undefined);
+    setWorkspaceHandoff(undefined);
     setSpaceWork(false);
     setAccountSettingsOpen(false);
     sidebarPreview.dismiss();
@@ -3463,11 +3581,27 @@ export function CloudChatPage({
     setWorkspaceView("chat");
   }
   function applyCloudLocation({ route, conversation }: ReturnType<typeof readCloudChatLocation>) {
+    if (
+      route.page === "tasks" &&
+      scheduleRoute &&
+      !accountSettingsOpen &&
+      !customizeOpen &&
+      !projectSettings.open
+    ) {
+      taskReturnConversation.current = conversation;
+      setScheduleRoute(route);
+      if (sidebar.isMobile) setSidebarOpen(false);
+      return;
+    }
     if (conversation !== viewRef.current.conversationId) {
       pendingQueue.pause();
       selectConversationView(conversation);
     }
     clearResources();
+    if (route.page === "tasks") {
+      taskReturnConversation.current = conversation;
+      setScheduleRoute(route);
+    }
     setCustomize((current) => ({
       owner: user.id,
       open: route.page === "extensions",
@@ -3499,10 +3633,83 @@ export function CloudChatPage({
   }
   function closeResources() {
     projectNavigation.request(() => {
+      leaveTaskConversation();
       clearResources();
       if (sidebar.isMobile) setSidebarOpen(false);
     });
   }
+  function leaveTaskConversation() {
+    const previous = taskReturnConversation.current;
+    taskReturnConversation.current = undefined;
+    taskRunSelection.current = null;
+    setTaskMessageJump(undefined);
+    if (previous !== undefined && previous !== viewRef.current.conversationId) {
+      pendingQueue.pause();
+      selectConversationView(previous);
+    }
+  }
+  function selectTaskConversation(selection: CloudTaskConversationSelection) {
+    const { id, runId, followLatest, jump } = selection;
+    const sameConversation = viewRef.current.conversationId === id;
+    const previous = taskRunSelection.current;
+    const sameRun = previous?.id === id && previous.runId === runId;
+    if (
+      sameConversation &&
+      sameRun &&
+      previous?.jump?.key === jump?.key &&
+      previous?.jump?.messageId === jump?.messageId &&
+      previous?.followLatest === followLatest
+    )
+      return;
+    taskRunSelection.current = selection;
+    if (!sameConversation) {
+      pendingQueue.pause();
+      setFilePanel(null);
+      setArtifactPanel(null);
+      setSourcePanel(null);
+      setWorkPanel(null);
+      selectConversationView(id);
+    }
+    if (historySelection?.conversationId === id) setHistorySelection(null);
+    setTaskMessageJump(jump ? { conversationId: id, jump } : undefined);
+    if (
+      followLatest &&
+      sameConversation &&
+      runId &&
+      !sameRun &&
+      !streaming &&
+      !pendingSubmissionRef.current
+    )
+      setHistoryReloadRevision((revision) => revision + 1);
+  }
+  function showTaskResultResource(resource: CloudChatPresentationResource) {
+    if (resource.kind === "source") {
+      setFilePanel(null);
+      setArtifactPanel(null);
+      setWorkPanel(null);
+      setSourcePanel({ sourceId: resource.id });
+    }
+    if (resource.kind === "file") showFileResource({ fileId: resource.id });
+    if (resource.kind === "artifact" || resource.kind === "site")
+      showArtifactResource({ versionId: resource.id, site: resource.kind === "site" });
+    if (resource.kind === "extension-draft") requestCustomize(resource.id, true);
+  }
+  const applyEmbeddedTask = useEffectEvent((selection: CloudTaskConversationSelection) =>
+    selectTaskConversation(selection),
+  );
+  const openEmbeddedTaskResource = useEffectEvent(showTaskResultResource);
+  useEffect(() => {
+    if (embeddedTaskId)
+      applyEmbeddedTask({
+        id: embeddedTaskId,
+        runId: embeddedTaskRun,
+        followLatest: embeddedTaskFollowLatest,
+        jump: embeddedTaskJump,
+      });
+  }, [embeddedTaskId, embeddedTaskRun, embeddedTaskFollowLatest, embeddedTaskJump]);
+  useEffect(() => {
+    if (embeddedTaskId && embeddedTaskResource) openEmbeddedTaskResource(embeddedTaskResource);
+  }, [embeddedTaskId, embeddedTaskResource]);
   useEffect(() => {
     if (!isEmbeddedMobileRuntime()) return;
     const handleBack = (event: Event) => {
@@ -3550,6 +3757,7 @@ export function CloudChatPage({
   function navigateConversation(id?: string, messageId?: string) {
     projectNavigation.request(() => {
       clearResources();
+      setCustomize((value) => ({ ...value, open: false }));
       if (id !== undefined) {
         if (messageId) {
           pendingQueue.pause();
@@ -3567,6 +3775,7 @@ export function CloudChatPage({
     });
   }
   useEffect(() => {
+    if (!workbenchActive || embeddedTask) return;
     const keydown = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -3586,7 +3795,7 @@ export function CloudChatPage({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, []);
+  }, [embeddedTask, workbenchActive]);
   function openResource(
     resource: "files" | "artifacts" | "sources" | "projects" | "memory",
     page = false,
@@ -3599,6 +3808,11 @@ export function CloudChatPage({
       return;
     }
     projectNavigation.request(() => {
+      if (page) {
+        leaveTaskConversation();
+        setScheduleRoute(undefined);
+        setCustomize((value) => ({ ...value, open: false }));
+      }
       setAccountSettingsOpen(false);
       sidebarPreview.dismiss();
       if (pinSidebar) sidebar.setOpen(true);
@@ -3627,6 +3841,7 @@ export function CloudChatPage({
   function newProjectConversation(project: CloudProject) {
     projectNavigation.request(() => {
       clearResources();
+      setCustomize((value) => ({ ...value, open: false }));
       const draft = { ...emptyCloudChatDraft(), projectId: project.id };
       void savedDraftSyncRef.current?.resetBlank({ version: 1, draft });
       selectConversationView("", false, draft, true);
@@ -3637,7 +3852,9 @@ export function CloudChatPage({
   function navigateSpace(location: CloudSpaceLocation) {
     projectNavigation.request(() => {
       setSpaceVisited(true);
+      leaveTaskConversation();
       clearResources();
+      setCustomize((value) => ({ ...value, open: false }));
       setSpaceLocation(location);
       setWorkspaceView("library");
       if (sidebar.isMobile) setSidebarOpen(false);
@@ -3649,6 +3866,11 @@ export function CloudChatPage({
       return;
     }
     projectNavigation.request(() => {
+      if (scheduleRoute || customizeOpen) {
+        leaveTaskConversation();
+        clearResources();
+        setCustomize((value) => ({ ...value, open: false }));
+      }
       setSpaceWork(false);
       setSpaceVisited(true);
       setFilePanel(item.kind === "file" ? { fileId: item.target_id } : null);
@@ -3739,16 +3961,52 @@ export function CloudChatPage({
       }
     }
   }
+  function openTaskWorkspace(
+    next: Extract<CloudChatRoute, { page: "tasks" }>,
+    options: { mobile?: boolean; pin?: boolean } = {},
+  ) {
+    projectNavigation.request(() => {
+      if (desktopCloudHost?.onOpenScheduledTasks) {
+        desktopCloudHost.onOpenScheduledTasks();
+        return;
+      }
+      if (!scheduleRoute) {
+        clearResources();
+        taskReturnConversation.current = viewRef.current.conversationId;
+        setCustomize((value) => ({ ...value, open: false }));
+      }
+      sidebarPreview.dismiss();
+      setScheduleRoute(next);
+      if (options.mobile) setSidebarOpen(false);
+      if (options.pin) sidebar.setOpen(true);
+    });
+  }
   function pinSidebarPreview() {
+    if (shownSidebarDestination === sidebarDestination) {
+      sidebarPreview.dismiss();
+      sidebar.setOpen(true);
+      return;
+    }
+    if (shownSidebarDestination === "cron-hub") {
+      openTaskWorkspace(scheduleRoute ?? taskPreviewRoute, { pin: true });
+      return;
+    }
+    if (shownSidebarDestination === "customize") {
+      requestCustomize(undefined, false, undefined, true);
+      return;
+    }
     if (shownSidebarDestination === "library") {
       openResource("files", true, undefined, undefined, true);
       return;
     }
     projectNavigation.request(() => {
+      leaveTaskConversation();
+      clearResources();
+      setCustomize((value) => ({ ...value, open: false }));
       if (shownSidebarDestination === "devices") {
         setSettingsSection("devices");
         setAccountSettingsOpen(true);
-      } else if (workspaceView !== "chat") clearResources();
+      }
       sidebarPreview.dismiss();
       sidebar.setOpen(true);
     });
@@ -3769,12 +4027,15 @@ export function CloudChatPage({
     const target = resolveExtensionMention(reference);
     if (target) requestCustomize(target.packageId, false, target.skillName);
   }
-  function requestCustomize(packageId?: string, draft = false, skillName?: string) {
+  function requestCustomize(packageId?: string, draft = false, skillName?: string, pin = false) {
     projectNavigation.request(() => {
+      leaveTaskConversation();
+      setScheduleRoute(undefined);
       sidebarPreview.dismiss();
       setComposerMenu(null);
       setAccountSettingsOpen(false);
       setCustomize({ owner: user.id, open: true, visited: true });
+      if (pin) sidebar.setOpen(true);
       if (packageId) {
         const pkg = extensionCatalog?.packages.find((item) => item.id === packageId);
         const reader =
@@ -4294,7 +4555,15 @@ export function CloudChatPage({
           <BrandMark />
         )
       }
-      activeId={customizeOpen ? "customize" : accountSettingsOpen ? "settings" : workspaceView}
+      activeId={
+        customizeOpen
+          ? "customize"
+          : accountSettingsOpen
+            ? "settings"
+            : scheduleRoute
+              ? "cron-hub"
+              : workspaceView
+      }
       items={[
         createWorkbenchNavigationItem("chat", "对话", () => {
           setCustomize((value) => ({ ...value, open: false }));
@@ -4310,9 +4579,16 @@ export function CloudChatPage({
           icon: <Blend className="size-5" />,
           onSelect: openCustomize,
         },
+        createWorkbenchNavigationItem(
+          "cron-hub",
+          settings.locale === "zh-CN" ? "定时任务" : "Scheduled tasks",
+          () => openTaskWorkspace({ page: "tasks" }, { mobile }),
+        ),
         createWorkbenchNavigationItem("devices", "设备", () => {
           if (mobile) setSidebarOpen(false);
           setCustomize((value) => ({ ...value, open: false }));
+          leaveTaskConversation();
+          setScheduleRoute(undefined);
           setSettingsSection("devices");
           setAccountSettingsOpen(true);
         }),
@@ -4326,6 +4602,205 @@ export function CloudChatPage({
     />
   );
 
+  const taskConversationVisible =
+    !!scheduleRoute &&
+    !accountSettingsOpen &&
+    !customizeOpen &&
+    taskConversationMount?.dataset.conversationId === conversationId;
+  const scheduledConversation = taskConversationVisible || embeddedTask;
+  const contextSidebar = !embeddedTask && contextDestination && (
+    <div
+      hidden={!embeddedAccount && workingInSpace && !sidebarPreview.open}
+      data-workbench-account-navigation={embeddedAccount || undefined}
+      data-space-working={(workingInSpace && !sidebarPreview.open) || undefined}
+      data-sidebar-preview-region
+      data-sidebar-context={contextDestination}
+      className={embeddedAccount ? "cloud-chat-shell" : "relative h-full shrink-0"}
+    >
+      {!sidebar.isMobile || contextDestination === "chat" ? (
+        <div
+          className={contextDestination === "chat" ? "contents" : "hidden"}
+          aria-hidden={contextDestination !== "chat"}
+          inert={contextDestination !== "chat"}
+        >
+          <ChatHistorySidebar
+            mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
+            newConversationIcon={<SquarePen className="size-4 shrink-0" />}
+            onPinPreview={desktopAccountLayout?.onPinSidebar ?? pinSidebarPreview}
+            previewOpen={
+              (desktopAccountLayout?.sidebarPreview ?? sidebarPreview.open) &&
+              contextDestination === "chat"
+            }
+            brand={
+              <div className="cloud-sidebar-brand">
+                <GatewayBrand />
+              </div>
+            }
+            navigationContent={({ renderConversation }) => (
+              <>
+                <div className="cloud-sidebar-utilities">
+                  <button
+                    type="button"
+                    className="cloud-sidebar-destination"
+                    aria-current={workspaceView === "library" ? "page" : undefined}
+                    onClick={() => openResource("files", true)}
+                  >
+                    <BookOpen className="size-4" />
+                    资料空间
+                  </button>
+                </div>
+                {!accountInvalidatedRef.current ? (
+                  <CloudChatProjectNavigation
+                    key={user.id}
+                    client={projectsClient}
+                    captureGuard={captureAccountRequestGuard}
+                    revision={navigationRevision}
+                    onOpen={openProject}
+                    onCreate={() => setProjectCreate({ owner: user.id, open: true })}
+                    renderConversation={renderConversation}
+                    onVisibleConversationsChange={registerProjectRows}
+                    onNewConversation={newProjectConversation}
+                    currentConversationId={workspaceView === "chat" ? conversationId : ""}
+                    activeProjectId={
+                      composerProject.scope === `${user.id}:${conversationId}`
+                        ? composerProject.project?.id
+                        : undefined
+                    }
+                    isOpen={contextDestination === "chat" && (sidebarOpen || sidebarPreview.open)}
+                  />
+                ) : null}
+              </>
+            )}
+            onOpenResourceHub={() => showFileResource({})}
+            navigationItems={accountInvalidatedRef.current ? undefined : projectSidebarItems}
+            renderConversationMoveMenu={renderConversationMoveMenu}
+            items={sidebarItems}
+            currentConversationId={workspaceView === "chat" ? conversationId : ""}
+            busyConversationIds={conversationMutations}
+            conversationSearchAdapter={conversationSearchAdapter}
+            conversationSearchRequestKey={conversationSearchRequest}
+            runningConversationIds={runningConversationIds}
+            listStatus={conversationsLoading ? "loading" : "ready"}
+            scopeKey={`${user.id}:web-chat`}
+            totalItems={sidebarItems.length}
+            hasMore={conversationsHasMore}
+            isLoadingMore={conversationsLoadingMore}
+            loadMoreMode="scroll"
+            errorMessage={conversationsError || null}
+            actionErrorMessage={error || null}
+            renamingId={renamingId}
+            renameDraft={renameDraft}
+            isOpen={contextDestination === "chat" && (sidebarOpen || sidebarPreview.open)}
+            fontScale={settings.customSettings.fontScale.sidebar}
+            activeView="chat"
+            showProjects={false}
+            recentCollapsed={recentSection.owner === user.id && recentSection.collapsed}
+            onRecentCollapsedChange={(collapsed) => setRecentSection({ owner: user.id, collapsed })}
+            showAgentHubs={false}
+            missingProjectPathKeys={EMPTY_PATHS}
+            runningProjectPathKeys={EMPTY_PATHS}
+            onNewConversation={() => navigateConversation()}
+            onSelectConversation={(id) => navigateConversation(id)}
+            onStartRenaming={(item) => {
+              setRenamingId(item.id);
+              setRenameDraft(item.title);
+            }}
+            onRenameDraftChange={setRenameDraft}
+            onCommitRename={() => void renameConversation()}
+            onCancelRename={() => {
+              setRenamingId(null);
+              setRenameDraft("");
+            }}
+            onSetPinned={(id, pinned) => void manageConversation(id, { pinned })}
+            onSetArchived={(id, archived) => void manageConversation(id, { archived })}
+            onMoveToWorkspace={() => undefined}
+            onMoveConversationsToWorkspace={async (ids) => ids}
+            canShareConversations={false}
+            sharedConversationCount={0}
+            onShareConversation={() => undefined}
+            onOpenSharedConversations={() => undefined}
+            onDeleteConversation={(id) => void removeConversation(id)}
+            onDeleteConversations={removeConversations}
+            onLoadMore={() => void loadMoreConversations()}
+            footerTrailing={
+              conversationsError ? (
+                <button
+                  type="button"
+                  className="text-xs text-destructive"
+                  onClick={() =>
+                    void (conversationsHasMore
+                      ? loadMoreConversations()
+                      : refreshConversations().catch(() => undefined))
+                  }
+                >
+                  重试会话列表
+                </button>
+              ) : undefined
+            }
+            onOpenSettings={() => {
+              setSettingsSection("system");
+              setAccountSettingsOpen(true);
+            }}
+            accountMenu={false}
+          />
+        </div>
+      ) : null}
+      {contextDestination !== "chat" ? (
+        <CloudContextSidebar
+          mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
+          key={`${user.id}:${contextDestination}`}
+          destination={contextDestination}
+          preview={desktopAccountLayout?.sidebarPreview ?? sidebarPreview.open}
+          reportLoadErrors={!embeddedAccount}
+          activeResource={
+            workspaceView === "library"
+              ? artifactPanel
+                ? "artifacts"
+                : sourcePanel
+                  ? "sources"
+                  : "files"
+              : undefined
+          }
+          files={filesClient}
+          spaceClient={spaceClient}
+          spaceLocation={spaceLocation}
+          onSpaceNewFolder={() => {
+            navigateSpace(spaceLocation);
+            setSpaceFolderRequest((old) => old + 1);
+          }}
+          spaceRevision={spaceRevision}
+          onSpaceNavigate={navigateSpace}
+          onSpaceOpen={openSpaceItem}
+          onSpaceStorage={() =>
+            projectNavigation.request(() => {
+              leaveTaskConversation();
+              clearResources();
+              setCustomize((value) => ({ ...value, open: false }));
+              setSpaceVisited(true);
+              setWorkspaceView("library");
+              setSpaceStorageOpen(true);
+              if (sidebar.isMobile) setSidebarOpen(false);
+            })
+          }
+          environments={environments}
+          onOpenResource={(resource) => openResource(resource, true)}
+          onOpenFile={(id) => openResource("files", true, undefined, id)}
+          onOpenDevices={() =>
+            projectNavigation.request(() => {
+              leaveTaskConversation();
+              clearResources();
+              setCustomize((value) => ({ ...value, open: false }));
+              setSettingsSection("devices");
+              setAccountSettingsOpen(true);
+            })
+          }
+          onPin={desktopAccountLayout?.onPinSidebar ?? pinSidebarPreview}
+        />
+      ) : null}
+    </div>
+  );
+  const standaloneWorkspace = !!scheduleRoute || customizeOpen;
+  const showTaskWorkspace = (!!scheduleRoute || previewTasks) && !accountSettingsOpen;
   return (
     <AppErrorBoundary>
       <CloudDraftConflictDialog
@@ -4342,11 +4817,15 @@ export function CloudChatPage({
         }}
       />
       <FileDropBoundary
-        className={`${GATEWAY_SHELL_CLASS} cloud-chat-shell`}
+        className={`${embeddedWorkbench ? "gateway-shell relative flex size-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background text-foreground" : GATEWAY_SHELL_CLASS} cloud-chat-shell`}
+        data-embedded-task={embeddedTask || undefined}
+        data-embedded-account={embeddedAccount || undefined}
         data-workspace-view={workspaceView}
-        coverage="viewport"
+        coverage={embeddedWorkbench || scheduleRoute ? "local" : "viewport"}
         active={
+          workbenchActive &&
           chatWorkspaceVisible &&
+          (!scheduleRoute || taskConversationVisible) &&
           !accountSettingsOpen &&
           !customizeOpen &&
           !draftConflictOpen &&
@@ -4377,222 +4856,51 @@ export function CloudChatPage({
         />
         <WorkbenchShell
           ref={sidebarPreview.rootRef}
-          layout="page"
+          layout={embeddedWorkbench ? "stacked-panels" : "page"}
           className="gateway-editor-host flex-1"
         >
-          {!sidebar.isMobile ? renderApplicationRail() : null}
+          {!embeddedWorkbench && !sidebar.isMobile ? renderApplicationRail() : null}
+          {!embeddedWorkbench && standaloneWorkspace && !sidebar.isMobile && !sidebar.open ? (
+            <div data-sidebar-hover-edge="" aria-hidden="true" />
+          ) : null}
+          {standaloneWorkspace && sidebarPreview.open && contextDestination ? (
+            <WorkbenchCanvas mode="sidebar-preview">{contextSidebar}</WorkbenchCanvas>
+          ) : null}
           <WorkbenchCanvas
+            mode={embeddedWorkbench ? "embedded" : "page"}
             data-cloud-conversation-workspace
-            aria-hidden={accountSettingsOpen || customizeOpen}
-            inert={accountSettingsOpen || customizeOpen}
+            aria-hidden={accountSettingsOpen || customizeOpen || !!scheduleRoute}
+            inert={accountSettingsOpen || customizeOpen || !!scheduleRoute}
             className={
-              accountSettingsOpen || customizeOpen
+              accountSettingsOpen || customizeOpen || scheduleRoute
                 ? "hidden"
                 : "relative flex min-h-0 min-w-0 flex-1"
             }
           >
-            {!sidebar.isMobile && !sidebar.open ? (
+            {!embeddedWorkbench && !sidebar.isMobile && !sidebar.open ? (
               <div data-cloud-sidebar-hover-edge aria-hidden="true" />
             ) : null}
-            <button
-              type="button"
-              className="gateway-sidebar-backdrop"
-              data-state={sidebarOpen ? "open" : "closed"}
-              aria-label="关闭侧栏"
-              aria-hidden={!sidebarOpen}
-              tabIndex={sidebarOpen ? 0 : -1}
-              onClick={() => setSidebarOpen(false)}
-            />
-            <div
-              hidden={workingInSpace}
-              data-space-working={workingInSpace || undefined}
-              data-sidebar-preview-region
-              data-transient={sidebarPreview.open ? "true" : undefined}
-              data-sidebar-context={shownSidebarDestination}
-              className="relative shrink-0"
-            >
-              {!sidebar.isMobile || shownSidebarDestination === "chat" ? (
-                <div
-                  className={shownSidebarDestination === "chat" ? "contents" : "hidden"}
-                  aria-hidden={shownSidebarDestination !== "chat"}
-                  inert={shownSidebarDestination !== "chat"}
-                >
-                  <ChatHistorySidebar
-                    mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
-                    newConversationIcon={<SquarePen className="size-4 shrink-0" />}
-                    onPinPreview={pinSidebarPreview}
-                    previewOpen={sidebarPreview.open && shownSidebarDestination === "chat"}
-                    brand={
-                      <div className="cloud-sidebar-brand">
-                        <GatewayBrand />
-                      </div>
-                    }
-                    navigationContent={({ renderConversation }) => (
-                      <>
-                        <div className="cloud-sidebar-utilities">
-                          <button
-                            type="button"
-                            className="cloud-sidebar-destination"
-                            aria-current={workspaceView === "library" ? "page" : undefined}
-                            onClick={() => openResource("files", true)}
-                          >
-                            <BookOpen className="size-4" />
-                            资料空间
-                          </button>
-                        </div>
-                        {!accountInvalidatedRef.current ? (
-                          <CloudChatProjectNavigation
-                            key={user.id}
-                            client={projectsClient}
-                            captureGuard={captureAccountRequestGuard}
-                            revision={navigationRevision}
-                            onOpen={openProject}
-                            onCreate={() => setProjectCreate({ owner: user.id, open: true })}
-                            renderConversation={renderConversation}
-                            onVisibleConversationsChange={registerProjectRows}
-                            onNewConversation={newProjectConversation}
-                            currentConversationId={workspaceView === "chat" ? conversationId : ""}
-                            activeProjectId={
-                              composerProject.scope === `${user.id}:${conversationId}`
-                                ? composerProject.project?.id
-                                : undefined
-                            }
-                            isOpen={
-                              shownSidebarDestination === "chat" &&
-                              (sidebarOpen || sidebarPreview.open)
-                            }
-                          />
-                        ) : null}
-                      </>
-                    )}
-                    onOpenResourceHub={() => showFileResource({})}
-                    navigationItems={
-                      accountInvalidatedRef.current ? undefined : projectSidebarItems
-                    }
-                    renderConversationMoveMenu={renderConversationMoveMenu}
-                    items={sidebarItems}
-                    currentConversationId={workspaceView === "chat" ? conversationId : ""}
-                    busyConversationIds={conversationMutations}
-                    conversationSearchAdapter={conversationSearchAdapter}
-                    conversationSearchRequestKey={conversationSearchRequest}
-                    runningConversationIds={runningConversationIds}
-                    listStatus={conversationsLoading ? "loading" : "ready"}
-                    scopeKey={`${user.id}:web-chat`}
-                    totalItems={sidebarItems.length}
-                    hasMore={conversationsHasMore}
-                    isLoadingMore={conversationsLoadingMore}
-                    loadMoreMode="scroll"
-                    errorMessage={conversationsError || null}
-                    actionErrorMessage={error || null}
-                    renamingId={renamingId}
-                    renameDraft={renameDraft}
-                    isOpen={
-                      shownSidebarDestination === "chat" && (sidebarOpen || sidebarPreview.open)
-                    }
-                    fontScale={settings.customSettings.fontScale.sidebar}
-                    activeView="chat"
-                    showProjects={false}
-                    recentCollapsed={recentSection.owner === user.id && recentSection.collapsed}
-                    onRecentCollapsedChange={(collapsed) =>
-                      setRecentSection({ owner: user.id, collapsed })
-                    }
-                    showAgentHubs={false}
-                    missingProjectPathKeys={EMPTY_PATHS}
-                    runningProjectPathKeys={EMPTY_PATHS}
-                    onNewConversation={() => navigateConversation()}
-                    onSelectConversation={(id) => navigateConversation(id)}
-                    onStartRenaming={(item) => {
-                      setRenamingId(item.id);
-                      setRenameDraft(item.title);
-                    }}
-                    onRenameDraftChange={setRenameDraft}
-                    onCommitRename={() => void renameConversation()}
-                    onCancelRename={() => {
-                      setRenamingId(null);
-                      setRenameDraft("");
-                    }}
-                    onSetPinned={(id, pinned) => void manageConversation(id, { pinned })}
-                    onSetArchived={(id, archived) => void manageConversation(id, { archived })}
-                    onMoveToWorkspace={() => undefined}
-                    onMoveConversationsToWorkspace={async (ids) => ids}
-                    canShareConversations={false}
-                    sharedConversationCount={0}
-                    onShareConversation={() => undefined}
-                    onOpenSharedConversations={() => undefined}
-                    onDeleteConversation={(id) => void removeConversation(id)}
-                    onDeleteConversations={removeConversations}
-                    onLoadMore={() => void loadMoreConversations()}
-                    footerTrailing={
-                      conversationsError ? (
-                        <button
-                          type="button"
-                          className="text-xs text-destructive"
-                          onClick={() =>
-                            void (conversationsHasMore
-                              ? loadMoreConversations()
-                              : refreshConversations().catch(() => undefined))
-                          }
-                        >
-                          重试会话列表
-                        </button>
-                      ) : undefined
-                    }
-                    onOpenSettings={() => {
-                      setSettingsSection("system");
-                      setAccountSettingsOpen(true);
-                    }}
-                    accountMenu={false}
-                  />
-                </div>
-              ) : null}
-              {shownSidebarDestination !== "chat" ? (
-                <CloudContextSidebar
-                  mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
-                  key={`${user.id}:${shownSidebarDestination}`}
-                  destination={shownSidebarDestination}
-                  preview={sidebarPreview.open}
-                  activeResource={
-                    workspaceView === "library"
-                      ? artifactPanel
-                        ? "artifacts"
-                        : sourcePanel
-                          ? "sources"
-                          : "files"
-                      : undefined
-                  }
-                  files={filesClient}
-                  spaceClient={spaceClient}
-                  spaceLocation={spaceLocation}
-                  onSpaceNewFolder={() => {
-                    navigateSpace(spaceLocation);
-                    setSpaceFolderRequest((old) => old + 1);
-                  }}
-                  spaceRevision={spaceRevision}
-                  onSpaceNavigate={navigateSpace}
-                  onSpaceOpen={openSpaceItem}
-                  onSpaceStorage={() =>
-                    projectNavigation.request(() => {
-                      clearResources();
-                      setSpaceVisited(true);
-                      setWorkspaceView("library");
-                      setSpaceStorageOpen(true);
-                      if (sidebar.isMobile) setSidebarOpen(false);
-                    })
-                  }
-                  environments={environments}
-                  onOpenResource={(resource) => openResource(resource, true)}
-                  onOpenFile={(id) => openResource("files", true, undefined, id)}
-                  onOpenDevices={() => {
-                    sidebarPreview.dismiss();
-                    setSettingsSection("devices");
-                    setAccountSettingsOpen(true);
-                  }}
-                  onPin={pinSidebarPreview}
-                />
-              ) : null}
-            </div>
-            <main
+            {!embeddedWorkbench && (
+              <button
+                type="button"
+                className="gateway-sidebar-backdrop"
+                data-state={sidebarOpen ? "open" : "closed"}
+                aria-label="关闭侧栏"
+                aria-hidden={!sidebarOpen}
+                tabIndex={sidebarOpen ? 0 : -1}
+                onClick={() => setSidebarOpen(false)}
+              />
+            )}
+            {!standaloneWorkspace &&
+              (embeddedAccount
+                ? workbenchActive &&
+                  desktopAccountLayout?.sidebarTarget &&
+                  createPortal(contextSidebar, desktopAccountLayout.sidebarTarget)
+                : contextSidebar)}
+            <CloudConversationMain
+              mount={taskConversationVisible ? taskConversationMount : null}
               className={`${GATEWAY_MAIN_SHELL_CLASS} gateway-cloud-main`}
+              data-scheduled-conversation={scheduledConversation || undefined}
               data-resource-panel-open={
                 workspaceView === "chat" && Boolean(sourcePanel || workPanel)
               }
@@ -4600,7 +4908,7 @@ export function CloudChatPage({
               <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
               <CloudChatResourceWorkbench
                 header={
-                  workingInSpace ? (
+                  scheduledConversation ? undefined : workingInSpace ? (
                     <div className="cloud-space-work-header">
                       <Button
                         variant="ghost"
@@ -4616,7 +4924,8 @@ export function CloudChatPage({
                       </Button>
                       <span>{currentConversation?.title || "与 AI 一起工作"}</span>
                     </div>
-                  ) : workspaceView === "library" && sidebar.isMobile ? (
+                  ) : embeddedAccount && workspaceView === "library" ? undefined : workspaceView ===
+                      "library" && sidebar.isMobile ? (
                     <header className="cloud-space-mobile-header">
                       <Button
                         variant="ghost"
@@ -4697,7 +5006,9 @@ export function CloudChatPage({
                         </>
                       }
                       trailingActions={
-                        workspaceView === "chat" ? (
+                        desktopCloudHost ? (
+                          <span ref={desktopCloudHost.onHeaderTarget} />
+                        ) : workspaceView === "chat" ? (
                           <>
                             {conversationId ? (
                               <CloudConversationBranches
@@ -5101,27 +5412,29 @@ export function CloudChatPage({
                                   ) : undefined
                                 }
                                 contextBar={
-                                  <div
-                                    className="cloud-context-motion"
-                                    data-open={presentation === "work"}
-                                    inert={presentation !== "work"}
-                                    aria-hidden={presentation !== "work"}
-                                  >
-                                    <div className="cloud-context-motion-inner">
-                                      <CloudChatWorkToolbar
-                                        open={composerMenu}
-                                        busy={projectContextBusy}
-                                        disabled={composerLocked}
-                                        projectDisabled={streaming}
-                                        projectName={
-                                          composerProject.scope === `${user.id}:${conversationId}`
-                                            ? composerProject.project?.name
-                                            : undefined
-                                        }
-                                        onOpen={openComposerPicker}
-                                      />
+                                  scheduledConversation ? undefined : (
+                                    <div
+                                      className="cloud-context-motion"
+                                      data-open={presentation === "work"}
+                                      inert={presentation !== "work"}
+                                      aria-hidden={presentation !== "work"}
+                                    >
+                                      <div className="cloud-context-motion-inner">
+                                        <CloudChatWorkToolbar
+                                          open={composerMenu}
+                                          busy={projectContextBusy}
+                                          disabled={composerLocked}
+                                          projectDisabled={streaming}
+                                          projectName={
+                                            composerProject.scope === `${user.id}:${conversationId}`
+                                              ? composerProject.project?.name
+                                              : undefined
+                                          }
+                                          onOpen={openComposerPicker}
+                                        />
+                                      </div>
                                     </div>
-                                  </div>
+                                  )
                                 }
                                 workdir=""
                                 enabledSkills={enabledCloudSkills}
@@ -5395,6 +5708,7 @@ export function CloudChatPage({
                           location={spaceLocation}
                           onNavigate={navigateSpace}
                           onOpen={openSpaceItem}
+                          onHandoff={(source) => setWorkspaceHandoff({ owner: user.id, source })}
                           onReference={referenceSpaceItems}
                           onCreateWork={(text) => {
                             if (composerLocked) return;
@@ -5414,6 +5728,34 @@ export function CloudChatPage({
                               notifyRelaySessionExpired();
                           }}
                         />
+                        {workspaceHandoff?.owner === user.id &&
+                          workbenchActive &&
+                          workspaceView === "library" && (
+                            <WorkspaceHandoffDialog
+                              key={workspaceHandoff.source.target_id}
+                              owner={user.id}
+                              source={workspaceHandoff.source}
+                              targets={desktopCloudHost?.getHandoffEnvironments?.() ?? environments}
+                              onClose={() => setWorkspaceHandoff(undefined)}
+                              read={async (signal) => {
+                                const source = workspaceHandoff.source;
+                                if (source.kind === "file") {
+                                  const file = await filesClient.get(source.target_id, signal);
+                                  const result = await filesClient.download(file, signal);
+                                  result.guard();
+                                  return { blob: result.blob, filename: file.name };
+                                }
+                                const version = await artifactsClient.get(source.target_id, signal);
+                                const result = await artifactsClient.download(version, signal);
+                                result.guard();
+                                return result;
+                              }}
+                              send={
+                                desktopCloudHost?.sendWorkspaceHandoff ??
+                                ((request) => sendBrowserWorkspaceHandoff(request, environments))
+                              }
+                            />
+                          )}
                       </div>
                     ) : null}
                   </>
@@ -5685,19 +6027,26 @@ export function CloudChatPage({
                   </div>
                 </CloudChatResourcePresentation.Provider>
               </CloudChatResourceWorkbench>
-            </main>
+            </CloudConversationMain>
           </WorkbenchCanvas>
 
-          {customize.owner === user.id && customize.visited ? (
+          {(customize.owner === user.id && customize.visited) || previewCustomize ? (
             <WorkbenchCanvas
-              hidden={!customizeOpen}
-              inert={!customizeOpen}
-              className={customizeOpen ? "relative flex min-h-0 min-w-0 flex-1" : "hidden"}
+              mode={
+                embeddedAccount
+                  ? "embedded"
+                  : previewCustomize && !customizeOpen
+                    ? "sidebar-preview"
+                    : "page"
+              }
+              hidden={!customizeOpen && !previewCustomize}
+              inert={!customizeOpen && !previewCustomize}
+              className={!customizeOpen && !previewCustomize ? "hidden" : undefined}
             >
               <Suspense
                 fallback={
                   <div
-                    className="flex flex-1 flex-col gap-5 p-8"
+                    className={`flex flex-1 flex-col gap-5 p-8 ${previewCustomize ? "h-full w-(--sidebar-width) rounded-2xl bg-background shadow-lg" : ""}`}
                     role="status"
                     aria-label="正在加载自定义工作区"
                   >
@@ -5712,7 +6061,29 @@ export function CloudChatPage({
                   adapter={extensionsAdapter}
                   catalog={extensionCatalog}
                   location={extensionLocation}
-                  onNavigate={setExtensionLocation}
+                  onNavigate={(location) => {
+                    if (previewCustomize) {
+                      projectNavigation.request(() => {
+                        leaveTaskConversation();
+                        setScheduleRoute(undefined);
+                        sidebarPreview.dismiss();
+                        setAccountSettingsOpen(false);
+                        setCustomize({ owner: user.id, open: true, visited: true });
+                        setExtensionLocation(location);
+                      });
+                    } else setExtensionLocation(location);
+                  }}
+                  sharedSidebar
+                  sidebarTarget={
+                    desktopAccountLayout
+                      ? workbenchActive && customizeOpen
+                        ? desktopAccountLayout.sidebarTarget
+                        : null
+                      : undefined
+                  }
+                  sidebarOnly={!customizeOpen}
+                  previewOpen={desktopAccountLayout?.sidebarPreview ?? previewCustomize}
+                  onPinSidebar={desktopAccountLayout?.onPinSidebar ?? pinSidebarPreview}
                   loading={extensions.loading}
                   error={extensions.error}
                   onCatalog={(catalog) =>
@@ -5720,6 +6091,10 @@ export function CloudChatPage({
                   }
                   onRefresh={() => setExtensionRefresh((value) => value + 1)}
                   onBack={() => {
+                    if (desktopAccountLayout) {
+                      desktopAccountLayout.onClose();
+                      return;
+                    }
                     setCustomize((value) => ({ ...value, open: false }));
                     if (!sidebar.isMobile) {
                       requestAnimationFrame(() =>
@@ -5729,8 +6104,70 @@ export function CloudChatPage({
                   }}
                   onTry={tryExtension}
                   onConfigureImages={openModelPreferences}
+                  onOpenDeviceSettings={desktopCloudHost?.onOpenDeviceSettings}
                 />
               </Suspense>
+            </WorkbenchCanvas>
+          ) : null}
+          {showTaskWorkspace && (!customizeOpen || previewTasks) ? (
+            <WorkbenchCanvas mode={scheduleRoute ? "page" : "sidebar-preview"}>
+              <CloudScheduleWorkspace
+                key={user.id}
+                owner={user.id}
+                route={scheduleRoute ?? taskPreviewRoute}
+                onNavigate={(next) => {
+                  if (scheduleRoute) setScheduleRoute(next);
+                  else if (next.id) openTaskWorkspace(next);
+                  else setTaskPreviewRoute(next);
+                }}
+                onBack={closeResources}
+                previewOpen={previewTasks}
+                onPinSidebar={pinSidebarPreview}
+                sidebarOnly={!scheduleRoute}
+                hideSidebar={sidebarPreview.open && !previewTasks}
+                onOpenConversation={navigateConversation}
+                onSelectConversation={(selection) => {
+                  taskReturnConversation.current ??= viewRef.current.conversationId;
+                  selectTaskConversation(selection);
+                }}
+                renderConversation={
+                  scheduleRoute
+                    ? (id) => (
+                        <div
+                          key={id}
+                          ref={setTaskConversationMount}
+                          data-conversation-id={id}
+                          className="flex min-h-0 min-w-0 flex-1"
+                          aria-busy={id !== conversationId}
+                        />
+                      )
+                    : undefined
+                }
+                runClient={runsClient}
+                onOpenResultResource={(id, resource) =>
+                  projectNavigation.request(() => {
+                    if (id !== viewRef.current.conversationId) selectTaskConversation({ id });
+                    showTaskResultResource(resource);
+                  })
+                }
+                locale={settings.locale}
+                fontScale={settings.customSettings.fontScale.sidebar}
+                currentModel={{ name: model, model, keyId: providerKeyId }}
+                models={modelOptions.map((option) => ({
+                  name: option.model,
+                  model: option.model,
+                  keyId: relayProviderKeyId(option.providerId),
+                }))}
+                space={spaceClient}
+                projects={projectsClient}
+                mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
+                environments={environments}
+                onOpenDevice={async (environment, taskRoute) => {
+                  const workspace = environment.workspaces[0];
+                  if (workspace)
+                    await (onOpenDeviceTasks ?? onSwitch)(environment, workspace, taskRoute);
+                }}
+              />
             </WorkbenchCanvas>
           ) : null}
           {accountSettingsOpen && !customizeOpen ? (
@@ -5878,13 +6315,15 @@ export function CloudChatPage({
           />
         ) : null}
         {projectNavigation.dialog}
-        <FirstRunOnboarding
-          userId={user.id}
-          onSyncKeys={async (keys, groups) => {
-            const next = await bindRelayKeysToSettings(settings, keys, groups, true);
-            setSettings(() => next);
-          }}
-        />
+        {!desktopCloudHost && (
+          <FirstRunOnboarding
+            userId={user.id}
+            onSyncKeys={async (keys, groups) => {
+              const next = await bindRelayKeysToSettings(settings, keys, groups, true);
+              setSettings(() => next);
+            }}
+          />
+        )}
       </FileDropBoundary>
     </AppErrorBoundary>
   );

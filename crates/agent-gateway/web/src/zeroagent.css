@@ -282,6 +282,9 @@ html[data-zeroagent-platform="android"]
 .cloud-workspace-primary[hidden] {
   display: none;
 }
+[data-scheduled-conversation] .cloud-workspace-chrome:empty {
+  display: none;
+}
 .cloud-resource-workbench[data-reader-open="true"] > .cloud-workspace-primary {
   flex: 0 0 var(--cloud-primary-width, 44%);
 }
@@ -675,6 +678,10 @@ html[data-zeroagent-platform="android"]
 .cloud-chat-shell {
   background: hsl(var(--settings-rail));
 }
+.cloud-chat-shell:is([data-embedded-task], [data-embedded-account]),
+.cloud-chat-shell:is([data-embedded-task], [data-embedded-account]) > .app-workspace-shell {
+  background: hsl(var(--background));
+}
 .cloud-chat-shell .application-rail {
   border-right: 0;
 }
@@ -686,31 +693,6 @@ html[data-zeroagent-platform="android"]
 }
 .cloud-chat-shell .cloud-context-sidebar {
   border-right: 1px solid hsl(var(--border) / 0.5);
-}
-.cloud-chat-shell
-  [data-sidebar-preview-region][data-transient="true"]
-  [data-slot="sidebar-container"] {
-  z-index: 30;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  height: calc(100% - 8px);
-  overflow: hidden;
-  border: 1px solid hsl(var(--border) / 0.6);
-  border-radius: var(--za-radius-floating);
-  background: hsl(var(--background));
-  box-shadow: var(--za-shadow-floating);
-  animation: cloud-sidebar-preview-in 160ms ease-out;
-}
-@keyframes cloud-sidebar-preview-in {
-  from {
-    opacity: 0.4;
-    transform: translateX(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 .application-rail-item[data-previewed="true"] {
   color: hsl(var(--foreground));
@@ -824,11 +806,6 @@ html[data-zeroagent-platform="android"]
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cloud-chat-shell
-    [data-sidebar-preview-region][data-transient="true"]
-    [data-slot="sidebar-container"] {
-    animation: none;
-  }
   .cloud-title-trigger,
   .cloud-title-pencil {
     transition: none;
@@ -839,18 +816,6 @@ html[data-zeroagent-platform="android"]
   inset: 0 auto 0 0;
   z-index: 12;
   width: 10px;
-}
-.cloud-chat-shell [data-slot="sidebar-container"][data-preview="true"] {
-  z-index: 30;
-  top: 10px;
-  bottom: 10px;
-  height: calc(100% - 20px);
-  overflow: hidden;
-  border: 1px solid hsl(var(--border) / 0.7);
-  border-radius: 18px;
-  box-shadow:
-    0 12px 32px #00000018,
-    0 2px 8px #0000000a;
 }
 .cloud-sidebar-utilities {
   padding: 0 12px 10px;

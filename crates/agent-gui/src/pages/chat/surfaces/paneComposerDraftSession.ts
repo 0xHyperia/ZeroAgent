@@ -6,6 +6,7 @@ import type {
 export type PaneComposerDraftController = {
   getDraft(): MentionComposerDraft | null;
   setDraft(draft: MentionComposerDraft): void;
+  clearDraft?(): void;
 };
 
 /**
@@ -30,7 +31,9 @@ export function beginPaneComposerDraftSession(
     // this composer mid-switch, so an empty composer must not delete the draft
     // cached in the registry.
     const nextDraft = composer?.getDraft();
-    if (!nextDraft || nextDraft.isEmpty || !nextDraft.text.trim()) {
+    if (!nextDraft) return;
+    if (nextDraft.isEmpty || !nextDraft.text.trim()) {
+      controller.clearDraft?.();
       return;
     }
     controller.setDraft(nextDraft);

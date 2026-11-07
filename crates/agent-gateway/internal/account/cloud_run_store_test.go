@@ -86,7 +86,7 @@ id UUID PRIMARY KEY,user_id BIGINT NOT NULL,title TEXT NOT NULL DEFAULT '',model
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE zerobox_cloud_messages (id UUID PRIMARY KEY,conversation_id UUID NOT NULL REFERENCES zerobox_cloud_conversations(id) ON DELETE CASCADE,
 user_id BIGINT NOT NULL,role TEXT NOT NULL,content JSONB NOT NULL,usage JSONB NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`
-	if _, err = db.ExecContext(ctx, existingCloudSchema+CloudRunSchema+CloudFileSchema+CloudArtifactSchema+CloudSiteSchema+CloudSpaceSchema); err != nil {
+	if _, err = db.ExecContext(ctx, existingCloudSchema+CloudRunSchema+CloudFileSchema+CloudArtifactSchema+CloudSiteSchema+CloudSpaceSchema+CloudExtensionsSchema); err != nil {
 		t.Fatalf("create test cloud schema: %v", err)
 	}
 	store := &PersistentStore{db: db}

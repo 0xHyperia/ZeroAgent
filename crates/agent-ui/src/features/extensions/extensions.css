@@ -12,6 +12,9 @@
   flex-shrink: 0;
   border-right: 1px solid hsl(var(--border));
 }
+.za-extensions-main[hidden] {
+  display: none;
+}
 .za-extension-nav {
   min-width: 0;
 }
@@ -669,7 +672,8 @@
   .za-extension-starters button > strong {
     display: none;
   }
-  .za-extensions-sidebar-container {
+  .za-extensions-sidebar-container,
+  .za-extensions-shared-sidebar {
     display: none;
   }
   .za-extensions-mobile-nav {

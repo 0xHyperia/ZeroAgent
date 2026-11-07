@@ -211,6 +211,15 @@ func main() {
 			fatal("cloud research startup failed", "err", err)
 		}
 		slog.Info("cloud research configured", "search", search.Status().Enabled, "public_page_fetch", fetchEnabled)
+		if value := strings.TrimSpace(os.Getenv("ZEROAGENT_CLOUD_SCHEDULES_ENABLED")); value != "" {
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				fatal("invalid cloud schedules setting")
+			}
+			if enabled {
+				accountService.EnableCloudSchedules()
+			}
+		}
 		if err := accountService.StartCloudRuns(runContext); err != nil {
 			fatal("cloud task runtime startup failed", "err", err)
 		}

@@ -32,6 +32,7 @@ import {
 type RemoteOpen = { bridgeId: string; selection: ExecutionSelection };
 type RemoteHttp = { status: number; headers: Record<string, string>; bodyBase64: string };
 type HostInput = {
+  initialView?: DesktopRemoteHost["initialView"];
   settings: AppSettings;
   environment: DesktopEnvironment;
   environments: DesktopEnvironment[];
@@ -42,6 +43,8 @@ type HostInput = {
   onWindowControlsTarget?: DesktopRemoteHost["onWindowControlsTarget"];
   onUpdateTarget?: DesktopRemoteHost["onUpdateTarget"];
   settingsNavigation?: DesktopRemoteHost["settingsNavigation"];
+  accountNavigation?: DesktopRemoteHost["accountNavigation"];
+  onAccountSurface?: DesktopRemoteHost["onAccountSurface"];
   onSelectionInvalid: DesktopRemoteHost["onSelectionInvalid"];
 };
 type Dependencies = {
@@ -83,7 +86,7 @@ function objectBody(init?: RequestInit): Record<string, unknown> {
 }
 
 /** Account actions retain the existing Native masking and password-proof boundary. */
-async function desktopAccountRequest(path: string, init?: RequestInit): Promise<Response> {
+export async function desktopAccountRequest(path: string, init?: RequestInit): Promise<Response> {
   const url = new URL(path, "http://account.invalid");
   const method = (init?.method ?? "GET").toUpperCase();
   const body = objectBody(init);
@@ -228,6 +231,9 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
       onWindowControlsTarget: input.onWindowControlsTarget,
       onUpdateTarget: input.onUpdateTarget,
       settingsNavigation: input.settingsNavigation,
+      accountNavigation: input.accountNavigation,
+      onAccountSurface: input.onAccountSurface,
+      initialView: input.initialView,
       onSelectionInvalid: input.onSelectionInvalid,
       logout: async () => {
         requireCurrent();

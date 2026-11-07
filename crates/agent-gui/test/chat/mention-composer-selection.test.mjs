@@ -22,17 +22,20 @@ test("the shared composer restores the last editor selection before external men
     const composer = composerSource(root);
     assert.match(composer, /lastEditorSelectionRef = useRef<Range \| null>\(null\)/);
     assert.match(composer, /document\.addEventListener\("selectionchange", rememberEditorSelection\)/);
-    assert.equal(
-      (composer.match(/focusEditorAtSavedSelection\(\);/g) ?? []).length,
-      7,
-      // file/skill/commit/gitFile/conversation/code 六种外部插入 + beginTransientText。
-      // app 提及只从 @ 弹层进入（selectSuggestion），没有外部插入通道。
-    );
-    const conversationInsertion = composer.slice(
-      composer.indexOf("insertConversationMention:"),
-      composer.indexOf("insertCodeMention:"),
-    );
-    assert.match(conversationInsertion, /focusEditorAtSavedSelection\(\);/);
+    for (const method of [
+      "insertFileMention",
+      "insertSkillMention",
+      "insertCommitMention",
+      "insertGitFileMention",
+      "insertConversationMention",
+      "insertCodeMention",
+      "beginTransientText",
+    ]) {
+      const start = composer.indexOf(`${method}: (`);
+      const end = composer.indexOf("\n        },", start);
+      assert.ok(start >= 0 && end > start, method);
+      assert.match(composer.slice(start, end), /focusEditorAtSavedSelection\(\);/, method);
+    }
   }
 });
 

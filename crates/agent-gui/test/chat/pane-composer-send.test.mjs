@@ -202,8 +202,9 @@ test("background pane bindings route Send by conversationId, not through focusGu
   const paneHost = readSource("../../src/pages/chat/surfaces/ConversationPaneHost.tsx");
   assert.match(paneHost, /createPaneComposerSendHandler/);
   assert.match(paneHost, /hasPendingUploads:\s*\(\)\s*=>\s*controller\.getSnapshot\(\)\.uploads\.length\s*>\s*0/);
-  // Chip removal must name this pane's conversation, not the focused one.
-  assert.match(builder, /removePendingUpload\(relativePath,\s*conversationId\)/);
+  // Chip removal uses the pane's composer scope, which defaults to its own conversation.
+  assert.match(builder, /const composerScopeId = controller\.composerScopeId \?\? conversationId/);
+  assert.match(builder, /removePendingUpload\(relativePath,\s*composerScopeId\)/);
   // Paste must pass an explicit conversation + workdir, not the focused ref.
   assert.doesNotMatch(builder, /onPasteFiles:\s*importReadableFiles\s*,/);
   assert.match(builder, /importReadableFiles\(files,\s*\{/);

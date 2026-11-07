@@ -137,15 +137,7 @@ impl GatewayController {
                 }
             }
             Some(proto::gateway_envelope::Payload::CronManage(request)) => {
-                // Successful apply actions broadcast their own snapshot via the
-                // AutomationStore notifier; no extra refresh is needed here.
-                match gateway_bridge::handle_cron_manage(
-                    self.app_handle.clone(),
-                    Arc::clone(&self.automation_store),
-                    request,
-                )
-                .await
-                {
+                match gateway_bridge::handle_cron_manage(self.app_handle.clone(), request).await {
                     Ok(response) => {
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,
@@ -1139,6 +1131,20 @@ impl GatewayController {
                         .await
                     }
                     Err(error) => self.send_error_response(request_id, 500, error).await,
+                }
+            }
+            Some(proto::gateway_envelope::Payload::WorkspaceHandoff(request)) => {
+                match self.copy_workspace_file(request).await {
+                    Ok(relative_path) => {
+                        self.send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::WorkspaceHandoffResp(
+                                proto::WorkspaceHandoffResponse { relative_path },
+                            )),
+                        }).await
+                    }
+                    Err(error) => self.send_error_response(request_id, 409, error).await,
                 }
             }
             Some(proto::gateway_envelope::Payload::ImportDirectory(request)) => {

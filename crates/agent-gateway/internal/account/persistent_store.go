@@ -260,6 +260,10 @@ func (s *PersistentStore) PutSession(ctx context.Context, session *Session) erro
 	if ttl <= 0 {
 		return ErrNotFound
 	}
+	if session.Purpose == desktopCloudAccessPurpose {
+		keys := []string{sessionKey(session.ID), cloudSessionReferenceKey(cloudSessionReference(session.ID))}
+		return putDesktopCloudAccessScript.Run(ctx, s.rdb, keys, data, session.AccessExpiresAt.Format(time.RFC3339), ttl.Milliseconds()).Err()
+	}
 	return s.rdb.Set(ctx, sessionKey(session.ID), data, ttl).Err()
 }
 

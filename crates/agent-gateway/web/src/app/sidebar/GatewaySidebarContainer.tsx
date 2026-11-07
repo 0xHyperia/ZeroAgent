@@ -352,6 +352,7 @@ export function GatewaySidebarContainer(props: GatewaySidebarContainerProps) {
         onNewConversation={props.onNewRecentConversation ?? props.onNewConversation}
         mobileRail={props.mobileRail}
         previewOpen={props.previewOpen}
+        onPinPreview={props.onPinPreview}
       />
     );
 

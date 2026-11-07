@@ -277,6 +277,37 @@ export function SettingsPage(props: SettingsPageProps) {
       onMobileDetailChange={props.onMobileDetailChange}
       hiddenSections={hiddenSections}
       fontScale={settings.customSettings.fontScale.settings}
+      describeScope={(section) => {
+        const zh = settings.locale === "zh-CN";
+        if (
+          section === "account" ||
+          section === "connections" ||
+          section === "devices" ||
+          (!showLocalRuntimeSettings && section === "providers")
+        )
+          return zh ? "账户" : "Account";
+        if (
+          section === "shortcuts" ||
+          section === "about" ||
+          (!showLocalRuntimeSettings && section === "system")
+        )
+          return zh ? "此客户端" : "This client";
+        if (
+          showLocalRuntimeSettings &&
+          ["skills", "mcp", "cron", "memory", "ssh", "remote", "hooks", "systemTools"].includes(
+            section,
+          )
+        ) {
+          return "runtimeKind" in props && props.runtimeKind === "device_agent"
+            ? zh
+              ? "指定设备"
+              : "Selected device"
+            : zh
+              ? "此电脑"
+              : "This computer";
+        }
+        return undefined;
+      }}
     />
   );
 }

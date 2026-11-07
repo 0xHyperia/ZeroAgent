@@ -137,7 +137,7 @@
   > [data-app-workbench-body] {
     display: contents;
 
-    > [data-slot="sidebar"] {
+    > :is([data-slot="sidebar"], [data-workbench-sidebar-slot]) {
       grid-column: 1;
       grid-row: 1 / -1;
     }

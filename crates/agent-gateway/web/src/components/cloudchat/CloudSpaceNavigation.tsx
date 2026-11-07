@@ -36,6 +36,7 @@ export function CloudSpaceNavigation(props: {
   onOther: (resource: "projects" | "sources") => void;
   onStorage?: () => void;
   onNewFolder?: () => void;
+  reportLoadErrors?: boolean;
 }) {
   const [page, setPage] = useState<CloudSpacePage | null>(null),
     [failed, setFailed] = useState(false),
@@ -149,7 +150,7 @@ export function CloudSpaceNavigation(props: {
           ) : null}
         </div>
       </section>
-      {failed ? (
+      {failed && props.reportLoadErrors !== false ? (
         <button
           type="button"
           className="cloud-sidebar-destination text-muted-foreground"

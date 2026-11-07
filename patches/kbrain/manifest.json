@@ -39,7 +39,23 @@
     {
       "file": "0009-prompt-cache-hint-inheritance.patch",
       "sha256": "163dc6843a3c3f405cc91028522741a0aec1f4e602f853bca7f76cd59df76353"
+    },
+    {
+      "file": "0010-scheduled-run-message-anchor.patch",
+      "sha256": "f872bfedc7b1db6f077b840fcf13a558772786a1ca85216120a15be0d2a3e513"
+    },
+    {
+      "file": "0011-scheduled-session-queue-readiness.patch",
+      "sha256": "893a09e657c01343c91f67378e3dce2f8f1badb370731c14f2d6f57b3d227f8b"
+    },
+    {
+      "file": "0012-scheduled-run-progress.patch",
+      "sha256": "d0201bb90e27145b3e52e41d9ba0dc5593651b2fb9b90860bb9f7f272ef8b27c"
+    },
+    {
+      "file": "0013-scheduled-run-prompt.patch",
+      "sha256": "5eed5bc9e103fc6e358c5acb9de7471770398a7033e32483a6f8741d8f00d8b9"
     }
   ],
-  "status": "local-adaptation; Native credentials, MCP lifecycle, built-in skills, ClawHub and upstream prompt-cache provider/model settings wired through requests"
+  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, and session queue readiness"
 }

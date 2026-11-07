@@ -57,6 +57,10 @@ func TestClientCronManageRoutesSnapshotCancelAndRunHydration(t *testing.T) {
 			_, _ = w.Write([]byte(`{"runs":[{"id":"run-1","taskId":"task/1","state":"leased","startedAt":1}]}`))
 		case "/v1/cron/task/1/cancel", "/v1/cron/task/1/runs/execution/1/cancel":
 			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/v1/cron/task/1/runs/execution/1/anchor":
+			_, _ = w.Write([]byte(`{"sessionId":"session-1","runId":"run-1","messageId":"message-1"}`))
+		case "/v1/cron/task/1/runs/execution/1/progress":
+			_, _ = w.Write([]byte(`{"sessionId":"session-1","runId":"run-1","cursor":21,"text":"visible reply","done":false,"more":false}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -90,6 +94,33 @@ func TestClientCronManageRoutesSnapshotCancelAndRunHydration(t *testing.T) {
 	}
 	if _, err := client.CronManage(context.Background(), "cancel_run", "task/1", `{"executionId":"execution/1"}`); err != nil {
 		t.Fatal(err)
+	}
+	anchor, err := client.CronManage(context.Background(), "run_anchor", "task/1", `{"executionId":"execution/1"}`)
+	if err != nil || !strings.Contains(string(anchor), `"messageId":"message-1"`) {
+		t.Fatalf("anchor=%s err=%v", anchor, err)
+	}
+	if !strings.Contains(strings.Join(paths, "\n"), "GET /v1/cron/task%2F1/runs/execution%2F1/anchor") {
+		t.Fatalf("exact anchor path missing: %v", paths)
+	}
+	for _, payload := range []string{`{}`, `{"executionId":".."}`} {
+		if _, err := client.CronManage(context.Background(), "run_anchor", "task/1", payload); err == nil {
+			t.Fatalf("accepted invalid anchor payload %s", payload)
+		}
+	}
+	progress, err := client.CronManage(context.Background(), "run_progress", "task/1", `{"executionId":"execution/1","cursor":20}`)
+	if err != nil || !strings.Contains(string(progress), `"text":"visible reply"`) {
+		t.Fatalf("progress=%s err=%v", progress, err)
+	}
+	if !strings.Contains(strings.Join(paths, "\n"), "GET /v1/cron/task%2F1/runs/execution%2F1/progress?after=20") {
+		t.Fatalf("exact progress path missing: %v", paths)
+	}
+	for _, payload := range []string{
+		`{"executionId":"..","cursor":0}`, `{"executionId":"execution/1","cursor":-1}`,
+		`{"executionId":"execution/1","cursor":9007199254740992}`,
+	} {
+		if _, err := client.CronManage(context.Background(), "run_progress", "task/1", payload); err == nil {
+			t.Fatalf("accepted invalid progress payload %s", payload)
+		}
 	}
 	if !strings.Contains(strings.Join(paths, "\n"), "POST /v1/cron/task%2F1/runs/execution%2F1/cancel") {
 		t.Fatalf("exact cancel paths=%v", paths)

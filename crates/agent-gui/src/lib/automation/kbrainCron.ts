@@ -1,7 +1,9 @@
 import type {
   AutomationApplyInput,
   CronApplyResponse,
+  CronRunAnchor,
   CronRunNowResponse,
+  CronRunProgress,
   CronRunRecord,
   CronSnapshot,
 } from "@liveagent/ui/lib/automation/types";
@@ -28,6 +30,15 @@ export const listKBrainCronRuns = (taskId: string, limit = 100) =>
   request<{ runs?: CronRunRecord[] }>(
     `/v1/cron/${encodeURIComponent(taskId)}/runs?limit=${encodeURIComponent(String(limit))}`,
   ).then((value) => value.runs ?? []);
+export const readKBrainCronRunAnchor = (taskId: string, executionId: string) =>
+  request<Partial<CronRunAnchor>>(
+    `/v1/cron/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(executionId)}/anchor`,
+  );
+export const readKBrainCronRunProgress = (taskId: string, executionId: string, cursor: number) =>
+  request<CronRunProgress>(
+    `/v1/cron/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(executionId)}/progress?after=${cursor}`,
+    { signal: AbortSignal.timeout(5_000) },
+  );
 export const clearKBrainCronRuns = (taskId: string) =>
   request<{ clearedCount?: number }>(`/v1/cron/${encodeURIComponent(taskId)}/runs`, {
     method: "DELETE",

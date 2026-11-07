@@ -418,6 +418,21 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+function SidebarHeaderRow({
+  children,
+  actions,
+}: {
+  children: React.ReactNode;
+  actions: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-8 min-w-0 items-center justify-between gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
+      <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+    </div>
+  );
+}
+
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -552,6 +567,8 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default: "hover:bg-foreground/5 hover:text-foreground",
+        navigation:
+          "text-foreground/75 hover:bg-settings-tile-hover hover:text-foreground data-active:bg-settings-active data-active:hover:bg-settings-active",
         outline:
           "bg-background shadow-[0_0_0_1px_var(--border)] hover:bg-foreground/5 hover:text-foreground hover:shadow-[0_0_0_1px_var(--accent)]",
       },
@@ -771,6 +788,7 @@ export {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarHeaderRow,
   SidebarInput,
   SidebarInset,
   SidebarMenu,

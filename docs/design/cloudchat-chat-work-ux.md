@@ -12,6 +12,7 @@
 | 插件及管理、技能和包内技能 | `/plugins`、`/plugins/:id`、`/plugins/:id/manage`、`/skills`、`/skills?skill_id=:id`、`/plugins/:id/skills/:name` |
 | 个人扩展编辑器与待审阅草稿 | `/customize/edit/:id`、`/customize/new/:kind`、`/customize/drafts/:id` |
 | 设置总览与分类 | `/settings`、`/settings/:section` |
+| 定时任务列表、任务与运行记录 | `/tasks`、`/tasks/:id`，状态、目标与运行标识使用查询参数 |
 
 筛选和会话内打开的阅读器使用查询参数。地址只包含路由用标识，不写入草稿、正文、凭据或执行租约。同一标签用账户绑定的浏览器历史记录恢复底层会话。冷启动按 URL 打开目标，保持现有加载、无权限与错误状态。旧会话和设置查询链接仍可打开并规范化。公开分享和设备授权沿用各自的入口。
 

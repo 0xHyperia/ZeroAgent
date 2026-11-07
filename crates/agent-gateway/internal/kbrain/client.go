@@ -611,6 +611,24 @@ func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string
 		}
 		path = "/v1/cron/" + url.PathEscape(taskID) + "/runs?limit=" + strconv.Itoa(limit)
 		method = http.MethodGet
+	case "run_anchor", "run_progress":
+		obj, _ := input.(map[string]any)
+		executionID, _ := obj["executionId"].(string)
+		executionID = strings.TrimSpace(executionID)
+		if taskID == "" || taskID == "." || taskID == ".." ||
+			executionID == "" || executionID == "." || executionID == ".." {
+			return nil, fmt.Errorf("cron %s requires valid task_id and executionId", action)
+		}
+		method, path = http.MethodGet, "/v1/cron/"+url.PathEscape(taskID)+"/runs/"+url.PathEscape(executionID)
+		if action == "run_progress" {
+			cursor, ok := obj["cursor"].(float64)
+			if !ok || cursor < 0 || cursor > (1<<53)-1 || float64(int64(cursor)) != cursor {
+				return nil, errors.New("cron run_progress requires a valid cursor")
+			}
+			path += "/progress?after=" + strconv.FormatInt(int64(cursor), 10)
+		} else {
+			path += "/anchor"
+		}
 	case "clear_runs":
 		if taskID == "" {
 			return nil, errors.New("cron clear_runs requires task_id")

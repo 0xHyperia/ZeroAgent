@@ -1,6 +1,20 @@
-import type { DesktopRemoteHost } from "@/lib/desktopRemoteHost";
+import type {
+  DesktopCloudHost,
+  DesktopRemoteHost,
+  DesktopTaskConversation,
+} from "@/lib/desktopRemoteHost";
 
-type Runtime = { mount(container: HTMLElement, host: DesktopRemoteHost): { dispose(): void } };
+type Runtime = {
+  mount(
+    container: HTMLElement,
+    host: DesktopRemoteHost | DesktopCloudHost,
+  ): {
+    dispose(): void;
+    setActive?(active: boolean): void;
+    setAccountLayout?(layout: import("@/lib/desktopRemoteHost").DesktopAccountLayout): void;
+    setTaskConversation?(conversation: DesktopTaskConversation): void;
+  };
+};
 type RuntimeFactory = { createDesktopRemoteRuntime(): Runtime };
 type Manifest = { schemaVersion: number; entry: string; styles: string[]; sha256: string };
 let prepared: Promise<{ factory: RuntimeFactory; styles: string[] }> | undefined;
@@ -62,7 +76,11 @@ export async function attachDesktopRemoteStyles(styles: string[], signal: AbortS
           }),
       ),
     );
-    return dispose;
+    return Object.assign(dispose, {
+      setEnabled(enabled: boolean) {
+        for (const link of links) link.disabled = !enabled;
+      },
+    });
   } catch (error) {
     dispose();
     throw error;

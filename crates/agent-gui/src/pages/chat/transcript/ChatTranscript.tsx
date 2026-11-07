@@ -18,6 +18,7 @@ import { cn } from "@liveagent/ui/lib/shared/utils";
 import { isMacLikePlatform } from "@liveagent/ui/lib/transcript-find/transcriptFind";
 import { createTranscriptFindSource } from "@liveagent/ui/lib/transcript-find/transcriptFindSource";
 import { useTranscriptFind } from "@liveagent/ui/lib/transcript-find/useTranscriptFind";
+import { useTranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { FloorNavRail } from "@liveagent/ui/pages/chat/transcript/FloorNavRail";
 import { TranscriptWidthControls } from "@liveagent/ui/pages/chat/transcript/TranscriptWidthControls";
 import {
@@ -59,8 +60,10 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     historyItems,
     hasMoreHistory,
     onLoadEarlierHistory,
+    messageJump,
     isHistorySwitching,
     isSending,
+    pendingReply,
     showUsage,
     usageContextWindow,
     liveTranscriptStore,
@@ -79,8 +82,8 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     onQuoteSelection,
   } = props;
   const { t } = useLocale();
-  const showNoModelsState = !hasModels;
-  const showStartChatState = hasModels && historyItems.length === 0 && !isSending;
+  const showNoModelsState = !hasModels && !pendingReply;
+  const showStartChatState = hasModels && historyItems.length === 0 && !isSending && !pendingReply;
   const shouldReserveTranscriptBottomSpace = !(showNoModelsState || showStartChatState);
   // The reserve minimum doubles as the scroll-follow reattach zone: stopping
   // anywhere inside the reserve looks like "the bottom" to the user, so the
@@ -143,6 +146,19 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     },
     [scrollFollowHandle],
   );
+  useTranscriptMessageJump({
+    target: messageJump,
+    rowKey: messageJump
+      ? historyItems.find(
+          (item) => item.kind === "user" && item.messageRef?.messageId === messageJump.messageId,
+        )?.key
+      : undefined,
+    historyBoundary: historyItems[0]?.key ?? "",
+    hasMoreHistory,
+    loadEarlier: onLoadEarlierHistory,
+    ready: Boolean(scrollViewport) && !isHistorySwitching,
+    jumpToRow: handleFloorJump,
+  });
 
   // 会话搜索跳转：目标消息在已加载窗口内就滚过去；否则逐页加载更早历史，
   // 直到命中或没有更多历史为止（最多 SEARCH_JUMP_MAX_PAGES 页）。
@@ -332,6 +348,7 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
                 key={conversationId}
                 conversationId={conversationId}
                 historyItems={historyItems}
+                pendingReply={pendingReply}
                 hasMoreHistory={hasMoreHistory}
                 onLoadEarlierHistory={onLoadEarlierHistory}
                 isHistorySwitching={isHistorySwitching}

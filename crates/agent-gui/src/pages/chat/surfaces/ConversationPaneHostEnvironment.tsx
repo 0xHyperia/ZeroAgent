@@ -1,5 +1,6 @@
 import type { ChangedFilesActions } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import type { MentionComposerDraft } from "@liveagent/ui/components/chat/MentionComposer";
+import type { ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import type { CheckpointRewoundInfo } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ProjectRef } from "@liveagent/ui/lib/workbench/types";
 import type { ChatComposerBarProps } from "@liveagent/ui/pages/chat/ChatComposerBar";
@@ -76,6 +77,7 @@ export type ConversationPaneBinding = {
   changedFilesActions: ChangedFilesActions;
   checkpointRewind: ConversationPaneCheckpointRewind;
   isConversationRunning: boolean;
+  scheduledRun?: ScheduledConversationRun;
   fileDrop: ConversationPaneFileDropState;
   /** 轨迹视图（只读分析），按会话实例独立绑定。 */
   trajectory?: ConversationPaneTrajectory;

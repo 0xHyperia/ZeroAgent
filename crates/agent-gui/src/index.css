@@ -10,6 +10,7 @@
 @source "../node_modules/@streamdown/math/dist/*.js";
 @source "../node_modules/@streamdown/mermaid/dist/*.js";
 @source "../../agent-ui/src";
+@source "../../agent-gateway/web/src/components/cloudchat/CloudScheduleWorkspace.tsx";
 
 @font-face {
   font-family: "OpenAI Sans Semibold";

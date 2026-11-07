@@ -182,8 +182,16 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       setSelectedHistoryId(activeConversationId);
     }
     const startedAsDraftConversation = isLocalDraftConversationId(activeConversationId);
-    if (chatCommandPipeline.hasPending(activeConversationId)) return null;
-    clearCachedComposerDraft(activeConversationId);
+    const queuePolicy = sendOptions?.queuePolicy ?? "auto";
+    const hasPendingCommand = chatCommandPipeline.hasPending(activeConversationId);
+    const queueBesidePending =
+      hasPendingCommand &&
+      !startedAsDraftConversation &&
+      !sendOptions?.editMessageRef &&
+      !sendOptions?.waitForStart &&
+      queuePolicy !== "auto";
+    if (hasPendingCommand && !queueBesidePending) return null;
+    if (!sendOptions?.preserveComposerOnStart) clearCachedComposerDraft(activeConversationId);
 
     const clientRequestId = sendOptions?.clientRequestId?.trim() || createUuid();
     const startedAt = Date.now();
@@ -200,7 +208,9 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       conversationWorkdirsRef.current.set(activeConversationId, effectiveWorkdir);
     protectedConversationRef.current = activeConversationId;
     setChatError(null);
-    if (isDisplayedConversation(activeConversationId)) transcriptFollow.stickToBottom();
+    if (!sendOptions?.preserveComposerOnStart && isDisplayedConversation(activeConversationId)) {
+      transcriptFollow.stickToBottom();
+    }
     const turnSelectedModel = selectionForConversation(activeConversationId);
     if (startedAsDraftConversation) {
       draftClientRequestsRef.current.set(clientRequestId, activeConversationId);
@@ -222,6 +232,32 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       selectedModel: turnSelectedModel,
       runtimeControls: sendOptions?.runtimeControls ?? settings.chatRuntimeControls,
     });
+    const submit = async () => {
+      await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
+      return api.chatCommand({
+        type: sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
+        message,
+        conversationId: startedAsDraftConversation ? undefined : activeConversationId,
+        selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
+        systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
+        uploadedFiles,
+        referencedConversations: sendOptions?.referencedConversations,
+        clientRequestId,
+        runtimeControls,
+        baseMessageRef: sendOptions?.editMessageRef,
+        queuePolicy,
+        goalAction: sendOptions?.goalAction,
+        goalText: sendOptions?.goalText,
+        promptCommand: sendOptions?.promptCommand,
+        planCommand: sendOptions?.planCommand,
+      });
+    };
+    if (queueBesidePending) {
+      // Keep the current command's pending entry until its own run starts.
+      const accepted = await submit();
+      refreshChatQueueSnapshot(activeConversationId);
+      return { kind: "accepted", accepted };
+    }
     const outcome = await chatCommandPipeline.submit({
       conversationId: activeConversationId,
       clientRequestId,
@@ -232,26 +268,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       baseMessageRef: sendOptions?.editMessageRef,
       optimistic: sendOptions?.optimisticEcho !== false,
       waitForStart: sendOptions?.waitForStart,
-      submit: async () => {
-        await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
-        return api.chatCommand({
-          type: sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
-          message,
-          conversationId: startedAsDraftConversation ? undefined : activeConversationId,
-          selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
-          systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
-          uploadedFiles,
-          referencedConversations: sendOptions?.referencedConversations,
-          clientRequestId,
-          runtimeControls,
-          baseMessageRef: sendOptions?.editMessageRef,
-          queuePolicy: sendOptions?.queuePolicy ?? "auto",
-          goalAction: sendOptions?.goalAction,
-          goalText: sendOptions?.goalText,
-          promptCommand: sendOptions?.promptCommand,
-          planCommand: sendOptions?.planCommand,
-        });
-      },
+      submit,
     });
     if (outcome.kind === "accepted") {
       const acceptedId = outcome.accepted.conversationId.trim();
@@ -379,26 +396,6 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       if (!materialized.text && materialized.uploadedFiles.length === 0) return false;
       clearCurrentComposerDraftForQueuedTurn(targetConversationId);
       clearedComposer = true;
-      if (chatCommandPipeline.hasPending(targetConversationId)) {
-        await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
-        await api.chatCommand({
-          type: "chat.submit",
-          message: materialized.text,
-          conversationId: targetConversationId,
-          selectedModel: buildGatewaySelectedModel(
-            selectionForConversation(targetConversationId),
-            activeProviders,
-          ),
-          systemSettings: buildGatewaySystemSettings(settings, workdir),
-          uploadedFiles: materialized.uploadedFiles,
-          referencedConversations: materialized.referencedConversations,
-          clientRequestId: createUuid(),
-          runtimeControls: chatRuntimeControlsForCurrentProvider,
-          queuePolicy,
-        });
-        refreshChatQueueSnapshot(targetConversationId);
-        return true;
-      }
       const outcome = await sendChat(materialized.text, {
         conversationId: targetConversationId,
         uploadedFiles: materialized.uploadedFiles,

@@ -478,6 +478,23 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     return request<KBrainSession>(`/v1/sessions/${encodeURIComponent(conversationId)}`, { signal });
   }
 
+  async function isSessionBusy(conversationId: string, signal?: AbortSignal): Promise<boolean> {
+    try {
+      const response = await request<{ busy: boolean }>(
+        `/v1/sessions/${encodeURIComponent(conversationId)}/runs/activity`,
+        { signal },
+      );
+      if (typeof response.busy !== "boolean") {
+        throw new Error("Malformed ZeroAgent engine run activity");
+      }
+      return response.busy;
+    } catch (error) {
+      // Older engines and deleted sessions use the existing run admission guard.
+      if ((error as { status?: number }).status === 404) return false;
+      throw error;
+    }
+  }
+
   async function getHistory(
     conversationId: string,
     params: {
@@ -1037,6 +1054,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     getHealth,
     sessionsExist,
     getSession,
+    isSessionBusy,
     updateSession,
     startRun,
     lookupRun,

@@ -31,6 +31,7 @@ func NewHTTPHandler(service *Service, cookieSecure bool, publicOrigin ...string)
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	h.registerWebChat(mux)
 	h.registerManagedWebKeys(mux)
+	h.registerCloudSchedules(mux)
 	mux.HandleFunc("GET /api/auth/settings", h.publicSettings)
 	mux.HandleFunc("POST /api/auth/send-verify-code", h.sendVerifyCode)
 	mux.HandleFunc("POST /api/auth/register", h.registerAccount)
@@ -319,15 +320,17 @@ func (h *HTTPHandler) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	// Validate the tab's asserted owner before a one-use token can be consumed.
 	// Refresh itself checks current authority; the preliminary lookup grants none.
-	if r.Header.Get("X-ZeroAgent-Account-ID") != "" {
-		identity, err := h.service.SessionForLogout(r.Context(), cookie.Value)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		if !matchesRequestAccount(w, r, identity) {
-			return
-		}
+	identity, err := h.service.SessionForLogout(r.Context(), cookie.Value)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if identity.Purpose == "cloud_schedule" || isDesktopCloudPurpose(identity.Purpose) {
+		writeError(w, &APIError{Status: http.StatusForbidden, Message: "session refresh is unavailable from the browser"})
+		return
+	}
+	if !matchesRequestAccount(w, r, identity) {
+		return
 	}
 	updated, err := h.service.Refresh(r.Context(), cookie.Value)
 	if err != nil {
@@ -366,6 +369,11 @@ func (h *HTTPHandler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request, session *Session) {
+	if session.Purpose == desktopCloudAccessPurpose {
+		w.Header().Set("Cache-Control", "no-store")
+		writeRawObject(w, http.StatusOK, "user", session.User)
+		return
+	}
 	user, err := h.service.RefreshUser(r.Context(), session)
 	if err != nil {
 		writeError(w, err)
@@ -525,8 +533,12 @@ func matchesRequestAccount(w http.ResponseWriter, r *http.Request, session *Sess
 
 func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if desktopCloudRoute(r.Method, r.URL.Path) && r.Header.Get("Authorization") != "" {
+			h.serveDesktopCloud(w, r, next)
+			return
+		}
 		cookie, err := r.Cookie(SessionCookieName)
-		if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		if err != nil || strings.TrimSpace(cookie.Value) == "" || strings.HasPrefix(strings.TrimSpace(cookie.Value), desktopCloudAccessPrefix) {
 			writeError(w, &APIError{Status: http.StatusUnauthorized, Message: "account login required"})
 			return
 		}
@@ -550,19 +562,26 @@ func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 		if !matchesRequestAccount(w, r, session) {
 			return
 		}
+		if session.Purpose == "cloud_schedule" || session.Purpose == desktopCloudExecutionPurpose {
+			writeError(w, sessionMissingError())
+			return
+		}
+		if isDesktopCloudPurpose(session.Purpose) && !desktopCloudRoute(r.Method, r.URL.Path) {
+			writeError(w, &APIError{Status: http.StatusForbidden, Message: "resource unavailable in the desktop cloud workbench"})
+			return
+		}
 		next(w, r, session)
 	}
 }
 
 func (h *HTTPHandler) withDesktopSession(next authenticatedHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		header := strings.TrimSpace(r.Header.Get("Authorization"))
-		parts := strings.SplitN(header, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		token := desktopBearer(r)
+		if token == "" {
 			writeError(w, &APIError{Status: http.StatusUnauthorized, Message: "USA-Zero access token is required"})
 			return
 		}
-		session, err := h.service.DesktopSession(r.Context(), parts[1])
+		session, err := h.service.DesktopSession(r.Context(), token)
 		if err != nil {
 			writeError(w, err)
 			return

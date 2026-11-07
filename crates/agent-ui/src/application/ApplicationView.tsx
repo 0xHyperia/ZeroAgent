@@ -37,6 +37,7 @@ type ApplicationViewProps = {
   chatStyle?: CSSProperties;
   chat: ApplicationChatViewProps;
   workspaceOverlays?: ReactNode;
+  scheduledTasks?: ReactNode;
   /** Lets hub pages jump to another view (e.g. schedule → scheduled tasks). */
   onOpenView?: (view: ApplicationViewId) => void;
 };
@@ -57,6 +58,7 @@ export function ApplicationView(props: ApplicationViewProps) {
     chatStyle,
     chat,
     workspaceOverlays,
+    scheduledTasks,
     onOpenView,
   } = props;
 
@@ -95,6 +97,8 @@ export function ApplicationView(props: ApplicationViewProps) {
     content = (
       <McpHubPage settings={settings} setSettings={setSettings} isAgentMode={isAgentMode} />
     );
+  } else if (activeView === "cron-hub" && scheduledTasks) {
+    content = scheduledTasks;
   } else if (activeView === "memory-hub" || activeView === "cron-hub") {
     content = (
       <ResourceManagementPage

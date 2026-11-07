@@ -4,7 +4,9 @@ import { createWebModuleLoader } from "../../test/helpers/load-web-module.mjs";
 
 const loader = createWebModuleLoader();
 const { ChatCommandPipeline } = loader.loadModule("src/lib/chat/stream/chatCommandPipeline.ts");
+const { createGatewayChatCommandActions } = loader.loadModule("src/app/gatewayChatCommandActions.ts");
 const { sendComposerCommandTurn } = loader.loadModule("src/app/sendComposerCommandTurn.ts");
+const { normalizeSettings } = loader.loadModule("src/lib/settings/index.ts");
 const deferred = () => {
   let resolve;
   return { promise: new Promise(r => { resolve = r; }), resolve: value => resolve(value) };
@@ -40,6 +42,64 @@ test("composer start ignores foreign runs and resolves once on its own run", asy
 
 test("ordinary messages still return immediately and keep their optimistic echo", async () => {
   const f=fixture();assert.equal((await f.pipeline.submit({conversationId:"c",clientRequestId:"req",message:"ordinary",submit:async()=>accepted})).kind,"accepted");assert.equal(f.optimistic.length,1);f.pipeline.reset();
+});
+
+test("a scoped follow-up can join a device queue before the first command starts", async (t) => {
+  const { pipeline, optimistic } = fixture();
+  t.after(() => pipeline.reset());
+  const commands = [];
+  const refreshed = [];
+  const cleared = [];
+  const conversationId = "task-conversation";
+  const { sendChat } = createGatewayChatCommandActions({
+    activeProviders: [],
+    api: {
+      chatCommand: async (command) => {
+        commands.push(command);
+        return { runId: command.clientRequestId, conversationId, acceptedSeq: 0 };
+      },
+    },
+    chatCommandPipeline: pipeline,
+    clearCachedComposerDraft: (id) => cleared.push(id),
+    conversationWorkdirsRef: { current: new Map() },
+    isAgentMode: true,
+    isDisplayedConversation: () => false,
+    isLocalDraftConversationId: () => false,
+    prepareChatRuntime: async () => {},
+    protectedConversationRef: { current: "" },
+    refreshChatQueueSnapshot: (id) => refreshed.push(id),
+    selectionForConversation: () => undefined,
+    sendChatRef: { current: null },
+    setChatError: () => {},
+    settings: normalizeSettings({}),
+    sidebarStore: { peek: () => undefined },
+  });
+  const scope = { conversationId, preserveComposerOnStart: true };
+  await sendChat("first", { ...scope, clientRequestId: "first" });
+  assert.equal(pipeline.hasPending(conversationId), true);
+  assert.equal(await sendChat("duplicate direct submit", scope), null);
+
+  const followup = await sendChat("follow-up", {
+    ...scope,
+    clientRequestId: "second",
+    workdir: "D:/project",
+    queuePolicy: "append",
+    optimisticEcho: false,
+  });
+  assert.equal(followup.kind, "accepted");
+  assert.deepEqual(commands.map(({ conversationId, message, queuePolicy }) => ({
+    conversationId, message, queuePolicy,
+  })), [
+    { conversationId, message: "first", queuePolicy: "auto" },
+    { conversationId, message: "follow-up", queuePolicy: "append" },
+  ]);
+  assert.deepEqual(refreshed, [conversationId]);
+  assert.deepEqual(cleared, []);
+  assert.deepEqual(optimistic.map(({ text }) => text), ["first"]);
+  pipeline.handleRunSignal(conversationId, "second", "second");
+  assert.equal(pipeline.hasPending(conversationId), true);
+  pipeline.handleRunSignal(conversationId, "first", "first");
+  assert.equal(pipeline.hasPending(conversationId), false);
 });
 
 test("a new conversation binds before waiting for its actual start", async () => {

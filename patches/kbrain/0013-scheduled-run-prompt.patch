@@ -1,0 +1,132 @@
+diff --git a/internal/backend/cron_canonical.go b/internal/backend/cron_canonical.go
+index 8ad403c..98a1283 100644
+--- a/internal/backend/cron_canonical.go
++++ b/internal/backend/cron_canonical.go
+@@ -59,6 +59,7 @@ func (s *Server) executeCronPromptCanonical(ctx context.Context, task *CronTask,
+ 	in := protocol.PromptRequest{
+ 		ConversationID:  id,
+ 		ClientRequestID: "cron-" + run.ID,
++		TurnID:          "cron-" + run.ID,
+ 		Prompt:          strings.TrimSpace(task.Prompt),
+ 		Model:           &selected,
+ 		Options: &protocol.RunOptions{
+diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
+index aacb8c8..b69d12f 100644
+--- a/internal/backend/cron_canonical_test.go
++++ b/internal/backend/cron_canonical_test.go
+@@ -300,11 +300,18 @@ func TestCronRunProgressReadsVisibleTextBeforeCancellation(t *testing.T) {
+ 	runs := waitCronRuns(t, server.URL, "progress", func(r []CronRunRecord) bool { return len(r) == 1 && r[0].RunID != "" })
+ 	client.waitUntilEntered(t)
+ 	path := server.URL + "/v1/cron/progress/runs/" + runs[0].ID
++	edit := CronApplyInput{Ops: []CronOperation{{Op: "update", ID: "progress", Patch: map[string]any{"prompt": "different prompt"}}}}
++	if code := doCronJSON(t, server.URL+"/v1/cron", http.MethodPut, edit, nil); code != 200 {
++		t.Fatalf("edit=%d", code)
++	}
+ 	var first cronProgress
+ 	if code := doCronJSON(t, path+"/progress?after=0", http.MethodGet, nil, &first); code != 200 ||
+ 		first.Text != client.preview || first.Done || first.More || first.Cursor <= 0 {
+ 		t.Fatalf("active progress: status=%d response=%+v", code, first)
+ 	}
++	if first.Prompt == nil || first.Prompt.Text != "scheduled prompt" || first.Prompt.MessageID != "cron-"+runs[0].ID {
++		t.Fatalf("active prompt: %+v", first.Prompt)
++	}
+ 	if code := doCronJSON(t, server.URL+"/v1/cron/other/runs/"+runs[0].ID+"/progress?after=0", http.MethodGet, nil, nil); code != 404 {
+ 		t.Fatalf("foreign execution: status=%d", code)
+ 	}
+@@ -314,9 +321,12 @@ func TestCronRunProgressReadsVisibleTextBeforeCancellation(t *testing.T) {
+ 	waitCronRuns(t, server.URL, "progress", func(r []CronRunRecord) bool { return len(r) == 1 && cronRunCancelled(r[0]) })
+ 	var final cronProgress
+ 	if code := doCronJSON(t, path+"/progress?after="+strconv.FormatInt(first.Cursor, 10), http.MethodGet, nil, &final); code != 200 ||
+-		final.Text != "" || !final.Done || final.Cursor <= first.Cursor {
++		final.Text != "" || final.Prompt != nil || !final.Done || final.Cursor <= first.Cursor {
+ 		t.Fatalf("terminal progress: status=%d response=%+v", code, final)
+ 	}
++	if _, err := store.MessageSequence(runs[0].SessionID, first.Prompt.MessageID); err != nil {
++		t.Fatalf("submitted prompt must persist under the same message id: %v", err)
++	}
+ }
+ 
+ func (c *cronPersistenceBlockingClient) waitUntilEntered(t *testing.T) {
+diff --git a/internal/backend/cron_progress.go b/internal/backend/cron_progress.go
+index 627eed3..69f98fb 100644
+--- a/internal/backend/cron_progress.go
++++ b/internal/backend/cron_progress.go
+@@ -13,15 +13,33 @@ import (
+ const maxCronProgressBytes = 64 << 10
+ 
+ type cronProgress struct {
+-	SessionID string `json:"sessionId"`
+-	RunID     string `json:"runId"`
+-	Cursor    int64  `json:"cursor"`
++	SessionID string              `json:"sessionId"`
++	RunID     string              `json:"runId"`
++	Cursor    int64               `json:"cursor"`
++	Text      string              `json:"text"`
++	Done      bool                `json:"done"`
++	More      bool                `json:"more"`
++	Truncated bool                `json:"truncated,omitempty"`
++	Prompt    *cronProgressPrompt `json:"prompt,omitempty"`
++}
++
++type cronProgressPrompt struct {
++	MessageID string `json:"messageId"`
+ 	Text      string `json:"text"`
+-	Done      bool   `json:"done"`
+-	More      bool   `json:"more"`
+ 	Truncated bool   `json:"truncated,omitempty"`
+ }
+ 
++func boundCronProgressText(text string) (string, bool) {
++	if len(text) <= maxCronProgressBytes {
++		return text, false
++	}
++	end := maxCronProgressBytes
++	for !utf8.RuneStart(text[end]) {
++		end--
++	}
++	return text[:end], true
++}
++
+ func (c *cronStore) findExecution(taskID, executionID string) (CronRunRecord, bool) {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+@@ -37,7 +55,8 @@ func (c *cronStore) findExecution(taskID, executionID string) (CronRunRecord, bo
+ }
+ 
+ // Resolve the session and run from the scheduler record. A cursor cannot
+-// select another run, and only parent assistant text can leave this endpoint.
++// select another run. Only the submitted user text and visible parent
++// assistant text can leave this endpoint.
+ func (s *Server) cronRunProgress(w http.ResponseWriter, r *http.Request, taskID, executionID string) {
+ 	w.Header().Set("Cache-Control", "no-store")
+ 	after, err := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+@@ -87,6 +106,16 @@ readEvents:
+ 	for _, event := range events {
+ 		if event.RunID == run.RunID && event.ParentRunID == "" {
+ 			switch event.Type {
++			case protocol.EventUserMessage:
++				var message protocol.Message
++				if err := json.Unmarshal(event.Payload, &message); err != nil {
++					writeJSONError(w, http.StatusInternalServerError, "cannot read cron run prompt")
++					return
++				}
++				if message.ID != "" && message.Role == protocol.RoleUser {
++					prompt, truncated := boundCronProgressText(messageText(message))
++					result.Prompt = &cronProgressPrompt{MessageID: message.ID, Text: prompt, Truncated: truncated}
++				}
+ 			case protocol.EventTextDelta:
+ 				var delta protocol.TextDelta
+ 				if err := json.Unmarshal(event.Payload, &delta); err != nil {
+@@ -97,11 +126,7 @@ readEvents:
+ 					break readEvents
+ 				}
+ 				if len(delta.Text) > maxCronProgressBytes {
+-					end := maxCronProgressBytes
+-					for !utf8.RuneStart(delta.Text[end]) {
+-						end--
+-					}
+-					delta.Text, result.Truncated = delta.Text[:end], true
++					delta.Text, result.Truncated = boundCronProgressText(delta.Text)
+ 				}
+ 				text.WriteString(delta.Text)
+ 			case protocol.EventRunCompleted, protocol.EventRunFailed, protocol.EventRunCancelled:

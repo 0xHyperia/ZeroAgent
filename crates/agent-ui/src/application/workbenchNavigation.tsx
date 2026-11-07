@@ -10,6 +10,7 @@ import {
   NavigationDevices,
   NavigationLibrary,
   NavigationLibraryFilled,
+  Package,
 } from "../components/IconSet";
 import {
   normalizeSidebarShortcuts,
@@ -20,7 +21,7 @@ import type { ApplicationRailItem } from "./ApplicationRail";
 import type { ApplicationViewId } from "./ApplicationView";
 
 const featureIcons = {
-  skills: Blend,
+  skills: Package,
   mcp: Cable,
   cron: Clock3,
   planning: CalendarDays,
@@ -31,9 +32,10 @@ const primaryIcons = {
   chat: NavigationChat,
   library: NavigationLibrary,
   devices: NavigationDevices,
+  customize: Blend,
 };
 const activeIcons = { chat: NavigationChatFilled, library: NavigationLibraryFilled };
-export type WorkbenchNavigationId = ApplicationViewId | "library" | "devices";
+export type WorkbenchNavigationId = ApplicationViewId | "library" | "devices" | "customize";
 
 /** One definition feeds rail and sidebar; visibility preferences never grant capabilities. */
 export function getWorkbenchFeatureNavigation(shortcuts?: SidebarShortcuts) {
@@ -45,14 +47,19 @@ export function getWorkbenchFeatureNavigation(shortcuts?: SidebarShortcuts) {
   }));
 }
 
+export const DEVICE_WORKBENCH_NAVIGATION: readonly ApplicationViewId[] = [
+  "chat",
+  ...getWorkbenchFeatureNavigation().map(({ view }) => view),
+];
+
 export function createWorkbenchNavigationItem(
   id: WorkbenchNavigationId,
   label: string,
   onSelect: () => void,
 ): ApplicationRailItem {
-  if (id === "chat" || id === "library" || id === "devices") {
+  if (id === "chat" || id === "library" || id === "devices" || id === "customize") {
     const Icon = primaryIcons[id];
-    const ActiveIcon = id === "devices" ? undefined : activeIcons[id];
+    const ActiveIcon = id === "chat" || id === "library" ? activeIcons[id] : undefined;
     return {
       id,
       label,

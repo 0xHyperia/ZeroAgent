@@ -76,6 +76,11 @@ macro_rules! app_invoke_handler {
             services::account_session::desktop_remote::account_remote_open,
             services::account_session::desktop_remote::account_remote_http,
             services::account_session::desktop_remote::account_remote_close,
+            services::account_session::desktop_cloud::account_cloud_open,
+            services::account_session::desktop_cloud::account_cloud_fetch,
+            services::account_session::desktop_cloud::account_cloud_read,
+            services::account_session::desktop_cloud::account_cloud_close,
+            services::account_session::desktop_cloud::account_workspace_handoff,
             commands::chat_history::chat_history_list,
             commands::chat_history::chat_history_workdirs,
             commands::chat_history::chat_history_shared_list,
@@ -415,6 +420,7 @@ macro_rules! app_invoke_handler {
                 || command.starts_with("account_gateway_")
                 || command.starts_with("account_device_")
                 || command.starts_with("account_remote_")
+                || command.starts_with("account_cloud_")
                 || command.starts_with("plugin:")
                 || matches!(
                     command,
@@ -456,6 +462,10 @@ fn start_account_session_lifecycle(app: &tauri::AppHandle) {
         .state::<Arc<services::account_session::desktop_remote::RemoteGatewayState>>()
         .inner()
         .clone();
+    let cloud = app
+        .state::<Arc<services::account_session::desktop_cloud::CloudGatewayState>>()
+        .inner()
+        .clone();
     let mut ended = account.subscribe_ended();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -465,6 +475,7 @@ fn start_account_session_lifecycle(app: &tauri::AppHandle) {
                 event=ended.recv()=>{
                     let Ok(event)=event else{continue;};
                     sockets.close_session(&event.handle).await;
+                    cloud.retire(&event.handle);
                     remote.close_session(&account, &event.handle).await;
                     let matched=app.state::<Arc<services::kbrain_backend::KBrainBackendState>>().close_account_session(&event.handle);
                     if matched {
@@ -1054,7 +1065,6 @@ pub(crate) fn start_native_profile_services(app: &tauri::AppHandle) -> Result<()
         Arc::new(runtime::managed_process::ManagedProcessRegistry::open());
     let gateway_controller = Arc::new(services::gateway::GatewayController::new(
         app.clone(),
-        Arc::clone(&automation_store),
         Arc::clone(
             app.state::<Arc<services::provider_usage::ProviderUsageService>>()
                 .inner(),
@@ -1178,6 +1188,9 @@ pub fn run() {
         .manage(Arc::new(
             services::account_session::desktop_remote::RemoteGatewayState::default(),
         ))
+        .manage(Arc::new(
+            services::account_session::desktop_cloud::CloudGatewayState::default(),
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
@@ -1235,6 +1248,11 @@ pub fn run() {
                 return;
             }
             let app = webview.app_handle();
+            if let Some(cloud) =
+                app.try_state::<Arc<services::account_session::desktop_cloud::CloudGatewayState>>()
+            {
+                cloud.start_document();
+            }
             if let Some(ready_state) = app.try_state::<Arc<commands::app::FrontendReadyState>>() {
                 ready_state.0.store(false, Ordering::SeqCst);
             }

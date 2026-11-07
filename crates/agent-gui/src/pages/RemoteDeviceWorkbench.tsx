@@ -16,7 +16,11 @@ import {
 } from "../lib/relay/desktopRemoteRuntime";
 import type { AppSettings } from "../lib/settings";
 
-type Props = {
+type Props = Pick<
+  import("@/lib/desktopRemoteHost").DesktopRemoteHost,
+  "accountNavigation" | "onAccountSurface"
+> & {
+  initialView?: "cron-hub";
   settings: AppSettings;
   environment: DesktopEnvironment;
   environments: DesktopEnvironment[];

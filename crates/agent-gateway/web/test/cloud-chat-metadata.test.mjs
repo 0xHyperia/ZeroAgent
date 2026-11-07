@@ -20,6 +20,20 @@ test("precise turn recovery reads only a bounded projected head with no output o
  for(const response of [{runs:[head({user_message_id:"other"})],output_included:false},{runs:[head(),head()],output_included:false},{runs:[head()],output_included:true},{runs:[head({state:"unknown"})],output_included:false}])await assert.rejects(api.createCloudChatMetadataClient(async()=>Response.json(response),guard).findTurnRun("a","user-a"),/摘要/);
  assert.equal(await api.createCloudChatMetadataClient(async()=>Response.json({runs:[],output_included:false}),guard).findTurnRun("a","user-a"),null);
 });
+test("scheduled turn recovery accepts persisted occurrence request IDs", async () => {
+ const api = load();
+ const requestId = "schedule:6be251ea-4dc3-4a60-98af-4da9a67a746a";
+ const client = (run) => api.createCloudChatMetadataClient(
+  async () => Response.json({ runs: [run], output_included: false }),
+  guard,
+ );
+ assert.equal(
+  (await client(head({ client_request_id: requestId })).findTurnRun("a", "user-a")).client_request_id,
+  requestId,
+ );
+ await assert.rejects(client(head({ client_request_id: "schedule:invalid" })).findTurnRun("a", "user-a"), /标识无效/);
+ await assert.rejects(client(head({ id: requestId })).findTurnRun("a", "user-a"), /标识无效/);
+});
 test("metadata readers enforce streamed byte budgets and retain the captured account guard until JSON completes",async()=>{
  const api=load();let owner=1,release;
  const client=api.createCloudChatMetadataClient(async()=>new Response(new ReadableStream({start(controller){release=()=>{owner=2;controller.enqueue(new TextEncoder().encode(JSON.stringify({conversations:[],has_more:false,next_cursor:""})));controller.close();};}})),()=>{const account=owner;return()=>{if(owner!==account)throw new Error("Account changed");};});

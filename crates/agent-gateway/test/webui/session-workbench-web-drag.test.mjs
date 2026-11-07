@@ -405,14 +405,20 @@ test("workbench never injects the page stage into the focused pane", () => {
 test("every conversation pane keeps a stable host; focus only swaps the primary binding", () => {
   assert.match(hostSource, /isPrimary: boolean/);
   assert.match(hostSource, /pageComposerRef\?/);
-  assert.match(hostSource, /if \(isDraft \|\| isPrimary\) return;/);
+  assert.match(
+    hostSource,
+    /if \(isDraft \|\| isPrimary \|\| !identityReady \|\| streamAlreadySubscribed\) return;/,
+  );
   assert.match(hostSource, /onSend=\{usePrimary && primary \? primary\.onSend : handleSend\}/);
   assert.doesNotMatch(hostSource, /pageComposerRef\.current = null/);
   assert.match(
     hostSource,
     /if \(composerRef\.current\) pageComposerRef\.current = composerRef\.current/,
   );
-  assert.match(hostSource, /if \(!hydrated && !isPrimary && rowCount === 0\)/);
+  assert.match(
+    hostSource,
+    /!showScheduledReply &&\s*\(\(!identityReady && !historyFailed\) \|\| \(!hydrated && !isPrimary && rowCount === 0\)\)/,
+  );
 });
 
 test("pane chrome owns per-conversation trajectory toggle and hides top tabs when split", () => {

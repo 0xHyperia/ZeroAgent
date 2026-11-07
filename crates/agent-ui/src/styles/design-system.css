@@ -255,7 +255,7 @@
   max-width: calc(100vw - 16px);
   padding: 6px;
 }
-.sidebar-context-menu [role="menuitem"] {
+.sidebar-context-menu :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
   min-height: 36px;
   gap: 10px;
   padding: 8px 10px;
@@ -263,15 +263,33 @@
   font-size: calc(14px * var(--zone-font-scale, 1));
   line-height: calc(20px * var(--zone-font-scale, 1));
 }
-.sidebar-context-menu [role="menuitem"] > svg {
+.sidebar-context-menu :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) > svg {
   width: 16px;
   height: 16px;
 }
+@media (max-width: 767px), (pointer: coarse) {
+  .sidebar-context-menu :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
+    min-height: 44px;
+  }
+}
+[data-workbench-account-sidebar] > [data-workbench-account-navigation],
+[data-workbench-account-sidebar] > .za-extensions-shared-sidebar {
+  display: contents;
+}
+[data-app-workbench-body]:has(> [data-workbench-account-sidebar] [data-slot="sidebar"])
+  > [data-workbench-account-fallback] {
+  display: none;
+}
 .app-workspace-shell [data-sidebar-hover-edge] {
   position: absolute;
-  inset: 52px auto 0 56px;
+  inset: 2px auto 0 56px;
   z-index: 12;
   width: 10px;
+}
+[data-workbench-sidebar-slot] {
+  position: relative;
+  min-height: 0;
+  flex: none;
 }
 .app-workspace-shell [data-slot="sidebar-container"][data-preview="true"] {
   z-index: 30;
@@ -309,7 +327,8 @@
   pointer-events: none;
 }
 .app-workspace-shell.app-workbench-layout:has(
-  > [data-app-workbench-body] > [data-slot="sidebar"][data-state="expanded"]
+  > [data-app-workbench-body] > [data-slot="sidebar"][data-state="expanded"],
+  > [data-app-workbench-body] > [data-workbench-sidebar-slot] [data-slot="sidebar"][data-state="expanded"]
 ) {
   --workbench-main-start-radius: 0px;
 }
@@ -341,12 +360,17 @@
     )
   )
   > :where([data-app-workbench-body])
-  > [data-slot="sidebar"] {
+  > :is([data-slot="sidebar"], [data-workbench-sidebar-slot]) {
   grid-column: 2;
 }
 :where(.app-workspace-shell.app-workbench-layout)
   > [data-app-workbench-body]
   > [data-slot="sidebar"][data-state="expanded"]
+  > [data-slot="sidebar-container"],
+:where(.app-workspace-shell.app-workbench-layout)
+  > [data-app-workbench-body]
+  > [data-workbench-sidebar-slot]
+  [data-slot="sidebar"][data-state="expanded"]
   > [data-slot="sidebar-container"] {
   border-radius: var(--za-radius-workbench) 0 0 var(--za-radius-workbench);
   overflow: hidden;
@@ -1066,6 +1090,23 @@
 .conversation-starter:hover {
   border-color: hsl(var(--foreground) / 0.13);
   background: hsl(var(--foreground) / 0.015);
+}
+.conversation-starter[data-layout="inline"] {
+  display: grid;
+  min-height: 96px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-content: center;
+  padding: 16px;
+}
+.conversation-starter[data-layout="inline"] .conversation-starter-top {
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+.conversation-starter[data-layout="inline"] .conversation-starter-description {
+  grid-column: 2;
 }
 .conversation-starter:focus-visible {
   outline: 2px solid hsl(var(--ring));

@@ -1,0 +1,89 @@
+diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
+index 1fb327b..35e7720 100644
+--- a/internal/backend/cron_canonical_test.go
++++ b/internal/backend/cron_canonical_test.go
+@@ -68,6 +68,24 @@ func TestCronCanonicalHistoryEventsRestart(t *testing.T) {
+ 		if len(history.Messages) != 2*(attempt+1) {
+ 			t.Fatalf("history=%+v", history.Messages)
+ 		}
++		for index, run := range runs {
++			endpoint := server.URL + "/v1/cron/durable/runs/" + run.ID + "/anchor"
++			var anchor map[string]string
++			if code := doCronJSON(t, endpoint, http.MethodGet, nil, &anchor); code != http.StatusOK {
++				t.Fatalf("anchor status=%d", code)
++			}
++			want := history.Messages[2*(attempt-index)].ID
++			if anchor["sessionId"] != id || anchor["runId"] != run.RunID || anchor["messageId"] == "" || anchor["messageId"] != want {
++				t.Fatalf("execution %s anchor=%+v, want message %q", run.ID, anchor, want)
++			}
++		}
++		if attempt == 1 {
++			createCronPromptForTest(t, server.URL, root, "unrelated")
++			endpoint := server.URL + "/v1/cron/unrelated/runs/" + runs[0].ID + "/anchor"
++			if code := doCronJSON(t, endpoint, http.MethodGet, nil, nil); code != http.StatusNotFound {
++				t.Fatalf("foreign run anchor status=%d", code)
++			}
++		}
+ 		response, err := http.Get(server.URL + "/v1/sessions/" + id + "/events?after_seq=" + strconv.FormatInt(cursor, 10))
+ 		if err != nil {
+ 			t.Fatal(err)
+diff --git a/internal/backend/cron_handler.go b/internal/backend/cron_handler.go
+index 8930ad9..5c27686 100644
+--- a/internal/backend/cron_handler.go
++++ b/internal/backend/cron_handler.go
+@@ -64,6 +64,13 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+ 			return
+ 		}
+ 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
++	case len(parts) == 4 && parts[1] == "runs" && parts[3] == "anchor" && r.Method == http.MethodGet:
++		executionID, err := url.PathUnescape(parts[2])
++		if err != nil || strings.TrimSpace(executionID) == "" {
++			writeJSONError(w, http.StatusBadRequest, "invalid cron execution id")
++			return
++		}
++		s.cronRunAnchor(w, taskID, executionID)
+ 	case len(parts) == 2 && parts[1] == "runs" && r.Method == http.MethodGet:
+ 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+ 		runs, err := s.cron.store.runs(taskID, limit)
+@@ -91,6 +98,41 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+ 	}
+ }
+ 
++func (s *Server) cronRunAnchor(w http.ResponseWriter, taskID, executionID string) {
++	w.Header().Set("Cache-Control", "no-store")
++	runs, err := s.cron.store.runs(taskID, cronRunLimit)
++	if err != nil {
++		writeJSONError(w, http.StatusNotFound, err.Error())
++		return
++	}
++	for _, run := range runs {
++		if run.ID != executionID {
++			continue
++		}
++		anchor := map[string]string{}
++		if validID(run.SessionID) && run.RunID != "" {
++			records, err := s.loadCheckpoints(run.SessionID)
++			if err != nil {
++				writeJSONError(w, http.StatusInternalServerError, "cannot read run checkpoint")
++				return
++			}
++			for _, record := range records {
++				if record.RunID != run.RunID || record.TurnID == "" {
++					continue
++				}
++				// A rewind or edit can retire a checkpoint's original message.
++				if _, err := s.store.MessageSequence(run.SessionID, record.TurnID); err == nil {
++					anchor = map[string]string{"sessionId": run.SessionID, "runId": run.RunID, "messageId": record.TurnID}
++					break
++				}
++			}
++		}
++		writeJSON(w, http.StatusOK, anchor)
++		return
++	}
++	writeJSONError(w, http.StatusNotFound, "cron execution not found")
++}
++
+ func (s *Server) cronApply(w http.ResponseWriter, r *http.Request) {
+ 	var input CronApplyInput
+ 	if err := decodeCronJSON(w, r, &input); err != nil {

@@ -386,6 +386,7 @@ export type ChatComposerBarProps = {
   /** Host-owned editing/queue action label; stop keeps its own meaning. */
   submitLabel?: string;
   onStop: () => void;
+  stopDisabled?: boolean;
   onPrepareChatRuntime?: () => void;
   onComposerBusyChange: (isBusy: boolean) => void;
   onSelectModel: (selection: SelectedModel) => void;
@@ -512,6 +513,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     onSend,
     submitLabel,
     onStop,
+    stopDisabled = false,
     onPrepareChatRuntime,
     onComposerBusyChange,
     onSelectModel,
@@ -719,7 +721,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         : "Ctrl+Enter"
       : "Enter";
   useEscapeToStopRun({
-    enabled: isSending && !hidden && approvalBar == null,
+    enabled: isSending && !stopDisabled && !hidden && approvalBar == null,
     onStop,
     anchorRef: composerLayerRef,
     composerInputRef: glassCardRef,
@@ -2044,6 +2046,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     title={t("chat.stopGeneration")}
                     aria-label={t("chat.stopGeneration")}
                     onClick={onStop}
+                    disabled={stopDisabled}
                     data-composer-secondary-action="stop"
                     className="shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
@@ -2054,7 +2057,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   data-composer-primary-action={
                     canQueueDraftWhileSending ? "queue" : isSending ? "stop" : "send"
                   }
-                  disabled={isSending ? false : sendDisabled}
+                  disabled={isSending && !canQueueDraftWhileSending ? stopDisabled : sendDisabled}
                   onClick={() => {
                     if (canQueueDraftWhileSending) {
                       handleComposerSend();

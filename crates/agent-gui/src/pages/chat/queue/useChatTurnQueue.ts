@@ -18,6 +18,7 @@ import {
 } from "react";
 import type { LiveTranscriptStore } from "../../../lib/chat/conversation/liveTranscriptStore";
 import { isKBrainBackendEnabled, isTauriHost } from "../../../lib/host";
+import { getKBrainConversationId, getKBrainSessionId } from "../../../lib/kbrain/mapping";
 import {
   type AppSettings,
   type ChatRuntimeControls,
@@ -69,6 +70,7 @@ import {
 // 比发送侧等待后端终止事件的上限（10 秒）稍长。
 const PREVIOUS_RUN_SETTLE_WAIT_MS = 15_000;
 const PREVIOUS_RUN_SETTLE_POLL_MS = 100;
+const BACKEND_QUEUE_RECHECK_MS = 2_000;
 
 type UseChatTurnQueueParams = {
   settings: AppSettings;
@@ -78,6 +80,7 @@ type UseChatTurnQueueParams = {
   conversationRuntimeCacheRef: MutableRefObject<Map<string, ConversationRuntimeEntry>>;
   buildRuntimeEntryFromVisibleState: () => ConversationRuntimeEntry;
   isConversationRunning: (conversationId: string) => boolean;
+  isBackendSessionBusy?: (conversationId: string) => Promise<boolean>;
   runningConversationIds: ReadonlySet<string>;
   getConversationAbortController: (conversationId: string) => AbortController | null;
   setConversationAbortController: (
@@ -126,6 +129,7 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
     conversationRuntimeCacheRef,
     buildRuntimeEntryFromVisibleState,
     isConversationRunning,
+    isBackendSessionBusy,
     runningConversationIds,
     getConversationAbortController,
     setConversationAbortController,
@@ -169,6 +173,19 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
     getQueuedChatTurnsSnapshot,
   );
   const queuedChatProcessingConversationIdsRef = useRef(new Set<string>());
+  const backendQueueTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const queueActive = useRef(true);
+  const processQueuedTurn = useRef(requestQueuedChatTurnProcessing);
+  processQueuedTurn.current = requestQueuedChatTurnProcessing;
+  useEffect(() => {
+    queueActive.current = true;
+    const timers = backendQueueTimers.current;
+    return () => {
+      queueActive.current = false;
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
   const queuedChatStopVersionsRef = useRef(new Map<string, number>());
   // 打断并执行的恢复意图：conversationId → 触发打断那一刻的 stop-request 版本号。
   // stopConversation 会打上 stop-requested 标记，而 drain effect 对该标记一律
@@ -220,11 +237,12 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
     queue: readonly QueuedChatTurn[] = queuedChatTurnsRef.current,
   ): ChatQueueSnapshot {
     const key = conversationId.trim();
+    const localId = getKBrainConversationId(key) ?? key;
     return {
       conversationId: key,
       revision: chatQueueRevisionRef.current,
       items: queue
-        .filter((item) => item.conversationId === key)
+        .filter((item) => item.conversationId === key || item.conversationId === localId)
         .map((item) => ({
           id: item.id,
           previewText: buildQueuedChatTurnPreview(item.draft),
@@ -329,6 +347,8 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
   ) {
     for (const conversationId of conversationIds) {
       publishChatQueueSnapshot(conversationId, queue);
+      const sessionId = getKBrainSessionId(conversationId);
+      if (sessionId && sessionId !== conversationId) publishChatQueueSnapshot(sessionId, queue);
     }
   }
 
@@ -499,6 +519,7 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
    */
   function enqueueComposerTurnForConversation(input: {
     conversationId: string;
+    composerScopeId?: string;
     draft: MentionComposerDraft | null;
     uploadedFiles: PendingUploadedFile[];
     /** 覆盖入队 turn 的运行时控制;缺省取当前 settings 快照。计划批准的续轮
@@ -534,8 +555,12 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
       runtimeControls: input.runtimeControls ?? settings.chatRuntimeControls,
     });
     setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
-    setPendingUploadsForConversation(conversationId, []);
-    clearCachedComposerDraft(conversationId);
+    const composerScopeId = input.composerScopeId ?? conversationId;
+    setPendingUploadsForConversation(composerScopeId, []);
+    clearCachedComposerDraft(composerScopeId);
+    if (!isConversationStopRequested(conversationId)) {
+      requestQueuedChatTurnProcessing(conversationId);
+    }
     return true;
   }
 
@@ -564,7 +589,7 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
 
   function requestQueuedChatTurnProcessing(conversationId: string) {
     const targetConversationId = conversationId.trim();
-    if (!targetConversationId) return;
+    if (!targetConversationId || !queueActive.current) return;
     if (isConversationStopRequested(targetConversationId)) {
       queuedChatProcessingConversationIdsRef.current.delete(targetConversationId);
       const stopRequestVersion = getConversationStopRequestVersion(targetConversationId);
@@ -577,6 +602,9 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
     if (!queuedChatTurnsRef.current.some((item) => item.conversationId === targetConversationId)) {
       return;
     }
+    const rechecks = backendQueueTimers.current;
+    clearTimeout(rechecks.get(targetConversationId));
+    rechecks.delete(targetConversationId);
 
     queuedChatProcessingConversationIdsRef.current.add(targetConversationId);
     const processingState = {
@@ -603,7 +631,29 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
         if (!(await waitForPreviousRunToFinish(targetConversationId, wasStoppedDuringProcessing))) {
           return false;
         }
+        // The scheduler can run independently of the desktop's running set.
+        // Keep the item visible in the queue until the engine admits new work.
+        const backendBusy = await isBackendSessionBusy?.(targetConversationId).catch(() => true);
+        if (
+          !queueActive.current ||
+          wasStoppedDuringProcessing() ||
+          isConversationRunning(targetConversationId)
+        ) {
+          return false;
+        }
         if (isConversationStopRequested(targetConversationId)) return false;
+        if (backendBusy) {
+          rechecks.set(
+            targetConversationId,
+            setTimeout(() => {
+              rechecks.delete(targetConversationId);
+              if (!isConversationStopRequested(targetConversationId)) {
+                processQueuedTurn.current(targetConversationId);
+              }
+            }, BACKEND_QUEUE_RECHECK_MS),
+          );
+          return false;
+        }
         // 等待期间用户可能打开了队首的编辑；和进入处理时一样挡住，提交编辑时会重新触发。
         if (isQueuedChatTurnEditBlockingProcessing(targetConversationId)) return false;
         const taken = takeNextQueuedChatTurn(queuedChatTurnsRef.current, targetConversationId);
@@ -755,18 +805,27 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
   function runQueuedTurnNow(id: string) {
     const queuedTurn = queuedChatTurnsRef.current.find((item) => item.id === id.trim());
     if (!queuedTurn) return;
-    setQueuedChatTurnsState((current) => promoteQueuedChatTurn(current, queuedTurn.id));
-    if (isConversationRunning(queuedTurn.conversationId)) {
-      stopConversation(queuedTurn.conversationId);
+    const conversationId =
+      getKBrainConversationId(queuedTurn.conversationId) ?? queuedTurn.conversationId;
+    setQueuedChatTurnsState((current) =>
+      promoteQueuedChatTurn(
+        conversationId === queuedTurn.conversationId
+          ? current
+          : current.map((item) => (item.id === queuedTurn.id ? { ...item, conversationId } : item)),
+        queuedTurn.id,
+      ),
+    );
+    if (isConversationRunning(conversationId)) {
+      stopConversation(conversationId);
       // 登记恢复意图（须在 stopConversation bump 版本号之后取值），运行结束后
       // drain effect 据此消费 stop 标记并自动发送刚置顶的轮次。
       queuedChatInterruptResumeVersionsRef.current.set(
-        queuedTurn.conversationId,
-        getConversationStopRequestVersion(queuedTurn.conversationId),
+        conversationId,
+        getConversationStopRequestVersion(conversationId),
       );
       return;
     }
-    requestQueuedChatTurnProcessing(queuedTurn.conversationId);
+    requestQueuedChatTurnProcessing(conversationId);
   }
 
   function moveQueuedTurnUp(id: string) {
@@ -842,9 +901,11 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
     );
   }
 
+  const gatewayQueueAdmissionsRef = useRef(new Map<string, Promise<void>>());
   async function enqueueGatewayChatRequest(
     claimed: GatewayChatClaimedRequest,
     conversationId: string,
+    markQueued: () => Promise<void>,
   ) {
     const payload = claimed.request;
     const requestId = payload.requestId.trim();
@@ -901,14 +962,25 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
       },
     });
 
-    setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
-    if (payload.queuePolicy === "interrupt") {
-      // 与本地"打断并执行"共用同一路径：置顶 + 运行中则打断并登记恢复意图；
-      // 空闲则直接触发队列处理（此前空闲时也会打 stop 标记且无人消费，
-      // 导致该轮次永远挂起）。
-      runQueuedTurnNow(queuedTurn.id);
+    const admissions = gatewayQueueAdmissionsRef.current;
+    const previous = admissions.get(targetConversationId) ?? Promise.resolve();
+    const admission = previous.catch(() => undefined).then(async () => {
+      // Confirm the queue lease before an idle processor can start this request.
+      await markQueued();
+      setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
+      if (payload.queuePolicy === "interrupt") {
+        runQueuedTurnNow(queuedTurn.id);
+      } else if (!isConversationStopRequested(targetConversationId)) {
+        requestQueuedChatTurnProcessing(targetConversationId);
+      }
+    });
+    admissions.set(targetConversationId, admission);
+    try {
+      await admission;
+      return true;
+    } finally {
+      if (admissions.get(targetConversationId) === admission) admissions.delete(targetConversationId);
     }
-    return true;
   }
 
   const gatewayChatQueueActionsRef = useRef({
@@ -979,6 +1051,7 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
       const action = request.action?.trim() ?? "";
       const conversationId =
         request.conversationId?.trim() || currentConversationIdRef.current.trim();
+      const localConversationId = getKBrainConversationId(conversationId) ?? conversationId;
       const itemId = request.itemId?.trim() ?? "";
 
       const fail = (message: string, errorCode = "invalid_request") => {
@@ -1157,7 +1230,10 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
       }
 
       const item = queuedChatTurnsRef.current.find(
-        (candidate) => candidate.id === itemId && candidate.conversationId === conversationId,
+        (candidate) =>
+          candidate.id === itemId &&
+          (candidate.conversationId === localConversationId ||
+            candidate.conversationId === conversationId),
       );
 
       if (action === "get_item") {

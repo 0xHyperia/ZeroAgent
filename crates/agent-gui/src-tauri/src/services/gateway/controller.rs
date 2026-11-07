@@ -13,7 +13,6 @@ use crate::commands::settings::{
 use crate::runtime::managed_process::ManagedProcessRegistry;
 use crate::runtime::sftp::SftpSessionRegistry;
 use crate::runtime::terminal::TerminalSessionRegistry;
-use crate::services::automation::AutomationStore;
 use crate::services::chat_run_ledger::ChatRunLedger;
 use crate::services::provider_usage::ProviderUsageService;
 use crate::services::tunnel::{TunnelProxy, TunnelStore};
@@ -54,7 +53,6 @@ fn follow_kbrain_for_images(
 impl GatewayController {
     pub fn new(
         app_handle: tauri::AppHandle,
-        automation_store: Arc<AutomationStore>,
         provider_usage_service: Arc<ProviderUsageService>,
         terminal_registry: Arc<TerminalSessionRegistry>,
         sftp_registry: Arc<SftpSessionRegistry>,
@@ -70,7 +68,6 @@ impl GatewayController {
         follow_kbrain_for_images(&app_handle, &local_gateway);
         Self {
             app_handle,
-            automation_store,
             provider_usage_service,
             terminal_registry,
             sftp_registry,

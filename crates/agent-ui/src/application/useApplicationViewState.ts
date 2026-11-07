@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { ApplicationViewId } from "./ApplicationView";
 
-export function useApplicationViewState<TResourceProject>() {
-  const [activeView, setActiveView] = useState<ApplicationViewId>("chat");
+export function useApplicationViewState<TResourceProject>(initialView: ApplicationViewId = "chat") {
+  const [activeView, setActiveView] = useState(initialView);
   const [projectSettingsProject, setProjectSettingsProject] = useState<TResourceProject | null>(
     null,
   );

@@ -1,11 +1,21 @@
-import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
+import { ApplicationView, type ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
+import {
+  useWorkbenchAccountDestination,
+  useWorkbenchAccountSurface,
+} from "@liveagent/ui/application/useWorkbenchAccountSurface";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchAccountSidebar } from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
 import { WorkbenchBody, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
+import {
+  createWorkbenchNavigationItem,
+  DEVICE_WORKBENCH_NAVIGATION,
+  type WorkbenchNavigationId,
+} from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
@@ -102,6 +112,7 @@ import {
   useWebImageStudioHost,
 } from "@/agent-ui-adapters/imageStudio";
 import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
+import { ConnectedDeviceTasks } from "@/components/cloudchat/ConnectedDeviceTasks";
 import { DesktopHostSlot } from "@/components/DesktopHostSlot";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
@@ -158,7 +169,12 @@ import {
 import { GatewayTerminalPaneHost } from "./workbench/GatewayTerminalPaneHost";
 import { sessionWorkbench } from "./workbench/sessionWorkbench";
 
-const DEVICE_PREVIEW_DESTINATIONS = ["chat"] as const;
+const DESKTOP_ACCOUNT_PREVIEW_DESTINATIONS: readonly WorkbenchNavigationId[] = [
+  ...DEVICE_WORKBENCH_NAVIGATION,
+  "library",
+  "customize",
+];
+
 export function GatewayAppView({
   viewModel,
   imageStudioIdentity,
@@ -418,6 +434,8 @@ export function GatewayAppView({
     statusError,
     submitCurrentComposerToGuiQueue,
     submitInFlightRef,
+    handleConversationStreamEvent,
+    handleConversationStreamSync,
     taskProgressSnapshot,
     terminalClient,
     terminalDisabledMessage,
@@ -469,15 +487,62 @@ export function GatewayAppView({
     workspaceSshTerminalOpenRequest,
   } = viewModel;
   const sidebar = useSidebar();
+  const taskDeviceId = selection?.runtime_kind === "device_agent" ? selection.device_id : undefined;
+  const taskOwner = relayUser?.id;
+  const taskDeviceAuthorization = useRef({ owner: taskOwner, selection });
+  taskDeviceAuthorization.current = { owner: taskOwner, selection };
+  const requireTaskDevice = useCallback(() => {
+    const latest = taskDeviceAuthorization.current;
+    if (
+      !taskOwner ||
+      latest.owner !== taskOwner ||
+      !taskDeviceId ||
+      latest.selection?.runtime_kind !== "device_agent" ||
+      latest.selection.device_id !== taskDeviceId ||
+      !latest.selection.selection_lease ||
+      (latest.selection.expires_at && !(Date.parse(latest.selection.expires_at) > Date.now()))
+    )
+      throw new Error(
+        settings.locale === "zh-CN"
+          ? "设备授权已失效，请重新连接设备。"
+          : "The device authorization expired. Reconnect to the device.",
+      );
+  }, [settings.locale, taskDeviceId, taskOwner]);
+  const showDeviceTasks = activeView === "cron-hub" && !!taskOwner && !!taskDeviceId;
+  const accountNavigation = desktopHost?.accountNavigation;
+  const accountDestination = useWorkbenchAccountDestination(accountNavigation);
+  const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(
     !sidebar.isMobile && !settingsOpen,
     relayUser?.id ?? "device",
     {
       pinnedOpen: sidebar.open,
-      destination: "chat",
-      destinations: DEVICE_PREVIEW_DESTINATIONS,
+      destination: committedDestination,
+      destinations: accountNavigation
+        ? DESKTOP_ACCOUNT_PREVIEW_DESTINATIONS
+        : DEVICE_WORKBENCH_NAVIGATION,
     },
   );
+  const shownSidebar = navigationPreview.open
+    ? navigationPreview.destination
+    : committedDestination;
+  const showAccountSidebar = !!accountDestination && shownSidebar === accountDestination;
+  const accountSidebar =
+    shownSidebar === "library" || shownSidebar === "customize" ? shownSidebar : null;
+  const openAccountTasks = useCallback(() => setActiveView("cron-hub"), [setActiveView]);
+  const accountSurface = useWorkbenchAccountSurface({
+    bind: desktopHost?.onAccountSurface,
+    enabled: !!accountNavigation,
+    sidebarVisible: showAccountSidebar && !sidebar.isMobile,
+    sidebarOpen,
+    sidebarPreview: navigationPreview.open && showAccountSidebar,
+    setSidebarOpen,
+    dismissPreview: navigationPreview.dismiss,
+    close: accountNavigation?.close,
+    openTasks: openAccountTasks,
+  });
+  const showTaskSidebar = shownSidebar === "cron-hub" && !!taskOwner && !!taskDeviceId;
+  const [taskSidebarTarget, setTaskSidebarTarget] = useState<HTMLDivElement | null>(null);
   const sttSettingsService = useMemo<SttSettingsService>(
     () => ({
       runtimeLabel: "设备 WebUI",
@@ -803,6 +868,8 @@ export function GatewayAppView({
     selectionForConversation,
     workdirForConversation,
     isConversationBusy,
+    handleConversationStreamEvent,
+    handleConversationStreamSync,
     sendChat,
     cancelChat,
     materializeComposerDraftForSend,
@@ -1394,25 +1461,111 @@ export function GatewayAppView({
           translate("chat.pendingTitle", settings.locale)}
       </div>
     ) : null;
+  function selectNavigation(
+    view: WorkbenchNavigationId,
+    mobile = false,
+    pin = false,
+    href?: string,
+  ) {
+    if (desktopSettingsTarget && desktopHost?.settingsNavigation?.requestLeave() === false) return;
+    if (settingsOpen && closeSettings() === false) return;
+    navigationPreview.dismiss();
+    if (pin || (!mobile && view === "chat")) setSidebarOpen(true);
+    if (view === "library" || view === "customize") {
+      accountNavigation?.open(href ?? (view === "library" ? "/space" : "/plugins"));
+      if (mobile) setSidebarOpen(false);
+      return;
+    }
+    if (view === "devices") return;
+    accountNavigation?.close();
+    if (view === "chat") setActiveView("chat");
+    else
+      handleSidebarOpenResourceHub(
+        view.replace(/-hub$/, "") as Parameters<typeof handleSidebarOpenResourceHub>[0],
+      );
+    if (mobile) setSidebarOpen(false);
+  }
+
+  const renderConnectedTasks = (sidebarOnly = false) =>
+    taskOwner && taskDeviceId ? (
+      <ConnectedDeviceTasks
+        key={`${taskOwner}:${taskDeviceId}`}
+        owner={taskOwner}
+        deviceId={taskDeviceId}
+        label={
+          environments.find((environment) => environment.device_id === taskDeviceId)?.name ??
+          (settings.locale === "zh-CN" ? "已连接设备" : "Connected device")
+        }
+        settings={settings}
+        sidebarTarget={taskSidebarTarget}
+        sidebarOnly={sidebarOnly}
+        hideSidebar={!showTaskSidebar}
+        previewOpen={navigationPreview.open && showTaskSidebar}
+        onActivate={() => selectNavigation("cron-hub")}
+        onPinSidebar={() => selectNavigation("cron-hub", false, true)}
+        requireCurrent={requireTaskDevice}
+        mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+        onBack={() => setActiveView("chat")}
+        onOpenConversation={(id) => {
+          setActiveView("chat");
+          handleSidebarSelectConversation(id);
+        }}
+        renderConversation={(id, run, messageJump, scheduledRun) => {
+          const composerScopeId = `scheduled-task-result:${taskOwner}:${taskDeviceId}:${id}`;
+          const latestRun = scheduledRun?.run ?? run;
+          return (
+            <GatewayConversationPaneHost
+              key={composerScopeId}
+              paneId="scheduled-task-result"
+              conversationId={id}
+              context={conversationPaneHostContext}
+              isPrimary={false}
+              composerScopeId={composerScopeId}
+              historyVersion={`${latestRun.id}:${latestRun.state}:${scheduledRun?.preview?.done ?? false}`}
+              messageJump={messageJump}
+              scheduledRun={scheduledRun}
+              isStreamAlreadySubscribed={(conversationId) =>
+                conversationId === displayedConversationId ||
+                (workbenchHasMultiplePanes &&
+                  Object.values(workbenchController.workbench.layout.panes).some(
+                    ({ surface }) =>
+                      surface.kind === "conversation" && surface.conversationId === conversationId,
+                  ))
+              }
+              blockedMessage={chatProtocolIncompatibleMessage}
+              onFocusPane={(conversationId) => {
+                setActiveView("chat");
+                handleSidebarSelectConversation(conversationId);
+              }}
+            />
+          );
+        }}
+      />
+    ) : undefined;
+
   const renderNavigationRail = (mobile = false) => (
     <WorkbenchNavigationRail
       brand={<BrandMark />}
-      activeView={activeView}
+      activeView={committedDestination}
+      destinations={
+        accountNavigation
+          ? [
+              createWorkbenchNavigationItem(
+                "library",
+                settings.locale === "zh-CN" ? "资料空间" : "Library",
+                () => selectNavigation("library", mobile),
+              ),
+              createWorkbenchNavigationItem(
+                "customize",
+                settings.locale === "zh-CN" ? "自定义" : "Customize",
+                () => selectNavigation("customize", mobile),
+              ),
+            ]
+          : undefined
+      }
       shortcuts={settings.customSettings.sidebarShortcuts}
-      onSelectView={(view) => {
-        if (desktopSettingsTarget && desktopHost?.settingsNavigation?.requestLeave() === false)
-          return;
-        if (settingsOpen && closeSettings() === false) return;
-        navigationPreview.dismiss();
-        if (view === "chat") {
-          setActiveView("chat");
-          if (!mobile) setSidebarOpen(true);
-        } else
-          handleSidebarOpenResourceHub(
-            view.replace(/-hub$/, "") as Parameters<typeof handleSidebarOpenResourceHub>[0],
-          );
-        if (mobile) setSidebarOpen(false);
-      }}
+      previewId={navigationPreview.open ? navigationPreview.destination : undefined}
+      onSelectView={(view) => selectNavigation(view, mobile)}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
       footer={
         <>
@@ -1498,8 +1651,15 @@ export function GatewayAppView({
               onOpenSidebar={() => setSidebarOpen((open) => !open)}
               leadingActions={
                 <>
-                  {desktopHost && <DesktopHostSlot kind="header" />}
-                  {activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes ? (
+                  {desktopHost &&
+                    !accountDestination &&
+                    (activeView === "chat" || activeView === "cron-hub") && (
+                      <DesktopHostSlot kind="header" />
+                    )}
+                  {!accountDestination &&
+                  activeView === "chat" &&
+                  hasConversationReply &&
+                  !workbenchHasMultiplePanes ? (
                     <ConversationViewTabs
                       active={renderedConversationView}
                       onChange={setActiveConversationView}
@@ -1511,22 +1671,24 @@ export function GatewayAppView({
                 desktopHost && !settingsOpen ? <DesktopHostSlot kind="window" /> : undefined
               }
               trailingActions={
-                <>
-                  <ProjectToolsPanelToggle
-                    isOpen={rightDockOpen}
-                    sessionCount={projectTerminalSessions.length}
-                    disabledMessage={projectToolsDisabledMessage}
-                    className="mr-6px max-520:mr-8px"
-                    onToggle={() => setRightDockOpen((open) => !open)}
-                  />
-                  {!desktopHost && (
-                    <ExecutionEnvironmentSwitcher
-                      environments={environments}
-                      selection={selection}
-                      onSwitch={switchExecutionTarget}
+                !accountDestination && (
+                  <>
+                    <ProjectToolsPanelToggle
+                      isOpen={rightDockOpen}
+                      sessionCount={projectTerminalSessions.length}
+                      disabledMessage={projectToolsDisabledMessage}
+                      className="mr-6px max-520:mr-8px"
+                      onToggle={() => setRightDockOpen((open) => !open)}
                     />
-                  )}
-                </>
+                    {!desktopHost && (
+                      <ExecutionEnvironmentSwitcher
+                        environments={environments}
+                        selection={selection}
+                        onSwitch={switchExecutionTarget}
+                      />
+                    )}
+                  </>
+                )
               }
             />
             <WorkbenchBody>
@@ -1538,90 +1700,135 @@ export function GatewayAppView({
               {!sidebar.isMobile && !sidebar.open ? (
                 <div data-sidebar-hover-edge="" aria-hidden="true" />
               ) : null}
-              <GatewaySidebarContainer
-                mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
-                previewOpen={navigationPreview.open}
-                onPinPreview={() => {
-                  navigationPreview.dismiss();
-                  setSidebarOpen(true);
-                }}
-                accountMenu={false}
-                pinnedOrder={settings.system.sidebarPinnedOrder}
-                onReorderPinned={(sidebarPinnedOrder) =>
-                  setSettings((previous) => ({
-                    ...previous,
-                    system: { ...previous.system, sidebarPinnedOrder },
-                  }))
-                }
-                projectOrder={settings.system.workspaceProjectOrder}
-                onReorderProjects={(workspaceProjectOrder) =>
-                  setSettings((previous) => ({
-                    ...previous,
-                    system: { ...previous.system, workspaceProjectOrder },
-                  }))
-                }
-                store={sidebarStore}
-                approvalConversationIds={approvalConversationIds}
-                transientRunningConversations={manualCompactTransientConversations}
-                currentConversationId={displayedConversationId}
-                isOpen={sidebarOpen}
-                fontScale={settings.customSettings.fontScale.sidebar}
-                activeView={activeView}
-                showProjects={isAgentMode}
-                projects={workspaceProjects}
-                workspaceProjectGroups={settings.system.workspaceProjectGroups}
-                activeProjectId={activeWorkspaceProject?.id ?? ""}
-                missingProjectPathKeys={missingWorkspaceProjectPathKeys}
-                projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
-                workspaceFolderDropActive={workspaceFolderDropActive}
-                workspaceFolderDropHandlers={workspaceFolderDropHandlers}
-                recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
-                canShareConversations={canShareHistory}
-                sharedConversationCount={sharedHistoryItems.length}
-                externalErrorMessage={sidebarActionError}
-                connectionLost={gatewayConnectionLost}
-                sectionsDisabled={sidebarSectionsDisabled}
-                isLocalDraftConversationId={isLocalDraftConversationId}
-                onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
-                onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
-                onCreateProject={handleOpenCreateWorkspaceProject}
-                onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
-                onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
-                onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
-                onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
-                onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
-                onSelectProject={handleSelectWorkspaceProject}
-                onNewConversationForProject={handleNewConversationForProject}
-                onBrowseProjectInFileTree={handleBrowseWorkspaceProjectInFileTree}
-                onConfigureProject={setProjectSettingsProject}
-                onSetProjectPinned={handleSetWorkspaceProjectPinned}
-                onRemoveProject={handleRemoveWorkspaceProject}
-                onArchiveProject={handleArchiveWorkspaceProject}
-                onUnarchiveProject={handleUnarchiveWorkspaceProject}
-                archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
-                onNewConversation={handleSidebarNewConversation}
-                onSelectConversation={handleSidebarSelectConversation}
-                onConversationOpenInWorkbenchSplit={
-                  sessionWorkbench.enabled
-                    ? workbenchController.handleOpenConversationInSplit
-                    : undefined
-                }
-                onConversationWorkbenchDragIntent={
-                  sessionWorkbench.enabled
-                    ? workbenchController.handleConversationDragIntent
-                    : undefined
-                }
-                onProjectWorkbenchDragIntent={
-                  sessionWorkbench.enabled ? workbenchController.handleProjectDragIntent : undefined
-                }
-                onShareConversation={handleOpenShareModal}
-                onOpenSharedConversations={handleOpenSharedHistoryManager}
-                onLocalDraftDeleted={handleSidebarLocalDraftDeleted}
-                onConversationsRemoved={handleSidebarConversationsRemoved}
-                sidebarShortcuts={settings.customSettings.sidebarShortcuts}
-                onOpenSettings={openSettings}
-                onOpenResourceHub={handleSidebarOpenResourceHub}
-              />
+              {!sidebar.isMobile && (showDeviceTasks || showTaskSidebar) && (
+                <div ref={setTaskSidebarTarget} data-workbench-sidebar-slot="" />
+              )}
+              {!showDeviceTasks && showTaskSidebar && renderConnectedTasks(true)}
+              {accountNavigation && !sidebar.isMobile && (
+                <div
+                  ref={accountSurface.setSidebarTarget}
+                  data-workbench-sidebar-slot=""
+                  data-workbench-account-sidebar=""
+                />
+              )}
+              {accountSidebar && (
+                <div
+                  className={sidebar.isMobile ? "contents" : undefined}
+                  data-workbench-sidebar-slot=""
+                  data-workbench-account-fallback={showAccountSidebar || undefined}
+                >
+                  <WorkbenchAccountSidebar
+                    destination={accountSidebar}
+                    previewOpen={navigationPreview.open}
+                    mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+                    fontScale={settings.customSettings.fontScale.sidebar}
+                    onNavigate={(href) =>
+                      selectNavigation(accountSidebar, sidebar.isMobile, false, href)
+                    }
+                    onPin={() => {
+                      if (!showAccountSidebar) selectNavigation(accountSidebar, false, true);
+                      else {
+                        navigationPreview.dismiss();
+                        setSidebarOpen(true);
+                      }
+                    }}
+                  />
+                </div>
+              )}
+              {!showTaskSidebar && !accountSidebar && (!showAccountSidebar || sidebar.isMobile) && (
+                <GatewaySidebarContainer
+                  mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+                  previewOpen={navigationPreview.open}
+                  onPinPreview={() => selectNavigation(shownSidebar, false, true)}
+                  accountMenu={false}
+                  pinnedOrder={settings.system.sidebarPinnedOrder}
+                  onReorderPinned={(sidebarPinnedOrder) =>
+                    setSettings((previous) => ({
+                      ...previous,
+                      system: { ...previous.system, sidebarPinnedOrder },
+                    }))
+                  }
+                  projectOrder={settings.system.workspaceProjectOrder}
+                  onReorderProjects={(workspaceProjectOrder) =>
+                    setSettings((previous) => ({
+                      ...previous,
+                      system: { ...previous.system, workspaceProjectOrder },
+                    }))
+                  }
+                  store={sidebarStore}
+                  approvalConversationIds={approvalConversationIds}
+                  transientRunningConversations={manualCompactTransientConversations}
+                  currentConversationId={displayedConversationId}
+                  isOpen={sidebarOpen}
+                  fontScale={settings.customSettings.fontScale.sidebar}
+                  activeView={shownSidebar as ApplicationViewId}
+                  showProjects={isAgentMode}
+                  projects={workspaceProjects}
+                  workspaceProjectGroups={settings.system.workspaceProjectGroups}
+                  activeProjectId={activeWorkspaceProject?.id ?? ""}
+                  missingProjectPathKeys={missingWorkspaceProjectPathKeys}
+                  projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
+                  workspaceFolderDropActive={workspaceFolderDropActive}
+                  workspaceFolderDropHandlers={workspaceFolderDropHandlers}
+                  recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
+                  canShareConversations={canShareHistory}
+                  sharedConversationCount={sharedHistoryItems.length}
+                  externalErrorMessage={sidebarActionError}
+                  connectionLost={gatewayConnectionLost}
+                  sectionsDisabled={sidebarSectionsDisabled}
+                  isLocalDraftConversationId={isLocalDraftConversationId}
+                  onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
+                  onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
+                  onCreateProject={handleOpenCreateWorkspaceProject}
+                  onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
+                  onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
+                  onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
+                  onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
+                  onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
+                  onSelectProject={handleSelectWorkspaceProject}
+                  onNewConversationForProject={handleNewConversationForProject}
+                  onBrowseProjectInFileTree={handleBrowseWorkspaceProjectInFileTree}
+                  onConfigureProject={setProjectSettingsProject}
+                  onSetProjectPinned={handleSetWorkspaceProjectPinned}
+                  onRemoveProject={handleRemoveWorkspaceProject}
+                  onArchiveProject={handleArchiveWorkspaceProject}
+                  onUnarchiveProject={handleUnarchiveWorkspaceProject}
+                  archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
+                  onNewConversation={() => {
+                    accountNavigation?.close();
+                    handleSidebarNewConversation();
+                  }}
+                  onSelectConversation={(id, options) => {
+                    accountNavigation?.close();
+                    handleSidebarSelectConversation(id, options);
+                  }}
+                  onConversationOpenInWorkbenchSplit={
+                    sessionWorkbench.enabled
+                      ? workbenchController.handleOpenConversationInSplit
+                      : undefined
+                  }
+                  onConversationWorkbenchDragIntent={
+                    sessionWorkbench.enabled
+                      ? workbenchController.handleConversationDragIntent
+                      : undefined
+                  }
+                  onProjectWorkbenchDragIntent={
+                    sessionWorkbench.enabled
+                      ? workbenchController.handleProjectDragIntent
+                      : undefined
+                  }
+                  onShareConversation={handleOpenShareModal}
+                  onOpenSharedConversations={handleOpenSharedHistoryManager}
+                  onLocalDraftDeleted={handleSidebarLocalDraftDeleted}
+                  onConversationsRemoved={handleSidebarConversationsRemoved}
+                  sidebarShortcuts={settings.customSettings.sidebarShortcuts}
+                  onOpenSettings={openSettings}
+                  onOpenResourceHub={(resource) => {
+                    accountNavigation?.close();
+                    handleSidebarOpenResourceHub(resource);
+                  }}
+                />
+              )}
 
               {shareConversation ? (
                 <HistoryShareModal
@@ -1684,14 +1891,31 @@ export function GatewayAppView({
               {confirmDialog}
 
               <WorkspacePanelGroup
-                open={Boolean(terminalClient) && activeView === "chat" && rightDockOpen}
+                open={
+                  !accountDestination &&
+                  Boolean(terminalClient) &&
+                  activeView === "chat" &&
+                  rightDockOpen
+                }
                 width={settings.customSettings.rightDock.width}
                 onWidthChange={handleRightDockWidthChange}
                 onClose={handleRightDockClose}
-                immediate={activeView !== "chat"}
+                immediate={!!accountDestination || activeView !== "chat"}
               >
                 <WorkspaceMainPanel>
-                  <main className={GATEWAY_MAIN_SHELL_CLASS}>
+                  {accountNavigation && (
+                    <div
+                      ref={accountSurface.setTarget}
+                      hidden={!accountDestination}
+                      inert={!accountDestination}
+                      className={accountDestination ? "flex min-h-0 min-w-0 flex-1" : "hidden"}
+                      data-workbench-account-content=""
+                    />
+                  )}
+                  <main
+                    className={accountDestination ? "hidden" : GATEWAY_MAIN_SHELL_CLASS}
+                    inert={!!accountDestination}
+                  >
                     <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
 
                     {activeView === "image-studio-hub" && !imageStudio.host && (
@@ -1723,6 +1947,7 @@ export function GatewayAppView({
                       initialSkills={availableSkills}
                       initialSkillsRootDir={skillsRootDir}
                       onOpenView={setActiveView}
+                      scheduledTasks={showDeviceTasks ? renderConnectedTasks() : undefined}
                       className={
                         activeView === "image-studio-hub" && !imageStudio.host
                           ? "hidden"
@@ -2201,7 +2426,7 @@ export function GatewayAppView({
                 <WorkspaceToolsPanel>
                   {terminalClient ? (
                     <RightDockPanel
-                      isOpen={activeView === "chat" && rightDockOpen}
+                      isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
                       fontScale={settings.customSettings.fontScale.rightDock}
                       projectPathKey={terminalProjectPathKey}
                       cwd={terminalProjectPath}
@@ -2329,6 +2554,7 @@ export function GatewayAppView({
                 }
               >
                 <SettingsPage
+                  runtimeKind="device_agent"
                   onOpenModelPreferences={() => setModelPreferencesOpen(true)}
                   imageClient={imageStudio.host?.client}
                   registerLeaveGuard={viewModel.registerSettingsLeaveGuard}

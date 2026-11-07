@@ -269,6 +269,8 @@ export function useGatewayConversationRuntime({
   return {
     displayedConversationBusy,
     displayedTranscript,
+    handleConversationStreamEvent,
+    handleConversationStreamSync,
     manualCompactPending: manualCompactPendingByConversation.has(displayedConversationId),
     manualCompactTransientConversations: useMemo(
       () => Array.from(manualCompactPendingByConversation.values()),

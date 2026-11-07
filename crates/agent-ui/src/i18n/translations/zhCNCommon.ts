@@ -519,7 +519,7 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.safety.sandboxOfflineDesc": "命令在沙箱内自动运行，只能写入工作区，且不能访问网络",
   "chat.safety.sandboxCapabilityUnknown": "当前执行端尚未报告沙箱能力",
   "chat.safety.sandboxNativeWindows":
-    "Windows 原生 K-brain 暂不支持沙箱。可在 WSL2 中运行 K-brain，或选择「始终询问」。",
+    "Windows 原生环境暂不支持沙箱。可在 WSL2 中运行 ZeroAgent 后端，或选择「始终询问」。",
   "chat.safety.sandboxUnavailable": "ZeroAgent 无法在本机启用沙箱",
   "chat.safety.sandboxOfflineUnavailable": "ZeroAgent 无法在本机断开沙箱网络",
   "chat.safety.cycleShortcut": "{keys} 切换",

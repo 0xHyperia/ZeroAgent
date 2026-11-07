@@ -27,7 +27,7 @@ test("device confirmation uses the shared top-level modal outside header and com
   } };
   const click = (node) => act(async () => node.click());
   const open = async () => {
-    await click(header.querySelector('[aria-label^="切换设备"]'));
+    await click(header.querySelector("button[aria-expanded]"));
     await click([...header.querySelectorAll("button")].find((button) => button.textContent.includes("Remote")));
   };
   const button = (label) => [...document.querySelectorAll('[role="dialog"] button')].find((node) => node.textContent.trim() === label);

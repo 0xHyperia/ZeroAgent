@@ -1,8 +1,11 @@
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft,
   Blend,
   Package as Box,
+  Cable,
   Check,
   ChevronDown,
   ChevronRight,
@@ -33,6 +36,7 @@ import { Input } from "../../components/ui/input";
 import { LabelTooltip } from "../../components/ui/label-tooltip";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import {
+  Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
@@ -42,6 +46,8 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
+  useSidebar,
 } from "../../components/ui/sidebar";
 import {
   SidebarResizeContext,
@@ -104,6 +110,56 @@ function restoredRoute(scope: string): Route {
   }
   return { page: "plugins" };
 }
+function ExtensionsNavigationFrame({
+  shared,
+  title,
+  preview,
+  sidebarLayout,
+  children,
+  target,
+}: {
+  shared?: boolean;
+  title: string;
+  preview?: boolean;
+  sidebarLayout: ReturnType<typeof useSidebarWidthLayout>;
+  children: ReactNode;
+  target?: HTMLElement | null;
+}) {
+  if (shared) {
+    const navigation = (
+      <div className="za-extensions-shared-sidebar relative shrink-0">
+        <Sidebar
+          label={title}
+          previewOpen={preview}
+          className="bg-background"
+          data-sidebar-preview-region=""
+        >
+          {children}
+        </Sidebar>
+      </div>
+    );
+    return target === undefined ? navigation : target && createPortal(navigation, target);
+  }
+  return (
+    <SidebarResizeContext.Provider value={sidebarLayout}>
+      <div className="za-extensions-sidebar-container">
+        {children}
+        <SidebarResizeHandle />
+      </div>
+    </SidebarResizeContext.Provider>
+  );
+}
+
+function ExtensionsSidebarOpener() {
+  const { open, isMobile } = useSidebar();
+  if (open || isMobile) return null;
+  return (
+    <div className="px-3 pt-2">
+      <SidebarTrigger />
+    </div>
+  );
+}
+
 export function ExtensionsWorkspace(props: {
   adapter: ExtensionsAdapter;
   catalog: ExtensionCatalog | null;
@@ -114,14 +170,26 @@ export function ExtensionsWorkspace(props: {
   onBack: () => void;
   onTry: (pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) => void;
   onConfigureImages?: () => void;
+  onOpenDeviceSettings?: (section: "skills" | "mcp") => void;
   openPackage?: { id: string; key: number; draft?: boolean; skillName?: string };
   location?: ExtensionWorkspaceLocation;
   onNavigate?: (location: ExtensionWorkspaceLocation) => void;
+  sharedSidebar?: boolean;
+  /** undefined keeps the browser layout; null leaves sidebar navigation to the host. */
+  sidebarTarget?: HTMLElement | null;
+  sidebarOnly?: boolean;
+  previewOpen?: boolean;
+  onPinSidebar?: () => void;
 }) {
   const { adapter, catalog } = props;
   const { locale } = useLocale();
+  const deviceScope = locale === "en-US" ? "This computer" : "此电脑";
+  const deviceEntries = [
+    { id: "skills", name: locale === "en-US" ? "Skills" : "技能", icon: Box },
+    { id: "mcp", name: locale === "en-US" ? "Connections" : "连接", icon: Cable },
+  ] as const;
   const host = useRef<HTMLDivElement>(null);
-  const sidebarLayout = useSidebarWidthLayout(host, false, 720);
+  const sidebarLayout = useSidebarWidthLayout(host, props.sharedSidebar, 720);
   const [localRoute, setRoute] = useState<Route>(() => restoredRoute(adapter.scope));
   const route = props.location?.route ?? localRoute;
   const [query, setQuery] = useState("");
@@ -450,134 +518,206 @@ export function ExtensionsWorkspace(props: {
       ref={host}
       className="za-extensions-workspace"
       data-testid="extensions-workspace"
-      style={{ "--sidebar-width": `${sidebarLayout.width}px` } as CSSProperties}
+      style={
+        props.sharedSidebar
+          ? undefined
+          : ({ "--sidebar-width": `${sidebarLayout.width}px` } as CSSProperties)
+      }
     >
-      {route.page !== "editor" && (
-        <SidebarResizeContext.Provider value={sidebarLayout}>
-          <div className="za-extensions-sidebar-container">
-            <ScrollArea className="h-full">
-              <aside>
-                <SidebarHeader className="px-3 pb-2 pt-2.5">
-                  <div className="flex h-8 items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      title="返回对话"
-                      aria-label="返回对话"
-                      onClick={props.onBack}
-                    >
-                      <ArrowLeft className="size-4" />
-                    </Button>
-                    <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6">
-                      自定义
-                    </h2>
-                    <Button
-                      ref={installedSearchButton}
-                      variant="ghost"
-                      size="icon-sm"
-                      title="搜索已安装的插件"
-                      aria-label="搜索已安装的插件"
-                      aria-expanded={installedSearchOpen}
-                      onClick={() => {
-                        if (installedSearchOpen) closeInstalledSearch();
-                        else {
-                          setInstalledSearchOpen(true);
-                          requestAnimationFrame(() => installedSearchInput.current?.focus());
+      {(route.page !== "editor" || props.sidebarOnly) && (
+        <ExtensionsNavigationFrame
+          sidebarLayout={sidebarLayout}
+          shared={props.sharedSidebar}
+          target={props.sidebarTarget}
+          title={locale === "en-US" ? "Customize" : "自定义"}
+          preview={props.previewOpen}
+        >
+          <ScrollArea className="h-full">
+            <aside>
+              <SidebarHeader className="px-3 pb-2 pt-2.5">
+                <div className="flex h-8 items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title="返回对话"
+                    aria-label="返回对话"
+                    onClick={props.onBack}
+                  >
+                    <ArrowLeft className="size-4" />
+                  </Button>
+                  <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6">
+                    {locale === "en-US" ? "Customize" : "自定义"}
+                  </h2>
+                  {adapter.scope.startsWith("cloud:") && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {locale === "en-US" ? "Account" : "账户"}
+                    </span>
+                  )}
+                  <Button
+                    ref={installedSearchButton}
+                    variant="ghost"
+                    size="icon-sm"
+                    title="搜索已安装的插件"
+                    aria-label="搜索已安装的插件"
+                    aria-expanded={installedSearchOpen}
+                    onClick={() => {
+                      if (installedSearchOpen) closeInstalledSearch();
+                      else {
+                        setInstalledSearchOpen(true);
+                        requestAnimationFrame(() => installedSearchInput.current?.focus());
+                      }
+                    }}
+                  >
+                    <Search className="size-4" />
+                  </Button>
+                  {props.sharedSidebar && (
+                    <SidebarTrigger
+                      showShortcut={!props.previewOpen}
+                      aria-label={
+                        props.previewOpen
+                          ? locale === "en-US"
+                            ? "Pin sidebar"
+                            : "固定边栏"
+                          : undefined
+                      }
+                      onClick={(event) => {
+                        if (props.previewOpen) {
+                          event.preventDefault();
+                          props.onPinSidebar?.();
                         }
-                      }}
-                    >
-                      <Search className="size-4" />
-                    </Button>
-                  </div>
-                  {installedSearchOpen && (
-                    <Input
-                      ref={installedSearchInput}
-                      className="mt-2 h-8"
-                      type="search"
-                      aria-label="筛选已安装的插件"
-                      placeholder="搜索已安装的插件"
-                      value={installedQuery}
-                      onChange={(event) => setInstalledQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        closeInstalledSearch();
                       }}
                     />
                   )}
-                </SidebarHeader>
-                <SidebarContent className="overflow-visible pb-3">
-                  <SidebarGroup className="px-3">
-                    <nav aria-label="自定义">
-                      <SidebarMenu className="gap-1">
-                        <SidebarMenuItem>
+                </div>
+                {installedSearchOpen && (
+                  <Input
+                    ref={installedSearchInput}
+                    className="mt-2 h-8"
+                    type="search"
+                    aria-label="筛选已安装的插件"
+                    placeholder="搜索已安装的插件"
+                    value={installedQuery}
+                    onChange={(event) => setInstalledQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      closeInstalledSearch();
+                    }}
+                  />
+                )}
+              </SidebarHeader>
+              <SidebarContent className="overflow-visible pb-3">
+                <SidebarGroup className="px-3">
+                  <nav aria-label="自定义">
+                    <SidebarMenu className="gap-1">
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          type="button"
+                          className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
+                          isActive={pluginDirectoryActive}
+                          aria-current={pluginDirectoryActive ? "page" : undefined}
+                          onClick={() => navigate({ page: "plugins" })}
+                        >
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <Blend className="size-4" />
+                          </span>
+                          <span>插件</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          type="button"
+                          className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
+                          isActive={skillDirectoryActive}
+                          aria-current={skillDirectoryActive ? "page" : undefined}
+                          onClick={() => navigate({ page: "skills" })}
+                        >
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <Box className="size-4" />
+                          </span>
+                          <span>技能</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </nav>
+                </SidebarGroup>
+                <SidebarGroup className="mt-4 px-3">
+                  <SidebarGroupLabel className="h-7">已安装</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu className="gap-1">
+                      {installedPlugins.map((item) => (
+                        <SidebarMenuItem key={item.id}>
                           <SidebarMenuButton
                             type="button"
-                            className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
-                            isActive={pluginDirectoryActive}
-                            aria-current={pluginDirectoryActive ? "page" : undefined}
-                            onClick={() => navigate({ page: "plugins" })}
+                            className="za-extension-nav sidebar-list-row min-h-9 rounded-lg pr-8"
+                            isActive={pkg?.id === item.id}
+                            aria-current={pkg?.id === item.id ? "page" : undefined}
+                            onClick={() => navigate({ page: "plugin", id: item.id })}
                           >
-                            <span className="flex size-5 shrink-0 items-center justify-center">
-                              <Blend className="size-4" />
-                            </span>
-                            <span>插件</span>
+                            <ExtensionMark id={item.id} small />
+                            <span className="truncate">{extensionDisplayName(item, locale)}</span>
                           </SidebarMenuButton>
+                          {actionMenu(item, undefined, true)}
                         </SidebarMenuItem>
-                        <SidebarMenuItem>
-                          <SidebarMenuButton
-                            type="button"
-                            className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
-                            isActive={skillDirectoryActive}
-                            aria-current={skillDirectoryActive ? "page" : undefined}
-                            onClick={() => navigate({ page: "skills" })}
-                          >
-                            <span className="flex size-5 shrink-0 items-center justify-center">
-                              <Box className="size-4" />
-                            </span>
-                            <span>技能</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      </SidebarMenu>
-                    </nav>
-                  </SidebarGroup>
+                      ))}
+                    </SidebarMenu>
+                    {installedQuery.trim() && installedPlugins.length === 0 && (
+                      <p className="px-2.5 py-2 text-xs text-muted-foreground" role="status">
+                        没有匹配的已安装插件
+                      </p>
+                    )}
+                  </SidebarGroupContent>
+                </SidebarGroup>
+                {props.onOpenDeviceSettings && (
                   <SidebarGroup className="mt-4 px-3">
-                    <SidebarGroupLabel className="h-7">已安装</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                      <SidebarMenu className="gap-1">
-                        {installedPlugins.map((item) => (
-                          <SidebarMenuItem key={item.id}>
-                            <SidebarMenuButton
-                              type="button"
-                              className="za-extension-nav sidebar-list-row min-h-9 rounded-lg pr-8"
-                              isActive={pkg?.id === item.id}
-                              aria-current={pkg?.id === item.id ? "page" : undefined}
-                              onClick={() => navigate({ page: "plugin", id: item.id })}
-                            >
-                              <ExtensionMark id={item.id} small />
-                              <span className="truncate">{extensionDisplayName(item, locale)}</span>
-                            </SidebarMenuButton>
-                            {actionMenu(item, undefined, true)}
-                          </SidebarMenuItem>
-                        ))}
-                      </SidebarMenu>
-                      {installedQuery.trim() && installedPlugins.length === 0 && (
-                        <p className="px-2.5 py-2 text-xs text-muted-foreground" role="status">
-                          没有匹配的已安装插件
-                        </p>
-                      )}
-                    </SidebarGroupContent>
+                    <SidebarGroupLabel className="h-7">{deviceScope}</SidebarGroupLabel>
+                    <SidebarMenu className="gap-1">
+                      {deviceEntries.map(({ id, name, icon: Icon }) => (
+                        <SidebarMenuItem key={id}>
+                          <SidebarMenuButton
+                            type="button"
+                            className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
+                            onClick={() => props.onOpenDeviceSettings?.(id)}
+                          >
+                            <span className="flex size-5 shrink-0 items-center justify-center">
+                              <Icon className="size-4" />
+                            </span>
+                            <span>{name}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
                   </SidebarGroup>
-                </SidebarContent>
-              </aside>
-            </ScrollArea>
-            <SidebarResizeHandle />
-          </div>
-        </SidebarResizeContext.Provider>
+                )}
+              </SidebarContent>
+            </aside>
+          </ScrollArea>
+        </ExtensionsNavigationFrame>
       )}
-      <div className="za-extensions-main">
+      <div className="za-extensions-main" hidden={props.sidebarOnly} inert={props.sidebarOnly}>
+        {props.sharedSidebar &&
+        props.sidebarTarget === undefined &&
+        !props.sidebarOnly &&
+        route.page !== "editor" ? (
+          <ExtensionsSidebarOpener />
+        ) : null}
         <div className="za-extensions-mobile-nav">
+          {props.onOpenDeviceSettings && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+                {deviceScope}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {deviceEntries.map(({ id, name, icon: Icon }) => (
+                  <DropdownMenuItem key={id} onClick={() => props.onOpenDeviceSettings?.(id)}>
+                    <Icon className="size-4" />
+                    {name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button
             variant="ghost"
             size="icon"

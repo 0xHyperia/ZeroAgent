@@ -34,12 +34,21 @@ export function WorkbenchBody({ className, ...props }: DivProps) {
 }
 
 /** One rounded surface around contextual navigation and its content. */
-export function WorkbenchCanvas({ className, ...props }: DivProps) {
+export function WorkbenchCanvas({
+  mode = "page",
+  className,
+  ...props
+}: DivProps & { mode?: "page" | "embedded" | "sidebar-preview" }) {
   return (
     <div
       {...props}
-      data-workbench-canvas=""
-      className={cn("relative flex min-h-0 min-w-0 flex-1", className)}
+      data-workbench-canvas={mode === "page" ? "" : undefined}
+      className={cn(
+        mode === "sidebar-preview"
+          ? "absolute inset-y-0 left-(--app-rail-width) z-30 flex w-0"
+          : "relative flex min-h-0 min-w-0 flex-1",
+        className,
+      )}
     />
   );
 }

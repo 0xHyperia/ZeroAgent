@@ -38,6 +38,7 @@ export type ConversationControllerActions = {
 
 export type ConversationSurfaceController = {
   readonly conversationId: string;
+  readonly composerScopeId?: string;
   readonly project: ProjectRef;
   getSnapshot(): ConversationSurfaceSnapshot;
   subscribe(listener: () => void): () => void;

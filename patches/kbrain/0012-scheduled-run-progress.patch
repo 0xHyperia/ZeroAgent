@@ -1,0 +1,227 @@
+diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
+index 3e59cf5..aacb8c8 100644
+--- a/internal/backend/cron_canonical_test.go
++++ b/internal/backend/cron_canonical_test.go
+@@ -49,6 +49,13 @@ func TestCronCanonicalHistoryEventsRestart(t *testing.T) {
+ 		if !runs[0].Success || runs[0].Output != "scheduled answer" {
+ 			t.Fatalf("run=%+v", runs[0])
+ 		}
++		var progress cronProgress
++		progressURL := server.URL + "/v1/cron/durable/runs/" + runs[0].ID + "/progress?after=0"
++		if code := doCronJSON(t, progressURL, http.MethodGet, nil, &progress); code != 200 ||
++			progress.RunID != runs[0].RunID || progress.SessionID != runs[0].SessionID ||
++			progress.Text != "scheduled answer" || !progress.Done || progress.More {
++			t.Fatalf("isolated progress: status=%d response=%+v", code, progress)
++		}
+ 		var snapshot CronSnapshot
+ 		if code := doCronJSON(t, server.URL+"/v1/cron", http.MethodGet, nil, &snapshot); code != 200 {
+ 			t.Fatal(code)
+@@ -251,6 +258,7 @@ type cronPersistenceBlockingClient struct {
+ 	*scriptedClient
+ 	entered chan struct{}
+ 	once    sync.Once
++	preview string
+ }
+ 
+ func newCronPersistenceBlockingClient() *cronPersistenceBlockingClient {
+@@ -266,11 +274,51 @@ func (c *cronPersistenceBlockingClient) Stream(ctx context.Context, request ai.R
+ 	c.models = append(c.models, request.Model)
+ 	c.requests = append(c.requests, append([]ai.Message(nil), request.Messages...))
+ 	c.mu.Unlock()
++	if c.preview != "" && onText != nil {
++		onText(c.preview)
++	}
+ 	c.once.Do(func() { close(c.entered) })
+ 	<-ctx.Done()
+ 	return ai.Message{}, ai.Usage{}, ctx.Err()
+ }
+ 
++func TestCronRunProgressReadsVisibleTextBeforeCancellation(t *testing.T) {
++	root := t.TempDir()
++	store, err := session.Open(filepath.Join(root, "sessions"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer store.Close()
++	client := newCronPersistenceBlockingClient()
++	client.preview = "still generating"
++	_, server := newCronPersistenceFailureServer(t, store, filepath.Join(root, "events"), client)
++	createCronPromptForTest(t, server.URL, root, "progress")
++	createCronPromptForTest(t, server.URL, root, "other")
++	if code := doCronJSON(t, server.URL+"/v1/cron/progress/run-now", http.MethodPost, nil, nil); code != 202 {
++		t.Fatal(code)
++	}
++	runs := waitCronRuns(t, server.URL, "progress", func(r []CronRunRecord) bool { return len(r) == 1 && r[0].RunID != "" })
++	client.waitUntilEntered(t)
++	path := server.URL + "/v1/cron/progress/runs/" + runs[0].ID
++	var first cronProgress
++	if code := doCronJSON(t, path+"/progress?after=0", http.MethodGet, nil, &first); code != 200 ||
++		first.Text != client.preview || first.Done || first.More || first.Cursor <= 0 {
++		t.Fatalf("active progress: status=%d response=%+v", code, first)
++	}
++	if code := doCronJSON(t, server.URL+"/v1/cron/other/runs/"+runs[0].ID+"/progress?after=0", http.MethodGet, nil, nil); code != 404 {
++		t.Fatalf("foreign execution: status=%d", code)
++	}
++	if code := doCronJSON(t, path+"/cancel", http.MethodPost, nil, nil); code != 200 {
++		t.Fatal(code)
++	}
++	waitCronRuns(t, server.URL, "progress", func(r []CronRunRecord) bool { return len(r) == 1 && cronRunCancelled(r[0]) })
++	var final cronProgress
++	if code := doCronJSON(t, path+"/progress?after="+strconv.FormatInt(first.Cursor, 10), http.MethodGet, nil, &final); code != 200 ||
++		final.Text != "" || !final.Done || final.Cursor <= first.Cursor {
++		t.Fatalf("terminal progress: status=%d response=%+v", code, final)
++	}
++}
++
+ func (c *cronPersistenceBlockingClient) waitUntilEntered(t *testing.T) {
+ 	t.Helper()
+ 	select {
+diff --git a/internal/backend/cron_handler.go b/internal/backend/cron_handler.go
+index 5c27686..62433de 100644
+--- a/internal/backend/cron_handler.go
++++ b/internal/backend/cron_handler.go
+@@ -64,13 +64,17 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+ 			return
+ 		}
+ 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+-	case len(parts) == 4 && parts[1] == "runs" && parts[3] == "anchor" && r.Method == http.MethodGet:
++	case len(parts) == 4 && parts[1] == "runs" && (parts[3] == "anchor" || parts[3] == "progress") && r.Method == http.MethodGet:
+ 		executionID, err := url.PathUnescape(parts[2])
+ 		if err != nil || strings.TrimSpace(executionID) == "" {
+ 			writeJSONError(w, http.StatusBadRequest, "invalid cron execution id")
+ 			return
+ 		}
+-		s.cronRunAnchor(w, taskID, executionID)
++		if parts[3] == "progress" {
++			s.cronRunProgress(w, r, taskID, executionID)
++		} else {
++			s.cronRunAnchor(w, taskID, executionID)
++		}
+ 	case len(parts) == 2 && parts[1] == "runs" && r.Method == http.MethodGet:
+ 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+ 		runs, err := s.cron.store.runs(taskID, limit)
+diff --git a/internal/backend/cron_progress.go b/internal/backend/cron_progress.go
+new file mode 100644
+index 0000000..627eed3
+--- /dev/null
++++ b/internal/backend/cron_progress.go
+@@ -0,0 +1,119 @@
++package backend
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++	"strings"
++	"unicode/utf8"
++
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++)
++
++const maxCronProgressBytes = 64 << 10
++
++type cronProgress struct {
++	SessionID string `json:"sessionId"`
++	RunID     string `json:"runId"`
++	Cursor    int64  `json:"cursor"`
++	Text      string `json:"text"`
++	Done      bool   `json:"done"`
++	More      bool   `json:"more"`
++	Truncated bool   `json:"truncated,omitempty"`
++}
++
++func (c *cronStore) findExecution(taskID, executionID string) (CronRunRecord, bool) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	if c.task(taskID) != nil {
++		for i := len(c.disk.Runs) - 1; i >= 0; i-- {
++			run := c.disk.Runs[i]
++			if run.TaskID == taskID && run.ID == executionID {
++				return run, true
++			}
++		}
++	}
++	return CronRunRecord{}, false
++}
++
++// Resolve the session and run from the scheduler record. A cursor cannot
++// select another run, and only parent assistant text can leave this endpoint.
++func (s *Server) cronRunProgress(w http.ResponseWriter, r *http.Request, taskID, executionID string) {
++	w.Header().Set("Cache-Control", "no-store")
++	after, err := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
++	if err != nil || after < 0 {
++		writeJSONError(w, http.StatusBadRequest, "invalid progress cursor")
++		return
++	}
++	run, ok := s.cron.store.findExecution(taskID, executionID)
++	if !ok || !validID(run.SessionID) || run.RunID == "" {
++		writeJSONError(w, http.StatusNotFound, "cron execution has no conversation")
++		return
++	}
++	rt, err := s.historyRuntime(run.SessionID)
++	if err != nil {
++		mutationError(w, err)
++		return
++	}
++	defer s.releaseRuntime(rt)
++	rt.mu.Lock()
++	var accepted int64
++	for _, record := range rt.runs {
++		if record.RunID == run.RunID {
++			accepted = record.AcceptedSeq
++			break
++		}
++	}
++	if rt.deleted || accepted == 0 {
++		rt.mu.Unlock()
++		writeJSONError(w, http.StatusNotFound, "cron conversation run not found")
++		return
++	}
++	if after > rt.nextSeq {
++		rt.mu.Unlock()
++		writeJSONError(w, http.StatusBadRequest, "progress cursor is beyond the journal")
++		return
++	}
++	result := cronProgress{SessionID: run.SessionID, RunID: run.RunID, Cursor: max(after, accepted)}
++	events, err := rt.eventsAfterLocked(result.Cursor)
++	head := rt.nextSeq
++	rt.mu.Unlock()
++	if err != nil {
++		writeJSONError(w, http.StatusInternalServerError, "cannot read cron run progress")
++		return
++	}
++	var text strings.Builder
++readEvents:
++	for _, event := range events {
++		if event.RunID == run.RunID && event.ParentRunID == "" {
++			switch event.Type {
++			case protocol.EventTextDelta:
++				var delta protocol.TextDelta
++				if err := json.Unmarshal(event.Payload, &delta); err != nil {
++					writeJSONError(w, http.StatusInternalServerError, "cannot read cron run text")
++					return
++				}
++				if text.Len() > 0 && len(delta.Text) > maxCronProgressBytes-text.Len() {
++					break readEvents
++				}
++				if len(delta.Text) > maxCronProgressBytes {
++					end := maxCronProgressBytes
++					for !utf8.RuneStart(delta.Text[end]) {
++						end--
++					}
++					delta.Text, result.Truncated = delta.Text[:end], true
++				}
++				text.WriteString(delta.Text)
++			case protocol.EventRunCompleted, protocol.EventRunFailed, protocol.EventRunCancelled:
++				result.Cursor, result.Done = event.Seq, true
++				break readEvents
++			}
++		}
++		result.Cursor = event.Seq
++	}
++
++	result.Text = text.String()
++	result.More = !result.Done && result.Cursor < head
++	result.Done = result.Done || (!result.More && run.FinishedAt != nil)
++	writeJSON(w, http.StatusOK, result)
++}

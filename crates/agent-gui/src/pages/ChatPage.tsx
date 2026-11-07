@@ -1,14 +1,27 @@
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
-import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
+import { ApplicationView, type ApplicationViewId } from "@liveagent/ui/application/ApplicationView";
 import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
+import {
+  useWorkbenchAccountDestination,
+  useWorkbenchAccountSurface,
+} from "@liveagent/ui/application/useWorkbenchAccountSurface";
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail as DesktopNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
 import { WorkbenchBody, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
+import {
+  WorkbenchAccountSidebar,
+  WorkbenchDestinationPreview,
+} from "@liveagent/ui/application/WorkbenchFeatureSidebar";
+import {
+  createWorkbenchNavigationItem,
+  DEVICE_WORKBENCH_NAVIGATION,
+  type WorkbenchNavigationId,
+} from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
@@ -17,7 +30,7 @@ import type { MentionComposerDraft } from "@liveagent/ui/components/chat/Mention
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
+import { MonitorSmartphone, PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
@@ -47,6 +60,8 @@ import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-edito
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { getAutomationState, useAutomation } from "@liveagent/ui/lib/automation/index";
+import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
+import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { formatCheckpointRewoundNotification } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type {
   ComposerCommandHost,
@@ -125,6 +140,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -160,6 +176,7 @@ import { isKBrainBackendEnabled, isKBrainBrowserHost } from "../lib/host";
 import { useKBrainCatalogSettings } from "../lib/kbrain/catalog";
 import { createKBrainClient } from "../lib/kbrain/client";
 import { publishGoalState } from "../lib/kbrain/goalStore";
+import { resolveKBrainLocalId } from "../lib/kbrain/history";
 import { subscribeHistoryImported } from "../lib/kbrain/manualHistoryImport";
 import { getKBrainSessionId } from "../lib/kbrain/mapping";
 import { watchKBrainHistory } from "../lib/kbrain/watchHistory";
@@ -299,7 +316,12 @@ import { useProjectTerminals } from "./chat/workspace/useProjectTerminals";
 import { useWorkspaceProjectRemoval } from "./chat/workspace/useWorkspaceProjectRemoval";
 import { useWorkspaceProjects } from "./chat/workspace/useWorkspaceProjects";
 
-const DESKTOP_PREVIEW_DESTINATIONS = ["chat"] as const;
+const DESKTOP_PREVIEW_DESTINATIONS: readonly WorkbenchNavigationId[] = [
+  ...DEVICE_WORKBENCH_NAVIGATION,
+  "library",
+  "customize",
+  "devices",
+];
 
 const ConversationPaneHost = lazy(async () => ({
   default: (await import("./chat/surfaces/ConversationPaneHost")).ConversationPaneHost,
@@ -382,6 +404,19 @@ function ChatPageContent(props: ChatPageProps) {
 
   const isAgentMode = isAgentExecutionMode(settings.system.executionMode);
   const kBrainBackendEnabled = isKBrainBackendEnabled();
+  const kBrainClient = useMemo(
+    () => (kBrainBackendEnabled ? createKBrainClient() : undefined),
+    [kBrainBackendEnabled],
+  );
+  const isBackendSessionBusy = useCallback(
+    async (conversationId: string) => {
+      const sessionId = getKBrainSessionId(conversationId);
+      return kBrainClient && sessionId
+        ? kBrainClient.isSessionBusy(sessionId, AbortSignal.timeout(3_000))
+        : false;
+    },
+    [kBrainClient],
+  );
   const isAgentDevExecutionMode = isAgentDevMode(settings.system.executionMode);
   const workdir = settings.system.workdir.trim();
   // The sidebar store owns all sidebar domain state (conversation list,
@@ -408,6 +443,10 @@ function ChatPageContent(props: ChatPageProps) {
     rightDockOpen,
     setRightDockOpen,
   } = useApplicationViewState<WorkspaceProject>();
+  const scheduledTasksRequest = props.scheduledTasksRequest;
+  useEffect(() => {
+    if (scheduledTasksRequest) setActiveView("cron-hub");
+  }, [scheduledTasksRequest, setActiveView]);
   const {
     workspaceProjects,
     setActiveWorkspaceProjectId,
@@ -477,11 +516,31 @@ function ChatPageContent(props: ChatPageProps) {
   const settingsNavigationTarget = useWorkbenchNavigationTarget(props.settingsNavigation);
   const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
   const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
+  const { accountNavigation } = props;
+  const accountDestination = useWorkbenchAccountDestination(accountNavigation);
+  const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(active && !sidebar.isMobile, props.relayUser.id, {
     pinnedOpen: sidebar.open,
-    destination: "chat",
+    destination: committedDestination,
     destinations: DESKTOP_PREVIEW_DESTINATIONS,
   });
+  const [taskSidebarTarget, setTaskSidebarTarget] = useState<HTMLDivElement | null>(null);
+  const shownSidebar = navigationPreview.open
+    ? navigationPreview.destination
+    : committedDestination;
+  const showAccountSidebar = !!accountDestination && shownSidebar === accountDestination;
+  const accountSurface = useWorkbenchAccountSurface({
+    bind: props.onAccountSurface,
+    enabled: active,
+    sidebarVisible: showAccountSidebar && !sidebar.isMobile,
+    sidebarOpen,
+    sidebarPreview: navigationPreview.open && showAccountSidebar,
+    setSidebarOpen,
+    dismissPreview: navigationPreview.dismiss,
+    close: props.accountNavigation?.close,
+  });
+  const showTaskWorkspace = activeView === "cron-hub" && !!props.renderScheduledTasks;
+  const showTaskSidebar = shownSidebar === "cron-hub" && !!props.renderScheduledTasks;
   const [conversationSearchRequestKey, setConversationSearchRequestKey] = useState(0);
   const { remoteRuntimeStatus, setRemoteRuntimeStatus } = useGatewayStatus({
     remote: settings.remote,
@@ -968,6 +1027,7 @@ function ChatPageContent(props: ChatPageProps) {
     getPendingUploadsForConversation,
     setPendingUploadsForConversation,
     pickReadableFiles,
+    pickReadableFilesForConversation,
     importReadableFilePaths,
     importReadableFiles,
     removePendingUpload,
@@ -1040,6 +1100,18 @@ function ChatPageContent(props: ChatPageProps) {
     },
     [composerRef, conversationRuntimeRegistry],
   );
+  // Capture while the editor is still visible. Lazy workspaces and hidden panes
+  // may temporarily detach its ref; do not replace that snapshot from a hidden editor.
+  const chatVisible = activeView === "chat" && !accountDestination && active;
+  const wasChatVisible = useRef(chatVisible);
+  useLayoutEffect(() => {
+    const returned = chatVisible && !wasChatVisible.current;
+    wasChatVisible.current = chatVisible;
+    if (!returned) return;
+    const draft = conversationRuntimeRegistry.drafts.get(currentConversationId);
+    const composer = composerRef.current;
+    if (draft && composer && !composer.hasContent()) composer.setDraft(draft);
+  }, [chatVisible, composerRef, conversationRuntimeRegistry, currentConversationId]);
   const prepareComposerForConversationChange = useCallback(() => {
     cacheActiveComposerDraft();
   }, [cacheActiveComposerDraft]);
@@ -1079,6 +1151,7 @@ function ChatPageContent(props: ChatPageProps) {
     conversationRuntimeCacheRef,
     buildRuntimeEntryFromVisibleState,
     isConversationRunning,
+    isBackendSessionBusy,
     runningConversationIds,
     getConversationAbortController,
     setConversationAbortController,
@@ -1707,6 +1780,7 @@ function ChatPageContent(props: ChatPageProps) {
     shouldQueueGatewayChatRequest,
     enqueueGatewayChatRequest,
     isConversationRunning,
+    isBackendSessionBusy,
     isQueuedTurnEditOpen: (conversationId) =>
       queuedChatTurnEditSlotRef.current?.conversationId === conversationId.trim(),
     getConversationAbortController,
@@ -1836,11 +1910,12 @@ function ChatPageContent(props: ChatPageProps) {
   ]);
 
   const handleNewRecentConversation = useCallback(() => {
+    accountNavigation?.close();
     setActiveView("chat");
     openController.cancel();
     prepareComposerForConversationChange();
     startNewConversationActionRef.current({ workdir: "" });
-  }, [openController, prepareComposerForConversationChange, setActiveView]);
+  }, [accountNavigation, openController, prepareComposerForConversationChange, setActiveView]);
 
   // 动作总线（Rust `app:action`）里 ChatPage 拥有的动作在下方统一监听
   // （handleSelectConversation 定义之后）；这里先备好 ref 镜像。
@@ -1876,10 +1951,6 @@ function ChatPageContent(props: ChatPageProps) {
     modelOptions,
     runtimeControls: settings.chatRuntimeControls,
   };
-  const kBrainClient = useMemo(
-    () => (kBrainBackendEnabled ? createKBrainClient() : undefined),
-    [kBrainBackendEnabled],
-  );
   const watchedKBrainSessionId = kBrainBackendEnabled
     ? getKBrainSessionId(currentConversationId)
     : undefined;
@@ -3509,6 +3580,7 @@ function ChatPageContent(props: ChatPageProps) {
 
   // Background pane controllers (conversations visible in unfocused panes).
   const backgroundControllersRef = useRef(new Map<string, ConversationSurfaceController>());
+  const taskResultControllerRef = useRef<ConversationSurfaceController | null>(null);
   const getBackgroundConversationController = useCallback(
     (conversationId: string, project: ProjectRef): ConversationSurfaceController => {
       const existing = backgroundControllersRef.current.get(conversationId);
@@ -3616,9 +3688,18 @@ function ChatPageContent(props: ChatPageProps) {
 
   const buildBackgroundPaneBinding = (
     surface: ConversationWorkbenchSurface,
+    taskResult?: {
+      controller: ConversationSurfaceController;
+      openConversation: () => void;
+      messageJump?: TranscriptMessageJump;
+      scheduledRun?: ScheduledConversationRun;
+    },
   ): ConversationPaneBinding => {
     const conversationId = surface.conversationId;
-    const controller = getBackgroundConversationController(conversationId, surface.project);
+    const controller =
+      taskResult?.controller ??
+      getBackgroundConversationController(conversationId, surface.project);
+    const composerScopeId = controller.composerScopeId ?? conversationId;
     const runtimeEntry = conversationRuntimeRegistry.getSnapshot(conversationId);
     const historyItem = sidebarConversationsById.get(conversationId);
     const workspaceRoot = historyItem?.cwd?.trim() || runtimeEntry?.workdir?.trim() || undefined;
@@ -3673,6 +3754,10 @@ function ChatPageContent(props: ChatPageProps) {
     const paneTrajectoryActive = viewForConversation(conversationId) === "trajectory";
     const focusGuard = <Args extends unknown[]>(fn: (...args: Args) => void) => {
       return (...args: Args) => {
+        if (taskResult) {
+          taskResult.openConversation();
+          return;
+        }
         if (currentConversationIdRef.current !== conversationId) {
           focusWorkbenchConversationPane(conversationId);
           return;
@@ -3685,11 +3770,18 @@ function ChatPageContent(props: ChatPageProps) {
     // idle one sends immediately. Uploads come from the pane conversation's
     // own store — the focused pane's pending files must never ride along.
     const paneSendDraft = async (draft: MentionComposerDraft) => {
-      const uploads = conversationRuntimeRegistry.uploads.getSnapshot(conversationId).slice();
+      if (taskResult && isUploadingFiles) return false;
+      const uploads = conversationRuntimeRegistry.uploads.getSnapshot(composerScopeId).slice();
       const runtime = conversationRuntimeRegistry.getSnapshot(conversationId);
-      if (isConversationRunning(conversationId) || runtime?.isSending) {
+      if (
+        taskResult?.scheduledRun?.active ||
+        isConversationRunning(conversationId) ||
+        runtime?.isSending ||
+        (taskResult && (await isBackendSessionBusy(conversationId)))
+      ) {
         return enqueueComposerTurnForConversation({
           conversationId,
+          composerScopeId,
           draft,
           uploadedFiles: uploads,
         });
@@ -3698,9 +3790,10 @@ function ChatPageContent(props: ChatPageProps) {
         conversationIdOverride: conversationId,
         composerDraftOverride: draft,
         uploadedFilesOverride: uploads,
+        preserveComposerOnStart: Boolean(taskResult),
       });
       if (accepted) {
-        conversationRuntimeRegistry.uploads.set(conversationId, []);
+        conversationRuntimeRegistry.uploads.set(composerScopeId, []);
       }
       return accepted;
     };
@@ -3715,6 +3808,7 @@ function ChatPageContent(props: ChatPageProps) {
         onRewound: () => undefined,
       },
       isConversationRunning: isConversationRunning(conversationId),
+      scheduledRun: taskResult?.scheduledRun,
       // Native file drop routes only to the focused pane's composer.
       fileDrop: {
         active: false,
@@ -3740,8 +3834,9 @@ function ChatPageContent(props: ChatPageProps) {
       transcript: {
         workspaceRoot,
         gitClient: tauriGitClient,
-        hasModels,
+        hasModels: hasModels || Boolean(taskResult),
         onLoadEarlierHistory: () => loadEarlierHistoryActionRef.current(conversationId),
+        messageJump: taskResult?.messageJump,
         isHistorySwitching: false,
         showUsage: isAgentDevExecutionMode,
         usageContextWindow: paneContextWindow,
@@ -3759,7 +3854,7 @@ function ChatPageContent(props: ChatPageProps) {
         presentation: "pane",
         capabilities: DEVICE_COMPOSER_CAPABILITIES,
         conversationId,
-        isUploadingFiles: false,
+        isUploadingFiles: Boolean(taskResult) && isUploadingFiles,
         isInputDisabled: false,
         // 麦克风在开启语音输入后显示；点击设置卡片会立即切换当前供应商。
         sttSessionKey: conversationId,
@@ -3814,7 +3909,13 @@ function ChatPageContent(props: ChatPageProps) {
         onSelectExecutionMode: handleSelectExecutionMode,
         onOpenSettings,
         onChatRuntimeControlsChange: focusGuard(handleChatRuntimeControlsChange),
-        onPickReadableFiles: focusGuard(pickReadableFiles),
+        onPickReadableFiles: taskResult
+          ? () =>
+              void pickReadableFilesForConversation({
+                conversationId: composerScopeId,
+                workdir: workspaceRoot ?? "",
+              })
+          : focusGuard(pickReadableFiles),
         onPickWorkspaceFolder: focusGuard(() => {
           void pickWorkspaceFolder(conversationId, workspaceRoot ?? "");
         }),
@@ -3823,7 +3924,7 @@ function ChatPageContent(props: ChatPageProps) {
         // the focused pane. Same explicit target as native drop.
         onPasteFiles: (files) => {
           void importReadableFiles(files, {
-            conversationId,
+            conversationId: composerScopeId,
             workdir: workspaceRoot ?? "",
           });
         },
@@ -3837,43 +3938,120 @@ function ChatPageContent(props: ChatPageProps) {
         // 与主 Pane 口径一致：clarifyContext 只喂本 Pane 会话的轻量工作区
         // 信息；会话无 cwd/workdir 时不传空串，避免系统提示词带噪音。
         clarifyContext: workspaceRoot ? { workdir: workspaceRoot } : undefined,
-        onRemovePendingUpload: (relativePath) => removePendingUpload(relativePath, conversationId),
+        onRemovePendingUpload: (relativePath) => removePendingUpload(relativePath, composerScopeId),
         onRunQueuedTurnNow: runQueuedTurnNow,
         onMoveQueuedTurnUp: moveQueuedTurnUp,
         onEditQueuedTurn: focusGuard(editQueuedTurn),
         onRemoveQueuedTurn: removeQueuedTurn,
-        commandHost: resolveBackgroundComposerCommandHost(conversationId, {
-          modelLabel: paneModelLabel,
-          contextWindow: paneContextWindow,
-          contextUsageTokensSource: paneContextUsageTokensSource,
-          workdir: workspaceRoot,
-          selectModel: focusGuard(handleSelectModel),
-          sendTurn: async (text, command, options) => {
-            const runtime = conversationRuntimeRegistry.getSnapshot(conversationId);
-            if (isConversationRunning(conversationId) || runtime?.isSending) {
-              throw new Error(t("chat.commands.busy"));
-            }
-            // 附件取本 Pane 会话自己的待上传文件，与 paneSendDraft 一致。
-            const uploads = conversationRuntimeRegistry.uploads.getSnapshot(conversationId).slice();
-            const accepted = await sendActionRef.current({
-              conversationIdOverride: conversationId,
-              ...(options?.draft
-                ? { composerDraftOverride: options.draft }
-                : { textOverride: text }),
-              uploadedFilesOverride: uploads,
-              composerCommand: command,
-              ...(options?.runtimeControls
-                ? { runtimeControlsOverride: options.runtimeControls }
-                : {}),
-            });
-            if (accepted) conversationRuntimeRegistry.uploads.set(conversationId, []);
-            // false（开始前被拒）由宿主转成错误，草稿放回输入框。
-            return accepted;
-          },
-        }),
+        commandHost: taskResult
+          ? undefined
+          : resolveBackgroundComposerCommandHost(conversationId, {
+              modelLabel: paneModelLabel,
+              contextWindow: paneContextWindow,
+              contextUsageTokensSource: paneContextUsageTokensSource,
+              workdir: workspaceRoot,
+              selectModel: focusGuard(handleSelectModel),
+              sendTurn: async (text, command, options) => {
+                const runtime = conversationRuntimeRegistry.getSnapshot(conversationId);
+                if (isConversationRunning(conversationId) || runtime?.isSending) {
+                  throw new Error(t("chat.commands.busy"));
+                }
+                // 附件取本 Pane 会话自己的待上传文件，与 paneSendDraft 一致。
+                const uploads = conversationRuntimeRegistry.uploads
+                  .getSnapshot(conversationId)
+                  .slice();
+                const accepted = await sendActionRef.current({
+                  conversationIdOverride: conversationId,
+                  ...(options?.draft
+                    ? { composerDraftOverride: options.draft }
+                    : { textOverride: text }),
+                  uploadedFilesOverride: uploads,
+                  composerCommand: command,
+                  ...(options?.runtimeControls
+                    ? { runtimeControlsOverride: options.runtimeControls }
+                    : {}),
+                });
+                if (accepted) conversationRuntimeRegistry.uploads.set(conversationId, []);
+                // false（开始前被拒）由宿主转成错误，草稿放回输入框。
+                return accepted;
+              },
+            }),
       },
       sendDraft: paneSendDraft,
     };
+  };
+
+  const openScheduledDeviceConversation = (sessionId: string) => {
+    setActiveView("chat");
+    handleSelectConversation(resolveKBrainLocalId(sessionId));
+  };
+
+  const renderScheduledDeviceConversation = (
+    sessionId: string,
+    run: CronRunRecord,
+    messageJump?: TranscriptMessageJump,
+    scheduledRun?: ScheduledConversationRun,
+  ) => {
+    const conversationId = resolveKBrainLocalId(sessionId);
+    const item = sidebarConversationsById.get(conversationId);
+    const project = item
+      ? workbenchProjectForConversation(item)
+      : {
+          projectId: `conversation:${conversationId}`,
+          projectPathKey: `conversation:${conversationId}`,
+        };
+    const composerScopeId = `scheduled-task-result:${props.relayUser.id}:${conversationId}`;
+    let controller = taskResultControllerRef.current;
+    if (
+      !controller ||
+      controller.composerScopeId !== composerScopeId ||
+      controller.project.projectPathKey !== project.projectPathKey ||
+      controller.project.projectId !== project.projectId
+    ) {
+      controller = createConversationSurfaceController({
+        conversationId,
+        composerScopeId,
+        project,
+        registry: conversationRuntimeRegistry,
+        actions: conversationControllerActions,
+      });
+      taskResultControllerRef.current = controller;
+    }
+    const paneId = "scheduled-task-result";
+    const latestRun = scheduledRun?.run ?? run;
+    const environment = createConversationPaneHostEnvironment([
+      {
+        identity: { paneId, conversationId, project: controller.project },
+        binding: buildBackgroundPaneBinding(
+          { kind: "conversation", conversationId, project: controller.project },
+          {
+            controller,
+            messageJump,
+            scheduledRun,
+            openConversation: () => openScheduledDeviceConversation(sessionId),
+          },
+        ),
+      },
+    ]);
+    return (
+      <ConversationPaneHostEnvironmentProvider key={composerScopeId} value={environment}>
+        <Suspense fallback={<PaneLoadingSkeleton label={t("chat.loadingConversation")} />}>
+          <RestorableConversationPaneHost
+            paneId={paneId}
+            title={item?.title}
+            historyRefresh={
+              latestRun.runId || latestRun.state === "done" || latestRun.state === "expired"
+                ? {
+                    version: `${latestRun.id}:${latestRun.state}:${scheduledRun?.preview?.done ?? false}`,
+                    reload: () =>
+                      reloadConversationLatestRef.current(conversationId, { idleOnly: true }),
+                  }
+                : undefined
+            }
+          />
+        </Suspense>
+      </ConversationPaneHostEnvironmentProvider>
+    );
   };
 
   const workbenchRegistrations: ConversationPaneRegistration[] = sessionWorkbench.enabled
@@ -4276,22 +4454,86 @@ function ChatPageContent(props: ChatPageProps) {
       </div>
     ) : null;
 
+  function selectNavigation(
+    view: WorkbenchNavigationId,
+    mobile = false,
+    pin = false,
+    href?: string,
+  ) {
+    if (settingsNavigationTarget && props.settingsNavigation?.requestLeave() === false) return;
+    navigationPreview.dismiss();
+    if (pin || (!mobile && view === "chat")) setSidebarOpen(true);
+    if (mobile) setSidebarOpen(false);
+    if (view === "library" || view === "customize") {
+      if (chatVisible) cacheActiveComposerDraft();
+      props.accountNavigation?.open(href ?? (view === "library" ? "/space" : "/plugins"));
+      return;
+    }
+    if (view === "devices") {
+      props.onOpenDevices?.();
+      return;
+    }
+    props.accountNavigation?.close();
+    if (view !== "chat") {
+      if (chatVisible) cacheActiveComposerDraft();
+      if (!accountDestination) setRightDockOpen(false);
+    }
+    setActiveView(view);
+  }
+
+  const text = (zh: string, en: string) => (settings.locale === "zh-CN" ? zh : en);
+  const accountSidebar =
+    shownSidebar === "library" || shownSidebar === "customize" ? shownSidebar : null;
+  const renderTasks = (sidebarOnly: boolean) =>
+    props.renderScheduledTasks?.({
+      onBack: () => selectNavigation("chat"),
+      onOpenDeviceConversation: openScheduledDeviceConversation,
+      renderDeviceConversation: renderScheduledDeviceConversation,
+      mobileRail: sidebar.isMobile ? renderNavigationRail(true) : undefined,
+      previewOpen: navigationPreview.open && showTaskSidebar,
+      sidebarTarget: taskSidebarTarget,
+      sidebarOnly,
+      hideSidebar: !showTaskSidebar,
+      onActivate: () => selectNavigation("cron-hub"),
+      onPinSidebar: () => selectNavigation("cron-hub", false, true),
+    });
+
   const renderNavigationRail = (mobile = false) => (
     <DesktopNavigationRail
       brand={<BrandMark />}
-      activeView={activeView}
+      destinations={[
+        ...(props.accountNavigation
+          ? [
+              createWorkbenchNavigationItem(
+                "library",
+                settings.locale === "zh-CN" ? "资料空间" : "Library",
+                () => selectNavigation("library", mobile),
+              ),
+            ]
+          : []),
+        ...(props.accountNavigation
+          ? [
+              createWorkbenchNavigationItem(
+                "customize",
+                settings.locale === "zh-CN" ? "自定义" : "Customize",
+                () => selectNavigation("customize", mobile),
+              ),
+            ]
+          : []),
+        ...(props.onOpenDevices
+          ? [
+              createWorkbenchNavigationItem(
+                "devices",
+                settings.locale === "zh-CN" ? "设备" : "Devices",
+                () => selectNavigation("devices", mobile),
+              ),
+            ]
+          : []),
+      ]}
+      activeView={committedDestination}
+      previewId={!mobile && navigationPreview.open ? navigationPreview.destination : undefined}
       shortcuts={settings.customSettings.sidebarShortcuts}
-      onSelectView={(view) => {
-        if (settingsNavigationTarget && props.settingsNavigation?.requestLeave() === false) return;
-        navigationPreview.dismiss();
-        if (view !== "chat") {
-          cacheActiveComposerDraft();
-          setRightDockOpen(false);
-        }
-        setActiveView(view);
-        if (mobile) setSidebarOpen(false);
-        else if (view === "chat") setSidebarOpen(true);
-      }}
+      onSelectView={(view) => selectNavigation(view, mobile)}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
       footer={
         <>
@@ -4318,7 +4560,7 @@ function ChatPageContent(props: ChatPageProps) {
       data-app-frame="three-column"
       layout={isMacOsTauri() ? "stacked-panels" : "panels"}
     >
-      {activeView === "image-studio-hub" ? (
+      {!accountDestination && activeView === "image-studio-hub" ? (
         <AppHeaderFrame sidebarOpen={sidebarOpen}>
           <div className="relative flex h-full items-center gap-3 pl-4" data-tauri-drag-region>
             {!isMacOsTauri() && !sidebarOpen && (
@@ -4363,7 +4605,10 @@ function ChatPageContent(props: ChatPageProps) {
           accountInRail
           leadingActions={
             <>
-              {activeView === "chat" && hasConversationReply && !sidebarOpen ? (
+              {!accountDestination &&
+              activeView === "chat" &&
+              hasConversationReply &&
+              !sidebarOpen ? (
                 <TooltipButton
                   variant="ghost"
                   size="icon"
@@ -4374,8 +4619,13 @@ function ChatPageContent(props: ChatPageProps) {
                   <SquarePen className="size-4.5" />
                 </TooltipButton>
               ) : null}
-              {headerLeadingActions}
-              {activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes ? (
+              {!accountDestination &&
+                (activeView === "chat" || activeView === "cron-hub") &&
+                headerLeadingActions}
+              {!accountDestination &&
+              activeView === "chat" &&
+              hasConversationReply &&
+              !workbenchHasMultiplePanes ? (
                 <ConversationViewTabs
                   active={renderedConversationView}
                   onChange={setActiveConversationView}
@@ -4384,12 +4634,14 @@ function ChatPageContent(props: ChatPageProps) {
             </>
           }
           trailingActions={
-            <ProjectToolsPanelToggle
-              isOpen={rightDockOpen}
-              sessionCount={projectTerminalSessions.length}
-              disabledMessage={projectToolsUserDisabledMessage}
-              onToggle={() => setRightDockOpen((open) => !open)}
-            />
+            !accountDestination && (
+              <ProjectToolsPanelToggle
+                isOpen={rightDockOpen}
+                sessionCount={projectTerminalSessions.length}
+                disabledMessage={projectToolsUserDisabledMessage}
+                onToggle={() => setRightDockOpen((open) => !open)}
+              />
+            )
           }
         />
       )}
@@ -4404,105 +4656,164 @@ function ChatPageContent(props: ChatPageProps) {
           <div data-sidebar-hover-edge="" aria-hidden="true" />
         ) : null}
         {/* ---- Left column: navigation/sidebar ---- */}
-        <ChatSidebarContainer
-          mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
-          previewOpen={navigationPreview.open}
-          onPinPreview={() => {
-            navigationPreview.dismiss();
-            setSidebarOpen(true);
-          }}
-          onNewRecentConversation={handleNewRecentConversation}
-          accountMenu={false}
-          pinnedOrder={settings.system.sidebarPinnedOrder}
-          onReorderPinned={(sidebarPinnedOrder) =>
-            setSettings((previous) => ({
-              ...previous,
-              system: { ...previous.system, sidebarPinnedOrder },
-            }))
-          }
-          projectOrder={settings.system.workspaceProjectOrder}
-          onReorderProjects={(workspaceProjectOrder) =>
-            setSettings((previous) => ({
-              ...previous,
-              system: { ...previous.system, workspaceProjectOrder },
-            }))
-          }
-          store={sidebarStore}
-          approvalStore={conversationRuntimeRegistry.approvals}
-          questionStore={conversationRuntimeRegistry.questions}
-          currentConversationId={currentConversationId}
-          isOpen={sidebarOpen}
-          fontScale={settings.customSettings.fontScale.sidebar}
-          conversationSearchRequestKey={conversationSearchRequestKey}
-          activeView={activeView}
-          showProjects={isAgentMode}
-          projects={workspaceProjects}
-          workspaceProjectGroups={workspaceProjectGroups}
-          activeProjectId={activeWorkspaceProject?.id ?? ""}
-          missingProjectPathKeys={missingWorkspaceProjectPathKeys}
-          projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
-          workspaceFolderDropActive={isWorkspaceFolderDropActive}
-          recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
-          onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
-          onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
-          onCreateProject={handleOpenCreateWorkspaceProject}
-          onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
-          onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
-          onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
-          onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
-          onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
-          onSelectProject={handleSelectWorkspaceProject}
-          onNewConversationForProject={handleNewConversationForProject}
-          onBrowseProjectInFileTree={handleBrowseWorkspaceProjectInFileTree}
-          onBrowseProjectInSystemFileManager={handleBrowseWorkspaceProjectInSystemFileManager}
-          onConfigureProject={setProjectSettingsProject}
-          onSetProjectPinned={handleSetWorkspaceProjectPinned}
-          onRemoveProject={handleRemoveWorkspaceProject}
-          onArchiveProject={handleArchiveWorkspaceProject}
-          onUnarchiveProject={handleUnarchiveWorkspaceProject}
-          archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
-          onNewConversation={() => {
-            setActiveView("chat");
-            if (activeView !== "chat" && isDraftConversation) {
-              return;
-            }
-            handleNewConversation();
-          }}
-          onSelectConversation={(id, options) => {
-            setActiveView("chat");
-            handleSelectConversation(id, options);
-          }}
-          onConversationDeleted={handleConversationDeleted}
-          onConversationCwdChanged={handleConversationCwdChanged}
-          onConversationWorkbenchDragIntent={
-            sessionWorkbench.enabled ? handleConversationWorkbenchDragIntent : undefined
-          }
-          onConversationOpenInWorkbenchSplit={
-            sessionWorkbench.enabled ? handleOpenConversationInSplit : undefined
-          }
-          onProjectWorkbenchDragIntent={
-            sessionWorkbench.enabled ? handleProjectWorkbenchDragIntent : undefined
-          }
-          canShareConversations={canShareHistory}
-          sharedConversationCount={sharedHistoryItems.length}
-          onShareConversation={handleOpenShareModal}
-          onOpenSharedConversations={handleOpenSharedHistoryManager}
-          sidebarShortcuts={settings.customSettings.sidebarShortcuts}
-          onOpenSettings={onOpenSettings}
-          appUpdate={appUpdate}
-          onOpenResourceHub={(resource) => {
-            cacheActiveComposerDraft();
-            setRightDockOpen(false);
-            setActiveView(`${resource}-hub`);
-          }}
-        />
+        {!sidebar.isMobile && (showTaskWorkspace || showTaskSidebar) && (
+          <div ref={setTaskSidebarTarget} data-workbench-sidebar-slot="" />
+        )}
+        {!showTaskWorkspace && showTaskSidebar && renderTasks(true)}
+        {props.accountNavigation && !sidebar.isMobile && (
+          <div
+            ref={accountSurface.setSidebarTarget}
+            data-workbench-sidebar-slot=""
+            data-workbench-account-sidebar=""
+          />
+        )}
+        {accountSidebar && (
+          <div
+            className={sidebar.isMobile ? "contents" : undefined}
+            data-workbench-sidebar-slot=""
+            data-workbench-account-fallback={showAccountSidebar || undefined}
+          >
+            <WorkbenchAccountSidebar
+              destination={accountSidebar}
+              previewOpen={navigationPreview.open}
+              mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+              fontScale={settings.customSettings.fontScale.sidebar}
+              onNavigate={(href) => selectNavigation(accountSidebar, sidebar.isMobile, false, href)}
+              onPin={() => {
+                if (!showAccountSidebar) selectNavigation(accountSidebar, false, true);
+                else {
+                  navigationPreview.dismiss();
+                  setSidebarOpen(true);
+                }
+              }}
+            />
+          </div>
+        )}
+        {shownSidebar === "devices" && (
+          <WorkbenchDestinationPreview
+            title={text("设备", "Devices")}
+            fontScale={settings.customSettings.fontScale.sidebar}
+            entries={[
+              {
+                label: text("管理设备", "Manage devices"),
+                icon: <MonitorSmartphone className="size-4" />,
+                onSelect: () => selectNavigation("devices"),
+              },
+            ]}
+            onPin={() => selectNavigation("devices", false, true)}
+          />
+        )}
+        {!showTaskSidebar &&
+          !accountSidebar &&
+          shownSidebar !== "devices" &&
+          (!showAccountSidebar || sidebar.isMobile) && (
+            <ChatSidebarContainer
+              mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+              previewOpen={navigationPreview.open}
+              onPinPreview={() => selectNavigation(shownSidebar, false, true)}
+              onNewRecentConversation={handleNewRecentConversation}
+              accountMenu={false}
+              pinnedOrder={settings.system.sidebarPinnedOrder}
+              onReorderPinned={(sidebarPinnedOrder) =>
+                setSettings((previous) => ({
+                  ...previous,
+                  system: { ...previous.system, sidebarPinnedOrder },
+                }))
+              }
+              projectOrder={settings.system.workspaceProjectOrder}
+              onReorderProjects={(workspaceProjectOrder) =>
+                setSettings((previous) => ({
+                  ...previous,
+                  system: { ...previous.system, workspaceProjectOrder },
+                }))
+              }
+              store={sidebarStore}
+              approvalStore={conversationRuntimeRegistry.approvals}
+              questionStore={conversationRuntimeRegistry.questions}
+              currentConversationId={currentConversationId}
+              isOpen={sidebarOpen}
+              fontScale={settings.customSettings.fontScale.sidebar}
+              conversationSearchRequestKey={conversationSearchRequestKey}
+              activeView={shownSidebar as ApplicationViewId}
+              showProjects={isAgentMode}
+              projects={workspaceProjects}
+              workspaceProjectGroups={workspaceProjectGroups}
+              activeProjectId={activeWorkspaceProject?.id ?? ""}
+              missingProjectPathKeys={missingWorkspaceProjectPathKeys}
+              projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
+              workspaceFolderDropActive={isWorkspaceFolderDropActive}
+              recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
+              onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
+              onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
+              onCreateProject={handleOpenCreateWorkspaceProject}
+              onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
+              onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
+              onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
+              onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
+              onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
+              onSelectProject={handleSelectWorkspaceProject}
+              onNewConversationForProject={async (project) => {
+                const id = await handleNewConversationForProject(project);
+                if (id) accountNavigation?.close();
+                return id;
+              }}
+              onBrowseProjectInFileTree={async (project) => {
+                await handleBrowseWorkspaceProjectInFileTree(project);
+                accountNavigation?.close();
+              }}
+              onBrowseProjectInSystemFileManager={handleBrowseWorkspaceProjectInSystemFileManager}
+              onConfigureProject={setProjectSettingsProject}
+              onSetProjectPinned={handleSetWorkspaceProjectPinned}
+              onRemoveProject={handleRemoveWorkspaceProject}
+              onArchiveProject={handleArchiveWorkspaceProject}
+              onUnarchiveProject={handleUnarchiveWorkspaceProject}
+              archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
+              onNewConversation={() => {
+                accountNavigation?.close();
+                setActiveView("chat");
+                if (activeView !== "chat" && isDraftConversation) {
+                  return;
+                }
+                handleNewConversation();
+              }}
+              onSelectConversation={(id, options) => {
+                accountNavigation?.close();
+                setActiveView("chat");
+                handleSelectConversation(id, options);
+              }}
+              onConversationDeleted={handleConversationDeleted}
+              onConversationCwdChanged={handleConversationCwdChanged}
+              onConversationWorkbenchDragIntent={
+                sessionWorkbench.enabled ? handleConversationWorkbenchDragIntent : undefined
+              }
+              onConversationOpenInWorkbenchSplit={
+                sessionWorkbench.enabled ? handleOpenConversationInSplit : undefined
+              }
+              onProjectWorkbenchDragIntent={
+                sessionWorkbench.enabled ? handleProjectWorkbenchDragIntent : undefined
+              }
+              canShareConversations={canShareHistory}
+              sharedConversationCount={sharedHistoryItems.length}
+              onShareConversation={handleOpenShareModal}
+              onOpenSharedConversations={handleOpenSharedHistoryManager}
+              sidebarShortcuts={settings.customSettings.sidebarShortcuts}
+              onOpenSettings={onOpenSettings}
+              appUpdate={appUpdate}
+              onOpenResourceHub={(resource) => {
+                if (chatVisible) cacheActiveComposerDraft();
+                accountNavigation?.close();
+                setRightDockOpen(false);
+                setActiveView(`${resource}-hub`);
+              }}
+            />
+          )}
 
         <WorkspacePanelGroup
-          open={activeView === "chat" && rightDockOpen}
+          open={!accountDestination && activeView === "chat" && rightDockOpen}
           width={settings.customSettings.rightDock.width}
           onWidthChange={handleRightDockWidthChange}
           onClose={() => setRightDockOpen(false)}
-          immediate={activeView !== "chat"}
+          immediate={!!accountDestination || activeView !== "chat"}
         >
           <WorkspaceMainPanel>
             {/* ---- Center column: workbench chrome + conversation surfaces ---- */}
@@ -4510,139 +4821,160 @@ function ChatPageContent(props: ChatPageProps) {
               data-app-frame-column="main"
               className="relative flex flex-col min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {workspaceCreateModalOpen ? (
-                <WorkspaceCloneModal
-                  initialParent={activeWorkspaceProjectPath || workdir}
-                  onOpenFolder={handleOpenWorkspaceFolder}
-                  onClone={handleCloneWorkspaceProject}
-                  onClose={() => setWorkspaceCreateModalOpen(false)}
-                  onLoadBranches={handleLoadWorkspaceRemoteBranches}
+              {props.accountNavigation && (
+                <div
+                  ref={accountSurface.setTarget}
+                  hidden={!accountDestination}
+                  inert={!accountDestination}
+                  className={accountDestination ? "flex min-h-0 min-w-0 flex-1" : "hidden"}
+                  data-workbench-account-content=""
                 />
-              ) : null}
-              <WorkspaceCloneTaskOverlayAdapter onOpenWorkspace={handleOpenClonedWorkspace} />
+              )}
+              <div
+                className={accountDestination ? "hidden" : "contents"}
+                inert={!!accountDestination}
+              >
+                {workspaceCreateModalOpen ? (
+                  <WorkspaceCloneModal
+                    initialParent={activeWorkspaceProjectPath || workdir}
+                    onOpenFolder={handleOpenWorkspaceFolder}
+                    onClone={handleCloneWorkspaceProject}
+                    onClose={() => setWorkspaceCreateModalOpen(false)}
+                    onLoadBranches={handleLoadWorkspaceRemoteBranches}
+                  />
+                ) : null}
+                <WorkspaceCloneTaskOverlayAdapter onOpenWorkspace={handleOpenClonedWorkspace} />
 
-              {shareConversation ? (
-                <HistoryShareModal
-                  conversation={shareConversation}
-                  share={shareStatus}
-                  isLoading={shareLoading}
-                  isUpdating={shareUpdating}
-                  errorMessage={shareError}
-                  shareOrigin={sharedManagerShareOrigin}
-                  shareBackendUrl={shareBackendUrl}
-                  shareOriginPort={sharedManagerShareOriginPort}
-                  shareOriginLoading={sharedManagerGatewayUrlLoading}
-                  onToggle={handleToggleHistoryShare}
-                  onRedactToolContentChange={handleSetShareRedactToolContent}
-                  onClose={handleCloseShareModal}
-                />
-              ) : null}
+                {shareConversation ? (
+                  <HistoryShareModal
+                    conversation={shareConversation}
+                    share={shareStatus}
+                    isLoading={shareLoading}
+                    isUpdating={shareUpdating}
+                    errorMessage={shareError}
+                    shareOrigin={sharedManagerShareOrigin}
+                    shareBackendUrl={shareBackendUrl}
+                    shareOriginPort={sharedManagerShareOriginPort}
+                    shareOriginLoading={sharedManagerGatewayUrlLoading}
+                    onToggle={handleToggleHistoryShare}
+                    onRedactToolContentChange={handleSetShareRedactToolContent}
+                    onClose={handleCloseShareModal}
+                  />
+                ) : null}
 
-              {sharedManagerOpen ? (
-                <SharedHistoryManagerModal
-                  conversations={sharedHistoryItems}
-                  statuses={sharedManagerStatuses}
-                  loadingIds={sharedManagerLoadingIds}
-                  updatingIds={sharedManagerUpdatingIds}
-                  errors={sharedManagerErrors}
-                  shareOrigin={sharedManagerShareOrigin}
-                  shareBackendUrl={shareBackendUrl}
-                  shareOriginPort={sharedManagerShareOriginPort}
-                  shareOriginLoading={sharedManagerGatewayUrlLoading}
-                  onRefresh={handleRefreshSharedHistoryStatuses}
-                  onLoadStatus={handleLoadSharedHistoryStatus}
-                  onDisableShare={handleDisableSharedHistory}
-                  onSetRedactToolContent={handleSetSharedHistoryRedactToolContent}
-                  onClose={() => setSharedManagerOpen(false)}
-                />
-              ) : null}
+                {sharedManagerOpen ? (
+                  <SharedHistoryManagerModal
+                    conversations={sharedHistoryItems}
+                    statuses={sharedManagerStatuses}
+                    loadingIds={sharedManagerLoadingIds}
+                    updatingIds={sharedManagerUpdatingIds}
+                    errors={sharedManagerErrors}
+                    shareOrigin={sharedManagerShareOrigin}
+                    shareBackendUrl={shareBackendUrl}
+                    shareOriginPort={sharedManagerShareOriginPort}
+                    shareOriginLoading={sharedManagerGatewayUrlLoading}
+                    onRefresh={handleRefreshSharedHistoryStatuses}
+                    onLoadStatus={handleLoadSharedHistoryStatus}
+                    onDisableShare={handleDisableSharedHistory}
+                    onSetRedactToolContent={handleSetSharedHistoryRedactToolContent}
+                    onClose={() => setSharedManagerOpen(false)}
+                  />
+                ) : null}
 
-              {confirmDialog}
+                {confirmDialog}
 
-              {/* ---- Main content ----
+                {/* ---- Main content ----
             字体缩放仅作用于聊天视图：Skills/MCP Hub 页面存在大量未迁移的固定
             像素字号，整列缩放会造成混排（聊天区设置也只应影响聊天区）。 */}
-              <ApplicationView
-                activeView={activeView}
-                settings={settings}
-                setSettings={setSettings}
-                resourceHost={resourceHost}
-                kbrainSettings={kbrainSettingsAdapter}
-                imageStudioHost={
-                  imageStudioHost
-                    ? {
-                        ...imageStudioHost,
-                        onOpenSettings: () => onOpenSettings("image-studio"),
-                        // Desktop hub views have no app header, so the page carries the toggle.
-                        headerActions: (
-                          <ThemeToggleButton theme={settings.theme} onToggle={onToggleTheme} />
-                        ),
+                <ApplicationView
+                  activeView={activeView}
+                  settings={settings}
+                  setSettings={setSettings}
+                  resourceHost={resourceHost}
+                  kbrainSettings={kbrainSettingsAdapter}
+                  imageStudioHost={
+                    imageStudioHost
+                      ? {
+                          ...imageStudioHost,
+                          onOpenSettings: () => onOpenSettings("image-studio"),
+                          // Desktop hub views have no app header, so the page carries the toggle.
+                          headerActions: (
+                            <ThemeToggleButton theme={settings.theme} onToggle={onToggleTheme} />
+                          ),
+                        }
+                      : undefined
+                  }
+                  isAgentMode={isAgentMode}
+                  initialSkills={availableSkills}
+                  initialSkillsRootDir={skillsRootDir}
+                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+                  chatClassName="zone-font-scale"
+                  chatStyle={
+                    {
+                      "--zone-font-scale": settings.customSettings.fontScale.chat,
+                    } as CSSProperties
+                  }
+                  chat={{ content: chatContent }}
+                  scheduledTasks={showTaskWorkspace ? renderTasks(false) : undefined}
+                  onOpenView={setActiveView}
+                  workspaceOverlays={
+                    <WorkspaceOverlayHost
+                      locale={settings.locale}
+                      theme={effectiveTheme}
+                      workspaceEditorMounted={workspaceOverlays.workspaceEditorMounted}
+                      workspaceEditorOpenRequest={workspaceOverlays.workspaceEditorOpenRequest}
+                      workspaceEditorCloseRequestId={
+                        workspaceOverlays.workspaceEditorCloseRequestId
                       }
-                    : undefined
-                }
-                isAgentMode={isAgentMode}
-                initialSkills={availableSkills}
-                initialSkillsRootDir={skillsRootDir}
-                className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
-                chatClassName="zone-font-scale"
-                chatStyle={
-                  {
-                    "--zone-font-scale": settings.customSettings.fontScale.chat,
-                  } as CSSProperties
-                }
-                chat={{ content: chatContent }}
-                onOpenView={setActiveView}
-                workspaceOverlays={
-                  <WorkspaceOverlayHost
-                    locale={settings.locale}
-                    theme={effectiveTheme}
-                    workspaceEditorMounted={workspaceOverlays.workspaceEditorMounted}
-                    workspaceEditorOpenRequest={workspaceOverlays.workspaceEditorOpenRequest}
-                    workspaceEditorCloseRequestId={workspaceOverlays.workspaceEditorCloseRequestId}
-                    workspaceEditorOpen={workspaceOverlays.workspaceEditorOpen}
-                    workspaceEditorCleanupPending={workspaceOverlays.workspaceEditorCleanupPending}
-                    onWorkspaceEditorPreviewFile={workspaceOverlays.openWorkspaceFilePreview}
-                    onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
-                    onWorkspaceEditorHide={workspaceOverlays.handleWorkspaceEditorHide}
-                    onWorkspaceEditorClose={workspaceOverlays.handleWorkspaceEditorClosed}
-                    workspaceFilePreviewMounted={workspaceOverlays.workspaceFilePreviewMounted}
-                    workspaceFilePreviewOpenRequest={
-                      workspaceOverlays.workspaceFilePreviewOpenRequest
-                    }
-                    workspaceFilePreviewOpen={workspaceOverlays.workspaceFilePreviewOpen}
-                    onWorkspaceFilePreviewOpenEditor={workspaceOverlays.openWorkspaceEditorFile}
-                    onWorkspaceFilePreviewRequestClose={
-                      workspaceOverlays.requestWorkspaceFilePreviewClose
-                    }
-                    onWorkspaceFilePreviewClose={workspaceOverlays.handleWorkspaceFilePreviewClosed}
-                    workspaceSshTerminalMounted={workspaceOverlays.workspaceSshTerminalMounted}
-                    workspaceSshTerminalOpenRequest={
-                      workspaceOverlays.workspaceSshTerminalOpenRequest
-                    }
-                    workspaceSshTerminalOpen={workspaceOverlays.workspaceSshTerminalOpen}
-                    terminalProjectPathKey={terminalProjectPathKey}
-                    terminalClient={tauriTerminalClient}
-                    sftpClient={tauriSftpClient}
-                    terminalSessions={terminalSessions}
-                    onWorkspaceSshTerminalHide={() =>
-                      workspaceOverlays.setWorkspaceSshTerminalOpen(false)
-                    }
-                    onSshTerminalOpenFile={workspaceOverlays.handleOpenSftpFile}
-                    sshTerminalPaneLeasedSessionIds={leasedDockSessionIds}
-                    onSshTerminalFocusLeasedSession={
-                      sessionWorkbench.enabled ? focusWorkbenchTerminalPane : undefined
-                    }
-                    onSshTerminalSessionTabDragStart={
-                      sessionWorkbench.enabled ? handleSshTerminalTabDragIntent : undefined
-                    }
-                  />
-                }
-              />
+                      workspaceEditorOpen={workspaceOverlays.workspaceEditorOpen}
+                      workspaceEditorCleanupPending={
+                        workspaceOverlays.workspaceEditorCleanupPending
+                      }
+                      onWorkspaceEditorPreviewFile={workspaceOverlays.openWorkspaceFilePreview}
+                      onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
+                      onWorkspaceEditorHide={workspaceOverlays.handleWorkspaceEditorHide}
+                      onWorkspaceEditorClose={workspaceOverlays.handleWorkspaceEditorClosed}
+                      workspaceFilePreviewMounted={workspaceOverlays.workspaceFilePreviewMounted}
+                      workspaceFilePreviewOpenRequest={
+                        workspaceOverlays.workspaceFilePreviewOpenRequest
+                      }
+                      workspaceFilePreviewOpen={workspaceOverlays.workspaceFilePreviewOpen}
+                      onWorkspaceFilePreviewOpenEditor={workspaceOverlays.openWorkspaceEditorFile}
+                      onWorkspaceFilePreviewRequestClose={
+                        workspaceOverlays.requestWorkspaceFilePreviewClose
+                      }
+                      onWorkspaceFilePreviewClose={
+                        workspaceOverlays.handleWorkspaceFilePreviewClosed
+                      }
+                      workspaceSshTerminalMounted={workspaceOverlays.workspaceSshTerminalMounted}
+                      workspaceSshTerminalOpenRequest={
+                        workspaceOverlays.workspaceSshTerminalOpenRequest
+                      }
+                      workspaceSshTerminalOpen={workspaceOverlays.workspaceSshTerminalOpen}
+                      terminalProjectPathKey={terminalProjectPathKey}
+                      terminalClient={tauriTerminalClient}
+                      sftpClient={tauriSftpClient}
+                      terminalSessions={terminalSessions}
+                      onWorkspaceSshTerminalHide={() =>
+                        workspaceOverlays.setWorkspaceSshTerminalOpen(false)
+                      }
+                      onSshTerminalOpenFile={workspaceOverlays.handleOpenSftpFile}
+                      sshTerminalPaneLeasedSessionIds={leasedDockSessionIds}
+                      onSshTerminalFocusLeasedSession={
+                        sessionWorkbench.enabled ? focusWorkbenchTerminalPane : undefined
+                      }
+                      onSshTerminalSessionTabDragStart={
+                        sessionWorkbench.enabled ? handleSshTerminalTabDragIntent : undefined
+                      }
+                    />
+                  }
+                />
+              </div>
             </div>
           </WorkspaceMainPanel>
           <WorkspaceToolsPanel>
             <RightDockPanel
-              isOpen={activeView === "chat" && rightDockOpen}
+              isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
               onClose={() => setRightDockOpen(false)}
               fontScale={settings.customSettings.fontScale.rightDock}
               projectPathKey={terminalProjectPathKey}

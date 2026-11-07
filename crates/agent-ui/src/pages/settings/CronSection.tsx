@@ -1,5 +1,5 @@
 import { useDirectoryPicker } from "@liveagent/adapters/directoryPicker";
-import { isAgentExecutionMode, workspaceProjectPathKey } from "@liveagent/app/lib/settings";
+import { isAgentExecutionMode } from "@liveagent/app/lib/settings";
 import type { SettingsSectionProps } from "@liveagent/app/pages/settings/types";
 import {
   AlertTriangle,
@@ -21,12 +21,15 @@ import {
   type CronTaskType,
   useAutomation,
 } from "@liveagent/ui/lib/automation/index";
-import { buildModelOptions } from "@liveagent/ui/lib/models/modelOptions";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { type CronTaskFormData, CronTaskModal } from "@liveagent/ui/pages/settings/CronTaskModal";
+import {
+  type CronTaskFormData,
+  CronTaskModal,
+  useCronTaskEditorOptions,
+} from "@liveagent/ui/pages/settings/CronTaskModal";
 import { CronTaskViewModal } from "@liveagent/ui/pages/settings/CronTaskViewModal";
 import { AgentActivationSwitch, ConfirmDeletePopover } from "@liveagent/ui/pages/settings/shared";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const TASK_TYPE_LABEL: Record<CronTaskType, string> = {
   bash: "settings.cronTypeBash",
@@ -58,30 +61,7 @@ export function CronSection(props: SettingsSectionProps) {
   const { cron } = useAutomation();
   const tasks = cron.tasks;
   const autoPromptSupported = isAgentExecutionMode(settings.system.executionMode);
-  const modelOptions = useMemo(
-    () =>
-      buildModelOptions(settings).map((option) => ({
-        value: option.value,
-        label: option.label,
-        providerName: option.providerName,
-        providerId: option.providerId,
-        providerType: option.providerType,
-      })),
-    [settings],
-  );
-  // Archived/hidden workspaces are not offered for pinning; a task already
-  // pinned to one keeps its path (the modal shows it as unavailable).
-  const workspaceOptions = useMemo(() => {
-    const excludedPathKeys = new Set(
-      [
-        ...settings.system.archivedWorkspaceProjectPaths,
-        ...settings.system.hiddenWorkspaceProjectPaths,
-      ].map(workspaceProjectPathKey),
-    );
-    return settings.system.workspaceProjects
-      .filter((project) => !excludedPathKeys.has(workspaceProjectPathKey(project.path)))
-      .map((project) => ({ path: project.path, name: project.name || project.path }));
-  }, [settings]);
+  const { modelOptions, workspaceOptions } = useCronTaskEditorOptions(settings);
 
   function runOps(run: () => Promise<unknown>) {
     setActionError(null);

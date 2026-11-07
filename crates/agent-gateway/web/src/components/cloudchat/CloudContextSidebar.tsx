@@ -8,7 +8,12 @@ import {
   PanelLeftClose,
   X,
 } from "@liveagent/ui/components/IconSet";
-import { Sidebar, SidebarHeader, SidebarTrigger } from "@liveagent/ui/components/ui/sidebar";
+import {
+  Sidebar,
+  SidebarHeader,
+  SidebarHeaderRow,
+  SidebarTrigger,
+} from "@liveagent/ui/components/ui/sidebar";
 import { type ReactNode, useEffect, useState } from "react";
 import type { CloudChatFile, CloudChatFilesClient } from "@/lib/cloudChatFiles";
 import type { CloudSpaceClient, CloudSpaceItem, CloudSpaceLocation } from "@/lib/cloudSpace";
@@ -37,6 +42,7 @@ export function CloudContextSidebar(props: {
   onOpenFile: (id: string) => void;
   onOpenDevices: () => void;
   onPin: () => void;
+  reportLoadErrors?: boolean;
 }) {
   const [files, setFiles] = useState<CloudChatFile[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -73,43 +79,46 @@ export function CloudContextSidebar(props: {
       className="cloud-context-sidebar bg-settings-rail"
       data-context-destination={destination}
     >
-      <SidebarHeader className="px-3 pb-2 pt-4">
-        <div className="flex min-h-8 items-center justify-between gap-2">
-          <h2 className="px-1 text-base font-semibold">
+      <SidebarHeader className="px-3 pb-2 pt-2.5">
+        <SidebarHeaderRow
+          actions={
+            <SidebarTrigger
+              showShortcut={!props.preview}
+              title={
+                props.preview
+                  ? destination === "library"
+                    ? "打开资料空间"
+                    : "打开设备管理"
+                  : "收起侧栏"
+              }
+              aria-label={
+                props.preview
+                  ? destination === "library"
+                    ? "打开资料空间"
+                    : "打开设备管理"
+                  : "收起侧栏"
+              }
+              onClick={(event) => {
+                if (props.preview) {
+                  event.preventDefault();
+                  props.onPin();
+                }
+              }}
+            >
+              {props.mobileRail ? (
+                <X className="size-4" />
+              ) : props.preview ? (
+                <PanelLeft className="size-4" />
+              ) : (
+                <PanelLeftClose className="size-4" />
+              )}
+            </SidebarTrigger>
+          }
+        >
+          <h2 className="min-w-0 truncate px-1 text-base font-semibold">
             {destination === "library" ? "资料空间" : "设备"}
           </h2>
-          <SidebarTrigger
-            showShortcut={!props.preview}
-            title={
-              props.preview
-                ? destination === "library"
-                  ? "打开资料空间"
-                  : "打开设备管理"
-                : "收起侧栏"
-            }
-            aria-label={
-              props.preview
-                ? destination === "library"
-                  ? "打开资料空间"
-                  : "打开设备管理"
-                : "收起侧栏"
-            }
-            onClick={(event) => {
-              if (props.preview) {
-                event.preventDefault();
-                props.onPin();
-              }
-            }}
-          >
-            {props.mobileRail ? (
-              <X className="size-4" />
-            ) : props.preview ? (
-              <PanelLeft className="size-4" />
-            ) : (
-              <PanelLeftClose className="size-4" />
-            )}
-          </SidebarTrigger>
-        </div>
+        </SidebarHeaderRow>
       </SidebarHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-5 flex flex-col">
         {destination === "library" ? (
@@ -123,6 +132,7 @@ export function CloudContextSidebar(props: {
               onOther={props.onOpenResource}
               onStorage={props.onSpaceStorage}
               onNewFolder={props.onSpaceNewFolder}
+              reportLoadErrors={props.reportLoadErrors}
             />
           ) : (
             <>

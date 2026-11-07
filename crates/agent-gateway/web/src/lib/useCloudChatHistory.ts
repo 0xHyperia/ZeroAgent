@@ -1,11 +1,27 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { type CloudChatRoute, cloudChatRouteHref, readCloudChatRoute } from "./cloudChatRoute";
+import { getDesktopCloudHost } from "./desktopRemoteHost";
 
 const historyKey = "zeroagentCloudRoute";
 type Entry = { owner: number; index: number; conversation: string };
 
+let desktopEntry: Entry | undefined;
+function routeURL() {
+  const host = getDesktopCloudHost();
+  if (!host) return new URL(window.location.href);
+  const href = host.readLocation();
+  return new URL(/^\/(?!\/)[^\\]*$/.test(href) ? href : "/", host.gatewayOrigin);
+}
+
 function readEntry(owner: number): Entry | undefined {
-  const entry = window.history.state?.[historyKey] as Entry | undefined;
+  const host = getDesktopCloudHost();
+  const entry = host
+    ? (desktopEntry ?? {
+        owner: host.accountUser.id,
+        index: 0,
+        conversation: host.readConversation(),
+      })
+    : (window.history.state?.[historyKey] as Entry | undefined);
   if (
     entry?.owner === owner &&
     Number.isSafeInteger(entry.index) &&
@@ -16,8 +32,10 @@ function readEntry(owner: number): Entry | undefined {
 }
 
 export function readCloudChatLocation(owner: number) {
-  const url = new URL(window.location.href);
-  const storedOwner = window.history.state?.[historyKey]?.owner;
+  const url = routeURL();
+  const storedOwner = getDesktopCloudHost()
+    ? desktopEntry?.owner
+    : window.history.state?.[historyKey]?.owner;
   if (typeof storedOwner === "number" && storedOwner !== owner) {
     return { route: { page: "chat", id: "" } satisfies CloudChatRoute, conversation: "" };
   }
@@ -34,12 +52,19 @@ export function readCloudChatLocation(owner: number) {
 }
 
 function write(method: "pushState" | "replaceState", entry: Entry, href: string) {
+  const host = getDesktopCloudHost();
+  if (host) {
+    desktopEntry = entry;
+    host.saveLocation(href, entry.conversation);
+    return;
+  }
   window.history[method]({ ...window.history.state, [historyKey]: entry }, "", href);
 }
 
 export function useCloudChatHistory({
   owner,
   active,
+  listen = true,
   route,
   conversation,
   apply,
@@ -48,6 +73,7 @@ export function useCloudChatHistory({
 }: {
   owner: number;
   active: boolean;
+  listen?: boolean;
   route: CloudChatRoute;
   conversation: string;
   apply: (location: ReturnType<typeof readCloudChatLocation>) => void;
@@ -64,7 +90,7 @@ export function useCloudChatHistory({
 
   useLayoutEffect(() => {
     if (!active || restoration.current) return;
-    const url = new URL(window.location.href);
+    const url = routeURL();
     const href = cloudChatRouteHref(route, url);
     const browserHref = url.pathname + url.search + url.hash;
     const existing = readEntry(owner);
@@ -80,6 +106,18 @@ export function useCloudChatHistory({
   });
 
   useEffect(() => {
+    if (!listen) return;
+    const host = getDesktopCloudHost();
+    if (host)
+      return host.subscribeLocation(() => {
+        const options = latest.current;
+        const navigate = () => {
+          fromPop.current = true;
+          options.apply(readCloudChatLocation(owner));
+        };
+        if (options.isDirty()) options.confirm(navigate);
+        else navigate();
+      });
     function onPop() {
       const previous = current.current;
       const options = latest.current;
@@ -120,7 +158,7 @@ export function useCloudChatHistory({
       restoration.current = null;
       approved.current = null;
     };
-  }, [owner]);
+  }, [owner, listen]);
 
   return replaceNext;
 }

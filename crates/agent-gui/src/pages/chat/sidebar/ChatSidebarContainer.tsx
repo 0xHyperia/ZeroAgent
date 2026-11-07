@@ -261,6 +261,7 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
         onNewConversation={props.onNewRecentConversation ?? props.onNewConversation}
         mobileRail={props.mobileRail}
         previewOpen={props.previewOpen}
+        onPinPreview={props.onPinPreview}
         headerTop={<DesktopSidebarTitleBar />}
       />
     );

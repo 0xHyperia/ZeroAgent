@@ -160,9 +160,11 @@ export async function revokeExecutionDevice(deviceId: string) {
 export async function selectExecutionTarget(
   environment: ExecutionEnvironment,
   workspace: ExecutionWorkspace,
+  scope: "workspace" | "device" = environment.runtime_kind === "device_agent"
+    ? "device"
+    : "workspace",
 ): Promise<ExecutionSelection> {
-  const deviceScoped = environment.runtime_kind === "device_agent";
-  const workspaceId = deviceScoped ? "" : workspace.id;
+  const workspaceId = scope === "device" ? "" : workspace.id;
   const target = [environment.runtime_kind, environment.device_id ?? "", workspaceId].join(":");
   return accountRequest<ExecutionSelection>(
     "/api/execution-target/select",
@@ -172,7 +174,7 @@ export async function selectExecutionTarget(
         runtime_kind: environment.runtime_kind,
         device_id: environment.device_id ?? "",
         workspace_id: workspaceId,
-        scope: deviceScoped ? "device" : "workspace",
+        scope,
         target_fingerprint: target,
       }),
     },

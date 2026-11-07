@@ -159,6 +159,36 @@ export type CronRunRecord = {
   terminationReason?: CronRunTerminationReason;
 };
 
+export type CronRunAnchor = {
+  sessionId: string;
+  runId: string;
+  messageId: string;
+};
+
+export type CronRunProgress = {
+  sessionId: string;
+  runId: string;
+  cursor: number;
+  text: string;
+  done: boolean;
+  more: boolean;
+  truncated?: boolean;
+  prompt?: { messageId: string; text: string; truncated?: boolean };
+};
+
+export type ScheduledRunPreview = Pick<CronRunProgress, "text" | "done" | "truncated" | "prompt">;
+
+export type ScheduledConversationRun = {
+  run: CronRunRecord;
+  active: boolean;
+  cancel?: () => void;
+  preview?: ScheduledRunPreview;
+};
+
+export function isCronRunActive(run: CronRunRecord): boolean {
+  return run.state === "pending" || run.state === "leased";
+}
+
 export const MANUAL_CRON_RUN_POLL_INTERVAL_MS = 1_000;
 export const MANUAL_CRON_RUN_TIMEOUT_MS = 6 * 60_000;
 

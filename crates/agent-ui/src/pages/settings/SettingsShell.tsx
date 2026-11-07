@@ -35,6 +35,7 @@ type SettingsShellProps<Context> = {
   onMobileDetailChange?: (detail: boolean) => void;
   hiddenSections?: readonly string[];
   fontScale?: number;
+  describeScope?: (section: string) => string | undefined;
 };
 
 function getSaveIndicator(state: SettingsSaveState, t: (key: string) => string) {
@@ -164,6 +165,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
   const saveIndicator = getSaveIndicator(saveState, t);
   const showSaveIndicator = activeSection.showSaveIndicator !== false;
   const SectionTitle = presentation === "page" ? "h2" : "div";
+  const scope = props.describeScope?.(activeSection.id);
 
   return (
     <ZoneFontScaleContext.Provider value={fontScale}>
@@ -372,6 +374,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                 >
                   {t(activeSection.labelKey)}
                 </SectionTitle>
+                {scope ? <p className="mt-1 text-xs text-muted-foreground">{scope}</p> : null}
               </div>
               {showSaveIndicator ? (
                 <div

@@ -22,32 +22,35 @@ import (
 )
 
 type Service struct {
-	store              Store
-	usa                *USAClient
-	sessionTTL         time.Duration
-	selectionLeaseTTL  time.Duration
-	now                func() time.Time
-	deviceRevoker      func(userID int64, deviceID string)
-	webKeyMu           sync.Mutex
-	webKeys            map[int64]string
-	credentialMu       sync.RWMutex
-	credentialEpochs   map[string]uint64
-	cloudRuntimeMu     sync.Mutex
-	cloudRuntime       *cloudRunRuntime
-	cloudRuntimeConfig CloudRuntimeConfig
-	cloudViewerMu      sync.Mutex
-	cloudViewers       map[int64]int
-	cloudViewerCount   int
-	refreshLocks       sync.Map
-	cloudFileMu        sync.RWMutex
-	cloudFiles         *cloudFileService
-	cloudExecutor      *cloudexecutor.Client
-	cloudFileParser    *cloudFileParser
-	cloudResearchMu    sync.RWMutex
-	cloudResearch      *cloudResearchService
-	cloudSiteMu        sync.RWMutex
-	cloudSites         *cloudSiteService
+	store                 Store
+	usa                   *USAClient
+	sessionTTL            time.Duration
+	selectionLeaseTTL     time.Duration
+	now                   func() time.Time
+	deviceRevoker         func(userID int64, deviceID string)
+	webKeyMu              sync.Mutex
+	webKeys               map[int64]string
+	credentialMu          sync.RWMutex
+	credentialEpochs      map[string]uint64
+	cloudRuntimeMu        sync.Mutex
+	cloudRuntime          *cloudRunRuntime
+	cloudRuntimeConfig    CloudRuntimeConfig
+	cloudSchedulesEnabled bool
+	cloudViewerMu         sync.Mutex
+	cloudViewers          map[int64]int
+	cloudViewerCount      int
+	refreshLocks          sync.Map
+	cloudFileMu           sync.RWMutex
+	cloudFiles            *cloudFileService
+	cloudExecutor         *cloudexecutor.Client
+	cloudFileParser       *cloudFileParser
+	cloudResearchMu       sync.RWMutex
+	cloudResearch         *cloudResearchService
+	cloudSiteMu           sync.RWMutex
+	cloudSites            *cloudSiteService
 }
+
+func (s *Service) EnableCloudSchedules() { s.cloudSchedulesEnabled = true }
 
 func (s *Service) SetDeviceRevoker(revoker func(userID int64, deviceID string)) {
 	s.deviceRevoker = revoker
@@ -99,7 +102,47 @@ func (s *Service) Register(ctx context.Context, email, password, verifyCode, inv
 }
 
 func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
-	return s.coordinatedSession(ctx, id, false)
+	var session *Session
+	var err error
+	if strings.HasPrefix(id, desktopCloudAccessPrefix) {
+		session, err = s.store.GetSession(ctx, id)
+		if errors.Is(err, ErrNotFound) {
+			return nil, sessionMissingError()
+		}
+		if err != nil {
+			return nil, sessionStorageError()
+		}
+	} else {
+		session, err = s.coordinatedSession(ctx, id, false)
+	}
+	if err != nil {
+		return session, err
+	}
+	if session.Purpose == "cloud_schedule" {
+		store, ok := s.store.(*PersistentStore)
+		if !ok {
+			return nil, sessionMissingError()
+		}
+		current, err := store.cloudScheduleSessionID(ctx, session.UserID)
+		if errors.Is(err, ErrNotFound) || (err == nil && current != session.ID) {
+			return nil, sessionMissingError()
+		}
+		if err != nil {
+			return nil, sessionStorageError()
+		}
+		return session, nil
+	}
+	if !isDesktopCloudPurpose(session.Purpose) {
+		return session, nil
+	}
+	user, err := s.usa.AppMe(ctx, session.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if !sessionUserMatches(user, session.UserID) {
+		return nil, sessionMissingError()
+	}
+	return session, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, id string) (*Session, error) {
@@ -339,6 +382,9 @@ func (s *Service) ReleaseDeviceSessionPresence(
 }
 
 func (s *Service) ValidateSelection(ctx context.Context, controllerSessionID, leaseID string) (*Session, *SelectionLease, error) {
+	if strings.HasPrefix(strings.TrimSpace(controllerSessionID), desktopCloudAccessPrefix) {
+		return nil, nil, sessionMissingError()
+	}
 	session, err := s.Session(ctx, controllerSessionID)
 	if err != nil {
 		return nil, nil, err
@@ -585,9 +631,10 @@ func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPa
 	}
 	challengeSum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
+	scope := "profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access"
 	requestID, err := s.usa.CreateAppAuthorizationRequest(ctx, map[string]any{
 		"response_type": "code", "client_id": clientID, "redirect_uri": redirectURI,
-		"scope":          "profile:read profile:write usage:read groups:read keys:read keys:write subscriptions:read execution:authorize offline_access",
+		"scope":          scope,
 		"code_challenge": challenge, "code_challenge_method": "S256", "state": state,
 		"device_name": "ZeroAgent", "platform": platform,
 		"installation_id": strings.TrimSpace(installationID),
@@ -607,7 +654,7 @@ func (s *Service) StartOAuth(ctx context.Context, surface, redirectURI, returnPa
 
 func (s *Service) CompleteOAuth(ctx context.Context, state, code, expectedSurface string) (*Session, string, error) {
 	transaction, err := s.store.ConsumeOAuthTransaction(ctx, hashToken(strings.TrimSpace(state)))
-	if err != nil || transaction.State != state || transaction.Surface != expectedSurface {
+	if err != nil || transaction.State != state || transaction.Surface != expectedSurface || transaction.ScheduleOwner != 0 {
 		return nil, "", &APIError{Status: http.StatusBadRequest, Message: "authorization state is invalid, expired, or already used"}
 	}
 	if strings.TrimSpace(code) == "" {
@@ -636,6 +683,10 @@ func (s *Service) CompleteOAuth(ctx context.Context, state, code, expectedSurfac
 	}
 	if err := s.store.PutSession(ctx, session); err != nil {
 		return nil, transaction.ReturnPath, err
+	}
+	if store, ok := s.store.(*PersistentStore); ok && s.cloudSchedulesEnabled {
+		// Ordinary account sign-in makes the same cloud execution available from either client.
+		_ = s.rememberCloudExecutionSession(ctx, store, session)
 	}
 	return session, transaction.ReturnPath, nil
 }

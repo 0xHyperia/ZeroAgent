@@ -1,4 +1,5 @@
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
+import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
@@ -100,6 +101,7 @@ const LOAD_EARLIER_THRESHOLD_PX = 1600;
 export type TranscriptListProps = {
   conversationId: string;
   historyItems: RenderTimelineItem[];
+  pendingReply?: ScheduledPreviewRow;
   hasMoreHistory: boolean;
   onLoadEarlierHistory: () => Promise<void>;
   isHistorySwitching: boolean;
@@ -147,6 +149,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   const {
     conversationId,
     historyItems,
+    pendingReply,
     hasMoreHistory,
     onLoadEarlierHistory,
     isHistorySwitching,
@@ -205,18 +208,27 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const pendingReplyRef = useRef(pendingReply);
+  pendingReplyRef.current = pendingReply;
+  const virtualCount = rows.length + (pendingReply ? 1 : 0);
   useEffect(() => {
     findSource?.publish(() => buildTranscriptFindEntries(rows));
   }, [findSource, rows]);
   const liveStartIndexRef = useRef(liveStartIndex);
-  liveStartIndexRef.current = liveStartIndex;
+  liveStartIndexRef.current =
+    liveStartIndex >= 0 ? liveStartIndex : pendingReply ? rows.length : -1;
   const getScrollElement = useCallback(() => scrollViewport, [scrollViewport]);
   const estimateRowSize = useCallback((index: number) => {
     const rowList = rowsRef.current;
     const row = rowList[index];
-    return row ? row.estimate + (index < rowList.length - 1 ? row.gapAfter : 0) : 260;
+    if (!row) return pendingReplyRef.current ? 132 : 260;
+    const hasNext = index < rowList.length - 1 || Boolean(pendingReplyRef.current);
+    return row.estimate + (hasNext ? row.gapAfter : 0);
   }, []);
-  const getRowKey = useCallback((index: number) => rowsRef.current[index]?.key ?? index, []);
+  const getRowKey = useCallback(
+    (index: number) => rowsRef.current[index]?.key ?? pendingReplyRef.current?.key ?? index,
+    [],
+  );
   const getRenderCost = useCallback((index: number) => rowsRef.current[index]?.renderCost, []);
   const extractVirtualRange = useCallback(
     (range: Range) => extractRenderUnitRange(range, getRenderCost, liveStartIndexRef.current),
@@ -283,7 +295,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     [rows, initialMeasurementsCache, scrollViewport, savedScrollPosition],
   );
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: virtualCount,
     getScrollElement,
     estimateSize: estimateRowSize,
     getItemKey: getRowKey,
@@ -640,6 +652,19 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index];
+          if (!row && pendingReply && virtualRow.index === rows.length) {
+            return (
+              <article
+                key={virtualRow.key}
+                data-row-key={pendingReply.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                className="absolute inset-x-0 top-0"
+              >
+                {pendingReply.content}
+              </article>
+            );
+          }
           if (!row) return null;
           const assistantReplyKey =
             row.kind === "assistant-unit" || row.kind === "assistant-activity"
@@ -711,7 +736,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
               className="absolute inset-x-0 top-0"
             >
               {body}
-              {row.gapAfter > 0 && virtualRow.index < rows.length - 1 ? (
+              {row.gapAfter > 0 && virtualRow.index < virtualCount - 1 ? (
                 <div aria-hidden="true" style={{ height: row.gapAfter }} />
               ) : null}
             </div>

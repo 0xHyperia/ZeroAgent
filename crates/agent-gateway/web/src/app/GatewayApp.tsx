@@ -64,6 +64,7 @@ import type { ChatCommandUpdate } from "@/lib/chat/stream/streamTypes";
 import { createTranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { registerToolApprovalDecisionHandler } from "@/lib/chat/toolApprovalBridge";
 import { transcriptRowsToJumpCandidates } from "@/lib/chat/transcript/searchJumpCandidates";
+import { cloudChatRouteHref, readCloudChatRoute } from "@/lib/cloudChatRoute";
 import { getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import type {
   AgentStatus,
@@ -187,6 +188,7 @@ function useGatewayAppController() {
   const selectedAgentId = selection?.agent_id?.trim() || selection?.device_id?.trim() || "";
   const [activeAgentId, setActiveAgentId] = useState(() => api?.getActiveAgent() ?? "");
   const activeAgentIdRef = useRef(activeAgentId);
+  const taskLandingAgentRef = useRef("");
   const activeAgentScope = selectedAgentId || activeAgentId || api?.getActiveAgent() || "";
   useEffect(() => {
     if (!api || !selectedAgentId) return;
@@ -347,6 +349,7 @@ function useGatewayAppController() {
     setModelPreferencesOpen,
   } = useGatewaySettingsOverlay(setSidebarOpen);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const initialRoute = useMemo(() => readCloudChatRoute(new URL(window.location.href)), []);
   const {
     activeView,
     setActiveView,
@@ -354,7 +357,33 @@ function useGatewayAppController() {
     setProjectSettingsProject,
     rightDockOpen,
     setRightDockOpen,
-  } = useApplicationViewState<WorkspaceProject>();
+  } = useApplicationViewState<WorkspaceProject>(
+    getDesktopRemoteHost()?.initialView ??
+      (initialRoute.page === "tasks" && initialRoute.deviceView ? "cron-hub" : "chat"),
+  );
+  const selectedTaskDevice = selection?.runtime_kind === "device_agent" ? selection.device_id : "";
+  useEffect(() => {
+    if (!selectedTaskDevice || getDesktopRemoteHost()) return;
+    const restoreTaskView = () => {
+      const route = readCloudChatRoute(new URL(window.location.href));
+      if (route.page === "tasks" && route.deviceView && route.target === selectedTaskDevice) {
+        setActiveView("cron-hub");
+      } else {
+        setActiveView((current) => (current === "cron-hub" ? "chat" : current));
+      }
+    };
+    window.addEventListener("popstate", restoreTaskView);
+    return () => window.removeEventListener("popstate", restoreTaskView);
+  }, [selectedTaskDevice, setActiveView]);
+  useEffect(() => {
+    if (activeView === "cron-hub" || !selectedTaskDevice || getDesktopRemoteHost()) return;
+    const url = new URL(window.location.href);
+    const route = readCloudChatRoute(url);
+    if (route.page === "tasks" && route.deviceView && route.target === selectedTaskDevice) {
+      const href = cloudChatRouteHref({ page: "chat", id: "" }, url);
+      window.history.pushState(window.history.state, "", href);
+    }
+  }, [activeView, selectedTaskDevice]);
   const { confirm: requestConfirmDialog, dialog: confirmDialog } = useConfirmDialog();
   // Both elements arrive via callback refs → state so the scroll-follow hook
   // re-binds on element identity change and can never keep listeners on a
@@ -1309,6 +1338,8 @@ function useGatewayAppController() {
   const {
     displayedConversationBusy,
     displayedTranscript,
+    handleConversationStreamEvent,
+    handleConversationStreamSync,
     manualCompactPending,
     manualCompactTransientConversations,
   } = useGatewayConversationRuntime({
@@ -1824,6 +1855,8 @@ function useGatewayAppController() {
   const handleActiveAgentChange = useCallback(
     (agentId: string) => {
       const nextAgentId = agentId.trim();
+      const taskLanding = !!nextAgentId && taskLandingAgentRef.current === nextAgentId;
+      taskLandingAgentRef.current = "";
       const previousAgentId = activeAgentIdRef.current.trim();
       activeAgentIdRef.current = nextAgentId;
       setActiveAgentId(nextAgentId);
@@ -1869,7 +1902,7 @@ function useGatewayAppController() {
       setProjectPickerOpen(false);
       setProjectSettingsProject(null);
       resetSettingsOverlay();
-      setActiveView("chat");
+      setActiveView(taskLanding ? "cron-hub" : "chat");
       setRightDockOpen(false);
       toast.dismiss();
       resetProjectToolsRuntimeRef.current();
@@ -2477,6 +2510,18 @@ function useGatewayAppController() {
           setSettings={setSettings}
           settingsSaveState={settingsSaveState}
           onSwitch={switchExecutionTarget}
+          onOpenDeviceTasks={async (environment, workspace, taskRoute) => {
+            const target = await switchExecutionTarget(environment, workspace);
+            if (target?.runtime_kind !== "device_agent" || !target.device_id) return;
+            taskLandingAgentRef.current = target?.agent_id ?? environment.agent_id ?? "";
+            const url = new URL(window.location.href);
+            const href = cloudChatRouteHref(
+              { ...taskRoute, page: "tasks", target: target.device_id, deviceView: true },
+              url,
+            );
+            window.history.replaceState(window.history.state, "", href);
+            setActiveView("cron-hub");
+          }}
           onLogout={handleLogout}
         />
       </LocaleContext.Provider>
@@ -2513,8 +2558,13 @@ function useGatewayAppController() {
   // 的数据面):工作区、草稿缓存、附件导入全部按显式 conversationId 路由。---
   const getCachedComposerDraft = (targetConversationId: string) =>
     composerDraftCacheRef.current.get(resolveComposerDraftKey(targetConversationId));
-  const setCachedComposerDraft = (targetConversationId: string, draft: MentionComposerDraft) => {
-    composerDraftCacheRef.current.set(resolveComposerDraftKey(targetConversationId), draft);
+  const setCachedComposerDraft = (
+    targetConversationId: string,
+    draft: MentionComposerDraft | null,
+  ) => {
+    const key = resolveComposerDraftKey(targetConversationId);
+    if (draft) composerDraftCacheRef.current.set(key, draft);
+    else composerDraftCacheRef.current.delete(key);
   };
   const importFilesForConversation = (
     targetConversationId: string,
@@ -2678,6 +2728,8 @@ function useGatewayAppController() {
     isAgentDevExecutionMode,
     isAgentMode,
     isConversationBusy,
+    handleConversationStreamEvent,
+    handleConversationStreamSync,
     isFileDropActive,
     isImportingPastedTextRef,
     isUploadingFiles,

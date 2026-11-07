@@ -82,6 +82,7 @@ const extract = (name, predicate = () => true) => {
 
 function appHarness(request) {
   let current = selectedRemote();
+  let openRemoteTasks = false;
   let leases = new Map([[remote.device_id, { lease: "fixture-lease", expiresAt: Date.now() + 60000 }]]);
   const epoch = { current: 0 };
   const context = vm.createContext({
@@ -92,11 +93,14 @@ function appHarness(request) {
     getValidRelayAccessToken: async () => {}, switchDesktopDevice: request,
     setExecutionState(next) { current = typeof next === "function" ? next(current) : next; },
     setRemoteSelectionLeases(next) { leases = typeof next === "function" ? next(leases) : next; },
+    relayUser: null, rememberedExecutionOwner: { current: null },
+    setOpenRemoteTasks(value) { openRemoteTasks = value; },
+    setAccountPage() {}, setScheduledTasksRequest() {}, closeAccountPage() {},
     setRelayReady() {}, setRelayUser() {}, setRelayStats() {}, closeSettingsOverlay() {},
   });
   const code = `${extract("buildLocalOnlyEnvironment")}\n${extract("isRemoteLeaseValid")}\nconst refresh=${extract("refresh", node => appSource.slice(node.init.start, node.init.end).includes("getDesktopEnvironments(settings)"))};\nconst handleSessionChanged=${extract("handleSessionChanged")};\n${extract("handleExecutionSwitch")}\n${extract("handleRemoteSelectionInvalid")}`;
   vm.runInContext(transpileTypeScriptModule(code, "desktop-route-fixture.ts"), context);
-  return { context, current: () => current, leases: () => leases, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
+  return { context, current: () => current, leases: () => leases, openRemoteTasks: () => openRemoteTasks, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
 }
 
 test("the actual refresh callback keeps a remote route on rejection and missing-device success", async () => {
@@ -176,10 +180,13 @@ test("explicit reconnect renews the selected device even when the cached lease h
     requests++;
     return { selection_lease: "renewed", expires_at: new Date(Date.now() + 60000).toISOString() };
   });
-  await vm.runInContext("handleExecutionSwitch(remote, true)", harness.context);
+  await vm.runInContext("handleExecutionSwitch(remote, true, true)", harness.context);
   assert.equal(requests, 1);
   assert.equal(harness.leases().get("remote").lease, "renewed");
   assert.equal(harness.current().selectedDeviceId, "remote");
+  assert.equal(harness.openRemoteTasks(), true);
+  harness.changed();
+  assert.equal(harness.openRemoteTasks(), false);
 });
 
 test("another device's expiry cannot discard a current lease with less than ten seconds remaining", () => {

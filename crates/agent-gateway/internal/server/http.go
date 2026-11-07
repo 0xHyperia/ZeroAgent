@@ -51,7 +51,9 @@ func NewHTTPServerWithReadiness(
 	rootMux.HandleFunc("GET /readyz", handler.Ready(readinessCheck))
 	accounts, _ := authenticator.(*account.Service)
 	if accounts != nil {
-		account.NewHTTPHandler(accounts, cfg.CookieSecure, cfg.PublicOrigin).Register(rootMux)
+		accountHTTP := account.NewHTTPHandler(accounts, cfg.CookieSecure, cfg.PublicOrigin)
+		accountHTTP.Register(rootMux)
+		accountHTTP.RegisterDeviceSchedules(rootMux, handler.DeviceScheduleSummary(sm, cfg.RequestTimeout))
 		accounts.SetDeviceRevoker(func(_ int64, agentID string) { sm.DisconnectAgent(agentID) })
 		sm.SetHistoryObserver(accounts.RecordAgentHistorySync)
 	}
@@ -79,6 +81,7 @@ func NewHTTPServerWithReadiness(
 		rootMux.Handle("/api/status", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("/api/files/import", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("/api/files/import-directory", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("POST /api/files/handoff", protectedAPIHandler(cfg, sm, accounts))
 	} else {
 		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
 		rootMux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(sm, cfg.RequestTimeout, nil))
@@ -195,6 +198,24 @@ func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *acco
 			query.Set("agent_id", agentID)
 			r.URL.RawQuery = query.Encode()
 			handler.ImportDirectory(sm, cfg.RequestTimeout).ServeHTTP(w, r)
+		case "/api/files/handoff":
+			handler.WorkspaceHandoff(sm, cfg.RequestTimeout, agentID, func(workspace string) bool {
+				owner, current, err := accounts.ValidateSelection(r.Context(), cookie.Value, credential.Lease)
+				if err != nil || owner.UserID != accountSession.UserID || current.AgentID != agentID ||
+					(current.EffectiveScope() != account.SelectionScopeDevice && current.WorkspaceID != workspace) {
+					return false
+				}
+				device, err := accounts.Device(r.Context(), owner.UserID, agentID)
+				if err != nil || device.RevokedAt != nil {
+					return false
+				}
+				for _, published := range device.Workspaces {
+					if published.ID == workspace && published.Path != "" {
+						return true
+					}
+				}
+				return false
+			}).ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}

@@ -186,7 +186,7 @@ test("a stop intent aborts a controller and handler registered later", () => {
   hookHarness.cleanup();
 });
 
-test("a direct queue stop pauses processing until composer Stop resumes it", async () => {
+test("a direct queue stop pauses processing until composer Stop resumes it", async (t) => {
   const hookHarness = createHookHarness();
   const sendGate = deferred();
   const sendCalls = [];
@@ -197,6 +197,7 @@ test("a direct queue stop pauses processing until composer Stop resumes it", asy
   const toolStatusWrites = [];
   const liveTranscriptStores = createLiveTranscriptStoreStub();
   let stopRequestVersion = 0;
+  let backendBusy = false;
   let draftText = "first queued turn";
   const composer = {
     getDraft() {
@@ -287,6 +288,9 @@ test("a direct queue stop pauses processing until composer Stop resumes it", asy
       },
       isConversationRunning() {
         return false;
+      },
+      async isBackendSessionBusy() {
+        return backendBusy;
       },
       runningConversationIds: new Set(),
       getConversationAbortController() {
@@ -379,34 +383,45 @@ test("a direct queue stop pauses processing until composer Stop resumes it", asy
   assert.equal(sendCalls[1].commandSafetyModeOverride, "sandboxOffline");
   assert.equal(queue.queuedChatTurnsRef.current.length, 0);
 
-  // A gateway request parked in the GUI queue must retain the remote mode on
-  // both the queued send and the reconstructed bridge request.
-  assert.equal(
-    await queue.enqueueGatewayChatRequest(
-      {
+  // A plan can keep the engine busy after the gateway acknowledges this item.
+  // Keep it in the queue until the engine can run the next turn.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  backendBusy = true;
+  const queuedAck = deferred();
+  const enqueue = queue.enqueueGatewayChatRequest(
+    {
+      requestId: "gateway-request-sandbox",
+      clientRequestId: "gateway-client-sandbox",
+      request: {
         requestId: "gateway-request-sandbox",
         clientRequestId: "gateway-client-sandbox",
-        request: {
-          requestId: "gateway-request-sandbox",
-          clientRequestId: "gateway-client-sandbox",
-          conversationId: "conversation-1",
-          message:
-            "use [conversation: Earlier investigation](conversation:conversation-source)",
-          referencedConversations: [
-            { id: "conversation-source", title: "Earlier investigation" },
-          ],
-          executionMode: "tools",
-          commandSafetyMode: "sandboxOffline",
-          queuePolicy: "append",
-        },
+        conversationId: "conversation-1",
+        message:
+          "use [conversation: Earlier investigation](conversation:conversation-source)",
+        referencedConversations: [
+          { id: "conversation-source", title: "Earlier investigation" },
+        ],
+        executionMode: "tools",
+        commandSafetyMode: "sandboxOffline",
+        queuePolicy: "append",
       },
-      "conversation-1",
-    ),
-    true,
+    },
+    "conversation-1",
+    () => queuedAck.promise,
   );
-  queue.requestQueuedChatTurnProcessing("conversation-1");
+  await flushPromises();
+  assert.equal(sendCalls.length, 2, "a request cannot run before the gateway acknowledges it");
+  assert.equal(queue.queuedChatTurnsRef.current.length, 0);
+  queuedAck.resolve();
+  assert.equal(await enqueue, true);
+  await flushPromises();
+  assert.equal(sendCalls.length, 2);
+  assert.equal(queue.queuedChatTurnsRef.current.length, 1);
+  backendBusy = false;
+  t.mock.timers.tick(2_000);
   await flushPromises();
   await flushPromises();
+  assert.equal(sendCalls.length, 3);
   const gatewaySend = sendCalls.at(-1);
   assert.equal(gatewaySend.commandSafetyModeOverride, "sandboxOffline");
   assert.equal(

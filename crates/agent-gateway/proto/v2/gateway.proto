@@ -78,6 +78,7 @@ message GatewayEnvelope {
     ProxyDetectRequest proxy_detect = 109;
     HistoryResyncRequest history_resync = 110;
     PermissionRulesRequest permission_rules = 111;
+    WorkspaceHandoffRequest workspace_handoff = 112;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -172,11 +173,23 @@ message AgentEnvelope {
     HistorySyncStatus history_sync_status = 117;
     HistorySyncSnapshot history_sync_snapshot = 118;
     PermissionRulesResponse permission_rules_resp = 119;
+    WorkspaceHandoffResponse workspace_handoff_resp = 120;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
   // never-wired chat event replay response.
   reserved 67, 68, 69, 78;
+}
+
+message WorkspaceHandoffRequest {
+  string workspace_id = 1;
+  string operation_id = 2;
+  string file_name = 3;
+  bytes content = 4;
+}
+
+message WorkspaceHandoffResponse {
+  string relative_path = 1;
 }
 
 message ChatSelectedModel {

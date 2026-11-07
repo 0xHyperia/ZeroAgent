@@ -85,6 +85,11 @@ func (s *Service) StartCloudRuns(parent context.Context) error {
 	}
 	runtime.wg.Add(1)
 	go runtime.cleanupWorker()
+	if persistent, ok := s.store.(*PersistentStore); ok && s.cloudSchedulesEnabled {
+		runtime.wg.Add(2)
+		go runtime.scheduleWorker(persistent)
+		go runtime.cloudExecutionRefreshWorker(persistent)
+	}
 	return nil
 }
 
@@ -189,6 +194,10 @@ func validateCloudContent(raw json.RawMessage) (json.RawMessage, error) {
 }
 
 func (s *Service) CreateCloudRun(ctx context.Context, session *Session, input CreateCloudRunInput) (*CloudRun, bool, error) {
+	return s.createCloudRun(ctx, session, input, false)
+}
+
+func (s *Service) createCloudRun(ctx context.Context, session *Session, input CreateCloudRunInput, scheduled bool) (*CloudRun, bool, error) {
 	if session == nil || session.UserID <= 0 || !session.SessionExpiresAt.After(s.now()) {
 		return nil, false, &APIError{Status: http.StatusUnauthorized, Message: "account login required"}
 	}
@@ -202,6 +211,9 @@ func (s *Service) CreateCloudRun(ctx context.Context, session *Session, input Cr
 	session = current
 	input.ConversationID = strings.TrimSpace(input.ConversationID)
 	input.ClientRequestID = strings.TrimSpace(input.ClientRequestID)
+	if strings.HasPrefix(input.ClientRequestID, "schedule:") != scheduled {
+		return nil, false, ErrCloudRunInvalid
+	}
 	input.Model = strings.TrimSpace(input.Model)
 	if input.Model == "" {
 		input.Model = "gpt-5.1"
@@ -347,6 +359,9 @@ func (r *cloudRunRuntime) execute(run *CloudRun, owner string) {
 				check, done := context.WithTimeout(ctx, 3*time.Second)
 				current, err := r.store.RenewCloudRunLease(check, run.UserID, run.ID, owner, run.Attempt, cloudRunLease)
 				session, sessionErr := r.sessions.GetCloudRunSession(check, run.SessionRef)
+				if sessionErr == nil && (isDesktopCloudPurpose(session.Purpose) || session.Purpose == "cloud_schedule") {
+					session, sessionErr = r.service.Session(check, session.ID)
+				}
 				done()
 				if err != nil || current.State == CloudRunCancelling || sessionErr != nil || session.UserID != run.UserID {
 					cancel()

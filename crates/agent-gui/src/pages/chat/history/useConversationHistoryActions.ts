@@ -513,6 +513,7 @@ export function useConversationHistoryActions(params: UseConversationHistoryActi
   // the retry, while the projection's own field stays nullable.
   async function reloadConversation(
     conversationId: string,
+    options?: { idleOnly?: boolean },
   ): Promise<{ state: ConversationViewState; revision: string } | null> {
     const id = conversationId.trim();
     if (!id) return null;
@@ -522,8 +523,9 @@ export function useConversationHistoryActions(params: UseConversationHistoryActi
       includeActiveSegment: true,
     });
     if (!record.activeSegment) return null;
-    const state = buildConversationStateFromWindow(record);
     const previous = conversationRuntimeCacheRef.current.get(id);
+    if (options?.idleOnly && (previous?.isSending || isConversationRunning(id))) return null;
+    const state = buildConversationStateFromWindow(record);
     const entry = previous
       ? { ...previous, state, errorMessage: null }
       : createConversationRuntimeEntry({

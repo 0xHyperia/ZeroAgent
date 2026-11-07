@@ -24,7 +24,6 @@ use crate::commands::settings::RemoteSettingsPayload;
 use crate::runtime::managed_process::ManagedProcessRegistry;
 use crate::runtime::sftp::SftpSessionRegistry;
 use crate::runtime::terminal::TerminalSessionRegistry;
-use crate::services::automation::AutomationStore;
 use crate::services::chat_run_ledger::ChatRunLedger;
 use crate::services::provider_usage::ProviderUsageService;
 use crate::services::tunnel::{TunnelProxy, TunnelStore};
@@ -62,6 +61,7 @@ mod tests;
 mod types;
 mod util;
 mod ws_transport;
+mod workspace_handoff;
 
 pub(crate) use chat::*;
 pub(crate) use chat_inbox::*;
@@ -126,7 +126,6 @@ pub(crate) const GATEWAY_CHAT_CHECKPOINT_REQUESTED_EVENT: &str =
 
 pub struct GatewayController {
     app_handle: tauri::AppHandle,
-    automation_store: Arc<AutomationStore>,
     provider_usage_service: Arc<ProviderUsageService>,
     terminal_registry: Arc<TerminalSessionRegistry>,
     sftp_registry: Arc<SftpSessionRegistry>,

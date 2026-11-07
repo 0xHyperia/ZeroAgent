@@ -120,6 +120,15 @@ func (c *USAClient) RefreshApp(ctx context.Context, clientID, refreshToken strin
 	})
 }
 
+func (c *USAClient) ExchangeDesktopCloud(ctx context.Context, accessToken string) (*OAuthTokenResult, error) {
+	if !c.WebOAuthConfigured() {
+		return nil, &APIError{Status: http.StatusServiceUnavailable, Reason: "cloud_execution_unavailable", Message: "Cloud execution from the desktop is unavailable on this gateway"}
+	}
+	return c.appToken(ctx, url.Values{
+		"grant_type": {"urn:zeroagent:grant:desktop-cloud"}, "client_id": {"zeroagent-web"}, "subject_token": {accessToken},
+	})
+}
+
 func (c *USAClient) RevokeApp(ctx context.Context, token, hint string) error {
 	values := url.Values{"token": {token}}
 	if hint != "" {

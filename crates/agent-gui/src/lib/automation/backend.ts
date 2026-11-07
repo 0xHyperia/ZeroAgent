@@ -27,6 +27,7 @@ import {
   clearKBrainCronRuns,
   fetchKBrainCron,
   listKBrainCronRuns,
+  readKBrainCronRunAnchor,
   runKBrainCronNow,
   subscribeKBrainCron,
   validateKBrainCron,
@@ -92,6 +93,12 @@ export const backend = {
       task_id: taskId,
       limit: limit ?? 100,
     });
+  },
+
+  runAnchor(taskId: string, executionId: string) {
+    return isKBrainBackendEnabled()
+      ? readKBrainCronRunAnchor(taskId, executionId)
+      : Promise.resolve({});
   },
 
   cronOccurrences(from: number, to: number): Promise<CronOccurrencesResponse> {

@@ -562,7 +562,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.sandboxCapabilityUnknown":
     "Sandbox capability has not been reported by the execution host",
   "chat.safety.sandboxNativeWindows":
-    "Native Windows K-brain does not support run sandboxes. Run K-brain in WSL2 or choose Always Ask.",
+    "Run sandboxes are unavailable on native Windows. Run the ZeroAgent backend in WSL2 or choose Always Ask.",
   "chat.safety.sandboxUnavailable": "ZeroAgent cannot sandbox commands on this machine",
   "chat.safety.sandboxOfflineUnavailable":
     "ZeroAgent cannot cut the sandbox off from the network on this machine",

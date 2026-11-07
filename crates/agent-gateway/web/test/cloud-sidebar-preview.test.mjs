@@ -43,15 +43,17 @@ test('navigation previews only open while collapsed and pinning cancels visible 
  const {useCloudSidebarPreview}=env.loadModule('src/components/cloudchat/useCloudSidebarPreview.ts');
  const container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
  let preview;
- function Harness({pinnedOpen=true,destination='chat'}){preview=useCloudSidebarPreview(true,1,{pinnedOpen,destination});return React.createElement('div',{ref:preview.rootRef},...['chat','library','devices'].map(id=>React.createElement('button',{key:id,'data-rail-item':id},id)),React.createElement('div',{'data-sidebar-preview-region':''},'Preview'));}
+ function Harness({pinnedOpen=true,destination='chat'}){preview=useCloudSidebarPreview(true,1,{pinnedOpen,destination});return React.createElement('div',{ref:preview.rootRef},...['chat','library','devices','cron-hub','customize'].map(id=>React.createElement('button',{key:id,'data-rail-item':id},id)),React.createElement('div',{'data-sidebar-preview-region':''},'Preview'));}
  const render=props=>act(async()=>root.render(React.createElement(Harness,props)));
  const hover=async(id,wait=150)=>act(async()=>{const event=new Event('pointerover',{bubbles:true});Object.defineProperty(event,'pointerType',{value:'mouse'});container.querySelector(`[data-rail-item="${id}"]`).dispatchEvent(event);if(wait)await new Promise(resolve=>setTimeout(resolve,wait));});
  try{
   await render();
-  for(const id of ['chat','library','devices']){await hover(id);assert.equal(preview.open,false,'an expanded sidebar must not show hover previews');}
+  for(const id of ['chat','library','devices','cron-hub','customize']){await hover(id);assert.equal(preview.open,false,'an expanded sidebar must not show hover previews');}
   await render({pinnedOpen:false});
   await hover('library');assert.equal(preview.open,true);assert.equal(preview.destination,'library');
   await hover('devices');assert.equal(preview.open,true);assert.equal(preview.destination,'devices');
+  await hover('cron-hub');assert.equal(preview.open,true);assert.equal(preview.destination,'cron-hub');
+  await hover('customize');assert.equal(preview.open,true);assert.equal(preview.destination,'customize');
   await render({pinnedOpen:true,destination:'library'});assert.equal(preview.open,false);
   await hover('chat');assert.equal(preview.open,false);
   await render({pinnedOpen:false,destination:'library'});await hover('chat');assert.equal(preview.destination,'chat');assert.equal(preview.open,true);
@@ -66,12 +68,12 @@ test('crossing the collapsed edge into a context preview retains that sidebar un
  const {useCloudSidebarPreview}=env.loadModule('src/components/cloudchat/useCloudSidebarPreview.ts');
  const container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
  let preview;
- function Harness(){preview=useCloudSidebarPreview(true,1);return React.createElement('div',{ref:preview.rootRef},...['chat','library','devices'].map(id=>React.createElement('button',{key:id,'data-rail-item':id},id)),React.createElement('div',{'data-cloud-sidebar-hover-edge':''},'Edge'),React.createElement('div',{'data-sidebar-preview-region':''},React.createElement('button',{'data-preview-row':''},'Preview row')));}
+ function Harness(){preview=useCloudSidebarPreview(true,1,{destination:'cron-hub'});return React.createElement('div',{ref:preview.rootRef},...['chat','library','devices','cron-hub','customize'].map(id=>React.createElement('button',{key:id,'data-rail-item':id},id)),React.createElement('div',{'data-cloud-sidebar-hover-edge':''},'Edge'),React.createElement('div',{'data-sidebar-preview-region':''},React.createElement('button',{'data-preview-row':''},'Preview row')));}
  const point=selector=>act(async()=>{const event=new Event('pointerover',{bubbles:true});Object.defineProperty(event,'pointerType',{value:'mouse'});document.querySelector(selector).dispatchEvent(event);});
  const settle=ms=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,ms));});
  try{
   await act(async()=>root.render(React.createElement(Harness)));
-  for(const destination of ['library','devices']){
+  for(const destination of ['chat','library','devices','customize']){
    await point(`[data-rail-item="${destination}"]`);await settle(150);
    assert.equal(preview.destination,destination);assert.equal(preview.open,true);
    await point('[data-cloud-sidebar-hover-edge]');await settle(150);
@@ -79,7 +81,7 @@ test('crossing the collapsed edge into a context preview retains that sidebar un
    assert.equal(preview.open,true);assert.equal(preview.destination,destination,'the handoff edge must not replace the visible preview with chat');
    await point('body');await settle(250);assert.equal(preview.open,false);
    await point('[data-cloud-sidebar-hover-edge]');await settle(150);
-   assert.equal(preview.open,true);assert.equal(preview.destination,'chat','a fresh edge entry after closing still opens the current page sidebar');
+   assert.equal(preview.open,true);assert.equal(preview.destination,'cron-hub','a fresh edge entry still opens the selected task workspace');
   }
  }finally{await act(async()=>root.unmount());container.remove();env.cleanup();}
 });

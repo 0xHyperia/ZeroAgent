@@ -18,12 +18,18 @@ import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import {
+  ScheduledPromptPreview,
+  ScheduledReplyPreview,
+} from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { TaskProgressBar } from "@liveagent/ui/components/chat/TaskProgressBar";
 import { ToolApprovalBar } from "@liveagent/ui/components/chat/ToolApprovalBar";
 import { ChevronDown, Loader2 } from "@liveagent/ui/components/IconSet";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
+import { Button } from "@liveagent/ui/components/ui/button";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import type { ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import {
   type CheckpointRewindClient,
   CheckpointRewindProvider,
@@ -46,6 +52,11 @@ import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { toTrajectoryMessages } from "@liveagent/ui/lib/trajectory/transcriptMessages";
 import {
+  type TranscriptMessageJump,
+  useTranscriptMessageJump,
+} from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
+import type { TranscriptNavigationHandle } from "@liveagent/ui/lib/transcript-virtual/useTranscriptNavigation";
+import {
   ChatComposerBar,
   type ChatComposerBarProps,
   type ChatQueueTurnPreview,
@@ -58,6 +69,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -68,6 +80,10 @@ import type { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { executeClarifyPromptTurn } from "@/lib/chat/clarifyPromptTurn";
 import { trimLeadingHeadlessEntries } from "@/lib/chat/historyWindow";
+import type {
+  ConversationStreamEvent,
+  ConversationSubscribeResult,
+} from "@/lib/chat/stream/streamTypes";
 import type { TranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { submitToolApprovalDecision } from "@/lib/chat/toolApprovalBridge";
 import type { GatewayWebSocketClient } from "@/lib/gatewaySocket";
@@ -148,6 +164,11 @@ export type GatewayConversationPaneHostContext = {
   selectionForConversation: (conversationId: string) => SelectedModel | undefined;
   workdirForConversation: (conversationId: string) => string;
   isConversationBusy: (conversationId: string) => boolean;
+  handleConversationStreamEvent: (conversationId: string, event: ConversationStreamEvent) => void;
+  handleConversationStreamSync: (
+    conversationId: string,
+    result: ConversationSubscribeResult,
+  ) => void;
   sendChat: SendChatFn;
   cancelChat: (conversationId: string) => Promise<void> | void;
   materializeComposerDraftForSend: (
@@ -174,7 +195,7 @@ export type GatewayConversationPaneHostContext = {
     files: File[],
   ) => Promise<void>;
   getCachedComposerDraft: (conversationId: string) => MentionComposerDraft | undefined;
-  setCachedComposerDraft: (conversationId: string, draft: MentionComposerDraft) => void;
+  setCachedComposerDraft: (conversationId: string, draft: MentionComposerDraft | null) => void;
   notifyError: (message: string) => void;
   trajectoryHost: ReturnType<typeof createGatewayTrajectoryHost>;
 };
@@ -245,28 +266,50 @@ export type GatewayConversationPaneHostProps = {
   /** 本 Pane 是否承载页面当前会话(primary 绑定)。焦点切换不拆宿主。 */
   isPrimary: boolean;
   /** focusGuard 出口:页面级操作先聚焦本 Pane。 */
-  onFocusPane: () => void;
+  onFocusPane: (conversationId: string) => void;
   /** 页面 composerRef:primary Pane 把自己的输入框挂上去。 */
   pageComposerRef?: MutableRefObject<MentionComposerHandle | null>;
   primary?: GatewayConversationPrimarySurface;
   blockedMessage?: string | null;
   /** 本 Pane 独立的会话/轨迹视图（每个会话一份，后台 Pane 也能保持）。 */
   trajectoryActive?: boolean;
+  composerScopeId?: string;
+  historyVersion?: string;
+  messageJump?: TranscriptMessageJump;
+  scheduledRun?: ScheduledConversationRun;
+  isStreamAlreadySubscribed?: (conversationId: string) => boolean;
 };
 
 export function GatewayConversationPaneHost(props: GatewayConversationPaneHostProps) {
   const chatFrameRef = useRef<HTMLDivElement | null>(null);
   const {
     paneId,
-    conversationId,
+    conversationId: requestedConversationId,
     context,
     isPrimary,
-    onFocusPane,
+    onFocusPane: focusPane,
     pageComposerRef,
     primary,
     blockedMessage,
     trajectoryActive = false,
+    composerScopeId,
+    historyVersion,
+    messageJump,
+    scheduledRun,
+    isStreamAlreadySubscribed,
   } = props;
+  const [taskConversation, setTaskConversation] = useState<{
+    requestedId: string;
+    id: string;
+  }>();
+  const resolvedTaskConversation =
+    taskConversation?.requestedId === requestedConversationId ? taskConversation : undefined;
+  const conversationId = resolvedTaskConversation?.id ?? requestedConversationId;
+  const identityReady = !composerScopeId || Boolean(resolvedTaskConversation);
+  const onFocusPane = useCallback(() => focusPane(conversationId), [conversationId, focusPane]);
+  const streamAlreadySubscribed = isStreamAlreadySubscribed?.(conversationId) === true;
+  const composerKey = composerScopeId ?? conversationId;
+  const taskFileInputRef = useRef<HTMLInputElement | null>(null);
   const { api, registry } = context;
   // context 里的部分函数(sendChat 等)每次渲染都是新引用;凡按 conversationId
   // 维度运行的 effect 一律经 ref 读取,避免身份抖动触发误重置。
@@ -280,48 +323,105 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   // Primary 的流由页面级 useConversationChat 占用同一 store;背景 Pane 自己订
   // 阅。isPrimary 翻转时 effect 重跑,保证「后订阅替换先订阅」后背景能把流接回。
   useEffect(() => {
-    if (isDraft || isPrimary) return;
+    if (isDraft || isPrimary || !identityReady || streamAlreadySubscribed) return;
     return api.subscribeConversationStream(conversationId, {
-      onSync: (result) => store.applySync(result),
-      onEvent: (event) => store.applyEvent(event),
+      onSync: (result) => {
+        store.applySync(result);
+        contextRef.current.handleConversationStreamSync(conversationId, result);
+      },
+      onEvent: (event) => {
+        store.applyEvent(event);
+        contextRef.current.handleConversationStreamEvent(conversationId, event);
+      },
     });
-  }, [api, conversationId, isDraft, isPrimary, store]);
+  }, [api, conversationId, identityReady, isDraft, isPrimary, store, streamAlreadySubscribed]);
 
   const [hydrated, setHydrated] = useState(isDraft);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const [historyReadVersion, setHistoryReadVersion] = useState<string>();
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  const lastCompletedRunRef = useRef<string | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const loadedMaxMessagesRef = useRef(HISTORY_DETAIL_INITIAL_MAX_MESSAGES);
   const historyConversationIdRef = useRef(conversationId);
   historyConversationIdRef.current = conversationId;
+  const preview = scheduledRun?.preview;
+  const scheduledRunActive = Boolean(scheduledRun?.active);
+  const streamingScheduledReply = scheduledRunActive && !preview?.done;
+  const deferScheduledHistoryRefresh = useEffectEvent(() => streamingScheduledReply);
   // biome-ignore lint/correctness/useExhaustiveDependencies: conversation identity is the reset trigger; the effect intentionally does not read it.
   useEffect(() => {
     loadedMaxMessagesRef.current = HISTORY_DETAIL_INITIAL_MAX_MESSAGES;
     setHasMoreHistory(false);
   }, [conversationId]);
   useEffect(() => {
+    if (!composerScopeId || !identityReady) return;
+    const isResultConversation = (id: string) =>
+      id === conversationId || id === requestedConversationId;
+    const refresh = () => {
+      // The scheduled preview owns the live reply until the completion refresh.
+      if (!deferScheduledHistoryRefresh()) setHistoryAttempt((attempt) => attempt + 1);
+    };
+    const unsubscribeActivity = api.subscribeChatActivity((event) => {
+      if (
+        event.running ||
+        !event.runId ||
+        event.runId === lastCompletedRunRef.current ||
+        !isResultConversation(event.conversationId)
+      )
+        return;
+      lastCompletedRunRef.current = event.runId;
+      refresh();
+    });
+    const unsubscribeHistory = api.subscribeHistory((event) => {
+      // Desktop-origin turns can persist before the task pane receives any
+      // activity event. Use the same history notification as the chat page.
+      if (event.kind === "upsert" && isResultConversation(event.conversation_id)) refresh();
+    });
+    return () => {
+      unsubscribeActivity();
+      unsubscribeHistory();
+    };
+  }, [api, composerScopeId, conversationId, identityReady, requestedConversationId]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: historyAttempt and historyVersion explicitly revalidate the read.
+  useEffect(() => {
+    setHistoryFailed(false);
     if (isDraft || isPrimary) {
       setHydrated(true);
       return;
     }
-    if (store.getSnapshot().rows.length > 0) {
-      setHydrated(true);
-      return;
-    }
+    const hasCachedRows = store.getSnapshot().rows.length > 0;
+    if (hasCachedRows) setHydrated(true);
+    if (hasCachedRows && !composerScopeId) return;
     let cancelled = false;
-    setHydrated(false);
+    if (!hasCachedRows) setHydrated(false);
     void (async () => {
       try {
         const detail = await api.getHistory(conversationId, {
-          maxMessages: HISTORY_DETAIL_INITIAL_MAX_MESSAGES,
+          maxMessages: loadedMaxMessagesRef.current,
         });
         if (cancelled) return;
         const parsed = await parseHistoryMessagesJsonAsync(detail.messages_json);
         if (cancelled) return;
         const entries = detail.has_more === true ? trimLeadingHeadlessEntries(parsed) : parsed;
-        const mode = store.getSnapshot().rows.length > 0 ? "enrich" : "replace";
-        store.applyHistorySnapshot(entries, { mode });
+        // Scheduler records carry engine session IDs. Remote chat and its
+        // events use the desktop conversation ID from the history summary.
+        const id = composerScopeId ? detail.conversation?.id?.trim() || conversationId : conversationId;
+        const targetStore = id === conversationId ? store : registry.get(id);
+        const mode = targetStore.getSnapshot().rows.length > 0 ? "enrich" : "replace";
+        targetStore.applyHistorySnapshot(entries, { mode });
+        if (composerScopeId) {
+          setTaskConversation((current) =>
+            current?.requestedId === requestedConversationId && current.id === id
+              ? current
+              : { requestedId: requestedConversationId, id },
+          );
+        }
         setHasMoreHistory(detail.has_more === true);
+        setHistoryReadVersion(historyVersion);
       } catch {
         // 历史读取失败时退化为纯实时视图;聚焦后主视图会重新拉取。
+        if (!cancelled) setHistoryFailed(true);
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -329,17 +429,33 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     return () => {
       cancelled = true;
     };
-  }, [api, conversationId, isDraft, isPrimary, store]);
+  }, [
+    api,
+    composerScopeId,
+    conversationId,
+    historyAttempt,
+    historyVersion,
+    isDraft,
+    isPrimary,
+    registry,
+    requestedConversationId,
+    store,
+  ]);
+  useEffect(() => {
+    if (!preview?.text || streamingScheduledReply || !historyFailed) return;
+    const timer = window.setTimeout(() => setHistoryAttempt((attempt) => attempt + 1), 4000);
+    return () => window.clearTimeout(timer);
+  }, [historyFailed, preview?.text, streamingScheduledReply]);
 
   const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const loadingEarlierRef = useRef(false);
+  const loadingEarlierRef = useRef<Promise<void> | null>(null);
   const handleLoadEarlierHistory = useCallback(() => {
-    if (isDraft || loadingEarlierRef.current) return;
+    if (isDraft) return Promise.resolve();
+    if (loadingEarlierRef.current) return loadingEarlierRef.current;
     const requestedConversationId = conversationId;
-    loadingEarlierRef.current = true;
     setLoadingEarlier(true);
     const nextMax = loadedMaxMessagesRef.current + HISTORY_DETAIL_LOAD_EARLIER_PAGE_MESSAGES;
-    void (async () => {
+    const request = (async () => {
       try {
         const detail = await api.getHistory(requestedConversationId, { maxMessages: nextMax });
         if (historyConversationIdRef.current !== requestedConversationId) return;
@@ -351,18 +467,20 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         setHasMoreHistory(detail.has_more === true);
       } catch {
         // 拉取失败保持现状,按钮可重试。
-      } finally {
-        if (historyConversationIdRef.current === requestedConversationId) {
-          loadingEarlierRef.current = false;
-          setLoadingEarlier(false);
-        }
       }
-    })();
+    })().finally(() => {
+      if (loadingEarlierRef.current === request) {
+        loadingEarlierRef.current = null;
+        setLoadingEarlier(false);
+      }
+    });
+    loadingEarlierRef.current = request;
+    return request;
   }, [api, conversationId, isDraft, store]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: conversation identity cancels the previous pane's loading indicator; the effect intentionally does not read it.
   useEffect(() => {
-    loadingEarlierRef.current = false;
+    loadingEarlierRef.current = null;
     setLoadingEarlier(false);
   }, [conversationId]);
 
@@ -496,8 +614,8 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   // 权威快照，不再依赖 Pane 自己动作后的手动镜像刷新。
   const pendingUploads = useSyncExternalStore(
     context.subscribePendingUploads,
-    () => context.getPendingUploads(conversationId),
-    () => context.getPendingUploads(conversationId),
+    () => context.getPendingUploads(composerKey),
+    () => context.getPendingUploads(composerKey),
   );
 
   // ---- 发送/停止:严格按本 Pane 的 conversationId 路由(桌面端口径) --------
@@ -579,7 +697,10 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     [workdir],
   );
 
-  const isRunning = transcript.activeRun !== null || context.isConversationBusy(conversationId);
+  const isRunning =
+    scheduledRunActive ||
+    transcript.activeRun !== null ||
+    context.isConversationBusy(conversationId);
   const isRunningRef = useRef(isRunning);
   isRunningRef.current = isRunning;
 
@@ -587,13 +708,13 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     if (sendInFlightRef.current || context.transportInputDisabled) return;
     // 本会话的附件导入尚未落账时不得发送:此刻 getPendingUploads 读到的
     // 是空列表,消息会丢附件(与主 Pane 的上传中禁用同一边界)。
-    if (context.uploadingConversationId === conversationId) return;
+    if (context.uploadingConversationId === composerKey) return;
     const composer = composerRef.current;
     const draft = composer?.getDraft() ?? null;
     sendInFlightRef.current = true;
     void (async () => {
       try {
-        const files = context.getPendingUploads(conversationId).slice();
+        const files = context.getPendingUploads(composerKey).slice();
         let text: string;
         let uploadedFiles: PendingUploadedFile[];
         let referencedConversations = draft?.conversationMentions ?? [];
@@ -603,7 +724,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
                 draft,
                 files,
                 workdirRef.current,
-                conversationId,
+                composerKey,
               )
             : { text: "", uploadedFiles: files, referencedConversations: [] };
           text = materialized.text;
@@ -615,17 +736,25 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         }
         if (!text && uploadedFiles.length === 0) return;
         composerRef.current?.clear();
-        context.updatePendingUploads(conversationId, () => []);
+        if (composerScopeId) context.setCachedComposerDraft(composerKey, null);
+        context.updatePendingUploads(composerKey, () => []);
         // 忙时入队(与桌面端背景 Pane enqueue 一致):队列面板持有提示词,
         // 不做转录乐观回显;闲时直发。
         const busy = isRunningRef.current || queuedTurnsRef.current.length > 0;
         const restore = () => {
-          context.updatePendingUploads(conversationId, (current) =>
+          context.updatePendingUploads(composerKey, (current) =>
             mergePendingUploadedFiles(current, uploadedFiles),
           );
           const currentComposer = composerRef.current;
           if (draft && currentComposer && !currentComposer.hasContent()) {
             currentComposer.setDraft(draft);
+          } else if (
+            composerScopeId &&
+            draft &&
+            !currentComposer &&
+            !context.getCachedComposerDraft(composerKey)
+          ) {
+            context.setCachedComposerDraft(composerKey, draft);
           }
         };
         try {
@@ -634,9 +763,11 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             uploadedFiles,
             referencedConversations,
             runtimeControls: paneRuntimeControls,
-            ...(busy ? { queuePolicy: "append" as const, optimisticEcho: false } : {}),
+            preserveComposerOnStart: Boolean(composerScopeId),
+            queuePolicy: busy ? "append" : "auto",
+            optimisticEcho: !busy,
           });
-          if (outcome?.kind === "failed") restore();
+          if (outcome?.kind === "failed" || (composerScopeId && !outcome)) restore();
         } catch {
           restore();
         }
@@ -644,9 +775,13 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         sendInFlightRef.current = false;
       }
     })();
-  }, [context, conversationId, paneRuntimeControls]);
+  }, [composerKey, composerScopeId, context, conversationId, paneRuntimeControls]);
 
   const handleStop = useCallback(() => {
+    if (scheduledRun?.active) {
+      scheduledRun.cancel?.();
+      return;
+    }
     // 与桌面端/聚焦舞台一致:有排队回合先"停当前、跑下一条",否则纯停止。
     const nextQueuedTurn = queuedTurnsRef.current[0];
     if (nextQueuedTurn && !queuePaused) {
@@ -654,7 +789,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
       return;
     }
     void context.cancelChat(conversationId);
-  }, [context, conversationId, handleRunQueuedTurnNow, queuePaused]);
+  }, [context, conversationId, handleRunQueuedTurnNow, queuePaused, scheduledRun]);
   // 背景 Pane 的“/”指令：目录、发送、目标清除与定时任务都按本会话路由；
   // /plan、/model 与 /rewind 依赖主 Pane 的开关、模型与回退上下文，这里不提供。
   // context 每次渲染都是新对象：读数经 ref 取最新值，宿主引用只随 api 与会话变化，
@@ -683,10 +818,13 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   // ---- 草稿:挂载恢复缓存,卸载(聚焦切换/关 Pane)写回缓存(桌面端口径) --
   // hydrated 必须参与触发:背景 Pane 冷启动时先渲染加载占位,composer 尚未
   // 挂载,恢复会被无声跳过;水合完成后重跑一次才能把缓存草稿真正写进输入框。
+  const composerMounted =
+    hydrated && identityReady && (!composerScopeId || !historyFailed || transcript.rows.length > 0);
   useLayoutEffect(() => {
-    if (!hydrated) return;
+    if (!composerMounted) return;
     const composer = composerRef.current;
-    const cached = contextRef.current.getCachedComposerDraft(conversationId);
+    const { getCachedComposerDraft, setCachedComposerDraft } = contextRef.current;
+    const cached = getCachedComposerDraft(composerKey);
     if (cached) {
       composer?.setDraft(cached);
     } else {
@@ -695,11 +833,15 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     return () => {
       // 只写回非空草稿:空输入框不得删除缓存里的草稿(聚焦舞台的恢复
       // 通路仍需要它),与桌面端 ConversationPaneHost 的卸载语义一致。
-      const nextDraft = composerRef.current?.getDraft();
-      if (!nextDraft || nextDraft.isEmpty || !nextDraft.text.trim()) return;
-      contextRef.current.setCachedComposerDraft(conversationId, nextDraft);
+      const nextDraft = composer?.getDraft();
+      if (!nextDraft) return;
+      if (nextDraft.isEmpty || !nextDraft.text.trim()) {
+        if (composerScopeId) setCachedComposerDraft(composerKey, null);
+        return;
+      }
+      setCachedComposerDraft(composerKey, nextDraft);
     };
-  }, [conversationId, hydrated]);
+  }, [composerKey, composerMounted, composerScopeId]);
 
   useLayoutEffect(() => {
     if (!isPrimary || !pageComposerRef) return;
@@ -731,6 +873,23 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     if (!usePrimary) paneFollow.stickToBottom();
   }, [conversationId, paneFollow, usePrimary]);
   const rowCount = transcript.rows.length;
+  const taskResultNavigation = useRef<TranscriptNavigationHandle | null>(null);
+  useTranscriptMessageJump({
+    target: messageJump,
+    rowKey: messageJump
+      ? transcript.rows.find(
+          (row) => row.kind === "user" && row.messageRef?.messageId === messageJump.messageId,
+        )?.key
+      : undefined,
+    historyBoundary: transcript.rows[0]?.key ?? "",
+    hasMoreHistory,
+    loadEarlier: handleLoadEarlierHistory,
+    ready: Boolean(paneViewport) && hydrated && historyReadVersion === historyVersion,
+    jumpToRow: (key) => {
+      paneFollow.breakFollow();
+      taskResultNavigation.current?.scrollToRowKey(key);
+    },
+  });
 
   // ---- 每会话模型/用量/进度/审批 -------------------------------------------
   const selectedValue = selection
@@ -795,7 +954,51 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
       />
     ) : null;
 
-  if (!hydrated && !isPrimary && rowCount === 0) {
+  const promptId = preview?.prompt?.messageId;
+  const scheduledPromptIndex = promptId
+    ? transcript.rows.findIndex((row) => row.kind === "user" && row.messageRef?.messageId === promptId)
+    : -1;
+  const followingPrompt = scheduledPromptIndex < 0
+    ? undefined
+    : transcript.rows.slice(scheduledPromptIndex + 1).find(
+        (row) => row.kind === "assistant" || row.kind === "user",
+      );
+  const scheduledHistoryReplyKey =
+    !streamingScheduledReply && followingPrompt?.kind === "assistant"
+      ? followingPrompt.key
+      : undefined;
+  const showScheduledReply =
+    !scheduledHistoryReplyKey &&
+    scheduledRun &&
+    preview &&
+    (streamingScheduledReply ||
+      ((preview.text || preview.prompt) &&
+        (historyFailed || historyReadVersion !== historyVersion)));
+  const scheduledTurn =
+    scheduledRun && preview && (showScheduledReply || promptId)
+      ? {
+          key: `scheduled-preview:${scheduledRun.run.id}`,
+          promptHistoryKey: transcript.rows[scheduledPromptIndex]?.key,
+          replyHistoryKey: scheduledHistoryReplyKey,
+          prompt:
+            showScheduledReply && preview.prompt && scheduledPromptIndex < 0
+              ? <ScheduledPromptPreview prompt={preview.prompt} />
+              : undefined,
+          reply: showScheduledReply ? (
+            <ScheduledReplyPreview
+              preview={preview}
+              startedAt={scheduledRun.run.startedAt}
+              streaming={streamingScheduledReply}
+              showPrompt={false}
+            />
+          ) : undefined,
+        }
+      : undefined;
+
+  if (
+    !showScheduledReply &&
+    ((!identityReady && !historyFailed) || (!hydrated && !isPrimary && rowCount === 0))
+  ) {
     return (
       <div
         data-workbench-pane-id={paneId}
@@ -804,6 +1007,29 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         className="flex size-full min-h-0 items-center justify-center"
       >
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!showScheduledReply && composerScopeId && historyFailed && (!identityReady || rowCount === 0)) {
+    const zh = context.settings.locale === "zh-CN";
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+        <p className="text-sm text-muted-foreground" role="status">
+          {zh ? "暂时无法读取结果对话。" : "The result conversation could not be loaded."}
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setHistoryAttempt((attempt) => attempt + 1)}
+          >
+            {zh ? "重试" : "Retry"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onFocusPane}>
+            {zh ? "打开结果对话" : "Open result conversation"}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -850,7 +1076,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
       onOpenFileLink={context.onOpenFileLink}
       gitClient={context.gitClient}
       onLoadUploadedImagePreview={context.onLoadUploadedImagePreview}
-      navRef={usePrimary ? primary?.navRef : undefined}
+      navRef={usePrimary ? primary?.navRef : messageJump ? taskResultNavigation : undefined}
       onAnchorUserRowChange={usePrimary ? primary?.onAnchorUserRowChange : undefined}
       onResendFromEdit={usePrimary ? primary?.onResendFromEdit : () => onFocusPane()}
       onBranchConversation={usePrimary ? primary?.onBranchConversation : undefined}
@@ -858,6 +1084,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         usePrimary ? (primary?.branchPendingMessageId ?? undefined) : undefined
       }
       onSuggestionSelect={usePrimary ? primary?.onSuggestionSelect : () => onFocusPane()}
+      scheduledTurn={scheduledTurn}
     />
   );
 
@@ -870,6 +1097,19 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
       data-workbench-surface-id={`conversation:${conversationId}`}
       className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
+      {composerScopeId && (
+        <input
+          ref={taskFileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            if (files.length) void context.importFilesForConversation(composerKey, workdir, files);
+          }}
+        />
+      )}
       {blockedMessage ? (
         <div
           data-workbench-pane-blocked=""
@@ -972,7 +1212,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             isUploadingFiles={
               usePrimary
                 ? (primary?.isUploadingFiles ?? false)
-                : context.uploadingConversationId === conversationId
+                : context.uploadingConversationId === composerKey
             }
             isInputDisabled={resolveWorkbenchComposerInputDisabled({
               isPrimary: usePrimary,
@@ -991,7 +1231,13 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             mentionableConversations={context.mentionableConversations}
             searchMentionableConversations={context.searchMentionableConversations}
             mentionApps={context.mentionApps}
-            commandHost={usePrimary && primary ? primary.commandHost : backgroundCommandHost}
+            commandHost={
+              usePrimary && primary
+                ? primary.commandHost
+                : composerScopeId
+                  ? undefined
+                  : backgroundCommandHost
+            }
             executionMode={context.settings.system.executionMode}
             hasModels={context.hasModels}
             currentModelLabel={modelLabel}
@@ -1021,6 +1267,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             onWorktreeRemoved={context.onWorktreeRemoved}
             onSend={usePrimary && primary ? primary.onSend : handleSend}
             onStop={usePrimary && primary ? primary.onStop : handleStop}
+            stopDisabled={Boolean(scheduledRun?.active && !scheduledRun.cancel)}
             onComposerBusyChange={
               usePrimary && primary ? primary.onComposerBusyChange : () => undefined
             }
@@ -1034,7 +1281,11 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             }
             onPrepareChatRuntime={usePrimary && primary ? primary.onPrepareChatRuntime : undefined}
             onPickReadableFiles={
-              usePrimary && primary ? primary.onPickReadableFiles : () => onFocusPane()
+              usePrimary && primary
+                ? primary.onPickReadableFiles
+                : composerScopeId
+                  ? () => taskFileInputRef.current?.click()
+                  : onFocusPane
             }
             onPickWorkspaceFolder={
               usePrimary && primary ? primary.onPickWorkspaceFolder : () => onFocusPane()
@@ -1043,11 +1294,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
               usePrimary && primary
                 ? primary.onPasteFiles
                 : (files) => {
-                    void context.importFilesForConversation(
-                      conversationId,
-                      workdirRef.current,
-                      files,
-                    );
+                    void context.importFilesForConversation(composerKey, workdirRef.current, files);
                   }
             }
             onLoadUploadedImagePreview={context.onLoadUploadedImagePreview}
@@ -1059,7 +1306,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
               usePrimary && primary
                 ? primary.onRemovePendingUpload
                 : (relativePath) => {
-                    context.updatePendingUploads(conversationId, (current) =>
+                    context.updatePendingUploads(composerKey, (current) =>
                       current.filter((file) => file.relativePath !== relativePath),
                     );
                   }
@@ -1067,6 +1314,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             queuedTurns={usePrimary && primary ? primary.queuedTurns : queuedTurns}
             queuePaused={usePrimary ? primary?.queuePaused : queuePaused}
             queueControlPending={queueControlPending}
+            queueRunDisabled={scheduledRunActive}
             onQueuePausedChange={handleQueuePausedChange}
             onRunQueuedTurnNow={
               usePrimary && primary ? primary.onRunQueuedTurnNow : handleRunQueuedTurnNow

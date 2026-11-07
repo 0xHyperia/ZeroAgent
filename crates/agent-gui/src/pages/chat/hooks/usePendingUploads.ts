@@ -288,18 +288,25 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     ],
   );
 
-  const pickReadableFiles = useCallback(
-    () =>
-      runUploadTask({
-        emptySelectionMessage: "所选文件均不受当前 Read 支持",
-        errorFallback: "导入文件失败",
-        importer: ({ targetWorkdir }) =>
-          invoke<SystemPickReadableFilesResponse>("system_pick_readable_files", {
-            workdir: targetWorkdir,
-            maxFiles: MAX_UPLOAD_FILES,
-          }),
-      }),
+  const pickReadableFilesForConversation = useCallback(
+    (target?: ConversationUploadTarget) =>
+      runUploadTask(
+        {
+          emptySelectionMessage: "所选文件均不受当前 Read 支持",
+          errorFallback: "导入文件失败",
+          importer: ({ targetWorkdir }) =>
+            invoke<SystemPickReadableFilesResponse>("system_pick_readable_files", {
+              workdir: targetWorkdir,
+              maxFiles: MAX_UPLOAD_FILES,
+            }),
+        },
+        target,
+      ),
     [runUploadTask],
+  );
+  const pickReadableFiles = useCallback(
+    () => pickReadableFilesForConversation(),
+    [pickReadableFilesForConversation],
   );
 
   const importReadableFilePaths = useCallback(
@@ -373,6 +380,7 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     getPendingUploadsForConversation,
     setPendingUploadsForConversation,
     pickReadableFiles,
+    pickReadableFilesForConversation,
     importReadableFilePaths,
     importReadableFiles,
     removePendingUpload,

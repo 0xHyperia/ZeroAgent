@@ -42,6 +42,15 @@ function identifier(value: unknown): string {
     throw new Error("会话或任务标识无效");
   return value;
 }
+function clientRequestIdentifier(value: unknown): string {
+  // Gateway keys scheduled submissions by occurrence, including existing runs.
+  if (
+    typeof value === "string" &&
+    /^schedule:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)
+  )
+    return value;
+  return identifier(value);
+}
 function text(value: unknown, max: number): string {
   if (typeof value !== "string" || value.length > max) throw new Error("会话元数据响应无效");
   return value;
@@ -183,7 +192,7 @@ export function createCloudChatMetadataClient(request: Request, captureGuard: Ca
       return {
         id: identifier(value.id),
         conversation_id: conversationId,
-        client_request_id: identifier(value.client_request_id),
+        client_request_id: clientRequestIdentifier(value.client_request_id),
         model: text(value.model, 512),
         state: value.state as CloudChatRunState,
         user_message_id: userMessageId,
