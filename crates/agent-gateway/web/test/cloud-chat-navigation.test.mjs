@@ -696,3 +696,61 @@ test("a selected project outside the first five is revealed, and late membership
  retired=true;await app.env.act(async()=>{finish({items:[{conversation_id:"private",conversation:{title:"PRIVATE_MEMBER"}}],next_before_id:""});await tick();});
  assert.doesNotMatch(app.host.textContent,/PRIVATE_MEMBER/);
 });
+
+test("task chrome stays in the conversation column when the result reader opens", async (t) => {
+  const app = await setup(t);
+  const { React, act } = app.env;
+  const { CloudScheduleWorkspace } = app.env.loadModule("src/components/cloudchat/CloudScheduleWorkspace.tsx");
+  const { CloudChatResourceWorkbench } = app.env.loadModule("src/components/cloudchat/CloudChatResourceWorkbench.tsx");
+  const { SidebarProvider } = app.env.loadModule("../../agent-ui/src/components/ui/sidebar.tsx");
+  const task = {
+    id: "report", name: "Daily report", enabled: false,
+    rule: { frequency: "daily", start: "2026-11-10T09:00", time_zone: "UTC" },
+    run: { content: "Read the report" },
+  };
+  const run = { id: "run", run_id: "cloud-run", conversation_id: "result", state: "completed", trigger_at: "2026-11-10T09:00:00Z" };
+  const schedules = {
+    list: async () => ({ enabled: true, tasks: [task] }),
+    runs: async () => ({ runs: [run] }),
+  };
+  const prototype = window.HTMLElement.prototype;
+  const bounds = prototype.getBoundingClientRect;
+  prototype.getBoundingClientRect = function() {
+    return this.classList.contains("cloud-resource-workbench")
+      ? { width: 1150, height: 700, top: 0, left: 0, right: 1150, bottom: 700 }
+      : bounds.call(this);
+  };
+  t.after(() => { prototype.getBoundingClientRect = bounds; });
+  const noop = () => {};
+  function Harness({ open }) {
+    return React.createElement(SidebarProvider, null,
+      React.createElement(CloudScheduleWorkspace, {
+        owner: 42, route: { page: "tasks", id: task.id }, onNavigate: noop, onBack: noop,
+        locale: "en-US", schedules, environments: [], models: [],
+        currentModel: { name: "", model: "", keyId: 0 },
+        renderConversation: (_id, onChromeTarget) => React.createElement(CloudChatResourceWorkbench, {
+          open, primaryVisible: true, onSplitAvailabilityChange: noop, headerInFlow: true,
+          header: React.createElement("div", { ref: onChromeTarget, "data-task-result-chrome": "" }),
+          primary: React.createElement("textarea", { defaultValue: "Keep this draft" }),
+        }, open ? React.createElement("section", { "data-test-reader": "" }, "Saved report") : null),
+      }));
+  }
+  await app.render(React.createElement(Harness, { open: false }));
+  const primary = app.host.querySelector(".cloud-workspace-primary");
+  const draft = primary.querySelector("textarea");
+  const header = primary.querySelector("header");
+  assert.ok(header.querySelector('button[aria-label="Task actions"]'));
+  await act(async () => {
+    header.querySelector('button[aria-label="Task details"]').click();
+    await tick();
+  });
+  const details = primary.querySelector('aside[aria-label="Task details"]');
+  assert.ok(details);
+  await app.render(React.createElement(Harness, { open: true }));
+  const reader = app.host.querySelector("[data-test-reader]");
+  assert.equal(reader.parentElement, primary.parentElement);
+  assert.equal(primary.querySelector("header"), header);
+  assert.equal(primary.querySelector("aside"), details);
+  assert.equal(primary.querySelector("textarea"), draft);
+  assert.equal(draft.value, "Keep this draft");
+});

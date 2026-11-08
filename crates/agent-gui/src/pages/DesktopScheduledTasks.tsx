@@ -1,3 +1,4 @@
+import { buildModelOptions } from "@liveagent/ui/lib/models/modelOptions";
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -114,13 +115,9 @@ export function DesktopScheduledTasks({
     return () => controller.abort();
   }, [owner, attempt]);
 
-  const models = settings.customProviders.flatMap((provider) => {
-    const keyId = relayProviderKeyId(provider.id);
-    return keyId
-      ? provider.models
-          .filter((model) => provider.activeModels.includes(model.id))
-          .map((model) => ({ name: model.displayName || model.id, model: model.id, keyId }))
-      : [];
+  const models = buildModelOptions(settings, { floatSelectedFirst: false }).flatMap((option) => {
+    const keyId = relayProviderKeyId(option.providerId);
+    return keyId ? [{ name: option.label, model: option.model, keyId, pickerOption: option }] : [];
   });
   const selected = settings.selectedModel;
   const currentModel = models.find(
@@ -156,7 +153,11 @@ export function DesktopScheduledTasks({
       renderConversation={
         sidebarOnly
           ? undefined
-          : (id) => renderTaskConversation(taskConversation?.id === id ? taskConversation : { id })
+          : (id, onChromeTarget) =>
+              renderTaskConversation({
+                ...(taskConversation?.id === id ? taskConversation : { id }),
+                onChromeTarget,
+              })
       }
       onOpenResultResource={(id, resource) =>
         setTaskConversation((current) => ({

@@ -12,6 +12,7 @@ import type { RelayUser } from "./relay/client";
 import type { WorkspaceHandoff } from "./workspaceHandoff";
 
 export type DesktopTaskConversation = CloudTaskConversationSelection & {
+  onChromeTarget?: (element: HTMLDivElement | null) => void;
   resource?: CloudChatPresentationResource;
 };
 

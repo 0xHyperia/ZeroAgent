@@ -386,6 +386,36 @@ function CloudConversationMain({
   return mount ? createPortal(surface, mount) : surface;
 }
 
+type TaskConversationMount = {
+  element: HTMLDivElement;
+  onChromeTarget: (element: HTMLDivElement | null) => void;
+};
+
+function TaskResultMount({
+  id,
+  loading,
+  onMount,
+  onChromeTarget,
+}: {
+  id: string;
+  loading: boolean;
+  onMount: (mount: TaskConversationMount | null) => void;
+  onChromeTarget: TaskConversationMount["onChromeTarget"];
+}) {
+  const attach = useCallback(
+    (element: HTMLDivElement | null) => onMount(element ? { element, onChromeTarget } : null),
+    [onMount, onChromeTarget],
+  );
+  return (
+    <div
+      ref={attach}
+      data-conversation-id={id}
+      className="flex min-h-0 min-w-0 flex-1"
+      aria-busy={loading}
+    />
+  );
+}
+
 async function webChatRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const guard = captureAccountRequestGuard();
   const response = await accountFetch(path, {
@@ -490,7 +520,7 @@ export function CloudChatPage({
   const [scheduleRoute, setScheduleRoute] = useState<
     Extract<CloudChatRoute, { page: "tasks" }> | undefined
   >(initialRoute.page === "tasks" ? initialRoute : undefined);
-  const [taskConversationMount, setTaskConversationMount] = useState<HTMLDivElement | null>(null);
+  const [taskConversationMount, setTaskConversationMount] = useState<TaskConversationMount | null>(null);
   const taskReturnConversation = useRef<string | undefined>(undefined);
   const taskRunSelection = useRef<CloudTaskConversationSelection | null>(null);
   const initialReader =
@@ -4606,8 +4636,13 @@ export function CloudChatPage({
     !!scheduleRoute &&
     !accountSettingsOpen &&
     !customizeOpen &&
-    taskConversationMount?.dataset.conversationId === conversationId;
+    taskConversationMount?.element.dataset.conversationId === conversationId;
   const scheduledConversation = taskConversationVisible || embeddedTask;
+  const taskChromeTarget = embeddedTask
+    ? embeddedTaskConversation?.onChromeTarget
+    : taskConversationVisible
+      ? taskConversationMount?.onChromeTarget
+      : undefined;
   const contextSidebar = !embeddedTask && contextDestination && (
     <div
       hidden={!embeddedAccount && workingInSpace && !sidebarPreview.open}
@@ -4898,7 +4933,7 @@ export function CloudChatPage({
                   createPortal(contextSidebar, desktopAccountLayout.sidebarTarget)
                 : contextSidebar)}
             <CloudConversationMain
-              mount={taskConversationVisible ? taskConversationMount : null}
+              mount={taskConversationVisible ? (taskConversationMount?.element ?? null) : null}
               className={`${GATEWAY_MAIN_SHELL_CLASS} gateway-cloud-main`}
               data-scheduled-conversation={scheduledConversation || undefined}
               data-resource-panel-open={
@@ -4907,8 +4942,17 @@ export function CloudChatPage({
             >
               <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
               <CloudChatResourceWorkbench
+                headerInFlow={scheduledConversation}
                 header={
-                  scheduledConversation ? undefined : workingInSpace ? (
+                  scheduledConversation ? (
+                    taskChromeTarget && (
+                      <div
+                        ref={taskChromeTarget}
+                        className="relative z-20"
+                        data-task-result-chrome=""
+                      />
+                    )
+                  ) : workingInSpace ? (
                     <div className="cloud-space-work-header">
                       <Button
                         variant="ghost"
@@ -6132,13 +6176,13 @@ export function CloudChatPage({
                 }}
                 renderConversation={
                   scheduleRoute
-                    ? (id) => (
-                        <div
+                    ? (id, onChromeTarget) => (
+                        <TaskResultMount
                           key={id}
-                          ref={setTaskConversationMount}
-                          data-conversation-id={id}
-                          className="flex min-h-0 min-w-0 flex-1"
-                          aria-busy={id !== conversationId}
+                          id={id}
+                          loading={id !== conversationId}
+                          onMount={setTaskConversationMount}
+                          onChromeTarget={onChromeTarget}
                         />
                       )
                     : undefined
@@ -6154,9 +6198,10 @@ export function CloudChatPage({
                 fontScale={settings.customSettings.fontScale.sidebar}
                 currentModel={{ name: model, model, keyId: providerKeyId }}
                 models={modelOptions.map((option) => ({
-                  name: option.model,
+                  name: option.label,
                   model: option.model,
                   keyId: relayProviderKeyId(option.providerId),
+                  pickerOption: option,
                 }))}
                 space={spaceClient}
                 projects={projectsClient}

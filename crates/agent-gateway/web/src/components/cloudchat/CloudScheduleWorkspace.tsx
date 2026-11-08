@@ -1,3 +1,5 @@
+import { mountWorkbenchLayout } from "@liveagent/ui/application/workbenchLayoutPortal";
+import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import { ConversationStarter } from "@liveagent/ui/components/chat/ConversationStarter";
 import {
   ArrowLeft,
@@ -88,6 +90,7 @@ import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual
 import {
   type CSSProperties,
   type ReactNode,
+  useCallback,
   useEffect,
   useEffectEvent,
   useId,
@@ -119,7 +122,7 @@ import type { ExecutionEnvironment } from "../../lib/executionTargets";
 import { useScheduledRunPreview } from "./useScheduledRunPreview";
 
 type Route = Extract<CloudChatRoute, { page: "tasks" }>;
-type Model = { name: string; model: string; keyId: number };
+type Model = { name: string; model: string; keyId: number; pickerOption?: ModelPickerOption };
 type Text = (zh: string, en: string) => string;
 type CreationTarget = {
   id: string;
@@ -224,7 +227,10 @@ export function CloudScheduleWorkspace({
   onNavigate: (route: Route) => void;
   onOpenConversation: (id: string) => void;
   onSelectConversation?: (selection: CloudTaskConversationSelection) => void;
-  renderConversation?: (id: string) => ReactNode;
+  renderConversation?: (
+    id: string,
+    onChromeTarget: (element: HTMLDivElement | null) => void,
+  ) => ReactNode;
   onOpenResultResource: (conversation: string, resource: CloudChatPresentationResource) => void;
   runClient?: Pick<ReturnType<typeof createCloudChatRunsClient>, "getRun">;
   onBack: () => void;
@@ -274,6 +280,7 @@ export function CloudScheduleWorkspace({
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
   const taskDetailsInset = taskDetailsOpen ? "@min-[56rem]:pr-[17.5rem] @min-[83rem]:pr-0" : "";
   const taskDetailsId = useId();
+  const [chromeHost, setChromeHost] = useState<{ id: string; element: HTMLDivElement }>();
   const taskDetailsTrigger = useRef<HTMLElement>(null);
   function closeTaskDetails() {
     setTaskDetailsOpen(false);
@@ -321,6 +328,7 @@ export function CloudScheduleWorkspace({
   const searchKey = `zeroagent.task-search:${owner}`;
   const [query, setQuery] = useState(() => sessionStorage.getItem(searchKey) ?? "");
   const [searchOpen, setSearchOpen] = useState(!!query);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<TaskStatus>>(() => new Set());
   const searchButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
@@ -490,6 +498,21 @@ export function CloudScheduleWorkspace({
         ? previousConversationId
         : undefined
     : undefined;
+  const onTaskChromeTarget = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (!liveConversationId) return;
+      setChromeHost((current) =>
+        element
+          ? { id: liveConversationId, element }
+          : current?.id === liveConversationId
+            ? undefined
+            : current,
+      );
+    },
+    [liveConversationId],
+  );
+  const taskChromeTarget = chromeHost?.id === liveConversationId ? chromeHost?.element : undefined;
+  const inspectorTarget = isMobile ? undefined : taskChromeTarget;
   const selectConversation = useEffectEvent((selection: CloudTaskConversationSelection) =>
     onSelectConversation?.(selection),
   );
@@ -1378,8 +1401,31 @@ export function CloudScheduleWorkspace({
             const rows = taskRows.filter((item) => item.group === group);
             return rows.length ? (
               <SidebarGroup key={group} className="shrink-0 pb-2 pt-1">
-                <SidebarGroupLabel className="h-7">{labels[group]}</SidebarGroupLabel>
-                <SidebarGroupContent>
+                <SidebarGroupLabel
+                  render={
+                    <button
+                      type="button"
+                      aria-expanded={!collapsedGroups.has(group)}
+                      className="group/status w-fit gap-1.5"
+                      onClick={() =>
+                        setCollapsedGroups((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(group)) next.delete(group);
+                          else next.add(group);
+                          return next;
+                        })
+                      }
+                    />
+                  }
+                  className="h-7 max-md:h-11"
+                >
+                  {labels[group]}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`size-3 ${collapsedGroups.has(group) ? "-rotate-90" : "[@media(hover:hover)]:opacity-0 group-hover/status:opacity-100 group-focus-visible/status:opacity-100"}`}
+                  />
+                </SidebarGroupLabel>
+                <SidebarGroupContent hidden={collapsedGroups.has(group)}>
                   <SidebarMenu className="gap-px">
                     {rows.map((item) => {
                       const cloudItem =
@@ -1567,6 +1613,24 @@ export function CloudScheduleWorkspace({
       {renderSidebarContents(!isMobile || openMobile)}
     </Sidebar>
   );
+  const cloudTaskHeader = task && (
+    <TaskDetailHeader
+      name={task.name}
+      compact
+      leading={!open && !isMobile && !hostSidebarTrigger ? <SidebarTrigger /> : undefined}
+      text={text}
+      onBack={isMobile ? backToList : undefined}
+      menu={cloudTaskMenu(task, Boolean(liveConversationId))}
+    >
+      {waitingInPreviousConversation && (
+        <span role="status" className="max-w-24 truncate text-xs text-muted-foreground">
+          {runLabels.pending}
+        </span>
+      )}
+      {taskDetailsButton}
+    </TaskDetailHeader>
+  );
+
   return (
     <section
       aria-label={text("定时任务", "Scheduled tasks")}
@@ -1592,7 +1656,7 @@ export function CloudScheduleWorkspace({
         <div
           className={`@container min-h-0 min-w-0 flex-1 flex-col ${liveConversationId || deviceConversationId ? "overflow-hidden" : "overflow-auto"} ${showMobileListOnly ? "hidden" : "flex"}`}
         >
-          {!open && !isMobile && !hostSidebarTrigger && (
+          {!task && !open && !isMobile && !hostSidebarTrigger && (
             <div className="px-3 pt-2">
               <SidebarTrigger />
             </div>
@@ -1864,22 +1928,11 @@ export function CloudScheduleWorkspace({
             </div>
           ) : task && schedules ? (
             <>
-              <TaskDetailHeader
-                name={task.name}
-                compact
-                text={text}
-                onBack={isMobile ? backToList : undefined}
-                menu={cloudTaskMenu(task, Boolean(liveConversationId))}
-              >
-                {waitingInPreviousConversation && (
-                  <span role="status" className="max-w-24 truncate text-xs text-muted-foreground">
-                    {runLabels.pending}
-                  </span>
-                )}
-                {taskDetailsButton}
-              </TaskDetailHeader>
+              {taskChromeTarget
+                ? mountWorkbenchLayout(cloudTaskHeader, taskChromeTarget, "task-header")
+                : cloudTaskHeader}
               <div
-                className={`relative flex min-h-0 min-w-0 flex-1 flex-col gap-4 ${liveConversationId ? "" : "px-4 pb-8 md:px-6"} ${taskDetailsInset}`}
+                className={`relative flex min-h-0 min-w-0 flex-1 flex-col gap-4 ${liveConversationId ? "" : "px-4 pb-8 md:px-6"} ${inspectorTarget ? "" : taskDetailsInset}`}
               >
                 {cloudHistoryLoading && (
                   <p
@@ -2035,11 +2088,16 @@ export function CloudScheduleWorkspace({
                 )}
                 {liveConversationId && (
                   <div className="relative order-3 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                    {renderConversation?.(liveConversationId)}
+                    {renderConversation?.(liveConversationId, onTaskChromeTarget)}
                   </div>
                 )}
                 {taskDetailsOpen && (
-                  <TaskInspector id={taskDetailsId} text={text} onClose={closeTaskDetails}>
+                  <TaskInspector
+                    id={taskDetailsId}
+                    text={text}
+                    anchorTarget={inspectorTarget}
+                    onClose={closeTaskDetails}
+                  >
                     <TaskInspectorGroup title={text("定时任务", "Scheduled task")}>
                       <TaskInspectorPlan
                         name={task.name}
@@ -2351,6 +2409,7 @@ function TaskDetailHeader({
   name,
   target,
   compact,
+  leading,
   text,
   onBack,
   menu,
@@ -2359,6 +2418,7 @@ function TaskDetailHeader({
   name: string;
   target?: string;
   compact?: boolean;
+  leading?: ReactNode;
   text: Text;
   onBack?: () => void;
   menu: ReactNode;
@@ -2372,6 +2432,7 @@ function TaskDetailHeader({
       <div
         className={`mx-auto flex w-full flex-wrap items-center gap-2 px-4 py-2 ${compact ? "min-h-12" : "min-h-14 max-w-6xl sm:px-6 lg:px-8"}`}
       >
+        {leading}
         {onBack && (
           <TooltipButton
             variant="ghost"
@@ -2422,20 +2483,26 @@ function TaskDetailHeader({
 function TaskInspector({
   id,
   text,
+  anchorTarget,
   onClose,
   children,
 }: {
   id: string;
   text: Text;
+  anchorTarget?: HTMLElement;
   onClose: () => void;
   children: ReactNode;
 }) {
-  return (
+  const panel = (
     <aside
       id={id}
       tabIndex={-1}
       aria-label={text("任务详情", "Task details")}
-      className={taskDetailsClass}
+      className={
+        anchorTarget
+          ? "za-floating-surface absolute top-full right-3 z-20 max-h-[min(64dvh,34rem)] w-[min(calc(100%-1.5rem),17.5rem)] divide-y divide-border/60 overflow-auto rounded-2xl text-sm"
+          : taskDetailsClass
+      }
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
         event.preventDefault();
@@ -2446,6 +2513,7 @@ function TaskInspector({
       {children}
     </aside>
   );
+  return anchorTarget ? mountWorkbenchLayout(panel, anchorTarget, "task-inspector") : panel;
 }
 
 function TaskInspectorGroup({ title, children }: { title: string; children: ReactNode }) {
@@ -2668,12 +2736,21 @@ function ScheduleEditor({
   const frequency = isWorkdaySchedule(rule) ? "workdays" : rule.frequency;
   const endMode = rule.count ? "count" : rule.end_date ? "date" : "never";
   const modelKey = `${input.run.provider_key_id ?? 0}:${input.run.model}`;
-  const modelOptions = models.map<[string, string]>((item) => [
-    `${item.keyId}:${item.model}`,
-    item.name,
-  ]);
-  if (!modelOptions.some(([key]) => key === modelKey))
-    modelOptions.unshift([modelKey, input.run.model || text("选择模型", "Choose a model")]);
+  const modelOptions: ModelPickerOption[] = models.map((item) => ({
+    providerName: text("云端", "Cloud"),
+    ...item.pickerOption,
+    value: `${item.keyId}:${item.model}`,
+    label: item.name,
+    model: item.model,
+  }));
+  if (input.run.model && !modelOptions.some((option) => option.value === modelKey)) {
+    modelOptions.unshift({
+      value: modelKey,
+      label: input.run.model,
+      model: input.run.model,
+      providerName: text("已保存模型", "Saved model"),
+    });
+  }
   const setRule = (patch: Partial<ScheduleRule>) =>
     onChange({ ...input, rule: { ...rule, ...patch } });
   const setRun = (patch: Partial<ScheduleInput["run"]>) =>
@@ -2785,63 +2862,24 @@ function ScheduleEditor({
           }}
         >
           <DialogBody className="space-y-3">
-            {!existing && creationTargets.length ? (
-              <div className="space-y-1 text-sm">
-                <label htmlFor={`${labelId}-target`}>{text("执行位置", "Runs on")}</label>
-                <Select value={targetId} onValueChange={setTargetId}>
-                  <SelectTrigger id={`${labelId}-target`} className="min-h-11 w-full md:min-h-9">
-                    <SelectValue>{target?.label ?? text("云端", "Cloud")}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cloud" disabled={!cloudEnabled}>
-                      {cloudEnabled
-                        ? text("云端", "Cloud")
-                        : text("云端暂不可用", "Cloud unavailable")}
-                    </SelectItem>
-                    {creationTargets.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            {target ? (
-              <p className="text-sm text-muted-foreground">
-                {target.ready
-                  ? text(
-                      target.inline
-                        ? "使用此设备的时区、模型和工作区安排任务。"
-                        : "在设备的定时任务中填写计划和执行选项。",
-                      target.inline
-                        ? "Schedule with this device’s time zone, models and workspace."
-                        : "Configure the schedule and execution options on the device.",
-                    )
-                  : text(
-                      "设备暂时不可用，请连接后继续。",
-                      "This device is unavailable. Connect it to continue.",
-                    )}
-              </p>
-            ) : null}
+            <label className="block space-y-1 text-sm" htmlFor={`${labelId}-prompt`}>
+              <span className="sr-only">{text("任务说明", "Task instructions")}</span>
+              <Textarea
+                id={`${labelId}-prompt`}
+                required={!target}
+                className="min-h-28 rounded-2xl px-4 py-3.5"
+                placeholder={text("说明…", "Instructions…")}
+                value={prompt}
+                onChange={(event) =>
+                  setRun({
+                    content: refs.length
+                      ? [{ type: "text", text: event.target.value }, ...refs]
+                      : event.target.value,
+                  })
+                }
+              />
+            </label>
             <fieldset hidden={!!target} disabled={!!target} className="min-w-0 space-y-3">
-              <label className="block space-y-1 text-sm" htmlFor={`${labelId}-prompt`}>
-                <span className="sr-only">{text("任务说明", "Task instructions")}</span>
-                <Textarea
-                  id={`${labelId}-prompt`}
-                  required
-                  className="min-h-28 rounded-2xl px-4 py-3.5"
-                  placeholder={text("说明…", "Instructions…")}
-                  value={prompt}
-                  onChange={(event) =>
-                    setRun({
-                      content: refs.length
-                        ? [{ type: "text", text: event.target.value }, ...refs]
-                        : event.target.value,
-                    })
-                  }
-                />
-              </label>
               {publicTopic !== undefined && (
                 <label className="block space-y-1.5 text-sm" htmlFor={`${labelId}-topic`}>
                   <span>{text("公开检索主题", "Public search topic")}</span>
@@ -3047,233 +3085,281 @@ function ScheduleEditor({
                       : text("正在计算", "Calculating"))}{" "}
                 · {rule.time_zone}
               </p>
-              <details
-                className="group"
-                onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-              >
-                <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                  {text("高级", "Advanced")}
-                  <ChevronDown aria-hidden="true" className="size-3 group-open:rotate-180" />
-                </summary>
-                <div className="divide-y divide-border/60 rounded-2xl border border-border/60">
-                  <ScheduleFormRow>
-                    <label htmlFor={`${labelId}-name`}>{text("名称", "Name")}</label>
-                    <Input
-                      id={`${labelId}-name`}
-                      className="max-w-[68%] border-transparent bg-transparent text-right"
-                      value={input.name}
-                      placeholder={inferredName || text("根据说明生成", "From instructions")}
-                      maxLength={80}
-                      onChange={(event) => onChange({ ...input, name: event.target.value })}
-                    />
-                  </ScheduleFormRow>
-                  <ScheduleFormRow>
-                    <label htmlFor={`${labelId}-timezone`}>{text("时区", "Time zone")}</label>
-                    <TimeZonePicker
-                      id={`${labelId}-timezone`}
-                      label={text("时区", "Time zone")}
-                      triggerClassName="w-fit max-w-[72%] border-transparent bg-transparent"
-                      value={rule.time_zone}
-                      onChange={(time_zone) => setRule({ time_zone })}
-                    />
-                  </ScheduleFormRow>
-                  <ScheduleSelect
-                    id={`${labelId}-notification`}
-                    label={text("任务列表通知", "Task list notifications")}
-                    value={input.notification ?? "attention"}
-                    options={[
-                      ["attention", text("需要处理时", "When attention is needed")],
-                      [
-                        "all",
-                        text("完成或需要处理时", "On completion or when attention is needed"),
-                      ],
-                      ["none", text("关闭", "Off")],
-                    ]}
-                    onChange={(notification) =>
-                      onChange({
-                        ...input,
-                        notification,
-                      })
-                    }
-                  />
-                  <ScheduleSwitch
-                    id={`${labelId}-approval`}
-                    label={text("每次运行前需要批准", "Require approval before each run")}
-                    checked={input.require_approval ?? false}
-                    onChange={(require_approval) => onChange({ ...input, require_approval })}
-                  />
-                  <ScheduleSwitch
-                    id={`${labelId}-new-conversation`}
-                    label={text("每次运行时都开启新对话", "Start a new chat for each run")}
-                    checked={input.new_conversation}
-                    onChange={(new_conversation) =>
-                      onChange({
-                        ...input,
-                        new_conversation,
-                        archive_successful_runs: new_conversation
-                          ? input.archive_successful_runs
-                          : undefined,
-                      })
-                    }
-                  />
-                  <ScheduleSwitch
-                    id={`${labelId}-archive`}
-                    label={text("归档成功运行记录", "Archive successful runs")}
-                    disabled={!input.new_conversation}
-                    checked={input.archive_successful_runs ?? false}
-                    hint={
-                      input.new_conversation
-                        ? undefined
-                        : text(
-                            "仅在每次新建对话时可用",
-                            "Available when each run starts a new chat",
-                          )
-                    }
-                    onChange={(archive_successful_runs) =>
-                      onChange({ ...input, archive_successful_runs })
-                    }
-                  />
-                  {projects && (
-                    <>
-                      <ScheduleSelect
-                        id={`${labelId}-project`}
-                        label={text("项目", "Project")}
-                        options={projectOptions}
-                        value={projectKey}
-                        onChange={(value) =>
-                          onChange({ ...input, project_id: value === "none" ? undefined : value })
-                        }
-                      />
-                      {advancedOpen && (projectLoadFailed || !projectItems) && (
-                        <ScheduleFormRow>
-                          <span className="text-xs text-muted-foreground" role="status">
-                            {projectLoadFailed
-                              ? text("暂时无法读取项目", "Projects are unavailable")
-                              : text("正在读取项目", "Loading projects")}
-                          </span>
-                          {projectLoadFailed && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setProjectRetry((value) => value + 1)}
-                            >
-                              {text("重试", "Retry")}
-                            </Button>
-                          )}
-                        </ScheduleFormRow>
-                      )}
-                    </>
-                  )}
-                  <ScheduleSelect
-                    id={`${labelId}-model`}
-                    label={text("模型", "Model")}
-                    options={modelOptions}
-                    value={modelKey}
-                    onChange={(value) => {
-                      const model = models.find((item) => `${item.keyId}:${item.model}` === value);
-                      if (model) setRun({ model: model.model, provider_key_id: model.keyId });
-                    }}
-                  />
-                  <ScheduleSelect
-                    id={`${labelId}-reasoning`}
-                    label={text("思考强度", "Reasoning effort")}
-                    value={input.run.reasoning_effort || "default"}
-                    options={[
-                      ["default", text("模型默认", "Model default")],
-                      ...CLOUD_CHAT_REASONING_OPTIONS.map(
-                        (level) =>
-                          [
-                            cloudChatReasoningEffort(level),
-                            translate(
-                              `settings.reasoning.${level}`,
-                              locale === "zh-CN" ? "zh-CN" : "en-US",
-                            ),
-                          ] as const,
-                      ),
-                    ]}
-                    onChange={(effort) =>
-                      setRun({ reasoning_effort: effort === "default" ? undefined : effort })
-                    }
-                  />
-                  <ScheduleSwitch
-                    id={`${labelId}-research`}
-                    label={text("公开网页调研", "Research the public web")}
-                    checked={!!input.run.public_research}
-                    onChange={(checked) =>
-                      setRun({ public_research: checked ? { topic: "" } : undefined })
-                    }
-                  />
-                  <ScheduleFormRow>
-                    <span>{text("来源", "Sources")}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      aria-expanded={resourcesOpen}
-                      disabled={!space}
-                      onClick={() => setResourcesOpen(!resourcesOpen)}
-                    >
-                      {text("从资料空间选择", "Choose from library")} · {refs.length}
-                    </Button>
-                  </ScheduleFormRow>
-                  {resourcesOpen && (
-                    <div className="space-y-2 p-3">
-                      <Input
-                        value={resourceQuery}
-                        aria-label={text("搜索资料", "Search files")}
-                        onChange={(event) => setResourceQuery(event.target.value)}
-                      />
-                      <div className="max-h-36 overflow-auto">
-                        {resources.map((item) => {
-                          const id = item.target_id;
-                          const selected = refs.some((part) =>
-                            part.type === "file_reference"
-                              ? part.file_id === id
-                              : part.version_id === id,
-                          );
-                          return (
-                            <label
-                              key={item.id}
-                              htmlFor={`${labelId}-resource-${item.id}`}
-                              className={`${row} gap-2`}
-                            >
-                              <Checkbox
-                                id={`${labelId}-resource-${item.id}`}
-                                checked={selected}
-                                disabled={!selected && refs.length >= 8}
-                                onCheckedChange={() =>
-                                  setRun({
-                                    content: [
-                                      { type: "text", text: prompt },
-                                      ...(selected
-                                        ? refs.filter((part) =>
-                                            part.type === "file_reference"
-                                              ? part.file_id !== id
-                                              : part.version_id !== id,
-                                          )
-                                        : [
-                                            ...refs,
-                                            item.kind === "file"
-                                              ? { type: "file_reference" as const, file_id: id }
-                                              : {
-                                                  type: "artifact_reference" as const,
-                                                  version_id: id,
-                                                },
-                                          ]),
-                                    ],
-                                  })
-                                }
-                              />
-                              <span className="truncate">{item.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </details>
             </fieldset>
+            <details
+              className="group"
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                {text("高级", "Advanced")}
+                <ChevronDown aria-hidden="true" className="size-3 group-open:rotate-180" />
+              </summary>
+              {!existing && creationTargets.length ? (
+                <div className="space-y-1 text-sm">
+                  <label htmlFor={`${labelId}-target`}>{text("执行位置", "Runs on")}</label>
+                  <Select value={targetId} onValueChange={setTargetId}>
+                    <SelectTrigger id={`${labelId}-target`} className="min-h-11 w-full md:min-h-9">
+                      <SelectValue>{target?.label ?? text("云端", "Cloud")}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cloud" disabled={!cloudEnabled}>
+                        {cloudEnabled
+                          ? text("云端", "Cloud")
+                          : text("云端暂不可用", "Cloud unavailable")}
+                      </SelectItem>
+                      {creationTargets.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              {target ? (
+                <p className="text-sm text-muted-foreground">
+                  {target.ready
+                    ? text(
+                        target.inline
+                          ? "使用此设备的时区、模型和工作区安排任务。"
+                          : "在设备的定时任务中填写计划和执行选项。",
+                        target.inline
+                          ? "Schedule with this device’s time zone, models and workspace."
+                          : "Configure the schedule and execution options on the device.",
+                      )
+                    : text(
+                        "设备暂时不可用，请连接后继续。",
+                        "This device is unavailable. Connect it to continue.",
+                      )}
+                </p>
+              ) : null}
+              <fieldset hidden={!!target} disabled={!!target} className="min-w-0 divide-y divide-border/60 rounded-2xl border border-border/60">
+                <ScheduleFormRow>
+                  <label htmlFor={`${labelId}-name`}>{text("名称", "Name")}</label>
+                  <Input
+                    id={`${labelId}-name`}
+                    className="max-w-[68%] border-transparent bg-transparent text-right"
+                    value={input.name}
+                    placeholder={inferredName || text("根据说明生成", "From instructions")}
+                    maxLength={80}
+                    onChange={(event) => onChange({ ...input, name: event.target.value })}
+                  />
+                </ScheduleFormRow>
+                <ScheduleFormRow>
+                  <label htmlFor={`${labelId}-timezone`}>{text("时区", "Time zone")}</label>
+                  <TimeZonePicker
+                    id={`${labelId}-timezone`}
+                    label={text("时区", "Time zone")}
+                    triggerClassName="w-fit max-w-[72%] border-transparent bg-transparent"
+                    value={rule.time_zone}
+                    onChange={(time_zone) => setRule({ time_zone })}
+                  />
+                </ScheduleFormRow>
+                <ScheduleSelect
+                  id={`${labelId}-notification`}
+                  label={text("任务列表通知", "Task list notifications")}
+                  value={input.notification ?? "attention"}
+                  options={[
+                    ["attention", text("需要处理时", "When attention is needed")],
+                    [
+                      "all",
+                      text("完成或需要处理时", "On completion or when attention is needed"),
+                    ],
+                    ["none", text("关闭", "Off")],
+                  ]}
+                  onChange={(notification) =>
+                    onChange({
+                      ...input,
+                      notification,
+                    })
+                  }
+                />
+                <ScheduleSwitch
+                  id={`${labelId}-approval`}
+                  label={text("每次运行前需要批准", "Require approval before each run")}
+                  checked={input.require_approval ?? false}
+                  onChange={(require_approval) => onChange({ ...input, require_approval })}
+                />
+                <ScheduleSwitch
+                  id={`${labelId}-new-conversation`}
+                  label={text("每次运行时都开启新对话", "Start a new chat for each run")}
+                  checked={input.new_conversation}
+                  onChange={(new_conversation) =>
+                    onChange({
+                      ...input,
+                      new_conversation,
+                      archive_successful_runs: new_conversation
+                        ? input.archive_successful_runs
+                        : undefined,
+                    })
+                  }
+                />
+                <ScheduleSwitch
+                  id={`${labelId}-archive`}
+                  label={text("归档成功运行记录", "Archive successful runs")}
+                  disabled={!input.new_conversation}
+                  checked={input.archive_successful_runs ?? false}
+                  hint={
+                    input.new_conversation
+                      ? undefined
+                      : text(
+                          "仅在每次新建对话时可用",
+                          "Available when each run starts a new chat",
+                        )
+                  }
+                  onChange={(archive_successful_runs) =>
+                    onChange({ ...input, archive_successful_runs })
+                  }
+                />
+                {projects && (
+                  <>
+                    <ScheduleSelect
+                      id={`${labelId}-project`}
+                      label={text("项目", "Project")}
+                      options={projectOptions}
+                      value={projectKey}
+                      onChange={(value) =>
+                        onChange({ ...input, project_id: value === "none" ? undefined : value })
+                      }
+                    />
+                    {advancedOpen && (projectLoadFailed || !projectItems) && (
+                      <ScheduleFormRow>
+                        <span className="text-xs text-muted-foreground" role="status">
+                          {projectLoadFailed
+                            ? text("暂时无法读取项目", "Projects are unavailable")
+                            : text("正在读取项目", "Loading projects")}
+                        </span>
+                        {projectLoadFailed && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setProjectRetry((value) => value + 1)}
+                          >
+                            {text("重试", "Retry")}
+                          </Button>
+                        )}
+                      </ScheduleFormRow>
+                    )}
+                  </>
+                )}
+                <ScheduleFormRow>
+                  <span className="shrink-0">{text("模型", "Model")}</span>
+                  <div className="w-full max-w-[68%] min-w-0">
+                    <ModelPicker
+                      options={modelOptions}
+                      value={modelKey}
+                      ariaLabel={text("模型", "Model")}
+                      placeholder={text("选择模型", "Choose a model")}
+                      variant="plain"
+                      disabled={modelOptions.length === 0}
+                      onChange={(value) => {
+                        const model = models.find(
+                          (item) => `${item.keyId}:${item.model}` === value,
+                        );
+                        if (model) setRun({ model: model.model, provider_key_id: model.keyId });
+                      }}
+                    />
+                  </div>
+                </ScheduleFormRow>
+                <ScheduleSelect
+                  id={`${labelId}-reasoning`}
+                  label={text("思考强度", "Reasoning effort")}
+                  value={input.run.reasoning_effort || "default"}
+                  options={[
+                    ["default", text("模型默认", "Model default")],
+                    ...CLOUD_CHAT_REASONING_OPTIONS.map(
+                      (level) =>
+                        [
+                          cloudChatReasoningEffort(level),
+                          translate(
+                            `settings.reasoning.${level}`,
+                            locale === "zh-CN" ? "zh-CN" : "en-US",
+                          ),
+                        ] as const,
+                    ),
+                  ]}
+                  onChange={(effort) =>
+                    setRun({ reasoning_effort: effort === "default" ? undefined : effort })
+                  }
+                />
+                <ScheduleSwitch
+                  id={`${labelId}-research`}
+                  label={text("公开网页调研", "Research the public web")}
+                  checked={!!input.run.public_research}
+                  onChange={(checked) =>
+                    setRun({ public_research: checked ? { topic: "" } : undefined })
+                  }
+                />
+                <ScheduleFormRow>
+                  <span>{text("来源", "Sources")}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-expanded={resourcesOpen}
+                    disabled={!space}
+                    onClick={() => setResourcesOpen(!resourcesOpen)}
+                  >
+                    {text("从资料空间选择", "Choose from library")} · {refs.length}
+                  </Button>
+                </ScheduleFormRow>
+                {resourcesOpen && (
+                  <div className="space-y-2 p-3">
+                    <Input
+                      value={resourceQuery}
+                      aria-label={text("搜索资料", "Search files")}
+                      onChange={(event) => setResourceQuery(event.target.value)}
+                    />
+                    <div className="max-h-36 overflow-auto">
+                      {resources.map((item) => {
+                        const id = item.target_id;
+                        const selected = refs.some((part) =>
+                          part.type === "file_reference"
+                            ? part.file_id === id
+                            : part.version_id === id,
+                        );
+                        return (
+                          <label
+                            key={item.id}
+                            htmlFor={`${labelId}-resource-${item.id}`}
+                            className={`${row} gap-2`}
+                          >
+                            <Checkbox
+                              id={`${labelId}-resource-${item.id}`}
+                              checked={selected}
+                              disabled={!selected && refs.length >= 8}
+                              onCheckedChange={() =>
+                                setRun({
+                                  content: [
+                                    { type: "text", text: prompt },
+                                    ...(selected
+                                      ? refs.filter((part) =>
+                                          part.type === "file_reference"
+                                            ? part.file_id !== id
+                                            : part.version_id !== id,
+                                        )
+                                      : [
+                                          ...refs,
+                                          item.kind === "file"
+                                            ? { type: "file_reference" as const, file_id: id }
+                                            : {
+                                                type: "artifact_reference" as const,
+                                                version_id: id,
+                                              },
+                                        ]),
+                                  ],
+                                })
+                              }
+                            />
+                            <span className="truncate">{item.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </fieldset>
+            </details>
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}

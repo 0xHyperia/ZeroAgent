@@ -10,6 +10,9 @@
   --za-radius-notice: 12px;
   --za-radius-floating: 16px;
   --za-radius-dialog: 20px;
+  --za-modal-blur: 4px;
+  --za-modal-tint: rgb(0 0 0 / 0.07);
+  --za-modal-surface: hsl(var(--background) / 0.56);
   --za-radius-workbench: 18px;
   --za-workbench-border: hsl(var(--border) / 0.55);
   --za-shadow-floating: 0 3px 8px rgb(0 0 0 / 0.035), 0 12px 32px rgb(0 0 0 / 0.075);
@@ -20,6 +23,8 @@
   --za-touch-target: 44px;
 }
 .dark {
+  --za-modal-tint: rgb(0 0 0 / 0.34);
+  --za-modal-surface: hsl(var(--background) / 0.34);
   --za-shadow-floating: 0 3px 8px rgb(0 0 0 / 0.18), 0 12px 32px rgb(0 0 0 / 0.3);
   --za-shadow-dialog: 0 16px 64px rgb(0 0 0 / 0.4);
 }
@@ -53,7 +58,11 @@
     border-radius: 14px;
   }
   .za-modal-backdrop {
-    background: rgb(0 0 0 / 0.24);
+    background: linear-gradient(var(--za-modal-tint), var(--za-modal-tint)), var(--za-modal-surface);
+    backdrop-filter: blur(var(--za-modal-blur));
+  }
+  .za-lightbox-backdrop {
+    background: rgb(0 0 0 / 0.8);
     backdrop-filter: none;
   }
   .za-segmented {

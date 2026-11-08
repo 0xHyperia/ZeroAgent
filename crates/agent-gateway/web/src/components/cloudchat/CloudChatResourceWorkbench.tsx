@@ -15,6 +15,7 @@ export function CloudChatResourceWorkbench(props: {
   readingScope?: string;
   defaultSplitRatio?: number;
   header?: ReactNode;
+  headerInFlow?: boolean;
   primary: ReactNode | ((readingOnly: boolean) => ReactNode);
   children: ReactNode;
 }) {
@@ -85,6 +86,7 @@ export function CloudChatResourceWorkbench(props: {
           ref={setHost}
           className="cloud-resource-workbench"
           data-reader-open={props.open}
+          data-header-in-flow={props.headerInFlow || undefined}
           data-reader-only={readingOnly}
           data-reader-resizing={resizing}
           style={{ "--cloud-primary-width": `${primaryWidth}px` } as CSSProperties}

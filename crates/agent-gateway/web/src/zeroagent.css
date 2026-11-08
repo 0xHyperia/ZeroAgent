@@ -360,22 +360,22 @@ html[data-zeroagent-platform="android"]
 .cloud-workspace-chrome {
   flex-shrink: 0;
 }
-.cloud-resource-workbench[data-reader-open="true"] .cloud-workspace-chrome {
+.cloud-resource-workbench[data-reader-open="true"]:not([data-header-in-flow]) .cloud-workspace-chrome {
   position: absolute;
   inset: 0 0 auto;
   z-index: 5;
   pointer-events: none;
 }
-.cloud-resource-workbench[data-reader-open="true"]
+.cloud-resource-workbench[data-reader-open="true"]:not([data-header-in-flow])
   .cloud-workspace-chrome
   :is(header, .app-workbench-chrome) {
   background: transparent;
   border: 0;
 }
-.cloud-resource-workbench[data-reader-open="true"] .cloud-workspace-chrome :is(button, a, input) {
+.cloud-resource-workbench[data-reader-open="true"]:not([data-header-in-flow]) .cloud-workspace-chrome :is(button, a, input) {
   pointer-events: auto;
 }
-.cloud-resource-workbench[data-reader-open="true"] .gateway-transcript-shell {
+.cloud-resource-workbench[data-reader-open="true"]:not([data-header-in-flow]) .gateway-transcript-shell {
   padding-top: 72px;
 }
 .cloud-resource-reader .za-reader-stage {
