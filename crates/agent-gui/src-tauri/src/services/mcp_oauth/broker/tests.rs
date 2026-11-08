@@ -62,6 +62,8 @@ impl TestProfile {
             self.storage_id.clone(),
             live,
             true,
+            #[cfg(desktop)]
+            None,
         )
         .unwrap()
     }

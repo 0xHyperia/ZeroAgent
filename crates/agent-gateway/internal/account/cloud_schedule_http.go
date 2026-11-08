@@ -18,8 +18,11 @@ func (h *HTTPHandler) registerCloudSchedules(mux *http.ServeMux) {
 		"PUT /api/web-chat/schedules/{id}":                      h.saveCloudSchedule,
 		"DELETE /api/web-chat/schedules/{id}":                   h.deleteCloudSchedule,
 		"GET /api/web-chat/schedules/{id}/runs":                 h.listCloudScheduleRuns,
+		"GET /api/web-chat/schedules/{id}/runs/{run}":           h.getCloudScheduleRun,
+		"GET /api/web-chat/schedules/{id}/run-now":              h.getCloudScheduleRunReceipt,
 		"POST /api/web-chat/schedules/{id}/run-now":             h.runCloudScheduleNow,
 		"POST /api/web-chat/schedules/{id}/runs/{run}/cancel":   h.cancelPendingCloudSchedule,
+		"GET /api/web-chat/schedules/{id}/runs/{run}/approval":  h.getCloudScheduleApproval,
 		"POST /api/web-chat/schedules/{id}/runs/{run}/approval": h.decideCloudScheduleApproval,
 	} {
 		mux.HandleFunc(pattern, h.withSession(func(w http.ResponseWriter, r *http.Request, session *Session) {
@@ -70,6 +73,8 @@ func writeScheduleError(w http.ResponseWriter, err error) {
 		writeError(w, &APIError{Status: http.StatusNotFound, Message: "scheduled task not found"})
 	case errors.Is(err, errCloudScheduleInvalid):
 		writeError(w, &APIError{Status: http.StatusBadRequest, Message: "invalid scheduled task"})
+	case errors.Is(err, errCloudScheduleApprovalConflict):
+		writeError(w, &APIError{Status: http.StatusConflict, Reason: "schedule_approval_conflict", Message: errCloudScheduleApprovalConflict.Error()})
 	default:
 		writeError(w, cloudRunAPIError(err))
 	}
@@ -190,6 +195,44 @@ func (h *HTTPHandler) listCloudScheduleRuns(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"runs": items})
 }
 
+func (h *HTTPHandler) getCloudScheduleRun(w http.ResponseWriter, r *http.Request, session *Session, store *PersistentStore) {
+	occurrence, err := uuid.Parse(r.PathValue("run"))
+	if err != nil {
+		writeScheduleError(w, errCloudScheduleInvalid)
+		return
+	}
+	item, err := store.cloudScheduleRun(r.Context(), session.UserID, r.PathValue("id"), occurrence.String())
+	if err != nil {
+		writeScheduleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"run": item})
+}
+
+func (h *HTTPHandler) getCloudScheduleRunReceipt(w http.ResponseWriter, r *http.Request, session *Session, store *PersistentStore) {
+	requestID, err := uuid.Parse(r.URL.Query().Get("request_id"))
+	if err != nil {
+		writeScheduleError(w, errCloudScheduleInvalid)
+		return
+	}
+	taskID := uuid.MustParse(r.PathValue("id")).String()
+	receipt := cloudScheduleID(taskID, "manual:"+requestID.String())
+	var admitted bool
+	err = store.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM zeroagent_cloud_schedule_occurrences o
+ WHERE o.id=$3 AND o.task_id=s.id AND o.user_id=s.user_id AND o.manual)
+ FROM zeroagent_cloud_schedules s WHERE s.id=$1 AND s.user_id=$2 AND s.deleted_at IS NULL`,
+		taskID, session.UserID, receipt).Scan(&admitted)
+	if err != nil {
+		writeScheduleError(w, err)
+		return
+	}
+	if admitted {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "admitted", "id": receipt})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "missing"})
+}
+
 func (h *HTTPHandler) runCloudScheduleNow(w http.ResponseWriter, r *http.Request, session *Session, store *PersistentStore) {
 	var request struct {
 		RequestID string `json:"request_id"`
@@ -242,6 +285,20 @@ func (h *HTTPHandler) cancelPendingCloudSchedule(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *HTTPHandler) getCloudScheduleApproval(w http.ResponseWriter, r *http.Request, session *Session, store *PersistentStore) {
+	runID, err := uuid.Parse(r.PathValue("run"))
+	if err != nil {
+		writeScheduleError(w, errCloudScheduleInvalid)
+		return
+	}
+	decision, err := store.cloudScheduleApprovalDecision(r.Context(), session.UserID, r.PathValue("id"), runID.String())
+	if err != nil {
+		writeScheduleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"decision": decision})
+}
+
 func (h *HTTPHandler) decideCloudScheduleApproval(w http.ResponseWriter, r *http.Request, session *Session, store *PersistentStore) {
 	var input struct {
 		Decision string `json:"decision"`
@@ -254,13 +311,29 @@ func (h *HTTPHandler) decideCloudScheduleApproval(w http.ResponseWriter, r *http
 		writeScheduleError(w, errCloudScheduleInvalid)
 		return
 	}
+	ctx, taskID := r.Context(), r.PathValue("id")
+	decision, err := store.cloudScheduleApprovalDecision(ctx, session.UserID, taskID, runID.String())
+	if err != nil {
+		writeScheduleError(w, err)
+		return
+	}
+	// A retry of a recorded decision only acknowledges the original operation.
+	// The execution account may have changed since it was recorded.
+	if decision == input.Decision {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if decision != "pending" {
+		writeScheduleError(w, errCloudScheduleApprovalConflict)
+		return
+	}
 	if input.Decision == "approve" {
-		if err = h.service.ensureCloudExecutionAccount(r.Context(), store, session); err != nil {
+		if err = h.service.ensureCloudExecutionAccount(ctx, store, session); err != nil {
 			writeScheduleError(w, err)
 			return
 		}
 	}
-	if err = store.decideCloudScheduleApproval(r.Context(), session.UserID, r.PathValue("id"), runID.String(), input.Decision, h.service.now().UTC()); err != nil {
+	if err = store.decideCloudScheduleApproval(ctx, session.UserID, taskID, runID.String(), input.Decision, h.service.now().UTC()); err != nil {
 		writeScheduleError(w, err)
 		return
 	}

@@ -19,6 +19,11 @@ on:
         type: string
         required: false
         default: ""
+      previous_windows_release:
+        description: Optional previous stable ZeroAgent tag for a disposable Windows upgrade check
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -46,9 +51,14 @@ jobs:
         env:
           ARTIFACTS_ONLY: ${{ inputs.artifacts_only }}
           REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+          PREVIOUS_WINDOWS_RELEASE: ${{ inputs.previous_windows_release }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
+          if [[ -n "$PREVIOUS_WINDOWS_RELEASE" ]] && { [[ "$ARTIFACTS_ONLY" != true ]] || [[ ! "$PREVIOUS_WINDOWS_RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }; then
+            echo "previous_windows_release requires an artifacts-only build and an exact stable vX.Y.Z tag." >&2
+            exit 1
+          fi
           if [ "$ARTIFACTS_ONLY" = true ]; then
             [[ "$REQUESTED_SOURCE_REF" =~ ^[0-9a-f]{40}$ ]] || {
               echo "Artifacts-only builds require an exact reviewed commit SHA." >&2
@@ -356,6 +366,90 @@ jobs:
           name: liveagent-windows-x64
           path: dist/*
           if-no-files-found: error
+
+  windows-upgrade:
+    name: Windows x64 In-Place Upgrade
+    if: github.event_name == 'workflow_dispatch' && inputs.artifacts_only && inputs.previous_windows_release != ''
+    needs: [release-metadata, windows]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      PREVIOUS_WINDOWS_RELEASE: ${{ inputs.previous_windows_release }}
+      ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
+      ZEROAGENT_RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: liveagent-windows-x64
+          path: ${{ runner.temp }}/zeroagent-upgrade-candidate
+
+      - name: Download and verify exact previous release asset digests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:PREVIOUS_WINDOWS_RELEASE
+          if ($tag -cnotmatch '^v\d+\.\d+\.\d+$') { throw 'Expected an exact previous stable release tag' }
+          if ([version]$tag.Substring(1) -ge [version]($env:ZEROAGENT_APP_VERSION -split '-')[0]) { throw 'Previous release must be older than the candidate Windows base version' }
+          $release = gh api "repos/$env:RELEASE_REPOSITORY/releases/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.tag_name -cne $tag -or $release.draft -or $release.prerelease) { throw 'Previous stable release is unavailable' }
+          $directory = Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-previous'
+          [void](New-Item -ItemType Directory -Path $directory)
+          $prefix = "ZeroAgent-$tag-Windows-x64"
+          $names = @('latest.json', "$prefix.msi", "$prefix-Setup.exe", "$prefix-portable.zip")
+          $patterns = foreach ($name in $names) { '--pattern'; $name }
+          gh release download $tag --repo $env:RELEASE_REPOSITORY --dir $directory @patterns
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download exact previous Windows release assets' }
+          foreach ($name in $names) {
+            $asset = @($release.assets | Where-Object { $_.name -ceq $name })
+            $file = Get-Item -LiteralPath (Join-Path $directory $name)
+            $digest = 'sha256:' + (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.Count -ne 1 -or $asset[0].digest -cne $digest -or $asset[0].size -ne $file.Length) {
+              throw "Previous release asset does not match its published digest and size: $name"
+            }
+          }
+
+      - name: Prepare candidate updater public key
+        shell: pwsh
+        env:
+          ZEROAGENT_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          if (-not $env:ZEROAGENT_UPDATER_PUBLIC_KEY) { throw 'Release updater public key is required' }
+          $config = Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-updater.json'
+          node scripts/release/prepare-app-version-from-tag.mjs $env:ZEROAGENT_RELEASE_TAG --tauri-config $config
+          if ($LASTEXITCODE -ne 0) { throw 'Could not generate candidate updater config' }
+
+      - name: Verify same-family upgrades and data retention
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          ./scripts/release/test-windows-installers.ps1 `
+            -ArtifactDir (Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-candidate') `
+            -ReportDir (Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-report') `
+            -ExpectedVersion $env:ZEROAGENT_APP_VERSION `
+            -PreviousArtifactDir (Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-previous') `
+            -PreviousVersion $env:PREVIOUS_WINDOWS_RELEASE.Substring(1) `
+            -UpdaterConfig (Join-Path $env:RUNNER_TEMP 'zeroagent-upgrade-updater.json')
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qa-windows-upgrade
+          path: ${{ runner.temp }}/zeroagent-upgrade-report/*
+          if-no-files-found: ignore
 
   linux:
     name: Linux x64

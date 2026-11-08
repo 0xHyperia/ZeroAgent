@@ -10,7 +10,7 @@
   -webkit-backdrop-filter: none;
 }
 
-/* Navigation selection survives hover; the solid glyph belongs to the host. */
+/* The committed page and its transient preview keep distinct rail states. */
 .application-rail .application-rail-item {
   background: transparent;
   color: hsl(var(--navigation-icon-rest));
@@ -18,7 +18,7 @@
 
 @media (hover: hover) {
   .application-rail .application-rail-item:hover {
-    background: hsl(var(--navigation-item-highlight));
+    background: var(--za-control-hover);
     color: hsl(var(--navigation-icon-emphasis));
   }
 }
@@ -28,10 +28,22 @@
   color: hsl(var(--navigation-icon-emphasis));
 }
 
+.application-rail .application-rail-item[data-previewed="true"]:not([aria-current="page"]) {
+  background: var(--za-control-hover);
+  color: hsl(var(--navigation-icon-emphasis));
+  outline: 1px solid hsl(var(--navigation-icon-rest) / 0.36);
+  outline-offset: -1px;
+}
+
 @media (forced-colors: active) {
   .application-rail .application-rail-item[aria-current="page"] {
     outline: 1px solid currentColor;
     outline-offset: -1px;
+  }
+
+  .application-rail .application-rail-item[data-previewed="true"]:not([aria-current="page"]) {
+    outline-color: currentColor;
+    outline-style: dashed;
   }
 }
 
@@ -153,6 +165,11 @@
 
 @utility layer-raised {
   z-index: var(--layer-raised);
+}
+
+.chat-transcript-viewport:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
 }
 
 @utility layer-panel {

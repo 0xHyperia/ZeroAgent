@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed skills-native skills-native-releases
+//go:embed skills-native
 var cloudNativeWorkflows embed.FS
 
 const cloudNativeWorkflowRevision = 5
@@ -39,6 +39,9 @@ func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExte
 	}[id]
 	next := base
 	next.Number, next.Name, next.Description = cloudNativeWorkflowRevision, info.name, info.description
+	if id == "product-design" {
+		next.Number = cloudProductDesignQARevision
+	}
 	next.Native = &cloudWorkflowPresentation{Overview: info.overview, Examples: info.examples}
 	next.Files = maps.Clone(base.Files)
 	next.Skills = append([]CloudExtensionSkill(nil), base.Skills...)
@@ -46,6 +49,9 @@ func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExte
 	for i := range next.Skills {
 		skill := &next.Skills[i]
 		_, skill.Description = cloudSkillFrontmatter(next.Files[skill.Entry])
+		if id == "product-design" && skill.Name == "design-qa" {
+			skill.DisplayName = "Design QA"
+		}
 	}
 	next.Files["plugin.json"] = string(cloudJSON(map[string]any{
 		"name": id, "description": info.description, "skills": "./skills",
@@ -56,25 +62,6 @@ func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExte
 	})) + "\n"
 	if !cloudExtensionRevisionValid(next) {
 		panic("invalid ZeroAgent workflow definition")
-	}
-	return next
-}
-
-func cloudProductDesignQA(previous CloudExtensionRevision) CloudExtensionRevision {
-	next := previous
-	next.Number = cloudProductDesignQARevision
-	next.Files = maps.Clone(previous.Files)
-	next.Skills = append([]CloudExtensionSkill(nil), previous.Skills...)
-	overlayCloudNativeFiles(next.Files, "skills-native-releases/product-design-qa")
-	for i := range next.Skills {
-		skill := &next.Skills[i]
-		_, skill.Description = cloudSkillFrontmatter(next.Files[skill.Entry])
-		if skill.Name == "design-qa" {
-			skill.DisplayName = "Design QA"
-		}
-	}
-	if !cloudExtensionRevisionValid(next) {
-		panic("invalid embedded Product Design QA workflow")
 	}
 	return next
 }

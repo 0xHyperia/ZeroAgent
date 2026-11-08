@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { PanelLeft } from "../IconSet";
 import { ScrollArea } from "../ui/scroll-area";
 import { TooltipButton as Button } from "../ui/tooltip-button";
@@ -16,8 +16,28 @@ export function DocumentNavigation(props: {
   children: ReactNode;
 }) {
   const [preview, setPreview] = useState(false);
+  const navigationId = useId();
+  const rail = useRef<HTMLButtonElement>(null);
+  const pin = useRef<HTMLElement>(null);
   const nav = useRef<HTMLElement>(null);
+  const pendingFocus = useRef<"rail" | "current" | null>(null);
   const open = props.pinned || preview;
+  useLayoutEffect(() => {
+    if (props.pinned && pendingFocus.current === "current") {
+      pendingFocus.current = null;
+      (nav.current?.querySelector<HTMLElement>("[aria-current]") ?? pin.current)?.focus({
+        preventScroll: true,
+      });
+    } else if (!open && pendingFocus.current === "rail") {
+      pendingFocus.current = null;
+      rail.current?.focus({ preventScroll: true });
+    }
+  }, [open, props.pinned]);
+  function collapse() {
+    pendingFocus.current = "rail";
+    if (props.pinned) props.onPinned(false);
+    setPreview(false);
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Selection changes must reveal the current item inside the already mounted navigation.
   useEffect(() => {
     if (open) nav.current?.querySelector("[aria-current]")?.scrollIntoView?.({ block: "nearest" });
@@ -38,18 +58,31 @@ export function DocumentNavigation(props: {
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setPreview(true);
       }}
-      onPointerLeave={() => setPreview(false)}
+      onPointerLeave={(event) => {
+        const focused = document.activeElement;
+        if (focused === rail.current || !event.currentTarget.contains(focused)) setPreview(false);
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setPreview(false);
       }}
+      onKeyDown={(event) => {
+        if (!open || event.key !== "Escape" || event.defaultPrevented) return;
+        event.preventDefault();
+        event.stopPropagation();
+        collapse();
+      }}
     >
       <button
+        ref={rail}
         type="button"
         className="za-document-navigation-rail"
         aria-label={`展开${props.label}`}
         aria-expanded={open}
-        onFocus={() => setPreview(true)}
-        onClick={() => props.onPinned(!props.pinned)}
+        aria-controls={open ? navigationId : undefined}
+        onClick={() => {
+          pendingFocus.current = "current";
+          props.onPinned(true);
+        }}
       >
         {Array.from({ length: ticks }, (_, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: These fixed ruler marks never contain identity or state.
@@ -57,18 +90,19 @@ export function DocumentNavigation(props: {
         ))}
       </button>
       {open ? (
-        <aside className="za-document-navigation" aria-label={props.label}>
+        <aside id={navigationId} className="za-document-navigation" aria-label={props.label}>
           <header>
             <strong>{props.title}</strong>
             {props.actions}
             <Button
+              ref={pin}
               variant="ghost"
               size="icon-sm"
               tooltip={props.pinned ? "收起目录" : "固定目录"}
               aria-label={props.pinned ? `收起${props.label}` : `固定${props.label}`}
               onClick={() => {
-                props.onPinned(!props.pinned);
-                setPreview(false);
+                if (props.pinned) collapse();
+                else props.onPinned(true);
               }}
             >
               <PanelLeft className="size-4" />

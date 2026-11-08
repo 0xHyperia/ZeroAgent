@@ -2,12 +2,16 @@
   "schema_version": 1,
   "rules": [
     {
-      "glob": "{crates/agent-gateway/internal/account/cloud_schedule*.go,crates/agent-gateway/internal/account/cloud_execution_account.go,crates/agent-gateway/internal/account/desktop_cloud_session.go,crates/agent-gateway/internal/account/cloud_run_runtime.go,crates/agent-gateway/internal/account/workbench_*.go,crates/agent-gateway/internal/handler/{device_schedule_summary,workspace_handoff}.go,crates/agent-gateway/web/src/components/cloudchat/{CloudScheduleWorkspace,WorkspaceHandoffDialog}.tsx,crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs,crates/agent-gui/src-tauri/src/services/gateway/workspace_handoff.rs}",
+      "glob": "{crates/agent-gateway/internal/account/cloud_schedule*.go,crates/agent-gateway/internal/account/cloud_execution_account.go,crates/agent-gateway/internal/account/desktop_cloud_session.go,crates/agent-gateway/internal/account/cloud_run_runtime.go,crates/agent-gateway/internal/account/workbench_*.go,crates/agent-gateway/internal/handler/{device_schedule_summary,workspace_handoff}.go,crates/agent-gateway/internal/server/workspace_handoff_test.go,crates/agent-gateway/web/src/components/cloudchat/{CloudScheduleWorkspace,DeviceScheduleEditor,ScheduleRunApprovalCard,ScheduleSourcePicker,WorkspaceHandoffDialog}.tsx,crates/agent-gateway/web/src/lib/{cloudSchedules,deviceScheduleHost,workspaceHandoff}.ts,crates/agent-gateway/web/test/workspace-handoff.test.mjs,crates/agent-ui/src/pages/settings/WorkbenchCronPreview.tsx,crates/agent-gui/src/lib/relay/desktopWorkspaceHandoff.ts,crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs,crates/agent-gui/src-tauri/src/services/gateway/workspace_handoff.rs}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
         "保留共享账户会话及撤销边界、设备授权、定时触发幂等和外部执行结果核对",
-        "核对桌面、设备 WebUI 和托管 CloudChat 入口及计划回退"
+        "核对桌面、设备 WebUI 和托管 CloudChat 入口及计划回退",
+        "审批展示该次冻结请求，恢复仅只读核对原审批回执",
+        "任务草稿中的失效资料可以单独移除，保留其他来源的原成果版本",
+        "设备预览只传草稿规则，不读写任务状态，沿用原控制租约和调度器设备时区",
+        "资料交接精确绑定账户、设备、工作区 ID 和已确认路径，路径校验能力必须在实际接收会话上检查，未确认回执按原操作编号核对"
       ]
     },
     {
@@ -63,7 +67,7 @@
       ]
     },
     {
-      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtensions.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_extension_manifest*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go,crates/agent-gateway/internal/account/cloud_codex_originals*.go,crates/agent-gateway/internal/account/cloud_extension_drafts*.go,crates/agent-gateway/internal/account/cloud_native_workflows.go,crates/agent-gateway/internal/account/skills-native/**,crates/agent-gateway/internal/account/skills-native-releases/**,crates/agent-gateway/internal/account/codex-packages/**,scripts/import-codex-originals.mjs}",
+      "glob": "{crates/agent-ui/src/features/extensions/**,crates/agent-ui/src/lib/extensions/**,crates/agent-ui/src/assets/extensions/**,crates/agent-ui/src/components/chat/extensionMentions.css,crates/agent-gateway/web/src/lib/cloudExtension*.ts,crates/agent-gateway/internal/account/cloud_extensions*.go,crates/agent-gateway/internal/account/cloud_extension_manifest*.go,crates/agent-gateway/internal/account/cloud_builtin_release_test.go,crates/agent-gateway/internal/account/cloud_extension_drafts*.go,crates/agent-gateway/internal/account/cloud_native_workflows.go,crates/agent-gateway/internal/account/skills-native/**,crates/agent-gateway/internal/account/codex-packages/**,scripts/import-codex-originals.mjs}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
@@ -76,7 +80,7 @@
       ]
     },
     {
-      "glob": "{crates/agent-gateway/internal/account/cloud_image*,crates/agent-gateway/internal/account/cloud_run_image.go,crates/agent-gateway/internal/account/cloud_run_skills.go,crates/agent-gateway/internal/account/skills/**,crates/agent-gateway/internal/account/skills-releases/**,crates/agent-ui/src/components/chat/AssistantVisuals.tsx,crates/agent-ui/src/components/chat/assistant-visuals.css,crates/agent-gateway/web/src/lib/cloudImageSettings.ts,crates/agent-gateway/web/src/pages/settings/CloudImageSettingsSection.tsx}",
+      "glob": "{crates/agent-gateway/internal/account/cloud_image*,crates/agent-gateway/internal/account/cloud_run_image.go,crates/agent-gateway/internal/account/cloud_run_skills.go,crates/agent-gateway/internal/account/skills/**,crates/agent-ui/src/components/chat/AssistantVisuals.tsx,crates/agent-ui/src/components/chat/assistant-visuals.css,crates/agent-gateway/web/src/lib/cloudImageSettings.ts,crates/agent-gateway/web/src/pages/settings/CloudImageSettingsSection.tsx}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
@@ -371,12 +375,13 @@
       ]
     },
     {
-      "glob": "crates/agent-gateway/web/src/components/cloudchat/**",
+      "glob": "{crates/agent-gateway/web/src/components/cloudchat/**,crates/agent-gateway/web/src/lib/cloudSpaceBrowseState.ts}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
         "共享主题/菜单/资源栏与窄屏一致，所有原入口可达",
-        "账户切换清理、引用/下载/项目/成果回归"
+        "账户切换清理、引用/下载/项目/成果回归",
+        "资料浏览恢复按账户与列表位置隔离，选中项重新按有权读取的数据校验"
       ]
     },
     {
@@ -948,11 +953,20 @@
       ]
     },
     {
-      "glob": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
+      "glob": "{crates/agent-gateway/web/src/app/{GatewayApp,GatewayAppView}.tsx,crates/agent-gateway/web/src/app/hooks/useGatewayChatPresentation.tsx}",
       "ownership": "adapted",
       "risk": "high",
       "checks": [
-        "WebUI 与设备测试"
+        "WebUI 与设备测试",
+        "对话断线时保留草稿，收到新设备在线状态后才恢复发送"
+      ]
+    },
+    {
+      "glob": "{crates/agent-gateway/web/src/app/GatewayDeviceConnectionNotice.tsx,crates/agent-gateway/web/test/device-conversation-reconnect.test.mjs}",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "复用当前设备连接并在原对话就地恢复，避免重建会话或切换执行目标"
       ]
     },
     {

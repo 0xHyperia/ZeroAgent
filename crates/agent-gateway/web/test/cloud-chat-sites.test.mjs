@@ -63,6 +63,23 @@ test("opening a known space site previews its immutable version without creating
  await app.click("分享");assert.equal(app.calls.share.length,0);
 });
 
+test("the site management menu can hand off the viewed build without leaving its preview", async (t) => {
+ let handoffs = 0;
+ const app = await mount(t, {}, { openOnMount: true, workspace: {
+  versions: [], onVersion() {}, onClose() {}, onHandoff() { handoffs++; },
+ } });
+ const frame = document.querySelector(".cloud-site-frame-host iframe");
+ assert.ok(frame);
+ await app.click("管理站点");
+ const action = [...document.querySelectorAll('[role="menuitem"]')].find((item) => /发送到工作区|Send to workspace/.test(item.textContent));
+ assert.ok(action);
+ await app.env.act(async () => action.click());
+ assert.equal(handoffs, 1);
+ assert.equal(document.querySelector(".cloud-site-frame-host iframe"), frame);
+ assert.equal(app.calls.preview.length, 1);
+ assert.equal(app.calls.share.length, 0);
+});
+
 for(const [label,viewport] of [["手机","phone"],["桌面","desktop"]]){
  test(`${viewport} preview resizes the existing private frame without requesting another grant`,async t=>{
   const app=await mount(t,{}, {openOnMount:true,workspace:{versions:[],onVersion(){},onClose(){}}});
@@ -92,6 +109,62 @@ test("lost share responses retain the request identity and require explicit retr
  api=app.env.loadModule("src/lib/cloudChatSites.ts");await app.click("分享");await app.click("创建分享链接");assert.equal(attempts.length,1);
  await app.click("刷新分享状态");assert.equal(attempts.length,1);const create=[...document.querySelectorAll("button")].find(el=>el.textContent.trim()==="创建分享链接");assert.equal(create.disabled,true);
  await app.click("重试未确认的创建");assert.equal(attempts.length,2);assert.deepEqual(attempts[1],attempts[0]);
+});
+
+test("failed share reconciliation retains exact write intents and applies receipts without another list read", async (t) => {
+  let api, reads = 0, online = true;
+  const creates = [], revokes = [];
+  const app = await mount(t, {
+    async shares() {
+      reads++;
+      if (!online) throw new Error("share list is offline");
+      return [];
+    },
+    async share(version, id, days) {
+      creates.push({ version, id, days });
+      if (creates.length === 1) throw new api.CloudSiteWriteUnconfirmedError();
+      return access("share", id);
+    },
+    async revoke(grant) {
+      revokes.push({ id: grant.id, version: grant.version, releaseId: grant.release_id });
+      if (revokes.length === 1) throw new api.CloudSiteWriteUnconfirmedError();
+      return { ...grant, version: grant.version + 1, revoked_at: new Date().toISOString() };
+    },
+  }, { openOnMount: true });
+  api = app.env.loadModule("src/lib/cloudChatSites.ts");
+  const frame = document.querySelector("iframe");
+  const dialog = () => document.querySelector('[role="dialog"]');
+  const createButton = () => [...dialog().querySelectorAll("button")].find((el) => el.textContent.trim() === "创建分享链接");
+  online = false;
+  await app.click("分享");
+  assert.equal(createButton().disabled, true);
+  assert.match(dialog().querySelector('[role="alert"]').textContent, /无法刷新分享状态/);
+  assert.doesNotMatch(dialog().textContent, /没有生效中的分享链接/);
+  online = true;
+  await app.click("刷新分享状态");
+  assert.equal(createButton().disabled, false);
+  await app.click("创建分享链接");
+  online = false;
+  await app.click("刷新分享状态");
+  assert.equal(creates.length, 1);
+  assert.equal(createButton().disabled, true);
+  assert.match(dialog().textContent, /原操作仍待确认/);
+  await app.click("重试未确认的创建");
+  assert.equal(reads, 3, "the confirmed receipt updates its link without another list read");
+  assert.deepEqual(creates, [creates[0], creates[0]]);
+  assert.match(dialog().textContent, /分享链接已创建/);
+  assert.equal(dialog().querySelector('input[aria-label="站点分享链接"]').value, access("share", creates[0].id).url);
+  await app.click("撤销链接");
+  await app.click("刷新分享状态");
+  assert.equal(revokes.length, 1);
+  assert.match(dialog().textContent, /原操作仍待确认/);
+  await app.click("重试未确认的撤销");
+  assert.deepEqual(revokes, [revokes[0], revokes[0]]);
+  assert.equal(reads, 4);
+  assert.match(dialog().textContent, /分享已撤销/);
+  assert.equal(dialog().querySelector('input[aria-label="站点分享链接"]'), null);
+  assert.equal(document.querySelector("iframe"), frame);
+  assert.equal(app.calls.preview.length, 1);
 });
 test("retired site views never install delayed private content",async t=>{
  let complete;const app=await mount(t,{preview:()=>new Promise(resolve=>{complete=resolve;})});await app.click("预览站点");app.retire();await app.env.act(async()=>complete(access("private")));await app.flush();assert.equal(document.querySelector("iframe"),null);

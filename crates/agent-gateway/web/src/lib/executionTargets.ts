@@ -7,6 +7,8 @@ export type ExecutionWorkspace = {
   path?: string;
 };
 
+export type DeviceDraftWorkspace = { id: string; path: string };
+
 export type ExecutionEnvironment = {
   runtime_kind: "web_chat" | "device_agent";
   device_id?: string;
@@ -77,6 +79,8 @@ export type ExecutionSelection = {
   target_fingerprint: string;
   conversation_id: string;
   expires_at: string;
+  /** A browser landing intent only. Credentials and Gateway requests ignore it. */
+  device_draft_workspace?: DeviceDraftWorkspace;
 };
 
 export function resolveExecutionTarget(

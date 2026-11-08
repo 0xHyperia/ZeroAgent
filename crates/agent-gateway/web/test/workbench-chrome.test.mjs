@@ -29,7 +29,16 @@ const sheetSource = readFileSync(
 );
 
 test("gateway mounts workbench chrome outside the shared application view", () => {
-  assert.match(gatewayAppViewSource, /<main className=\{GATEWAY_MAIN_SHELL_CLASS\}>/);
+  const shellIndex = gatewayAppViewSource.indexOf("<WorkbenchShell");
+  const chromeIndex = gatewayAppViewSource.indexOf("<AppWorkbenchChrome");
+  const bodyIndex = gatewayAppViewSource.indexOf("<WorkbenchBody");
+  const mainIndex = gatewayAppViewSource.indexOf("<main", bodyIndex);
+  const applicationViewIndex = gatewayAppViewSource.indexOf("<ApplicationView", mainIndex);
+  assert.ok(shellIndex >= 0 && shellIndex < chromeIndex && chromeIndex < bodyIndex);
+  assert.ok(bodyIndex < mainIndex && mainIndex < applicationViewIndex);
+  const mainOpening = gatewayAppViewSource.slice(mainIndex, gatewayAppViewSource.indexOf(">", mainIndex));
+  assert.match(mainOpening, /className=\{accountDestination \? "hidden" : GATEWAY_MAIN_SHELL_CLASS\}/);
+  assert.match(mainOpening, /inert=\{!!accountDestination\}/);
   const mainClass = webStyleClassesSource.match(/GATEWAY_MAIN_SHELL_CLASS\s*=\s*\n?\s*"([^"]+)"/);
   assert.ok(mainClass, "gateway-main-shell class constant not found");
   const mainClassNames = new Set(mainClass[1].split(/\s+/));
@@ -48,27 +57,24 @@ test("gateway mounts workbench chrome outside the shared application view", () =
       `gateway-main-shell is missing ${className}`,
     );
   }
-  assert.match(
-    gatewayAppViewSource,
-    /<AppWorkbenchChrome[\s\S]*?<ApplicationView/,
-  );
   assert.doesNotMatch(gatewayAppViewSource, /chat=\{\{[\s\S]*?headerOverlay:/);
 });
 
 test("gateway shows the conversation view switcher in chrome only after an assistant reply", () => {
   const chromeIndex = gatewayAppViewSource.indexOf("<AppWorkbenchChrome");
   const tabsIndex = gatewayAppViewSource.indexOf("<ConversationViewTabs");
-  const applicationViewIndex = gatewayAppViewSource.indexOf("<ApplicationView");
+  const bodyIndex = gatewayAppViewSource.indexOf("<WorkbenchBody");
 
   assert.ok(chromeIndex >= 0);
   assert.ok(tabsIndex > chromeIndex);
-  assert.ok(tabsIndex < applicationViewIndex);
+  assert.ok(tabsIndex < bodyIndex);
   assert.equal(gatewayAppViewSource.match(/<ConversationViewTabs/g)?.length, 1);
   assert.match(
     gatewayAppViewSource,
     /const hasConversationReply =[\s\S]*?displayedConversationId !== "" &&[\s\S]*?!isLocalDraftConversationId\(displayedConversationId\)[\s\S]*?trajectoryMessages\.some\(\(message\) => message\.role === "assistant"\)/,
   );
-  assert.match(gatewayAppViewSource, /activeView === "chat" && hasConversationReply/);
+  const chrome = gatewayAppViewSource.slice(chromeIndex, bodyIndex);
+  assert.match(chrome, /!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes\s*\?\s*\(\s*<ConversationViewTabs/);
   assert.match(
     gatewayAppViewSource,
     /useConversationViewState\(displayedConversationId\)/,

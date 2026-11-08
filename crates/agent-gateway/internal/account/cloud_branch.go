@@ -11,13 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// Edits and regenerations branch from an immutable prefix. The original
-// conversation remains available, including any later messages or outputs.
+// An explicit fork copies the prefix through the selected message.
 type CloudBranchInput struct {
-	ClientRequestID string          `json:"client_request_id"`
-	MessageID       string          `json:"message_id"`
-	Action          string          `json:"action"`
-	Content         json.RawMessage `json:"content,omitempty"`
+	ClientRequestID string `json:"client_request_id"`
+	MessageID       string `json:"message_id"`
+	Action          string `json:"action"`
 }
 
 type CloudBranch struct {
@@ -25,7 +23,6 @@ type CloudBranch struct {
 	SourceConversationID string             `json:"source_conversation_id"`
 	SourceMessageID      string             `json:"source_message_id"`
 	Action               string             `json:"action"`
-	DraftContent         json.RawMessage    `json:"draft_content,omitempty"`
 }
 
 type cloudBranchReceipt struct {
@@ -51,18 +48,7 @@ func validateCloudBranch(userID int64, sourceID string, input CloudBranchInput) 
 		return "", input, "", ErrCloudRunInvalid
 	}
 	input.MessageID = anchor.String()
-	switch input.Action {
-	case "edit":
-		input.Content, err = validateCloudContent(input.Content)
-		if err != nil {
-			return "", input, "", err
-		}
-	case "regenerate", "fork":
-		if len(input.Content) != 0 && string(input.Content) != "null" {
-			return "", input, "", ErrCloudRunInvalid
-		}
-		input.Content = nil
-	default:
+	if input.Action != "fork" {
 		return "", input, "", ErrCloudRunInvalid
 	}
 	digest := sha256.Sum256(cloudJSON(struct {
@@ -87,36 +73,9 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 		return nil, nil, ErrNotFound
 	}
 	cut := anchor + 1
-	var draft json.RawMessage
-	switch input.Action {
-	case "edit":
-		if messages[anchor].Role != "user" {
-			return nil, nil, ErrCloudRunInvalid
-		}
-		cut = anchor
-		draft = append(json.RawMessage(nil), input.Content...)
-	case "regenerate":
-		if messages[anchor].Role != "assistant" && messages[anchor].Role != "user" {
-			return nil, nil, ErrCloudRunInvalid
-		}
-		user := anchor
-		for user >= 0 && messages[user].Role != "user" {
-			user--
-		}
-		if user < 0 {
-			return nil, nil, ErrCloudRunInvalid
-		}
-		cut = user
-		draft = append(json.RawMessage(nil), messages[user].Content...)
-	}
 	baseTitle := strings.TrimSpace(source.Title)
 	for strings.HasSuffix(baseTitle, " · 分支") {
 		baseTitle = strings.TrimSuffix(baseTitle, " · 分支")
-	}
-	if input.Action == "edit" {
-		if editedTitle := cloudConversationTitle(draft); editedTitle != "新对话" {
-			baseTitle = editedTitle
-		}
 	}
 	title := []rune(baseTitle)
 	if len(title) > 80 {
@@ -124,7 +83,7 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 	}
 	conversation := &CloudConversation{ID: uuid.NewString(), UserID: source.UserID, Title: string(title) + " · 分支", Model: source.Model, CreatedAt: now, UpdatedAt: now}
 	clones := make([]CloudMessage, 0, cut)
-	total := len(draft)
+	total := 0
 	for i, m := range messages[:cut] {
 		total += len(m.Content) + len(m.Usage) + len(m.Presentation)
 		if total > CloudRunMaxInputBytes || i >= 10000 {
@@ -145,7 +104,7 @@ func buildCloudBranch(source CloudConversation, messages []CloudMessage, input C
 		m.Presentation = append(json.RawMessage(nil), m.Presentation...)
 		clones = append(clones, m)
 	}
-	return &CloudBranch{Conversation: conversation, SourceConversationID: source.ID, SourceMessageID: input.MessageID, Action: input.Action, DraftContent: draft}, clones, nil
+	return &CloudBranch{Conversation: conversation, SourceConversationID: source.ID, SourceMessageID: input.MessageID, Action: input.Action}, clones, nil
 }
 
 func cloneCloudBranch(input CloudBranch) *CloudBranch {
@@ -154,7 +113,6 @@ func cloneCloudBranch(input CloudBranch) *CloudBranch {
 		conversation := *input.Conversation
 		result.Conversation = &conversation
 	}
-	result.DraftContent = append(json.RawMessage(nil), input.DraftContent...)
 	return &result
 }
 

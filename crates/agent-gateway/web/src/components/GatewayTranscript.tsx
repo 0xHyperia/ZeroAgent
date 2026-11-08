@@ -429,7 +429,6 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
         }}
         rewindTurnId={effectiveMessageRef?.messageId}
         readOnly={readOnly}
-        alwaysShowActions
       />
     </div>
   );
@@ -597,7 +596,6 @@ const GatewayAssistantMessageActions = memo(function GatewayAssistantMessageActi
       }}
       shareSource={shareSource}
       withAvatarSpacer
-      alwaysShowActions
     />
   );
 });
@@ -1179,6 +1177,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
             <article
               key={virtualRow.key}
               data-index={virtualRow.index}
+              data-row-key={row.key}
               ref={transcriptVirtualizer.measureElement}
               className={`${GATEWAY_TRANSCRIPT_ROW_CLASS} absolute inset-x-0 top-0 justify-end!`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}

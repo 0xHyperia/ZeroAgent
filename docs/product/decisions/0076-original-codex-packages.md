@@ -1,6 +1,7 @@
 # ADR 0076：CloudChat 使用本机 Codex 原始包
 
 - 日期：2026-11-05。
+- 状态：运行时方案已由 ADR 0077 和 ADR 0079 取代。下文保留当时的验证记录。
 - 范围：Product Design、Plugin Creator、Image Gen、Skill Creator。
 - 本决策替代 ADR 0073 对这四个能力的中文改写与展示命名。插件与独立技能仍分别归类。
 

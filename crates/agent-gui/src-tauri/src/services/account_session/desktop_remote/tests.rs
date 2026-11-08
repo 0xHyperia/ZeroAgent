@@ -49,6 +49,7 @@ impl Drop for Wire {
 }
 
 async fn serve(HttpState(state): HttpState<Arc<WireState>>, request: Request) -> Response {
+    let method = request.method().clone();
     let path = request.uri().path().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
     let auth = request
@@ -63,6 +64,11 @@ async fn serve(HttpState(state): HttpState<Arc<WireState>>, request: Request) ->
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    let confirmed_path = request
+        .headers()
+        .get("x-zeroagent-workspace-path")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = to_bytes(request.into_body(), 1024 * 1024)
         .await
         .unwrap()
@@ -76,17 +82,22 @@ async fn serve(HttpState(state): HttpState<Arc<WireState>>, request: Request) ->
         "/api/desktop/handoff" => {
             assert_eq!(auth, "Bearer access-a");
             assert!(cookie.is_empty());
-            assert_eq!(
-                serde_json::from_slice::<Value>(&body).unwrap()["selection_lease"],
-                "source-lease"
-            );
-            axum::Json(json!({"handoff_code":"private-one-use-code","expires_in":60}))
-                .into_response()
+            let input = serde_json::from_slice::<Value>(&body).unwrap();
+            let code = match input["selection_lease"].as_str() {
+                Some("source-lease") => "private-one-use-code",
+                Some("source-workspace-lease") => "private-workspace-code",
+                _ => panic!("unexpected selection"),
+            };
+            axum::Json(json!({"handoff_code":code,"expires_in":60})).into_response()
         }
         "/api/auth/handoff" => {
             assert!(auth.is_empty());
             assert!(cookie.is_empty());
-            assert_eq!(query, "code=private-one-use-code");
+            let workspace = match query.as_str() {
+                "code=private-one-use-code" => "",
+                "code=private-workspace-code" => "chosen",
+                _ => panic!("unexpected handoff code"),
+            };
             let index = state.handoffs.fetch_add(1, Ordering::SeqCst) + 1;
             let target = if state.invalid_target.load(Ordering::SeqCst) == 1 {
                 "other-device"
@@ -95,10 +106,13 @@ async fn serve(HttpState(state): HttpState<Arc<WireState>>, request: Request) ->
             };
             Response::builder().status(303)
                 .header("set-cookie", format!("zeroagent_session=private-http-cookie-{index}; Path=/; HttpOnly"))
-                .header("location", format!("/?selection_lease=new-lease-{index}&runtime_kind=device_agent&device_id={target}&agent_id={target}&workspace_id=&conversation_id=conversation-{index}"))
+                .header("location", format!("/?selection_lease=new-lease-{index}&runtime_kind=device_agent&device_id={target}&agent_id={target}&workspace_id={workspace}&conversation_id=conversation-{index}"))
                 .body(Body::empty()).unwrap()
         }
-        "/api/status" | "/api/files/import" | "/api/files/import-directory" => {
+        "/api/status"
+        | "/api/files/import"
+        | "/api/files/import-directory"
+        | "/api/files/confirmed-handoff" => {
             assert!(cookie.starts_with("zeroagent_session=private-http-cookie-"));
             let encoded = auth.strip_prefix("Bearer selection.").unwrap();
             let selection: Value = serde_json::from_slice(
@@ -116,7 +130,26 @@ async fn serve(HttpState(state): HttpState<Arc<WireState>>, request: Request) ->
                 let params: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes())
                     .into_owned()
                     .collect();
-                assert_eq!(params.get("agent_id").unwrap(), "owned-device");
+                if method == axum::http::Method::POST {
+                    assert_eq!(params.get("agent_id").unwrap(), "owned-device");
+                } else {
+                    assert_eq!(method, axum::http::Method::GET);
+                    assert_eq!(path, "/api/files/confirmed-handoff");
+                    assert!(!params.contains_key("agent_id"));
+                    assert!(body.is_empty());
+                }
+                if path == "/api/files/confirmed-handoff" {
+                    assert_eq!(selection["workspaceId"], "chosen");
+                    assert_eq!(params.get("workspace_id").unwrap(), "chosen");
+                    assert_eq!(
+                        base64::engine::general_purpose::URL_SAFE_NO_PAD
+                            .decode(confirmed_path.expect("confirmed path header"))
+                            .unwrap(),
+                        "D:/工程/Chosen".as_bytes()
+                    );
+                    return axum::Json(json!({"relative_path":"ZA-operation/ZA-fixture.bin"}))
+                        .into_response();
+                }
                 let gate = state.upload_gate.lock().unwrap().take();
                 state.upload_started.notify_one();
                 if let Some(gate) = gate {
@@ -141,7 +174,75 @@ fn open_request(origin: &Url, handle: &str) -> RemoteOpenRequest {
         origin: origin.origin().ascii_serialization(),
         device_id: "owned-device".into(),
         selection_lease: "source-lease".into(),
+        workspace_id: None,
     }
+}
+
+#[tokio::test]
+async fn workspace_handoff_bridge_can_only_submit_to_its_confirmed_workspace() {
+    let account = super::super::tests::Fixture::new().await;
+    let owner = account.login("a", false).await;
+    account
+        .state
+        .public_summary(&owner.session_handle)
+        .await
+        .unwrap();
+    let wire = Wire::new().await;
+    let remote = RemoteGatewayState::default();
+    let mut request = open_request(&wire.origin, &owner.session_handle);
+    request.selection_lease = "source-workspace-lease".into();
+    request.workspace_id = Some("chosen".into());
+    let opened = open_remote(&account.state, &remote, wire.origin.clone(), request)
+        .await
+        .unwrap();
+    assert_eq!(opened.selection["workspace_id"], "chosen");
+    assert_eq!(opened.selection["scope"], "workspace");
+    for path in [
+        "/api/files/import",
+        "/api/files/handoff?workspace_id=chosen",
+        "/api/files/confirmed-handoff?workspace_id=other",
+        "/api/files/confirmed-handoff?workspace_id=chosen&workspace_id=other",
+    ] {
+        let request = http_request(&owner.session_handle, &opened, path);
+        assert!(remote_http(&account.state, &remote, request).await.is_err());
+    }
+    let bytes = [0, 255, 42];
+    let expected_path = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("D:/工程/Chosen");
+    let mut request = http_request(
+        &owner.session_handle,
+        &opened,
+        "/api/files/confirmed-handoff?workspace_id=chosen&operation_id=fixture",
+    );
+    request.body_base64 = Some(BASE64.encode(bytes));
+    request
+        .headers
+        .insert("x-zeroagent-workspace-path".into(), expected_path.clone());
+    let response = remote_http(&account.state, &remote, request).await.unwrap();
+    assert_eq!(response.status, 200);
+    let mut lookup = http_request(
+        &owner.session_handle,
+        &opened,
+        "/api/files/confirmed-handoff?workspace_id=chosen&operation_id=fixture",
+    );
+    lookup.method = "GET".into();
+    lookup
+        .headers
+        .insert("x-zeroagent-workspace-path".into(), expected_path);
+    assert_eq!(
+        remote_http(&account.state, &remote, lookup)
+            .await
+            .unwrap()
+            .status,
+        200
+    );
+    let calls = wire.state.calls.lock().unwrap();
+    let transfers: Vec<_> = calls
+        .iter()
+        .filter(|call| call.0 == "/api/files/confirmed-handoff")
+        .collect();
+    assert_eq!(transfers.len(), 2);
+    assert_eq!(transfers[0].3, bytes);
+    assert!(transfers[1].3.is_empty());
 }
 
 fn http_request(handle: &str, response: &RemoteOpenResponse, path: &str) -> RemoteHttpRequest {
@@ -308,7 +409,7 @@ async fn rejected_handoff_target_is_logged_out_and_never_becomes_a_bridge() {
         "/api/auth/login",
         "/?selection_lease=x&selection_lease=y",
     ] {
-        assert!(handoff_selection(&wire.origin, location, "owned-device").is_err());
+        assert!(handoff_selection(&wire.origin, location, "owned-device", None).is_err());
     }
 }
 

@@ -54,12 +54,41 @@ test("active content remains mounted after the close animation", async () => {
   renderCollapse(root, { open: false, retainWhileClosed: true });
   await waitForCollapseAnimation();
   assert.notEqual(container.querySelector("[data-heavy-body]"), null);
+  assert.equal(container.firstElementChild.hasAttribute("inert"), true);
 
   renderCollapse(root, { open: false, retainWhileClosed: false });
   await waitForCollapseAnimation();
   assert.equal(container.querySelector("[data-heavy-body]"), null);
 
   act(() => root.unmount());
+});
+
+test("closing an active disclosure returns its inner keyboard focus to the controlling button", () => {
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  const triggerRef = React.createRef();
+  const draw = (open) => act(() => root.render(React.createElement(React.Fragment, null,
+    React.createElement("button", { ref: triggerRef, "aria-controls": "activity-details" }, "Tool output"),
+    React.createElement(LazyCollapse, { id: "activity-details", triggerRef, open, retainWhileClosed: true },
+      () => React.createElement("button", { id: "activity-action" }, "Open source")),
+    React.createElement("button", { id: "outside-activity" }, "Continue"),
+  )));
+  draw(true);
+  const source = document.getElementById("activity-action");
+  source.focus();
+  assert.equal(document.activeElement, source);
+  draw(false);
+  assert.equal(document.activeElement, triggerRef.current);
+  assert.equal(document.getElementById("activity-details").hasAttribute("inert"), true);
+  assert.equal(document.getElementById("activity-action"), source);
+
+  draw(true);
+  const outside = document.getElementById("outside-activity");
+  outside.focus();
+  draw(false);
+  assert.equal(document.activeElement, outside);
+  act(() => root.unmount());
+  container.remove();
 });
 
 test.after(() => env.cleanup());

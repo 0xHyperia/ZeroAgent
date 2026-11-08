@@ -42,7 +42,7 @@ import {
   sanitizePlanMarkdown,
 } from "@liveagent/ui/lib/chat/planMode";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "../../IconSet";
 import {
   areStableValuesEqual,
@@ -128,6 +128,8 @@ function ToolCallItem({
   onOpenFileLink?: (link: ChatFileLink) => void;
 }) {
   const { t } = useLocale();
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const result = item.toolResult;
   const builtinResultKind = getBuiltinResultKind(result);
   const isBash = item.toolCall.name === "Bash";
@@ -359,7 +361,7 @@ function ToolCallItem({
     compactChip
       ? "group/tool -mx-1.5 min-h-7 w-bleed-0p75rem rounded-lg px-1.5 py-1 transition-colors duration-150 hover:bg-foreground/[0.04]"
       : "min-h-7 w-full py-1",
-    canExpand ? "cursor-pointer" : "cursor-default",
+    canExpand ? "za-chat-activity-trigger cursor-pointer" : "cursor-default",
   );
   const summaryContent = simpleFileOperation ? (
     <>
@@ -396,19 +398,7 @@ function ToolCallItem({
     </>
   ) : compactChip ? (
     <>
-      {/* 宽度锁在图标列的 12px 上（高度仍留 14px 呼吸感），否则悬停切换用的
-          居中盒会把图标整体右推 1px，和同组里的简单文件操作行错开。 */}
-      <span className="relative flex h-3.5 w-3 shrink-0 items-center justify-center text-foreground/45">
-        <ToolIcon className="size-3 transition-opacity duration-150 group-hover/tool:opacity-0 group-focus-within/tool:opacity-0" />
-        {canExpand ? (
-          <ChevronRight
-            className={cn(
-              "absolute size-3 opacity-0 transition-[opacity,transform] duration-150 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100",
-              effectiveOpen ? "rotate-90" : "",
-            )}
-          />
-        ) : null}
-      </span>
+      <ToolIcon aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
 
       <span className="shrink-0 text-sm font-[450] text-foreground/62">{summaryTitleName}</span>
 
@@ -442,6 +432,12 @@ function ToolCallItem({
       <ToolPermissionMarker marker={permissionAutoResolved} />
       {displayIsRunning || result?.isError || shellSessionFailed ? (
         <span className={cn("shrink-0 text-tiny", statusTextClass)}>{statusLabel}</span>
+      ) : null}
+      {canExpand ? (
+        <ChevronRight
+          aria-hidden="true"
+          className={cn("za-chat-activity-chevron size-3 shrink-0", effectiveOpen && "rotate-90")}
+        />
       ) : null}
     </>
   ) : (
@@ -494,10 +490,8 @@ function ToolCallItem({
         )}
         {canExpand ? (
           <ChevronRight
-            className={cn(
-              "size-3 text-foreground/40 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tool:opacity-100 group-focus-within/tool:opacity-100",
-              effectiveOpen ? "rotate-90" : "",
-            )}
+            aria-hidden="true"
+            className={cn("za-chat-activity-chevron size-3 shrink-0", effectiveOpen && "rotate-90")}
           />
         ) : null}
       </div>
@@ -555,6 +549,8 @@ function ToolCallItem({
     ) : null;
   const body = (
     <LazyCollapse
+      id={detailsId}
+      triggerRef={triggerRef}
       open={effectiveOpen}
       retainWhileClosed={retainRunningToolContent && displayIsRunning}
     >
@@ -643,8 +639,10 @@ function ToolCallItem({
   return (
     <div className={containerClassName}>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={effectiveOpen}
+        aria-controls={detailsId}
         className={summaryClassName}
         onClick={() => {
           userInteractedRef.current = true;

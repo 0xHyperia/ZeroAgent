@@ -168,12 +168,17 @@ func (f *cloudFileHTTPFixture) request(t *testing.T, method, path, cookie string
 	return response.StatusCode, data, response.Header
 }
 
-func cloudFileMultipart(t *testing.T, conversationID, name string, data []byte) (*bytes.Buffer, http.Header) {
+func cloudFileMultipart(t *testing.T, conversationID, name string, data []byte, uploadID ...string) (*bytes.Buffer, http.Header) {
 	t.Helper()
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	if err := writer.WriteField("conversation_id", conversationID); err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range uploadID {
+		if err := writer.WriteField("upload_id", id); err != nil {
+			t.Fatal(err)
+		}
 	}
 	part, err := writer.CreateFormFile("file", name)
 	if err != nil {
@@ -186,6 +191,49 @@ func cloudFileMultipart(t *testing.T, conversationID, name string, data []byte) 
 		t.Fatal(err)
 	}
 	return body, http.Header{"Content-Type": []string{writer.FormDataContentType()}}
+}
+
+func TestCloudFileUploadReceiptIsReadOnlyAndOwnerScoped(t *testing.T) {
+	f := newCloudFileHTTPFixture(t)
+	const uploadID = "5dd87f35-9ef6-4aa7-b09d-2a01f37d2780"
+	const uploads = "/api/web-chat/files"
+	receiptPath := "/api/web-chat/uploads/" + uploadID
+	if status, _, _ := f.request(t, "GET", receiptPath, "file-owner", nil, nil); status != 404 {
+		t.Fatalf("missing receipt status=%d", status)
+	}
+	post := func(owner, data string, ids ...string) (int, []byte) {
+		body, headers := cloudFileMultipart(t, "", "receipt.txt", []byte(data), ids...)
+		status, payload, _ := f.request(t, "POST", uploads, owner, body, headers)
+		return status, payload
+	}
+	if status, _ := post("file-owner", "original", uploadID, uploadID); status != 400 {
+		t.Fatalf("duplicate form key status=%d", status)
+	}
+	status, _ := post("file-owner", "original", uploadID)
+	if status != 201 {
+		t.Fatalf("upload status=%d", status)
+	}
+	status, data, headers := f.request(t, "GET", receiptPath, "file-owner", nil, nil)
+	var receipt struct {
+		ID   string    `json:"upload_id"`
+		File CloudFile `json:"file"`
+	}
+	if err := json.Unmarshal(data, &receipt); err != nil || status != 200 || headers.Get("Cache-Control") != "private, no-store" || receipt.ID != uploadID || receipt.File.UploadedAt == nil {
+		t.Fatalf("owner receipt status=%d body=%s err=%v", status, data, err)
+	}
+	if status, _, _ := f.request(t, "GET", receiptPath, "file-other", nil, nil); status != 404 {
+		t.Fatalf("foreign receipt status=%d", status)
+	}
+	if status, _ := post("file-owner", "replacement", uploadID); status != 409 {
+		t.Fatalf("repeated upload status=%d", status)
+	}
+	status, data, _ = f.request(t, "GET", uploads+"/"+receipt.File.ID+"/download", "file-owner", nil, nil)
+	if status != 200 || string(data) != "original" {
+		t.Fatalf("original bytes status=%d body=%q", status, data)
+	}
+	if status, data := post("file-other", "another account", uploadID); status != 201 || bytes.Contains(data, []byte(receipt.File.ID)) {
+		t.Fatalf("separate account upload status=%d body=%s", status, data)
+	}
 }
 
 func (f *cloudFileHTTPFixture) upload(t *testing.T, name string, data []byte) *CloudFile {

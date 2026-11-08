@@ -15,6 +15,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/tdewolff/parse/v2 v2.8.13
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/net v0.57.0
 	google.golang.org/protobuf v1.36.11
 )

@@ -1,5 +1,5 @@
 import { ChevronRight, Globe, Link2, Search } from "@liveagent/ui/components/IconSet";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useLocale } from "../../i18n/index";
 import { cn } from "../../lib/shared/utils";
 import { LazyCollapse } from "./LazyCollapse";
@@ -118,7 +118,9 @@ export function HostedSearchGroupView({
   isLive?: boolean;
   readOnly?: boolean;
 }) {
-  const { locale, t } = useLocale();
+  const { locale } = useLocale();
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const queries = useMemo(() => getUniqueQueries(items), [items]);
@@ -138,6 +140,20 @@ export function HostedSearchGroupView({
         ? "Web search failed"
         : "联网搜索失败"
       : completedLabel(locale, items.length, sources.length);
+  const summary = (
+    <>
+      <Globe aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
+      <span
+        className={cn(
+          "min-w-0 truncate",
+          active && "shimmer",
+          status === "failed" && "text-destructive",
+        )}
+      >
+        {label}
+      </span>
+    </>
+  );
 
   return (
     <section
@@ -145,40 +161,31 @@ export function HostedSearchGroupView({
       aria-busy={active}
       data-hosted-search-trace=""
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-label={expanded ? t("chat.search.collapseActivity") : t("chat.search.expandActivity")}
-        className={cn(
-          "-mx-1.5 flex h-auto max-w-bleed-0p75rem items-center gap-1.5 rounded-lg",
-          "px-1.5 py-1 text-sm font-[450] text-foreground/60 transition-colors",
-          "hover:bg-foreground/[0.04] hover:text-foreground/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        )}
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <Globe className="size-3 shrink-0 text-foreground/45" />
-        <span
+      {hasDetails ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
           className={cn(
-            "min-w-0 truncate",
-            active && "shimmer",
-            status === "failed" && "text-destructive",
+            "za-chat-activity-trigger -mx-1.5 flex h-auto max-w-bleed-0p75rem items-center gap-1.5 rounded-lg",
+            "px-1.5 py-1 text-sm font-[450] text-foreground/60 transition-colors",
+            "hover:bg-foreground/[0.04] hover:text-foreground/75",
           )}
+          onClick={() => setExpanded((current) => !current)}
         >
-          {label}
-        </span>
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            "size-3 shrink-0 text-foreground/40 opacity-0",
-            "transition-[opacity,transform] duration-150 ease-out",
-            "group-hover/search-trace:opacity-100 group-focus-within/search-trace:opacity-100 motion-reduce:transition-none",
-            expanded && "rotate-90",
-          )}
-        />
-      </button>
+          {summary}
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("za-chat-activity-chevron size-3 shrink-0", expanded && "rotate-90")}
+          />
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5 py-1 text-sm font-[450]">{summary}</div>
+      )}
 
       {hasDetails ? (
-        <LazyCollapse open={expanded}>
+        <LazyCollapse id={detailsId} triggerRef={triggerRef} open={expanded}>
           {() => (
             <div className="mt-1 border-l border-border/55 py-1 pl-3">
               <section

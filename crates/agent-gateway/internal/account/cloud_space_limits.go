@@ -28,12 +28,6 @@ func lockSpaceWrite(ctx context.Context, tx *sql.Tx, userID int64) error {
 	return err
 }
 
-const spaceLimitsSchema = `
-ALTER TABLE zeroagent_cloud_space_limits ADD COLUMN IF NOT EXISTS file_limit_bytes BIGINT NULL CHECK(file_limit_bytes>0 AND file_limit_bytes<=1125899906842624);
-ALTER TABLE zeroagent_cloud_space_limits ADD COLUMN IF NOT EXISTS artifact_limit_bytes BIGINT NULL CHECK(artifact_limit_bytes>0 AND artifact_limit_bytes<=1125899906842624);
-ALTER TABLE zeroagent_cloud_space_limits ADD COLUMN IF NOT EXISTS max_files INTEGER NULL CHECK(max_files BETWEEN 1 AND 1000000);
-ALTER TABLE zeroagent_cloud_space_limits ADD COLUMN IF NOT EXISTS max_artifact_versions INTEGER NULL CHECK(max_artifact_versions BETWEEN 1 AND 1000000);`
-
 func readSpaceLimitsTx(ctx context.Context, tx *sql.Tx, userID int64) (CloudSpaceLimits, error) {
 	p := defaultSpaceLimits()
 	err := tx.QueryRowContext(ctx, `SELECT COALESCE(l.limit_bytes,$2),COALESCE(l.file_limit_bytes,$3),COALESCE(l.artifact_limit_bytes,$4),COALESCE(l.max_files,$5),COALESCE(l.max_artifact_versions,$6) FROM (SELECT 1) AS singleton LEFT JOIN zeroagent_cloud_space_limits l ON l.user_id=$1`, userID, p.TotalBytes, p.FileBytes, p.ArtifactBytes, p.MaxFiles, p.MaxArtifactVersions).Scan(&p.TotalBytes, &p.FileBytes, &p.ArtifactBytes, &p.MaxFiles, &p.MaxArtifactVersions)

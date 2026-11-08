@@ -58,11 +58,11 @@ test("artifact citations identify exact versions without rewriting ordinary exte
  assert.equal(api.cloudArtifactVersionFromLink("/workspace/output.csv"),null);assert.equal(api.cloudArtifactVersionFromLink("https://example.com/a"),null);
 });
 
-async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",initial=true,libraryRecords,failInitial=false,binaryContent=content,continueResult}={}){
- let env,revision=0,active=true,release;const calls=[],deleted=[],notices=[],continues=[];
+async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",initial=true,libraryRecords,failInitial=false,binaryContent=content,continueResult,conversationId=CONV,onOpenSourceRun,onVersionChange,onVersionRestored,inline=false,workFromSpace=false,getVersionResponse}={}){
+ let env,revision=0,active=true,release,closed=0;const calls=[],deleted=[],notices=[],continues=[];
  const icons=new Proxy({},{get:()=>()=>null});
  const capture=()=>{const owner=revision;return()=>{if(owner!==revision)throw new Error("Account changed");};};
- const records=libraryRecords??[oldVersion(),record];let failMore=false,delayMore=false,finishMore;
+ const records=libraryRecords??[oldVersion(),record];let failMore=false,delayMore=false,finishMore,unreadableVersion;
  const request=async(path,init={})=>{
    calls.push({path,init});assert.ok(path.startsWith("/api/web-chat/artifacts"),"artifact panel attempted a VM path or external origin");
    if(init.method==="DELETE"){deleted.push(path);return Response.json({family_id:FAMILY,state:deleteState},{status:deleteState==="deleting"?202:200});}
@@ -76,12 +76,32 @@ async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",
      const start=before?filtered.findIndex(item=>item.id===before)+1:0,page=filtered.slice(start,start+limit);
      return Response.json({versions:page,next_cursor:filtered.length>start+limit?page.at(-1).id:""});
    }
-   const id=path.split("/").at(-1);return Response.json({version:records.find(item=>item.id===id)});
+   const id=path.split("/").at(-1);
+   if(id===unreadableVersion)return Response.json({error:"unavailable"},{status:503});
+   if(getVersionResponse){const response=await getVersionResponse(id);if(response)return response;}
+   return Response.json({version:records.find(item=>item.id===id)});
  };
- env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,[fileURLToPath(new URL("../../../agent-ui/src/components/resource-preview/ResourceSourceEditor.tsx",import.meta.url))]:{default:props=>env.React.createElement("pre",{"data-source-editor":""},props.text)},"@liveagent/ui/components/IconSet":icons,[fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,"@/lib/accountRequest":{captureAccountRequestGuard:capture},[fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("div",{role:"dialog"},env.React.createElement("header",null,env.React.createElement("h2",null,props.title),env.React.createElement("p",null,props.subtitle??props.description),props.headerActions),props.children,props.details)},"@liveagent/ui/components/ui/dialog":{Dialog:props=>props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)}}});
+ const panelMock = inline ? {} : {
+   [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx", import.meta.url))]: {
+     CloudChatResourcePanel: (props) => env.React.createElement("div", { role: "dialog" },
+       env.React.createElement("header", null,
+         env.React.createElement("h2", null, props.title),
+         env.React.createElement("p", null, props.subtitle ?? props.description),
+         props.continueAction && env.React.createElement("button", {
+           disabled: props.continueAction.disabled, onClick: props.continueAction.onClick,
+         }, props.continueAction.label),
+         props.headerActions),
+       props.children, props.details),
+   },
+ };
+ env=await createWebDomTestEnv({resolveDynamicImports:true,mocks:{streamdown,[fileURLToPath(new URL("../../../agent-ui/src/components/resource-preview/ResourceSourceEditor.tsx",import.meta.url))]:{default:props=>env.React.createElement("pre",{"data-source-editor":""},props.text)},"@liveagent/ui/components/IconSet":icons,[fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,"@/lib/accountRequest":{captureAccountRequestGuard:capture},...panelMock,"@liveagent/ui/components/ui/dialog":{Dialog:props=>props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)}}});
  const {createCloudChatArtifactsClient}=env.loadModule("src/lib/cloudChatArtifacts.ts"),client=createCloudChatArtifactsClient(request,capture);
  const {CloudChatArtifactsPanel}=env.loadModule("src/components/cloudchat/CloudChatArtifactsPanel.tsx");const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
- await env.act(async()=>{root.render(env.React.createElement(CloudChatArtifactsPanel,{client,conversationId:CONV,initialVersionId:initial?record.id:undefined,isCurrent:()=>active,onClose:()=>{},onDeleted:id=>notices.push(id),onContinue:version=>{continues.push(version);return continueResult;}}));await tick();});
+ const panel=env.React.createElement(CloudChatArtifactsPanel,{client,conversationId,initialVersionId:initial?record.id:undefined,isCurrent:()=>active,onClose:()=>closed++,onDeleted:id=>notices.push(id),onContinue:version=>{continues.push(version);return continueResult;},onOpenSourceRun,onVersionChange,onVersionRestored,workFromSpace});
+ const { CloudChatResourcePresentation } = env.loadModule("src/components/cloudchat/CloudChatReaderContext.ts");
+ await env.act(async()=>{root.render(inline
+   ? env.React.createElement(CloudChatResourcePresentation.Provider, { value: "inline" }, panel)
+   : panel);await tick();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
  async function click(label) {
    let button=[...document.querySelectorAll('button')].find(node=>(node.getAttribute('aria-label')??node.textContent).trim()===label);
@@ -99,14 +119,177 @@ async function mount(t,{record=version(),lateBinary=false,deleteState="deleted",
    const button=host.querySelector(`[data-version-id="${id}"]`);assert.ok(button,'version point');
    await env.act(async()=>{button.click();await tick();});
  }
- return{env,host,client,calls,deleted,notices,continues,click,choose,switchAccount(){revision++;},set failInitial(value){failInitial=value;},set failMore(value){failMore=value;},set delayMore(value){delayMore=value;},async finishMore(){await env.act(async()=>{finishMore();await tick();});},async retire(){await env.act(async()=>{revision++;active=false;root.render(null);await tick();});},async finishBinary(){await env.act(async()=>{release();await tick();});}};
+ return{env,host,client,calls,deleted,notices,continues,click,choose,get closed(){return closed;},switchAccount(){revision++;},set unreadableVersion(value){unreadableVersion=value;},set failInitial(value){failInitial=value;},set failMore(value){failMore=value;},set delayMore(value){delayMore=value;},async finishMore(){await env.act(async()=>{finishMore();await tick();});},async retire(){await env.act(async()=>{revision++;active=false;root.render(null);await tick();});},async finishBinary(){await env.act(async()=>{release();await tick();});}};
 }
+
+test("direct artifact links retry the same immutable version and restore reader focus", async (t) => {
+  const reads = [], locations = [];
+  let finish;
+  const app = await mount(t, {
+    inline: true,
+    workFromSpace: true,
+    onVersionChange: (id) => locations.push(id),
+    getVersionResponse(id) {
+      reads.push(id);
+      if (reads.length === 1) return Response.json({ error: "missing" }, { status: 404 });
+      if (reads.length === 2) return Response.json({ error: "offline" }, { status: 503 });
+      return new Promise((resolve) => { finish = resolve; });
+    },
+  });
+  assert.match(app.host.querySelector(".cloud-reader-opening").textContent, /成果版本不可用/);
+  assert.doesNotMatch(app.host.textContent, /还没有成果/);
+  const retry = [...app.host.querySelectorAll("button")].find((button) => button.textContent.trim() === "重试");
+  retry.focus();
+  await app.click("重试");
+  assert.match(app.host.querySelector(".cloud-reader-opening").textContent, /暂时无法打开成果版本/);
+  assert.equal(document.activeElement, retry);
+  await app.click("重试");
+  assert.equal(retry.getAttribute("aria-disabled"), "true");
+  await app.click("正在打开成果版本…");
+  assert.deepEqual(reads, [V2, V2, V2]);
+  assert.deepEqual(locations, []);
+  assert.ok(!app.calls.some(({ path }) => path.includes("?")));
+  await app.env.act(async () => { finish(Response.json({ version: version() })); await tick(); });
+  assert.equal(document.activeElement, app.host.querySelector('[aria-label^="文件菜单："]'));
+  assert.equal(app.host.querySelector(".cloud-reader-opening"), null);
+  await app.click("返回资料空间");
+  assert.equal(app.closed, 1);
+});
 
 test("artifact reader switches immutable family versions and downloads the chosen old version",async(t)=>{
  const app=await mount(t);assert.match(app.host.textContent,/v2 · 正式版本已就绪/);await app.choose(V1);assert.match(app.host.textContent,/v1 · 正式版本已就绪/);
  const downloads=[];const originalCreate=URL.createObjectURL,originalRevoke=URL.revokeObjectURL;URL.createObjectURL=()=>"blob:artifact-fixture";URL.revokeObjectURL=()=>{};t.after(()=>{URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke;});
  app.env.dom.window.HTMLAnchorElement.prototype.click=function(){downloads.push(this.download);};
  await app.click("下载此版本");assert.deepEqual(downloads,["older.html"]);assert.ok(app.calls.some(call=>call.path===`/api/web-chat/artifacts/versions/${V1}/download`));
+});
+
+test("closing artifact history restores the live file menu for the selected version", async (t) => {
+ const changes = [];
+ const app = await mount(t, { inline:true, onVersionChange:id=>changes.push(id) });
+ const menu = () => app.host.querySelector('[aria-label^="文件菜单："]');
+ const originalMenu = menu();
+ await app.click("版本历史记录");
+ assert.equal(originalMenu.isConnected,false);
+ await app.choose(V1);
+ const selected = app.host.querySelector('[data-version-id][aria-current="true"]');
+ assert.equal(selected.dataset.versionId,V1);
+ selected.focus();
+ await app.env.act(async()=>{
+  selected.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}));
+  await tick();
+ });
+ assert.equal(app.host.querySelector(".za-reader-timeline"),null);
+ assert.equal(document.activeElement === menu(),true);
+ assert.equal(menu().getAttribute("aria-label"),`文件菜单：${oldVersion().name}`);
+ assert.deepEqual(changes,[V1]);
+});
+
+test("a failed history read leaves the exact artifact readable and retries only history", async (t) => {
+ const app = await mount(t, { record: oldVersion(), libraryRecords: [version(), oldVersion()], failInitial: true });
+ const versionPath = `/api/web-chat/artifacts/versions/${V1}`;
+ assert.match(app.host.textContent, /v1 · 正式版本已就绪/);
+ assert.doesNotMatch(app.host.textContent, /暂时无法读取版本历史/);
+ await app.click("版本历史记录");
+ assert.match(app.host.querySelector('[role="alert"]').textContent, /暂时无法读取版本历史/);
+ assert.match(app.host.textContent, /正在查看 v1/);
+ assert.equal([...app.host.querySelectorAll("button")].find(button => button.textContent === "恢复此版本").disabled, true);
+ app.failInitial = false;
+ await app.click("重新读取版本历史");
+ assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V1);
+ assert.equal(app.calls.filter(call => call.path === versionPath).length, 1);
+ assert.equal(app.calls.filter(call => call.path.includes(`family_id=${FAMILY}`)).length, 2);
+});
+
+test("a long artifact history pages and retries from its exact cursor without losing a deep-linked version", async (t) => {
+ const records = Array.from({ length: 100 }, (_, index) => {
+   const number = 100 - index;
+   if (number === 1) return oldVersion();
+   if (number === 2) return version();
+   const id = `11223344-1122-4112-8112-${String(number).padStart(12, "0")}`;
+   return version({ id, number, download_url: `/api/web-chat/artifacts/versions/${id}/download` });
+ });
+ const app = await mount(t, { record: oldVersion(), libraryRecords: records });
+ const rows = () => [...app.host.querySelectorAll('[data-version-id]')];
+ await app.click("版本历史记录");
+ assert.equal(rows().length, 50);
+ assert.match(app.host.textContent, /正在查看 v1/);
+ const first = rows()[0];
+ app.failMore = true;
+ await app.click("加载更早版本");
+ assert.equal(rows().length, 50);
+ assert.equal(rows()[0], first);
+ assert.match(app.host.querySelector('[role="alert"]').textContent, /暂时无法加载更早的版本/);
+ app.failMore = false;
+ const retry = [...app.host.querySelectorAll('button')].find(button => button.textContent === "重试加载更早版本");
+ retry.focus();
+ await app.click("重试加载更早版本");
+ assert.equal(rows().length, 100);
+ assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V1);
+ assert.equal(document.activeElement.dataset.versionId, V1);
+ assert.doesNotMatch(app.host.textContent, /正在查看 v1|加载更早版本/);
+ const queries = app.calls.filter(call => call.path.includes(`family_id=${FAMILY}`)).map(call => new URL(call.path, "http://fixture.local").searchParams);
+ assert.deepEqual(queries.map(query => query.get("limit")), ["50", "50", "50"]);
+ assert.deepEqual(queries.map(query => query.get("before")), [null, records[49].id, records[49].id]);
+ assert.equal(app.calls.filter(call => call.path === `/api/web-chat/artifacts/versions/${V1}`).length, 1);
+});
+
+test("only a confirmed version updates the reader location and retry reads the attempted version", async (t) => {
+  const changes = [];
+  const app = await mount(t, { onVersionChange: (id) => changes.push(id) });
+  assert.deepEqual(changes, []);
+  app.unreadableVersion = V1;
+  await app.choose(V1);
+  assert.deepEqual(changes, []);
+  assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V2);
+  let finishOlder, olderReads = 0;
+  app.client.get = async (id) => {
+    assert.equal(id, V1);
+    olderReads++;
+    return new Promise((resolve) => { finishOlder = () => resolve(oldVersion()); });
+  };
+  const retry = app.host.querySelector('[role="alert"] button');
+  retry.focus();
+  await app.click("重新读取");
+  assert.equal(document.activeElement, retry);
+  assert.equal(retry.getAttribute("aria-disabled"), "true");
+  assert.match(retry.textContent, /正在重试/);
+  assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V2);
+  await app.click("正在重试…");
+  assert.equal(olderReads, 1);
+  assert.deepEqual(changes, []);
+  await app.env.act(async () => { finishOlder(); await tick(); });
+  assert.deepEqual(changes, [V1]);
+  assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V1);
+  assert.equal(document.activeElement.dataset.versionId, V1);
+
+  let finish, reads = 0, restores = 0;
+  app.client.get = async (id) => {
+    assert.equal(id, V2);
+    reads++;
+    return new Promise((resolve) => { finish = () => resolve(version()); });
+  };
+  app.client.restore = async () => { restores++; };
+  const restore = app.host.querySelector(".za-reader-restore-button");
+  const latest = app.host.querySelector(`[data-version-id="${V2}"]`);
+  assert.equal(restore.disabled, false);
+  latest.focus();
+  await app.choose(V2);
+  assert.equal(document.activeElement, latest);
+  assert.equal(latest.getAttribute("aria-disabled"), "true");
+  assert.match(latest.textContent, /正在打开/);
+  assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId, V1);
+  assert.equal(restore.disabled, true);
+  assert.deepEqual(changes, [V1]);
+  await app.choose(V2);
+  await app.click("恢复此版本");
+  assert.equal(reads, 1);
+  assert.equal(restores, 0);
+  await app.env.act(async () => { finish(); await tick(); });
+  assert.equal(document.activeElement, latest);
+  assert.equal(latest.getAttribute("aria-current"), "true");
+  assert.equal(latest.hasAttribute("aria-disabled"), false);
+  assert.doesNotMatch(latest.textContent, /正在打开/);
+  assert.deepEqual(changes, [V1, V2]);
 });
 
 test("HTML artifact preview stays scriptless and its explicit source is rendered as inert text",async(t)=>{
@@ -127,6 +310,40 @@ test("continuing work selects the exact ready version and rejects metadata from 
  const app=await mount(t);await app.choose(V1);await app.click("继续修改");
  assert.equal(app.continues.length,1);assert.equal(app.continues[0].id,V1);assert.equal(app.continues[0].family_id,FAMILY);assert.equal(app.continues[0].name,"older.html");
  app.switchAccount();await app.click("继续修改");assert.equal(app.continues.length,1);assert.match(app.host.textContent,/Account changed/);
+});
+
+test("source navigation keeps a version open on failure and routes revision to its original run", async (t) => {
+  const requests = [];
+  let finishRetry;
+  const app = await mount(t, {
+    conversationId: "",
+    inline: true,
+    onOpenSourceRun: async (selected, revise, signal) => {
+      assert.equal(signal.aborted, false);
+      requests.push([selected.id, selected.source_run_id, revise]);
+      if (requests.length === 1) throw new Error("temporarily unavailable");
+      if (requests.length === 2) await new Promise(resolve => { finishRetry = resolve; });
+    },
+  });
+  await app.click("打开来源会话");
+  assert.match(app.host.querySelector('[role="alert"]').textContent, /暂时无法打开来源会话/);
+  assert.equal(app.host.querySelector("h2").textContent, version().name);
+  const retry = app.host.querySelector('[role="alert"] button');
+  assert.equal(retry.textContent.trim(), "重试打开来源");
+  await app.env.act(async () => { retry.focus(); retry.click(); await tick(); });
+  assert.equal(document.activeElement, retry);
+  assert.equal(retry.getAttribute("aria-disabled"), "true");
+  await app.env.act(async () => { retry.click(); await tick(); });
+  assert.deepEqual(requests, [[V2, RUN, false], [V2, RUN, false]]);
+  await app.env.act(async () => { finishRetry(); await tick(); });
+  const continueButton = app.host.querySelector(".cloud-reader-compact-action button");
+  assert.equal(continueButton?.textContent.trim(), "在来源会话中修改");
+  await app.env.act(async () => { continueButton.click(); await tick(); });
+  assert.deepEqual(requests, [[V2, RUN, false], [V2, RUN, false], [V2, RUN, true]]);
+  assert.equal(app.continues.length, 0);
+  assert.equal(app.host.querySelector('[role="alert"]'), null);
+  await app.click("引用到当前对话");
+  assert.equal(app.continues[0].id, V2);
 });
 
 test("family deletion is explicit and a 202 cleanup receipt never pretends the objects were erased",async(t)=>{
@@ -239,7 +456,8 @@ test("refreshing an immutable version preserves its current text reading mode",a
 
 
 test("restore uses immutable source and head, shows in-button busy state and reconciles a lost response read-only",async t=>{
- const app=await mount(t);await app.choose(V1);
+ let libraryInvalidations=0;
+ const app=await mount(t,{onVersionRestored:()=>{libraryInvalidations++;}});await app.choose(V1);
  assert.ok(app.host.querySelector('[aria-label="返回文件阅读"]'));
  const V3="88888888-8888-4888-8888-888888888888",restored=version({id:V3,number:3,name:'older.html',download_url:`/api/web-chat/artifacts/versions/${V3}/download`});
  let release,posts=0,lookups=0;
@@ -247,9 +465,11 @@ test("restore uses immutable source and head, shows in-button busy state and rec
  await app.click('恢复此版本');
  const button=[...app.host.querySelectorAll('button')].find(item=>item.textContent==='恢复此版本');assert.ok(button.disabled);assert.ok(button.querySelector('.za-reader-button-spinner'));
  await app.env.act(async()=>{release();await tick();});
+ assert.equal(libraryInvalidations,0);
  app.client.restoreReceipt=async()=>{lookups++;return restored};app.client.get=async id=>id===V3?restored:version();app.client.list=async()=>({versions:[restored,version(),oldVersion()],nextCursor:''});
  await app.click('核对恢复状态');assert.equal(posts,1);assert.equal(lookups,1);
- assert.match(app.host.textContent,/当前版本/);assert.equal([...app.host.querySelectorAll('button')].find(item=>item.textContent==='恢复此版本').disabled,true);
+ assert.equal(libraryInvalidations,1);
+ assert.match(app.host.textContent,/v3 · 最新/);assert.equal([...app.host.querySelectorAll('button')].find(item=>item.textContent==='恢复此版本').disabled,true);
 });
 
 test("artifact restore client bounds IDs and rejects a restored response from another family",async()=>{

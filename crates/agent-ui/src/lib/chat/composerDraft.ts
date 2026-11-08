@@ -21,6 +21,7 @@ import {
   type PendingUploadedFile,
   withPastedTextDisplayMetadata,
 } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 
 export function buildPastedTextFileName(paste: MentionComposerLargePaste, index: number) {
   const baseName = paste.label
@@ -59,7 +60,12 @@ export function buildTextFromComposerDraft(
       .map((segment) => {
         if (segment.type === "text") return segment.text;
         if (segment.type === "fileMention") return formatFileMentionToken(segment.reference);
-        if (segment.type === "skillMention") return `/${segment.skill.name}`;
+        if (segment.type === "skillMention") {
+          const { name, displayName, skillFile } = segment.skill;
+          return parseExtensionReference(skillFile)
+            ? `[${(displayName || name).replace(/[\\[\]]/g, "\\$&")}](${skillFile})`
+            : `/${name}`;
+        }
         if (segment.type === "appMention") return formatAppMentionToken(segment.app);
         if (segment.type === "commitMention") return formatComposerCommitMention(segment.commit);
         if (segment.type === "gitFileMention") return formatComposerGitFileMention(segment.file);

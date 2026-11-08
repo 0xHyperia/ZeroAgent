@@ -2,7 +2,6 @@ import { assertJsxDimensions } from "../helpers/style-dimensions.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { normalizeClassGroups } from "../../../agent-ui/test-support/source-class-groups.mjs";
 
 const roundContentSource = fs.readFileSync(
   new URL(
@@ -68,13 +67,14 @@ test("inline code uses the higher-contrast transcript treatment", () => {
   assert.match(markdownStylesSource, /rounded-xs/);
 });
 
-test("operation rows use compact icons and reveal disclosure chevrons on intent", () => {
+test("operation rows keep compact icons and show a shared disclosure affordance without hover", () => {
   assertJsxDimensions(hostedSearchSource, "Globe", { width: "3", height: "3" });
   assertJsxDimensions(toolTraceSource, "BatchIcon", { width: "3", height: "3" });
   assertJsxDimensions(toolCallSource, "ToolIcon", { width: "3", height: "3" });
 
-  assert.match(normalizeClassGroups(workTraceSource), /opacity-0[^"\n]*group-hover\/work-trace:opacity-100/);
-  assert.match(normalizeClassGroups(hostedSearchSource), /opacity-0[^"\n]*group-hover\/search-trace:opacity-100/);
-  assert.match(normalizeClassGroups(toolTraceSource), /opacity-0[^"\n]*group-hover\/tool-trace:opacity-100/);
-  assert.match(normalizeClassGroups(toolCallSource), /opacity-0[^"\n]*group-hover\/tool:opacity-100/);
+  for (const source of [workTraceSource, hostedSearchSource, toolTraceSource, toolCallSource]) {
+    assert.match(source, /za-chat-activity-trigger/);
+    assert.match(source, /za-chat-activity-chevron size-3 shrink-0/);
+    assert.match(source, /aria-controls=\{detailsId\}/);
+  }
 });

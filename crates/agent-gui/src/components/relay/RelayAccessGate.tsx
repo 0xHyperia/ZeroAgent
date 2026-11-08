@@ -13,6 +13,7 @@ import {
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Label } from "@liveagent/ui/components/ui/label";
+import { useLocale } from "@liveagent/ui/i18n/index";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import { backendProfileMatchesAccount } from "../../lib/kbrain/profile";
@@ -62,6 +63,7 @@ export function RelayAccessGate({
   onReady,
   appUpdate,
 }: RelayAccessGateProps) {
+  const { locale } = useLocale();
   const [step, setStep] = useState<Step>("checking");
   const [mode, setMode] = useState<Mode>("login");
   const [publicSettings, setPublicSettings] = useState<RelayPublicSettings | null>(null);
@@ -101,15 +103,15 @@ export function RelayAccessGate({
 
   const finishAuthentication = useCallback(
     async (authenticatedUser?: RelayUser) => {
-      const [currentUser, keys, availableGroups] = await Promise.all([
-        authenticatedUser ? Promise.resolve(authenticatedUser) : getRelayCurrentUser(),
-        listRelayApiKeys(),
-        listRelayGroups(),
-      ]);
+      const currentUser = authenticatedUser ?? (await getRelayCurrentUser());
       if (!backendProfileMatchesAccount(RELAY_ORIGIN, currentUser.id)) {
-        window.location.reload();
-        return;
+        throw new Error(
+          locale === "en-US"
+            ? "The account does not match this workspace. Reconnect to try again."
+            : "账户与当前工作区不一致，请重新连接。",
+        );
       }
+      const [keys, availableGroups] = await Promise.all([listRelayApiKeys(), listRelayGroups()]);
       setUser(currentUser);
       setGroups(availableGroups);
       if (keys.length === 0) {
@@ -127,7 +129,7 @@ export function RelayAccessGate({
       });
       onReady(currentUser);
     },
-    [onReady, setSettings, settings],
+    [locale, onReady, setSettings, settings],
   );
 
   const initialize = useCallback(async () => {
@@ -453,7 +455,10 @@ export function RelayAccessGate({
                   </>
                 )}
                 {error && (
-                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
+                  <div
+                    role="alert"
+                    className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive"
+                  >
                     {error}
                   </div>
                 )}
@@ -491,7 +496,7 @@ export function RelayAccessGate({
                 {error && (
                   <Button type="button" variant="ghost" className="w-full" onClick={initialize}>
                     <RefreshCw className="h-4 w-4" />
-                    重新连接
+                    {locale === "en-US" ? "Reconnect" : "重新连接"}
                   </Button>
                 )}
               </form>

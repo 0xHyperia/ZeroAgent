@@ -25,6 +25,9 @@ export function setBootProfileScope(scope: string | null): void {
 export function getBootProfileScope(): string | null | undefined {
   return bootScope;
 }
+export function nativeProfileOriginMatches(scope: string | null, origin: string): boolean {
+  return scope === null || scope.startsWith(`${new URL(origin).origin}|user:`);
+}
 export function backendProfileMatchesAccount(origin: string, userId: number): boolean {
   // Explicit browser backends enforce their own identity; only native managed profiles use this gate.
   return bootScope === undefined || bootScope === accountStorageScope(origin, userId);

@@ -1,5 +1,5 @@
 import { SquarePen } from "@liveagent/ui/components/IconSet";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export function CloudConversationTitle({
   title,
@@ -19,7 +19,7 @@ export function CloudConversationTitle({
   const pending = useRef(false);
   const mounted = useRef(true);
   const cancelled = useRef(false);
-  const wasEditing = useRef(false);
+  const restoreTriggerFocus = useRef(false);
   const lastRenameRequest = useRef(renameRequest);
   useEffect(() => {
     if (lastRenameRequest.current === renameRequest) return;
@@ -36,16 +36,26 @@ export function CloudConversationTitle({
       mounted.current = false;
     };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editing) {
       inputRef.current?.focus();
       inputRef.current?.select();
-    } else if (wasEditing.current) triggerRef.current?.focus();
-    wasEditing.current = editing;
+    } else if (restoreTriggerFocus.current) {
+      restoreTriggerFocus.current = false;
+      const trigger = triggerRef.current;
+      if (trigger && trigger.ownerDocument.activeElement === trigger.ownerDocument.body) {
+        trigger.focus({ preventScroll: true });
+      }
+    }
   }, [editing]);
+  const finishEditing = () => {
+    const input = inputRef.current;
+    restoreTriggerFocus.current = Boolean(input && input.ownerDocument.activeElement === input);
+    setEditing(false);
+  };
   const cancel = () => {
     cancelled.current = true;
-    setEditing(false);
+    finishEditing();
     setError("");
   };
   async function commit() {
@@ -53,7 +63,6 @@ export function CloudConversationTitle({
     const value = draft.trim();
     if (!value) {
       setError("标题不能为空");
-      inputRef.current?.focus();
       return;
     }
     if (value === title) {
@@ -65,11 +74,10 @@ export function CloudConversationTitle({
     setError("");
     try {
       await onRename(value);
-      if (mounted.current) setEditing(false);
+      if (mounted.current) finishEditing();
     } catch (cause) {
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : "标题保存失败，请重试");
-        inputRef.current?.focus();
       }
     } finally {
       pending.current = false;
@@ -103,7 +111,7 @@ export function CloudConversationTitle({
             className="cloud-title-input"
             value={draft}
             maxLength={200}
-            disabled={saving}
+            readOnly={saving}
             onChange={(event) => {
               setDraft(event.currentTarget.value);
               setError("");

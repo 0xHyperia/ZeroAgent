@@ -101,7 +101,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
   const choices: ReasoningLevel[] = props.thinkingAlwaysOn
     ? props.reasoningOptions.filter((level) => level !== "off")
     : ["off", ...props.reasoningOptions.filter((level) => level !== "off")];
-  const canAdjust = supported && choices.length > 1;
+  const canAdjust = props.hasModels && supported && choices.length > 1;
   const nativeSearchSupported = option?.nativeWebSearchSupported === true;
   const nativeSearchOn = nativeSearchSupported && props.chatRuntimeControls.nativeWebSearchEnabled;
   const [preview, setPreview] = useState<ReasoningLevel | null>(null);

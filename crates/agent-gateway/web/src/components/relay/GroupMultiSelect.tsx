@@ -1,4 +1,5 @@
 import { Check, ChevronDown } from "@liveagent/ui/components/IconSet";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RelayGroup } from "@/lib/relay/client";
 import { relayProviderTypeForPlatform } from "@/lib/relay/providers";
@@ -20,6 +21,8 @@ function platformLabel(platform: string) {
 }
 
 export function GroupMultiSelect({ groups, selectedIds, onChange, disabled, id }: Props) {
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -27,6 +30,14 @@ export function GroupMultiSelect({ groups, selectedIds, onChange, disabled, id }
     () => groups.filter((group) => selectedSet.has(group.id)),
     [groups, selectedSet],
   );
+  const count = selectedGroups.length;
+  const selectionLabel = count
+    ? zh
+      ? `已选择 ${count} 个分组`
+      : `${count} ${count === 1 ? "group" : "groups"} selected`
+    : zh
+      ? "选择一个或多个分组"
+      : "Select one or more groups";
 
   useEffect(() => {
     if (!open) return;
@@ -56,7 +67,7 @@ export function GroupMultiSelect({ groups, selectedIds, onChange, disabled, id }
         className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm shadow-xs disabled:opacity-50"
       >
         <span className={selectedGroups.length ? "text-foreground" : "text-muted-foreground"}>
-          {selectedGroups.length ? `已选择 ${selectedGroups.length} 个分组` : "选择一个或多个分组"}
+          {selectionLabel}
         </span>
         <ChevronDown className={`h-4 w-4 opacity-50 ${open ? "rotate-180" : ""}`} />
       </button>
@@ -67,7 +78,9 @@ export function GroupMultiSelect({ groups, selectedIds, onChange, disabled, id }
           className="layer-popover absolute mt-1 max-h-72 w-full min-w-64 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {groups.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-foreground">暂无可用分组</p>
+            <p className="px-2 py-3 text-xs text-muted-foreground">
+              {zh ? "暂无可用分组" : "No groups available"}
+            </p>
           ) : (
             groups.map((group) => {
               const checked = selectedSet.has(group.id);

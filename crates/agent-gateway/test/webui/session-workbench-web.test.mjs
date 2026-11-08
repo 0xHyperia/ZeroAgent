@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 import { createWebModuleLoader } from "../helpers/load-web-module.mjs";
 
 const loader = createWebModuleLoader();
@@ -117,6 +118,111 @@ function twoPaneLayout(firstConversationId, secondConversationId) {
     focusedPaneId: first.paneId,
   };
 }
+
+test("retained device panes ignore window shortcuts outside the active chat surface", async (t) => {
+  const env = await createWebDomTestEnv();
+  const { act, createRoot, React } = env;
+  const { useGatewayWorkbench } = env.loadModule("src/app/workbench/useGatewayWorkbench.ts");
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  t.after(async () => {
+    await act(() => root.unmount());
+    env.cleanup();
+  });
+
+  const noOp = () => {};
+  const selected = [];
+  const params = {
+    enabled: true,
+    sidebarStore: { peek: () => undefined },
+    workspaceProjects: [],
+    archivedProjectPathKeys: new Set(),
+    missingProjectPathKeys: new Set(),
+    activateWorkspaceProject: noOp,
+    terminalClient: null,
+    terminalSessions: [],
+    terminalProjectPath: "",
+    newTerminalTitle: "Terminal",
+    projectToolTitle: () => "Project tool",
+    startConversationForProject: async () => null,
+    conversationWorkdirFor: () => null,
+    onNoSpaceForSplit: noOp,
+    onDropStateChanged: noOp,
+    onWorkspaceDropFailed: noOp,
+    onConversationAlreadyOpen: noOp,
+  };
+  let controller;
+  function View({ chatHidden, chatInert }) {
+    const [displayedConversationId, setDisplayedConversationId] = React.useState("conv-a");
+    controller = useGatewayWorkbench({
+      ...params,
+      displayedConversationId,
+      selectConversation: (id) => {
+        selected.push(id);
+        setDisplayedConversationId(id);
+      },
+    });
+    return React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(
+        "section",
+        { hidden: chatHidden, inert: chatInert },
+        React.createElement(
+          "div",
+          { ref: controller.canvasRef },
+          Object.values(controller.workbench.layout.panes).map((pane) =>
+            React.createElement("textarea", { key: pane.paneId, "aria-label": pane.paneId }),
+          ),
+        ),
+      ),
+      React.createElement("button", null, "Workspace navigation"),
+    );
+  }
+  const render = (props = {}) => act(() => root.render(React.createElement(View, props)));
+  const closeShortcut = async (target) => {
+    const event = new KeyboardEvent("keydown", {
+      key: "w",
+      ctrlKey: true,
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(() => target.dispatchEvent(event));
+    return event.defaultPrevented;
+  };
+
+  await render();
+  const firstPaneId = controller.workbench.layout.focusedPaneId;
+  await act(() => {
+    controller.workbench.openConversation(
+      { conversationId: "conv-b", project: { projectId: "project-b", projectPathKey: "/workspace/b" } },
+      { kind: "pane-edge", paneId: firstPaneId, edge: "right" },
+    );
+    controller.handleFocusPane(controller.workbench.paneIdForConversation("conv-b"));
+  });
+  assert.equal(Object.keys(controller.workbench.layout.panes).length, 2);
+  const secondPaneId = controller.workbench.paneIdForConversation("conv-b");
+  const draft = host.querySelector(`textarea[aria-label="${secondPaneId}"]`);
+  draft.value = "Keep this device draft";
+  draft.setSelectionRange(5, 9);
+  const beforeNavigation = controller.workbench.layout;
+
+  for (const props of [{ chatHidden: true, chatInert: true }, { chatInert: true }]) {
+    await render(props);
+    assert.equal(await closeShortcut(host.querySelector("button")), false);
+    assert.equal(controller.workbench.layout, beforeNavigation);
+  }
+
+  await render();
+  assert.equal(host.querySelector(`textarea[aria-label="${secondPaneId}"]`), draft);
+  assert.equal(draft.value, "Keep this device draft");
+  assert.equal(draft.selectionStart, 5);
+  assert.equal(controller.workbench.layout.focusedPaneId, secondPaneId);
+  assert.equal(await closeShortcut(draft), true);
+  assert.deepEqual(Object.keys(controller.workbench.layout.panes), [firstPaneId]);
+  assert.deepEqual(selected, ["conv-b", "conv-a"]);
+});
 
 // --- 会话隔离 ----------------------------------------------------------------
 

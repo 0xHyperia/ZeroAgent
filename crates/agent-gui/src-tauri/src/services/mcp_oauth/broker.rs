@@ -1,5 +1,9 @@
-//! Private host-to-sidecar OAuth transport. This is not a renderer/Gateway API.
+//! Profile-owned transport from K-brain to the Native host.
 use super::{store::TokenStore, CredentialOwner};
+#[cfg(desktop)]
+use crate::services::account_session::device_skills::{
+    self, DeviceSkillAccount, DeviceSkillReference,
+};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
@@ -24,6 +28,9 @@ use std::{
 use tokio::sync::{oneshot, Semaphore};
 
 pub(crate) const PROTOCOL: &str = "zeroagent.mcp-credentials.v1";
+const MCP_ROUTE: &str = "/v1/mcp/credential";
+#[cfg(desktop)]
+const DEVICE_SKILLS_ROUTE: &str = "/v1/device/skills";
 #[cfg(test)]
 mod tests;
 
@@ -38,6 +45,10 @@ struct BrokerState {
     slots: Arc<Semaphore>,
     configuration: Arc<crate::services::configuration_coordinator::ConfigurationCoordinator>,
     recovery: Arc<super::rotation::RotationRecovery>,
+    #[cfg(desktop)]
+    device_skills: Option<DeviceSkillAccount>,
+    #[cfg(desktop)]
+    device_skill_slots: Arc<Semaphore>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +113,7 @@ impl NativeCredentialBroker {
         storage_id: String,
         profile_live: Arc<AtomicBool>,
         file_only: bool,
+        #[cfg(desktop)] device_skills: Option<DeviceSkillAccount>,
     ) -> Result<Self, String> {
         if !backend_root.is_absolute()
             || !settings_root.is_absolute()
@@ -115,10 +127,11 @@ impl NativeCredentialBroker {
             .set_nonblocking(true)
             .map_err(|_| "配置 MCP 凭据宿主失败")?;
         let endpoint = format!(
-            "http://{}/v1/mcp/credential",
+            "http://{}{}",
             listener
                 .local_addr()
-                .map_err(|_| "读取 MCP 凭据宿主地址失败")?
+                .map_err(|_| "读取 MCP 凭据宿主地址失败")?,
+            MCP_ROUTE,
         );
         let capability = format!("za-mcp-host-{}", uuid::Uuid::new_v4());
         let running = Arc::new(AtomicBool::new(true));
@@ -137,6 +150,10 @@ impl NativeCredentialBroker {
             file_only,
             slots: Arc::new(Semaphore::new(16)),
             recovery: recovery.clone(),
+            #[cfg(desktop)]
+            device_skills,
+            #[cfg(desktop)]
+            device_skill_slots: Arc::new(Semaphore::new(4)),
         });
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -146,8 +163,10 @@ impl NativeCredentialBroker {
         let worker=thread::Builder::new().name("mcp-credential-host".into()).spawn(move||{
             runtime.block_on(async move{
                 let Ok(listener)=tokio::net::TcpListener::from_std(listener) else {return};
-                let router=Router::new().route("/v1/mcp/credential",post(credential))
-                    .layer(DefaultBodyLimit::max(1024*1024)).with_state(state);
+                let router=Router::new().route(MCP_ROUTE,post(credential));
+                #[cfg(desktop)]
+                let router=router.route(DEVICE_SKILLS_ROUTE,post(device_skill_snapshot));
+                let router=router.layer(DefaultBodyLimit::max(1024*1024)).with_state(state);
                 tokio::select!{_ = async { axum::serve(listener,router).await } =>{}, _ = shutdown =>{}}
             });
             // A cancelled HTTP future cannot interrupt a blocking token endpoint.
@@ -170,6 +189,14 @@ impl NativeCredentialBroker {
     pub(crate) fn capability(&self) -> &str {
         &self.capability
     }
+    #[cfg(desktop)]
+    pub(crate) fn device_skill_endpoint(&self) -> String {
+        format!(
+            "{}{}",
+            self.endpoint.trim_end_matches(MCP_ROUTE),
+            DEVICE_SKILLS_ROUTE
+        )
+    }
     pub(crate) fn process_guard(&self) -> NativeCredentialProcessGuard {
         NativeCredentialProcessGuard {
             running: self.running.clone(),
@@ -190,6 +217,71 @@ impl Drop for NativeCredentialBroker {
     }
 }
 
+fn authorized(state: &BrokerState, headers: &HeaderMap, uri: &Uri) -> bool {
+    uri.query().is_none()
+        && !headers.contains_key("origin")
+        && !headers.contains_key("cookie")
+        && headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            == Some(format!("Bearer {}", state.capability).as_str())
+}
+
+#[cfg(desktop)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeviceSkillRequest {
+    protocol: String,
+    references: Vec<DeviceSkillReference>,
+}
+
+#[cfg(desktop)]
+async fn device_skill_snapshot(
+    State(state): State<Arc<BrokerState>>,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> axum::response::Response {
+    let live = || state.profile_live.load(Ordering::SeqCst) && state.running.load(Ordering::SeqCst);
+    if !authorized(&state, &headers, &uri) || !live() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(account) = &state.device_skills else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if body.len() > 4096 {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let Ok(input) = serde_json::from_slice::<DeviceSkillRequest>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    if input.protocol != device_skills::PROTOCOL
+        || input.references.is_empty()
+        || input.references.len() > 4
+        || !input.references.iter().all(DeviceSkillReference::valid)
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(_permit) = state.device_skill_slots.clone().try_acquire_owned() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let response = account.resolve(&input.references).await;
+    if !live() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match response {
+        Ok(snapshot) => (
+            [
+                ("content-type", "application/json"),
+                ("cache-control", "no-store"),
+            ],
+            snapshot,
+        )
+            .into_response(),
+        Err(status) => status.into_response(),
+    }
+}
+
 async fn credential(
     State(state): State<Arc<BrokerState>>,
     headers: HeaderMap,
@@ -198,14 +290,7 @@ async fn credential(
 ) -> axum::response::Response {
     let denied =
         |status| (status, Json(json!({"error":super::AUTH_REQUIRED_MARKER}))).into_response();
-    if uri.query().is_some()
-        || headers.contains_key("origin")
-        || headers.contains_key("cookie")
-        || headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok())
-            != Some(format!("Bearer {}", state.capability).as_str())
-    {
+    if !authorized(&state, &headers, &uri) {
         return denied(StatusCode::UNAUTHORIZED);
     }
     let Ok(input) = serde_json::from_slice::<CredentialRequest>(&body) else {

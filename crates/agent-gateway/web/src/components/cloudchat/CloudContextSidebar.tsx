@@ -1,56 +1,44 @@
-import {
-  BookOpen,
-  FileText,
-  FolderClosed,
-  Globe,
-  MonitorSmartphone,
-  PanelLeft,
-  PanelLeftClose,
-  X,
-} from "@liveagent/ui/components/IconSet";
+import { BookOpen, FileText, PanelLeft, PanelLeftClose, X } from "@liveagent/ui/components/IconSet";
 import {
   Sidebar,
   SidebarHeader,
   SidebarHeaderRow,
   SidebarTrigger,
 } from "@liveagent/ui/components/ui/sidebar";
+import { useLocale } from "@liveagent/ui/i18n";
 import { type ReactNode, useEffect, useState } from "react";
 import type { CloudChatFile, CloudChatFilesClient } from "@/lib/cloudChatFiles";
-import type { CloudSpaceClient, CloudSpaceItem, CloudSpaceLocation } from "@/lib/cloudSpace";
-import type { ExecutionEnvironment } from "@/lib/executionTargets";
+import type { CloudSpaceClient, CloudSpaceLocation } from "@/lib/cloudSpace";
 import { CloudSpaceNavigation } from "./CloudSpaceNavigation";
 
-export type CloudSidebarDestination = "chat" | "library" | "devices";
-type Resource = "files" | "artifacts" | "sources" | "projects" | "memory";
+type Resource = "files" | "artifacts";
 
 /** Context navigation only. Hover never selects an execution environment. */
 export function CloudContextSidebar(props: {
-  destination: Exclude<CloudSidebarDestination, "chat">;
   preview: boolean;
   mobileRail?: ReactNode;
   spaceClient?: CloudSpaceClient;
   spaceLocation?: CloudSpaceLocation;
   spaceRevision?: number;
   onSpaceNavigate?: (location: CloudSpaceLocation) => void;
-  onSpaceOpen?: (item: CloudSpaceItem) => void;
   onSpaceStorage?: () => void;
   onSpaceNewFolder?: () => void;
   activeResource?: Resource;
   files: CloudChatFilesClient;
-  environments: readonly ExecutionEnvironment[];
   onOpenResource: (resource: Resource) => void;
   onOpenFile: (id: string) => void;
-  onOpenDevices: () => void;
   onPin: () => void;
   reportLoadErrors?: boolean;
 }) {
+  const { locale } = useLocale();
+  const text = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
   const [files, setFiles] = useState<CloudChatFile[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [retry, setRetry] = useState(0);
-  const { destination, files: client } = props;
+  const { files: client, spaceClient } = props;
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly restarts this read after a user action.
   useEffect(() => {
-    if (destination !== "library" || props.spaceClient) return;
+    if (spaceClient) return;
     const controller = new AbortController();
     setState("loading");
     setFiles([]);
@@ -67,37 +55,25 @@ export function CloudContextSidebar(props: {
         if (!controller.signal.aborted) setState("error");
       });
     return () => controller.abort();
-  }, [client, destination, retry, props.spaceClient]);
-  const devices = props.environments.filter(
-    (environment) => environment.runtime_kind === "device_agent",
-  );
+  }, [client, retry, spaceClient]);
+  const sidebarAction = props.preview
+    ? text("打开资料空间", "Open library")
+    : text("收起侧栏", "Collapse sidebar");
   return (
     <Sidebar
-      label={destination === "library" ? "资料空间导航" : "设备导航"}
+      label={text("资料空间导航", "Library navigation")}
       previewOpen={props.preview}
       mobileRail={props.mobileRail}
       className="cloud-context-sidebar bg-settings-rail"
-      data-context-destination={destination}
+      data-context-destination="library"
     >
       <SidebarHeader className="px-3 pb-2 pt-2.5">
         <SidebarHeaderRow
           actions={
             <SidebarTrigger
               showShortcut={!props.preview}
-              title={
-                props.preview
-                  ? destination === "library"
-                    ? "打开资料空间"
-                    : "打开设备管理"
-                  : "收起侧栏"
-              }
-              aria-label={
-                props.preview
-                  ? destination === "library"
-                    ? "打开资料空间"
-                    : "打开设备管理"
-                  : "收起侧栏"
-              }
+              title={sidebarAction}
+              aria-label={sidebarAction}
               onClick={(event) => {
                 if (props.preview) {
                   event.preventDefault();
@@ -116,104 +92,73 @@ export function CloudContextSidebar(props: {
           }
         >
           <h2 className="min-w-0 truncate px-1 text-base font-semibold">
-            {destination === "library" ? "资料空间" : "设备"}
+            {text("资料空间", "Library")}
           </h2>
         </SidebarHeaderRow>
       </SidebarHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-5 flex flex-col">
-        {destination === "library" ? (
-          props.spaceClient && props.spaceLocation && props.onSpaceNavigate && props.onSpaceOpen ? (
-            <CloudSpaceNavigation
-              client={props.spaceClient}
-              location={props.spaceLocation}
-              revision={props.spaceRevision ?? 0}
-              onNavigate={props.onSpaceNavigate}
-              onOpen={props.onSpaceOpen}
-              onOther={props.onOpenResource}
-              onStorage={props.onSpaceStorage}
-              onNewFolder={props.onSpaceNewFolder}
-              reportLoadErrors={props.reportLoadErrors}
-            />
-          ) : (
-            <>
-              <nav aria-label="资料类型" className="space-y-1">
-                {(
-                  [
-                    ["files", "文件", FileText],
-                    ["artifacts", "成果", BookOpen],
-                    ["sources", "来源", Globe],
-                    ["projects", "项目", FolderClosed],
-                  ] as const
-                ).map(([id, label, Icon]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-current={props.activeResource === id ? "page" : undefined}
-                    className="cloud-sidebar-destination"
-                    onClick={() => props.onOpenResource(id)}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    {label}
-                  </button>
-                ))}
-              </nav>
-              <h3 className="px-2.5 pb-2 pt-7 text-xs text-muted-foreground">最近文件</h3>
-              {state === "loading" ? (
-                <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
-                  正在加载文件…
-                </p>
-              ) : null}
-              {state === "error" ? (
-                <button
-                  type="button"
-                  className="cloud-sidebar-destination text-muted-foreground"
-                  onClick={() => setRetry((value) => value + 1)}
-                >
-                  文件加载失败，重试
-                </button>
-              ) : null}
-              {state === "ready" && !files.length ? (
-                <p className="px-2.5 py-2 text-xs text-muted-foreground">暂无文件</p>
-              ) : null}
-              {files.slice(0, 8).map((file) => (
-                <button
-                  key={file.id}
-                  type="button"
-                  className="cloud-sidebar-destination"
-                  onClick={() => props.onOpenFile(file.id)}
-                >
-                  <FileText className="size-4 shrink-0" />
-                  <span className="truncate">{file.name}</span>
-                </button>
-              ))}
-            </>
-          )
+        {props.spaceClient && props.spaceLocation && props.onSpaceNavigate ? (
+          <CloudSpaceNavigation
+            client={props.spaceClient}
+            location={props.spaceLocation}
+            revision={props.spaceRevision ?? 0}
+            onNavigate={props.onSpaceNavigate}
+            onStorage={props.onSpaceStorage}
+            onNewFolder={props.onSpaceNewFolder}
+            reportLoadErrors={props.reportLoadErrors}
+          />
         ) : (
           <>
-            <button
-              type="button"
-              className="cloud-sidebar-destination"
-              onClick={props.onOpenDevices}
-            >
-              <MonitorSmartphone className="size-4" />
-              管理设备
-            </button>
-            <h3 className="px-2.5 pb-2 pt-7 text-xs text-muted-foreground">已连接的设备</h3>
-            {!devices.length ? (
-              <p className="px-2.5 py-2 text-xs text-muted-foreground">暂无已连接的设备</p>
+            <nav aria-label={text("资料类型", "Resource types")} className="space-y-1">
+              {(
+                [
+                  ["files", text("文件", "Files"), FileText],
+                  ["artifacts", text("成果", "Outputs"), BookOpen],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-current={props.activeResource === id ? "page" : undefined}
+                  className="cloud-sidebar-destination"
+                  onClick={() => props.onOpenResource(id)}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <h3 className="px-2.5 pb-2 pt-7 text-xs text-muted-foreground">
+              {text("最近文件", "Recent files")}
+            </h3>
+            {state === "loading" ? (
+              <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
+                {text("正在加载文件…", "Loading files…")}
+              </p>
             ) : null}
-            {devices.map((device) => (
+            {state === "error" ? (
               <button
-                key={device.device_id ?? device.agent_id ?? device.name}
+                type="button"
+                className="cloud-sidebar-destination text-muted-foreground"
+                onClick={() => setRetry((value) => value + 1)}
+              >
+                {text("文件加载失败，重试", "Couldn't load files. Retry")}
+              </button>
+            ) : null}
+            {state === "ready" && !files.length ? (
+              <p className="px-2.5 py-2 text-xs text-muted-foreground">
+                {text("暂无文件", "No files")}
+              </p>
+            ) : null}
+            {files.slice(0, 8).map((file) => (
+              <button
+                key={file.id}
                 type="button"
                 className="cloud-sidebar-destination"
-                onClick={props.onOpenDevices}
+                onClick={() => props.onOpenFile(file.id)}
               >
-                <MonitorSmartphone className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{device.device_name || device.name}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {device.online ? "在线" : "离线"}
-                </span>
+                <FileText className="size-4 shrink-0" />
+                <span className="truncate">{file.name}</span>
               </button>
             ))}
           </>

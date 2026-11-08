@@ -47,6 +47,7 @@ test("shape motion reverses from its current height and respects reduced motion"
 
 test("the real inline composer retains its editor, selection and single model control across modes and toolbar placement", async t => {
   let env,mounts=0,modelMounts=0;
+  let sendFromEditor;
   const noop=()=>{};
   const mocks={
     '@liveagent/ui/components/IconSet':iconMocks,
@@ -55,6 +56,7 @@ test("the real inline composer retains its editor, selection and single model co
     '@liveagent/ui/components/chat/CommandSafetyModeSelector':{CommandSafetyModeSelector:()=>env.React.createElement('button',{'data-safety':''},'safety')},
     '@liveagent/ui/components/git/GitBranchSelector':{GitBranchSelector:()=>env.React.createElement('button',{'data-git':''},'git')},
     '@liveagent/ui/components/chat/MentionComposer':{MentionComposer:props=>{
+      sendFromEditor=props.onSend;
       const ref=env.React.useRef(null);
       env.React.useEffect(()=>{mounts++;props.onEmptyChange?.(false);},[]);
       env.React.useImperativeHandle(props.ref,()=>({getDraft:()=>({text:ref.current.value,textWithoutLargePastes:ref.current.value,segments:[{type:'text',text:ref.current.value}],largePastes:[],isEmpty:!ref.current.value}),focus:()=>ref.current.focus()}));
@@ -81,10 +83,17 @@ test("the real inline composer retains its editor, selection and single model co
   assert.equal(host.querySelector('textarea'),editor);assert.equal(mounts,1);assert.equal(sends,0);
   editor.value='第一行\n第二行';await env.act(async()=>{editor.dispatchEvent(new window.Event('input',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,40));});
   assert.equal(host.querySelector('.composer-glass-card').getAttribute('data-composer-single-line'),'false');
-  let stops=0;props.onStop=()=>stops++;props.isSending=true;props.allowQueueWhileSending=false;
+  props.isSubmissionDisabled=true;
+  await render(true);
+  assert.equal(host.querySelector('textarea'),editor);
+  assert.equal(editor.disabled,false);
+  assert.equal(host.querySelector('[data-composer-primary-action="send"]').disabled,true);
+  await env.act(async()=>sendFromEditor());
+  assert.equal(sends,0);
+  let stops=0;props.onStop=()=>stops++;props.isSending=true;props.allowQueueWhileSending=true;
   await render(true);const stop=host.querySelector('[data-composer-primary-action="stop"]');assert.ok(stop);
   await env.act(async()=>stop.click());assert.equal(stops,1);assert.equal(sends,0);assert.equal(host.querySelector('textarea'),editor);
-  props.isSending=false;await render(true);assert.equal(host.querySelector('[data-composer-primary-action="send"]'),stop,'the same action button changes state');
+  props.isSending=false;props.isSubmissionDisabled=false;await render(true);assert.equal(host.querySelector('[data-composer-primary-action="send"]'),stop,'the same action button changes state');
   props.layout='standard';props.executionMode='tools';props.showGitControls=true;props.commandSafetyMode='auto';props.onCommandSafetyModeChange=noop;
   await render(false);
   const deck=host.querySelector('.composer-control-deck');assert.ok(deck);

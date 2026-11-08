@@ -103,31 +103,3 @@ test("a legacy provider deleted in K-brain is not imported again on the next lau
     await kbrain.close();
   }
 });
-
-test("installs migrated before the record existed: providers already in K-brain are recorded, then honored", () => {
-  const mod = createTsModuleLoader().loadModule("src/lib/settings/legacyProviderImport.ts");
-  const a = legacy("a", "A", "codex", "https://a.invalid");
-  const b = legacy("b", "B", "codex", "https://b.invalid");
-  const c = legacy("c", "C", "codex", "https://c.invalid");
-  // a is in K-brain, b was recorded earlier and is now gone, c never reached K-brain.
-  const result = mod.partitionMissingLegacyProviders([a, b, c], new Set(["a"]), new Set(["b"]));
-  assert.deepEqual(
-    result.notYetImported.map((p) => p.id),
-    ["c"],
-  );
-  assert.deepEqual(
-    result.deleted.map((p) => p.id),
-    ["b"],
-  );
-  assert.deepEqual([...result.importedIds].sort(), ["a", "b"]);
-});
-
-test("the imported-id record round-trips and tolerates corrupt data", () => {
-  const mod = createTsModuleLoader().loadModule("src/lib/settings/legacyProviderImport.ts");
-  const storage = memoryStorage();
-  mod.writeImportedLegacyProviderIds(["x", "y", "x"], storage);
-  assert.deepEqual([...mod.readImportedLegacyProviderIds(storage)].sort(), ["x", "y"]);
-  const broken = memoryStorage();
-  broken.getItem = () => "{not json";
-  assert.equal(mod.readImportedLegacyProviderIds(broken).size, 0);
-});

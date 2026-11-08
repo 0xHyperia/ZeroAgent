@@ -17,22 +17,23 @@ trap cleanup EXIT
 
 smoke_compose config --quiet
 smoke_compose up --detach --wait --wait-timeout 120
-gateway_status() {
+gateway_response() {
   smoke_compose exec -T gateway curl --silent --show-error --max-time 10 \
-    --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:8080/$1"
+    --write-out '\n%{http_code}' "http://127.0.0.1:8080/$1"
 }
 expect_status() {
-  local actual
-  actual=$(gateway_status "$1")
+  local response actual
+  response=$(gateway_response "$1")
+  actual=${response##*$'\n'}
   [[ $actual == "$2" ]] || { echo "$1 returned $actual; expected $2" >&2; return 1; }
   if [[ $2 == 200 ]]; then
-    smoke_compose exec -T gateway curl --fail --silent --show-error --max-time 10 \
-      "http://127.0.0.1:8080/$1" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+    grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' <<< "${response%$'\n'*}"
   fi
 }
 wait_ready() {
+  local response
   for ((attempt = 0; attempt < 60; attempt++)); do
-    if [[ $(gateway_status readyz) == 200 ]]; then return 0; fi
+    if response=$(gateway_response readyz) && [[ ${response##*$'\n'} == 200 ]]; then return 0; fi
     sleep 1
   done
   echo 'Gateway readiness did not recover' >&2

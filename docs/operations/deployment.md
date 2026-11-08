@@ -112,7 +112,7 @@ GitHub 创建 README。私有源码仓库还需要配置：
 源码 tag 只需存在于私有仓库。发布工作流会在公开仓库的 `main` 提交上创建同名
 Release tag，公开仓库不需要同步源码。
 
-macOS signed/notarized release 需要这些 secrets：
+使用 Developer ID 签名和 Apple 公证需要以下凭据。当前 GitHub Actions 的 macOS job 使用表中的 Tauri 更新密钥。本地 `make desktop-build-macos-release` 使用系统钥匙串中的 Developer ID 和公证配置。
 
 | Secret | 说明 |
 |---|---|
@@ -157,12 +157,12 @@ Keychain 中必须是带私钥的 `Developer ID Application` identity。若 macO
 
 | 平台 | Runner | 产物 |
 |---|---|---|
-| macOS Intel | `macos-15-intel` | `LiveAgent-vX.Y.Z-macOS-x64.dmg`，以及 updater 使用的 `.app.tar.gz` / `.sig`。 |
-| macOS Apple Silicon | `macos-14` | `LiveAgent-vX.Y.Z-macOS-aarch64.dmg`，以及 updater 使用的 `.app.tar.gz` / `.sig`。 |
+| macOS Intel | `macos-15-intel` | `ZeroAgent-vX.Y.Z-macOS-x64.dmg`，以及 updater 使用的 `.app.tar.gz` / `.sig`。 |
+| macOS Apple Silicon | `macos-14` | `ZeroAgent-vX.Y.Z-macOS-aarch64.dmg`，以及 updater 使用的 `.app.tar.gz` / `.sig`。 |
 | Windows x64 | `windows-latest` | `LiveAgent-vX.Y.Z-Windows-x64.msi`、`LiveAgent-vX.Y.Z-Windows-x64-Setup.exe`，以及 updater 使用的 `.zip` / `.sig`。 |
 | Linux x64 | `ubuntu-latest` | `LiveAgent-vX.Y.Z-Linux-x86_64.AppImage`、`.deb`、`.rpm`，以及 updater 使用的 `.tar.gz` / `.sig`。 |
 
-macOS DMG 的安装窗口布局（背景图、窗口尺寸、图标位置）落盘在 DMG 根目录的 `.DS_Store`。tauri-bundler 通过 AppleScript 驱动 Finder 写入这份文件，但只要检测到 `CI=true` 就会跳过这一步，产出没有任何布局的白底 DMG。因此 `make desktop-build-macos-release` 不直接发布 tauri-bundler 生成的 DMG，而是在 `.app` 签名校验通过后用 [dmgbuild](https://github.com/dmgbuild/dmgbuild)（`dmgbuild==1.6.5`，CI 由 `desktop-release.yml` 的 `Install deterministic DMG builder` 步骤安装）按 `scripts/release/macos-dmg-settings.py` 重新生成 DMG：dmgbuild 直接写入 Finder 元数据，不依赖 GUI 会话，布局在任何 runner 上都是确定的。随后 DMG 再签名、公证、stapler 校验，并用 `scripts/release/verify-macos-dmg.sh` 挂载校验 `.DS_Store`、`.background.png`、`LiveAgent.app` 与 `Applications` 链接是否齐全，缺失即中止发布。本地排查时可以直接对任意 DMG 运行该脚本（`make desktop-verify-macos` 也会执行它）。
+GitHub Actions 直接归档 Tauri 生成的 DMG 和更新归档，并校验更新归档的 Tauri 签名。Apple Developer ID、公证、Gatekeeper 和 Finder 安装窗口需要在对应架构的 macOS 上另行验收。本地 `make desktop-build-macos-release` 对 Tauri 生成的应用验证签名，再对 DMG 签名、提交公证并附加公证票据。已完成公证时，可用 `make desktop-verify-macos` 复查应用签名、DMG 票据和 Gatekeeper 判定。验收记录应分别记录两种架构的产物摘要与检查结果。
 
 发布 job 会在上传平台产物后生成并上传 `latest.json`。桌面端「设置 -> 关于」会根据用户是否允许预发布，从 GitHub Releases 中筛选带 `latest.json` 的正式 / 预发布版本；未允许预发布时只检查正式 Release。
 

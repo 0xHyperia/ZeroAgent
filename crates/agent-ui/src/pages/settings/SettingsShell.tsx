@@ -206,7 +206,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   className={cn(
                     "settings-back-button flex cursor-pointer items-center gap-1 rounded-md px-2 py-1.5",
                     "text-sm text-muted-foreground transition-colors duration-150 hover:bg-settings-tile-hover hover:text-foreground",
-                    "web:max-820:min-h-34px web:max-820:w-auto web:max-820:px-10px web:max-820:py-8px",
+                    "web:max-820:min-h-11 web:max-820:w-auto web:max-820:px-10px web:max-820:py-8px",
                   )}
                 >
                   <ArrowLeft className="size-3.5 shrink-0" />

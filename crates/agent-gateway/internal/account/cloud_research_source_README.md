@@ -59,38 +59,18 @@ context.
 
 Root registers `registerCloudResearchSources(mux)`:
 
-- `GET /api/web-chat/sources?conversation_id=&before=&limit=` returns
-  `{sources,next_cursor}`. No conversation filter means the account library.
-  A conversation filter verifies its current owner; deleted origins remain
-  available through the independent account library and direct source ID.
-- `GET /api/web-chat/sources/{id}` returns `{source}` metadata.
-- `GET /api/web-chat/sources/{id}/content?from_line=&to_line=` returns exact
-  numbered retained lines, at most 200 lines / 256 KiB. Search-only sources
-  return 409, never alleged webpage lines.
-- `DELETE /api/web-chat/sources/{id}`, `If-Match: "version"`, deletes only an
-  owned snapshot. Repeat deletion is idempotent. All responses are private,
-  non-cacheable, account-authenticated JSON; there is no public publication API
-  or redirect-to-website endpoint.
+- `GET /api/web-chat/sources/{id}` returns the owned source's ID, title, and
+  original link metadata. Responses are private, non-cacheable JSON.
 
 Web uses `createCloudChatSourcesClient(accountFetch,captureAccountRequestGuard)`
-from `web/src/lib/cloudChatSources.ts`. Parsing and immediate UI use remain tied
-to the original account generation and bounded response size.
-`CloudChatSourcesPanel` props are `client`, `initialSourceId?`, `fromLine?`,
-`toLine?`, `isCurrent`, `onClose`, optional `onDeleted` / `onError`. Key the panel
-to the account/conversation view and close it on view retirement.
-
-`linkCloudSourceCitations(text)` maps `【来源:UUID】` and
-`【来源:UUID:Lx-Ly】` into controlled `cloud-sources/UUID#Lx-Ly` links. Root's
-transcript callback opens the panel, never a host file. A page citation must name
-retained lines; search summaries have no page-line citation. The panel shows the
-observed time, exact original host, summary/page distinction and truncation.
-Opening the original HTTP(S) website is an explicit `noopener noreferrer`
-browser link; the panel does not automatically fetch/embed any external page.
+from `web/src/lib/cloudChatSources.ts` with bounded parsing. `CloudChatSourceLinkDialog`
+shows the title and host within the current chat or task. The citation syntax is
+`【来源:UUID】`. Opening the original HTTP(S) page is an explicit
+`noopener noreferrer` browser link.
 
 Memory and real isolated PostgreSQL contracts cover publication fencing,
 deduplication/conflict, concurrent account budget reservation, empty receipts,
-ownership, branch retention and explicit deletion. HTTP and Web/client tests
-cover private-body exclusion, source excerpts, search-only honesty, retired
-accounts, safe errors and explicit deletion. Synthetic protocol data is test
+ownership, branch retention and explicit deletion. HTTP and Web client tests cover private-body exclusion, ownership, bounded
+metadata parsing, safe errors and explicit external navigation. Synthetic protocol data is test
 evidence only. Real Tavily, public-web/provider deployment and paid usage remain
 unverified.

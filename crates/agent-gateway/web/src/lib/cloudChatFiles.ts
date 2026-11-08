@@ -196,25 +196,33 @@ export function createCloudChatFilesClient(request: Request, captureGuard: Captu
     return readJSON(response, guard);
   }
   return {
-    async upload(file: File, conversationId = "", signal?: AbortSignal) {
+    async upload(file: File, conversationId = "", signal?: AbortSignal, uploadId?: string) {
       if (file.size > CLOUD_FILE_MAX_BYTES)
         throw new CloudChatFileError("文件超过当前 32 MiB 大小限制。", 413);
       const data = new FormData();
       if (conversationId) data.set("conversation_id", fileID(conversationId));
+      const requestId = uploadId ? fileID(uploadId) : "";
+      if (requestId) data.set("upload_id", requestId);
       data.set("file", file);
       try {
-        return parseFile(
-          (await json("/api/web-chat/files", { method: "POST", body: data, signal })).file,
-        );
+        const result = await json("/api/web-chat/files", { method: "POST", body: data, signal });
+        if (requestId && result.upload_id !== requestId) throw new Error("Upload identity changed");
+        return parseFile(result.file);
       } catch (cause) {
         if (
           signal?.aborted ||
-          cause instanceof CloudChatFileError ||
+          (cause instanceof CloudChatFileError && cause.status !== 408 && cause.status < 500) ||
           (cause instanceof Error && /Account changed/.test(cause.message))
         )
           throw cause;
         throw new CloudFileUploadUnconfirmedError();
       }
+    },
+    async readUpload(uploadId: string, signal?: AbortSignal) {
+      const requestId = fileID(uploadId);
+      const result = await json(`/api/web-chat/uploads/${requestId}`, { signal });
+      if (result.upload_id !== requestId) throw new Error("Upload identity changed");
+      return parseFile(result.file);
     },
     async list(options: { conversationId?: string; before?: string; signal?: AbortSignal } = {}) {
       const query = new URLSearchParams({ limit: "50" });
@@ -313,47 +321,49 @@ export function cloudFileCanReference(file: CloudChatFile) {
   return file.state === "ready" && file.text_bytes <= CLOUD_FILE_CONTEXT_BYTES;
 }
 
-export function cloudFileStatus(file: CloudChatFile): string {
-  if (file.state === "vision_ready") return "图片已就绪，可引用";
+export function cloudFileStatus(file: CloudChatFile, locale = "zh-CN"): string {
+  const copy = (zh: string, en: string) => (locale === "en-US" ? en : zh);
+  if (file.state === "vision_ready") return copy("图片已就绪，可引用", "Image ready to attach");
   if (
     file.mime !== "application/zip" &&
     file.processing_stage === "workspace_only" &&
     file.state === "uploaded"
   )
     return file.workspace_loadable && file.uploaded_at
-      ? "原件可在隔离沙箱读取"
-      : "原件已保存，可预览或下载";
+      ? copy("原件可在隔离沙箱读取", "Original available in the sandbox")
+      : copy("原件已保存，可预览或下载", "Original available to preview or download");
   if (
     file.mime === "application/zip" &&
     file.processing_stage === "workspace_only" &&
     file.state === "uploaded"
   )
     return file.workspace_loadable && file.uploaded_at
-      ? "原件可在隔离沙箱读取或解压"
-      : "ZIP 原件已保存，隔离沙箱暂不可用";
+      ? copy("原件可在隔离沙箱读取或解压", "ZIP available to read or extract in the sandbox")
+      : copy("ZIP 原件已保存，隔离沙箱暂不可用", "ZIP saved. Sandbox unavailable");
   if (
     file.workspace_loadable &&
     file.uploaded_at &&
     (file.state !== "ready" || file.text_bytes > CLOUD_FILE_CONTEXT_BYTES)
   )
-    return "原件可在隔离沙箱读取";
+    return copy("原件可在隔离沙箱读取", "Original available in the sandbox");
   if (file.state === "ready")
     return file.text_bytes > CLOUD_FILE_CONTEXT_BYTES
-      ? "原文已提取，请拆分后引用"
+      ? copy("原文已提取，请拆分后引用", "Text extracted. Split the file before attaching")
       : file.parse_truncated
-        ? "已提取部分内容，可引用"
-        : "可引用";
-  if (file.state === "uploading") return "正在保存原件";
-  if (file.state === "processing") return "正在解析";
-  if (file.state === "uploaded") return "原件已保存，等待隔离解析";
+        ? copy("已提取部分内容，可引用", "Partial text ready to attach")
+        : copy("可引用", "Ready to attach");
+  if (file.state === "uploading") return copy("正在保存原件", "Saving original");
+  if (file.state === "processing") return copy("正在解析", "Processing");
+  if (file.state === "uploaded")
+    return copy("原件已保存，等待隔离解析", "Saved. Waiting to process");
   if (file.state === "failed")
     return file.error_code === "unsupported_text_encoding"
-      ? "文本编码不支持，原件已保留"
+      ? copy("文本编码不支持，原件已保留", "Unsupported text encoding. Original kept")
       : file.uploaded_at
-        ? "解析失败，原件已保留"
-        : "原件尚未通过校验";
-  if (file.state === "deleting") return "删除待重试";
-  return "已删除";
+        ? copy("解析失败，原件已保留", "Processing failed. Original kept")
+        : copy("原件尚未通过校验", "Original has not passed validation");
+  if (file.state === "deleting") return copy("删除待重试", "Deletion pending retry");
+  return copy("已删除", "Deleted");
 }
 
 export function cloudFileReferences(content: unknown): CloudFileReference[] {

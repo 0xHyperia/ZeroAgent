@@ -150,6 +150,7 @@ export function WorkbenchCanvas(props: WorkbenchCanvasProps) {
   const handleResizePreview = useCallback((splitId: string, ratio: number) => {
     setResizePreview({ splitId, ratio });
   }, []);
+  const handleResizeCancel = useCallback(() => setResizePreview(null), []);
 
   const handleResizeCommit = useCallback(
     (splitId: string, ratio: number) => {
@@ -205,6 +206,7 @@ export function WorkbenchCanvas(props: WorkbenchCanvasProps) {
             minSizesForSplit={minSizesForSplit}
             onResizePreview={handleResizePreview}
             onResizeCommit={handleResizeCommit}
+            onResizeCancel={handleResizeCancel}
             onEqualize={onEqualizeSplit}
           />
           {dropPreview ? (

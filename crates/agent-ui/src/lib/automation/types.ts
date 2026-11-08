@@ -142,6 +142,10 @@ export type CronRunNowResponse = {
   startedAt: number;
 };
 
+export type CronManualRunReceipt =
+  | { status: "admitted"; executionId: string; startedAt: number }
+  | { status: "missing" | "rejected" | "unsupported" };
+
 export type CronRunRecord = {
   id: string;
   taskId: string;
@@ -274,6 +278,15 @@ export type CronOccurrencesResponse = {
   runs: CronRunSummary[];
   summaries: CronDaySummary[];
 };
+
+export type CronDraftPreviewInput = {
+  expression: string;
+  remainingExecutions?: number;
+};
+
+export type CronDraftPreview =
+  | { status: "valid"; nextAt?: number; utcOffsetSeconds: number; timeZone: string }
+  | { status: "invalid" | "unsupported" };
 
 export type PromptRunRequest = {
   executionId: string;

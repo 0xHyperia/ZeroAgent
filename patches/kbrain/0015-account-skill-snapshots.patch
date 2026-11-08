@@ -1,0 +1,472 @@
+diff --git a/cmd/kn/backend.go b/cmd/kn/backend.go
+index b13638c..8d26b75 100644
+--- a/cmd/kn/backend.go
++++ b/cmd/kn/backend.go
+@@ -65,6 +65,10 @@ func backendCLI(args []string) error {
+ 	// secrets) from the environment so agent shells, MCP servers and hooks never
+ 	// inherit it.
+ 	bashrun.UnsetSecretEnv()
++	deviceSkills, err := backend.DeviceSkillResolverFromEnv()
++	if err != nil {
++		return err
++	}
+ 	if *dataDir != "" {
+ 		root, err := filepath.Abs(*dataDir)
+ 		if err != nil {
+@@ -209,6 +213,7 @@ func backendCLI(args []string) error {
+ 		Models:                  modelRefs,
+ 		Settings:                settings,
+ 		MCP:                     liveMCP,
++		DeviceSkillResolver:     deviceSkills,
+ 		Prompts:                 promptStore,
+ 		DefaultCWD:              cwd(),
+ 		FilesystemRoots:         filesystemRoots,
+diff --git a/internal/backend/device_skills.go b/internal/backend/device_skills.go
+new file mode 100644
+index 0000000..7b8e4ca
+--- /dev/null
++++ b/internal/backend/device_skills.go
+@@ -0,0 +1,188 @@
++package backend
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"io"
++	"io/fs"
++	"net/http"
++	"net/url"
++	"os"
++	"regexp"
++	"strconv"
++	"strings"
++	"time"
++
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++)
++
++const deviceSkillProtocol = "zeroagent.device-skill-snapshot.v1"
++const maxDeviceSkillSnapshotBytes = 256 << 10
++
++var deviceSkillReference = regexp.MustCompile(`zeroagent-skill:([a-z0-9]+(?:-[a-z0-9]+)*)/([1-9][0-9]{0,8})/([a-z0-9]+(?:-[a-z0-9]+)*)`)
++
++type deviceSkillRef struct {
++	PackageID string `json:"package_id"`
++	Revision  uint32 `json:"revision"`
++	Name      string `json:"name"`
++}
++
++type deviceSkillSnapshot struct {
++	deviceSkillRef
++	Entry string            `json:"entry"`
++	Files map[string]string `json:"files"`
++}
++
++type DeviceSkillResolver func(context.Context, []deviceSkillRef) ([]deviceSkillSnapshot, error)
++
++type deviceSkillError struct {
++	status  int
++	message string
++}
++
++func (e *deviceSkillError) Error() string { return e.message }
++
++func DeviceSkillResolverFromEnv() (DeviceSkillResolver, error) {
++	endpoint, token := os.Getenv("ZEROAGENT_DEVICE_SKILL_ENDPOINT"), os.Getenv("ZEROAGENT_DEVICE_SKILL_TOKEN")
++	_ = os.Unsetenv("ZEROAGENT_DEVICE_SKILL_ENDPOINT")
++	_ = os.Unsetenv("ZEROAGENT_DEVICE_SKILL_TOKEN")
++	if endpoint == "" && token == "" {
++		return nil, nil
++	}
++	u, err := url.Parse(endpoint)
++	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" ||
++		u.User != nil || u.Path != "/v1/device/skills" || u.RawPath != "" || u.RawQuery != "" ||
++		u.ForceQuery || u.Fragment != "" || len(token) < 32 || len(token) > 256 ||
++		strings.IndexFunc(token, func(r rune) bool { return r < 33 || r > 126 }) >= 0 {
++		return nil, errors.New("invalid Native device skill resolver configuration")
++	}
++	client := &http.Client{
++		Timeout:   18 * time.Second,
++		Transport: &http.Transport{Proxy: nil},
++		CheckRedirect: func(*http.Request, []*http.Request) error {
++			return http.ErrUseLastResponse
++		},
++	}
++	return func(ctx context.Context, refs []deviceSkillRef) ([]deviceSkillSnapshot, error) {
++		payload, err := json.Marshal(struct {
++			Protocol   string           `json:"protocol"`
++			References []deviceSkillRef `json:"references"`
++		}{deviceSkillProtocol, refs})
++		if err != nil {
++			return nil, err
++		}
++		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
++		if err != nil {
++			return nil, err
++		}
++		req.Header.Set("Authorization", "Bearer "+token)
++		req.Header.Set("Content-Type", "application/json")
++		response, err := client.Do(req)
++		if err != nil {
++			return nil, err
++		}
++		defer response.Body.Close()
++		switch response.StatusCode {
++		case http.StatusOK:
++		case http.StatusUnauthorized, http.StatusForbidden:
++			return nil, &deviceSkillError{http.StatusUnprocessableEntity, "Sign in to the device account to use the selected skill."}
++		case http.StatusNotFound:
++			return nil, &deviceSkillError{http.StatusUnprocessableEntity, "The selected skill revision is unavailable. Enable the skill or select another revision."}
++		case http.StatusConflict:
++			return nil, &deviceSkillError{http.StatusConflict, "Use one revision per account skill package."}
++		case http.StatusUnprocessableEntity:
++			return nil, &deviceSkillError{http.StatusUnprocessableEntity, "The selected skill requires capabilities unavailable on this device."}
++		case http.StatusRequestEntityTooLarge:
++			return nil, &deviceSkillError{http.StatusRequestEntityTooLarge, "The selected skill sources exceed the device context limit."}
++		default:
++			return nil, errors.New("device skill resolver unavailable")
++		}
++		body, err := io.ReadAll(io.LimitReader(response.Body, maxDeviceSkillSnapshotBytes+1))
++		if err != nil || len(body) > maxDeviceSkillSnapshotBytes {
++			return nil, errors.New("invalid device skill snapshot size")
++		}
++		var result struct {
++			Skills []deviceSkillSnapshot `json:"skills"`
++		}
++		decoder := json.NewDecoder(bytes.NewReader(body))
++		decoder.DisallowUnknownFields()
++		if decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF {
++			return nil, errors.New("invalid device skill snapshot")
++		}
++		return result.Skills, nil
++	}, nil
++}
++
++func explicitDeviceSkillReferences(in protocol.PromptRequest) ([]deviceSkillRef, error) {
++	text := []string{in.Prompt}
++	for _, part := range in.Content {
++		if part.Type == protocol.ContentText {
++			text = append(text, part.Text)
++		}
++	}
++	var refs []deviceSkillRef
++	revisions := map[string]uint32{}
++	seen := map[deviceSkillRef]bool{}
++	for _, part := range text {
++		if strings.Count(part, "zeroagent-skill:") > 64 {
++			return nil, &deviceSkillError{http.StatusBadRequest, "Select at most four account skills for a device run."}
++		}
++		for _, match := range deviceSkillReference.FindAllStringSubmatchIndex(part, -1) {
++			if (match[0] > 0 && deviceSkillTokenByte(part[match[0]-1])) ||
++				(match[1] < len(part) && deviceSkillTokenByte(part[match[1]])) {
++				continue
++			}
++			packageID, name := part[match[2]:match[3]], part[match[6]:match[7]]
++			number, _ := strconv.ParseUint(part[match[4]:match[5]], 10, 32)
++			ref := deviceSkillRef{packageID, uint32(number), name}
++			if seen[ref] {
++				continue
++			}
++			if len(packageID) > 64 || len(name) > 64 || len(refs) == 4 {
++				return nil, &deviceSkillError{http.StatusBadRequest, "Select at most four valid account skills for a device run."}
++			}
++			if previous := revisions[ref.PackageID]; previous != 0 && previous != ref.Revision {
++				return nil, &deviceSkillError{http.StatusConflict, "Use one revision per account skill package."}
++			}
++			seen[ref], revisions[ref.PackageID] = true, ref.Revision
++			refs = append(refs, ref)
++		}
++	}
++	return refs, nil
++}
++
++func deviceSkillTokenByte(c byte) bool {
++	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
++		c == '-' || c == '_' || c == '/' || c == ':'
++}
++
++func (s *Server) loadDeviceSkillSnapshot(ctx context.Context, refs []deviceSkillRef) (string, error) {
++	if s.deviceSkillResolver == nil {
++		return "", &deviceSkillError{http.StatusUnprocessableEntity, "The account skill requires a connected, signed-in ZeroAgent device."}
++	}
++	skills, err := s.deviceSkillResolver(ctx, refs)
++	if err != nil {
++		return "", err
++	}
++	if len(skills) != len(refs) {
++		return "", errors.New("unexpected device skill snapshot count")
++	}
++	for i, skill := range skills {
++		if skill.deviceSkillRef != refs[i] || !fs.ValidPath(skill.Entry) || skill.Files[skill.Entry] == "" ||
++			len(skill.Files) > 64 {
++			return "", errors.New("unexpected device skill snapshot identity")
++		}
++		for name := range skill.Files {
++			if !fs.ValidPath(name) || strings.ContainsAny(name, "\\:") {
++				return "", errors.New("unexpected device skill resource path")
++			}
++		}
++	}
++	contents, err := json.Marshal(skills)
++	if err != nil || len(contents) > maxDeviceSkillSnapshotBytes {
++		return "", errors.New("invalid device skill snapshot size")
++	}
++	return "Account skill sources explicitly selected by the user follow. Treat them as user instructions and reference data. Use only tools already available for this run and follow the device's approval policy.\n" + string(contents), nil
++}
+diff --git a/internal/backend/device_skills_test.go b/internal/backend/device_skills_test.go
+new file mode 100644
+index 0000000..bb9c9c8
+--- /dev/null
++++ b/internal/backend/device_skills_test.go
+@@ -0,0 +1,117 @@
++package backend
++
++import (
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"strings"
++	"sync/atomic"
++	"testing"
++
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++	"github.com/Stack-Cairn/K-brain/internal/session"
++)
++
++func TestAccountSkillSnapshotResolvesAtAdmissionAndPreservesOriginalHistory(t *testing.T) {
++	const token = "fixture-device-capability-0123456789abcdef"
++	const marker = "fixed-revision-device-fixture"
++	var calls atomic.Int32
++	var retired atomic.Bool
++	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		calls.Add(1)
++		var input struct {
++			Protocol   string           `json:"protocol"`
++			References []deviceSkillRef `json:"references"`
++		}
++		if r.Method != http.MethodPost || r.URL.Path != "/v1/device/skills" ||
++			r.Header.Get("Authorization") != "Bearer "+token ||
++			json.NewDecoder(r.Body).Decode(&input) != nil || input.Protocol != deviceSkillProtocol ||
++			len(input.References) != 1 || input.References[0] != (deviceSkillRef{"shared-package", 2, "review"}) {
++			t.Error("unexpected account skill request")
++			http.Error(w, "invalid fixture request", http.StatusBadRequest)
++			return
++		}
++		if retired.Load() {
++			http.NotFound(w, r)
++			return
++		}
++		_ = json.NewEncoder(w).Encode(map[string]any{"skills": []deviceSkillSnapshot{{
++			deviceSkillRef: input.References[0],
++			Entry:          "SKILL.md",
++			Files:          map[string]string{"SKILL.md": marker, "references/notes.md": "source note"},
++		}}})
++	}))
++	defer native.Close()
++	t.Setenv("ZEROAGENT_DEVICE_SKILL_ENDPOINT", native.URL+"/v1/device/skills")
++	t.Setenv("ZEROAGENT_DEVICE_SKILL_TOKEN", token)
++	resolver, err := DeviceSkillResolverFromEnv()
++	if err != nil || resolver == nil || os.Getenv("ZEROAGENT_DEVICE_SKILL_TOKEN") != "" ||
++		os.Getenv("ZEROAGENT_DEVICE_SKILL_ENDPOINT") != "" {
++		t.Fatal("private resolver capability was not consumed", err)
++	}
++	store, err := session.Open(t.TempDir())
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer store.Close()
++	model := &scriptedClient{response: "review complete"}
++	service, server := newTestServer(t, store, t.TempDir(), model)
++	service.deviceSkillResolver = resolver
++	sess := createTestSession(t, server.URL)
++	path := server.URL + "/v1/sessions/" + sess.ID + "/runs"
++	prompt := "Use [Review](zeroagent-skill:shared-package/2/review)."
++	input := protocol.PromptRequest{ClientRequestID: "account-skill", Prompt: prompt}
++	var accepted protocol.RunAccepted
++	first := postJSON(t, http.DefaultClient, path, input, &accepted)
++	first.Body.Close()
++	if first.StatusCode != http.StatusAccepted {
++		t.Fatalf("first status = %d", first.StatusCode)
++	}
++	waitForRunTerminal(t, server.URL, sess.ID, accepted.RunID)
++	model.mu.Lock()
++	var userContext string
++	for _, request := range model.requests {
++		for _, message := range request {
++			if message.Role == "user" {
++				userContext += message.Content
++				for _, part := range message.Parts {
++					userContext += part.Text
++				}
++			}
++		}
++	}
++	model.mu.Unlock()
++	if !strings.Contains(userContext, marker) || !strings.Contains(userContext, "source note") {
++		t.Fatalf("model did not receive the fixed instruction and its resource: %q", userContext)
++	}
++	_, history, err := store.Load(sess.ID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	found := false
++	for _, message := range history {
++		if message.Role == "user" {
++			found = found || message.Content == prompt
++			if strings.Contains(message.Content, marker) {
++				t.Fatal("model-only skill context appeared in user message history")
++			}
++		}
++	}
++	if !found {
++		t.Fatal("the original user message was not retained")
++	}
++	retired.Store(true)
++	var replay protocol.RunAccepted
++	retry := postJSON(t, http.DefaultClient, path, input, &replay)
++	retry.Body.Close()
++	if retry.StatusCode != http.StatusOK || replay != accepted || calls.Load() != 1 {
++		t.Fatalf("accepted request resolved again: status %d, lookups %d", retry.StatusCode, calls.Load())
++	}
++	input.ClientRequestID = "new-account-skill"
++	unavailable := postJSON(t, http.DefaultClient, path, input, nil)
++	unavailable.Body.Close()
++	if unavailable.StatusCode != http.StatusUnprocessableEntity || calls.Load() != 2 {
++		t.Fatalf("unavailable revision accepted: status %d, lookups %d", unavailable.StatusCode, calls.Load())
++	}
++}
+diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
+index a2130dd..6942149 100644
+--- a/internal/backend/run_start.go
++++ b/internal/backend/run_start.go
+@@ -85,35 +85,60 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+ 			return fail(400, "user content must be text or image")
+ 		}
+ 	}
++	skillRefs, skillErr := explicitDeviceSkillReferences(in)
++	var skillSnapshot string
+ 	rt.mu.Lock()
+ 	defer rt.mu.Unlock()
+-	if rt.closing || s.shuttingDown.Load() {
+-		return fail(http.StatusServiceUnavailable, "backend is closing")
+-	}
+-	if rt.deleted {
+-		return fail(404, "session not found")
+-	}
+-	if rt.runtimeErr != nil {
+-		return fail(500, "session runtime is quarantined: "+rt.runtimeErr.Error())
+-	}
+-	requestHash := hashPrompt(in)
+-	if accepted, found, err := s.replayRunLocked(rt, in); found {
+-		if err != nil {
+-			return fail(409, err.Error())
++	for {
++		if rt.closing || s.shuttingDown.Load() {
++			return fail(http.StatusServiceUnavailable, "backend is closing")
+ 		}
+-		return accepted, http.StatusOK, nil
+-	}
+-	if rt.queue != nil && len(rt.queue.Items)+len(rt.queue.Edits) > 0 && ctx.Value(queueDispatchKey{}) != rt {
+-		return fail(409, "session has queued work; submit through /queue")
+-	}
+-	if rt.queue != nil && ctx.Value(queueDispatchKey{}) != rt {
+-		if _, exists := rt.queue.Receipts[in.ClientRequestID]; exists {
+-			return fail(409, "client_request_id belongs to a queue submission")
++		if rt.deleted {
++			return fail(404, "session not found")
++		}
++		if rt.runtimeErr != nil {
++			return fail(500, "session runtime is quarantined: "+rt.runtimeErr.Error())
++		}
++		if accepted, found, err := s.replayRunLocked(rt, in); found {
++			if err != nil {
++				return fail(409, err.Error())
++			}
++			return accepted, http.StatusOK, nil
+ 		}
++		if rt.queue != nil && len(rt.queue.Items)+len(rt.queue.Edits) > 0 && ctx.Value(queueDispatchKey{}) != rt {
++			return fail(409, "session has queued work; submit through /queue")
++		}
++		if rt.queue != nil && ctx.Value(queueDispatchKey{}) != rt {
++			if _, exists := rt.queue.Receipts[in.ClientRequestID]; exists {
++				return fail(409, "client_request_id belongs to a queue submission")
++			}
++		}
++		if rt.activeLocked() {
++			return fail(409, errSessionBusy)
++		}
++		if skillErr != nil {
++			var unavailable *deviceSkillError
++			if errors.As(skillErr, &unavailable) {
++				return fail(unavailable.status, unavailable.Error())
++			}
++			return fail(http.StatusServiceUnavailable, "Account skills could not be loaded. Reconnect and try again.")
++		}
++		if len(skillRefs) == 0 {
++			break
++		}
++		// The account check may block on the network. Recheck the session and
++		// its idempotent receipt under the lock before admitting any result.
++		skillSnapshot, skillErr = func() (string, error) {
++			rt.mu.Unlock()
++			defer rt.mu.Lock()
++			return s.loadDeviceSkillSnapshot(ctx, skillRefs)
++		}()
++		skillRefs = nil
+ 	}
+-	if rt.activeLocked() {
+-		return fail(409, errSessionBusy)
++	if err := ctx.Err(); err != nil {
++		return protocol.RunAccepted{}, http.StatusConflict, err
+ 	}
++	requestHash := hashPrompt(in)
+ 	// Expand after the idempotency check so a retried request replays even if its
+ 	// template changed or disappeared in between.
+ 	if in.PromptCommand {
+@@ -123,6 +148,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+ 		}
+ 		in.Snapshot = expanded
+ 	}
++	if skillSnapshot != "" {
++		appendSnapshot(&in, skillSnapshot)
++	}
+ 	if in.Model != nil && (in.Model.Model != "" || in.Model.Provider != "") {
+ 		if err := s.switchModelLocked(rt, *in.Model); err != nil {
+ 			return fail(400, "model switch failed: "+err.Error())
+diff --git a/internal/backend/server.go b/internal/backend/server.go
+index d2cf5eb..2853ccd 100644
+--- a/internal/backend/server.go
++++ b/internal/backend/server.go
+@@ -58,6 +58,7 @@ type Options struct {
+ 	QuestionTimeout         time.Duration
+ 	MCP                     *mcp.LiveManager
+ 	MCPCredentialBridge     mcp.CredentialBridge
++	DeviceSkillResolver     DeviceSkillResolver
+ 	// Build identifies this binary in /v1/health; zero value reports a dev build.
+ 	Build protocol.Build
+ 	// PermissionRulesDir is the data directory holding user and project permission
+@@ -95,6 +96,7 @@ type Server struct {
+ 	hookStore            *HookStore
+ 	hookRunner           *BackendHookRunner
+ 	mcp                  *mcp.LiveManager
++	deviceSkillResolver  DeviceSkillResolver
+ 	build                protocol.Build
+ 	instance             instanceIdentity
+ 
+@@ -207,9 +209,10 @@ func New(opts Options) (*Server, error) {
+ 		return nil, err
+ 	}
+ 	server := &Server{
+-		image:           opts.Image,
+-		filesystemRoots: append([]string(nil), opts.FilesystemRoots...),
+-		store:           opts.Store, factory: opts.Factory, token: opts.Token, models: append([]protocol.ModelRef(nil), opts.Models...),
++		deviceSkillResolver: opts.DeviceSkillResolver,
++		image:               opts.Image,
++		filesystemRoots:     append([]string(nil), opts.FilesystemRoots...),
++		store:               opts.Store, factory: opts.Factory, token: opts.Token, models: append([]protocol.ModelRef(nil), opts.Models...),
+ 		settings: opts.Settings, usage: NewProviderUsageService(opts.Settings), prompts: opts.Prompts,
+ 		eventDir: opts.EventDir, permissionDir: opts.PermissionRulesDir, sandboxMasked: append([]string(nil), opts.SandboxMasked...), defaultCWD: opts.DefaultCWD, memoryStore: memoryStore, questionWait: opts.QuestionTimeout, memoryRuntimeFactory: opts.MemoryRuntimeFactory, cron: cron, hookStore: hookStore, hookRunner: NewBackendHookRunner(hookStore), mcp: opts.MCP, sessions: make(map[string]*runtimeSession), snapshots: make(map[string]sessionHTTPSnapshot),
+ 		build: opts.Build,

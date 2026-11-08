@@ -11,6 +11,7 @@ import (
 const cloudScheduleGrace = 5 * time.Minute
 
 var errCloudScheduleInvalid = errors.New("invalid scheduled task")
+var errCloudScheduleApprovalConflict = errors.New("scheduled run is no longer awaiting this approval decision")
 
 type CloudScheduleRule struct {
 	Frequency       string         `json:"frequency"`

@@ -82,11 +82,16 @@ function deferred() {
 
 function queueBindingHarness() {
   let conversationId = "__local_draft__:one";
+  let agentRevision = 0;
   let content = draft();
   const calls = [];
   const binding = deferred();
   const uploads = new Map();
   const api = {
+    captureActiveAgentScope: () => {
+      const revision = agentRevision;
+      return () => agentRevision === revision;
+    },
     chatCommand: async (input) => { calls.push(["chat", input]); return { runId: "run-two", conversationId, acceptedSeq: 2 }; },
   };
   const options = {
@@ -153,6 +158,7 @@ function queueBindingHarness() {
     calls,
     actions: createGatewayChatCommandActions(options),
     resolveBinding: (id) => binding.resolve(id),
+    switchDevice: () => { agentRevision++; },
     content: () => content,
   };
 }
@@ -167,6 +173,16 @@ test("follow-up queue submission waits for draft binding and targets canonical c
   const request = h.calls.find(([kind]) => kind === "chat")[1];
   assert.equal(request.conversationId, "conversation-one");
   assert.equal(h.content().text, "");
+});
+
+test("a follow-up waiting for conversation binding cannot clear or send on another device", async () => {
+  const h = queueBindingHarness();
+  const sending = h.actions.submitCurrentComposerToGuiQueue("append");
+  h.switchDevice();
+  h.resolveBinding("conversation-one");
+  assert.equal(await sending, false);
+  assert.deepEqual(h.calls, []);
+  assert.equal(h.content().text, draft().text);
 });
 
 function editHarness() {

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_runs (
   state TEXT NOT NULL CHECK (state IN ('queued','running','cancelling','completed','failed','cancelled','interrupted')),
   output TEXT NOT NULL DEFAULT '' CHECK (octet_length(output) <= 8388608),
   usage JSONB NULL,
+  presentation JSONB NULL,
   error_code TEXT NOT NULL DEFAULT '',
   lease_owner TEXT NOT NULL DEFAULT '',
   attempt BIGINT NOT NULL DEFAULT 0,
@@ -69,9 +70,6 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_run_events (
   CONSTRAINT zeroagent_cloud_run_events_sequence_key UNIQUE (run_id,seq),
   CONSTRAINT zeroagent_cloud_run_events_operation_key UNIQUE (run_id,operation_id)
 );
-ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS model_parameters JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS public_research JSONB NOT NULL DEFAULT 'null'::jsonb;
-ALTER TABLE zeroagent_cloud_runs ADD COLUMN IF NOT EXISTS presentation JSONB NULL;
 ALTER TABLE zerobox_cloud_messages ADD COLUMN IF NOT EXISTS presentation JSONB NULL;` + cloudRunAdmissionSchema + CloudPendingQueueSchema + CloudConversationManagementSchema + CloudPrivateDraftSchema + cloudScheduleSchema
 
 const cloudRunColumns = `r.id::text,r.conversation_id::text,r.user_id,r.session_ref,r.client_request_id,

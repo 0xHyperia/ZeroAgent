@@ -102,11 +102,14 @@ export async function buildRelayProviders(
   keys: RelayApiKey[],
   groups: RelayGroup[],
   forceModelRefresh = false,
+  onModelReadFailure?: () => void,
 ) {
   const existingById = new Map(existingProviders.map((provider) => [provider.id, provider]));
   const providers = await Promise.all(
     keys
-      .filter((key) => key.status === "active" && key.group_id != null && key.key_configured !== false)
+      .filter(
+        (key) => key.status === "active" && key.group_id != null && key.key_configured !== false,
+      )
       .map(async (key): Promise<CustomProvider | null> => {
         const group = resolveKeyGroup(key, groups);
         if (group?.status !== "active") return null;
@@ -130,6 +133,7 @@ export async function buildRelayProviders(
               existing?.models ?? [],
             );
           } catch {
+            onModelReadFailure?.();
             models = existing?.models ?? [];
           }
         }
@@ -181,12 +185,14 @@ export async function bindRelayKeysToSettings(
   keys: RelayApiKey[],
   groups: RelayGroup[],
   forceModelRefresh = false,
+  onModelReadFailure?: () => void,
 ): Promise<AppSettings> {
   const customProviders = await buildRelayProviders(
     settings.customProviders,
     keys,
     groups,
     forceModelRefresh,
+    onModelReadFailure,
   );
   const current = settings.selectedModel;
   const currentAvailable = current

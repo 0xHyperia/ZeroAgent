@@ -1,10 +1,9 @@
+import { AppHeaderFrame } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { Button } from "@liveagent/ui/components/ui/button";
-import { useEffect, useRef, useState } from "react";
-import type {
-  DesktopAccountLayout,
-  DesktopCloudHost,
-  DesktopTaskConversation,
-} from "@/lib/desktopRemoteHost";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { DesktopCloudHost } from "@/lib/desktopRemoteHost";
+import { isMacOsTauri } from "../components/MacOsTitleBarSpacer";
+import { WindowsTitleBar } from "../components/WindowsTitleBar";
 import { openDesktopCloudHost } from "../lib/relay/desktopCloudHost";
 import {
   attachDesktopRemoteStyles,
@@ -16,21 +15,15 @@ type Props = {
   active: boolean;
   accountId: number;
   settings: AppSettings;
-  taskConversation?: DesktopTaskConversation;
+  headerLeadingActions?: ReactNode;
   updateClientPreferences: NonNullable<DesktopCloudHost["updateClientPreferences"]>;
-  accountLayout?: DesktopAccountLayout;
-  onLocationChange?: (href: string) => void;
-  onOpenScheduledTasks: () => void;
 } & Pick<
   DesktopCloudHost,
-  | "getEnvironments"
-  | "onSwitch"
-  | "onOpenDeviceTasks"
-  | "onOpenDeviceSettings"
   | "getHandoffEnvironments"
   | "sendWorkspaceHandoff"
   | "onLogout"
   | "onUserChange"
+  | "registerNavigationGuard"
 >;
 
 export function DesktopCloudWorkbench(props: Props) {
@@ -40,33 +33,38 @@ export function DesktopCloudWorkbench(props: Props) {
   const mounted = useRef<{
     dispose(): void;
     setActive?(active: boolean): void;
-    setAccountLayout?(layout: DesktopAccountLayout): void;
-    setTaskConversation?(conversation: DesktopTaskConversation): void;
   } | null>(null);
   const stylesheet = useRef<Awaited<ReturnType<typeof attachDesktopRemoteStyles>> | null>(null);
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const { active, accountId, accountLayout, taskConversation } = props;
+  const { active, accountId, getHandoffEnvironments } = props;
+  const handoffTargets = useMemo(() => getHandoffEnvironments?.() ?? [], [getHandoffEnvironments]);
+  const currentHandoffTargets = useRef(handoffTargets);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reconnect creates a fresh transport.
   useEffect(() => {
     const controller = new AbortController();
     let retire: (() => void) | undefined;
     let removeStyles: Awaited<ReturnType<typeof attachDesktopRemoteStyles>> | undefined;
-    setError("");
+    let mountFailed = false;
+    const fail = () => {
+      if (controller.signal.aborted || mountFailed) return;
+      mountFailed = true;
+      retire?.();
+      removeStyles?.();
+      setReady(false);
+      setFailed(true);
+    };
+    setFailed(false);
     setReady(false);
     void (async () => {
       const prepared = await loadDesktopRemoteRuntime();
       if (controller.signal.aborted) return;
       const { host, dispose } = await openDesktopCloudHost(
         {
-          getEnvironments: () => latest.current.getEnvironments(),
-          onSwitch: (environment) => latest.current.onSwitch(environment),
-          onOpenDeviceTasks: (environment) => latest.current.onOpenDeviceTasks(environment),
           onLogout: () => latest.current.onLogout(),
           onUserChange: (user) => latest.current.onUserChange(user),
-          onHeaderTarget: () => undefined,
-          onLocationChange: (href) => latest.current.onLocationChange?.(href),
+          registerNavigationGuard: latest.current.registerNavigationGuard,
         },
         controller.signal,
       );
@@ -76,18 +74,18 @@ export function DesktopCloudWorkbench(props: Props) {
       if (controller.signal.aborted || !container.current) return;
       mounted.current = prepared.factory.createDesktopRemoteRuntime().mount(container.current, {
         ...host,
-        taskConversation: latest.current.taskConversation,
-        accountLayout: latest.current.accountLayout,
         initialActive: latest.current.active,
+        onMountReady: () => {
+          if (!controller.signal.aborted && !mountFailed) setReady(true);
+        },
+        onMountError: fail,
         clientPreferences: () => ({
           locale: latest.current.settings.locale,
           theme: latest.current.settings.theme,
         }),
         updateClientPreferences: (preferences) =>
           latest.current.updateClientPreferences(preferences),
-        onOpenScheduledTasks: () => latest.current.onOpenScheduledTasks(),
-        onOpenDeviceSettings: (section) => latest.current.onOpenDeviceSettings?.(section),
-        getHandoffEnvironments: () => latest.current.getHandoffEnvironments?.() ?? [],
+        getHandoffEnvironments: () => currentHandoffTargets.current,
         sendWorkspaceHandoff: latest.current.sendWorkspaceHandoff
           ? async (request) => {
               const send = latest.current.sendWorkspaceHandoff;
@@ -99,13 +97,7 @@ export function DesktopCloudWorkbench(props: Props) {
       mounted.current.setActive?.(latest.current.active);
       stylesheet.current = removeStyles;
       stylesheet.current.setEnabled(latest.current.active);
-      setReady(true);
-    })().catch((cause) => {
-      if (controller.signal.aborted) return;
-      retire?.();
-      removeStyles?.();
-      setError(cause instanceof Error ? cause.message : String(cause));
-    });
+    })().catch(fail);
     return () => {
       controller.abort();
       mounted.current?.dispose();
@@ -116,15 +108,10 @@ export function DesktopCloudWorkbench(props: Props) {
     };
   }, [accountId, attempt]);
   useEffect(() => {
+    currentHandoffTargets.current = handoffTargets;
     stylesheet.current?.setEnabled(active);
     mounted.current?.setActive?.(active);
-  }, [active]);
-  useEffect(() => {
-    if (accountLayout) mounted.current?.setAccountLayout?.(accountLayout);
-  }, [accountLayout]);
-  useEffect(() => {
-    if (taskConversation) mounted.current?.setTaskConversation?.(taskConversation);
-  }, [taskConversation]);
+  }, [active, handoffTargets]);
 
   return (
     <div
@@ -133,13 +120,21 @@ export function DesktopCloudWorkbench(props: Props) {
       className={active ? "flex size-full min-h-0 flex-col" : "hidden"}
       data-desktop-cloud-workbench=""
     >
+      <AppHeaderFrame>
+        <div className="flex h-full items-center gap-3 px-3">
+          {isMacOsTauri() && <div aria-hidden="true" className="w-16 shrink-0" />}
+          {props.headerLeadingActions}
+          <div data-tauri-drag-region="" className="h-full min-w-0 flex-1" />
+          <WindowsTitleBar controlsOnly />
+        </div>
+      </AppHeaderFrame>
       <div ref={container} className={ready ? "flex min-h-0 flex-1 flex-col" : "hidden"} />
       {!ready && (
         <div
           className="grid flex-1 place-items-center p-8 text-sm text-muted-foreground"
           role="status"
         >
-          {error ? (
+          {failed ? (
             <div className="space-y-3 text-center">
               <p>
                 {props.settings.locale === "zh-CN"
@@ -153,15 +148,9 @@ export function DesktopCloudWorkbench(props: Props) {
               </div>
             </div>
           ) : props.settings.locale === "zh-CN" ? (
-            taskConversation ? (
-              "正在读取任务对话…"
-            ) : (
-              "正在打开账户内容…"
-            )
-          ) : taskConversation ? (
-            "Loading task conversation…"
+            "正在打开云端工作台…"
           ) : (
-            "Opening account content…"
+            "Opening the cloud workbench…"
           )}
         </div>
       )}

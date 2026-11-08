@@ -11,6 +11,7 @@ import {
   type ResourcePreviewProps,
   ResourceThumbnail,
 } from "@liveagent/ui/components/resource-preview/ResourcePreview";
+import type { Locale } from "@liveagent/ui/i18n";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { CloudChatArtifactsClient } from "@/lib/cloudChatArtifacts";
 import type { CloudChatFilesClient } from "@/lib/cloudChatFiles";
@@ -18,19 +19,22 @@ import type { CloudSpaceItem } from "@/lib/cloudSpace";
 
 export function cloudSpaceFormat(
   item: Pick<CloudSpaceItem, "name" | "kind" | "mime" | "site_version_id">,
+  locale: Locale,
 ) {
-  if (item.kind === "folder") return "文件夹";
-  if (item.site_version_id) return "站点";
-  const ext = item.name.split(".").pop()?.toLowerCase() ?? "";
-  if (/^docx?$/.test(ext)) return "Word 文档";
-  if (/^(xlsx?|csv|tsv|ods)$/.test(ext)) return "表格";
-  if (/^pptx?$/.test(ext)) return "演示文稿";
-  if (ext === "pdf") return "PDF 文档";
-  if (/^(md|markdown)$/.test(ext)) return "Markdown 文档";
-  if (item.mime.startsWith("image/")) return "图片";
-  if (item.mime.startsWith("video/")) return "视频";
-  if (item.mime.startsWith("audio/")) return "音频";
-  return ext ? `${ext.toUpperCase()} 文件` : "文件";
+  const text = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
+  if (item.kind === "folder") return text("文件夹", "Folder");
+  if (item.site_version_id) return text("站点", "Site");
+  const dot = item.name.lastIndexOf(".");
+  const ext = dot > 0 ? item.name.slice(dot + 1).toLowerCase() : "";
+  if (/^docx?$/.test(ext)) return text("Word 文档", "Word document");
+  if (/^(xlsx?|csv|tsv|ods)$/.test(ext)) return text("表格", "Spreadsheet");
+  if (/^pptx?$/.test(ext)) return text("演示文稿", "Presentation");
+  if (ext === "pdf") return text("PDF 文档", "PDF document");
+  if (/^(md|markdown)$/.test(ext)) return text("Markdown 文档", "Markdown document");
+  if (item.mime.startsWith("image/")) return text("图片", "Image");
+  if (item.mime.startsWith("video/")) return text("视频", "Video");
+  if (item.mime.startsWith("audio/")) return text("音频", "Audio");
+  return ext ? `${ext.toUpperCase()} ${text("文件", "file")}` : text("文件", "File");
 }
 
 type CoverProps = {

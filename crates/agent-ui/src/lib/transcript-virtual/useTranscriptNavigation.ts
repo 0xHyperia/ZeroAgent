@@ -1,7 +1,7 @@
 import { type MutableRefObject, useEffect, useLayoutEffect, useRef } from "react";
 
 export type TranscriptNavigationHandle = {
-  scrollToRowKey: (rowKey: string) => void;
+  scrollToRowKey: (rowKey: string, offset?: number) => void;
 };
 
 type VirtualItemPosition = {
@@ -11,6 +11,8 @@ type VirtualItemPosition = {
 
 type TranscriptVirtualizerNavigation = {
   scrollToIndex: (index: number, options: { align: "start" }) => void;
+  elementsCache: ReadonlyMap<string | number | bigint, Element>;
+  scrollToOffset: (offset: number, options: { align: "start" }) => void;
   getVirtualItems: () => readonly VirtualItemPosition[];
 };
 
@@ -47,14 +49,21 @@ export function useTranscriptNavigation<TItem>(options: UseTranscriptNavigationO
   useLayoutEffect(() => {
     if (!navRef) return;
     const handle: TranscriptNavigationHandle = {
-      scrollToRowKey: (rowKey) => {
+      scrollToRowKey: (rowKey, offset) => {
         cancelJumpSettleRef.current();
         const alignToRow = () => {
           const index = itemsRef.current.findIndex(
             (item) => getItemKeyRef.current(item) === rowKey,
           );
           if (index < 0) return false;
-          virtualizer.scrollToIndex(index, { align: "start" });
+          const element = offset === undefined ? undefined : virtualizer.elementsCache.get(rowKey);
+          if (element && scrollViewport && offset !== undefined) {
+            const bounds = element.getBoundingClientRect();
+            const inset = Math.min(offset, Math.max(0, bounds.height - 1));
+            const delta = bounds.top - scrollViewport.getBoundingClientRect().top + inset;
+            if (Math.abs(delta) >= 1)
+              virtualizer.scrollToOffset(scrollViewport.scrollTop + delta, { align: "start" });
+          } else virtualizer.scrollToIndex(index, { align: "start" });
           return true;
         };
         if (!alignToRow()) return;

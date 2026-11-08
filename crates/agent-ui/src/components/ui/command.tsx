@@ -2,7 +2,7 @@
 // Uses the project's Base UI primitives and semantic colors.
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn } from "../../lib/shared/utils";
 import { Search } from "../IconSet";
 
@@ -11,11 +11,22 @@ export const CommandDialogTrigger = DialogPrimitive.Trigger;
 export const CommandDialogTitle = DialogPrimitive.Title;
 export const CommandDialogDescription = DialogPrimitive.Description;
 
-export function CommandDialogPopup({ className, children, ...props }: DialogPrimitive.Popup.Props) {
+export function CommandDialogPopup({
+  className,
+  children,
+  layout = "center",
+  ...props
+}: DialogPrimitive.Popup.Props & { layout?: "center" | "visual-viewport" }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop className="za-modal-backdrop layer-modal fixed inset-0 transition-opacity duration-200 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none" />
-      <DialogPrimitive.Viewport className="layer-modal fixed inset-0 flex flex-col items-center justify-center px-4 py-[4vh] sm:py-[6vh]">
+      <DialogPrimitive.Viewport
+        className={cn(
+          "layer-modal fixed inset-0 flex flex-col items-center justify-center px-4 py-[4vh] sm:py-[6vh]",
+          layout === "visual-viewport" &&
+            "max-820:bottom-auto max-820:top-[var(--zeroagent-visual-viewport-offset-top,0px)] max-820:h-[var(--zeroagent-visual-viewport-height,var(--app-viewport-height))] max-820:justify-start max-820:pt-[max(12px,var(--zeroagent-safe-area-top,0px))] max-820:pb-[max(12px,var(--zeroagent-safe-area-bottom,0px))]",
+        )}
+      >
         <DialogPrimitive.Popup
           data-slot="command-dialog-popup"
           className={cn(
@@ -40,12 +51,19 @@ export function Command<Item>(
 export function CommandInput({
   className,
   startAddon,
+  endAddon,
+  inputRef,
   ...props
-}: Autocomplete.Input.Props & { startAddon?: ReactNode }) {
+}: Autocomplete.Input.Props & {
+  startAddon?: ReactNode;
+  endAddon?: ReactNode;
+  inputRef?: Ref<HTMLInputElement>;
+}) {
   return (
     <div className="relative flex h-14 shrink-0 items-center gap-3 px-4">
       {startAddon ?? <Search className="size-4 shrink-0 text-muted-foreground" />}
       <Autocomplete.Input
+        ref={inputRef}
         autoFocus
         data-slot="command-input"
         className={cn(
@@ -54,6 +72,7 @@ export function CommandInput({
         )}
         {...props}
       />
+      {endAddon}
     </div>
   );
 }

@@ -22,11 +22,11 @@ let prepared: Promise<{ factory: RuntimeFactory; styles: string[] }> | undefined
 export function loadDesktopRemoteRuntime() {
   prepared ??= (async () => {
     const base = new URL("remote-device/", document.baseURI);
-    const response = await fetch(new URL("manifest.json", base));
+    const response = await fetch(new URL("manifest.json", base), { cache: "no-cache" });
     if (!response.ok) throw new Error("完整远程界面未打包，请重新构建 ZeroAgent。");
     const manifest = (await response.json()) as Manifest;
     if (
-      manifest.schemaVersion !== 1 ||
+      manifest.schemaVersion !== 2 ||
       manifest.entry !== "runtime.js" ||
       !/^[a-f0-9]{64}$/.test(manifest.sha256) ||
       !Array.isArray(manifest.styles) ||

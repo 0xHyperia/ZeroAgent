@@ -16,12 +16,12 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_projects (
  name TEXT NOT NULL CHECK(octet_length(name) BETWEEN 1 AND 200),
  description TEXT NOT NULL DEFAULT '' CHECK(octet_length(description)<=4096),
  instructions TEXT NOT NULL DEFAULT '' CHECK(octet_length(instructions)<=16384),
+ icon TEXT NOT NULL DEFAULT 'folder',
+ color TEXT NOT NULL DEFAULT 'default',
  version BIGINT NOT NULL DEFAULT 1 CHECK(version>0),
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  UNIQUE(id,user_id)
 );
-ALTER TABLE zeroagent_cloud_projects ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'folder';
-ALTER TABLE zeroagent_cloud_projects ADD COLUMN IF NOT EXISTS color TEXT NOT NULL DEFAULT 'default';
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_projects_owner_idx ON zeroagent_cloud_projects(user_id,created_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_project_conversations (
  conversation_id UUID PRIMARY KEY REFERENCES zerobox_cloud_conversations(id) ON DELETE CASCADE,

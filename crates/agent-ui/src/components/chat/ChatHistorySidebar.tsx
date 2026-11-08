@@ -289,6 +289,8 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
   const { t } = useLocale();
 
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const conversationSearchTrigger = useRef<HTMLElement>(null);
+  const conversationSearchOpener = useRef<HTMLElement | null>(null);
   const [revealedSearchConversationId, setRevealedSearchConversationId] = useState<string | null>(
     null,
   );
@@ -384,10 +386,15 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       return;
     }
     lastConversationSearchRequestKeyRef.current = conversationSearchRequestKey;
-    if (!sectionsDisabled) {
+    if (!sectionsDisabled && !conversationSearchOpen) {
+      const focused = document.activeElement;
+      conversationSearchOpener.current =
+        focused instanceof HTMLElement && focused !== document.body
+          ? focused
+          : conversationSearchTrigger.current;
       setConversationSearchOpen(true);
     }
-  }, [conversationSearchRequestKey, sectionsDisabled]);
+  }, [conversationSearchOpen, conversationSearchRequestKey, sectionsDisabled]);
   const selectionAnchorRef = useRef<string | null>(null);
   const bulkConfirmOpenRef = useRef(false);
   // Bumped to invalidate an in-flight bulk delete: its shouldStop callback
@@ -1509,13 +1516,19 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
 
               <div className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]">
                 <Button
+                  ref={conversationSearchTrigger}
                   type="button"
                   variant="ghost"
                   size="icon-sm"
                   disabled={sectionsDisabled}
-                  onClick={() => setConversationSearchOpen(true)}
+                  onClick={(event) => {
+                    conversationSearchOpener.current = event.currentTarget;
+                    setConversationSearchOpen(true);
+                  }}
                   title={t("chat.searchConversations")}
                   aria-label={t("chat.searchConversations")}
+                  aria-haspopup="dialog"
+                  aria-expanded={conversationSearchOpen}
                   className="chat-history-search-button rounded-lg text-muted-foreground hover:text-foreground"
                 >
                   <Search className="size-4" />
@@ -2340,6 +2353,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       <ConversationSearchDialog
         open={conversationSearchOpen}
         onOpenChange={setConversationSearchOpen}
+        returnFocus={conversationSearchOpener}
         conversations={items}
         currentWorkdir={currentConversationWorkdir}
         onSelectConversation={handleSelectConversation}

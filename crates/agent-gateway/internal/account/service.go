@@ -118,22 +118,11 @@ func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return session, err
 	}
-	if session.Purpose == "cloud_schedule" {
-		store, ok := s.store.(*PersistentStore)
-		if !ok {
-			return nil, sessionMissingError()
-		}
-		current, err := store.cloudScheduleSessionID(ctx, session.UserID)
-		if errors.Is(err, ErrNotFound) || (err == nil && current != session.ID) {
-			return nil, sessionMissingError()
-		}
-		if err != nil {
-			return nil, sessionStorageError()
-		}
+	if session.Purpose == "" {
 		return session, nil
 	}
 	if !isDesktopCloudPurpose(session.Purpose) {
-		return session, nil
+		return nil, sessionMissingError()
 	}
 	user, err := s.usa.AppMe(ctx, session.AccessToken)
 	if err != nil {

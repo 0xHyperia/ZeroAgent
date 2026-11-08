@@ -84,6 +84,26 @@ test("expired account startup offers an explicit sign-in action in both language
   }
 });
 
+test("a split build's conflicting account origins stay in a localized recovery screen", (t) => {
+  const previous = globalThis.localStorage;
+  t.after(() => { globalThis.localStorage = previous; });
+  for (const locale of ["zh", "en"]) {
+    const dom = new JSDOM(readFileSync(new URL("../../index.html", import.meta.url), "utf8"), { url: "http://localhost" });
+    globalThis.localStorage = dom.window.localStorage;
+    localStorage.setItem("liveagent.ui-settings.v1", JSON.stringify({ locale }));
+    const doc = dom.window.document;
+    const screen = createStartupRenderer(doc);
+    t.after(() => { screen.dispose(); dom.window.close(); });
+    let retries = 0;
+    screen.fail(() => { retries++; }, "configuration");
+    assert.match(doc.querySelector("[data-boot-detail]").textContent, locale === "en" ? /conflicting account service addresses/ : /账户服务地址配置不一致/);
+    assert.equal(doc.querySelector("[data-static-boot-shell]").getAttribute("aria-busy"), "false");
+    assert.equal(retries, 0);
+    doc.querySelector("[data-boot-retry]").click();
+    assert.equal(retries, 1);
+  }
+});
+
 function oldConversation(id) {
   return { id, title:"private title", providerId:"removed", model:"removed", createdAt:1000, updatedAt:2000, isPinned:false, isShared:false, redactToolContent:false, contextMetaJson:"{}", checkpoint:{status:"not_found"}, segments:[{segmentIndex:0, segmentId:"first", messagesJson:JSON.stringify([{id:"user", role:"user", content:"private body", timestamp:1000}])}] };
 }

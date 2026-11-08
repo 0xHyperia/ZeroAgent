@@ -57,19 +57,6 @@ func (h *HTTPHandler) branchCloudConversation(w http.ResponseWriter, r *http.Req
 		writeError(w, cloudRunAPIError(ErrCloudRunInvalid))
 		return
 	}
-	if input.Action == "edit" {
-		var err error
-		input.Content, err = validateCloudContent(input.Content)
-		if err != nil {
-			writeError(w, cloudRunAPIError(err))
-			return
-		}
-		input.Content, err = h.service.canonicalCloudFileReferences(r.Context(), session.UserID, input.Content)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-	}
 	branch, created, err := store.CreateCloudBranch(r.Context(), session.UserID, r.PathValue("id"), input)
 	if err != nil {
 		writeError(w, cloudRunAPIError(err))

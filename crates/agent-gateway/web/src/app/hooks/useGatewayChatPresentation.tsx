@@ -57,6 +57,7 @@ type UseGatewayChatPresentationOptions = {
     options: { canDropUpload: boolean; disabledMessage: string },
   ) => void;
   historyDetailLoading: boolean;
+  historyOpenFailed: boolean;
   historyShareToken: string | null;
   isAgentMode: boolean;
   isDisplayedConversation: (conversationId: string) => boolean;
@@ -98,6 +99,7 @@ export function useGatewayChatPresentation({
   handlePendingFileDragOver,
   handlePendingFileDrop,
   historyDetailLoading,
+  historyOpenFailed,
   historyShareToken,
   isAgentMode,
   isDisplayedConversation,
@@ -201,17 +203,13 @@ export function useGatewayChatPresentation({
     [displayedConversationId, pendingToolApprovals.length],
   );
   const approvalBar =
-    pendingToolApprovals.length > 0 ? (
+    pendingToolApprovals.length > 0 && displayedConversationId ? (
       <ToolApprovalBar
+        key={displayedConversationId}
         pending={pendingToolApprovals}
         onDecide={(toolCallId, decision, options) =>
-          submitToolApprovalDecision(toolCallId, decision, undefined, options)
+          submitToolApprovalDecision(toolCallId, decision, displayedConversationId, options)
         }
-        onDecideAll={async (decision) => {
-          for (const item of pendingToolApprovals) {
-            await submitToolApprovalDecision(item.toolCallId, decision);
-          }
-        }}
       />
     ) : null;
   const transcriptFloors = useMemo(() => buildFloorEntries(transcriptRows), [transcriptRows]);
@@ -291,28 +289,37 @@ export function useGatewayChatPresentation({
   });
   const composerCompactionBlocked = transcriptToolStatusIsCompaction;
   const composerInputDisabled =
-    !status?.online ||
+    sidebarSectionsDisabled ||
     chatProtocolIncompatible ||
     historyDetailLoading ||
+    historyOpenFailed ||
     composerCompactionBlocked;
+  const canEditOfflineDraft = sidebarSectionsDisabled && !chatProtocolIncompatible;
+  const composerDraftOnly =
+    canEditOfflineDraft &&
+    Boolean(displayedConversationId) &&
+    !historyDetailLoading &&
+    !historyOpenFailed &&
+    !composerCompactionBlocked;
   const composerPlaceholder = chatProtocolIncompatible
     ? translate("chat.runtime.protocolIncompatiblePlaceholder", settings.locale)
     : composerCompactionBlocked
       ? translate("chat.compactingContextWait", settings.locale)
       : historyDetailLoading
         ? translate("chat.gatewayHistory.loadingPlaceholder", settings.locale)
-        : enabledComposerSkills.length > 0
-          ? translate("chat.inputHintWithSkills", settings.locale)
-          : translate("chat.inputHint", settings.locale);
+        : composerDraftOnly
+          ? translate("chat.deviceDraft.offlinePlaceholder", settings.locale)
+          : enabledComposerSkills.length > 0
+            ? translate("chat.inputHintWithSkills", settings.locale)
+            : translate("chat.inputHint", settings.locale);
   const canDropUpload =
-    status?.online === true &&
     isAgentMode &&
     Boolean(displayedConversationWorkdir.trim()) &&
     !isUploadingFiles &&
     !composerInputDisabled;
   const fileDropTitle = canDropUpload
     ? translate("chat.upload.dropReady", settings.locale)
-    : status?.online !== true
+    : sidebarSectionsDisabled
       ? translate("chat.upload.dropBusy", settings.locale)
       : !isAgentMode
         ? translate("chat.upload.onlyInTools", settings.locale)
@@ -333,8 +340,10 @@ export function useGatewayChatPresentation({
     approvalBar,
     approvalConversationIds,
     canDropUpload,
+    canEditOfflineDraft,
     chatProtocolIncompatibleMessage,
     composerCompactionBlocked,
+    composerDraftOnly,
     composerInputDisabled,
     composerIsSending: displayedConversationBusy,
     composerPlaceholder,

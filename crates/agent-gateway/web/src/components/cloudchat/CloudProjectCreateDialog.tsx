@@ -1,4 +1,4 @@
-import { FolderClosed, Lightbulb } from "@liveagent/ui/components/IconSet";
+import { FolderClosed } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   type CloudAccountGuard,
@@ -17,16 +18,47 @@ import {
   CloudWorkUnconfirmedError,
 } from "@/lib/cloudChatProjects";
 
-/** One creation flow for the sidebar and the conversation's move submenu. */
+/** The same creation form can continue the action that opened it. */
 export function CloudProjectCreateDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: CloudChatProjectsClient;
   captureGuard: CloudAccountGuard;
   disabled?: boolean;
-  moveAfterCreate?: boolean;
+  afterCreate?: "select" | "move";
+  finalFocus?: () => HTMLElement | false | undefined;
   onCreated: (project: CloudProject) => void | Promise<void>;
 }) {
+  const { locale } = useLocale();
+  const copy = (zh: string, en: string) => (locale === "en-US" ? en : zh);
+  const nameLabel = copy("项目名称", "Project name");
+  const intent =
+    props.afterCreate === "move"
+      ? {
+          description: copy(
+            "创建后，所选对话会移入这个项目。",
+            "Move the selected conversation into the new project.",
+          ),
+          submit: copy("创建并移入", "Create and move"),
+          retry: copy("重试移入项目", "Retry move"),
+        }
+      : props.afterCreate === "select"
+        ? {
+            description: copy(
+              "此草稿将使用新项目，输入和附件会保留。",
+              "Use this project for the draft. Keep its text and attachments.",
+            ),
+            submit: copy("创建并选择", "Create and select"),
+            retry: copy("重试选择项目", "Retry project selection"),
+          }
+        : {
+            description: copy(
+              "将相关对话、文件和项目指令放在一起。",
+              "Keep related conversations, files, and instructions together.",
+            ),
+            submit: copy("创建项目", "Create project"),
+            retry: copy("继续", "Continue"),
+          };
   const nameId = useId();
   const [name, setName] = useState("");
   const [created, setCreated] = useState<CloudProject | null>(null);
@@ -47,14 +79,14 @@ export function CloudProjectCreateDialog(props: {
     pending.current = true;
     setBusy(true);
     setError("");
+    let project = created;
     try {
-      const project =
-        created ??
-        (await props.client.createProject({
-          name: name.trim(),
-          description: "",
-          instructions: "",
-        }));
+      guard();
+      project ??= await props.client.createProject({
+        name: name.trim(),
+        description: "",
+        instructions: "",
+      });
       guard();
       if (!mounted.current) return;
       setCreated(project);
@@ -68,8 +100,30 @@ export function CloudProjectCreateDialog(props: {
       try {
         guard();
         if (mounted.current) {
-          setUnknown(cause instanceof CloudWorkUnconfirmedError);
-          setError(cause instanceof Error ? cause.message : "创建失败，请重试。");
+          const unconfirmed = cause instanceof CloudWorkUnconfirmedError;
+          setUnknown(unconfirmed);
+          if (project) {
+            const fallback = copy(
+              "项目已创建。请重试关联。",
+              "Project created. Try linking it again.",
+            );
+            setError(
+              locale !== "en-US" && cause instanceof Error
+                ? `项目已创建。${cause.message}`
+                : fallback,
+            );
+          } else {
+            setError(
+              unconfirmed
+                ? copy(
+                    "创建结果尚未确认，请先刷新列表核对，避免重复创建。",
+                    "Creation could not be confirmed. Check the project list before trying again.",
+                  )
+                : locale !== "en-US" && cause instanceof Error
+                  ? cause.message
+                  : copy("创建失败，请重试。", "Could not create the project. Try again."),
+            );
+          }
         }
       } catch {
         /* Retired account or conversation. */
@@ -90,13 +144,15 @@ export function CloudProjectCreateDialog(props: {
         className="max-w-lg rounded-3xl p-6"
         showCloseButton
         closeDisabled={busy}
-        closeLabel="关闭新建项目"
+        closeLabel={copy("关闭新建项目", "Close new project")}
+        finalFocus={props.finalFocus}
       >
-        <DialogHeader>
-          <DialogTitle className="text-xl">创建项目</DialogTitle>
+        <DialogHeader className="px-0 pt-0 max-[820px]:px-0 max-[820px]:pt-0">
+          <DialogTitle className="text-xl">{copy("创建项目", "Create project")}</DialogTitle>
+          <DialogDescription>{intent.description}</DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-5"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -104,7 +160,7 @@ export function CloudProjectCreateDialog(props: {
         >
           <div className="space-y-2">
             <label htmlFor={nameId} className="text-sm font-medium">
-              项目名称
+              {nameLabel}
             </label>
             <div className="relative">
               <FolderClosed
@@ -114,8 +170,8 @@ export function CloudProjectCreateDialog(props: {
               <Input
                 id={nameId}
                 autoFocus
-                aria-label="项目名称"
-                placeholder="例如：新产品发布计划"
+                aria-label={nameLabel}
+                placeholder={copy("例如：新产品发布计划", "For example, product launch plan")}
                 maxLength={200}
                 className="h-12 rounded-xl pl-10"
                 value={name}
@@ -124,40 +180,27 @@ export function CloudProjectCreateDialog(props: {
               />
             </div>
           </div>
-          <div className="flex gap-3 rounded-2xl bg-muted/60 p-4 text-sm leading-relaxed text-muted-foreground">
-            <Lightbulb className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-            <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
-              将相关对话、文件和项目指令放在一起，让持续进行的工作更有条理。
-              {props.moveAfterCreate ? "创建后，此对话会移入项目。" : ""}
-            </DialogDescription>
-          </div>
           {error ? (
             <p role="alert" className="text-sm text-destructive">
               {error}
             </p>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="min-h-0 px-0 pb-0 max-[820px]:flex-row max-[820px]:flex-wrap max-[820px]:items-center max-[820px]:px-0 max-[820px]:pb-0">
             <Button
               type="button"
               variant="ghost"
-              className="rounded-full"
+              className="rounded-full max-[820px]:min-h-11"
               disabled={busy}
               onClick={() => props.onOpenChange(false)}
             >
-              取消
+              {copy("取消", "Cancel")}
             </Button>
             <Button
               type="submit"
-              className="rounded-full px-5"
+              className="rounded-full px-5 max-[820px]:min-h-11"
               disabled={busy || props.disabled || unknown || !name.trim()}
             >
-              {busy
-                ? "正在保存…"
-                : created
-                  ? "重试移入项目"
-                  : props.moveAfterCreate
-                    ? "创建并移入"
-                    : "创建项目"}
+              {busy ? copy("正在保存…", "Saving…") : created ? intent.retry : intent.submit}
             </Button>
           </DialogFooter>
         </form>

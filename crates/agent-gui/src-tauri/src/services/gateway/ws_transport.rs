@@ -102,6 +102,7 @@ pub(crate) fn build_client_hello(
             "planning_v1".to_string(),
             COMPOSER_COMMANDS_V1_CAPABILITY.to_string(),
             PROXY_DETECT_V1_CAPABILITY.to_string(),
+            "WORKSPACE_HANDOFF_PATH_V1".to_string(),
         ],
     }
 }
@@ -551,6 +552,7 @@ mod tests {
                     "planning_v1",
                     COMPOSER_COMMANDS_V1_CAPABILITY,
                     PROXY_DETECT_V1_CAPABILITY,
+                    "WORKSPACE_HANDOFF_PATH_V1",
                 ]
             );
 

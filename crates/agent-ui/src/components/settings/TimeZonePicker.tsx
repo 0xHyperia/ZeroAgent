@@ -67,6 +67,10 @@ function zoneName(zone: string, locale: string, style: "shortOffset" | "longGene
   }
 }
 
+export function timeZoneDisplayName(zone: string, locale: Locale) {
+  return zoneName(zone, zoneLabelLocale(locale), "longGeneric", new Date()) || zone;
+}
+
 function offsetMinutes(offset: string) {
   const match = offset.match(/([+-])(\d{1,2})(?::(\d{2}))?/);
   if (!match) return 0;
@@ -143,6 +147,7 @@ export function TimeZonePicker({
   id,
   disabled,
   triggerClassName = "w-full max-w-none",
+  compactLabel = false,
 }: {
   value: string;
   onChange(zone: string): void;
@@ -152,6 +157,7 @@ export function TimeZonePicker({
   id?: string;
   disabled?: boolean;
   triggerClassName?: string;
+  compactLabel?: boolean;
 }) {
   const { t, locale } = useLocale();
   const options = useTimeZoneOptions(value, zoneLabelLocale(locale), autoLabel);
@@ -164,6 +170,7 @@ export function TimeZonePicker({
       searchPlaceholder={t("settings.timeZoneSearch")}
       emptyLabel={t("settings.timeZoneEmpty")}
       triggerClassName={triggerClassName}
+      triggerLabel={compactLabel && value ? timeZoneDisplayName(value, locale) : undefined}
       disabled={disabled}
       id={id}
     />

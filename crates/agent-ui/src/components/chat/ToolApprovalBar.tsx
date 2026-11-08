@@ -14,10 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { KbdShortcut } from "@liveagent/ui/components/ui/kbd";
+import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type {
   ToolApprovalAnswerOptions,
   ToolApprovalPreview,
@@ -65,27 +66,18 @@ function formatCountdown(remainingMs: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-// 倒计时取列表中最早的 deadline(最紧迫者驱动整栏)。没有任何 deadline 时(K-brain
-// 审批一直等到用户决定)返回 null,不显示倒计时。超时后桌面按“拒绝”落定,pending
-// 消失,本栏随之隐藏。
-function useEarliestCountdown(active: boolean, deadlines: number[]) {
-  const earliest = deadlines.length > 0 ? Math.min(...deadlines) : null;
-  const [remainingMs, setRemainingMs] = useState(() =>
-    earliest === null ? null : earliest - Date.now(),
-  );
+// The displayed deadline belongs to this request. The host still owns expiry.
+function useApprovalCountdown(deadlineAt: number | null) {
+  const [tick, setTick] = useState<{ deadlineAt: number; now: number } | null>(null);
   useEffect(() => {
-    if (!active || earliest === null) {
-      setRemainingMs(null);
-      return;
-    }
-    const tick = () => setRemainingMs(earliest - Date.now());
-    tick();
-    const timer = setInterval(tick, 1000);
+    if (deadlineAt === null) return;
+    const update = () => setTick({ deadlineAt, now: Date.now() });
+    update();
+    const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [active, earliest]);
-  // The deadline set can change between renders; never show a stale countdown for it.
-  if (earliest === null) return null;
-  return remainingMs ?? earliest - Date.now();
+  }, [deadlineAt]);
+  if (deadlineAt === null) return null;
+  return deadlineAt - (tick?.deadlineAt === deadlineAt ? tick.now : Date.now());
 }
 
 export function ToolApprovalBar({
@@ -99,20 +91,22 @@ export function ToolApprovalBar({
     decision: ToolApprovalDecision,
     options?: ToolApprovalAnswerOptions,
   ) => Promise<ToolApprovalSubmitOutcome>;
-  onDecideAll: (decision: "approve" | "deny") => Promise<void>;
+  onDecideAll?: (decision: "approve" | "deny") => Promise<void | ToolApprovalSubmitOutcome>;
 }) {
   const { t } = useLocale();
+  const feedbackId = useId();
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<{
-    toolCallId: string;
+    toolCallIds: readonly string[];
     text: string;
   } | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
-  const deadlines = pending
-    .map((item) => item.deadlineAt)
-    .filter((value): value is number => typeof value === "number");
-  const remainingMs = useEarliestCountdown(pending.length > 0, deadlines);
+  const submitInFlight = useRef(false);
+  const deadlineAt = pending[0]?.deadlineAt;
+  const remainingMs = useApprovalCountdown(
+    typeof deadlineAt === "number" && Number.isFinite(deadlineAt) ? deadlineAt : null,
+  );
   const submitting = submittingAction !== null;
   const currentToolCallId = pending[0]?.toolCallId ?? "";
 
@@ -150,7 +144,14 @@ export function ToolApprovalBar({
   const current = pending[0];
   const displayToolName =
     current.toolName.toLowerCase() === "bash" ? t("chat.toolApproval.terminal") : current.toolName;
-  const errorText = submissionError?.toolCallId === current.toolCallId ? submissionError.text : "";
+  const errorText = submissionError?.toolCallIds.includes(current.toolCallId)
+    ? submissionError.text
+    : "";
+  const actionState = {
+    "aria-disabled": submitting || undefined,
+    "aria-describedby": errorText ? feedbackId : undefined,
+  };
+  const waitingStyle = "aria-disabled:cursor-wait aria-disabled:opacity-50";
   const offerSession = current.allowSession === true;
   // With rules to remember the card shows its own remember option; the menu keeps the
   // old session item only for backends without rules (Computer Use grants).
@@ -165,9 +166,11 @@ export function ToolApprovalBar({
 
   const runGuarded = async (
     action: string,
-    task: (() => Promise<ToolApprovalSubmitOutcome>) | (() => Promise<void>),
+    task: () => Promise<ToolApprovalSubmitOutcome | void>,
+    toolCallIds = [current.toolCallId],
   ) => {
-    if (submitting) return;
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     setMoreOpen(false);
     setSubmittingAction(action);
     setSubmissionError(null);
@@ -175,18 +178,47 @@ export function ToolApprovalBar({
       const outcome = await task();
       if (outcome && !outcome.ok) {
         setSubmissionError({
-          toolCallId: current.toolCallId,
+          toolCallIds,
           text: outcome.message || t("chat.toolApproval.failed"),
         });
       }
     } catch (error) {
       setSubmissionError({
-        toolCallId: current.toolCallId,
+        toolCallIds,
         text: error instanceof Error ? error.message : t("chat.toolApproval.failed"),
       });
     } finally {
+      submitInFlight.current = false;
       setSubmittingAction(null);
     }
+  };
+
+  const decideAll = (decision: "approve" | "deny") => {
+    const toolCallIds = pending.map((item) => item.toolCallId);
+    void runGuarded(
+      `${decision}-all`,
+      async () => {
+        if (onDecideAll) return onDecideAll(decision);
+        let unconfirmed = 0;
+        for (const id of toolCallIds) {
+          try {
+            if (!(await onDecide(id, decision)).ok) unconfirmed++;
+          } catch {
+            unconfirmed++;
+          }
+        }
+        if (unconfirmed > 0) {
+          return {
+            ok: false,
+            message: t("chat.toolApproval.batchUnconfirmed").replace(
+              "{count}",
+              String(unconfirmed),
+            ),
+          };
+        }
+      },
+      toolCallIds,
+    );
   };
 
   const approveOnce = () =>
@@ -222,7 +254,8 @@ export function ToolApprovalBar({
           event.metaKey ||
           event.shiftKey ||
           submitting ||
-          moreOpen
+          moreOpen ||
+          (event.target instanceof Element && event.target.closest("[data-approval-details]"))
         ) {
           return;
         }
@@ -247,33 +280,44 @@ export function ToolApprovalBar({
         handle();
       }}
       className={cn(
-        "@container relative flex min-h-32 w-full flex-col",
+        "@container relative flex max-h-[min(65dvh,32rem)] min-h-32 w-full flex-col",
         "rounded-3xl border border-black/[0.055] bg-white/72 shadow-ui-toolapprovalbar-18 outline-none backdrop-blur-2xl backdrop-saturate-[165%]",
         "dark:border-white/[0.10] dark:bg-white/[0.06] dark:shadow-ui-toolapprovalbar-19",
       )}
     >
-      <div className="min-h-0 flex-auto overflow-hidden px-4 pt-3">
-        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <Terminal className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-xs leading-none">{displayToolName}</span>
-          {remainingMs === null ? (
-            pending.length > 1 ? (
-              <span className="shrink-0 text-tiny tabular-nums text-muted-foreground/65">
-                {`1 / ${pending.length}`}
-              </span>
-            ) : null
-          ) : (
-            <span
-              role="timer"
-              title={`${formatCountdown(remainingMs)} ${t("chat.toolApproval.timeoutHint")}`}
-              className="shrink-0 text-tiny tabular-nums text-muted-foreground/65"
-            >
-              {pending.length > 1 ? `1 / ${pending.length} · ` : null}
-              {formatCountdown(remainingMs)}
+      <header className="flex min-w-0 shrink-0 items-center gap-2 px-4 pt-3 text-muted-foreground">
+        <Terminal className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-xs leading-none">{displayToolName}</span>
+        {remainingMs === null ? (
+          pending.length > 1 ? (
+            <span className="shrink-0 text-tiny tabular-nums text-muted-foreground/65">
+              {`1 / ${pending.length}`}
             </span>
-          )}
-        </div>
-
+          ) : null
+        ) : (
+          <span
+            role="timer"
+            aria-label={t("chat.toolApproval.currentDeadline").replace(
+              "{time}",
+              formatCountdown(remainingMs),
+            )}
+            title={`${formatCountdown(remainingMs)} ${t("chat.toolApproval.timeoutHint")}`}
+            className="shrink-0 text-tiny tabular-nums text-muted-foreground/65"
+          >
+            {pending.length > 1 ? `1 / ${pending.length} · ` : null}
+            {formatCountdown(remainingMs)}
+          </span>
+        )}
+      </header>
+      <div
+        key={current.toolCallId}
+        data-approval-details=""
+        role="region"
+        aria-label={t("chat.toolApproval.details")}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll long approval details.
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
         {/* Wraps instead of truncating: on phones the session-wide explanation must stay readable. */}
         <p className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92">
           {current.sessionWide
@@ -281,12 +325,11 @@ export function ToolApprovalBar({
             : t("chat.toolApproval.body").replace("{tool}", displayToolName)}
         </p>
 
-        {/* The whole command, wrapped and scrollable: approving what one cut line shows
-            is approving blind. */}
+        {/* Keep the command in the same scroll region as its preview. */}
         {current.summary ? (
           <pre
             data-approval-command=""
-            className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-1p45 text-muted-foreground"
+            className="mt-1.5 whitespace-pre-wrap rounded-xl bg-muted/45 px-3 py-2 font-mono text-xs leading-1p45 text-muted-foreground [overflow-wrap:anywhere]"
           >
             {current.summary}
           </pre>
@@ -358,11 +401,14 @@ export function ToolApprovalBar({
             <Button
               variant="outline"
               size="sm"
-              disabled={submitting}
+              {...actionState}
               aria-busy={submittingAction === `session:${current.toolCallId}`}
               aria-keyshortcuts="2"
               onClick={remember}
-              className="h-7 shrink-0 px-3 text-xs"
+              className={cn(
+                "h-8 shrink-0 px-3 text-xs @max-[480px]:min-h-11 pointer-coarse:min-h-11",
+                waitingStyle,
+              )}
             >
               {submittingAction === `session:${current.toolCallId}` ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -374,21 +420,27 @@ export function ToolApprovalBar({
         ) : null}
       </div>
 
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 pb-2">
-        {errorText ? (
-          <span role="alert" className="mr-auto min-w-0 flex-1 truncate text-tiny text-destructive">
-            {errorText}
-          </span>
-        ) : null}
-
+      {errorText ? (
+        <StatusNotice
+          id={feedbackId}
+          compact
+          tone="error"
+          message={errorText}
+          className="mx-3 mb-1 max-h-24 shrink-0 overflow-y-auto"
+        />
+      ) : null}
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 pt-1 pb-2">
         <Button
           variant="outline"
           size="sm"
-          disabled={submitting}
+          {...actionState}
           aria-busy={submittingAction === `deny:${current.toolCallId}`}
           aria-keyshortcuts="Escape 3"
           onClick={deny}
-          className="h-7 shrink-0 px-3 text-xs"
+          className={cn(
+            "h-8 shrink-0 px-3 text-xs @max-[480px]:min-h-11 pointer-coarse:min-h-11",
+            waitingStyle,
+          )}
         >
           {submittingAction === `deny:${current.toolCallId}` ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -400,20 +452,29 @@ export function ToolApprovalBar({
             aria-hidden="true"
             variant="plain"
             size="inline"
-            className="rounded bg-muted px-1 py-0.5 text-tiny text-muted-foreground"
+            className="rounded bg-muted px-1 py-0.5 text-tiny text-muted-foreground pointer-coarse:hidden"
           />
         </Button>
 
-        <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
+        <DropdownMenu
+          open={moreOpen}
+          onOpenChange={(open) => {
+            if (!open || !submitInFlight.current) setMoreOpen(open);
+          }}
+        >
           <div className="flex shrink-0">
             <Button
               size="sm"
-              disabled={submitting}
+              {...actionState}
               aria-busy={submittingAction === `approve:${current.toolCallId}`}
               aria-keyshortcuts="Enter"
               title={t("chat.toolApproval.approveShortcutHint")}
               onClick={approveOnce}
-              className={cn("h-7 px-3 text-xs shadow-none", hasMoreActions && "rounded-r-none")}
+              className={cn(
+                "h-8 px-3 text-xs shadow-none @max-[480px]:min-h-11 pointer-coarse:min-h-11",
+                waitingStyle,
+                hasMoreActions && "rounded-r-none",
+              )}
             >
               {submittingAction === `approve:${current.toolCallId}` ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -429,7 +490,7 @@ export function ToolApprovalBar({
                 aria-hidden="true"
                 variant="plain"
                 size="inline"
-                className="rounded bg-primary-foreground/10 px-1 py-0.5 text-tiny text-primary-foreground/75"
+                className="rounded bg-primary-foreground/10 px-1 py-0.5 text-tiny text-primary-foreground/75 pointer-coarse:hidden"
               />
             </Button>
             {hasMoreActions ? (
@@ -437,10 +498,13 @@ export function ToolApprovalBar({
                 render={
                   <Button
                     size="sm"
-                    disabled={submitting}
-                    className="h-7 w-6 rounded-l-none border-l border-primary-foreground/20 px-0 shadow-none"
+                    className={cn(
+                      "h-8 w-8 rounded-l-none border-l border-primary-foreground/20 px-0 shadow-none @max-[480px]:size-11 pointer-coarse:size-11",
+                      waitingStyle,
+                    )}
                   />
                 }
+                {...actionState}
                 aria-label={t("chat.toolApproval.moreActions")}
               >
                 <ChevronDown className="size-3" />
@@ -455,15 +519,12 @@ export function ToolApprovalBar({
             ) : null}
             {pending.length > 1 ? (
               <>
-                <DropdownMenuItem
-                  disabled={submitting}
-                  onSelect={() => void runGuarded("approve-all", () => onDecideAll("approve"))}
-                >
+                <DropdownMenuItem disabled={submitting} onSelect={() => decideAll("approve")}>
                   {t("chat.toolApproval.approveAll")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={submitting}
-                  onSelect={() => void runGuarded("deny-all", () => onDecideAll("deny"))}
+                  onSelect={() => decideAll("deny")}
                   className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
                 >
                   {t("chat.toolApproval.denyAll")}

@@ -558,9 +558,25 @@ func (m *Manager) RegisterStreamAndSendContext(
 	requestID string,
 	env *gatewayv2.GatewayEnvelope,
 ) (<-chan *gatewayv2.AgentEnvelope, <-chan struct{}, func(), error) {
+	return m.registerStreamAndSendContext(ctx, agentID, requestID, env, "")
+}
+
+// RegisterCapabilityStreamAndSendContext checks the capability on the same session that receives the request.
+func (m *Manager) RegisterCapabilityStreamAndSendContext(
+	ctx context.Context, agentID, requestID string, env *gatewayv2.GatewayEnvelope, capability string,
+) (<-chan *gatewayv2.AgentEnvelope, <-chan struct{}, func(), error) {
+	return m.registerStreamAndSendContext(ctx, agentID, requestID, env, capability)
+}
+
+func (m *Manager) registerStreamAndSendContext(
+	ctx context.Context, agentID, requestID string, env *gatewayv2.GatewayEnvelope, capability string,
+) (<-chan *gatewayv2.AgentEnvelope, <-chan struct{}, func(), error) {
 	session, err := m.resolveSession(agentID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if capability != "" && !session.SupportsCapability(capability) {
+		return nil, nil, nil, ErrAgentCapabilityUnavailable
 	}
 
 	stream, err := session.registerStream(requestID)

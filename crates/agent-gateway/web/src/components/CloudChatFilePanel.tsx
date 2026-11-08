@@ -5,9 +5,9 @@ import {
   Info,
   Plus,
   Search,
+  Trash2,
   Upload,
 } from "@liveagent/ui/components/IconSet";
-import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
 import {
   RESOURCE_TEXT_MAX_BYTES,
   resourcePreviewKind,
@@ -23,11 +23,13 @@ import { Button } from "@liveagent/ui/components/ui/button";
 import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { TooltipButton as ReaderAction } from "@liveagent/ui/components/ui/tooltip-button";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import {
   CLOUD_FILE_CONTEXT_BYTES,
   type CloudChatFile,
+  CloudChatFileError,
   type CloudChatFilesClient,
   type CloudFileSource,
   cloudFileCanReference,
@@ -39,6 +41,15 @@ import {
   type ReaderConversationsClient,
 } from "./cloudchat/CloudChatRelatedConversations";
 import { CloudChatResourcePanel } from "./cloudchat/CloudChatResourcePanel";
+import {
+  CloudReaderOpening,
+  type CloudReaderOpeningFailure,
+  cloudReaderOpeningFailure,
+} from "./cloudchat/CloudReaderOpening";
+import {
+  WorkspaceHandoffMenuItem,
+  type WorkspaceHandoffSource,
+} from "./cloudchat/WorkspaceHandoffDialog";
 
 type Props = {
   onRequestRevision?: (
@@ -50,31 +61,40 @@ type Props = {
   fromLine?: number;
   toLine?: number;
   canAttach: boolean;
+  backLabel?: string;
   attached?: boolean;
   workFromSpace?: boolean;
+  inTrash?: boolean;
   workActive?: boolean;
   isCurrent: () => boolean;
   onClose: () => void;
   // biome-ignore lint/suspicious/noConfusingVoidType: existing hosts return void; false explicitly rejects a reference.
-  onAttach: (file: CloudChatFile) => boolean | void;
-  onDeleted: (id: string) => void;
-  onError: (cause: unknown) => void;
+  onAttach?: (file: CloudChatFile) => boolean | void;
+  onDeleted?: (id: string) => void;
+  onError?: (cause: unknown) => void;
   onUpload?: () => void;
-  onBrowseLibrary?: () => void;
+  onHandoff?: (source: WorkspaceHandoffSource) => void;
   onOpenInSpace?: () => void;
   onOpenSourceConversation?: (id: string) => void;
   conversationsClient?: ReaderConversationsClient;
 };
 
 export function CloudChatFilePanel(props: Props) {
+  const { locale } = useLocale();
+  const english = locale === "en-US";
+  const label = (zh: string, en: string) => (english ? en : zh);
+  const workLabel = english ? "Work with AI" : "与 AI 一起工作";
+  const attachLabel = english ? "Attach to message" : "引用到消息";
   const { client, initialFileId, fromLine = 1, toLine = fromLine + 99 } = props;
   const [files, setFiles] = useState<CloudChatFile[]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [selected, setSelected] = useState<CloudChatFile | null>(null);
   const [source, setSource] = useState<CloudFileSource | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(initialFileId));
   const [error, setError] = useState("");
+  const [openingFailure, setOpeningFailure] = useState<CloudReaderOpeningFailure | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [unconfirmedDelete, setUnconfirmedDelete] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sourceOpen, setSourceOpen] = useState(props.fromLine !== undefined);
   const sourceRange = useMemo(
@@ -86,6 +106,10 @@ export function CloudChatFilePanel(props: Props) {
   const mounted = useRef(true);
   const controller = useRef(new AbortController());
   const generation = useRef(0);
+  const deleting = useRef(false);
+  const retryButton = useRef<HTMLElement>(null);
+  const titleMenu = useRef<HTMLElement>(null);
+  const restoreRetryFocus = useRef(false);
   const currentProps = useRef(props);
   currentProps.current = props;
 
@@ -95,7 +119,7 @@ export function CloudChatFilePanel(props: Props) {
   function report(cause: unknown) {
     if (!valid()) return;
     setError(cause instanceof Error ? cause.message : "文件操作失败");
-    currentProps.current.onError(cause);
+    currentProps.current.onError?.(cause);
   }
 
   async function loadLibrary(append = false) {
@@ -129,6 +153,7 @@ export function CloudChatFilePanel(props: Props) {
   async function showFile(id: string, first = 1, last = first + 99) {
     const seq = ++generation.current;
     const guard = captureAccountRequestGuard();
+    let openingLink = initialFileId === id && selected?.id !== id;
     setBusy(true);
     setError("");
     setSource(null);
@@ -139,7 +164,13 @@ export function CloudChatFilePanel(props: Props) {
       const file = await client.get(id, controller.current.signal);
       guard();
       if (!valid() || generation.current !== seq) return;
+      if (openingLink) {
+        restoreRetryFocus.current = document.activeElement === retryButton.current;
+        setOpeningFailure(null);
+        openingLink = false;
+      }
       setSelected(file);
+      setUnconfirmedDelete((unconfirmed) => (unconfirmed === file.id ? null : unconfirmed));
       const fullSourcePreview =
         ["text", "markdown"].includes(resourcePreviewKind(file)) &&
         file.size <= RESOURCE_TEXT_MAX_BYTES &&
@@ -160,7 +191,13 @@ export function CloudChatFilePanel(props: Props) {
         setSource(excerpt);
       }
     } catch (cause) {
-      if (generation.current === seq && !controller.current.signal.aborted) report(cause);
+      if (!valid() || generation.current !== seq || controller.current.signal.aborted) return;
+      if (openingLink) {
+        setOpeningFailure(
+          cloudReaderOpeningFailure(cause instanceof CloudChatFileError ? cause.status : undefined),
+        );
+        currentProps.current.onError?.(cause);
+      } else report(cause);
     } finally {
       if (valid() && generation.current === seq) setBusy(false);
     }
@@ -179,6 +216,12 @@ export function CloudChatFilePanel(props: Props) {
       controller.current.abort();
     };
   }, [client, initialFileId, fromLine, toLine]);
+
+  useEffect(() => {
+    if (!selected || !restoreRetryFocus.current) return;
+    restoreRetryFocus.current = false;
+    if (document.activeElement === document.body) titleMenu.current?.focus({ preventScroll: true });
+  }, [selected]);
 
   async function download(file: CloudChatFile) {
     const guard = captureAccountRequestGuard();
@@ -212,30 +255,51 @@ export function CloudChatFilePanel(props: Props) {
   }
 
   async function remove(file: CloudChatFile) {
+    if (
+      !valid() ||
+      !currentProps.current.onDeleted ||
+      (initialFileId && !currentProps.current.inTrash) ||
+      deleting.current ||
+      unconfirmedDelete === file.id
+    )
+      return;
     const guard = captureAccountRequestGuard();
+    deleting.current = true;
     setBusy(true);
-    setError("");
     try {
-      await client.remove(file, controller.current.signal);
+      const deleted = await client.remove(file, controller.current.signal);
       guard();
       if (!valid()) return;
-      currentProps.current.onDeleted(file.id);
+      if (deleted.id !== file.id || deleted.state !== "deleted") {
+        throw new Error("Missing deletion receipt for the selected file");
+      }
+      currentProps.current.onDeleted?.(file.id);
+      setConfirmDelete(null);
+      if (initialFileId === file.id) {
+        currentProps.current.onClose();
+        return;
+      }
       setFiles((old) => old.filter((item) => item.id !== file.id));
       setSelected(null);
       setSource(null);
-      setConfirmDelete(null);
+      setDetailsOpen(false);
     } catch (cause) {
-      if (!controller.current.signal.aborted) report(cause);
+      if (valid() && !controller.current.signal.aborted) {
+        setUnconfirmedDelete(file.id);
+        currentProps.current.onError?.(cause);
+      }
     } finally {
+      deleting.current = false;
       if (valid()) setBusy(false);
     }
   }
 
   function attach(file: CloudChatFile) {
-    if (!valid() || busy || !currentProps.current.canAttach || !cloudFileCanReference(file)) return;
+    const { onAttach, canAttach } = currentProps.current;
+    if (!onAttach || !valid() || busy || !canAttach || !cloudFileCanReference(file)) return;
     try {
       captureAccountRequestGuard()();
-      if (currentProps.current.onAttach(file) === false) {
+      if (onAttach(file) === false) {
         setError("未能添加引用，请检查草稿中的资料数量或等待当前操作完成。");
         return;
       }
@@ -247,15 +311,17 @@ export function CloudChatFilePanel(props: Props) {
 
   const actions = (file: CloudChatFile) => (
     <div className="flex flex-wrap items-center gap-8px">
-      <Button
-        variant="outline"
-        size="sm"
-        type="button"
-        disabled={busy || !props.canAttach || !cloudFileCanReference(file)}
-        onClick={() => attach(file)}
-      >
-        引用到消息
-      </Button>
+      {props.onAttach ? (
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          disabled={busy || !props.canAttach || !cloudFileCanReference(file)}
+          onClick={() => attach(file)}
+        >
+          引用到消息
+        </Button>
+      ) : null}
       <Button
         variant="outline"
         size="sm"
@@ -267,50 +333,78 @@ export function CloudChatFilePanel(props: Props) {
       >
         下载原件
       </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        type="button"
-        className="text-destructive"
-        disabled={busy}
-        onClick={() => setConfirmDelete(file.id)}
-      >
-        删除原件
-      </Button>
+      {props.onDeleted ? (
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          className="text-destructive"
+          disabled={busy}
+          onClick={() => setConfirmDelete(file.id)}
+        >
+          删除原件
+        </Button>
+      ) : null}
     </div>
   );
+  const fileToDelete =
+    selected?.id === confirmDelete ? selected : files.find((item) => item.id === confirmDelete);
+  const deletionUnconfirmed = !!fileToDelete && unconfirmedDelete === fileToDelete.id;
 
   return (
     <CloudChatResourcePanel
       title={
         selected ? (
-          <ResourceTitleMenu name={selected.name}>
-            <DropdownMenuItem
-              className="gap-2"
-              disabled={
-                busy ||
-                (props.attached && !props.workFromSpace) ||
-                !props.canAttach ||
-                !cloudFileCanReference(selected)
-              }
-              onClick={() => attach(selected)}
-            >
-              <Plus className="size-4" />
-              {props.workFromSpace ? "与 AI 一起工作" : "引用到消息"}
-            </DropdownMenuItem>
+          <ResourceTitleMenu name={selected.name} triggerRef={titleMenu}>
+            {props.onAttach ? (
+              <DropdownMenuItem
+                className="gap-2"
+                disabled={
+                  busy ||
+                  (props.attached && !props.workFromSpace) ||
+                  !props.canAttach ||
+                  !cloudFileCanReference(selected)
+                }
+                onClick={() => attach(selected)}
+              >
+                <Plus className="size-4" />
+                {props.workFromSpace ? workLabel : attachLabel}
+              </DropdownMenuItem>
+            ) : null}
+            {props.onHandoff &&
+            selected.uploaded_at &&
+            ["ready", "vision_ready"].includes(selected.state) ? (
+              <WorkspaceHandoffMenuItem
+                disabled={busy}
+                onClick={() => {
+                  if (!valid()) return;
+                  props.onHandoff?.({ kind: "file", target_id: selected.id, name: selected.name });
+                }}
+              />
+            ) : null}
             <DropdownMenuItem className="gap-2" onClick={() => setDetailsOpen(true)}>
               <Info className="size-4" />
               文件信息
             </DropdownMenuItem>
-            {props.onOpenInSpace ? (
+            {!props.workFromSpace && props.onOpenInSpace ? (
               <DropdownMenuItem className="gap-2" onClick={props.onOpenInSpace}>
                 <FolderOpen className="size-4" />
                 在资料空间中打开
               </DropdownMenuItem>
             ) : null}
+            {props.inTrash && props.onDeleted && selected.state !== "deleted" ? (
+              <DropdownMenuItem
+                className="gap-2 text-destructive data-[highlighted]:text-destructive"
+                disabled={busy}
+                onClick={() => setConfirmDelete(selected.id)}
+              >
+                <Trash2 className="size-4" />
+                {label("彻底删除原件", "Delete original permanently")}
+              </DropdownMenuItem>
+            ) : null}
           </ResourceTitleMenu>
         ) : initialFileId ? (
-          "文件预览"
+          label("文件预览", "File preview")
         ) : (
           "文件库"
         )
@@ -342,44 +436,48 @@ export function CloudChatFilePanel(props: Props) {
           ? { kind: "file", id: selected.id, target_id: selected.id }
           : undefined
       }
-      description="查看、引用和下载你的资料，在新的对话中接着使用。"
+      description={
+        english
+          ? "View, attach, and download files to use in your conversations."
+          : "查看、引用和下载你的资料，在新的对话中接着使用。"
+      }
       subtitle={
         selected
           ? `${selected.name.split(".").pop()?.toUpperCase()} · ${(selected.size / 1024).toFixed(1)} KiB · ${selected.uploaded_at && !["deleting", "deleted"].includes(selected.state) ? "原件已保存" : cloudFileStatus(selected)}`
           : undefined
       }
+      continueAction={
+        selected && props.workFromSpace && !props.workActive
+          ? {
+              label: workLabel,
+              disabled: busy || !props.canAttach || !cloudFileCanReference(selected),
+              onClick: () => attach(selected),
+            }
+          : undefined
+      }
       headerActions={
         selected ? (
-          <>
-            {props.workFromSpace && !props.workActive ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="cloud-reader-continue-action"
-                disabled={busy || !props.canAttach || !cloudFileCanReference(selected)}
-                onClick={() => attach(selected)}
-              >
-                与 AI 一起工作
-              </Button>
-            ) : null}
-            <ReaderAction
-              variant="ghost"
-              size="icon-sm"
-              data-reader-secondary=""
-              aria-label="下载原件"
-              tooltip="下载原件"
-              disabled={
-                busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
-              }
-              onClick={() => void download(selected)}
-            >
-              <Download className="size-4" />
-              <span className="sr-only">下载原件</span>
-            </ReaderAction>
-          </>
+          <ReaderAction
+            variant="ghost"
+            size="icon-sm"
+            data-reader-secondary=""
+            aria-label="下载原件"
+            tooltip="下载原件"
+            disabled={
+              busy || !selected.uploaded_at || ["deleting", "deleted"].includes(selected.state)
+            }
+            onClick={() => void download(selected)}
+          >
+            <Download className="size-4" />
+            <span className="sr-only">下载原件</span>
+          </ReaderAction>
         ) : undefined
       }
-      closeLabel="关闭文件库"
+      closeLabel={
+        locale === "en-US" ? "Close reader" : props.workActive ? "关闭阅读器" : "关闭文件库"
+      }
+      backToLibrary={props.workFromSpace && !props.workActive}
+      backLabel={props.backLabel}
       wide={Boolean(
         selected &&
           ["docx", "pptx", "pdf", "sheet", "html", "svg", "markdown", "text"].includes(
@@ -439,21 +537,32 @@ export function CloudChatFilePanel(props: Props) {
           }
         />
       ) : null}
-      {confirmDelete ? (
+      {fileToDelete ? (
         <ResourceDeleteDialog
           open
           busy={busy}
-          name={selected?.name ?? files.find((item) => item.id === confirmDelete)?.name ?? "文件"}
-          description="原件将被永久删除，已有消息中的该文件和引用将无法再读取。只想从当前草稿移除时，请使用附件上的移除按钮。"
-          confirmLabel="确认删除"
+          name={fileToDelete.name}
+          description={label(
+            "原件将被永久删除，已有对话中的该文件和引用将无法再读取。",
+            "This permanently deletes the original. The file and its references will be unavailable in existing conversations.",
+          )}
+          confirmLabel={label("确认删除", "Delete permanently")}
+          confirmDisabled={deletionUnconfirmed}
+          feedback={
+            deletionUnconfirmed ? (
+              <CloudChatFeedback
+                compact
+                tone="error"
+                message={label(
+                  "暂时无法确认删除。请返回资料空间核对原件状态后再试。",
+                  "Couldn't confirm deletion. Return to the library and check the file before trying again.",
+                )}
+              />
+            ) : undefined
+          }
+          returnFocus={selected?.id === fileToDelete.id ? titleMenu : undefined}
           onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => {
-            const file =
-              selected?.id === confirmDelete
-                ? selected
-                : files.find((item) => item.id === confirmDelete);
-            if (file) void remove(file);
-          }}
+          onConfirm={() => void remove(fileToDelete)}
         />
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto">
@@ -537,10 +646,14 @@ export function CloudChatFilePanel(props: Props) {
               </details>
             ) : null}
           </>
-        ) : initialFileId && busy ? (
-          <div className="cloud-reader-opening">
-            <PreviewLoading message="正在打开文件…" />
-          </div>
+        ) : initialFileId ? (
+          <CloudReaderOpening
+            kind="file"
+            failure={openingFailure}
+            busy={busy}
+            retryRef={retryButton}
+            onRetry={() => showFile(initialFileId, fromLine, toLine)}
+          />
         ) : files.length ? (
           <ul className="m-0 list-none space-y-12px p-0">
             {files

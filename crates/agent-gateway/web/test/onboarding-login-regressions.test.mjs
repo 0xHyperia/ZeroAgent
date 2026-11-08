@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const loginSource = readFileSync(new URL("../src/pages/AccountLoginPage.tsx", import.meta.url), "utf8");
 const onboardingSource = readFileSync(
@@ -113,6 +114,55 @@ test("first-run onboarding uses the shared modal layer", () => {
   assert.match(onboardingSource, /<Dialog open=\{open\}/);
   assert.match(onboardingSource, /<DialogContent/);
   assert.doesNotMatch(onboardingSource, /createPortal|role="dialog"|zIndex:/);
+});
+
+test("first-run onboarding follows the interface locale through group selection and completion", async (t) => {
+  const env = await createWebDomTestEnv();
+  const { React, act, createRoot } = env;
+  const { FirstRunOnboarding } = env.loadModule("src/components/onboarding/FirstRunOnboarding.tsx");
+  const { LocaleContext, t: translate } = env.loadModule("@liveagent/ui/i18n/index.ts");
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  t.after(async () => { await act(async () => root.unmount()); host.remove(); env.cleanup(); });
+
+  const group = { id: 5, name: "本地模型组", status: "active", platform: "openai", rate_multiplier: 1 };
+  const created = [];
+  const dataSource = {
+    listApiKeys: async () => created.length ? [{ key: "fixture", status: "active", group_id: group.id }] : [],
+    listGroups: async () => [group],
+    createApiKeys: async (name, ids) => { created.push([name, ids]); },
+    supportsPlatform: () => true,
+  };
+  const render = (locale) => act(async () => root.render(React.createElement(
+    LocaleContext.Provider,
+    { value: { locale, t: (key) => translate(key, locale) } },
+    React.createElement(FirstRunOnboarding, { userId: 9, dataSource, onSyncKeys: async () => {} }),
+  )));
+  const dialog = () => document.querySelector('[role="dialog"]');
+  const clickText = (text) => act(async () => {
+    const action = [...dialog().querySelectorAll("button")].find((button) => button.textContent.trim() === text);
+    assert.ok(action, text);
+    action.click();
+  });
+
+  await render("en-US");
+  assert.match(dialog().textContent, /Get started with ZeroAgent.*Account connected/);
+  assert.ok(dialog().querySelector('[aria-label="Skip onboarding"]'));
+  await clickText("Continue");
+  assert.match(dialog().textContent, /Create your first group key.*Key name.*Model groups/);
+  const groups = () => dialog().querySelector("#onboarding-key-groups");
+  assert.match(groups().textContent, /1 group selected/);
+  await act(async () => groups().click());
+  assert.match(dialog().querySelector('[role="option"]').textContent, /本地模型组/);
+  await act(async () => dialog().querySelector('[role="option"]').click());
+  assert.match(groups().textContent, /Select one or more groups/);
+  await act(async () => dialog().querySelector('[role="option"]').click());
+  await clickText("Create and sync");
+  assert.match(dialog().textContent, /Setup complete/);
+  assert.deepEqual(created, [["ZeroAgent", [5]]]);
+  await render("zh-CN");
+  assert.match(dialog().textContent, /设置完成/);
+  assert.ok(dialog().querySelector('[aria-label="跳过引导"]'));
 });
 
 test("desktop onboarding uses the desktop relay client", () => {

@@ -142,7 +142,7 @@ func cloudFileFormat(name string, header []byte) (string, bool, error) {
 	return "", false, ErrCloudFileInvalid
 }
 
-func (p *cloudFileService) upload(ctx context.Context, userID int64, conversationID, name string, source multipart.File, size int64) (*CloudFile, error) {
+func (p *cloudFileService) upload(ctx context.Context, userID int64, conversationID, id, name string, source multipart.File, size int64) (*CloudFile, error) {
 	if !validCloudFileName(name) || size < 0 || size > CloudFileMaxBytes {
 		return nil, ErrCloudFileInvalid
 	}
@@ -169,7 +169,9 @@ func (p *cloudFileService) upload(ctx context.Context, userID int64, conversatio
 	if _, err = source.Seek(0, io.SeekStart); err != nil {
 		return nil, ErrCloudFileInvalid
 	}
-	id := uuid.NewString()
+	if id == "" {
+		id = uuid.NewString()
+	}
 	file, err := p.metadata.CreateCloudFile(ctx, &CloudFile{ID: id, UserID: userID, ConversationID: conversationID, ObjectKey: cloudFileObjectKey(userID, id), Name: name, MIME: mime, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil)), State: CloudFileUploading})
 	if err != nil {
 		return nil, err

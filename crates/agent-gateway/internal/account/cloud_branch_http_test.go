@@ -45,7 +45,7 @@ func TestCloudBranchHTTPAndExportKeepOriginalAndOwner(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: user.ID, Action: "regenerate"}
+	input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: user.ID, Action: "fork"}
 	path := "/api/web-chat/conversations/" + conversation.ID + "/branch"
 	body := string(cloudJSON(input))
 	for i, want := range []int{201, 200} {
@@ -58,7 +58,7 @@ func TestCloudBranchHTTPAndExportKeepOriginalAndOwner(t *testing.T) {
 	var result struct {
 		Branch CloudBranch `json:"branch"`
 	}
-	if lookup.Code != 200 || json.Unmarshal(lookup.Body.Bytes(), &result) != nil || result.Branch.Conversation == nil || string(result.Branch.DraftContent) != `"原问题"` {
+	if lookup.Code != 200 || json.Unmarshal(lookup.Body.Bytes(), &result) != nil || result.Branch.Conversation == nil || result.Branch.SourceMessageID != user.ID {
 		t.Fatal("branch lookup did not recover accepted result")
 	}
 	for _, target := range []string{path, "/api/web-chat/branches/" + input.ClientRequestID, "/api/web-chat/conversations/" + conversation.ID + "/export?format=json"} {

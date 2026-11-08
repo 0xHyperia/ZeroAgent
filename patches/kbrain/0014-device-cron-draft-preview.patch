@@ -1,0 +1,234 @@
+diff --git a/internal/backend/cron_preview.go b/internal/backend/cron_preview.go
+new file mode 100644
+index 0000000..b946b36
+--- /dev/null
++++ b/internal/backend/cron_preview.go
+@@ -0,0 +1,97 @@
++package backend
++
++import (
++	"encoding/json"
++	"time"
++)
++
++type cronDraftPreview struct {
++	Status           string `json:"status"`
++	NextAt           *int64 `json:"nextAt,omitempty"`
++	UTCOffsetSeconds int    `json:"utcOffsetSeconds"`
++	TimeZone         string `json:"timeZone,omitempty"`
++}
++
++// Preview uses the same parser, calendar matching and local clock as cronManager.tick.
++// It has no scheduler/store receiver and cannot create tasks or reserve runs.
++func previewCron(raw json.RawMessage, now time.Time) (cronDraftPreview, error) {
++	var input struct {
++		Expression          string  `json:"expression"`
++		RemainingExecutions *uint64 `json:"remainingExecutions"`
++	}
++	if err := json.Unmarshal(raw, &input); err != nil {
++		return cronDraftPreview{}, err
++	}
++	if len(input.Expression) > 4096 {
++		return cronDraftPreview{Status: "invalid"}, nil
++	}
++	schedule, err := parseCron(input.Expression)
++	if err != nil {
++		return cronDraftPreview{Status: "invalid"}, nil
++	}
++	result := cronDraftPreview{Status: "valid", TimeZone: now.Location().String()}
++	if input.RemainingExecutions != nil && *input.RemainingExecutions == 0 {
++		return result, nil
++	}
++	if next := schedule.next(now); !next.IsZero() {
++		at := next.UnixMilli()
++		result.NextAt = &at
++		_, result.UTCOffsetSeconds = next.Zone()
++	}
++	return result, nil
++}
++
++func (s *cronSchedule) next(now time.Time) time.Time {
++	start := now.Truncate(time.Second).Add(time.Second)
++	// Gregorian day/month rules recur within this bound, including the eight-year
++	// gap across a non-leap century. An impossible date produces no occurrence.
++	limit := start.UTC().AddDate(10, 0, 0)
++	for start.Before(limit) {
++		_, transition := start.ZoneBounds()
++		end := limit
++		if transition.After(start) && transition.Before(end) {
++			end = transition
++		}
++		_, seconds := start.Zone()
++		offset := time.Duration(seconds) * time.Second
++		// Search each fixed-offset wall-clock segment in absolute-time order.
++		// Missing wall times are absent; both real occurrences of a fold are visited.
++		wallStart, wallEnd := start.UTC().Add(offset), end.UTC().Add(offset)
++		if next := s.nextWallTime(wallStart, wallEnd); !next.IsZero() {
++			return next.Add(-offset).In(now.Location())
++		}
++		start = end.In(now.Location())
++	}
++	return time.Time{}
++}
++
++func (s *cronSchedule) nextWallTime(start, end time.Time) time.Time {
++	for day := start.Truncate(24 * time.Hour); day.Before(end); day = day.AddDate(0, 0, 1) {
++		if !s.matchesDate(day) {
++			continue
++		}
++		first := int(start.Sub(day) / time.Second)
++		for hour := 0; hour < 24; hour++ {
++			if !s.fields[2].values[hour] || (hour+1)*3600 <= first {
++				continue
++			}
++			for minute := 0; minute < 60; minute++ {
++				if !s.fields[1].values[minute] || hour*3600+(minute+1)*60 <= first {
++					continue
++				}
++				for second := 0; second < 60; second++ {
++					wallSeconds := hour*3600 + minute*60 + second
++					if wallSeconds < first || !s.fields[0].values[second] {
++						continue
++					}
++					at := day.Add(time.Duration(wallSeconds) * time.Second)
++					if at.Before(end) {
++						return at
++					}
++					return time.Time{}
++				}
++			}
++		}
++	}
++	return time.Time{}
++}
+diff --git a/internal/backend/cron_preview_test.go b/internal/backend/cron_preview_test.go
+new file mode 100644
+index 0000000..c4114f8
+--- /dev/null
++++ b/internal/backend/cron_preview_test.go
+@@ -0,0 +1,73 @@
++package backend
++
++import (
++	"encoding/json"
++	"testing"
++	"time"
++)
++
++func TestCronDraftPreviewMatchesDeviceClock(t *testing.T) {
++	zone, err := time.LoadLocation("America/New_York")
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, test := range []struct{ name, expression, now, next string }{
++		{"strictly in the future", "* * * * * *", "2026-01-05T12:00:00Z", "2026-01-05T12:00:01Z"},
++		{"workdays", "0 0 9 * * MON-FRI", "2026-01-09T15:00:00Z", "2026-01-12T14:00:00Z"},
++		{"day or weekday", "0 0 9 15 * MON", "2026-01-12T16:00:00Z", "2026-01-15T14:00:00Z"},
++		{"missing wall time", "0 30 2 * * *", "2026-03-08T06:00:00Z", "2026-03-09T06:30:00Z"},
++		{"second repeated wall time", "0 30 1 * * *", "2026-11-01T05:45:00Z", "2026-11-01T06:30:00Z"},
++		{"non-leap century", "0 0 9 29 FEB *", "2096-03-01T00:00:00Z", "2104-02-29T14:00:00Z"},
++		{"impossible date", "0 0 9 31 APR *", "2026-01-01T00:00:00Z", ""},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			now, err := time.Parse(time.RFC3339, test.now)
++			if err != nil {
++				t.Fatal(err)
++			}
++			input, err := json.Marshal(map[string]any{"expression": test.expression})
++			if err != nil {
++				t.Fatal(err)
++			}
++			preview, err := previewCron(input, now.In(zone))
++			if err != nil || preview.Status != "valid" || preview.TimeZone != zone.String() {
++				t.Fatalf("preview = %+v, %v", preview, err)
++			}
++			if test.next == "" {
++				if preview.NextAt != nil {
++					t.Fatalf("unexpected next: %v", *preview.NextAt)
++				}
++				return
++			}
++			expected, err := time.Parse(time.RFC3339, test.next)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if preview.NextAt == nil || *preview.NextAt != expected.UnixMilli() {
++				t.Fatalf("next = %v, want %s", preview.NextAt, expected)
++			}
++			_, offset := expected.In(zone).Zone()
++			schedule, err := parseCron(test.expression)
++			if err != nil || !schedule.matches(expected.In(zone)) || preview.UTCOffsetSeconds != offset {
++				t.Fatalf("preview does not match schedule at %v: %+v, %v", expected, preview, err)
++			}
++		})
++	}
++}
++
++func TestCronDraftPreviewActionDoesNotNeedAStore(t *testing.T) {
++	// The dispatch path can run on an empty server. It does not open planning
++	// storage, load task state, create a task, or reserve a run.
++	server := &Server{}
++	result, err := server.planningAction("cron.preview", json.RawMessage(`{"expression":"* * * * * *","remainingExecutions":0}`))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if preview := result.(cronDraftPreview); preview.Status != "valid" || preview.NextAt != nil {
++		t.Fatalf("zero remaining executions: %+v", preview)
++	}
++	result, err = server.planningAction("cron.preview", json.RawMessage(`{"expression":"invalid"}`))
++	if err != nil || result.(cronDraftPreview).Status != "invalid" {
++		t.Fatalf("invalid expression: %+v, %v", result, err)
++	}
++}
+diff --git a/internal/backend/cron_validate.go b/internal/backend/cron_validate.go
+index b5345ab..476161b 100644
+--- a/internal/backend/cron_validate.go
++++ b/internal/backend/cron_validate.go
+@@ -229,14 +229,18 @@ func parseCronField(raw string, minValue, maxValue int) (cronField, error) {
+ 	return field, nil
+ }
+ func (s *cronSchedule) matches(t time.Time) bool {
+-	values := [6]int{t.Second(), t.Minute(), t.Hour(), t.Day(), int(t.Month()), int(t.Weekday())}
+-	for _, i := range []int{0, 1, 2, 4} {
+-		if !s.fields[i].values[values[i]] {
+-			return false
+-		}
++	return s.fields[0].values[t.Second()] &&
++		s.fields[1].values[t.Minute()] &&
++		s.fields[2].values[t.Hour()] &&
++		s.matchesDate(t)
++}
++
++func (s *cronSchedule) matchesDate(t time.Time) bool {
++	if !s.fields[4].values[int(t.Month())] {
++		return false
+ 	}
+-	day := s.fields[3].values[values[3]]
+-	weekday := s.fields[5].values[values[5]]
++	day := s.fields[3].values[t.Day()]
++	weekday := s.fields[5].values[int(t.Weekday())]
+ 	if s.dayRestricted && s.weekdayRestricted {
+ 		return day || weekday
+ 	}
+diff --git a/internal/backend/planning.go b/internal/backend/planning.go
+index 3826809..9fa4d7b 100644
+--- a/internal/backend/planning.go
++++ b/internal/backend/planning.go
+@@ -6,6 +6,7 @@ import (
+ 	"errors"
+ 	"net/http"
+ 	"path/filepath"
++	"time"
+ 
+ 	"github.com/Stack-Cairn/K-brain/internal/agent"
+ 	"github.com/Stack-Cairn/K-brain/internal/ai"
+@@ -63,6 +64,9 @@ func (s *Server) planningAction(action string, raw json.RawMessage) (any, error)
+ 	if action == "cron.occurrences" {
+ 		return s.planningCron(raw)
+ 	}
++	if action == "cron.preview" {
++		return previewCron(raw, time.Now())
++	}
+ 	if action == "reminders.claim" {
+ 		s.mu.Lock()
+ 		unopened := s.planning == nil

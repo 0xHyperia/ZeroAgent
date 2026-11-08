@@ -14,6 +14,7 @@ import { useCheckpointRewindAction } from "../../lib/chat/checkpointRewind";
 import type { ReplyShareSource } from "../../lib/chat/replyShare";
 import { cachedDateTimeFormat } from "../../lib/shared/intlFormatters";
 import { cn } from "../../lib/shared/utils";
+import { buttonVariants } from "../ui/button";
 import { ConfirmActionPopover } from "../ui/confirm-action-popover";
 import { LabelTooltip } from "../ui/label-tooltip";
 import type { UsageDetailEntry } from "./UsagePanel";
@@ -82,8 +83,12 @@ type SharedActionProps = {
   copyDisabled?: boolean;
   copyTitle?: string;
   onCopy: () => void;
-  alwaysShowActions?: boolean;
 };
+
+const messageActionClass = cn(
+  buttonVariants({ variant: "ghost", size: "icon-xs" }),
+  "shrink-0 rounded-md text-muted-foreground max-sm:size-11 pointer-coarse:size-11",
+);
 
 export function TranscriptUserMessageActions(
   props: SharedActionProps & {
@@ -101,7 +106,6 @@ export function TranscriptUserMessageActions(
     copyDisabled = false,
     copyTitle,
     onCopy,
-    alwaysShowActions = false,
     timestamp,
     editDisabled,
     editTitle,
@@ -120,9 +124,8 @@ export function TranscriptUserMessageActions(
     <div className="mt-1 flex items-center justify-end gap-1.5 web:min-h-24px web:no-hover:opacity-100 web:max-640:opacity-100">
       <div
         className={cn(
-          "flex items-center gap-1.5 opacity-100 transition-opacity duration-150",
-          "motion-reduce:transition-none has-hover:opacity-0 has-hover:[[data-user-bubble-wrap]:hover_&]:pointer-events-auto has-hover:[[data-user-bubble-wrap]:hover_&]:opacity-100 has-hover:[[data-user-bubble-wrap]:focus-within_&]:pointer-events-auto has-hover:[[data-user-bubble-wrap]:focus-within_&]:opacity-100 data-[force-visible=true]:pointer-events-auto data-[force-visible=true]:opacity-100",
-          alwaysShowActions && "no-hover:opacity-100",
+          "flex min-w-0 flex-wrap items-center justify-end gap-x-1.5 opacity-100 transition-opacity duration-150",
+          "motion-reduce:transition-none has-hover:opacity-0 has-hover:[[data-user-bubble-wrap]:hover_&]:opacity-100 has-hover:[[data-user-bubble-wrap]:focus-within_&]:opacity-100",
         )}
       >
         {!readOnly ? (
@@ -132,11 +135,7 @@ export function TranscriptUserMessageActions(
               render={
                 <button
                   type="button"
-                  className={cn(
-                    "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                    "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                  )}
-                  title={copyTitle ?? t("chat.copy")}
+                  className={messageActionClass}
                   aria-label={copyTitle ?? t("chat.copy")}
                   disabled={copyDisabled}
                   onClick={onCopy}
@@ -150,11 +149,7 @@ export function TranscriptUserMessageActions(
               render={
                 <button
                   type="button"
-                  className={cn(
-                    "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                    "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                  )}
-                  title={editTitle}
+                  className={messageActionClass}
                   aria-label={editTitle}
                   disabled={editDisabled}
                   onClick={onEdit}
@@ -169,11 +164,7 @@ export function TranscriptUserMessageActions(
                 render={
                   <button
                     type="button"
-                    className={cn(
-                      "chat-user-bubble-action rounded-md p-1 text-muted-foreground transition-colors",
-                      "hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                    )}
-                    title={rewindTitle}
+                    className={messageActionClass}
                     aria-label={rewindTitle}
                     disabled={rewind.disabled}
                     onClick={rewind.onRewind}
@@ -218,7 +209,6 @@ export function TranscriptAssistantMessageActions(
     copyDisabled = false,
     copyTitle,
     onCopy,
-    alwaysShowActions = false,
     timestamp,
     retryDisabled,
     retryTitle,
@@ -238,11 +228,9 @@ export function TranscriptAssistantMessageActions(
     <div className="flex min-w-0 flex-1 items-center justify-start gap-0.5">
       <div
         className={cn(
-          "pointer-events-none flex items-center gap-0.5 opacity-100 transition-opacity duration-150",
-          "motion-reduce:transition-none has-hover:opacity-0 has-hover:[[data-assistant-row]:hover_&]:pointer-events-auto has-hover:[[data-assistant-row]:hover_&]:opacity-100 has-hover:[[data-assistant-row]:focus-within_&]:pointer-events-auto has-hover:[[data-assistant-row]:focus-within_&]:opacity-100 has-hover:[[data-assistant-row][data-actions-visible=true]_&]:pointer-events-auto has-hover:[[data-assistant-row][data-actions-visible=true]_&]:opacity-100",
+          "flex min-w-0 flex-wrap items-center gap-x-0.5 opacity-100 transition-opacity duration-150",
+          "motion-reduce:transition-none has-hover:pointer-events-none has-hover:opacity-0 has-hover:[[data-assistant-row]:hover_&]:pointer-events-auto has-hover:[[data-assistant-row]:hover_&]:opacity-100 has-hover:[[data-assistant-row]:focus-within_&]:pointer-events-auto has-hover:[[data-assistant-row]:focus-within_&]:opacity-100 has-hover:[[data-assistant-row][data-actions-visible=true]_&]:pointer-events-auto has-hover:[[data-assistant-row][data-actions-visible=true]_&]:opacity-100",
           "data-[force-visible=true]:pointer-events-auto data-[force-visible=true]:opacity-100",
-          alwaysShowActions && "no-hover:pointer-events-auto no-hover:opacity-100",
-          branchPending && "pointer-events-auto opacity-100",
         )}
         data-force-visible={branchPending ? "true" : undefined}
       >
@@ -251,11 +239,7 @@ export function TranscriptAssistantMessageActions(
           render={
             <button
               type="button"
-              className={cn(
-                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-              title={copyTitle ?? t("chat.copy")}
+              className={messageActionClass}
               aria-label={copyTitle ?? t("chat.copy")}
               disabled={copyDisabled}
               onClick={onCopy}
@@ -270,11 +254,7 @@ export function TranscriptAssistantMessageActions(
             render={
               <button
                 type="button"
-                className={cn(
-                  "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                  "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-                )}
-                title={t("chat.share")}
+                className={messageActionClass}
                 aria-label={t("chat.share")}
                 disabled={shareDisabled}
                 onClick={() => setShareOpen(true)}
@@ -296,10 +276,7 @@ export function TranscriptAssistantMessageActions(
           {(open) => (
             <button
               type="button"
-              className={cn(
-                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
+              className={messageActionClass}
               aria-label={retryTitle}
               disabled={retryDisabled}
               onClick={open}
@@ -321,10 +298,7 @@ export function TranscriptAssistantMessageActions(
           {(open) => (
             <button
               type="button"
-              className={cn(
-                "chat-assistant-action inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-                "transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-              )}
+              className={messageActionClass}
               aria-label={branchTitle}
               disabled={branchDisabled}
               onClick={open}

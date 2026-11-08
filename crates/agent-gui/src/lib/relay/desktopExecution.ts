@@ -84,7 +84,7 @@ export async function switchDesktopEnvironment(
   workspace: DesktopWorkspace,
 ) {
   const target = `device_agent:${environment.device_id}:${workspace.id}`;
-  const selection = await desktopRequest<{ selection_lease: string }>(
+  const selection = await desktopRequest<{ selection_lease: string; expires_at: string }>(
     settings,
     "/api/desktop/execution-target/select",
     {
@@ -93,6 +93,7 @@ export async function switchDesktopEnvironment(
         runtime_kind: "device_agent",
         device_id: environment.device_id,
         workspace_id: workspace.id,
+        scope: "workspace",
         target_fingerprint: target,
       }),
     },

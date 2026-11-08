@@ -12,7 +12,10 @@ export function DeviceScheduleEditor({
   target,
   timeZone,
   task,
+  name,
   prompt,
+  onUseCloud,
+  preview,
   onSave,
   onClose,
 }: DeviceScheduleEditorProps & { settings: AppSettings }) {
@@ -29,7 +32,10 @@ export function DeviceScheduleEditor({
         workbench={{
           target,
           timeZone,
+          name,
           prompt,
+          onUseCloud,
+          preview,
           modelValue: modelOptions.some((option) => option.value === modelValue)
             ? modelValue
             : undefined,

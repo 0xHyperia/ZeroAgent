@@ -422,27 +422,6 @@ function waitForReconnect(attempt: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function legacySessionId(
-  conversationId: string,
-  baseUrl: string | undefined,
-  hostSessionId: string,
-): string | undefined {
-  const normalizedBaseUrl = (baseUrl ?? "http://127.0.0.1:47321").trim().replace(/\/+$/, "");
-  const keys = [
-    `kbrain-session:${conversationId}`,
-    `kbrain-session:${encodeURIComponent(normalizedBaseUrl)}:${encodeURIComponent(hostSessionId)}:${encodeURIComponent(conversationId)}`,
-  ];
-  try {
-    for (const key of keys) {
-      const value = globalThis.localStorage?.getItem(key)?.trim();
-      if (value) return value;
-    }
-  } catch {
-    // Storage is optional; a missing mapping is recovered by creating a session.
-  }
-  return undefined;
-}
-
 function lastUserContent(context: Context): KBrainContentBlock[] {
   const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
   return lastUser ? (contextToKBrainMessages({ messages: [lastUser] })[0]?.content ?? []) : [];
@@ -525,10 +504,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   let resumeMessageId =
     params.resumeMessageId?.trim() ||
     (tail?.role === "user" && tail.kbrainEditPending === true ? tail.id : undefined);
-  let kbrainSessionId =
-    getKBrainSessionId(params.conversationId, baseUrl) ??
-    legacySessionId(params.conversationId, baseUrl, params.sessionId) ??
-    "";
+  let kbrainSessionId = getKBrainSessionId(params.conversationId, baseUrl) ?? "";
   const createSession = async () => {
     resumeMessageId = undefined;
     const history = contextToKBrainMessages(params.context);

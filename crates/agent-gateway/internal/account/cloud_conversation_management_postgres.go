@@ -226,7 +226,7 @@ func (s *PersistentStore) CloudConversationBranches(ctx context.Context, uid int
 	}
 	page := &CloudConversationBranches{Children: []CloudConversationBranchChild{}}
 	var source CloudConversationBranchSource
-	err = s.db.QueryRowContext(ctx, `SELECT b.result->>'source_conversation_id',b.result->>'source_message_id',b.result->>'action',COALESCE(c.title,''),c.id IS NOT NULL FROM zeroagent_cloud_branches b LEFT JOIN zerobox_cloud_conversations c ON c.id::text=b.result->>'source_conversation_id' AND c.user_id=b.user_id WHERE b.user_id=$1 AND b.destination_conversation_id=$2 ORDER BY b.created_at,b.client_request_id LIMIT 1`, uid, cid).Scan(&source.ConversationID, &source.MessageID, &source.Action, &source.Title, &source.Available)
+	err = s.db.QueryRowContext(ctx, `SELECT b.result->>'source_conversation_id',b.result->>'source_message_id',COALESCE(c.title,''),c.id IS NOT NULL FROM zeroagent_cloud_branches b LEFT JOIN zerobox_cloud_conversations c ON c.id::text=b.result->>'source_conversation_id' AND c.user_id=b.user_id WHERE b.user_id=$1 AND b.destination_conversation_id=$2 ORDER BY b.created_at,b.client_request_id LIMIT 1`, uid, cid).Scan(&source.ConversationID, &source.MessageID, &source.Title, &source.Available)
 	if err == nil {
 		page.Source = &source
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -238,7 +238,7 @@ func (s *PersistentStore) CloudConversationBranches(ctx context.Context, uid int
 		args = append(args, cursor.At, cursor.ID)
 		where = ` AND (c.created_at,c.id)<($4,$5::uuid)`
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+cloudConversationColumns+`,b.result->>'source_message_id',b.result->>'action' FROM zeroagent_cloud_branches b JOIN zerobox_cloud_conversations c ON c.id=b.destination_conversation_id AND c.user_id=b.user_id WHERE b.user_id=$1 AND b.result->>'source_conversation_id'=$2`+where+` ORDER BY c.created_at DESC,c.id DESC LIMIT $3`, args...)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+cloudConversationColumns+`,b.result->>'source_message_id' FROM zeroagent_cloud_branches b JOIN zerobox_cloud_conversations c ON c.id=b.destination_conversation_id AND c.user_id=b.user_id WHERE b.user_id=$1 AND b.result->>'source_conversation_id'=$2`+where+` ORDER BY c.created_at DESC,c.id DESC LIMIT $3`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (s *PersistentStore) CloudConversationBranches(ctx context.Context, uid int
 	for rows.Next() {
 		var item CloudConversationBranchChild
 		c := &item.Conversation
-		if err = rows.Scan(&c.ID, &c.UserID, &c.Title, &c.Model, &c.CreatedAt, &c.UpdatedAt, &c.Pinned, &c.Archived, &c.ManagementVersion, &item.SourceMessageID, &item.Action); err != nil {
+		if err = rows.Scan(&c.ID, &c.UserID, &c.Title, &c.Model, &c.CreatedAt, &c.UpdatedAt, &c.Pinned, &c.Archived, &c.ManagementVersion, &item.SourceMessageID); err != nil {
 			return nil, err
 		}
 		page.Children = append(page.Children, item)

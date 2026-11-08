@@ -2,8 +2,11 @@ import type {
   AssistantDeliverable,
   AssistantResource,
 } from "@liveagent/ui/lib/chat/assistantResources";
+import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { sliceStreamingMarkdownTail } from "@liveagent/ui/lib/chat/streamingRenderPolicy";
 import type { GatewayTranscriptRound } from "./chatUi";
+import { cloudArtifactReferences } from "./cloudChatArtifacts";
+import { cloudFileReferences } from "./cloudChatFiles";
 import type { CloudChatMessage } from "./cloudChatHistory";
 import { cloudMessageText, cloudMessageTextPage } from "./cloudChatMessagePreview";
 import type {
@@ -36,7 +39,7 @@ function sharedResource(resource: CloudChatPresentationResource): AssistantResou
     name: resource.name,
     role: resource.role,
     mime: resource.mime,
-    version: resource.version,
+    version: resource.kind === "source" ? undefined : resource.version,
     link: { path: `${resourceRoutes[resource.kind]}/${resource.id}`, source: "relative" },
   };
 }
@@ -75,17 +78,77 @@ export function cloudChatAssistantDeliverables(message: CloudChatMessage): Assis
   return [...items.values()];
 }
 
-/** Safe input/source navigation for the paged process reader as well as tool rows. */
+/** Safe navigation in process order, optionally including output receipts. */
 export function cloudChatProcessResources(
   presentation?: CloudChatPresentation,
-): AssistantResource[] {
-  const items = new Map<string, AssistantResource>();
+  deliverables: readonly AssistantDeliverable[] = [],
+): (AssistantResource & { status?: AssistantDeliverable["status"] })[] {
+  const outputs = new Map(
+    deliverables.map((output) => [`${output.kind}:${output.id.toLowerCase()}`, output]),
+  );
+  const items = new Map<string, AssistantResource & { status?: AssistantDeliverable["status"] }>();
   for (const block of presentation?.blocks ?? []) {
     if (block.type !== "tool") continue;
     for (const resource of block.resources ?? []) {
-      if (resource.role !== "input" && resource.role !== "source") continue;
       const safe = sharedResource(resource);
-      if (safe) items.set(`${safe.kind}:${safe.id}:${safe.version ?? ""}`, safe);
+      if (!safe) continue;
+      const output = outputs.get(`${safe.kind}:${safe.id.toLowerCase()}`);
+      if (!output && safe.role !== "input" && safe.role !== "source") continue;
+      const item = output ?? safe;
+      items.set(`${item.kind}:${item.id}:${item.version ?? ""}`, item);
+    }
+  }
+  return [...items.values()];
+}
+
+type MessageReaderResource = Pick<AssistantResource, "name" | "role" | "version"> & {
+  key: string;
+  status?: AssistantDeliverable["status"];
+  target: { kind: "file" | "artifact"; id: string } | { kind: "link"; link: ChatFileLink };
+};
+
+export function cloudChatMessageReaderResources(
+  message: CloudChatMessage,
+  includeToolResources: boolean,
+): MessageReaderResource[] {
+  const items = new Map<string, MessageReaderResource>();
+  const add = (item: MessageReaderResource) => {
+    if (!items.has(item.key) || item.role === "output") items.set(item.key, item);
+  };
+  for (const part of Array.isArray(message.content) ? message.content : []) {
+    const [file] = cloudFileReferences([part]);
+    if (file) {
+      add({
+        key: `file:${file.file_id.toLowerCase()}`,
+        name: file.name ?? "",
+        role: "input",
+        target: { kind: "file", id: file.file_id },
+      });
+    }
+    const [version] = cloudArtifactReferences([part]);
+    if (version) {
+      add({
+        key: `artifact:${version.version_id}`,
+        name: version.name ?? "",
+        role: "input",
+        version: version.number,
+        target: { kind: "artifact", id: version.version_id },
+      });
+    }
+  }
+  if (includeToolResources) {
+    for (const resource of cloudChatProcessResources(
+      message.presentation,
+      cloudChatAssistantDeliverables(message),
+    )) {
+      add({
+        key: `${resource.kind}:${resource.id.toLowerCase()}`,
+        name: resource.name,
+        role: resource.role,
+        version: resource.version,
+        status: resource.status,
+        target: { kind: "link", link: resource.link },
+      });
     }
   }
   return [...items.values()];

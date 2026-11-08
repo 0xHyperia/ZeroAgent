@@ -197,6 +197,7 @@
         "crates/agent-ui/src/components/workspace-editor/WorkspaceFilePreviewOverlay.tsx",
         "crates/agent-gateway/web/src/components/cloudchat/CloudSpacePage.tsx",
         "crates/agent-gateway/web/src/lib/cloudSpace.ts",
+        "crates/agent-gateway/web/src/lib/cloudSpaceBrowseState.ts",
         "crates/agent-gateway/web/src/lib/cloudChatSites.ts",
         "crates/agent-gateway/web/src/components/cloudchat/CloudChatSiteView.tsx",
         "crates/agent-gateway/web/src/components/cloudchat/CloudChatHeaderActions.tsx",
@@ -280,6 +281,7 @@
         "crates/agent-gui/src/lib/relay/desktopRemoteHost.ts",
         "crates/agent-gateway/web/src/desktopRemoteEntry.tsx",
         "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
+        "crates/agent-gateway/web/src/app/GatewayDeviceConnectionNotice.tsx",
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
         "scripts/prepare-desktop-remote.mjs",
         "crates/agent-gateway/internal/protocol/pbws/controller_selection.go",
@@ -289,6 +291,7 @@
       ],
       "tests": [
         "crates/agent-gateway/web/test/execution-targets.test.mjs",
+        "crates/agent-gateway/web/test/device-conversation-reconnect.test.mjs",
         "crates/agent-gateway/internal/session/tunnel_state_test.go",
         "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
         "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",
@@ -631,6 +634,7 @@
       "status": "active",
       "owner": "zeroagent",
       "surfaces": [
+        "desktop",
         "webui",
         "gateway",
         "android"
@@ -639,15 +643,16 @@
         "crates/agent-ui/src/features/extensions/ExtensionsWorkspace.tsx",
         "crates/agent-ui/src/lib/extensions/presentation.ts",
         "crates/agent-ui/src/components/chat/extensionMentions.css",
-        "crates/agent-gateway/internal/account/skills-releases",
         "crates/agent-gateway/internal/account/codex-packages",
-        "crates/agent-gateway/internal/account/cloud_codex_originals.go",
         "crates/agent-gateway/internal/account/cloud_extension_drafts.go",
         "crates/agent-gateway/internal/account/cloud_native_workflows.go",
         "crates/agent-gateway/internal/account/skills-native",
-        "crates/agent-gateway/internal/account/skills-native-releases",
         "crates/agent-gateway/web/src/lib/cloudExtensions.ts",
         "crates/agent-gateway/internal/account/cloud_extensions.go",
+        "crates/agent-gateway/internal/account/cloud_extensions_device.go",
+        "crates/agent-gui/src-tauri/src/services/account_session/device_skills.rs",
+        "patches/kbrain/0015-account-skill-snapshots.patch",
+        "crates/agent-gateway/internal/account/cloud_extensions_refs.go",
         "crates/agent-gateway/internal/account/cloud_run_skills.go",
         "crates/agent-gateway/internal/account/cloud_extension_manifest.go"
       ],
@@ -656,12 +661,12 @@
         "crates/agent-gateway/web/test/cloud-chat-context-picker.test.mjs",
         "crates/agent-gateway/web/test/composer-extension-mentions.test.mjs",
         "crates/agent-gateway/internal/account/cloud_extensions_test.go",
+        "crates/agent-gateway/internal/account/cloud_extensions_device_test.go",
         "crates/agent-gateway/internal/account/cloud_builtin_release_test.go",
-        "crates/agent-gateway/internal/account/cloud_codex_originals_test.go",
         "crates/agent-gateway/internal/account/cloud_extension_drafts_test.go",
         "crates/agent-gateway/internal/account/cloud_extension_manifest_test.go"
       ],
-      "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。 ADR0073：按本机定义组织显式 manifest 技能入口和辅助文件；产品设计不含创建技能，生图与创建技能独立。归档白名单保留改名和移出成员的旧固定引用，不注册为当前候选。",
+      "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。ADR0073：按本机定义组织显式 manifest 技能入口和辅助文件；产品设计不含创建技能，生图与创建技能独立。归档白名单保留改名和移出成员的旧固定引用，不注册为当前候选。设备显式固定引用经当前 profile 的 Native 私有读取口和桌面 bearer 核对账户与启用状态，只将支持的有界文本放入 K-brain 用户级快照。设备存储、安装、工具权限和审批仍由原运行时管理。",
       "upstream_relation": "adapt"
     },
     {
@@ -694,11 +699,12 @@
     },
     {
       "id": "unified-workbench-schedules",
-      "name": "云端与设备工作台及定时触发",
+      "name": "独立执行环境与共享定时任务界面",
       "status": "active",
       "owner": "zeroagent",
       "surfaces": ["desktop", "webui", "android", "gateway"],
       "entrypoints": [
+        "crates/agent-gui/src/components/DesktopExecutionSwitcher.tsx",
         "crates/agent-gui/src/pages/DesktopCloudWorkbench.tsx",
         "crates/agent-gui/src/pages/DesktopScheduledTasks.tsx",
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs",
@@ -709,11 +715,24 @@
         "crates/agent-gateway/internal/account/cloud_execution_account.go",
         "crates/agent-gateway/internal/handler/workspace_handoff.go",
         "crates/agent-gateway/web/src/components/cloudchat/CloudScheduleWorkspace.tsx",
+        "crates/agent-gateway/web/src/components/cloudchat/ScheduleRunApprovalCard.tsx",
+        "crates/agent-gateway/web/src/lib/cloudSchedules.ts",
+        "crates/agent-gateway/web/src/lib/deviceScheduleDraft.ts",
+        "crates/agent-gateway/web/src/lib/deviceScheduleHost.ts",
+        "crates/agent-ui/src/pages/settings/WorkbenchCronPreview.tsx",
+        "patches/kbrain/0014-device-cron-draft-preview.patch",
+        "patches/kbrain/0016-device-manual-run-receipts.patch",
         "crates/agent-gateway/web/src/components/cloudchat/WorkspaceHandoffDialog.tsx"
       ],
       "tests": [
         "crates/agent-gateway/internal/account/cloud_schedule_test.go",
-        "crates/agent-gateway/web/test/cloud-chat-navigation.test.mjs"
+        "crates/agent-gateway/internal/kbrain/client_test.go",
+        "crates/agent-gateway/web/test/cloud-chat-navigation.test.mjs",
+        "crates/agent-gateway/web/test/device-schedule-draft.test.mjs",
+        "crates/agent-gateway/internal/server/workspace_handoff_test.go",
+        "crates/agent-gateway/web/test/workspace-handoff.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/gateway/workspace_handoff.rs"
       ],
       "security": "ADR0078：桌面请求直接使用经 USA-Zero 验证的现有桌面访问令牌，原生传输限制目标、路由、头部和流量。桌面与 Web 的云计划复用账户登录和 Cloud Run 私有会话引用。仅有桌面登录时，服务端复用该登录的受限交换会话，原生刷新凭据不传给 Gateway。定时触发校验账户归属、租约和幂等请求，继续执行现有公开主题及私有资料检查。需审批的触发冻结运行配置，准入前按账户确认。设备汇总只投影计划摘要。文件交接使用账户读取、设备工作区租约及稳定的原生写入回执。",
       "upstream_relation": "adapt"

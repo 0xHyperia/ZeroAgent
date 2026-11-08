@@ -13,12 +13,14 @@ import { validDocumentRegion } from "./docxReaderDocument";
 import type { DocumentRevisionComment } from "./ResourceDocumentComments";
 
 export type PreviewZoom = "fit-width" | "fit-page" | number;
+export type MarkdownReadingPosition = { block: number; progress: number; top: number };
 type ReadingSnapshot = {
   pdfPage: number;
   pdfZoom: PreviewZoom;
   pdfNavigation: boolean;
   docxZoom: PreviewZoom;
   textZoom: number;
+  markdownPosition: MarkdownReadingPosition;
   sourceZoom: number;
   sourceWrap: boolean;
   sourceLanguage: string;
@@ -50,6 +52,22 @@ export function createReadingSnapshotStore() {
       return snapshot;
     },
     write<K extends keyof ReadingSnapshot>(key: string, field: K, value: ReadingSnapshot[K]) {
+      if (field === "markdownPosition") {
+        const position = value as MarkdownReadingPosition;
+        if (
+          !position ||
+          !Number.isSafeInteger(position.block) ||
+          position.block < -1 ||
+          position.block > 2_000_000 ||
+          !Number.isFinite(position.progress) ||
+          position.progress < 0 ||
+          position.progress > 1 ||
+          !Number.isFinite(position.top) ||
+          position.top < 0 ||
+          position.top > 40_000_000
+        )
+          return;
+      }
       if (
         field === "documentComments" &&
         (!Array.isArray(value) ||
@@ -144,24 +162,33 @@ export function PreviewReadingTarget({
   return <Target.Provider value={target}>{children}</Target.Provider>;
 }
 
+export function usePreviewReadingSnapshot<K extends keyof ReadingSnapshot>(field: K) {
+  const target = useContext(Target);
+  return useMemo(
+    () => ({
+      read: () => target?.store.read(target.key)?.[field],
+      write: (value: ReadingSnapshot[K]) => target?.store.write(target.key, field, value),
+    }),
+    [field, target],
+  );
+}
+
 export function usePreviewReadingState<K extends keyof ReadingSnapshot>(
   field: K,
   initial: ReadingSnapshot[K],
 ): [ReadingSnapshot[K], Dispatch<SetStateAction<ReadingSnapshot[K]>>] {
-  const target = useContext(Target);
-  const [value, setValue] = useState<ReadingSnapshot[K]>(
-    () => target?.store.read(target.key)?.[field] ?? initial,
-  );
+  const snapshot = usePreviewReadingSnapshot(field);
+  const [value, setValue] = useState<ReadingSnapshot[K]>(() => snapshot.read() ?? initial);
   const latest = useRef(value);
   latest.current = value;
   const update = useCallback<Dispatch<SetStateAction<ReadingSnapshot[K]>>>(
     (action) => {
       const next = typeof action === "function" ? action(latest.current) : action;
       latest.current = next;
-      target?.store.write(target.key, field, next);
+      snapshot.write(next);
       setValue(next);
     },
-    [field, target],
+    [snapshot],
   );
   return [value, update];
 }

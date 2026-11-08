@@ -110,7 +110,7 @@ test("lost settings acknowledgement does not replay a mutation and both device s
   second.dispose();
   const restored = connect("device-a");
   assert.equal((await restored.getSettings()).customProviders[0].promptCacheHintMode, "none");
-  await assert.rejects(first.chatCommand({ type: "chat.submit", message: "stale client", conversationId: "must-not-run" }), /disposed/);
+  await assert.rejects(first.chatCommand({ type: "chat.submit", message: "stale client", conversationId: "must-not-run" }), /The active device changed/);
   assert.equal(server.executedRuns.size, 0);
   server.assertHealthy();
 });

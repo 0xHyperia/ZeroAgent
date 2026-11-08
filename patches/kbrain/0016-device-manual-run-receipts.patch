@@ -1,0 +1,243 @@
+diff --git a/internal/backend/cron_handler.go b/internal/backend/cron_handler.go
+index 62433de..135d210 100644
+--- a/internal/backend/cron_handler.go
++++ b/internal/backend/cron_handler.go
+@@ -90,6 +90,8 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+ 			return
+ 		}
+ 		writeJSON(w, http.StatusOK, map[string]any{"clearedCount": count})
++	case len(parts) == 3 && parts[1] == "run-now" && (r.Method == http.MethodPost || r.Method == http.MethodGet):
++		s.cronManualRun(w, r, taskID, parts[2])
+ 	case len(parts) == 2 && parts[1] == "run-now" && r.Method == http.MethodPost:
+ 		response, err := s.cron.runNow(taskID)
+ 		if err != nil {
+@@ -102,6 +104,33 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
+ 	}
+ }
+ 
++func (s *Server) cronManualRun(w http.ResponseWriter, r *http.Request, taskID, executionID string) {
++	w.Header().Set("Cache-Control", "no-store")
++	if len(executionID) != 43 || !strings.HasPrefix(executionID, "manual-") || !validID(executionID) {
++		writeJSONError(w, http.StatusBadRequest, "invalid manual cron execution id")
++		return
++	}
++	var receipt CronRunNowResponse
++	if r.Method == http.MethodGet {
++		var found bool
++		receipt, found = s.cron.store.manualReceipt(taskID, executionID)
++		if !found {
++			writeJSON(w, http.StatusOK, map[string]string{"status": "missing"})
++			return
++		}
++	} else {
++		var err error
++		receipt, err = s.cron.startWithExecutionID(taskID, false, executionID)
++		if err != nil {
++			writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
++			return
++		}
++	}
++	writeJSON(w, http.StatusOK, map[string]any{
++		"status": "admitted", "executionId": receipt.ExecutionID, "startedAt": receipt.StartedAt,
++	})
++}
++
+ func (s *Server) cronRunAnchor(w http.ResponseWriter, taskID, executionID string) {
+ 	w.Header().Set("Cache-Control", "no-store")
+ 	runs, err := s.cron.store.runs(taskID, cronRunLimit)
+diff --git a/internal/backend/cron_manager.go b/internal/backend/cron_manager.go
+index b00d390..e7ef489 100644
+--- a/internal/backend/cron_manager.go
++++ b/internal/backend/cron_manager.go
+@@ -106,15 +106,24 @@ func (m *cronManager) tick(now time.Time) {
+ 	}
+ }
+ func (m *cronManager) start(taskID string, counted bool) (CronRunNowResponse, error) {
++	return m.startWithExecutionID(taskID, counted, "")
++}
++
++func (m *cronManager) startWithExecutionID(taskID string, counted bool, executionID string) (CronRunNowResponse, error) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	if m.closed {
+ 		return CronRunNowResponse{}, errors.New("cron scheduler is closed")
+ 	}
++	if executionID != "" {
++		if receipt, ok := m.store.manualReceipt(taskID, executionID); ok {
++			return receipt, nil
++		}
++	}
+ 	if m.active[taskID] != nil {
+ 		return CronRunNowResponse{}, errors.New("Cron task is already running.")
+ 	}
+-	task, run, err := m.store.reserve(taskID, counted)
++	task, run, err := m.store.reserveExecution(taskID, counted, executionID)
+ 	if err != nil {
+ 		return CronRunNowResponse{}, err
+ 	}
+diff --git a/internal/backend/cron_manual_receipt_test.go b/internal/backend/cron_manual_receipt_test.go
+new file mode 100644
+index 0000000..2f51ea1
+--- /dev/null
++++ b/internal/backend/cron_manual_receipt_test.go
+@@ -0,0 +1,110 @@
++package backend
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"path/filepath"
++	"sync/atomic"
++	"testing"
++
++	"github.com/Stack-Cairn/K-brain/internal/agent"
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++	"github.com/Stack-Cairn/K-brain/internal/session"
++)
++
++func TestManualCronReceiptIsExactAndPersistsAcrossRestart(t *testing.T) {
++	var requests atomic.Int32
++	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		requests.Add(1)
++		w.WriteHeader(http.StatusNoContent)
++	}))
++	defer upstream.Close()
++	root := t.TempDir()
++	sessions, err := session.Open(filepath.Join(root, "sessions"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sessions.Close()
++	factory := func(context.Context, string, protocol.ModelRef) (*agent.Agent, error) {
++		return agent.New(&cronTestClient{}, "model", 128, ""), nil
++	}
++	options := Options{Store: sessions, Factory: factory, EventDir: filepath.Join(root, "events"),
++		DefaultCWD: root, MemoryRoot: filepath.Join(root, "memory")}
++	newServer := func() (*Server, *httptest.Server) {
++		t.Helper()
++		backend, err := New(options)
++		if err != nil {
++			t.Fatal(err)
++		}
++		return backend, httptest.NewServer(backend)
++	}
++	backend, server := newServer()
++	defer backend.Close()
++	defer server.Close()
++	create := map[string]any{"baseRevision": 0, "ops": []any{
++		map[string]any{"op": "create", "item": map[string]any{
++			"id": "manual-task", "name": "manual", "cron": "0 0 0 1 1 *", "enabled": false,
++			"type": "http", "requests": []any{map[string]any{"url": upstream.URL, "method": "GET"}},
++			"remainingExecutions": 1,
++		}},
++	}}
++	if status := doCronJSON(t, server.URL+"/v1/cron", http.MethodPut, create, nil); status != http.StatusOK {
++		t.Fatalf("create status %d", status)
++	}
++	const id = "manual-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
++	path := "/v1/cron/manual-task/run-now/" + id
++	type response struct {
++		Status string `json:"status"`
++		CronRunNowResponse
++	}
++	get := func(server *httptest.Server, method, route string) response {
++		t.Helper()
++		var got response
++		if code := doCronJSON(t, server.URL+route, method, nil, &got); code != http.StatusOK {
++			t.Fatalf("%s %s status %d", method, route, code)
++		}
++		return got
++	}
++	if got := get(server, http.MethodGet, path); got.Status != "missing" {
++		t.Fatalf("read-only query unexpectedly admitted a run: %+v", got)
++	}
++	first := get(server, http.MethodPost, path)
++	if first.Status != "admitted" || first.ExecutionID != id || first.StartedAt <= 0 {
++		t.Fatalf("wrong admission: %+v", first)
++	}
++	completed := waitCronRuns(t, server.URL, "manual-task", func(runs []CronRunRecord) bool {
++		return len(runs) == 1 && runs[0].State == "done"
++	})
++	if !completed[0].Success || requests.Load() != 1 {
++		t.Fatalf("expected one completed request, got %d requests and %+v", requests.Load(), completed)
++	}
++	if repeat := get(server, http.MethodPost, path); repeat != first {
++		t.Fatalf("same execution returned a different receipt: %+v", repeat)
++	}
++	if other := get(server, http.MethodGet, "/v1/cron/other/run-now/"+id); other.Status != "missing" {
++		t.Fatalf("another task could read the receipt: %+v", other)
++	}
++	server.Close()
++	backend.Close()
++	restarted, restartedHTTP := newServer()
++	defer restarted.Close()
++	defer restartedHTTP.Close()
++	if got := get(restartedHTTP, http.MethodGet, path); got != first {
++		t.Fatalf("receipt lost after restart: %+v", got)
++	}
++	if repeat := get(restartedHTTP, http.MethodPost, path); repeat != first {
++		t.Fatalf("same execution after restart returned a different receipt: %+v", repeat)
++	}
++	var history struct {
++		Runs []CronRunRecord `json:"runs"`
++	}
++	if code := doCronJSON(t, restartedHTTP.URL+"/v1/cron/manual-task/runs", http.MethodGet, nil, &history); code != http.StatusOK ||
++		len(history.Runs) != 1 || history.Runs[0].ID != id || history.Runs[0].Counted || requests.Load() != 1 {
++		t.Fatalf("unexpected executions: %d %+v", code, history)
++	}
++	snapshot := restarted.cron.store.snapshot()
++	if count := snapshot.Tasks[0].RemainingExecutions; count == nil || *count != 1 {
++		t.Fatalf("manual run changed the scheduled count: %v", count)
++	}
++}
+diff --git a/internal/backend/cron_store.go b/internal/backend/cron_store.go
+index 82f61e7..7a1b6bf 100644
+--- a/internal/backend/cron_store.go
++++ b/internal/backend/cron_store.go
+@@ -347,6 +347,23 @@ func (c *cronStore) bindSession(expected *CronTask, sessionID string) error {
+ }
+ 
+ func (c *cronStore) reserve(id string, counted bool) (*CronTask, CronRunRecord, error) {
++	return c.reserveExecution(id, counted, "")
++}
++
++func (c *cronStore) manualReceipt(taskID, executionID string) (CronRunNowResponse, bool) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	if c.task(taskID) != nil {
++		for _, run := range c.disk.Runs {
++			if run.TaskID == taskID && run.ID == executionID && !run.Counted {
++				return CronRunNowResponse{ExecutionID: run.ID, StartedAt: run.StartedAt}, true
++			}
++		}
++	}
++	return CronRunNowResponse{}, false
++}
++
++func (c *cronStore) reserveExecution(id string, counted bool, executionID string) (*CronTask, CronRunRecord, error) {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+ 	t := c.task(id)
+@@ -357,6 +374,9 @@ func (c *cronStore) reserve(id string, counted bool) (*CronTask, CronRunRecord,
+ 		return nil, CronRunRecord{}, errors.New("cron task is disabled")
+ 	}
+ 	for _, r := range c.disk.Runs {
++		if executionID != "" && r.ID == executionID {
++			return nil, CronRunRecord{}, errors.New("cron execution id is already used")
++		}
+ 		if r.TaskID == id && r.State == "leased" {
+ 			return nil, CronRunRecord{}, errors.New("Cron task is already running.")
+ 		}
+@@ -376,7 +396,10 @@ func (c *cronStore) reserve(id string, counted bool) (*CronTask, CronRunRecord,
+ 		t.Loop.Iterations++
+ 		c.disk.Revision++
+ 	}
+-	r := CronRunRecord{ID: newRunID(), TaskID: id, State: "leased", StartedAt: time.Now().UnixMilli(), Counted: counted}
++	if executionID == "" {
++		executionID = newRunID()
++	}
++	r := CronRunRecord{ID: executionID, TaskID: id, State: "leased", StartedAt: time.Now().UnixMilli(), Counted: counted}
+ 	c.disk.Runs = append(c.disk.Runs, r)
+ 	if e := c.persistLocked(); e != nil {
+ 		c.disk = old

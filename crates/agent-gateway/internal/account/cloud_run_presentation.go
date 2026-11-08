@@ -97,17 +97,6 @@ func applyCloudPresentation(run *CloudRun, commit *CloudRunCommit, now time.Time
 	if err != nil {
 		return err
 	}
-	// An old active run may already contain public output when this version is
-	// deployed. Keep that prefix when its first structured event is committed.
-	if len(run.Presentation) == 0 {
-		prefix := run.Output
-		if commit.Delta != "" {
-			prefix = strings.TrimSuffix(prefix, commit.Delta)
-		}
-		if prefix != "" {
-			p.Blocks = append(p.Blocks, CloudPresentationBlock{ID: "legacy:text", Type: "text", Round: 0, Text: prefix, StartedAt: run.CreatedAt})
-		}
-	}
 	p.State, p.Usage = run.State, cloudPresentationUsage(run.Usage)
 	payload := map[string]any{"round": data.Round}
 	if strings.HasPrefix(kind, "model.") {

@@ -80,6 +80,7 @@ pub struct RemoteOpenRequest {
     pub origin: String,
     pub device_id: String,
     pub selection_lease: String,
+    pub workspace_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -147,7 +148,12 @@ pub(super) fn session_cookie(headers: &reqwest::header::HeaderMap) -> Result<Str
     cookie.ok_or_else(|| "Gateway did not establish an HTTP session".into())
 }
 
-fn handoff_selection(origin: &Url, location: &str, device_id: &str) -> Result<Value, String> {
+fn handoff_selection(
+    origin: &Url,
+    location: &str,
+    device_id: &str,
+    workspace_id: Option<&str>,
+) -> Result<Value, String> {
     let destination = origin
         .join(location)
         .map_err(|_| "Invalid Gateway handoff")?;
@@ -168,23 +174,24 @@ fn handoff_selection(origin: &Url, location: &str, device_id: &str) -> Result<Va
     };
     let lease = read("selection_lease")?;
     let conversation = read("conversation_id")?;
+    let workspace = workspace_id.unwrap_or_default();
     if read("runtime_kind")? != "device_agent"
         || read("device_id")? != device_id
         || read("agent_id")? != device_id
-        || !read("workspace_id")?.is_empty()
+        || read("workspace_id")? != workspace
         || !component(&lease)
         || !component(&conversation)
     {
-        return Err("Gateway handoff changed the selected device".into());
+        return Err("Gateway handoff changed the selected target".into());
     }
     Ok(json!({
         "selection_lease": lease,
         "runtime_kind": "device_agent",
         "device_id": device_id,
         "agent_id": device_id,
-        "workspace_id": "",
-        "scope": "device",
-        "target_fingerprint": format!("device_agent:{device_id}:"),
+        "workspace_id": workspace,
+        "scope": if workspace_id.is_some() { "workspace" } else { "device" },
+        "target_fingerprint": format!("device_agent:{device_id}:{workspace}"),
         "conversation_id": conversation,
         // The existing redirect does not expose a deadline. The desktop shell
         // retains its original, server-issued deadline; Gateway enforces both.
@@ -202,7 +209,7 @@ fn selection_credential(selection: &Value) -> String {
                 "runtimeKind": "device_agent",
                 "deviceId": selection["device_id"],
                 "agentId": selection["agent_id"],
-                "workspaceId": ""
+                "workspaceId": selection["workspace_id"]
             }))
             .expect("serialize a Gateway selection")
         )
@@ -233,6 +240,9 @@ async fn open_remote(
         != origin.origin()
         || !component(&request.device_id)
         || !component(&request.selection_lease)
+        || request.workspace_id.as_ref().is_some_and(|workspace| {
+            workspace.is_empty() || workspace.len() > 512 || workspace.chars().any(char::is_control)
+        })
     {
         return Err("Invalid selected Gateway device".into());
     }
@@ -282,7 +292,12 @@ async fn open_remote(
             .and_then(|value| value.to_str().ok())
             .filter(|value| value.len() <= 8192)
             .ok_or("Invalid Gateway handoff destination")?;
-        let selection = handoff_selection(&bridge.origin, location, &bridge.device_id)?;
+        let selection = handoff_selection(
+            &bridge.origin,
+            location,
+            &bridge.device_id,
+            request.workspace_id.as_deref(),
+        )?;
         state.require_current(&request.session_handle).await?;
         Ok::<_, String>(selection)
     }
@@ -317,10 +332,16 @@ async fn open_remote(
     })
 }
 
+const CONFIRMED_HANDOFF_PATH: &str = "/api/files/confirmed-handoff";
+
 fn resource_route(method: &str, path: &str) -> bool {
     matches!(
         (method, path),
-        ("GET", "/api/status") | ("POST", "/api/files/import" | "/api/files/import-directory" | "/api/files/handoff")
+        ("GET", "/api/status" | CONFIRMED_HANDOFF_PATH)
+            | (
+                "POST",
+                "/api/files/import" | "/api/files/import-directory" | CONFIRMED_HANDOFF_PATH
+            )
     )
 }
 
@@ -383,16 +404,30 @@ async fn remote_http(
         .await?;
     let mut url = super::gateway::gateway_url(&bridge.origin, &request.path)?;
     let method = request.method.to_ascii_uppercase();
-    if !resource_route(&method, url.path()) {
+    let handoff = url.path() == CONFIRMED_HANDOFF_PATH;
+    let workspace_scope = bridge.selection["scope"] == "workspace";
+    if !resource_route(&method, url.path()) || handoff != workspace_scope {
         return Err("Remote Gateway endpoint is not allowed".into());
+    }
+    if handoff {
+        let workspace = bridge.selection["workspace_id"]
+            .as_str()
+            .unwrap_or_default();
+        let mut submitted = url.query_pairs().filter(|(name, _)| name == "workspace_id");
+        if submitted.next().is_none_or(|(_, value)| value != workspace)
+            || submitted.next().is_some()
+        {
+            return Err("Remote Gateway request targets another workspace".into());
+        }
     }
     if request.headers.len() > 8
         || request.headers.iter().any(|(name, value)| {
-            name.len() + value.len() > 4096
-                || !matches!(
-                    name.to_ascii_lowercase().as_str(),
-                    "accept" | "content-type" | "authorization"
-                )
+            let allowed_size = match name.to_ascii_lowercase().as_str() {
+                "accept" | "content-type" | "authorization" => 4096,
+                "x-zeroagent-workspace-path" if handoff => 5500,
+                _ => 0,
+            };
+            name.len() + value.len() > allowed_size
                 || reqwest::header::HeaderValue::from_str(value).is_err()
         })
     {

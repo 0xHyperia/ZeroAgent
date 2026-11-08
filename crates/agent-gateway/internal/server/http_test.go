@@ -177,6 +177,21 @@ func TestNewHTTPServerDoesNotFallbackMissingStaticAssetsToIndex(t *testing.T) {
 	}
 }
 
+func TestDesktopGatewayDoesNotServeTheWebUIForAnUnavailableAccountAPI(t *testing.T) {
+	cfg := &config.Config{Token: "dev-token"}
+	gateway := NewHTTPServerWithLocalImages(cfg, session.NewManager(), nil, NewLocalImageHub(cfg))
+	t.Cleanup(func() { _ = gateway.(io.Closer).Close() })
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/files/handoff", nil))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected an API error instead of the WebUI, got %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("an unavailable API route must not remain cached after a Gateway upgrade")
+	}
+}
+
 func TestWebSocketRejectsForeignOrigin(t *testing.T) {
 	ts := httptest.NewServer(NewHTTPServer(&config.Config{Token: "dev-token"}, session.NewManager(), nil))
 	defer ts.Close()

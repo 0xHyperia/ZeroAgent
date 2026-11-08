@@ -1,6 +1,14 @@
 import { AnimatePresence, domAnimation, LazyMotion, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { UI_MOTION_TRANSITION } from "../../lib/shared/motion";
 import { cn } from "../../lib/shared/utils";
 
@@ -21,13 +29,22 @@ const CollapseBody = memo(
 // 运行中的内容可在收起后继续保留内部状态。
 export function LazyCollapse(props: {
   open: boolean;
+  id?: string;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
   retainWhileClosed?: boolean;
   className?: string;
   children: () => ReactNode;
 }) {
-  const { open, retainWhileClosed = false, className, children } = props;
+  const { open, id, triggerRef, retainWhileClosed = false, className, children } = props;
   const [hasOpened, setHasOpened] = useState(open);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
+
+  useLayoutEffect(() => {
+    if (!open && bodyRef.current?.contains(document.activeElement)) {
+      triggerRef?.current?.focus({ preventScroll: true });
+    }
+  }, [open, triggerRef]);
 
   useEffect(() => {
     if (open) setHasOpened(true);
@@ -40,7 +57,10 @@ export function LazyCollapse(props: {
 
   return (
     <div
+      id={id}
+      ref={bodyRef}
       aria-hidden={!open}
+      inert={!open}
       className={cn(
         // -mx-3/px-3: the collapse clips (overflow-hidden below, plus
         // `contain: paint` that callers may add on this root). Disclosure

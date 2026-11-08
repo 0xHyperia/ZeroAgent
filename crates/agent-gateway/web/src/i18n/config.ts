@@ -128,6 +128,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "sharedHistory.page.errorHint": "分享可能已被关闭，或桌面端当前不在线。",
     "sharedHistory.page.empty": "该会话暂无可展示内容",
     "chat.gatewayHistory.loadingPlaceholder": "正在加载会话历史，请稍候...",
+    "chat.deviceDraft.offlinePlaceholder": "可继续编辑草稿，连接恢复后发送。",
     "chat.largePasteImportFailed": "大段粘贴内容导入失败",
     "login.tagline": "安全连接到远程代理会话，在浏览器中获得完整的控制台体验。",
     "login.featureRemoteChat": "按桌面端式样查看 token、thinking、tool_call 与 tool_result。",
@@ -263,6 +264,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
       "The share may have been turned off, or the desktop app is offline.",
     "sharedHistory.page.empty": "This conversation has nothing to show yet",
     "chat.gatewayHistory.loadingPlaceholder": "Loading conversation history, please wait...",
+    "chat.deviceDraft.offlinePlaceholder": "Keep editing your draft. Send once connected.",
     "chat.largePasteImportFailed": "Failed to import the large paste",
     "login.tagline":
       "Connect securely to remote agent sessions and get the full console experience in your browser.",

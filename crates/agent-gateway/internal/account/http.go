@@ -325,7 +325,7 @@ func (h *HTTPHandler) refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if identity.Purpose == "cloud_schedule" || isDesktopCloudPurpose(identity.Purpose) {
+	if identity.Purpose != "" {
 		writeError(w, &APIError{Status: http.StatusForbidden, Message: "session refresh is unavailable from the browser"})
 		return
 	}
@@ -562,7 +562,7 @@ func (h *HTTPHandler) withSession(next authenticatedHandler) http.HandlerFunc {
 		if !matchesRequestAccount(w, r, session) {
 			return
 		}
-		if session.Purpose == "cloud_schedule" || session.Purpose == desktopCloudExecutionPurpose {
+		if session.Purpose != "" && session.Purpose != desktopCloudAccessPurpose {
 			writeError(w, sessionMissingError())
 			return
 		}

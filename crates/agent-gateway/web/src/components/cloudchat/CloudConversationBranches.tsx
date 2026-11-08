@@ -75,18 +75,6 @@ export function CloudConversationBranches({
     setOpen(false);
     onNavigate(id, messageId);
   };
-  const actionLabel = (action: string) =>
-    action === "edit"
-      ? zh
-        ? "编辑后分支"
-        : "Edited branch"
-      : action === "regenerate"
-        ? zh
-          ? "重新生成"
-          : "Regenerated"
-        : zh
-          ? "从此处分支"
-          : "Forked here";
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -158,7 +146,7 @@ export function CloudConversationBranches({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{item.conversation.title}</span>
                 <span className="text-xs text-muted-foreground">
-                  {actionLabel(item.action)}
+                  {zh ? "从此处分支" : "Forked here"}
                   {item.conversation.archived ? (zh ? " · 已归档" : " · Archived") : ""}
                 </span>
               </span>

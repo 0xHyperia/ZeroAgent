@@ -249,7 +249,20 @@ export function createCloudSpaceClient(
   };
 }
 export type CloudSpaceClient = ReturnType<typeof createCloudSpaceClient>;
-export function cloudSpaceTitle(location: CloudSpaceLocation) {
+export function cloudSpaceTitle(location: CloudSpaceLocation, locale: "en-US" | "zh-CN" = "zh-CN") {
+  if (locale === "en-US") {
+    if (location.scope === "trash") return "Trash";
+    if (location.scope === "starred") return "Favorites";
+    return {
+      all: "All files",
+      recent: "Recent",
+      documents: "Documents and files",
+      images: "Images",
+      uploads: "Uploads",
+      outputs: "Outputs",
+      sites: "Sites",
+    }[location.category];
+  }
   if (location.scope === "trash") return "回收站";
   if (location.scope === "starred") return "收藏";
   return {

@@ -34,9 +34,9 @@ export type ChatPageProps = {
   onOpenSettings: (section?: SectionId, providerId?: string) => void;
   onToggleTheme: () => void;
   headerLeadingActions?: ReactNode;
+  registerExecutionDeparture?: (captureDraft: () => void) => () => void;
   accountNavigation?: WorkbenchAccountNavigation;
   onAccountSurface?: (surface: WorkbenchAccountSurface | null) => void;
-  scheduledTasksRequest?: number;
   renderScheduledTasks?: (navigation: {
     onBack: () => void;
     onOpenDeviceConversation: (id: string) => void;
@@ -54,7 +54,6 @@ export type ChatPageProps = {
     hideSidebar?: boolean;
     onActivate?: () => void;
   }) => ReactNode;
-  onOpenDevices?: () => void;
   onExecutionBusyChange?: (busy: boolean) => void;
   appUpdate?: AppUpdateController;
   onRunningConversationCountChange?: (count: number) => void;

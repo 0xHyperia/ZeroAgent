@@ -450,6 +450,10 @@ export function useGatewayWorkbench(params: UseGatewayWorkbenchParams): GatewayW
     if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || !event.altKey || !(event.metaKey || event.ctrlKey)) return;
+      // Account pages, task views and settings can retain the mounted chat canvas.
+      const canvas = canvasRef.current;
+      if (!canvas?.isConnected || canvas.closest("[hidden], [inert]")) return;
+
       const layout = workbench.layoutRef.current;
       const focusedPaneId = layout.focusedPaneId;
       if (!focusedPaneId || Object.keys(layout.panes).length < 2) return;

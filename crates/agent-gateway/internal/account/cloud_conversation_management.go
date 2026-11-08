@@ -53,7 +53,6 @@ type CloudConversationSearchPage struct {
 type CloudConversationBranchSource struct {
 	ConversationID string `json:"conversation_id"`
 	MessageID      string `json:"message_id"`
-	Action         string `json:"action"`
 	Title          string `json:"title"`
 	Available      bool   `json:"available"`
 }
@@ -61,7 +60,6 @@ type CloudConversationBranchSource struct {
 type CloudConversationBranchChild struct {
 	Conversation    CloudConversation `json:"conversation"`
 	SourceMessageID string            `json:"source_message_id"`
-	Action          string            `json:"action"`
 }
 
 type CloudConversationBranches struct {

@@ -15,15 +15,6 @@
     },
     "top.usa0": {
       "primarySkill": "index",
-      "aliases": {
-        "product-design": "index",
-        "design-audit": "audit",
-        "design-research": "research",
-        "design-ideate": "ideate",
-        "design-implement": "image-to-code",
-        "design-verify": "design-qa",
-        "design-share": "share"
-      },
       "kind": "plugin",
       "adaptedFrom": {
         "package": "product-design",

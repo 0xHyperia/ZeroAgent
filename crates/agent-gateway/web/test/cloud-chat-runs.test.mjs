@@ -39,6 +39,28 @@ test("model parameter rejections expose only bounded known reason copy and never
  const unknown=api.createCloudChatRunsClient(async()=>Response.json({reason:"private-upstream-body",error:"private"},{status:400}));await assert.rejects(unknown.createRun({conversation_id:"c",client_request_id:"r",model:"m",content:"x"}),cause=>cause.status===400&&!cause.message.includes("private"));
 });
 
+test("skill reference rejections expose actionable feedback without reposting a definitely rejected draft", async () => {
+  const api = load();
+  for (const [status, reason, hint] of [
+    [422, "skill_reference_unavailable", /更换引用/],
+    [422, "skill_revision_conflict", /只能使用一个修订/],
+    [503, "skill_catalog_unavailable", /稍后重试/],
+  ]) {
+    let posts = 0;
+    const client = api.createCloudChatRunsClient(async (_path, init) => {
+      assert.equal(init.method, "POST");
+      posts++;
+      return Response.json({ reason, error: "private diagnostic" }, { status });
+    });
+    await assert.rejects(client.createRun({
+      conversation_id: "conversation-1", client_request_id: "request-1", model: "test-model",
+      content: "Use zeroagent-skill:fixture/1/audit.",
+    }), (cause) => cause.status === status && hint.test(cause.message) && !cause.message.includes("private"));
+    assert.equal(posts, 1);
+    assert.match(api.cloudChatRunStatusText({ state: "failed", error_code: reason }), hint);
+  }
+});
+
 test("an explicit account-queue rejection is known unaccepted and never immediately reposted or reconciled",async()=>{
  const api=load(),calls=[];let full=true;
  const request={conversation_id:"conversation-1",client_request_id:"request-1",model:"test-model",content:"preserved"};
@@ -251,6 +273,113 @@ test("missing terminal event is recovered from run status and does not restart g
   assert.equal(result.state, "completed");
   assert.equal(result.output, "完成");
   assert.deepEqual(methods, ["GET", "GET"]);
+});
+
+test("heartbeats keep a quiet run connected and a silent transport resumes at the latest read cursor", async (t) => {
+  const api = load();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const calls = [];
+  const connections = [];
+  let snapshots = 0;
+  let stream;
+  let cancelled = false;
+  const client = api.createCloudChatRunsClient(async (path, init) => {
+    calls.push([path, init.method ?? "GET"]);
+    if (!path.includes("/events")) return Response.json({ run: run({ output: "AB", last_seq: "2" }) });
+    if (stream) return sse([
+      frame(event("2", "message.delta", { delta: "B" })),
+      frame(event("3", "message.delta", { delta: "C" })),
+      frame(event("4", "run.completed")),
+    ]);
+    return new Response(new ReadableStream({
+      start(controller) { stream = controller; },
+      cancel() { cancelled = true; },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+  });
+  const watching = client.watchRun(run({ output: "A" }), {
+    signal: new AbortController().signal,
+    onRun: () => {},
+    onConnection: (state) => connections.push(state),
+    onSnapshot: () => snapshots++,
+    retry: async () => {},
+  });
+  await flush();
+  t.mock.timers.tick(20_000);
+  stream.enqueue(new TextEncoder().encode(": heartbeat\n\n"));
+  await flush();
+  t.mock.timers.tick(20_000);
+  await flush();
+  assert.equal(cancelled, false);
+  assert.deepEqual(connections, ["connecting", "connected"]);
+  assert.equal(calls.length, 1);
+  t.mock.timers.tick(10_000);
+  const result = await watching;
+  assert.equal(cancelled, true);
+  assert.equal(result.output, "ABC");
+  assert.equal(snapshots, 1);
+  assert.deepEqual(calls, [
+    ["/api/web-chat/runs/run-1/events?after_seq=1", "GET"],
+    ["/api/web-chat/runs/run-1", "GET"],
+    ["/api/web-chat/runs/run-1/events?after_seq=2", "GET"],
+  ]);
+});
+
+test("three unreachable checks stop the viewer and ignore late snapshots even if a host missed abort", async (t) => {
+  const api = load();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const calls = [];
+  const snapshots = [];
+  const updates = [];
+  const client = api.createCloudChatRunsClient(async (path, init) => {
+    calls.push([path, init.method ?? "GET", init.signal]);
+    if (path.includes("/events")) return new Promise(() => {});
+    return new Promise((resolve) => snapshots.push(resolve));
+  });
+  const watching = client.watchRun(run({ output: "preserved" }), {
+    signal: new AbortController().signal,
+    onRun: (state) => updates.push(state.output),
+    retry: async () => {},
+  });
+  const unavailable = assert.rejects(watching, { name: "TimeoutError" });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await flush();
+    t.mock.timers.tick(30_000);
+    await flush();
+    assert.equal(snapshots.length, attempt + 1);
+    t.mock.timers.tick(8_000);
+  }
+  await unavailable;
+  for (const resolve of snapshots)
+    resolve(Response.json({ run: run({ state: "completed", output: "late", last_seq: "4" }) }));
+  await flush();
+  assert.deepEqual(updates, ["preserved"]);
+  assert.equal(calls.length, 6);
+  assert.ok(calls.every(([path, method, signal]) =>
+    path.startsWith("/api/web-chat/runs/run-1") && method === "GET" && signal.aborted,
+  ));
+});
+
+test("a heartbeat followed by EOF cannot hide repeated failures to read the run", async () => {
+  const api = load();
+  let streams = 0;
+  let reads = 0;
+  const client = api.createCloudChatRunsClient(async (path) => {
+    if (path.includes("/events")) {
+      streams++;
+      return sse([": heartbeat\n\n"]);
+    }
+    reads++;
+    return new Response(null, { status: 503 });
+  });
+  await assert.rejects(client.watchRun(run(), {
+    signal: new AbortController().signal,
+    onRun: () => {},
+    retry: async () => {},
+  }), (error) => error.status === 503);
+  assert.equal(streams, 3);
+  assert.equal(reads, 3);
 });
 
 test("aborting a viewer closes its stream without cancelling the server run or applying late frames", async () => {

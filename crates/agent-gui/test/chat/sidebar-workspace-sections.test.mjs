@@ -437,19 +437,23 @@ test("the desktop top New Conversation action leaves every hub and starts exactl
     if (node.type === "VariableDeclarator" && node.id.name === "handleNewRecentConversation") callback = node.init;
   });
   assert.ok(callback, "use the actual desktop callback rather than a duplicate test implementation");
-  const createHandler = new Function("useCallback", "setActiveView", "openController", "prepareComposerForConversationChange", "startNewConversationActionRef", `return (${source.slice(callback.start, callback.end)});`);
+  const createHandler = new Function("useCallback", "leaveAccount", "setActiveView", "openController", "prepareComposerForConversationChange", "startNewConversationActionRef", `return (${source.slice(callback.start, callback.end)});`);
   const { useApplicationViewState } = env.loadModule("@liveagent/ui/application/useApplicationViewState.ts");
   for (const initialView of ["image-studio-hub", "skills-hub", "mcp-hub", "cron-hub", "planning-hub", "memory-hub", "chat"]) {
     const container = document.createElement("div"), root = createRoot(container);
     const events = [];
     let selectView;
+    const leaveAccount = (navigate) => {
+      events.push("close-account");
+      navigate();
+    };
     const controller = { cancel: () => events.push("cancel-open") };
     const prepare = () => events.push("prepare-composer");
     const start = { current: options => { events.push(options); return "new-conversation"; } };
     function Harness() {
       const { activeView, setActiveView } = useApplicationViewState();
       selectView = setActiveView;
-      const onNewRecentConversation = createHandler(React.useCallback, setActiveView, controller, prepare, start);
+      const onNewRecentConversation = createHandler(React.useCallback, leaveAccount, setActiveView, controller, prepare, start);
       return React.createElement("div", { "data-current-view": activeView }, React.createElement(ChatHistorySidebar, {
         ...baseProps, activeView, onNewRecentConversation,
         onNewConversation: () => assert.fail("the desktop top entry uses its dedicated callback"),
@@ -462,7 +466,7 @@ test("the desktop top New Conversation action leaves every hub and starts exactl
       assert.ok(entry);
       await click(entry);
       assert.equal(container.firstElementChild.dataset.currentView, "chat", initialView);
-      assert.deepEqual(events, ["cancel-open", "prepare-composer", { workdir: "" }], initialView);
+      assert.deepEqual(events, ["close-account", "cancel-open", "prepare-composer", { workdir: "" }], initialView);
     } finally { await act(async () => root.unmount()); }
   }
 });

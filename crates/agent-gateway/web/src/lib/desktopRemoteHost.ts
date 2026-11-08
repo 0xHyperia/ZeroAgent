@@ -6,14 +6,17 @@ import type {
 import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import type { AppSettings } from "@liveagent/ui/lib/settings/types";
 import type { CloudChatPresentationResource } from "./cloudChatPresentation";
+import type { CloudTaskReaderRoute } from "./cloudChatRoute";
 import type { CloudTaskConversationSelection } from "./cloudSchedules";
 import type { ExecutionEnvironment, ExecutionSelection } from "./executionTargets";
 import type { RelayUser } from "./relay/client";
 import type { WorkspaceHandoff } from "./workspaceHandoff";
 
 export type DesktopTaskConversation = CloudTaskConversationSelection & {
-  onChromeTarget?: (element: HTMLDivElement | null) => void;
   resource?: CloudChatPresentationResource;
+  reader?: CloudTaskReaderRoute;
+  onReaderChange?: (reader?: CloudTaskReaderRoute) => void;
+  onChromeTarget?: (element: HTMLDivElement | null) => void;
 };
 
 export type DesktopAccountLayout = WorkbenchAccountLayout;
@@ -26,25 +29,24 @@ export type DesktopCloudHost = {
   taskConversation?: DesktopTaskConversation;
   accountLayout?: DesktopAccountLayout;
   initialActive?: boolean;
-  getEnvironments: () => ExecutionEnvironment[];
+  onMountReady?: () => void;
+  onMountError?: () => void;
   getHandoffEnvironments?: () => ExecutionEnvironment[];
-  sendWorkspaceHandoff?: (request: WorkspaceHandoff) => Promise<string>;
-  onOpenScheduledTasks?: () => void;
+  sendWorkspaceHandoff?: (request: WorkspaceHandoff) => Promise<string | null>;
   clientPreferences?: () => Pick<AppSettings, "locale" | "theme">;
   updateClientPreferences?: (preferences: Pick<AppSettings, "locale" | "theme">) => void;
   request: (path: string, init?: RequestInit) => Promise<Response>;
   isCurrent: () => boolean;
-  onSwitch: (environment: ExecutionEnvironment) => Promise<void>;
-  onOpenDeviceTasks: (environment: ExecutionEnvironment) => Promise<void>;
   onOpenDeviceSettings?: (section: "skills" | "mcp") => void;
   onUserChange: (user: RelayUser) => void;
   onLogout: () => void;
   openExternal: (url: string) => Promise<void>;
   readLocation: () => string;
   readConversation: () => string;
-  saveLocation: (href: string, conversation: string) => void;
+  readSkillReaderReturn?: () => string | undefined;
+  saveLocation: (href: string, conversation: string, skillReaderReturn?: string) => void;
   subscribeLocation: (listener: () => void) => () => void;
-  onHeaderTarget: (element: HTMLElement | null) => void;
+  registerNavigationGuard?: (guard: (navigate: () => void) => void) => () => void;
 };
 
 /** Public host capabilities. Account and device credentials remain in Native. */

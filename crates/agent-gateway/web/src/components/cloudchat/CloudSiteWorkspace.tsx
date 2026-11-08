@@ -7,6 +7,7 @@ import {
   History,
   Lock,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MonitorSmartphone,
   RefreshCw,
@@ -22,7 +23,10 @@ import {
   ResourceDocumentComments,
   type RevisionSelection,
 } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
-import { ResourceVersionTimeline } from "@liveagent/ui/components/resource-preview/ResourceVersionTimeline";
+import {
+  type ResourceVersionHistory,
+  ResourceVersionTimeline,
+} from "@liveagent/ui/components/resource-preview/ResourceVersionTimeline";
 import {
   COMMENT_CURSOR,
   COMMENT_PIN,
@@ -41,8 +45,10 @@ import {
 import { Input } from "@liveagent/ui/components/ui/input";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { TooltipButton as Action } from "@liveagent/ui/components/ui/tooltip-button";
+import { useLocale } from "@liveagent/ui/i18n";
 import {
   type ReactNode,
+  type Ref,
   useCallback,
   useContext,
   useEffect,
@@ -54,6 +60,7 @@ import type { CloudChatArtifactVersion } from "@/lib/cloudChatArtifacts";
 import type { CloudSiteGrant, CloudSiteRelease } from "@/lib/cloudChatSites";
 import { CloudChatFeedback } from "./CloudChatFeedback";
 import { CloudChatReaderLayout } from "./CloudChatReaderContext";
+import { WorkspaceHandoffMenuItem } from "./WorkspaceHandoffDialog";
 
 type Props = {
   artifact: CloudChatArtifactVersion;
@@ -62,15 +69,24 @@ type Props = {
   busy: boolean;
   unavailable?: boolean;
   feedback: ReactNode;
-  initialAction?: "share" | "settings";
+  initialAction?: "share" | "settings" | "versions";
   displayName?: string;
   onRename?: (name: string) => Promise<void>;
   onShare: () => void;
   onOpen: () => void;
   onClose: () => void;
+  closeControlRef?: Ref<HTMLElement>;
   onContinue?: () => void;
+  onHandoff?: () => void;
+  continueLabel?: string;
+  source?: { label: string; onOpen: () => void; busy: boolean };
   versions: CloudChatArtifactVersion[];
   onVersion: (id: string) => void;
+  versionBusy?: boolean;
+  openingVersion?: string;
+  selectedVersionRef?: Ref<HTMLButtonElement>;
+  versionHistory?: ResourceVersionHistory;
+  readerFeedback?: ReactNode;
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean>;
   isCurrent: () => boolean;
 };
@@ -92,6 +108,8 @@ export function CloudSiteWorkspace(props: Props) {
 }
 
 function SiteWorkspaceContent(props: Props) {
+  const { locale } = useLocale();
+  const historyTitle = locale === "zh-CN" ? "版本历史记录" : "Version history";
   const layout = useContext(CloudChatReaderLayout);
   const root = useRef<HTMLElement>(null),
     frame = useRef<HTMLIFrameElement>(null),
@@ -110,9 +128,16 @@ function SiteWorkspaceContent(props: Props) {
   const [modifying, setModifying] = useState(false),
     [selection, setSelection] = useState<RevisionSelection | null>(null);
   const [marks, setMarks] = useState<readonly DocumentRevisionComment[]>([]);
-  const [manage, setManage] = useState(props.initialAction === "settings");
-  const [tab, setTab] = useState("settings"),
+  const versionTab = useRef<HTMLButtonElement>(null);
+  const [manage, setManage] = useState(
+    props.initialAction === "settings" || props.initialAction === "versions",
+  );
+  const [tab, setTab] = useState(props.initialAction === "versions" ? "versions" : "settings"),
     [title, setTitle] = useState(props.displayName ?? props.artifact.name.replace(/\.zip$/i, ""));
+  useEffect(() => {
+    if (props.initialAction === "versions" && !root.current?.contains(document.activeElement))
+      versionTab.current?.focus({ preventScroll: true });
+  }, [props.initialAction]);
   const [renaming, setRenaming] = useState(false),
     [renameError, setRenameError] = useState("");
   const initialOpened = useRef(false);
@@ -416,7 +441,7 @@ function SiteWorkspaceContent(props: Props) {
                 }}
               >
                 <History className="size-4" />
-                版本历史记录
+                {historyTitle}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => {
@@ -427,12 +452,27 @@ function SiteWorkspaceContent(props: Props) {
                 <Code className="size-4" />
                 构建文件
               </DropdownMenuItem>
-              {props.onContinue ? (
+              {props.onContinue || props.source || props.onHandoff ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={props.onContinue}>
-                    <SquareMousePointer className="size-4" />与 AI 一起工作
-                  </DropdownMenuItem>
+                  {props.onContinue ? (
+                    <DropdownMenuItem disabled={props.source?.busy} onClick={props.onContinue}>
+                      <SquareMousePointer className="size-4" />
+                      {props.continueLabel ?? "与 AI 一起工作"}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {props.source ? (
+                    <DropdownMenuItem disabled={props.source.busy} onClick={props.source.onOpen}>
+                      <MessageSquare className="size-4" />
+                      {props.source.label}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {props.onHandoff ? (
+                    <WorkspaceHandoffMenuItem
+                      disabled={props.versionBusy}
+                      onClick={props.onHandoff}
+                    />
+                  ) : null}
                 </>
               ) : null}
             </DropdownMenuContent>
@@ -454,10 +494,11 @@ function SiteWorkspaceContent(props: Props) {
               </Action>
             ) : null}
             <Action
+              ref={props.closeControlRef}
               variant="ghost"
               size="icon-sm"
-              tooltip="关闭站点"
-              aria-label="关闭站点"
+              tooltip={locale === "zh-CN" ? "关闭站点" : "Close site"}
+              aria-label={locale === "zh-CN" ? "关闭站点" : "Close site"}
               onClick={close}
             >
               <X className="size-4" />
@@ -465,6 +506,7 @@ function SiteWorkspaceContent(props: Props) {
           </div>
         </div>
       </header>
+      {props.readerFeedback}
       {manage ? (
         <ScrollArea className="cloud-site-management-scroll">
           <div className="cloud-site-management">
@@ -488,11 +530,12 @@ function SiteWorkspaceContent(props: Props) {
                 设置
               </button>
               <button
+                ref={versionTab}
                 type="button"
                 aria-current={tab === "versions" ? "page" : undefined}
                 onClick={() => setTab("versions")}
               >
-                版本
+                {locale === "zh-CN" ? "版本" : "Versions"}
               </button>
               <button
                 type="button"
@@ -582,12 +625,16 @@ function SiteWorkspaceContent(props: Props) {
               </>
             ) : tab === "versions" ? (
               <>
-                <h2>版本历史记录</h2>
+                <h2>{historyTitle}</h2>
                 <ResourceVersionTimeline
                   versions={props.versions}
                   selected={props.artifact.id}
-                  busy={props.busy}
+                  selectedNumber={props.artifact.number}
+                  opening={props.openingVersion}
+                  selectedRowRef={props.selectedVersionRef}
+                  busy={props.busy || props.versionBusy === true}
                   onSelect={props.onVersion}
+                  history={props.versionHistory}
                 />
               </>
             ) : (

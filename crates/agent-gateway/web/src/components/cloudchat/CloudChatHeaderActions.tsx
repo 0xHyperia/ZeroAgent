@@ -328,7 +328,7 @@ export function CloudChatHeaderActions(props: {
         client={projectsClient}
         captureGuard={captureGuard}
         disabled={props.disabled || props.moveDisabled}
-        moveAfterCreate
+        afterCreate="move"
         onCreated={props.onMoveToProject}
       />
     </div>

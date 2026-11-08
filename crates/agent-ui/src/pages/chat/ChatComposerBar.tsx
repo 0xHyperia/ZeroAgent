@@ -305,6 +305,8 @@ export type ChatComposerBarProps = {
   isSending: boolean;
   isUploadingFiles: boolean;
   isInputDisabled: boolean;
+  /** Edit a retained draft while actions that require the host are unavailable. */
+  draftOnly?: boolean;
   /** Host send precondition while the draft and other controls remain editable. */
   isSubmissionDisabled?: boolean;
   allowQueueWhileSending?: boolean;
@@ -341,6 +343,7 @@ export type ChatComposerBarProps = {
   mentionExtensions?: MentionComposerSkill[];
   resolveExtensionMention?: MentionComposerProps["resolveExtensionMention"];
   onOpenExtensionMention?: (reference: string) => void;
+  onExtensionSelectionConflict?: () => void;
   mentionActions?: MentionComposerAction[];
   /** Earlier conversations available to the structured @ reference picker. */
   mentionableConversations?: MentionComposerConversation[];
@@ -469,7 +472,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     composerRef,
     isSending,
     isUploadingFiles,
-    isInputDisabled,
+    isInputDisabled: hostInputDisabled,
+    draftOnly = false,
     isSubmissionDisabled = false,
     allowQueueWhileSending = true,
     allowUploadsWithoutWorkspace = false,
@@ -486,6 +490,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     mentionExtensions,
     resolveExtensionMention,
     onOpenExtensionMention,
+    onExtensionSelectionConflict,
     mentionActions,
     mentionableConversations = [],
     searchMentionableConversations,
@@ -555,6 +560,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     statsBar,
     contextDisplayMode,
   } = props;
+  const isInputDisabled = hostInputDisabled || draftOnly;
   const panePresentation = resolveComposerPresentation(props) === "pane";
   const { executionControls, gitControls: showGitControls } = resolveComposerControls(
     props.capabilities,
@@ -1172,6 +1178,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
   /** 发送（含排队）后退出全高编辑态，让路给回复内容。 */
   const handleComposerSend = useCallback(() => {
+    if (isInputDisabled || isSubmissionDisabled) return;
     if (isSending && !allowQueueWhileSending) return;
     // 澄清进行中禁发：避免把半成品草稿发出去（设计文档「交互」）。
     if (clarifyOpen) return;
@@ -1179,7 +1186,16 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     if (composerRef.current?.runCommandDraft()) return;
     setComposerExpanded(false);
     onSend();
-  }, [allowQueueWhileSending, isSending, clarifyOpen, composerRef, onSend, setComposerExpanded]);
+  }, [
+    allowQueueWhileSending,
+    isSending,
+    isInputDisabled,
+    isSubmissionDisabled,
+    clarifyOpen,
+    composerRef,
+    onSend,
+    setComposerExpanded,
+  ]);
 
   useEffect(() => {
     const editor = glassCardRef.current?.querySelector<HTMLElement>(".mention-composer");
@@ -1243,6 +1259,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     const composerLayer = composerLayerRef.current;
     if (!composerLayer) return;
 
+    const readMetrics = () =>
+      measureComposerOverlay({
+        layer: composerLayer.getBoundingClientRect(),
+        queueHeight: queuePanelRef.current?.getBoundingClientRect().height ?? 0,
+        floating: taskProgressBarElement?.getBoundingClientRect(),
+        column: composerColumnRef.current?.getBoundingClientRect(),
+      });
+
     if (panePresentation) {
       if (!onHeightChange && !onFloatingOverhangChange && !onCenterOffsetChange) return;
 
@@ -1250,12 +1274,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       const measure = () => {
         animationFrame = null;
         if (isComposerExpandedRef.current || expandAnimationRef.current) return;
-        const metrics = measureComposerOverlay({
-          layer: composerLayer.getBoundingClientRect(),
-          queueHeight: queuePanelRef.current?.getBoundingClientRect().height ?? 0,
-          floating: taskProgressBarElement?.getBoundingClientRect(),
-          column: composerColumnRef.current?.getBoundingClientRect(),
-        });
+        const metrics = readMetrics();
         onHeightChange?.(metrics.heightPx);
         onFloatingOverhangChange?.(metrics.floatingOverhangPx);
         onCenterOffsetChange?.(metrics.centerOffsetPx);
@@ -1296,33 +1315,33 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       // 展开态占满聊天区，保留最近一次常规高度，避免底部预留跟着跳动；
       // 展开/还原动画期间高度是中间值，同样不上报，动画结束后补测。
       if (isComposerExpandedRef.current || expandAnimationRef.current) return;
-      const composerLayerHeight = composerLayer.getBoundingClientRect().height;
-      const queueHeight = queuePanelRef.current?.getBoundingClientRect().height ?? 0;
+      const { heightPx, floatingOverhangPx } = readMetrics();
+      chatFrame.style.setProperty("--gateway-chat-composer-overlay-height", `${heightPx}px`);
       chatFrame.style.setProperty(
-        "--gateway-chat-composer-overlay-height",
-        `${Math.ceil(Math.max(0, composerLayerHeight - queueHeight))}px`,
+        "--gateway-chat-composer-clearance",
+        `${heightPx + floatingOverhangPx}px`,
       );
+    };
+    const clearComposerOverlayHeight = () => {
+      scheduleHeightMeasureRef.current = null;
+      chatFrame.style.removeProperty("--gateway-chat-composer-overlay-height");
+      chatFrame.style.removeProperty("--gateway-chat-composer-clearance");
     };
     scheduleHeightMeasureRef.current = updateComposerOverlayHeight;
 
     updateComposerOverlayHeight();
 
-    if (typeof ResizeObserver === "undefined") {
-      return () => {
-        scheduleHeightMeasureRef.current = null;
-        chatFrame.style.removeProperty("--gateway-chat-composer-overlay-height");
-      };
-    }
+    if (typeof ResizeObserver === "undefined") return clearComposerOverlayHeight;
 
     const resizeObserver = new ResizeObserver(() => {
       updateComposerOverlayHeight();
     });
     resizeObserver.observe(composerLayer);
+    if (taskProgressBarElement) resizeObserver.observe(taskProgressBarElement);
 
     return () => {
-      scheduleHeightMeasureRef.current = null;
       resizeObserver.disconnect();
-      chatFrame.style.removeProperty("--gateway-chat-composer-overlay-height");
+      clearComposerOverlayHeight();
     };
   }, [
     onHeightChange,
@@ -1813,7 +1832,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 pendingUploadedFiles.length > 0 ? "pt-1.5" : "pt-3",
                 isComposerExpanded && "min-h-0",
               )}
-              onFocusCapture={onPrepareChatRuntime}
+              onFocusCapture={draftOnly ? undefined : onPrepareChatRuntime}
               onInput={handleComposerInput}
             >
               <MentionComposer
@@ -1821,16 +1840,18 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 onSend={handleComposerSend}
                 onEmptyChange={handleComposerEmptyChange}
                 onBusyChange={onComposerBusyChange}
-                onPasteFiles={onPasteFiles}
-                loadHistoryPrompts={loadHistoryPrompts}
+                onPasteFiles={draftOnly ? undefined : onPasteFiles}
+                loadHistoryPrompts={draftOnly ? undefined : loadHistoryPrompts}
                 placeholder={inputPlaceholder}
-                disabled={isInputDisabled || stt.active}
+                disabled={(isInputDisabled && !draftOnly) || stt.active}
+                draftOnly={draftOnly}
                 workdir={workdir}
                 enabledSkills={enabledSkills}
                 slashSkills={slashSkills}
                 mentionExtensions={mentionExtensions}
                 resolveExtensionMention={resolveExtensionMention}
-                onOpenExtensionMention={onOpenExtensionMention}
+                onOpenExtensionMention={draftOnly ? undefined : onOpenExtensionMention}
+                onExtensionSelectionConflict={onExtensionSelectionConflict}
                 mentionActions={mentionActions}
                 conversationMentionsEnabled={isAgentExecutionMode(executionMode)}
                 conversations={
@@ -1843,7 +1864,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 }
                 currentConversationId={conversationId}
                 mentionApps={mentionApps}
-                commandHost={effectiveCommandHost}
+                commandHost={draftOnly ? undefined : effectiveCommandHost}
                 className={cn(
                   // 右让位由外层容器 pr-12 统一承担（见上），此处不再补 pr——
                   // 编辑器自身的右内距只会把文字推开、留下滚动条压在控制列上。

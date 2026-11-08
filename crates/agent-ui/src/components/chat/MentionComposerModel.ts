@@ -229,6 +229,13 @@ export type ComposerClipboardSnapshot = {
   payload: string;
 };
 
+export type MentionComposerExtensionDetails = {
+  /** Preserve the draft's label when only the extension's availability is known. */
+  label?: string;
+  description?: string;
+  availability?: "not-installed" | "disabled";
+};
+
 export interface MentionComposerProps {
   /** Called when user presses Enter (without Shift). */
   onSend: () => void;
@@ -243,6 +250,8 @@ export interface MentionComposerProps {
    */
   loadHistoryPrompts?: () => readonly string[];
   disabled?: boolean;
+  /** Keep local editing active while suggestions, commands and submission are paused. */
+  draftOnly?: boolean;
   placeholder?: string;
   workdir: string;
   enabledSkills?: MentionComposerSkill[];
@@ -250,10 +259,9 @@ export interface MentionComposerProps {
   slashSkills?: MentionComposerSkill[];
   /** Opt-in @ capability list. One primary entry per installed package, supplied by the host. */
   mentionExtensions?: MentionComposerSkill[];
-  resolveExtensionMention?: (
-    reference: string,
-  ) => { label: string; description?: string } | undefined;
+  resolveExtensionMention?: (reference: string) => MentionComposerExtensionDetails | undefined;
   onOpenExtensionMention?: (reference: string) => void;
+  onExtensionSelectionConflict?: () => void;
   mentionActions?: MentionComposerAction[];
   conversations?: MentionComposerConversation[];
   /** Searches the complete persisted history when the conversation query is non-empty. */

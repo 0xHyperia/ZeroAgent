@@ -12,6 +12,7 @@ const DEFAULT_READER_SPLIT_RATIO = 0.44;
 export function CloudChatResourceWorkbench(props: {
   open: boolean;
   primaryVisible: boolean;
+  onSplitAvailabilityChange: (canSplit: boolean) => void;
   readingScope?: string;
   defaultSplitRatio?: number;
   header?: ReactNode;
@@ -30,12 +31,21 @@ export function CloudChatResourceWorkbench(props: {
     mode: defaultRatio,
     ratio: defaultRatio,
   });
+  const [splitPreview, setSplitPreview] = useState<typeof split | null>(null);
   const [resizing, setResizing] = useState(false);
   useEffect(() => {
     const element = host;
     if (!element) return;
     const measure = () => {
       const { width, height } = element.getBoundingClientRect();
+      if (
+        width < 900 &&
+        element.contains(document.activeElement) &&
+        document.activeElement?.matches('[data-workbench-divider="cloud-reader"]')
+      )
+        element.querySelector<HTMLButtonElement>("[data-cloud-reader-return]")?.focus({
+          preventScroll: true,
+        });
       setCanSplit(width >= 900);
       setArea((old) => (old.width === width && old.height === height ? old : { width, height }));
     };
@@ -46,33 +56,33 @@ export function CloudChatResourceWorkbench(props: {
     return () => observer.disconnect();
   }, [host]);
   useEffect(() => {
+    props.onSplitAvailabilityChange(canSplit);
+  }, [canSplit, props.onSplitAvailabilityChange]);
+  useEffect(() => {
     if (!props.open) setExpanded(false);
   }, [props.open]);
   const readingOnly = props.open && (!props.primaryVisible || expanded || !canSplit);
   const usable = Math.max(1, area.width - 8);
+  const currentSplit = splitPreview ?? split;
   const ratio = Math.max(
     320 / usable,
     Math.min(
       1 - 420 / usable,
-      split.scope === props.readingScope && split.mode === defaultRatio
-        ? split.ratio
+      currentSplit.scope === props.readingScope && currentSplit.mode === defaultRatio
+        ? currentSplit.ratio
         : defaultRatio,
     ),
   );
   const primaryWidth = usable * ratio;
-  const changeRatio = (_id: string, value: number) =>
-    setSplit({ scope: props.readingScope, mode: defaultRatio, ratio: value });
-  useEffect(() => {
-    const end = () => setResizing(false);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
-    window.addEventListener("blur", end);
-    return () => {
-      window.removeEventListener("pointerup", end);
-      window.removeEventListener("pointercancel", end);
-      window.removeEventListener("blur", end);
-    };
-  }, []);
+  const nextSplit = (value: number) => ({
+    scope: props.readingScope,
+    mode: defaultRatio,
+    ratio: value,
+  });
+  const changeRatio = (_id: string, value: number) => {
+    setSplitPreview(null);
+    setSplit(nextSplit(value));
+  };
   return (
     <ResourcePreviewReadingSession scope={props.readingScope ?? "workspace"}>
       <CloudChatReaderLayout.Provider
@@ -86,19 +96,10 @@ export function CloudChatResourceWorkbench(props: {
           ref={setHost}
           className="cloud-resource-workbench"
           data-reader-open={props.open}
-          data-header-in-flow={props.headerInFlow || undefined}
           data-reader-only={readingOnly}
           data-reader-resizing={resizing}
+          data-header-in-flow={props.headerInFlow || undefined}
           style={{ "--cloud-primary-width": `${primaryWidth}px` } as CSSProperties}
-          onPointerDownCapture={(event) => {
-            if (
-              event.button === 0 &&
-              event.target instanceof Element &&
-              event.target.closest('[data-workbench-divider="cloud-reader"]')
-            )
-              setResizing(true);
-          }}
-          onLostPointerCapture={() => setResizing(false)}
         >
           <div
             className="cloud-workspace-primary"
@@ -127,11 +128,13 @@ export function CloudChatResourceWorkbench(props: {
             }
             dividerSize={8}
             hitSlop={8}
-            separatorLabel="调整对话与预览宽度"
-            resetHint={t("layout.resetWidthHint")}
+            separatorLabel={t("layout.resizeChatReader")}
+            resetHint={t("layout.resetSplitHint")}
             minSizesForSplit={() => ({ firstMin: 320, secondMin: 420 })}
-            onResizePreview={changeRatio}
+            onResizePreview={(_id, value) => setSplitPreview(nextSplit(value))}
             onResizeCommit={changeRatio}
+            onResizeCancel={() => setSplitPreview(null)}
+            onDragStateChange={setResizing}
             onEqualize={() => changeRatio("cloud-reader", defaultRatio)}
           />
         </WorkbenchBody>

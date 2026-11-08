@@ -7,7 +7,6 @@ import {
   ImageIcon,
   NavigationChat,
   NavigationChatFilled,
-  NavigationDevices,
   NavigationLibrary,
   NavigationLibraryFilled,
   Package,
@@ -31,11 +30,10 @@ const featureIcons = {
 const primaryIcons = {
   chat: NavigationChat,
   library: NavigationLibrary,
-  devices: NavigationDevices,
   customize: Blend,
 };
 const activeIcons = { chat: NavigationChatFilled, library: NavigationLibraryFilled };
-export type WorkbenchNavigationId = ApplicationViewId | "library" | "devices" | "customize";
+export type WorkbenchNavigationId = ApplicationViewId | "library" | "customize";
 
 /** One definition feeds rail and sidebar; visibility preferences never grant capabilities. */
 export function getWorkbenchFeatureNavigation(shortcuts?: SidebarShortcuts) {
@@ -57,7 +55,7 @@ export function createWorkbenchNavigationItem(
   label: string,
   onSelect: () => void,
 ): ApplicationRailItem {
-  if (id === "chat" || id === "library" || id === "devices" || id === "customize") {
+  if (id === "chat" || id === "library" || id === "customize") {
     const Icon = primaryIcons[id];
     const ActiveIcon = id === "chat" || id === "library" ? activeIcons[id] : undefined;
     return {

@@ -15,10 +15,12 @@ pub async fn account_workspace_handoff(
     gateway: State<'_, Arc<crate::services::gateway::GatewayController>>,
     session_handle: String,
     workspace_id: String,
+    expected_workspace_path: String,
     operation_id: String,
     file_name: String,
     body_base64: String,
-) -> Result<String, String> {
+    check_only: Option<bool>,
+) -> Result<Option<String>, String> {
     api::guard_viewer(&app, state.inner(), &session_handle).await?;
     if body_base64.len() > MAX_BODY_BYTES.div_ceil(3) * 4 {
         return Err("File is too large".into());
@@ -27,14 +29,22 @@ pub async fn account_workspace_handoff(
         .decode(body_base64)
         .map_err(|_| "Invalid workspace transfer")?;
     state.require_current(&session_handle).await?;
-    let relative_path = gateway
-        .copy_workspace_file(crate::services::gateway::proto::WorkspaceHandoffRequest {
+    let destination = gateway.workspace_handoff_destination(&workspace_id).await?;
+    // Settings resolution is asynchronous and can observe an account switch.
+    // Check the caller again before publishing into the resolved directory.
+    state.require_current(&session_handle).await?;
+    let relative_path = crate::services::gateway::GatewayController::handle_workspace_handoff_to(
+        destination,
+        crate::services::gateway::proto::WorkspaceHandoffRequest {
             workspace_id,
             operation_id,
             file_name,
             content,
-        })
-        .await?;
+            check_only: check_only.unwrap_or_default(),
+            expected_workspace_path,
+        },
+    )
+    .await?;
     state.require_current(&session_handle).await?;
     Ok(relative_path)
 }
@@ -181,7 +191,7 @@ impl CloudGatewayState {
 
 fn cloud_path(method: &str, path: &str) -> bool {
     matches!(method, "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE")
-        && (path.starts_with("/api/web-chat/")
+        && (path.starts_with("/api/web-chat/") && path != super::device_skills::DEVICE_SKILL_PATH
             || matches!(
                 (method, path),
                 (
@@ -251,6 +261,69 @@ mod tests {
         assert!(!cloud_path("DELETE", "/api/web-settings"));
         assert!(!cloud_path("PATCH", "/api/web-settings/device"));
         assert!(!cloud_path("GET", "/api/managed-provider-keys"));
+        assert!(!cloud_path(
+            "POST",
+            super::super::device_skills::DEVICE_SKILL_PATH
+        ));
+    }
+
+    #[tokio::test]
+    async fn cloud_viewer_requires_a_successful_json_identity_for_the_native_account() {
+        use axum::{http::HeaderMap, routing::get, Router};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!(
+            "http://{}/api/auth/me",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let router = Router::new().route(
+                "/api/auth/me",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers["x-zeroagent-account-id"], "7");
+                    let (status, mime, body) = match headers["authorization"].to_str().unwrap() {
+                        "Bearer fixture-current" | "Bearer fixture-renewed" => (
+                            StatusCode::OK,
+                            "application/json; charset=utf-8",
+                            r#"{"user":{"id":7}}"#,
+                        ),
+                        "Bearer fixture-other" => {
+                            (StatusCode::OK, "application/json", r#"{"user":{"id":8}}"#)
+                        }
+                        "Bearer fixture-spa" => (
+                            StatusCode::OK,
+                            "text/html",
+                            "<!doctype html><title>WebUI</title>",
+                        ),
+                        "Bearer fixture-malformed" => {
+                            (StatusCode::OK, "application/json", r#"{"user":"#)
+                        }
+                        _ => (StatusCode::UNAUTHORIZED, "application/json", "{}"),
+                    };
+                    (status, [("content-type", mime)], body)
+                }),
+            );
+            axum::serve(listener, router).await.unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for (token, accepted) in [
+            ("fixture-current", true),
+            ("fixture-renewed", true),
+            ("fixture-other", false),
+            ("fixture-spa", false),
+            ("fixture-malformed", false),
+            ("fixture-expired", false),
+        ] {
+            assert_eq!(
+                verify_cloud_viewer(&client, &url, token, 7, Duration::from_secs(3))
+                    .await
+                    .is_ok(),
+                accepted,
+                "{token}"
+            );
+        }
+        server.abort();
     }
 }
 
@@ -259,6 +332,38 @@ mod tests {
 pub struct CloudOpenResponse {
     bridge_id: String,
     origin: String,
+}
+
+async fn verify_cloud_viewer(
+    client: &reqwest::Client,
+    url: &Url,
+    access_token: &str,
+    user_id: u64,
+    timeout: Duration,
+) -> Result<(), String> {
+    const UNAVAILABLE: &str = "Cloud workbench authorization is unavailable";
+    let response = client
+        .get(url.clone())
+        .bearer_auth(access_token)
+        .header("X-ZeroAgent-Account-ID", user_id.to_string())
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|_| "Cloud authorization exchange failed")?;
+    let json = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json"));
+    if response.status() != StatusCode::OK || !json {
+        return Err(UNAVAILABLE.into());
+    }
+    let identity = response_json(response).await.map_err(|_| UNAVAILABLE)?;
+    if identity["user"]["id"].as_u64() != Some(user_id) {
+        return Err(UNAVAILABLE.into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -272,18 +377,18 @@ pub async fn account_cloud_open(
     api::guard_viewer(&app, state.inner(), &session_handle).await?;
     let origin = gateway::configured_gateway_origin()?;
     let url = gateway::gateway_url(&origin, "/api/auth/me")?;
+    let user_id = state.snapshot(&session_handle).await?.public.user["id"]
+        .as_u64()
+        .ok_or(RESPONSE_ERROR)?;
     let tokens = state.access(&session_handle, false).await?;
-    let response = state
-        .client
-        .get(url.clone())
-        .bearer_auth(&tokens.access_token)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|_| "Cloud authorization exchange failed")?;
-    if response.status() != StatusCode::OK {
-        return Err("Cloud workbench authorization is unavailable".into());
-    }
+    verify_cloud_viewer(
+        &state.client,
+        &url,
+        &tokens.access_token,
+        user_id,
+        Duration::from_secs(30),
+    )
+    .await?;
     state.require_current(&session_handle).await?;
     let origin_string = origin.origin().ascii_serialization();
     let (id, mut closed) = cloud
@@ -312,17 +417,18 @@ pub async fn account_cloud_open(
             if tokens.access_token == last_access {
                 continue;
             }
-            let renewal = account
-                .client
-                .get(url.clone())
-                .bearer_auth(&tokens.access_token)
-                .timeout(Duration::from_secs(10))
-                .send();
+            let renewal = verify_cloud_viewer(
+                &account.client,
+                &url,
+                &tokens.access_token,
+                user_id,
+                Duration::from_secs(10),
+            );
             let result = tokio::select! {
                 _ = closed.changed() => break,
                 result = renewal => result,
             };
-            if result.is_ok_and(|response| response.status() == StatusCode::OK) {
+            if result.is_ok() {
                 last_access = tokens.access_token;
             }
         }

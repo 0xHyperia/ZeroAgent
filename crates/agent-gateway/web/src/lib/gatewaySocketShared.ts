@@ -76,7 +76,12 @@ export type PendingRequest = {
 export type GatewayRequestOptions = {
   timeoutMs?: number;
   onDelta?: (delta: string) => void;
+  isCurrentAgent?: () => boolean;
 };
+
+export function requireCurrentGatewayAgent(isCurrentAgent?: () => boolean) {
+  if (isCurrentAgent && !isCurrentAgent()) throw new Error("The active device changed.");
+}
 
 export type GatewayChatSystemSettings = {
   executionMode?: string;

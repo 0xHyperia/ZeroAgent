@@ -5,11 +5,28 @@ import {
   validateImportedPastedTextFiles,
 } from "@liveagent/ui/lib/chat/composerDraft";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 
 export {
   buildTextFromComposerDraft,
   createTextComposerDraft,
 } from "@liveagent/ui/lib/chat/composerDraft";
+
+export function deviceAccountSkillIssue(skillFiles: readonly string[], selectedFile: string) {
+  const selected = parseExtensionReference(selectedFile);
+  if (!selected) return;
+  const existing = new Set<string>();
+  for (const skillFile of skillFiles) {
+    const reference = parseExtensionReference(skillFile);
+    if (!reference) continue;
+    if (reference.packageId === selected.packageId && reference.version !== selected.version) {
+      return "revision-conflict";
+    }
+    existing.add(skillFile);
+  }
+  // K-brain admits four distinct account skill references per run.
+  if (!existing.has(selectedFile) && existing.size >= 4) return "limit";
+}
 
 type SystemImportPastedTextsResponse = {
   files: PendingUploadedFile[];

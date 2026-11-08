@@ -13,9 +13,6 @@ import (
 )
 
 const cloudScheduleSchema = `
-CREATE TABLE IF NOT EXISTS zeroagent_cloud_schedule_authority (
- user_id BIGINT PRIMARY KEY, session_id TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_execution_accounts (
  user_id BIGINT NOT NULL, source TEXT NOT NULL CHECK (source IN ('web','desktop')),
  session_ref TEXT NOT NULL, refresh_at TIMESTAMPTZ,
@@ -26,7 +23,8 @@ CREATE INDEX IF NOT EXISTS zeroagent_cloud_execution_refresh ON zeroagent_cloud_
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_schedules (
  id UUID PRIMARY KEY, user_id BIGINT NOT NULL, revision BIGINT NOT NULL DEFAULT 1,
  enabled BOOLEAN NOT NULL DEFAULT true, next_at TIMESTAMPTZ, admitted INTEGER NOT NULL DEFAULT 0,
- blocked TEXT NOT NULL DEFAULT '', spec JSONB NOT NULL, UNIQUE (id,user_id)
+ blocked TEXT NOT NULL DEFAULT '', spec JSONB NOT NULL, deleted_at TIMESTAMPTZ,
+ UNIQUE (id,user_id)
 );
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_schedules_owner ON zeroagent_cloud_schedules(user_id,id);
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_schedules_due ON zeroagent_cloud_schedules(next_at,id) WHERE enabled;
@@ -34,15 +32,12 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_schedule_occurrences (
  id UUID PRIMARY KEY, task_id UUID NOT NULL, user_id BIGINT NOT NULL, trigger_at TIMESTAMPTZ NOT NULL,
  manual BOOLEAN NOT NULL, spec JSONB NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
  lease_owner TEXT NOT NULL DEFAULT '', lease_until TIMESTAMPTZ, run_id UUID,
- error_code TEXT NOT NULL DEFAULT '',
+ error_code TEXT NOT NULL DEFAULT '', approval_decision TEXT NOT NULL DEFAULT '', approved_at TIMESTAMPTZ,
  FOREIGN KEY(task_id,user_id) REFERENCES zeroagent_cloud_schedules(id,user_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_schedule_history ON zeroagent_cloud_schedule_occurrences(task_id,trigger_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS zeroagent_cloud_schedule_trigger ON zeroagent_cloud_schedule_occurrences(task_id,trigger_at) WHERE NOT manual;
 CREATE UNIQUE INDEX IF NOT EXISTS zeroagent_cloud_schedule_dispatch ON zeroagent_cloud_schedule_occurrences(task_id) WHERE state='pending';
-ALTER TABLE zeroagent_cloud_schedule_occurrences ADD COLUMN IF NOT EXISTS approval_decision TEXT NOT NULL DEFAULT '';
-ALTER TABLE zeroagent_cloud_schedule_occurrences ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
-ALTER TABLE zeroagent_cloud_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 `
 
 const cloudScheduleFields = `id::text,revision,enabled,next_at,admitted,blocked,spec`
@@ -79,6 +74,24 @@ func (s *PersistentStore) listCloudSchedules(ctx context.Context, uid int64) ([]
 	return items, rows.Err()
 }
 
+const cloudScheduleRunRows = `SELECT o.id::text,o.trigger_at,o.manual,COALESCE(r.state,o.state),COALESCE(r.conversation_id::text,''),COALESCE(r.id::text,''),COALESCE(left(r.output,4000),''),COALESCE(r.error_code,o.error_code),COALESCE(c.archived,false),CASE WHEN o.state='awaiting_approval' THEN o.spec ELSE NULL END
+ FROM zeroagent_cloud_schedule_occurrences o LEFT JOIN zeroagent_cloud_runs r ON r.id=o.run_id AND r.user_id=o.user_id
+ LEFT JOIN zerobox_cloud_conversations c ON c.id=r.conversation_id AND c.user_id=r.user_id`
+
+func scanCloudScheduleRun(row interface{ Scan(...any) error }) (CloudScheduleRun, error) {
+	var item CloudScheduleRun
+	var approval []byte
+	if err := row.Scan(&item.ID, &item.TriggerAt, &item.Manual, &item.State, &item.ConversationID, &item.RunID, &item.Output, &item.ErrorCode, &item.Archived, &approval); err != nil {
+		return CloudScheduleRun{}, err
+	}
+	if len(approval) != 0 {
+		if err := json.Unmarshal(approval, &item.Approval); err != nil {
+			return CloudScheduleRun{}, err
+		}
+	}
+	return item, nil
+}
+
 func (s *PersistentStore) cloudScheduleRuns(ctx context.Context, uid int64, task string) ([]CloudScheduleRun, error) {
 	var exists bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM zeroagent_cloud_schedules WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL)`, task, uid).Scan(&exists); err != nil {
@@ -87,9 +100,7 @@ func (s *PersistentStore) cloudScheduleRuns(ctx context.Context, uid int64, task
 	if !exists {
 		return nil, ErrNotFound
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT o.id::text,o.trigger_at,o.manual,COALESCE(r.state,o.state),COALESCE(r.conversation_id::text,''),COALESCE(r.id::text,''),COALESCE(left(r.output,4000),''),COALESCE(r.error_code,o.error_code),COALESCE(c.archived,false),CASE WHEN o.state='awaiting_approval' THEN o.spec ELSE NULL END
- FROM zeroagent_cloud_schedule_occurrences o LEFT JOIN zeroagent_cloud_runs r ON r.id=o.run_id AND r.user_id=o.user_id
- LEFT JOIN zerobox_cloud_conversations c ON c.id=r.conversation_id AND c.user_id=r.user_id
+	rows, err := s.db.QueryContext(ctx, cloudScheduleRunRows+`
  WHERE o.task_id=$1 AND o.user_id=$2 ORDER BY (o.state='awaiting_approval') DESC,o.trigger_at DESC,o.id DESC LIMIT 100`, task, uid)
 	if err != nil {
 		return nil, err
@@ -97,19 +108,19 @@ func (s *PersistentStore) cloudScheduleRuns(ctx context.Context, uid int64, task
 	defer rows.Close()
 	items := make([]CloudScheduleRun, 0)
 	for rows.Next() {
-		var item CloudScheduleRun
-		var approval []byte
-		if err := rows.Scan(&item.ID, &item.TriggerAt, &item.Manual, &item.State, &item.ConversationID, &item.RunID, &item.Output, &item.ErrorCode, &item.Archived, &approval); err != nil {
+		item, err := scanCloudScheduleRun(rows)
+		if err != nil {
 			return nil, err
-		}
-		if len(approval) != 0 {
-			if err := json.Unmarshal(approval, &item.Approval); err != nil {
-				return nil, err
-			}
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *PersistentStore) cloudScheduleRun(ctx context.Context, uid int64, task, occurrence string) (CloudScheduleRun, error) {
+	return scanCloudScheduleRun(s.db.QueryRowContext(ctx, cloudScheduleRunRows+`
+ WHERE o.task_id=$1 AND o.user_id=$2 AND o.id=$3
+ AND EXISTS (SELECT 1 FROM zeroagent_cloud_schedules s WHERE s.id=o.task_id AND s.user_id=o.user_id AND s.deleted_at IS NULL)`, task, uid, occurrence))
 }
 
 func (s *PersistentStore) deleteCloudSchedule(ctx context.Context, uid int64, id string, now time.Time) error {
@@ -154,22 +165,39 @@ func (s *PersistentStore) cancelPendingCloudSchedule(ctx context.Context, uid in
 	return err
 }
 
+func (s *PersistentStore) cloudScheduleApprovalDecision(ctx context.Context, uid int64, task, run string) (string, error) {
+	var decision string
+	err := s.db.QueryRowContext(ctx, `SELECT CASE
+ WHEN o.approval_decision<>'' THEN o.approval_decision
+ WHEN o.state='awaiting_approval' THEN 'pending'
+ ELSE 'unavailable' END
+ FROM zeroagent_cloud_schedule_occurrences o JOIN zeroagent_cloud_schedules s ON s.id=o.task_id AND s.user_id=o.user_id
+ WHERE o.id=$1 AND o.task_id=$2 AND o.user_id=$3 AND s.deleted_at IS NULL`, run, task, uid).Scan(&decision)
+	return decision, err
+}
+
 func (s *PersistentStore) decideCloudScheduleApproval(ctx context.Context, uid int64, task, run, decision string, now time.Time) error {
 	state := "rejected"
 	if decision == "approve" {
 		state = "pending"
 	}
-	var stored string
-	err := s.db.QueryRowContext(ctx, `UPDATE zeroagent_cloud_schedule_occurrences
- SET state=CASE WHEN state='awaiting_approval' THEN $4 ELSE state END,
-     approved_at=CASE WHEN state='awaiting_approval' AND $5='approve' THEN $6 ELSE approved_at END,
-     approval_decision=$5
- WHERE id=$1 AND task_id=$2 AND user_id=$3 AND (state='awaiting_approval' OR approval_decision=$5)
- RETURNING approval_decision`, run, task, uid, state, decision, now).Scan(&stored)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrCloudRunConflict
+	result, err := s.db.ExecContext(ctx, `UPDATE zeroagent_cloud_schedule_occurrences o
+ SET state=$4,approved_at=CASE WHEN $5='approve' THEN $6::timestamptz ELSE NULL END,approval_decision=$5
+ FROM zeroagent_cloud_schedules s
+ WHERE o.id=$1 AND o.task_id=$2 AND o.user_id=$3 AND o.state='awaiting_approval' AND o.approval_decision=''
+ AND s.id=o.task_id AND s.user_id=o.user_id AND s.deleted_at IS NULL`, run, task, uid, state, decision, now)
+	if err != nil {
+		return err
 	}
-	return err
+	if count, err := result.RowsAffected(); err != nil || count != 0 {
+		return err
+	}
+	// Another request may have recorded a decision since the handler checked.
+	stored, err := s.cloudScheduleApprovalDecision(ctx, uid, task, run)
+	if err != nil || stored == decision {
+		return err
+	}
+	return errCloudScheduleApprovalConflict
 }
 
 func cloudScheduleActive(ctx context.Context, tx *sql.Tx, id string) (bool, error) {
@@ -399,13 +427,4 @@ func (s *PersistentStore) finishCloudSchedule(ctx context.Context, item *cloudSc
 		return err
 	}
 	return tx.Commit()
-}
-
-func (s *PersistentStore) cloudScheduleSessionID(ctx context.Context, uid int64) (string, error) {
-	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT session_id FROM zeroagent_cloud_schedule_authority WHERE user_id=$1`, uid).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = ErrNotFound
-	}
-	return id, err
 }

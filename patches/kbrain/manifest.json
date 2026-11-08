@@ -5,7 +5,8 @@
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
-    "zeroagent.builtin-skills.v1"
+    "zeroagent.builtin-skills.v1",
+    "zeroagent.device-skill-snapshot.v1"
   ],
   "patches": [
     {
@@ -55,7 +56,19 @@
     {
       "file": "0013-scheduled-run-prompt.patch",
       "sha256": "5eed5bc9e103fc6e358c5acb9de7471770398a7033e32483a6f8741d8f00d8b9"
+    },
+    {
+      "file": "0014-device-cron-draft-preview.patch",
+      "sha256": "87c0ac86a73250cdf1e1c8d8615332bfb85d883ef6db47329a7bf80dfb5719e6"
+    },
+    {
+      "file": "0015-account-skill-snapshots.patch",
+      "sha256": "7b705c0ce85ed966ac90a5ad16a6b29016a104a3e4d097a2d2ac1487136072a4"
+    },
+    {
+      "file": "0016-device-manual-run-receipts.patch",
+      "sha256": "bcba2db0d54bb8b0c8e07888996ed26dfd9a3790450d803eb9f8df2e98bed342"
     }
   ],
-  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, and session queue readiness"
+  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, and device manual run receipts"
 }

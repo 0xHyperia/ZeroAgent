@@ -40,6 +40,27 @@ test("desktop releases publish the same assets to source and public repositories
   assert.match(workflow, /Missing public release notes/);
 });
 
+test("Windows packaging retains stock uninstall without the upstream data cleanup hook", () => {
+  for (const filename of ["tauri.conf.json", "tauri.windows.conf.json", "tauri.windows.release.conf.json"]) {
+    const config = JSON.parse(readRepoFile(`crates/agent-gui/src-tauri/${filename}`));
+    assert.equal(config.bundle.windows.nsis.installerIcon, "icons/icon.ico", filename);
+    assert.equal(Object.hasOwn(config.bundle.windows.nsis, "installerHooks"), false, filename);
+  }
+});
+
+test("Windows upgrade acceptance is opt-in and consumes the signed candidate on a separate read-only runner", () => {
+  const workflow = readRepoFile(".github/workflows/desktop-release.yml");
+  const upgrade = workflow.match(/\n  windows-upgrade:\n([\s\S]*?)(?=\n  [\w-]+:\n)/)?.[1];
+  assert.ok(upgrade);
+  assert.match(upgrade, /if: github\.event_name == 'workflow_dispatch' && inputs\.artifacts_only && inputs\.previous_windows_release != ''/);
+  assert.match(upgrade, /needs: \[release-metadata, windows\]\s+runs-on: windows-latest\s+permissions:\s+contents: read/);
+  assert.match(upgrade, /actions\/download-artifact@v8\s+with:\s+name: liveagent-windows-x64/);
+  assert.match(upgrade, /-PreviousVersion \$env:PREVIOUS_WINDOWS_RELEASE\.Substring\(1\)/);
+  assert.match(upgrade, /\$asset\[0\]\.digest -cne \$digest/);
+  assert.doesNotMatch(upgrade, /TAURI_SIGNING_PRIVATE_KEY|PUBLIC_RELEASE_TOKEN|gh release (?:create|upload)|contents: write/);
+  assert.doesNotMatch(workflow.match(/\n  publish:\n([\s\S]+)/)?.[1] ?? "", /- windows-upgrade/);
+});
+
 test("browser extension presents ZeroAgent branding while keeping its bridge protocol", () => {
   const manifest = JSON.parse(readRepoFile("crates/agent-gui/browser-extension/manifest.json"));
   const background = readRepoFile("crates/agent-gui/browser-extension/background.js");

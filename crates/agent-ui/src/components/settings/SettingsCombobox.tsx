@@ -19,6 +19,7 @@ type SettingsComboboxProps = {
   searchPlaceholder: string;
   emptyLabel: string;
   triggerClassName?: string;
+  triggerLabel?: string;
   /** Lets an external <label htmlFor> target the trigger. */
   id?: string;
   disabled?: boolean;
@@ -32,6 +33,7 @@ export function SettingsCombobox({
   searchPlaceholder,
   emptyLabel,
   triggerClassName,
+  triggerLabel,
   id,
   disabled,
 }: SettingsComboboxProps) {
@@ -60,7 +62,7 @@ export function SettingsCombobox({
         )}
       >
         <span className="min-w-0 truncate" style={selectedOption?.style}>
-          {selectedOption?.label}
+          {triggerLabel ?? selectedOption?.label}
         </span>
         <Combobox.Icon>
           <ChevronDown className="size-3.5 opacity-40" />

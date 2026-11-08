@@ -1150,4 +1150,5 @@ pub(crate) mod tests;
 pub mod api;
 pub mod desktop_remote;
 pub mod desktop_cloud;
+pub(crate) mod device_skills;
 pub mod gateway;

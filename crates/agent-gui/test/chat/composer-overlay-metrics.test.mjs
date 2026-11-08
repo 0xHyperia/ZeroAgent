@@ -155,16 +155,16 @@ test("composer bar measures the card column and task pill wrapper alongside the 
 });
 
 test("jump-to-bottom centers on the composer card and clears its floating chrome", () => {
-  const jumpButton = transcriptSource.match(/chat-jump-to-bottom[\s\S]*?<ChevronDown/)?.[0];
+  const jumpButton = transcriptSource.match(/<TranscriptLatestButton[\s\S]*?\/>/)?.[0];
   assert.ok(jumpButton, "jump-to-bottom button markup not found");
   assert.doesNotMatch(jumpButton, /left-1\/2/);
   assert.match(
     jumpButton,
-    /left:\s*`calc\(50% \+ \$\{Math\.round\(composerCenterOffsetPx\)\}px\)`/,
+    /left=\{`calc\(50% \+ \$\{Math\.round\(composerCenterOffsetPx\)\}px\)`\}/,
   );
   assert.match(
     jumpButton,
-    /bottom:\s*Math\.ceil\(bottomReservePx\)\s*\+\s*Math\.ceil\(floatingOverhangPx\)\s*\+\s*16/,
+    /bottom=\{Math\.ceil\(bottomReservePx\)\s*\+\s*Math\.ceil\(floatingOverhangPx\)\s*\+\s*16\}/,
   );
 
   assert.match(paneHostSource, /onFloatingOverhangChange=\{setComposerFloatingOverhang\}/);

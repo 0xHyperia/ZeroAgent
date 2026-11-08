@@ -24,7 +24,7 @@ pub fn conversation_id_from_notification_id(id: &str) -> Option<&str> {
     (!conversation_id.is_empty()).then_some(conversation_id)
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(target_os = "macos")]
 fn activate_from_notification(id: &str) {
     let Some(app) = APP.get() else { return };
     let Some(conversation_id) = conversation_id_from_notification_id(id) else {

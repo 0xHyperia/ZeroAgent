@@ -100,6 +100,7 @@ import {
   type RawManagedProcessOpPayload,
   type RawManagedProcessStatePayload,
   type RawTerminalResponse,
+  requireCurrentGatewayAgent,
   type SkillListResponse,
   type SkillManagePayload,
   type SkillMetadataResponse,
@@ -317,7 +318,10 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
 
   // Submit a chat command. Streaming does not hang off the command: the
   // conversation subscription (persistent, run-agnostic) carries the reply.
-  async chatCommand(input: GatewayChatCommandInput): Promise<ChatCommandAccepted> {
+  async chatCommand(
+    input: GatewayChatCommandInput,
+    isCurrentAgent = this.captureActiveAgentScope(),
+  ): Promise<ChatCommandAccepted> {
     if (this.token.trim() === "") {
       throw new Error("Gateway token is required");
     }
@@ -329,11 +333,13 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     const request = () =>
       this.request<RawChatCommandResponse>("chat.command", payload, {
         timeoutMs: CHAT_COMMAND_ACK_TIMEOUT_MS,
+        isCurrentAgent,
       });
     let response: RawChatCommandResponse;
     try {
       response = await request();
     } catch (error) {
+      requireCurrentGatewayAgent(isCurrentAgent);
       if (
         this.disposed ||
         (!isRecoverableGatewayTransportError(error) &&
@@ -353,10 +359,12 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
         // The forced disconnect may have rejected an in-flight connect
         // attempt whose settled promise ensureConnected replays; one fresh
         // attempt follows it so the retry actually reaches the wire.
+        requireCurrentGatewayAgent(isCurrentAgent);
         await this.ensureConnected();
       }
       response = await request();
     }
+    requireCurrentGatewayAgent(isCurrentAgent);
     const runId = String(response.run_id ?? "").trim();
     if (!runId) {
       throw new Error("Gateway chat command returned no run_id");

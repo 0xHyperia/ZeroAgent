@@ -1,8 +1,9 @@
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
 import { TranscriptFindBar } from "@liveagent/ui/components/chat/TranscriptFindBar";
+import { TranscriptLatestButton } from "@liveagent/ui/components/chat/TranscriptLatestButton";
 import { TranscriptQuoteSelection } from "@liveagent/ui/components/chat/TranscriptQuoteSelection";
-import { ChevronDown, Copy } from "@liveagent/ui/components/IconSet";
+import { Copy } from "@liveagent/ui/components/IconSet";
 import { ContextMenuItem, ContextMenuPopup } from "@liveagent/ui/components/ui/context-menu";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
@@ -293,7 +294,6 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
   );
 
   const copySelectedTextLabel = t("chat.transcript.copySelectedText");
-  const jumpToBottomLabel = t("chat.transcript.scrollToBottom");
   const resizeTranscriptLabel = t("chat.transcript.resizeWidth");
   const resetTranscriptWidthLabel = t("chat.transcript.resizeWidthReset");
 
@@ -310,7 +310,10 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
       <div
         ref={setScrollViewport}
         data-scroll-viewport
-        className="chat-transcript-scrollbar mx-1.5 h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
+        role="region"
+        aria-label={t("chat.transcript.messages")}
+        tabIndex={-1}
+        className="chat-transcript-viewport chat-transcript-scrollbar mx-1.5 h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
       >
         <div
           className={cn(
@@ -399,27 +402,16 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
           onJump={handleFloorJump}
         />
       ) : null}
-      {!following ? (
-        <button
-          type="button"
-          aria-label={jumpToBottomLabel}
-          title={jumpToBottomLabel}
-          onClick={() => scrollFollowHandle.jumpToBottom()}
-          className={cn(
-            "chat-jump-to-bottom absolute z-10 flex size-8 -translate-x-1/2 items-center justify-center",
-            "rounded-full border border-border/55 bg-background/45 text-muted-foreground shadow-[inset_0_var(--spacing-1px)_0_color-mix(in_oklab,_var(--color-white)_45%,_transparent),0_var(--spacing-8px)_var(--spacing-24px)_var(--spacing-minus-14px)_color-mix(in_oklab,_var(--color-black)_35%,_transparent)] backdrop-blur-18px backdrop-saturate-[180%]",
-            "transition-colors hover:bg-background/65 hover:text-foreground dark:border-white/[0.12] dark:bg-white/[0.06] dark:shadow-[inset_0_var(--spacing-1px)_0_color-mix(in_oklab,_var(--color-white)_8%,_transparent),0_var(--spacing-8px)_var(--spacing-24px)_var(--spacing-minus-14px)_color-mix(in_oklab,_var(--color-black)_60%,_transparent)] dark:hover:bg-white/[0.11]",
-          )}
+      {!following && !isTranscriptBusy && (historyItems.length > 0 || pendingReply || isSending) ? (
+        <TranscriptLatestButton
+          viewport={scrollViewport}
+          onJump={scrollFollowHandle.jumpToBottom}
           // Centered on the composer card (not the pane) and stacked above
           // the task-progress pill / queue panel: the composer layer paints
           // over the transcript, so any overlap would hide the button.
-          style={{
-            left: `calc(50% + ${Math.round(composerCenterOffsetPx)}px)`,
-            bottom: Math.ceil(bottomReservePx) + Math.ceil(floatingOverhangPx) + 16,
-          }}
-        >
-          <ChevronDown className="size-4" />
-        </button>
+          left={`calc(50% + ${Math.round(composerCenterOffsetPx)}px)`}
+          bottom={Math.ceil(bottomReservePx) + Math.ceil(floatingOverhangPx) + 16}
+        />
       ) : null}
       {typeof document !== "undefined" && transcriptContextMenu ? (
         <ContextMenuPopup

@@ -1,5 +1,11 @@
 export const EN_US_COMMON_TRANSLATIONS = {
   "layout.resetWidthHint": "Double-click to restore default width",
+  "layout.splitResizeKeys":
+    "Use the arrow keys to resize. Hold Shift for larger steps. Home and End go to the limits.",
+  "layout.splitResizeResetKeys":
+    "Use the arrow keys to resize. Hold Shift for larger steps. Home and End go to the limits. Press Enter to reset.",
+  "layout.resizeChatReader": "Resize chat and reader",
+  "layout.resetSplitHint": "Reset width with Enter or double-click",
   "sidebar.resizeWidth": "Resize sidebar",
   "sidebar.resizeWidthHint":
     "Drag to resize; double-click to reset. Arrow keys adjust, Shift accelerates, Enter resets, Escape cancels the drag.",
@@ -169,6 +175,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.conversationSearchNavigate": "Navigate",
   "chat.conversationSearchOpen": "Open",
   "chat.conversationSearchClose": "Close",
+  "chat.clearConversationSearch": "Clear search",
   "chat.retryConversationSearch": "Retry",
   "chat.commandPalette.title": "Command palette",
   "chat.commandPalette.description": "Run an action or search conversations.",
@@ -754,6 +761,9 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.composer.noMatchingReferenceTypes": "No matching reference types",
   "chat.composer.noMatchingExtensions": "No matching plugins, skills or resources",
   "chat.composer.openExtensionDetails": "Open details",
+  "chat.composer.extensionNotInstalled":
+    "Not installed. Install this extension in Customize to use it.",
+  "chat.composer.extensionDisabled": "Disabled. Enable this extension in Customize to use it.",
   "chat.composer.capabilitiesTitle": "Plugins and resources",
   "chat.composer.mentionGroupApps": "Apps",
   "chat.composer.appsHint": "Reference an installed app for computer use",
@@ -1002,7 +1012,11 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.toolApproval.moreActions": "More approval options",
   "chat.toolApproval.deny": "Deny",
   "chat.toolApproval.timeoutHint": "until it is auto-denied",
+  "chat.toolApproval.currentDeadline": "This request will be denied in {time}",
+  "chat.toolApproval.details": "Pending operation details",
   "chat.toolApproval.failed": "Submit failed. Please retry.",
+  "chat.toolApproval.batchUnconfirmed":
+    "Unconfirmed decisions: {count}. Check the remaining requests before deciding again.",
   "chat.toolApproval.remember": "Allow and remember",
   "chat.toolApproval.rememberRules": "Remember: {rules}",
   "chat.toolApproval.scope.session": "This session",
@@ -1033,7 +1047,9 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "skills.clearSelection": "Clear Selection",
   "sidebar.openSidebar": "Open Sidebar",
   "sidebar.navigation": "Navigation and conversations",
+  "sidebar.applicationNavigation": "App navigation",
   "sidebar.closeSidebar": "Close Sidebar",
+  "sidebar.previewSidebar": "Preview sidebar",
   "sidebar.readingHistory": "Reading conversation history...",
   "sidebar.autoShowLater": "Recent saved conversations will appear automatically.",
   "sidebar.loadingMoreHistory": "Loading more history...",
@@ -2409,7 +2425,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.markdown.externalLinkDontRemind": "Don't ask again",
   "chat.greetingTemplate": "{greeting}. {subtitle}",
   "chat.transcript.copySelectedText": "Copy selected text",
-  "chat.transcript.scrollToBottom": "Scroll to bottom",
+  "chat.transcript.messages": "Conversation messages",
+  "chat.transcript.scrollToBottom": "Go to latest messages",
   "chat.transcript.resizeWidth": "Resize conversation content",
   "chat.transcript.resizeWidthReset": "Double-click to reset",
   "projectTools.terminalInputPaused.offline":

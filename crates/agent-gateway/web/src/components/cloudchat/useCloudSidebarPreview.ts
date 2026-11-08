@@ -1,12 +1,10 @@
 import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
-import type { CloudSidebarDestination } from "./CloudContextSidebar";
 
-export type CloudNavigationDestination = CloudSidebarDestination | "cron-hub" | "customize";
+export type CloudNavigationDestination = "chat" | "library" | "cron-hub" | "customize";
 
 const destinations: readonly CloudNavigationDestination[] = [
   "chat",
   "library",
-  "devices",
   "cron-hub",
   "customize",
 ];

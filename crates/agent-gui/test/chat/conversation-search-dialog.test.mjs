@@ -7,7 +7,7 @@ test("conversation search preserves ordering, navigation, draft opening and stal
   const pending = [];
   env = await createDomTestEnv({ mocks: {
     "../IconSet": new Proxy({}, {get: () => () => null}),
-    "@liveagent/ui/components/IconSet": Object.fromEntries(["Clock3", "Loader2", "MessageSquareText", "Pin", "Search"].map(name => [name, () => null])),
+    "@liveagent/ui/components/IconSet": Object.fromEntries(["Clock3", "Loader2", "MessageSquareText", "Pin", "Search", "X"].map(name => [name, () => null])),
     "@liveagent/ui/i18n/index": { useLocale: () => ({ t: key => key, locale: "en" }) },
     "@liveagent/ui/lib/chat/conversationSearch": { searchPersistedConversations: args => new Promise((resolve, reject) => pending.push({ args, resolve, reject })) },
   }});
@@ -59,6 +59,7 @@ test("conversation search preserves ordering, navigation, draft opening and stal
     assert.ok(retry);
     await act(async () => retry.click());
     assert.equal(pending.length, 4);
+    assert.equal(document.activeElement, input());
     await render({ open: false });
     await act(async () => pending[3].resolve([{ id: "late", title: "Late" }]));
     await render();
@@ -70,6 +71,41 @@ test("conversation search preserves ordering, navigation, draft opening and stal
     events.length = 0;
     await key("Escape");
     assert.deepEqual(events, [["open", false]], "Escape closes the search once");
+
+    const pages = [];
+    const adapter = {
+      search: (query, { cursor }) => new Promise((resolve, reject) => pages.push({ query, cursor, resolve, reject })),
+      onSelectResult: (item) => events.push(["result", item.id]),
+    };
+    await render({ open: false, searchAdapter: adapter });
+    await render({ searchAdapter: adapter });
+    await type("project"); await debounce();
+    await act(async () => pages[0].resolve({ items: [{ id: "first", title: "First" }], hasMore: true, nextCursor: "cursor-1" }));
+    const more = [...document.querySelectorAll("button")].find(el => el.textContent === "Load more");
+    assert.ok(more);
+    more.focus();
+    await act(async () => more.click());
+    assert.equal(document.activeElement, more);
+    assert.equal(more.getAttribute("aria-disabled"), "true");
+    await act(async () => more.click());
+    assert.equal(pages.length, 2);
+    await act(async () => pages[1].reject(new Error("offline")));
+    assert.equal(document.activeElement, more);
+    assert.equal(more.textContent, "chat.retryConversationSearch");
+    assert.equal(options()[0].textContent, "First");
+    await act(async () => more.click());
+    assert.deepEqual(pages.map(page => [page.query, page.cursor]), [
+      ["project", undefined], ["project", "cursor-1"], ["project", "cursor-1"],
+    ]);
+    await act(async () => pages[2].resolve({ items: [{ id: "last", title: "Last" }] }));
+    assert.deepEqual(options().map(el => el.textContent), ["First", "Last"]);
+    assert.equal(document.activeElement, input());
+    await act(async () => document.querySelector('[aria-label="chat.clearConversationSearch"]').click());
+    assert.equal(input().value, "");
+    assert.deepEqual(options().map(el => el.textContent), ["Pinned", "Recent"]);
+    events.length = 0;
+    await act(async () => [...document.querySelectorAll("button")].find(el => el.textContent === "chat.conversationSearchClose").click());
+    assert.deepEqual(events, [["open", false]]);
   } finally {
     await act(async () => root.unmount()); host.remove(); env.cleanup();
   }

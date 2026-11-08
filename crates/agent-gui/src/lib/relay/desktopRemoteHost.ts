@@ -37,6 +37,7 @@ type HostInput = {
   environment: DesktopEnvironment;
   environments: DesktopEnvironment[];
   selectionLease: string;
+  workspaceId?: string;
   expiresAt: number;
   signal?: AbortSignal;
   onHeaderTarget?: DesktopRemoteHost["onHeaderTarget"];
@@ -196,6 +197,7 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
         origin: gatewayOrigin,
         deviceId: input.environment.device_id,
         selectionLease: input.selectionLease,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
       },
     });
     bridgeId = opened.bridgeId;
@@ -204,7 +206,8 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
       !bridgeId ||
       !opened.selection.selection_lease?.trim() ||
       opened.selection.runtime_kind !== "device_agent" ||
-      opened.selection.device_id !== input.environment.device_id
+      opened.selection.device_id !== input.environment.device_id ||
+      (opened.selection.workspace_id ?? "") !== (input.workspaceId ?? "")
     )
       throw new Error("远程设备授权响应无效。");
     const selection: ExecutionSelection = {
@@ -285,7 +288,7 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
         } else {
           const request = new Request(url.href, { ...init, signal: undefined });
           const headers: Record<string, string> = {};
-          for (const name of ["content-type", "authorization"]) {
+          for (const name of ["content-type", "authorization", "x-zeroagent-workspace-path"]) {
             const value = request.headers.get(name);
             if (value) headers[name] = value;
           }

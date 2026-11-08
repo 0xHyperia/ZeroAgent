@@ -1134,17 +1134,29 @@ impl GatewayController {
                 }
             }
             Some(proto::gateway_envelope::Payload::WorkspaceHandoff(request)) => {
-                match self.copy_workspace_file(request).await {
+                match self.handle_workspace_handoff(request).await {
                     Ok(relative_path) => {
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,
                             timestamp: now_unix_seconds(),
                             payload: Some(proto::agent_envelope::Payload::WorkspaceHandoffResp(
-                                proto::WorkspaceHandoffResponse { relative_path },
+                                proto::WorkspaceHandoffResponse {
+                                    relative_path: relative_path.unwrap_or_default(),
+                                },
                             )),
-                        }).await
+                        })
+                        .await
                     }
-                    Err(error) => self.send_error_response(request_id, 409, error).await,
+                    Err(error) => {
+                        let code = if error
+                            == super::workspace_handoff::WORKSPACE_HANDOFF_TARGET_CHANGED
+                        {
+                            412
+                        } else {
+                            409
+                        };
+                        self.send_error_response(request_id, code, error).await
+                    }
                 }
             }
             Some(proto::gateway_envelope::Payload::ImportDirectory(request)) => {

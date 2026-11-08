@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/liveagent/agent-gateway/internal/objectstore"
 )
 
@@ -21,6 +22,7 @@ func (h *HTTPHandler) registerCloudFiles(mux *http.ServeMux) {
 	h.registerCloudSites(mux)
 	mux.HandleFunc("POST /api/web-chat/files", h.withSession(h.uploadCloudFile))
 	mux.HandleFunc("GET /api/web-chat/files", h.withSession(h.listCloudFiles))
+	mux.HandleFunc("GET /api/web-chat/uploads/{id}", h.withSession(h.getCloudFileUpload))
 	mux.HandleFunc("GET /api/web-chat/files/{id}", h.withSession(h.getCloudFile))
 	mux.HandleFunc("GET /api/web-chat/files/{id}/content", h.withSession(h.cloudFileContent))
 	mux.HandleFunc("GET /api/web-chat/files/{id}/segments", h.withSession(h.cloudFileSegments))
@@ -67,6 +69,35 @@ func cloudFileResponseHeaders(w http.ResponseWriter, file *CloudFile) {
 	}
 }
 
+// Derive the original's ID from both the authenticated owner and the upload
+// request. A request ID from another account cannot reserve or read the file.
+func cloudFileUploadIdentity(userID int64, uploadID string) (string, error) {
+	id, err := uuid.Parse(uploadID)
+	if err != nil || id.Version() != 4 || id.Variant() != uuid.RFC4122 || id.String() != uploadID {
+		return "", ErrCloudFileInvalid
+	}
+	key := fmt.Sprintf("zeroagent:cloud-file-upload:v1:%d:%s", userID, uploadID)
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String(), nil
+}
+
+func (h *HTTPHandler) getCloudFileUpload(w http.ResponseWriter, r *http.Request, session *Session) {
+	cloudFileResponseHeaders(w, nil)
+	uploadID := r.PathValue("id")
+	fileID, err := cloudFileUploadIdentity(session.UserID, uploadID)
+	if err != nil {
+		writeError(w, cloudFileAPIError(err))
+		return
+	}
+	file, err := h.readCloudFile(r.Context(), session.UserID, fileID, false)
+	if err != nil {
+		writeError(w, cloudFileAPIError(err))
+		return
+	}
+	cloudFileResponseHeaders(w, file)
+	h.service.cloudFileCapabilities(r.Context(), file)
+	writeJSON(w, http.StatusOK, map[string]any{"file": file, "upload_id": uploadID})
+}
+
 func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, session *Session) {
 	if !h.cloudWriteAllowed(w, r) {
 		return
@@ -105,9 +136,24 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
-	if len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 || len(r.MultipartForm.Value) > 1 || (len(r.MultipartForm.Value) == 1 && len(r.MultipartForm.Value["conversation_id"]) != 1) {
+	if len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 {
 		writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
 		return
+	}
+	for key, values := range r.MultipartForm.Value {
+		if (key != "conversation_id" && key != "upload_id") || len(values) != 1 {
+			writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
+			return
+		}
+	}
+	var uploadID, fileID string
+	if values, provided := r.MultipartForm.Value["upload_id"]; provided {
+		uploadID = values[0]
+		fileID, err = cloudFileUploadIdentity(session.UserID, uploadID)
+		if err != nil {
+			writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
+			return
+		}
 	}
 	conversationID := r.FormValue("conversation_id")
 	if conversationID != "" {
@@ -140,7 +186,7 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 		writeError(w, &APIError{Status: http.StatusUnauthorized, Message: "account session expired"})
 		return
 	}
-	file, err := provider.upload(r.Context(), session.UserID, conversationID, header.Filename, source, header.Size)
+	file, err := provider.upload(r.Context(), session.UserID, conversationID, fileID, header.Filename, source, header.Size)
 	if err != nil {
 		writeError(w, cloudFileAPIError(err))
 		return
@@ -151,7 +197,11 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 	}
 	cloudFileResponseHeaders(w, file)
 	h.service.cloudFileCapabilities(r.Context(), file)
-	writeJSON(w, http.StatusCreated, map[string]any{"file": file})
+	result := map[string]any{"file": file}
+	if uploadID != "" {
+		result["upload_id"] = uploadID
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *HTTPHandler) listCloudFiles(w http.ResponseWriter, r *http.Request, session *Session) {

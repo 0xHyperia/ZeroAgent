@@ -50,11 +50,13 @@ import {
   formatFileMentionToken,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import { buildComposerQuoteInsertion } from "@liveagent/ui/lib/chat/transcriptQuote";
-import { parseExtensionReference } from "@liveagent/ui/lib/extensions/presentation";
+import {
+  extensionDraftSelection,
+  parseExtensionReference,
+} from "@liveagent/ui/lib/extensions/reference";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import { AnimatePresence } from "motion/react";
 import {
   type ClipboardEvent,
   type FocusEvent,
@@ -64,6 +66,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -198,6 +201,26 @@ export {
 } from "./MentionComposerInternals";
 export type { MentionComposerAction } from "./MentionComposerModel";
 
+function mentionSuggestionIdentity(suggestion: MentionSuggestion): string {
+  switch (suggestion.type) {
+    case "file":
+      return `file:${suggestion.entry.kind}:${suggestion.entry.path}`;
+    case "skill":
+    case "extension":
+      return `${suggestion.type}:${suggestion.skill.skillFile || suggestion.skill.name}`;
+    case "action":
+      return `action:${suggestion.action.id}`;
+    case "command":
+      return `command:${suggestion.command.kind}:${suggestion.command.name}`;
+    case "app":
+      return `app:${suggestion.app.bundleId || suggestion.app.path || suggestion.app.name}`;
+    case "conversation":
+      return `conversation:${suggestion.conversation.id}`;
+    case "category":
+      return `category:${suggestion.category}`;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*  MentionComposer                                                    */
 /* ------------------------------------------------------------------ */
@@ -211,6 +234,7 @@ export const MentionComposer = memo(
       onPasteFiles,
       loadHistoryPrompts,
       disabled = false,
+      draftOnly = false,
       placeholder = "",
       workdir,
       enabledSkills = [],
@@ -218,6 +242,7 @@ export const MentionComposer = memo(
       mentionExtensions,
       resolveExtensionMention,
       onOpenExtensionMention,
+      onExtensionSelectionConflict,
       mentionActions,
       conversations = [],
       searchConversations,
@@ -231,39 +256,58 @@ export const MentionComposer = memo(
     ref,
   ) {
     const { locale, t } = useLocale();
+    const suggestionListId = useId();
     const editorRef = useRef<HTMLDivElement>(null);
+    const draftOnlyRef = useRef(draftOnly);
+    draftOnlyRef.current = draftOnly;
     const wrapperRef = useRef<HTMLDivElement>(null);
     const extensionPointerStart = useRef<{ x: number; y: number } | null>(null);
     const extensionLinksEnabled = !!onOpenExtensionMention;
     useLayoutEffect(() => {
       const editor = editorRef.current;
-      if (!editor || !resolveExtensionMention) return;
+      if (!editor) return;
       const refreshLinks = () => {
         for (const chip of editor.querySelectorAll<HTMLElement>(
           ".mention-extension[data-skill-file]",
         )) {
           const reference = chip.getAttribute("data-skill-file") ?? "";
-          const details = resolveExtensionMention(reference);
+          const details = resolveExtensionMention?.(reference);
           const label = details?.label;
           const text = chip.lastChild;
           if (label && text?.nodeType === Node.TEXT_NODE && text.nodeValue !== label) {
             text.nodeValue = label;
             chip.setAttribute("data-skill-display-name", label);
           }
-          if (details && extensionLinksEnabled) {
+          if (extensionLinksEnabled && parseExtensionReference(reference)) {
             chip.setAttribute("role", "link");
             chip.tabIndex = 0;
-            chip.title = [details.description, t("chat.composer.openExtensionDetails")]
+            const availability = details?.availability;
+            if (availability) chip.dataset.extensionAvailability = availability;
+            else delete chip.dataset.extensionAvailability;
+            const description = [
+              details?.description,
+              availability === "not-installed"
+                ? t("chat.composer.extensionNotInstalled")
+                : availability === "disabled"
+                  ? t("chat.composer.extensionDisabled")
+                  : undefined,
+              t("chat.composer.openExtensionDetails"),
+            ]
               .filter(Boolean)
               .join("\n");
+            chip.title = description;
+            chip.setAttribute("aria-description", description);
           } else {
             chip.removeAttribute("role");
             chip.removeAttribute("tabindex");
             chip.removeAttribute("title");
+            chip.removeAttribute("aria-description");
+            delete chip.dataset.extensionAvailability;
           }
         }
       };
       refreshLinks();
+      if (!resolveExtensionMention && !extensionLinksEnabled) return;
       const observer = new MutationObserver(refreshLinks);
       observer.observe(editor, { childList: true, subtree: true });
       return () => observer.disconnect();
@@ -476,9 +520,13 @@ export const MentionComposer = memo(
       setHighlightIdx(0);
       resetMentionSession();
     }, [resetMentionSession, setMentionMenuMode]);
+    useEffect(() => {
+      if (draftOnly) closeMentionSession();
+    }, [draftOnly, closeMentionSession]);
 
     const startMentionSession = useCallback(
       (ctx: MentionContext, opts?: { keepEntries?: boolean; mode?: MentionMenuMode }) => {
+        if (draftOnlyRef.current) return;
         cancelMentionRefetch();
         const requestSeq = ++mentionSessionRequestSeqRef.current;
         const mode = opts?.mode ?? mentionMenuModeRef.current;
@@ -834,11 +882,25 @@ export const MentionComposer = memo(
                       : "chat.composer.noMatchingReferenceTypes",
                   )
                 : t("chat.composer.noMatchingFiles");
-    const showEmpty =
-      mentionCtx !== null && !popupLoading && !popupError && suggestions.length === 0;
-    const popupVisible =
-      mentionCtx !== null &&
-      (popupLoading || Boolean(popupError) || suggestions.length > 0 || showEmpty);
+    const popupVisible = !disabled && !draftOnly && mentionCtx !== null;
+    const hasPopupList = popupVisible && (popupLoading || suggestions.length > 0);
+    const optionIds = useMemo(
+      () =>
+        suggestions.map(
+          (suggestion, index) =>
+            `${suggestionListId}-option-${index}-${mentionSuggestionIdentity(suggestion).replace(/\s/g, "_")}`,
+        ),
+      [suggestionListId, suggestions],
+    );
+    const popupLoadingLabel =
+      mentionMenuMode === "conversations"
+        ? t("chat.composer.searchingConversations")
+        : t("chat.composer.indexingFiles");
+    const popupStatus = !popupVisible
+      ? ""
+      : popupLoading
+        ? popupLoadingLabel
+        : (popupError ?? (suggestions.length === 0 ? popupEmptyLabel : ""));
 
     const applyEmptyState = useCallback(
       (nextEmpty: boolean, nextDomEmpty: boolean) => {
@@ -1024,8 +1086,9 @@ export const MentionComposer = memo(
     // ---- Mention detection (called after DOM updates) ----
     const refreshMention = useCallback(() => {
       const el = editorRef.current;
-      if (!el) return;
+      if (!el || draftOnlyRef.current) return;
       const applyContext = (ctx: MentionContext | null) => {
+        if (draftOnlyRef.current) return;
         if (!ctx) {
           if (mentionActiveRef.current) {
             closeMentionSession();
@@ -1526,18 +1589,20 @@ export const MentionComposer = memo(
           return;
         }
         if (suggestion.type === "skill" || suggestion.type === "extension") {
-          const reference = parseExtensionReference(suggestion.skill.skillFile);
-          const existing =
-            reference &&
+          const selected = extensionDraftSelection(
             Array.from(
               editorRef.current?.querySelectorAll<HTMLElement>("[data-skill-file]") ?? [],
-            ).some((element) => {
-              const selected = parseExtensionReference(
-                element.getAttribute("data-skill-file") ?? "",
-              );
-              return selected?.packageId === reference.packageId;
-            });
-          if (existing) replaceMentionQueryText(mentionCtx, "");
+              (element) => element.getAttribute("data-skill-file") ?? "",
+            ),
+            suggestion.skill.skillFile,
+          );
+          if (selected === "conflict" && onExtensionSelectionConflict) {
+            closeMentionSession();
+            onExtensionSelectionConflict();
+            editorRef.current?.focus();
+            return;
+          }
+          if (selected !== "none") replaceMentionQueryText(mentionCtx, "");
           else insertSkillMentionChip(mentionCtx, suggestion.skill);
         } else if (suggestion.type === "conversation") {
           const selectedIds = new Set(
@@ -1579,6 +1644,7 @@ export const MentionComposer = memo(
         commandHost,
         mentionCtx,
         notifyUserEdit,
+        onExtensionSelectionConflict,
         openMentionMenuMode,
         refreshEmptyState,
         resetPromptHistoryRecall,
@@ -2046,6 +2112,11 @@ export const MentionComposer = memo(
           return;
         }
 
+        if (popupVisible && e.key === "Tab" && e.shiftKey) {
+          closeMentionSession();
+          return;
+        }
+
         // Popup navigation
         if (popupVisible && suggestions.length > 0) {
           if (e.key === "ArrowDown") {
@@ -2079,13 +2150,12 @@ export const MentionComposer = memo(
           }
           return;
         }
-        if (commandPanel && e.key === "Escape") {
+        if (commandPanel && !draftOnly && e.key === "Escape") {
           clearCommandRecovery(currentConversationId ?? "");
           e.preventDefault();
           setCommandPanel(null);
           return;
         }
-        // Any open popup, even one still loading or empty, keeps Tab for itself.
         if (
           onCycleMode &&
           !popupVisible &&
@@ -2186,7 +2256,7 @@ export const MentionComposer = memo(
         }
 
         // Send only with the configured combination, after IME and mention handling.
-        if (isEnter && shouldSendOnEnter(e, readComposerSendShortcut())) {
+        if (isEnter && !draftOnly && shouldSendOnEnter(e, readComposerSendShortcut())) {
           imeEnterSuppressUntilRef.current = 0;
           compositionEnterKeyRef.current = false;
           lastCompositionEndAtRef.current = 0;
@@ -2215,6 +2285,7 @@ export const MentionComposer = memo(
         highlightIdx,
         selectSuggestion,
         disabled,
+        draftOnly,
         closeMentionSession,
         mentionCtx?.trigger,
         mentionMenuMode,
@@ -2312,7 +2383,7 @@ export const MentionComposer = memo(
           return;
         }
         const clipboardFiles = extractClipboardFiles(e.clipboardData);
-        if (clipboardFiles.length > 0) {
+        if (clipboardFiles.length > 0 && !draftOnly) {
           e.preventDefault();
           onPasteFiles?.(clipboardFiles);
           return;
@@ -2358,6 +2429,7 @@ export const MentionComposer = memo(
         conversationMentionsEnabled,
         createLargePaste,
         currentConversationId,
+        draftOnly,
         enabledSkills,
         insertLargePaste,
         onPasteFiles,
@@ -2431,7 +2503,7 @@ export const MentionComposer = memo(
 
     return (
       <div ref={wrapperRef} className="relative w-full min-w-0 max-w-full flex-1">
-        {commandPanel ? (
+        {commandPanel && !draftOnly ? (
           <ComposerCommandPanel
             panel={commandPanel}
             onClose={() => {
@@ -2440,31 +2512,29 @@ export const MentionComposer = memo(
             }}
           />
         ) : null}
-        <AnimatePresence initial={false}>
-          {popupVisible ? (
-            <Popup
-              key="mention-popup"
-              anchorRef={wrapperRef}
-              trigger={mentionCtx.trigger}
-              mode={mentionMenuMode}
-              capabilityMenu={
-                mentionExtensions !== undefined &&
-                mentionCtx.trigger === "file" &&
-                mentionMenuMode === "root"
-              }
-              suggestions={suggestions}
-              highlightIndex={highlightIdx}
-              isLoading={popupLoading}
-              error={popupError}
-              showEmpty={showEmpty}
-              emptyLabel={popupEmptyLabel}
-              onBack={returnToMentionRoot}
-              onClose={closeMentionSession}
-              onSelect={selectSuggestion}
-              onHighlight={setHighlightIdx}
-            />
-          ) : null}
-        </AnimatePresence>
+        {popupVisible ? (
+          <Popup
+            anchorRef={wrapperRef}
+            listId={hasPopupList ? suggestionListId : undefined}
+            optionIds={optionIds}
+            trigger={mentionCtx.trigger}
+            mode={mentionMenuMode}
+            capabilityMenu={
+              mentionExtensions !== undefined &&
+              mentionCtx.trigger === "file" &&
+              mentionMenuMode === "root"
+            }
+            suggestions={suggestions}
+            highlightIndex={highlightIdx}
+            isLoading={popupLoading}
+            status={popupStatus}
+            hasError={Boolean(popupError) && !popupLoading}
+            onBack={returnToMentionRoot}
+            onClose={closeMentionSession}
+            onSelect={selectSuggestion}
+            onHighlight={setHighlightIdx}
+          />
+        ) : null}
         {commitTooltip ? (
           <CommitMentionTooltip
             commit={commitTooltip.commit}
@@ -2515,6 +2585,9 @@ export const MentionComposer = memo(
             </ContextMenuItem>
           </ContextMenuPopup>
         ) : null}
+        <div className="sr-only" role="status" aria-atomic="true">
+          {popupStatus}
+        </div>
         {/* biome-ignore lint/a11y/useSemanticElements: The composer is contenteditable so it can host inline mention chips. */}
         <div
           ref={editorRef}
@@ -2524,6 +2597,10 @@ export const MentionComposer = memo(
           tabIndex={disabled ? undefined : 0}
           aria-multiline
           aria-label={placeholder || undefined}
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-controls={hasPopupList ? suggestionListId : undefined}
+          aria-activedescendant={popupVisible ? optionIds[highlightIdx] : undefined}
           aria-placeholder={placeholder}
           aria-disabled={disabled}
           onInput={handleInput}

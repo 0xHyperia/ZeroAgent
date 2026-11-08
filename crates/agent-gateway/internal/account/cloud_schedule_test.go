@@ -90,18 +90,8 @@ func TestCloudScheduleDispatchUsesDetachedCloudRun(t *testing.T) {
 	if err := store.PutSession(ctx, session); err != nil {
 		t.Fatal(err)
 	}
-	legacy := *session
-	legacy.ID = uuid.NewString()
-	legacy.Purpose = "cloud_schedule"
-	redis.remember(legacy.ID)
-	if err := store.PutSession(ctx, &legacy); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.db.Exec(`INSERT INTO zeroagent_cloud_schedule_authority(user_id,session_id) VALUES($1,$2)`, legacy.UserID, legacy.ID); err != nil {
-		t.Fatal(err)
-	}
-	if active, err := service.scheduledCloudExecutionSession(ctx, store, legacy.UserID); err != nil || active.ID != legacy.ID {
-		t.Fatalf("an existing plan lost access before its account session was bound: %v", err)
+	if _, err := service.cloudExecutionSession(ctx, store, session.UserID); !cloudExecutionSessionUnavailable(err) {
+		t.Fatalf("unbound account must not authorize background execution: %v", err)
 	}
 	if err := service.ensureCloudExecutionAccount(ctx, store, session); err != nil {
 		t.Fatal(err)
@@ -174,7 +164,7 @@ func TestCloudScheduleDispatchUsesDetachedCloudRun(t *testing.T) {
 			if err := store.DeleteSession(ctx, session.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := service.scheduledCloudExecutionSession(ctx, store, session.UserID); !cloudExecutionSessionUnavailable(err) {
+			if _, err := service.cloudExecutionSession(ctx, store, session.UserID); !cloudExecutionSessionUnavailable(err) {
 				t.Fatalf("the removed account session remained usable: %v", err)
 			}
 			return
@@ -232,7 +222,7 @@ func TestCloudScheduleDesktopSessionRefreshesWithClientClosed(t *testing.T) {
 	if err := service.ensureCloudExecutionAccount(ctx, store, actor); err != nil {
 		t.Fatal(err)
 	}
-	cloud, err := service.scheduledCloudExecutionSession(ctx, store, actor.UserID)
+	cloud, err := service.cloudExecutionSession(ctx, store, actor.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,14 +241,14 @@ func TestCloudScheduleDesktopSessionRefreshesWithClientClosed(t *testing.T) {
 	if err = service.refreshCloudExecutionAccount(ctx, store); err != nil || refreshes.Load() != 1 {
 		t.Fatalf("did not refresh ahead of an idle plan: %v, refreshes %d", err, refreshes.Load())
 	}
-	cloud, err = service.scheduledCloudExecutionSession(ctx, store, actor.UserID)
+	cloud, err = service.cloudExecutionSession(ctx, store, actor.UserID)
 	if err != nil || cloud.AccessToken != "renewed-cloud-access" {
 		t.Fatalf("could not execute after desktop login was no longer present: %v", err)
 	}
 	if _, err = store.db.Exec(`INSERT INTO zeroagent_cloud_execution_accounts(user_id,source,session_ref) VALUES ($1,'web',$2)`, actor.UserID+1, ref); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.scheduledCloudExecutionSession(ctx, store, actor.UserID+1); !cloudExecutionSessionUnavailable(err) {
+	if _, err := service.cloudExecutionSession(ctx, store, actor.UserID+1); !cloudExecutionSessionUnavailable(err) {
 		t.Fatalf("another account could use the desktop cloud session: %v", err)
 	}
 }
@@ -416,10 +406,32 @@ func TestCloudSchedulePostgresClaimAndAdmission(t *testing.T) {
 	if _, err = store.cloudScheduleRuns(ctx, 2, id); err != ErrNotFound {
 		t.Fatalf("foreign account could read schedule: %v", err)
 	}
+	readReceipt := func(owner int64, request string) *httptest.ResponseRecorder {
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/web-chat/schedules/"+id+"/run-now?request_id="+request, nil)
+		req.SetPathValue("id", id)
+		(&HTTPHandler{}).getCloudScheduleRunReceipt(res, req, &Session{UserID: owner}, store)
+		return res
+	}
 	request := uuid.NewString()
+	if receipt := readReceipt(1, request); receipt.Code != http.StatusOK || !strings.Contains(receipt.Body.String(), `"status":"missing"`) {
+		t.Fatalf("a read without an admitted request should be missing: %d %s", receipt.Code, receipt.Body)
+	}
+	if runs, err := store.cloudScheduleRuns(ctx, 1, id); err != nil || len(runs) != 1 {
+		t.Fatalf("receipt lookup created a run: %v %v", runs, err)
+	}
 	manual, err := store.queueCloudSchedule(ctx, 1, id, request, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if receipt := readReceipt(1, request); receipt.Code != http.StatusOK || !strings.Contains(receipt.Body.String(), `"id":"`+manual+`"`) {
+		t.Fatalf("receipt did not identify the original run: %d %s", receipt.Code, receipt.Body)
+	}
+	if receipt := readReceipt(2, request); receipt.Code != http.StatusNotFound {
+		t.Fatalf("foreign account could check a receipt: %d %s", receipt.Code, receipt.Body)
+	}
+	if receipt := readReceipt(1, uuid.NewString()); receipt.Code != http.StatusOK || !strings.Contains(receipt.Body.String(), `"status":"missing"`) {
+		t.Fatalf("an unrelated request received a different run: %d %s", receipt.Code, receipt.Body)
 	}
 	if err = store.cancelPendingCloudSchedule(ctx, 2, id, manual); err == nil {
 		t.Fatal("foreign account cancelled a waiting run")
@@ -455,6 +467,72 @@ func TestCloudSchedulePostgresClaimAndAdmission(t *testing.T) {
 	}
 }
 
+func TestCloudScheduleExactRunRequiresSession(t *testing.T) {
+	mux := http.NewServeMux()
+	(&HTTPHandler{}).registerCloudSchedules(mux)
+	path := "/api/web-chat/schedules/" + uuid.NewString() + "/runs/" + uuid.NewString()
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, httptest.NewRequest(http.MethodGet, path, nil))
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("unregistered or public run read: %d %s", res.Code, res.Body)
+	}
+}
+
+func TestCloudScheduleExactRunOutsideRecentHistory(t *testing.T) {
+	fixture := cloudRunPostgresFixture(t)
+	store := fixture.store.(*PersistentStore)
+	ctx := context.Background()
+	task, otherTask, oldRun := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO zeroagent_cloud_schedules(id,user_id,spec) VALUES($1,1,'{}'),($2,1,'{}')`, task, otherTask); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO zeroagent_cloud_schedule_occurrences(id,task_id,user_id,trigger_at,manual,spec,state)
+ VALUES($1,$2,1,'2026-10-01 09:00:00+00',false,'{}','completed')`, oldRun, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO zeroagent_cloud_schedule_occurrences(id,task_id,user_id,trigger_at,manual,spec,state)
+ SELECT gen_random_uuid(),$1,1,'2026-10-01 09:00:00+00'::timestamptz + n * interval '1 day',false,'{}','completed'
+ FROM generate_series(1,100) n`, task); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.cloudScheduleRuns(ctx, 1, task)
+	if err != nil || len(runs) != 100 {
+		t.Fatalf("recent history: %d runs, %v", len(runs), err)
+	}
+	for _, run := range runs {
+		if run.ID == oldRun {
+			t.Fatal("old run should be outside recent history")
+		}
+	}
+	read := func(owner int64, taskID, runID string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/web-chat/schedules/"+taskID+"/runs/"+runID, nil)
+		req.SetPathValue("id", taskID)
+		req.SetPathValue("run", runID)
+		res := httptest.NewRecorder()
+		(&HTTPHandler{}).getCloudScheduleRun(res, req, &Session{UserID: owner}, store)
+		return res
+	}
+	result := read(1, task, oldRun)
+	var envelope struct{ Run CloudScheduleRun }
+	if result.Code != http.StatusOK || json.Unmarshal(result.Body.Bytes(), &envelope) != nil || envelope.Run.ID != oldRun || envelope.Run.State != "completed" {
+		t.Fatalf("read historical run: %d %s", result.Code, result.Body)
+	}
+	for _, response := range []*httptest.ResponseRecorder{read(2, task, oldRun), read(1, otherTask, oldRun), read(1, task, uuid.NewString())} {
+		if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), oldRun) {
+			t.Fatalf("unavailable run leaked its identity: %d %s", response.Code, response.Body)
+		}
+	}
+	if response := read(1, task, "invalid"); response.Code != http.StatusBadRequest {
+		t.Fatalf("accepted invalid occurrence ID: %d", response.Code)
+	}
+	if _, err = store.db.ExecContext(ctx, `UPDATE zeroagent_cloud_schedules SET deleted_at=now() WHERE id=$1`, task); err != nil {
+		t.Fatal(err)
+	}
+	if response := read(1, task, oldRun); response.Code != http.StatusNotFound {
+		t.Fatalf("read occurrence of deleted schedule: %d", response.Code)
+	}
+}
+
 func TestCloudScheduleApprovalFencesDispatch(t *testing.T) {
 	fixture := cloudRunPostgresFixture(t)
 	store := fixture.store.(*PersistentStore)
@@ -484,22 +562,120 @@ func TestCloudScheduleApprovalFencesDispatch(t *testing.T) {
 		t.Fatalf("missing frozen approval: %v, %v", runs, err)
 	}
 	run := runs[0].ID
-	if err := store.decideCloudScheduleApproval(ctx, 2, task, run, "approve", now); err == nil {
-		t.Fatal("a different account approved the run")
+	handler := &HTTPHandler{service: NewService(store, &USAClient{}, time.Hour, time.Hour)}
+	approval := func(owner int64, occurrence, decision string) *httptest.ResponseRecorder {
+		res := httptest.NewRecorder()
+		path := "/api/web-chat/schedules/" + task + "/runs/" + occurrence + "/approval"
+		// This actor cannot establish a new execution account. Reading an approval
+		// and acknowledging a previously recorded choice must still work.
+		actor := &Session{UserID: owner, Purpose: desktopCloudAccessPurpose}
+		if decision == "" {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.SetPathValue("id", task)
+			req.SetPathValue("run", occurrence)
+			handler.getCloudScheduleApproval(res, req, actor, store)
+		} else {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(cloudJSON(map[string]string{"decision": decision}))))
+			req.SetPathValue("id", task)
+			req.SetPathValue("run", occurrence)
+			handler.decideCloudScheduleApproval(res, req, actor, store)
+		}
+		return res
 	}
-	approvedAt := now.Add(time.Hour)
-	for range 2 {
-		if err := store.decideCloudScheduleApproval(ctx, 1, task, run, "approve", approvedAt); err != nil {
-			t.Fatal(err)
+	assertDecision := func(occurrence, want string) {
+		t.Helper()
+		res := approval(1, occurrence, "")
+		var payload struct{ Decision string }
+		if err := json.Unmarshal(res.Body.Bytes(), &payload); res.Code != http.StatusOK || err != nil || payload.Decision != want {
+			t.Fatalf("approval read should be %q: %d %s", want, res.Code, res.Body)
 		}
 	}
-	if err := store.decideCloudScheduleApproval(ctx, 1, task, run, "reject", approvedAt); err == nil {
-		t.Fatal("a second decision superseded the approval")
+	for _, lookup := range []struct {
+		owner      int64
+		occurrence string
+		decision   string
+	}{{2, run, ""}, {2, run, "approve"}, {1, uuid.NewString(), ""}} {
+		if res := approval(lookup.owner, lookup.occurrence, lookup.decision); res.Code != http.StatusNotFound {
+			t.Fatalf("approval exposed an unowned or missing occurrence: %d %s", res.Code, res.Body)
+		}
 	}
-	if item, err := store.claimCloudSchedule(ctx, approvedAt); err != nil || item == nil || item.id != run || !item.trigger.Equal(now) || !item.readyAt.Equal(approvedAt) {
+	if res := approval(1, run, "approve"); res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), `"cloud_execution_unavailable"`) {
+		t.Fatalf("fresh approval bypassed execution account checks: %d %s", res.Code, res.Body)
+	}
+	assertDecision(run, "pending")
+	approvedAt := now.Add(time.Hour)
+	if err := store.decideCloudScheduleApproval(ctx, 1, task, run, "approve", approvedAt); err != nil {
+		t.Fatal(err)
+	}
+	if res := approval(1, run, "approve"); res.Code != http.StatusNoContent {
+		t.Fatalf("original approval could not be acknowledged after a lost response: %d %s", res.Code, res.Body)
+	}
+	if res := approval(1, run, "reject"); res.Code != http.StatusConflict || !strings.Contains(res.Body.String(), `"schedule_approval_conflict"`) {
+		t.Fatalf("a second decision superseded the approval: %d %s", res.Code, res.Body)
+	}
+	item, err := store.claimCloudSchedule(ctx, approvedAt)
+	if err != nil || item == nil || item.id != run || !item.trigger.Equal(now) || !item.readyAt.Equal(approvedAt) {
 		t.Fatalf("missing approved original occurrence: %v, %v", item, err)
 	}
 	if item, err := store.claimCloudSchedule(ctx, approvedAt); err != nil || item != nil {
 		t.Fatalf("duplicate claim: %v, %v", item, err)
+	}
+	if err := store.finishCloudSchedule(ctx, item, "", "needs_attention", "authorization_required"); err != nil {
+		t.Fatal(err)
+	}
+	assertDecision(run, "approve")
+
+	skippedRun := uuid.NewString()
+	if _, err := store.db.Exec(`INSERT INTO zeroagent_cloud_schedule_occurrences(id,task_id,user_id,trigger_at,manual,spec,state)
+ VALUES($1,$2,1,$3,true,$4,'skipped')`, skippedRun, task, approvedAt, spec); err != nil {
+		t.Fatal(err)
+	}
+	assertDecision(skippedRun, "unavailable")
+	if res := approval(1, skippedRun, "approve"); res.Code != http.StatusConflict {
+		t.Fatalf("an unavailable run could be approved: %d %s", res.Code, res.Body)
+	}
+
+	competingRun, err := store.queueCloudSchedule(ctx, 1, task, uuid.NewString(), approvedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type submission struct {
+		decision string
+		err      error
+	}
+	start := make(chan struct{})
+	submissions := make(chan submission, 2)
+	for _, decision := range []string{"approve", "reject"} {
+		go func() {
+			<-start
+			submissions <- submission{decision, store.decideCloudScheduleApproval(ctx, 1, task, competingRun, decision, approvedAt)}
+		}()
+	}
+	close(start)
+	var winner string
+	var conflicts int
+	for range 2 {
+		result := <-submissions
+		switch {
+		case result.err == nil:
+			winner = result.decision
+		case errors.Is(result.err, errCloudScheduleApprovalConflict):
+			conflicts++
+		default:
+			t.Fatal(result.err)
+		}
+	}
+	if conflicts != 1 || winner == "" {
+		t.Fatalf("expected one competing decision to win, got %q and %d conflicts", winner, conflicts)
+	}
+	assertDecision(competingRun, winner)
+	if res := approval(1, competingRun, winner); res.Code != http.StatusNoContent {
+		t.Fatalf("winning decision could not be acknowledged: %d %s", res.Code, res.Body)
+	}
+	if err := store.deleteCloudSchedule(ctx, 1, task, approvedAt); err != nil {
+		t.Fatal(err)
+	}
+	if res := approval(1, competingRun, ""); res.Code != http.StatusNotFound {
+		t.Fatalf("deleted schedule approval was readable: %d %s", res.Code, res.Body)
 	}
 }

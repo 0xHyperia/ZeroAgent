@@ -6,7 +6,7 @@ const loader = createTsModuleLoader();
 const {
   customProviderFromKBrain,
   kBrainSettingsUpdateForMissingInputModalities,
-  kBrainSettingsUpdateFromLegacyProviders,
+  kBrainSettingsUpdateFromAppSettings,
 } = loader.loadModule(
   "src/lib/kbrain/providerSettings.ts",
 );
@@ -38,7 +38,7 @@ test("relay models without modalities are pushed to K-brain with catalog vision"
     { id: "deepseek-v4-pro", contextWindow: 1_000_000, limitsSource: "provider" },
     { id: "unknown-relay-model", contextWindow: 8192, limitsSource: "user" },
   ]);
-  const update = kBrainSettingsUpdateFromLegacyProviders([saved], [saved]);
+  const update = kBrainSettingsUpdateFromAppSettings({customProviders:[saved]}, {customProviders:[saved]});
 
   assert.deepEqual(pushedModel(update, "relay", "claude-opus-5-5").inputModalities, [
     "text",
@@ -55,7 +55,7 @@ test("anthropic-compatible user modality override reaches K-brain and survives r
   const saved = relayProvider("relay", [
     { id: "unknown-relay-model", contextWindow: 8192, inputModalities: ["text", "image"] },
   ]);
-  const update = kBrainSettingsUpdateFromLegacyProviders([saved], [saved]);
+  const update = kBrainSettingsUpdateFromAppSettings({customProviders:[saved]}, {customProviders:[saved]});
   const pushedProvider = update.providers.find((provider) => provider.id === "relay");
   assert.equal(pushedProvider.api, "anthropic-messages");
   assert.deepEqual(pushedModel(update, "relay", "unknown-relay-model").inputModalities, [
@@ -78,7 +78,7 @@ test("anthropic-compatible user modality override reaches K-brain and survives r
 test("explicit modalities win and are shared across providers for the same model id", () => {
   const explicit = relayProvider("a", [{ id: "claude-opus-4-6", inputModalities: ["text"] }]);
   const implicit = relayProvider("b", [{ id: "claude-opus-4-6" }]);
-  const update = kBrainSettingsUpdateFromLegacyProviders([], [explicit, implicit]);
+  const update = kBrainSettingsUpdateFromAppSettings({customProviders:[]}, {customProviders:[explicit, implicit]});
 
   // K-brain 要求同 id 跨供应商元数据一致，否则整次设置更新会被拒绝。
   assert.deepEqual(pushedModel(update, "a", "claude-opus-4-6").inputModalities, ["text"]);

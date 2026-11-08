@@ -149,15 +149,6 @@ export function kBrainSettingsUpdateFromAppSettings(
   );
 }
 
-/** Build a one-time import request without exposing legacy provider secrets to storage. */
-export function kBrainSettingsUpdateFromLegacyProviders(
-  previousProviders: readonly CustomProvider[],
-  providers: readonly CustomProvider[],
-  selectedModel?: AppSettings["selectedModel"],
-): KBrainSettingsUpdate {
-  return settingsUpdateFromProviders(previousProviders, providers, selectedModel);
-}
-
 /**
  * 启动对账：后端里缺少输入模态、但本地模型目录能确认支持图片的模型，补推一次。
  * 不依赖用户下次保存设置；没有需要补齐的模型时返回 undefined，不产生写入。
@@ -216,16 +207,6 @@ export function kBrainSettingsUpdateForCatalogRefresh(document: KBrainSettingsDo
     return changed ? [{ id: backend.id, models: patches }] : [];
   });
   return updates.length ? { providers: updates } : undefined;
-}
-
-/** Import only providers absent from the backend; existing backend records are untouched. */
-export function kBrainSettingsUpdateFromMissingLegacyProviders(
-  providers: readonly CustomProvider[],
-  selectedModel?: AppSettings["selectedModel"],
-): KBrainSettingsUpdate {
-  const update = settingsUpdateFromProviders([], providers, selectedModel);
-  delete update.deleteProviders;
-  return update;
 }
 
 export function getKBrainSettingsClient() {

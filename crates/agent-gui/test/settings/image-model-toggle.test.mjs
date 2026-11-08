@@ -6,7 +6,7 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 // imageModel 是 K-brain 回传的只读生效结果，只有新版 K-brain 才会回传。
 const loader = createTsModuleLoader();
 const { normalizeProviderModelConfig } = loader.loadModule("src/lib/settings/index.ts");
-const { kBrainSettingsUpdateFromLegacyProviders } = loader.loadModule(
+const { kBrainSettingsUpdateFromAppSettings } = loader.loadModule(
   "src/lib/kbrain/providerSettings.ts",
 );
 // providerUtils 依赖 tauri invoke；这里只用纯函数，mock 仅为满足模块加载。
@@ -75,7 +75,7 @@ test("saving sends auto as an explicit clear, only to a K-brain that knows the t
     ],
     activeModels: ["auto", "off", "old"],
   };
-  const models = kBrainSettingsUpdateFromLegacyProviders([provider], [provider]).providers[0].models;
+  const models = kBrainSettingsUpdateFromAppSettings({customProviders:[provider]}, {customProviders:[provider]}).providers[0].models;
   const byId = Object.fromEntries(models.map((model) => [model.id, model]));
   // K-brain keeps an omitted field, so "auto" must clear the stored choice.
   assert.equal(byId.auto.imageAdapter, "");
@@ -106,7 +106,7 @@ test("the same model ID under two providers keeps separate choices", () => {
     activeModels: ["agnes-image-2.5-flash"],
   });
   const providers = [provider("agnes-cn", "disabled"), provider("agnes-global")];
-  const pushed = kBrainSettingsUpdateFromLegacyProviders(providers, providers).providers;
+  const pushed = kBrainSettingsUpdateFromAppSettings({customProviders:providers}, {customProviders:providers}).providers;
   assert.equal(pushed.find((p) => p.id === "agnes-cn").models[0].imageAdapter, "disabled");
   assert.equal(pushed.find((p) => p.id === "agnes-global").models[0].imageAdapter, "");
 });

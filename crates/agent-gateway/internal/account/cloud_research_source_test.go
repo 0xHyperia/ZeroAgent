@@ -189,7 +189,7 @@ func runResearchSourceContract(t *testing.T, postgres bool) {
 		if _, err = f.tools.CommitCloudTool(ctx, 7, op.ID, run.LeaseOwner, run.Attempt, CloudToolSucceeded, cloudJSON(map[string]any{"source_id": source.ID}), ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = f.runs.CommitCloudRun(ctx, 7, run.ID, run.LeaseOwner, run.Attempt, CloudRunCommit{OperationID: "finish-source-run", State: CloudRunCompleted, Delta: "合成引用【来源:" + source.ID + ":L1-L3】"}); err != nil {
+		if _, err = f.runs.CommitCloudRun(ctx, 7, run.ID, run.LeaseOwner, run.Attempt, CloudRunCommit{OperationID: "finish-source-run", State: CloudRunCompleted, Delta: "合成引用【来源:" + source.ID + "】"}); err != nil {
 			t.Fatal(err)
 		}
 		brancher := f.store.(CloudBranchStore)
@@ -330,7 +330,7 @@ func TestCloudResearchSourceSecretsValidationAndHTTP(t *testing.T) {
 	if _, err = sources.ReserveCloudResearchSearch(ctx, 7, run.ID, run.LeaseOwner, run.Attempt, searchOp.ID, 1); err != nil {
 		t.Fatal(err)
 	}
-	summary, err := sources.PersistCloudResearchSources(ctx, 7, run.ID, run.LeaseOwner, run.Attempt, searchOp.ID, []CloudResearchSourceInput{researchSnippet()})
+	_, err = sources.PersistCloudResearchSources(ctx, 7, run.ID, run.LeaseOwner, run.Attempt, searchOp.ID, []CloudResearchSourceInput{researchSnippet()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,56 +341,34 @@ func TestCloudResearchSourceSecretsValidationAndHTTP(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, false).registerCloudResearchSources(mux)
-	request := func(method, path, cookie, version string) (int, string) {
+	request := func(method, path, cookie string) (int, string) {
 		t.Helper()
 		req := httptest.NewRequest(method, path, nil)
 		if cookie != "" {
 			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: cookie})
 		}
-		if version != "" {
-			req.Header.Set("If-Match", version)
-		}
 		recorder := httptest.NewRecorder()
 		mux.ServeHTTP(recorder, req)
 		return recorder.Code, recorder.Body.String()
 	}
-	for _, path := range []string{"/api/web-chat/sources/" + source.ID, "/api/web-chat/sources/" + source.ID + "/content", "/api/web-chat/sources?conversation_id=" + source.ConversationID} {
-		status, _ := request("GET", path, "research-other", "")
-		if status != 404 {
-			t.Fatal("foreign source route was readable")
-		}
+	path := "/api/web-chat/sources/" + source.ID
+	status, body := request("GET", path, "research-owner")
+	if status != 200 || !strings.Contains(body, source.FinalURL) || strings.Contains(body, "第一行合成资料") || strings.Contains(body, op.ID) {
+		t.Fatal("expected the original link without the page body or private operation")
 	}
-	status, body := request("GET", "/api/web-chat/sources/"+source.ID, "research-owner", "")
-	if status != 200 || strings.Contains(body, "第一行合成资料") || strings.Contains(body, op.ID) {
-		t.Fatal("metadata route exposed page body/private operation")
+	if status, _ = request("GET", path, "research-other"); status != 404 {
+		t.Fatal("foreign source was readable")
 	}
-	status, body = request("GET", "/api/web-chat/sources/"+source.ID+"/content?from_line=2&to_line=3", "research-owner", "")
-	if status != 200 || !strings.Contains(body, "第二行合成资料") || strings.Contains(body, "第一行合成资料") {
-		t.Fatal("line excerpt did not match persisted snapshot")
-	}
-	status, _ = request("GET", "/api/web-chat/sources/"+summary[0].ID+"/content", "research-owner", "")
-	if status != 409 {
-		t.Fatal("search summary pretended to have page lines")
-	}
-	status, _ = request("GET", "/api/web-chat/sources/"+source.ID+"/content?from_line=1&to_line=201", "research-owner", "")
-	if status != 400 {
-		t.Fatal("unbounded excerpt accepted")
-	}
-	status, _ = request("GET", "/api/web-chat/sources/"+source.ID, "", "")
-	if status != 401 {
+	if status, _ = request("GET", path, ""); status != 401 {
 		t.Fatal("unauthenticated source read accepted")
 	}
-	status, _ = request("DELETE", "/api/web-chat/sources/"+source.ID, "research-other", "\"1\"")
-	if status != 404 {
-		t.Fatal("foreign delete accepted")
+	for _, retired := range []string{path + "/content", "/api/web-chat/sources?conversation_id=" + source.ConversationID} {
+		if status, _ = request("GET", retired, "research-owner"); status != 404 {
+			t.Fatalf("retired source route %s returned %d", retired, status)
+		}
 	}
-	status, _ = request("DELETE", "/api/web-chat/sources/"+source.ID, "research-owner", "\"1\"")
-	if status != 200 {
-		t.Fatal("source delete failed")
-	}
-	status, _ = request("GET", "/api/web-chat/sources/"+source.ID+"/content", "research-owner", "")
-	if status != 404 {
-		t.Fatal("deleted source excerpt remained readable")
+	if status, _ = request("DELETE", path, "research-owner"); status != 405 {
+		t.Fatal("source metadata route accepted deletion")
 	}
 	faulty := failedResearchViewerStore{Store: f.store, CloudResearchSourceStore: sources}
 	faultMux := http.NewServeMux()

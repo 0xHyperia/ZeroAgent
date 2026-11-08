@@ -334,15 +334,26 @@ export function cloudArtifactCanPreviewImage(version: CloudChatArtifactVersion) 
 export function cloudArtifactImageDimensions(bytes: Uint8Array, mime: string) {
   return previewImageDimensions(bytes, mime);
 }
-export function cloudArtifactStatus(version: CloudChatArtifactVersion) {
-  return {
-    ready: "正式版本已就绪",
-    staging: "正在保存正式版本",
-    unknown: "保存结果待核对",
-    failed: "保存失败",
-    deleting: "正在删除",
-    deleted: "已删除",
-  }[version.state];
+export function cloudArtifactStatus(version: CloudChatArtifactVersion, locale = "zh-CN") {
+  const labels =
+    locale === "zh-CN"
+      ? {
+          ready: "正式版本已就绪",
+          staging: "正在保存正式版本",
+          unknown: "保存结果待核对",
+          failed: "保存失败",
+          deleting: "正在删除",
+          deleted: "已删除",
+        }
+      : {
+          ready: "Saved",
+          staging: "Saving",
+          unknown: "Save status unconfirmed",
+          failed: "Save failed",
+          deleting: "Deleting",
+          deleted: "Deleted",
+        };
+  return labels[version.state];
 }
 export function cloudArtifactSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

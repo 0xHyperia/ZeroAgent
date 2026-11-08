@@ -61,24 +61,24 @@ func (s *Service) verifyCloudExecutionSession(ctx context.Context, id string, ui
 	return session, nil
 }
 
-func (s *Service) cloudExecutionSession(ctx context.Context, store *PersistentStore, uid int64) (*Session, bool, error) {
+func (s *Service) cloudExecutionSession(ctx context.Context, store *PersistentStore, uid int64) (*Session, error) {
 	rows, err := store.db.QueryContext(ctx, `SELECT session_ref FROM zeroagent_cloud_execution_accounts
  WHERE user_id=$1 ORDER BY source DESC`, uid)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	var refs []string
 	for rows.Next() {
 		var ref string
 		if err := rows.Scan(&ref); err != nil {
 			rows.Close()
-			return nil, false, err
+			return nil, err
 		}
 		refs = append(refs, ref)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	var temporary error
 	for _, ref := range refs {
@@ -86,7 +86,7 @@ func (s *Service) cloudExecutionSession(ctx context.Context, store *PersistentSt
 		if err == nil && session.UserID == uid && (session.Purpose == "" || session.Purpose == desktopCloudExecutionPurpose) {
 			session, err = s.verifyCloudExecutionSession(ctx, session.ID, uid)
 			if err == nil {
-				return session, true, nil
+				return session, nil
 			}
 		}
 		if err != nil && !cloudExecutionSessionUnavailable(err) {
@@ -94,9 +94,9 @@ func (s *Service) cloudExecutionSession(ctx context.Context, store *PersistentSt
 		}
 	}
 	if temporary != nil {
-		return nil, len(refs) > 0, temporary
+		return nil, temporary
 	}
-	return nil, len(refs) > 0, sessionMissingError()
+	return nil, sessionMissingError()
 }
 
 // Desktop refresh tokens remain in the native client. If an ordinary Gateway
@@ -109,7 +109,7 @@ func (s *Service) ensureCloudExecutionAccount(ctx context.Context, store *Persis
 	if actor.Purpose != desktopCloudAccessPurpose {
 		return sessionMissingError()
 	}
-	if _, _, err := s.cloudExecutionSession(ctx, store, actor.UserID); err == nil {
+	if _, err := s.cloudExecutionSession(ctx, store, actor.UserID); err == nil {
 		return nil
 	} else if !cloudExecutionSessionUnavailable(err) {
 		return err

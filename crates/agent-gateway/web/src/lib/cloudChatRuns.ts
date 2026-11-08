@@ -111,6 +111,17 @@ const TERMINAL_STATES = new Set<CloudChatRunState>([
 const MAX_OUTPUT_CHARS = 8 * 1024 * 1024;
 const MAX_EVENT_CHARS = MAX_OUTPUT_CHARS * 2 + CLOUD_CHAT_PRESENTATION_MAX_BYTES + 64 * 1024;
 
+function cloudSkillReferenceMessage(reason?: string): string | undefined {
+  switch (reason) {
+    case "skill_reference_unavailable":
+      return "所选技能修订已不可用，请重新启用技能或从草稿中更换引用。";
+    case "skill_revision_conflict":
+      return "同一技能包只能使用一个修订，请调整草稿中的引用。";
+    case "skill_catalog_unavailable":
+      return "暂时无法读取技能目录，请稍后重试。";
+  }
+}
+
 export class CloudChatRunRequestError extends Error {
   readonly reason?: string;
   constructor(
@@ -129,10 +140,12 @@ export class CloudChatRunRequestError extends Error {
     };
     const modelMessage =
       reason && Object.hasOwn(modelMessages, reason) ? modelMessages[reason] : undefined;
+    const skillMessage = cloudSkillReferenceMessage(reason);
     super(
-      (status === 429 && reason === "cloud_stream_limit"
-        ? "打开的实时页面已达上限，请关闭其他窗口后重试；任务会继续运行。"
-        : undefined) ||
+      skillMessage ||
+        (status === 429 && reason === "cloud_stream_limit"
+          ? "打开的实时页面已达上限，请关闭其他窗口后重试；任务会继续运行。"
+          : undefined) ||
         (status === 400 && modelMessage) ||
         (status === 409 && reason === "cloud_history_changed"
           ? "会话历史已变化。请重新加载会话后再编辑。"
@@ -152,7 +165,8 @@ export class CloudChatRunRequestError extends Error {
     this.name = "CloudChatRunRequestError";
     this.reason =
       reason &&
-      (Object.hasOwn(modelMessages, reason) ||
+      (skillMessage ||
+        Object.hasOwn(modelMessages, reason) ||
         ["account_queue_full", "cloud_stream_limit", "cloud_history_changed"].includes(reason))
         ? reason
         : undefined;
@@ -171,8 +185,10 @@ async function cloudRequestError(
   response: Response,
   admission = false,
 ): Promise<CloudChatRunRequestError> {
-  if (![400, 409, 429].includes(response.status) || !response.body)
-    return new CloudChatRunRequestError(response.status);
+  const hasKnownReason =
+    [400, 409, 429].includes(response.status) ||
+    (admission && (response.status === 422 || response.status === 503));
+  if (!hasKnownReason || !response.body) return new CloudChatRunRequestError(response.status);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0,
@@ -353,7 +369,9 @@ export function cloudChatRunStatusText(
       if (run.error_code === "model_output_limit")
         return "本次回答达到模型输出上限，已保留内容，可继续追问。";
       return "任务已中断，已生成的内容已保留；未自动重复执行";
-    case "failed":
+    case "failed": {
+      const skillMessage = cloudSkillReferenceMessage(run.error_code);
+      if (skillMessage) return skillMessage;
       if (run.error_code === "cloud_research_authorization_required")
         return "联网研究授权已失效或当前已进入私有分析阶段，请重新确认公开主题后发起新任务。";
       if (run.error_code === "cloud_research_unavailable")
@@ -381,6 +399,7 @@ export function cloudChatRunStatusText(
         run.error_code === "session_expired"
         ? "任务授权已失效，请重新登录后继续"
         : "任务未能完成，已生成的内容已保留";
+    }
     default:
       return null;
   }
@@ -394,9 +413,8 @@ function permanent(cause: unknown): boolean {
   return (
     cause instanceof CloudChatAccountQueueFullError ||
     (cause instanceof CloudChatRunRequestError &&
-      cause.status >= 400 &&
-      cause.status < 500 &&
-      cause.status !== 429) ||
+      ((cause.status === 503 && cause.reason === "skill_catalog_unavailable") ||
+        (cause.status >= 400 && cause.status < 500 && cause.status !== 429))) ||
     (cause instanceof Error && cause.message.startsWith("Account changed"))
   );
 }
@@ -416,9 +434,57 @@ export function waitForCloudChatRetry(milliseconds: number, signal: AbortSignal)
   });
 }
 
+const RUN_SNAPSHOT_TIMEOUT_MS = 8_000;
+// The Gateway emits a heartbeat every ten seconds, including during tool waits.
+const RUN_EVENT_IDLE_TIMEOUT_MS = 30_000;
+const RUN_UNREACHABLE_ATTEMPTS = 3;
+
+/** Deadlines cancel the read even when a host transport ignores the abort signal. */
+export async function readCloudChatRunView<T>(
+  signal: AbortSignal,
+  read: (attempt: AbortSignal, markActivity: () => void) => Promise<T>,
+  idleMs = RUN_SNAPSHOT_TIMEOUT_MS,
+): Promise<T> {
+  aborted(signal);
+  const attempt = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let rejectRead!: (reason: unknown) => void;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    rejectRead = reject;
+  });
+  const interrupt = (reason: unknown) => {
+    rejectRead(reason);
+    attempt.abort(reason);
+  };
+  const onAbort = () => interrupt(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  const markActivity = () => {
+    if (attempt.signal.aborted) return;
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => interrupt(new DOMException("Cloud run read timed out", "TimeoutError")),
+      idleMs,
+    );
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  markActivity();
+  try {
+    return await Promise.race([
+      interrupted,
+      Promise.resolve().then(() => {
+        aborted(attempt.signal);
+        return read(attempt.signal, markActivity);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 async function readEvents(
   response: Response,
   signal: AbortSignal,
+  onActivity: (frameReceived: boolean) => void,
   onFrame: (event: string, data: string) => boolean | undefined,
 ): Promise<void> {
   if (!response.ok) throw new CloudChatRunRequestError(response.status);
@@ -437,6 +503,7 @@ async function readEvents(
       aborted(signal);
       const { value, done } = await reader.read();
       aborted(signal);
+      if (value?.byteLength) onActivity(false);
       buffer += decoder.decode(value, { stream: !done });
       // CRLF may be split across network chunks; normalize only complete frame boundaries.
       let match = /\r?\n\r?\n/.exec(buffer);
@@ -450,7 +517,13 @@ async function readEvents(
           if (line.startsWith("event:")) event = line.slice(6).trimStart();
           if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
         }
-        if (data.length > 0 && onFrame(event, data.join("\n")) === false) return;
+        if (data.length > 0) {
+          const keepReading = onFrame(event, data.join("\n"));
+          if (keepReading !== undefined) onActivity(true);
+          if (keepReading === false) return;
+        } else if (frame.startsWith(":")) {
+          onActivity(true);
+        }
         match = /\r?\n\r?\n/.exec(buffer);
       }
       if (buffer.length > MAX_EVENT_CHARS) throw new Error("任务事件超过显示上限");
@@ -469,6 +542,10 @@ export function createCloudChatRunsClient(request: CloudChatFetch) {
     headers.set("Accept", "application/json");
     if (init?.body !== undefined) headers.set("Content-Type", "application/json");
     const response = await request(path, { ...init, credentials: "include", headers });
+    if (init?.signal?.aborted) {
+      void response.body?.cancel().catch(() => undefined);
+      aborted(init.signal);
+    }
     if (!response.ok)
       throw await cloudRequestError(
         response,
@@ -595,6 +672,7 @@ export function createCloudChatRunsClient(request: CloudChatFetch) {
       signal: AbortSignal;
       onRun: (run: CloudChatRun) => void;
       onConnection?: (state: ConnectionState) => void;
+      onSnapshot?: () => void;
       onRecoverableError?: (cause: CloudChatRunRequestError) => void;
       retry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
     },
@@ -603,6 +681,7 @@ export function createCloudChatRunsClient(request: CloudChatFetch) {
     const retry = options.retry ?? waitForCloudChatRetry;
     let run = initial;
     let failures = 0;
+    let unreachable = 0;
     const update = (next: CloudChatRun) => {
       aborted(signal);
       if (next.id !== initial.id || next.conversation_id !== initial.conversation_id) {
@@ -616,41 +695,66 @@ export function createCloudChatRunsClient(request: CloudChatFetch) {
     while (!isCloudChatRunTerminal(run)) {
       aborted(signal);
       options.onConnection?.(failures > 0 ? "reconnecting" : "connecting");
+      let connected = false;
+      let confirmedRun = false;
       try {
-        const response = await request(
-          `/api/web-chat/runs/${encodeURIComponent(run.id)}/events?after_seq=${run.last_seq}`,
-          { credentials: "include", headers: { Accept: "text/event-stream" }, signal },
+        await readCloudChatRunView(
+          signal,
+          async (attempt, markActivity) => {
+            const response = await request(
+              `/api/web-chat/runs/${encodeURIComponent(run.id)}/events?after_seq=${run.last_seq}`,
+              { credentials: "include", headers: { Accept: "text/event-stream" }, signal: attempt },
+            );
+            if (attempt.aborted) {
+              void response.body?.cancel().catch(() => undefined);
+              aborted(attempt);
+            }
+            if (!response.ok) throw await cloudRequestError(response);
+            await readEvents(
+              response,
+              attempt,
+              (frameReceived) => {
+                markActivity();
+                if (!frameReceived || connected) return;
+                connected = true;
+                options.onConnection?.("connected");
+              },
+              (event, data) => {
+                if (event !== "snapshot" && event !== "cloud_run") return;
+                const value: unknown = JSON.parse(data);
+                if (event === "snapshot") {
+                  if (!record(value)) throw new Error("任务快照无效");
+                  update(parseCloudChatRun(value.run));
+                } else {
+                  update(reduceCloudChatRunEvent(run, value));
+                }
+                confirmedRun = true;
+                failures = 0;
+                return !isCloudChatRunTerminal(run);
+              },
+            );
+          },
+          RUN_EVENT_IDLE_TIMEOUT_MS,
         );
-        aborted(signal);
-        if (!response.ok) throw await cloudRequestError(response);
-        options.onConnection?.("connected");
-        await readEvents(response, signal, (event, data) => {
-          const value: unknown = JSON.parse(data);
-          if (event === "snapshot") {
-            if (!record(value)) throw new Error("任务快照无效");
-            update(parseCloudChatRun(value.run));
-          } else if (event === "cloud_run") {
-            update(reduceCloudChatRunEvent(run, value));
-          }
-          failures = 0;
-          return !isCloudChatRunTerminal(run);
-        });
       } catch (cause) {
         aborted(signal);
         if (permanent(cause)) throw cause;
         if (cause instanceof CloudChatRunRequestError) options.onRecoverableError?.(cause);
-        failures++;
       }
       if (isCloudChatRunTerminal(run)) break;
+      failures++;
+      options.onConnection?.("reconnecting");
       try {
-        update(await getRun(run.id, signal));
+        update(await readCloudChatRunView(signal, (attempt) => getRun(run.id, attempt)));
+        unreachable = 0;
+        options.onSnapshot?.();
       } catch (cause) {
         aborted(signal);
         if (permanent(cause)) throw cause;
-        failures++;
+        unreachable = confirmedRun ? 0 : unreachable + 1;
+        if (unreachable >= RUN_UNREACHABLE_ATTEMPTS) throw cause;
       }
       if (!isCloudChatRunTerminal(run)) {
-        options.onConnection?.("reconnecting");
         await retry(Math.min(500 * 2 ** Math.min(failures, 4), 8000), signal);
       }
     }

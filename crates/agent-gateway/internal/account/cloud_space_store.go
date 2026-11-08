@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_space_metadata (
  PRIMARY KEY(user_id,kind,id));
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_space_folder_idx ON zeroagent_cloud_space_metadata(user_id,folder_id);
 CREATE TABLE IF NOT EXISTS zeroagent_cloud_space_limits (
- user_id BIGINT PRIMARY KEY CHECK(user_id>0),limit_bytes BIGINT NOT NULL CHECK(limit_bytes>0));` + spaceLimitsSchema + cloudSpacePagingSchema
+ user_id BIGINT PRIMARY KEY CHECK(user_id>0),limit_bytes BIGINT NOT NULL CHECK(limit_bytes>0),
+ file_limit_bytes BIGINT NOT NULL CHECK(file_limit_bytes>0 AND file_limit_bytes<=1125899906842624),
+ artifact_limit_bytes BIGINT NOT NULL CHECK(artifact_limit_bytes>0 AND artifact_limit_bytes<=1125899906842624),
+ max_files INTEGER NOT NULL CHECK(max_files BETWEEN 1 AND 1000000),
+ max_artifact_versions INTEGER NOT NULL CHECK(max_artifact_versions BETWEEN 1 AND 1000000));` + cloudSpacePagingSchema
 
 func (s *MemoryStore) spaceRecordsLocked(userID int64) cloudSpaceRecords {
 	r := cloudSpaceRecords{limits: s.spaceLimitsLocked(userID), sites: map[string]CloudSiteRelease{}}

@@ -3,7 +3,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { chatTimestamp, workDuration } from "@liveagent/ui/lib/chat/workTiming";
 import { isDocumentHidden } from "@liveagent/ui/lib/shared/documentVisibility";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { LazyCollapse } from "./LazyCollapse";
 import { useExpandProcessByDefault, useProcessDefaultChange } from "./processDisclosure";
 import { useAttentionDisclosure } from "./useAttentionDisclosure";
@@ -107,6 +107,8 @@ export function AssistantWorkTrace({
   collapseAfterAnswer?: boolean;
 }) {
   const { t } = useLocale();
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const validStartedAt = chatTimestamp(startedAtMs);
   const validDuration = workDuration(durationMs);
   // 没有总结文案的回合（被打断、失败、只有过程）挂载时展开：折叠后只剩标题，
@@ -174,11 +176,8 @@ export function AssistantWorkTrace({
       </span>
       {hasDetails ? (
         <ChevronDown
-          className={cn(
-            "size-3 shrink-0 text-foreground/40 opacity-0 transition-[opacity,transform] duration-150",
-            "group-hover/work-trace:opacity-100 group-focus-visible/work-trace:opacity-100 motion-reduce:transition-none",
-            !expanded && "-rotate-90",
-          )}
+          aria-hidden="true"
+          className={cn("za-chat-activity-chevron size-3 shrink-0", !expanded && "-rotate-90")}
         />
       ) : null}
       <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-foreground/10" />
@@ -194,13 +193,15 @@ export function AssistantWorkTrace({
     >
       {hasDetails ? (
         <button
+          ref={triggerRef}
           type="button"
           className={cn(
-            "group/work-trace flex w-full items-center gap-2 rounded-lg py-1",
+            "za-chat-activity-trigger flex w-full items-center gap-2 rounded-lg py-1",
             "text-sm font-[450] transition-colors",
-            "hover:text-foreground/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "hover:text-foreground/75",
           )}
           aria-expanded={expanded}
+          aria-controls={detailsId}
           onClick={() => setExpanded((current) => !current)}
         >
           {header}
@@ -210,7 +211,12 @@ export function AssistantWorkTrace({
       )}
 
       {hasDetails ? (
-        <LazyCollapse className="[contain:layout_paint]" open={expanded}>
+        <LazyCollapse
+          id={detailsId}
+          triggerRef={triggerRef}
+          className="[contain:layout_paint]"
+          open={expanded}
+        >
           {() => (
             // 行距由本容器统一负责：各行组件不再自带 pb/my，
             // 否则不同行类型会凑出不同的间隙。

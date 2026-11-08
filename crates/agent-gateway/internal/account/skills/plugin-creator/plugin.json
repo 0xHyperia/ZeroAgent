@@ -15,7 +15,6 @@
     },
     "top.usa0": {
       "primarySkill": "create-plugin",
-      "aliases": { "plugin-creator": "create-plugin" },
       "kind": "plugin",
       "adaptedFrom": {
         "package": "plugin-creator",

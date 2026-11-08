@@ -6,6 +6,8 @@ export type DesktopExecutionState = {
   environments: DesktopEnvironment[];
   localDeviceId: string;
   selectedDeviceId: string;
+  directoryUnavailable?: boolean;
+  selectedDeviceMissing?: boolean;
 };
 
 export function localDesktopExecutionState(
@@ -25,7 +27,10 @@ export function refreshDesktopExecutionState(
     current.selectedDeviceId === current.localDeviceId ||
     current.selectedDeviceId === LOCAL_ONLY_DEVICE_ID;
   if (selectedLocal) return localDesktopExecutionState(environments, localDeviceId);
-  if (!environments.some((item) => item.device_id === current.selectedDeviceId)) {
+  const selectedDeviceMissing = !environments.some(
+    (item) => item.device_id === current.selectedDeviceId,
+  );
+  if (selectedDeviceMissing) {
     const previous = current.environments.find(
       (item) => item.device_id === current.selectedDeviceId,
     );
@@ -42,7 +47,12 @@ export function refreshDesktopExecutionState(
       },
     ];
   }
-  return { environments, localDeviceId, selectedDeviceId: current.selectedDeviceId };
+  return {
+    environments,
+    localDeviceId,
+    selectedDeviceId: current.selectedDeviceId,
+    ...(selectedDeviceMissing ? { selectedDeviceMissing } : {}),
+  };
 }
 
 export function unavailableDesktopExecutionState(
@@ -56,13 +66,17 @@ export function unavailableDesktopExecutionState(
   ) {
     return localDesktopExecutionState(localEnvironments, LOCAL_ONLY_DEVICE_ID);
   }
-  return refreshDesktopExecutionState(
-    current,
-    current.environments.map((item) =>
-      item.device_id === current.localDeviceId ? item : { ...item, online: false },
+  return {
+    ...refreshDesktopExecutionState(
+      current,
+      current.environments.map((item) =>
+        item.device_id === current.localDeviceId ? item : { ...item, online: false },
+      ),
+      current.localDeviceId,
     ),
-    current.localDeviceId,
-  );
+    directoryUnavailable: true,
+    ...(current.selectedDeviceMissing ? { selectedDeviceMissing: true } : {}),
+  };
 }
 
 export function selectDesktopExecutionState(
@@ -73,8 +87,9 @@ export function selectDesktopExecutionState(
     environment.device_id === current.localDeviceId ||
     environment.device_id === LOCAL_ONLY_DEVICE_ID
   ) {
-    return { ...current, selectedDeviceId: current.localDeviceId };
+    return localDesktopExecutionState(current.environments, current.localDeviceId);
   }
+  if (current.selectedDeviceId === environment.device_id) return current;
   return refreshDesktopExecutionState(
     { ...current, selectedDeviceId: environment.device_id },
     current.environments,

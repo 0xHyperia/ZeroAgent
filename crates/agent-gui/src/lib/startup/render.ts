@@ -22,6 +22,7 @@ export function createStartupRenderer(doc: Document = document) {
     if (el && el.textContent !== value) el.textContent = value;
   };
   const en = startupLanguage() === "en";
+  doc.documentElement.lang = en ? "en-US" : "zh-CN";
   const choose = (zh: string, english: string) => (en ? english : zh);
   let state = createStartupProgress();
   let disposed = false;
@@ -132,7 +133,7 @@ export function createStartupRenderer(doc: Document = document) {
       if (event.operation === "done" || event.operation === "error") paint();
       else schedule();
     },
-    fail(onRetry: () => void, reason: "authentication" | "startup" = "startup") {
+    fail(onRetry: () => void, reason: "authentication" | "configuration" | "startup" = "startup") {
       if (disposed) return;
       state = { ...state, phase: "error" };
       shell?.setAttribute("aria-busy", "false");
@@ -144,10 +145,15 @@ export function createStartupRenderer(doc: Document = document) {
               "登录已失效，请重新登录 USA-Zero。",
               "Your session has expired. Sign in to USA-Zero again.",
             )
-          : choose(
-              "本地服务或数据准备未能完成，请重试。若仍失败，请查看诊断日志。",
-              "The local service or data preparation could not finish. Retry, or check diagnostic logs if it persists.",
-            ),
+          : reason === "configuration"
+            ? choose(
+                "客户端的账户服务地址配置不一致。请使用配置一致的客户端后重试。",
+                "The desktop app has conflicting account service addresses. Retry with a consistently configured build.",
+              )
+            : choose(
+                "本地服务或数据准备未能完成，请重试。若仍失败，请查看诊断日志。",
+                "The local service or data preparation could not finish. Retry, or check diagnostic logs if it persists.",
+              ),
       );
       text(
         "retry",

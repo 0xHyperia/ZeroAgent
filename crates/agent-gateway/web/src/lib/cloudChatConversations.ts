@@ -20,19 +20,16 @@ export type CloudConversationSearchMatch = {
   match: "title" | "message";
   created_at: string;
 };
-export type CloudConversationBranchAction = "edit" | "regenerate" | "fork";
 export type CloudConversationBranches = {
   source: null | {
     conversation_id: string;
     message_id: string;
-    action: CloudConversationBranchAction;
     title: string;
     available: boolean;
   };
   children: {
     conversation: CloudConversation;
     source_message_id: string;
-    action: CloudConversationBranchAction;
   }[];
   hasMore: boolean;
   nextCursor: string;
@@ -42,7 +39,6 @@ type PageOptions = { cursor?: string; limit?: number; signal?: AbortSignal };
 type ScopeOptions = PageOptions & { scope?: CloudConversationScope };
 const ROOT = "/api/web-chat/conversations";
 const SCOPES = new Set(["active", "unassigned", "archived", "pinned", "all"]);
-const ACTIONS = new Set(["edit", "regenerate", "fork"]);
 function invalid(): never {
   throw new Error("会话响应无效，请重新读取。");
 }
@@ -317,22 +313,19 @@ export function createCloudChatConversationsClient(
       let source: CloudConversationBranches["source"] = null;
       if (data.source !== null) {
         const item = object(data.source);
-        if (!ACTIONS.has(item.action as string) || typeof item.available !== "boolean") invalid();
+        if (typeof item.available !== "boolean") invalid();
         source = {
           conversation_id: id(item.conversation_id),
           message_id: id(item.message_id),
-          action: item.action as CloudConversationBranchAction,
           title: text(item.title, 2048),
           available: item.available,
         };
       }
       const children = data.children.map((value) => {
         const item = object(value);
-        if (!ACTIONS.has(item.action as string)) invalid();
         return {
           conversation: parseCloudConversation(item.conversation),
           source_message_id: id(item.source_message_id),
-          action: item.action as CloudConversationBranchAction,
         };
       });
       if (new Set(children.map((item) => item.conversation.id)).size !== children.length) invalid();

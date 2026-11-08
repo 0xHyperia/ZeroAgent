@@ -1,4 +1,11 @@
-import { Clock3, Loader2, MessageSquareText, Pin, Search } from "@liveagent/ui/components/IconSet";
+import {
+  Clock3,
+  Loader2,
+  MessageSquareText,
+  Pin,
+  Search,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   Command,
@@ -22,7 +29,16 @@ import {
 import { setSearchJumpTarget } from "@liveagent/ui/lib/chat/searchJumpTarget";
 import { cachedDateTimeFormat } from "@liveagent/ui/lib/shared/intlFormatters";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
 import type { SidebarConversation } from "../../lib/sidebar/types";
 
@@ -51,6 +67,7 @@ type ConversationSearchDialogProps = {
   currentWorkdir?: string;
   onSelectConversation: (id: string, options?: ConversationOpenOptions) => void;
   searchAdapter?: ConversationSearchAdapter;
+  returnFocus?: RefObject<HTMLElement | null>;
 };
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
@@ -91,6 +108,7 @@ function formatChineseUpdatedAt(date: Date, locale: string) {
 function formatUpdatedAt(value: number | undefined, locale: string) {
   if (!value || !Number.isFinite(value)) return "";
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
   if (locale.toLowerCase().startsWith("zh")) {
     return formatChineseUpdatedAt(date, locale);
   }
@@ -143,6 +161,7 @@ export function ConversationSearchDialog({
   currentWorkdir,
   onSelectConversation,
   searchAdapter,
+  returnFocus,
 }: ConversationSearchDialogProps) {
   const { t, locale } = useLocale();
   const [query, setQuery] = useState("");
@@ -150,6 +169,9 @@ export function ConversationSearchDialog({
   const [nextCursor, setNextCursor] = useState<string>();
   const [moreStatus, setMoreStatus] = useState<SearchStatus>("idle");
   const controllerRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const paginationFocus = useRef<HTMLButtonElement | null>(null);
+  const resultSelected = useRef(false);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const requestSequenceRef = useRef(0);
   const normalizedQuery = query.trim();
@@ -180,7 +202,14 @@ export function ConversationSearchDialog({
               ]
             : page.items,
         );
-        setNextCursor(page.hasMore ? page.nextCursor : undefined);
+        const next = page.hasMore ? page.nextCursor : undefined;
+        if (cursor && !next) {
+          const origin = paginationFocus.current;
+          if (origin?.ownerDocument.activeElement === origin)
+            inputRef.current?.focus({ preventScroll: true });
+          paginationFocus.current = null;
+        }
+        setNextCursor(next);
         setStatus("ready");
         setMoreStatus("ready");
       } catch {
@@ -198,7 +227,11 @@ export function ConversationSearchDialog({
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   useEffect(() => {
-    if (open) return;
+    if (open) {
+      resultSelected.current = false;
+      return;
+    }
+    paginationFocus.current = null;
     requestSequenceRef.current += 1;
     controllerRef.current?.abort();
     setQuery("");
@@ -266,6 +299,7 @@ export function ConversationSearchDialog({
 
   const selectConversation = (item: ConversationSearchResult) => {
     const { id } = item;
+    resultSelected.current = true;
     onOpenChange(false);
     if (normalizedQuery && searchAdapter) {
       searchAdapter.onSelectResult(item);
@@ -283,7 +317,18 @@ export function ConversationSearchDialog({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandDialogPopup data-conversation-search-dialog="" className="max-h-[min(640px,80dvh)]">
+      <CommandDialogPopup
+        data-conversation-search-dialog=""
+        className="min-820:max-h-[min(640px,80dvh)]"
+        layout="visual-viewport"
+        finalFocus={() => {
+          if (!returnFocus || resultSelected.current) return true;
+          const origin = returnFocus.current;
+          return origin?.isConnected && origin.getClientRects().length && !origin.closest("[inert]")
+            ? origin
+            : false;
+        }}
+      >
         <CommandDialogTitle className="sr-only">{t("chat.searchConversations")}</CommandDialogTitle>
         <CommandDialogDescription className="sr-only">
           {t("chat.searchConversationsDescription")}
@@ -298,6 +343,36 @@ export function ConversationSearchDialog({
           loopFocus={false}
         >
           <CommandInput
+            inputRef={inputRef}
+            endAddon={
+              <div className="flex shrink-0 items-center gap-0.5">
+                {query.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-lg text-muted-foreground max-820:size-11 pointer-coarse:size-11"
+                    title={t("chat.clearConversationSearch")}
+                    aria-label={t("chat.clearConversationSearch")}
+                    onClick={() => {
+                      setQuery("");
+                      inputRef.current?.focus({ preventScroll: true });
+                    }}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-lg text-muted-foreground max-820:min-h-11 max-820:min-w-11 max-820:px-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                  onClick={() => onOpenChange(false)}
+                >
+                  {t("chat.conversationSearchClose")}
+                </Button>
+              </div>
+            }
             onKeyDownCapture={(event) => {
               if (
                 event.nativeEvent.isComposing ||
@@ -311,7 +386,7 @@ export function ConversationSearchDialog({
             placeholder={t("chat.searchConversationsPlaceholder")}
             startAddon={
               status === "loading" ? (
-                <Loader2 className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" />
+                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
               ) : undefined
             }
             onKeyDown={(event) => {
@@ -327,13 +402,17 @@ export function ConversationSearchDialog({
             {status === "error" ? (
               <div
                 role="alert"
-                className="flex min-h-200px flex-col items-center justify-center gap-3 px-8 text-center text-sm"
+                className="flex shrink flex-col items-center justify-center gap-3 overflow-y-auto px-6 py-8 text-center text-sm min-820:min-h-200px max-820:py-4"
               >
                 <span className="text-destructive">{t("chat.conversationSearchFailed")}</span>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void performSearch(normalizedQuery)}
+                  className="shrink-0 max-820:min-h-11 pointer-coarse:min-h-11"
+                  onClick={(event) => {
+                    if (event.detail === 0) inputRef.current?.focus({ preventScroll: true });
+                    void performSearch(normalizedQuery);
+                  }}
                 >
                   {t("chat.retryConversationSearch")}
                 </Button>
@@ -341,14 +420,14 @@ export function ConversationSearchDialog({
             ) : status === "loading" ? (
               <div
                 role="status"
-                className="flex min-h-200px items-center justify-center text-sm text-muted-foreground"
+                className="flex shrink items-center justify-center px-4 py-8 text-sm text-muted-foreground min-820:min-h-200px max-820:py-4"
               >
                 {t("chat.conversationSearchLoading")}
               </div>
             ) : selectableItems.length === 0 ? (
               <div
                 role="status"
-                className="flex min-h-200px flex-col items-center justify-center gap-2 px-8 text-center text-sm text-muted-foreground"
+                className="flex shrink flex-col items-center justify-center gap-2 overflow-y-auto px-6 py-8 text-center text-sm text-muted-foreground min-820:min-h-200px max-820:py-4"
               >
                 <MessageSquareText className="size-8 opacity-40" />
                 {normalizedQuery
@@ -358,7 +437,10 @@ export function ConversationSearchDialog({
             ) : null}
             <CommandList
               aria-label={t("chat.searchConversations")}
-              className={cn("max-h-[min(52vh,440px)]", selectableItems.length === 0 && "p-0")}
+              className={cn(
+                "min-820:max-h-[min(52vh,440px)]",
+                selectableItems.length === 0 && "p-0",
+              )}
             >
               {groups
                 .filter((group) => group.items.length > 0)
@@ -372,49 +454,56 @@ export function ConversationSearchDialog({
                       </CommandGroupLabel>
                       {group.items.map((item) => {
                         const updatedAt = formatUpdatedAt(item.updatedAt, locale);
-                        const meta = [item.cwd, updatedAt].filter(Boolean).join(" · ");
                         return (
                           <CommandItem
                             key={resultKey(item)}
                             value={item}
+                            className="max-820:min-h-11 max-820:justify-center pointer-coarse:min-h-11"
                             onClick={() => selectConversation(item)}
                           >
-                            <div className="w-full truncate font-medium leading-5">
-                              {searchAdapter && normalizedQuery
-                                ? renderSearchPreview(item.title, normalizedQuery)
-                                : item.title}
+                            <div className="flex w-full min-w-0 items-baseline gap-2">
+                              <div className="min-w-0 flex-1 truncate font-medium leading-5">
+                                {searchAdapter && normalizedQuery
+                                  ? renderSearchPreview(item.title, normalizedQuery)
+                                  : item.title}
+                              </div>
+                              {updatedAt ? (
+                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  {updatedAt}
+                                </span>
+                              ) : null}
                             </div>
-                            {item.matchType ? (
-                              <span className="text-xs text-muted-foreground">
-                                {item.matchType === "message"
-                                  ? locale.startsWith("zh")
-                                    ? "正文匹配"
-                                    : "Message match"
-                                  : locale.startsWith("zh")
-                                    ? "标题匹配"
-                                    : "Title match"}
-                                {item.archived
-                                  ? locale.startsWith("zh")
-                                    ? " · 已归档"
-                                    : " · Archived"
-                                  : ""}
-                              </span>
+                            {item.matchType || item.cwd ? (
+                              <div className="flex w-full min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground">
+                                {item.matchType ? (
+                                  <span className="shrink-0">
+                                    {item.matchType === "message"
+                                      ? locale.startsWith("zh")
+                                        ? "正文匹配"
+                                        : "Message match"
+                                      : locale.startsWith("zh")
+                                        ? "标题匹配"
+                                        : "Title match"}
+                                    {item.archived
+                                      ? locale.startsWith("zh")
+                                        ? " · 已归档"
+                                        : " · Archived"
+                                      : ""}
+                                  </span>
+                                ) : null}
+                                {item.cwd ? (
+                                  <span className="min-w-0 flex-1 truncate" title={item.cwd}>
+                                    {item.cwd}
+                                  </span>
+                                ) : null}
+                              </div>
                             ) : null}
                             {item.searchPreview ? (
-                              <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                              <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">
                                 {renderSearchPreview(
                                   item.searchPreview,
                                   searchAdapter ? normalizedQuery : undefined,
                                 )}
-                              </div>
-                            ) : null}
-                            {item.cwd || updatedAt ? (
-                              <div
-                                className="mt-1 flex w-full items-center gap-3 text-xs leading-4 text-muted-foreground"
-                                title={meta}
-                              >
-                                <span className="min-w-0 flex-1 truncate">{item.cwd}</span>
-                                <span className="shrink-0 tabular-nums">{updatedAt}</span>
                               </div>
                             ) : null}
                           </CommandItem>
@@ -425,7 +514,7 @@ export function ConversationSearchDialog({
                 })}
             </CommandList>
             {nextCursor && status === "ready" ? (
-              <div className="px-3 pb-3 text-center">
+              <div className="shrink-0 px-3 pb-3 text-center max-820:pb-1.5">
                 {moreStatus === "error" ? (
                   <p role="alert" className="mb-2 text-xs text-destructive">
                     {t("chat.conversationSearchFailed")}
@@ -434,8 +523,14 @@ export function ConversationSearchDialog({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={moreStatus === "loading"}
-                  onClick={() => void performSearch(normalizedQuery, nextCursor)}
+                  className="aria-disabled:opacity-60 max-820:min-h-11 pointer-coarse:min-h-11"
+                  aria-disabled={moreStatus === "loading"}
+                  aria-busy={moreStatus === "loading"}
+                  onClick={(event) => {
+                    if (moreStatus === "loading") return;
+                    paginationFocus.current = event.detail === 0 ? event.currentTarget : null;
+                    void performSearch(normalizedQuery, nextCursor);
+                  }}
                 >
                   {moreStatus === "loading" ? (
                     <Loader2 className="mr-2 size-3.5 animate-spin motion-reduce:animate-none" />
@@ -449,7 +544,7 @@ export function ConversationSearchDialog({
               </div>
             ) : null}
           </CommandPanel>
-          <CommandFooter>
+          <CommandFooter className="max-820:hidden pointer-coarse:hidden">
             <div className="flex items-center gap-4">
               <span>
                 <kbd className="mr-1.5 rounded border border-foreground/10 px-1">↑ ↓</kbd>

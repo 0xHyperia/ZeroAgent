@@ -19,6 +19,7 @@ pub async fn chat_notification_deliver(
 }
 
 /// Sets (or clears with `None`/0) the Dock / taskbar badge count.
+#[cfg(desktop)]
 #[tauri::command]
 pub fn app_set_badge_count(app: tauri::AppHandle, count: Option<i64>) -> Result<(), String> {
     use tauri::Manager;

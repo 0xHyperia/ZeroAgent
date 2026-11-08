@@ -62,7 +62,10 @@ test("device selection credentials do not bind a remote workspace", () => {
     expires_at: "",
   };
 
-  const credential = targets.encodeSelectionCredential(selection);
+  const credential = targets.encodeSelectionCredential({
+    ...selection,
+    device_draft_workspace: { id: "workspace-b", path: "C:\\code\\beta" },
+  });
   assert.deepEqual(targets.decodeSelectionCredential(credential), {
     lease: "lease-2",
     runtimeKind: "device_agent",

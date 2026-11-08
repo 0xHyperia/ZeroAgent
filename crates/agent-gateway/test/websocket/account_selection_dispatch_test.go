@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/liveagent/agent-gateway/internal/account"
+	gatewayhandler "github.com/liveagent/agent-gateway/internal/handler"
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
 	"github.com/liveagent/agent-gateway/internal/protocol/pbws"
 	gatewayserver "github.com/liveagent/agent-gateway/internal/server"
@@ -290,13 +291,16 @@ func TestAccountWorkspaceHandoffKeepsBytesAndScope(t *testing.T) {
 	sm := session.NewManager()
 	sm.RecordAuthentication(fixture.device.ID, "1", "owned")
 	agent := session.NewAgentSession(sm.LatestAuthSnapshot(fixture.device.ID))
+	agent.SetCapabilities([]string{gatewayv2.WorkspaceHandoffPathV1Capability})
 	sm.SetSession(agent)
 	defer agent.Close()
 	handler := gatewayserver.NewHTTPServer(newV2TestConfig(), sm, fixture.service)
 	id := "c1e38fb0-5387-4e4b-9802-ebaeecbfcc96"
 	data := []byte{0x00, 0xFF, 0x03}
+	const expectedPath = "/workspace/project"
 	request := func(workspace string) *http.Request {
-		req := httptest.NewRequest(http.MethodPost, "/api/files/handoff?workspace_id="+workspace+"&name=fixture.pdf&operation_id="+id, bytes.NewReader(data))
+		req := httptest.NewRequest(http.MethodPost, "/api/files/confirmed-handoff?workspace_id="+workspace+"&name=fixture.pdf&operation_id="+id, bytes.NewReader(data))
+		req.Header.Set(gatewayhandler.WorkspaceHandoffPathHeader, base64.RawURLEncoding.EncodeToString([]byte(expectedPath)))
 		fixture.authorizeHTTP(t, req)
 		return req
 	}
@@ -322,7 +326,8 @@ func TestAccountWorkspaceHandoffKeepsBytesAndScope(t *testing.T) {
 	select {
 	case env := <-agent.Outbound():
 		handoff := env.GetWorkspaceHandoff()
-		if handoff == nil || handoff.GetOperationId() != id || handoff.GetWorkspaceId() != "workspace-1" || !bytes.Equal(handoff.GetContent(), data) {
+		if handoff == nil || handoff.GetOperationId() != id || handoff.GetWorkspaceId() != "workspace-1" ||
+			handoff.GetExpectedWorkspacePath() != expectedPath || !bytes.Equal(handoff.GetContent(), data) {
 			t.Fatalf("incorrect workspace transfer: %v", handoff)
 		}
 		env.Ack(nil)

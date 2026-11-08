@@ -23,6 +23,10 @@ type cloudHTTPFixture struct {
 }
 
 func newCloudHTTPFixture(t *testing.T, generate http.HandlerFunc) *cloudHTTPFixture {
+	return newCloudHTTPFixtureWithPlatform(t, generate, http.NotFound)
+}
+
+func newCloudHTTPFixtureWithPlatform(t *testing.T, generate, platform http.HandlerFunc) *cloudHTTPFixture {
 	t.Helper()
 	fixture := &cloudHTTPFixture{store: NewMemoryStore()}
 	usa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +42,7 @@ func newCloudHTTPFixture(t *testing.T, generate http.HandlerFunc) *cloudHTTPFixt
 			}
 			generate(w, r)
 		default:
-			http.NotFound(w, r)
+			platform(w, r)
 		}
 	}))
 	t.Cleanup(usa.Close)

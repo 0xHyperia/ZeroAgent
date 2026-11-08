@@ -10,7 +10,7 @@ import {
 } from "../../lib/cloudChatRoute";
 import { getDesktopRemoteHost } from "../../lib/desktopRemoteHost";
 import { createDeviceScheduleHost } from "../../lib/deviceScheduleHost";
-import { readCloudChatLocation, useCloudChatHistory } from "../../lib/useCloudChatHistory";
+import { useCloudChatHistory } from "../../lib/useCloudChatHistory";
 import { CloudScheduleWorkspace } from "./CloudScheduleWorkspace";
 import { DeviceScheduleEditor } from "./DeviceScheduleEditor";
 
@@ -59,7 +59,7 @@ export function ConnectedDeviceTasks({
   const browserHistory = !getDesktopRemoteHost();
   const [route, setRoute] = useState<Route>(() => {
     if (browserHistory) {
-      const { route: linked } = readCloudChatLocation(owner);
+      const linked = readCloudChatRoute(new URL(window.location.href));
       if (linked.page === "tasks" && linked.deviceView && linked.target === deviceId) return linked;
     }
     const stored = window.sessionStorage.getItem(storageKey);

@@ -31,16 +31,82 @@ async function mount(t,overrides={}){
    editor.dispatchEvent(new Event('input',{bubbles:true}));await tick();
   });await flush();
  }
- async function key(key){await env.act(async()=>{editor.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true}));await tick();});}
+ async function key(key,modifiers={}){
+  const event=new KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true,...modifiers});
+  await env.act(async()=>{editor.dispatchEvent(event);await tick();});
+  return event;
+ }
  return {env,editor,ref,input,key,flush,cloudComposerExtensions,get sent(){return sent;},get actions(){return actions;},get anchor(){return anchor;},async update(next){props={...props,...next};await render();},async setLocale(next){locale=next;await this.update({enabledSkills:cloudComposerSkills(catalog,locale),slashSkills:cloudComposerSlashSkills(catalog,locale),mentionExtensions:cloudComposerExtensions(catalog,locale),resolveExtensionMention:reference=>cloudExtensionMention(catalog,reference,locale)});},async choose(name){const item=[...document.querySelectorAll('[role="option"]')].find(el=>el.textContent.includes(name));assert.ok(item,name);await env.act(async()=>{item.click();await tick();});}};
 }
 
-test('@ lists one primary per package, including personal and independent content, without bundled child skills',async t=>{
+test('@ lists one primary per usable plugin without standalone or bundled skills',async t=>{
  const app=await mount(t);await app.input('@');
  const text=document.querySelector('[role="listbox"]').textContent;
- assert.match(text,/产品设计/);assert.match(text,/创建插件/);assert.match(text,/创建技能/);assert.match(text,/我的方法/);
- assert.doesNotMatch(text,/审查体验|完善插件|my-child|文件和文件夹/);
- assert.equal(document.querySelectorAll('[role="option"]').length,5);assert.equal(app.sent,0);
+ assert.match(text,/产品设计/);assert.match(text,/创建插件/);assert.match(text,/我的方法/);
+ assert.doesNotMatch(text,/创建技能|审查体验|完善插件|my-child|文件和文件夹/);
+ assert.equal(document.querySelectorAll('[role="option"]').length,4);assert.equal(app.sent,0);
+});
+test('@ exposes the highlighted option and localized description while keeping focus in the editor', async t => {
+ const app = await mount(t);
+ await app.input('@');
+ const list = document.getElementById(app.editor.getAttribute('aria-controls'));
+ const activeOption = () => document.getElementById(app.editor.getAttribute('aria-activedescendant'));
+ const first = activeOption();
+ assert.equal(list.getAttribute('role'), 'listbox');
+ assert.ok(list.contains(first));
+ assert.equal(first.tabIndex, -1);
+ assert.equal(first.getAttribute('aria-selected'), 'true');
+ assert.equal(first.getAttribute('aria-label'), '从资料库添加');
+ assert.equal(document.getElementById(first.getAttribute('aria-describedby')).textContent, '引用已保存文件');
+ await app.key('ArrowDown');
+ assert.equal(document.activeElement, app.editor);
+ assert.notEqual(activeOption(), first);
+ assert.ok(list.contains(activeOption()));
+ assert.equal(first.getAttribute('aria-selected'), 'false');
+ assert.equal(activeOption().getAttribute('aria-selected'), 'true');
+ await app.key('Escape');
+ assert.equal(app.editor.hasAttribute('aria-activedescendant'), false);
+ assert.equal(app.editor.hasAttribute('aria-controls'), false);
+ assert.equal(document.activeElement, app.editor);
+ assert.equal(app.editor.textContent, '@');
+ assert.equal(app.sent, 0);
+
+ await app.input('@nothing-matches');
+ assert.equal(app.editor.hasAttribute('aria-controls'), false);
+ assert.equal(document.querySelector('[role="status"]').textContent, '未找到匹配的插件、技能或资料入口');
+});
+test('slash options support accessibility click with the same fixed revision as keyboard selection', async t => {
+ const app = await mount(t);
+ await app.input('/');
+ const option = document.getElementById(app.editor.getAttribute('aria-activedescendant'));
+ assert.equal(option.getAttribute('aria-label'), '创建技能');
+ assert.ok(document.getElementById(option.getAttribute('aria-describedby')).textContent);
+ await app.choose('创建技能');
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile, 'zeroagent-skill:skill-creator/2/skill-creator');
+ assert.equal(document.activeElement, app.editor);
+ assert.equal(app.editor.hasAttribute('aria-activedescendant'), false);
+ assert.equal(app.sent, 0);
+});
+test('reverse Tab leaves the open reference picker without selecting or changing the draft', async t => {
+ let modeChanges=0;
+ const app=await mount(t,{onCycleMode:()=>modeChanges++});
+ for(const [query,label] of [['保留这句 @','从资料库添加'],['/Skill','创建技能']]){
+  await app.input(query);
+  const option=document.getElementById(app.editor.getAttribute('aria-activedescendant'));
+  assert.equal(option.getAttribute('aria-label'),label);
+  const before=app.ref.current.getDraft();
+  const event=await app.key('Tab',{shiftKey:true});
+  assert.equal(event.defaultPrevented,false);
+  assert.equal(app.editor.hasAttribute('aria-activedescendant'),false);
+  assert.deepEqual(app.ref.current.getDraft(),before);
+ }
+ assert.equal(app.actions,0);
+ assert.equal(modeChanges,0);
+ assert.equal(app.sent,0);
+ await app.input('/Skill');
+ await app.key('Tab');
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,'zeroagent-skill:skill-creator/2/skill-creator');
+ assert.equal(app.sent,0);
 });
 test('@ searches original aliases and selecting with Enter inserts only a fixed plugin reference',async t=>{
  const app=await mount(t);await app.input('先保留这些文字 @Plugin');
@@ -54,9 +120,14 @@ test('@ action removes only its query, preserves surrounding draft and invokes i
  assert.equal(app.actions,1);assert.ok(app.anchor instanceof HTMLElement);assert.equal(app.editor.textContent,'保留原需求 ');assert.equal(app.sent,0);
 });
 test('@ does not replace or duplicate an existing reference pinned to an older package release',async t=>{
- const app=await mount(t);await app.env.act(async()=>app.ref.current.insertSkillMention({name:'plugin-creator',displayName:'创建插件',description:'old',skillFile:'zeroagent-skill:plugin-creator/1/plugin-creator',baseDir:'cloud'}));
+ let conflicts=0;
+ const app=await mount(t,{onExtensionSelectionConflict:()=>conflicts++});await app.env.act(async()=>app.ref.current.insertSkillMention({name:'plugin-creator',displayName:'创建插件',description:'old',skillFile:'zeroagent-skill:plugin-creator/1/plugin-creator',baseDir:'cloud'}));
  await app.input(' @创建插件',{append:true});await app.key('Enter');
  const selected=app.ref.current.getDraft().skillMentions;assert.equal(selected.length,1);assert.equal(selected[0].skillFile,'zeroagent-skill:plugin-creator/1/plugin-creator');assert.equal(app.sent,0);
+ assert.equal(conflicts,1);
+ assert.match(app.editor.textContent,/ @创建插件$/);
+ assert.equal(app.editor.hasAttribute('aria-activedescendant'),false);
+ assert.equal(document.activeElement,app.editor);
 });
 test('a saved bundled reference prevents adding a second release of its package',async t=>{
  const app=await mount(t);
@@ -98,6 +169,92 @@ test('inline references open details by click and keyboard while a selection sta
  assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,reference);
  assert.equal(app.sent,0);
 });
+
+test('a fixed draft link keeps its authored label and keyboard action while the catalogue is offline', async t=>{
+ const opened=[];
+ const reference='zeroagent-skill:product-design/1/design-audit';
+ const app=await mount(t,{resolveExtensionMention:()=>undefined,onOpenExtensionMention:value=>opened.push(value)});
+ await app.env.act(async()=>app.ref.current.insertSkillMention({name:'design-audit',displayName:'Archived audit',description:'',skillFile:reference,baseDir:'cloud'}));
+ const chip=app.editor.querySelector('[role="link"]');
+ assert.equal(chip.textContent,'Archived audit');
+ assert.equal(chip.hasAttribute('data-extension-availability'),false);
+ await app.env.act(async()=>{chip.focus();chip.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));});
+ assert.deepEqual(opened,[reference]);
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,reference);
+ assert.equal(app.sent,0);
+});
+test('an existing extension reference shows its current availability and still opens details', async t => {
+ const opened = [];
+ const app = await mount(t, {onOpenExtensionMention: reference => opened.push(reference)});
+ await app.setLocale('en-US');
+ await app.input('Keep this draft @Product');
+ await app.key('Enter');
+ const chip = app.editor.querySelector('.mention-extension');
+ const reference = 'zeroagent-skill:product-design/2/product-design';
+ assert.equal(chip.dataset.extensionAvailability, undefined);
+ const {cloudExtensionMention} = app.env.loadModule('src/lib/cloudExtensions.ts');
+ const resolveWithPackage = changes => id => cloudExtensionMention({
+  ...catalog,
+  packages: catalog.packages.map(pkg => pkg.id === 'product-design' ? {...pkg, ...changes} : pkg),
+ }, id, 'en-US');
+
+ await app.update({resolveExtensionMention: resolveWithPackage({disabled_skills: ['product-design']})});
+ assert.equal(app.editor.querySelector('.mention-extension'), chip);
+ assert.equal(chip.dataset.extensionAvailability, 'disabled');
+ assert.match(chip.title, /Disabled\. Enable this extension in Customize/);
+ assert.equal(chip.getAttribute('aria-description'), chip.title);
+ assert.equal(chip.getAttribute('role'), 'link');
+ await app.env.act(async () => {
+  chip.focus();
+  chip.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+  await tick();
+ });
+ assert.deepEqual(opened, [reference]);
+ assert.equal(app.sent, 0);
+
+ await app.update({resolveExtensionMention: resolveWithPackage({installed: false, enabled: false})});
+ assert.equal(chip.dataset.extensionAvailability, 'not-installed');
+ assert.match(chip.title, /Not installed\. Install this extension in Customize/);
+ await app.update({resolveExtensionMention: resolveWithPackage({})});
+ assert.equal(chip.dataset.extensionAvailability, undefined);
+ assert.doesNotMatch(chip.title, /Disabled|Not installed/);
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile, reference);
+ assert.match(app.editor.textContent, /Keep this draft Product Design/);
+});
+test('a renamed archived reference keeps its label and shows the confirmed package availability', async t => {
+ const opened=[];
+ const app=await mount(t,{onOpenExtensionMention:reference=>opened.push(reference)});
+ const reference='zeroagent-skill:product-design/1/design-audit';
+ const pinned={name:'design-audit',displayName:'原版设计核对',description:'Original notes',baseDir:'cloud',skillFile:reference};
+ const {cloudExtensionMention,cloudComposerSkills}=app.env.loadModule('src/lib/cloudExtensions.ts');
+ const revised=pkg('product-design',['index','audit'],{version:3});
+ const resolve=changes=>id=>cloudExtensionMention({version:4,packages:[{...revised,...changes}]},id,'zh-CN');
+ await app.update({resolveExtensionMention:resolve({installed:false})});
+ await app.input('保留草稿 ');
+ await app.env.act(async()=>{app.ref.current.insertSkillMention(pinned);await tick();});
+ const chip=app.editor.querySelector('.mention-extension');
+ assert.equal(chip.textContent,pinned.displayName);
+ assert.equal(chip.dataset.extensionAvailability,'not-installed');
+ assert.match(chip.getAttribute('aria-description'),/未安装.*打开详情/s);
+ assert.equal(resolve({installed:false})('zeroagent-skill:other/1/design-audit'),undefined);
+ assert.equal(resolve({installed:false})('zeroagent-skill:product-design/3/unknown'),undefined);
+ assert.equal(resolve({installed:false})('zeroagent-skill:product-design/4/design-audit'),undefined);
+ await app.update({resolveExtensionMention:resolve({enabled:false})});
+ assert.equal(app.editor.querySelector('.mention-extension'),chip);
+ assert.equal(chip.textContent,pinned.displayName);
+ assert.equal(chip.dataset.extensionAvailability,'disabled');
+ assert.match(chip.title,/已停用/);
+ await app.env.act(async()=>{chip.focus();chip.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await tick();});
+ assert.deepEqual(opened,[reference]);
+ assert.equal(app.sent,0);
+ await app.update({resolveExtensionMention:resolve({})});
+ assert.equal(chip.dataset.extensionAvailability,undefined);
+ assert.equal(chip.textContent,pinned.displayName);
+ assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,reference);
+ assert.match(app.editor.textContent,/保留草稿.*原版设计核对/);
+ assert.ok(cloudComposerSkills({version:4,packages:[revised]}).every(skill=>skill.skillFile!==reference));
+});
+
 test('switching UI language updates saved inline references without replacing their DOM or revision',async t=>{
  const app=await mount(t,{onOpenExtensionMention(){}});
  const pinned={name:'product-design',displayName:'Product Design',description:'Design',baseDir:'cloud',skillFile:'zeroagent-skill:product-design/1/product-design'};
@@ -105,12 +262,15 @@ test('switching UI language updates saved inline references without replacing th
  const chip=app.editor.querySelector('[data-skill-file]');
  assert.equal(chip.textContent,'产品设计');
  assert.match(chip.title,/研究产品问题/);
+ assert.equal(chip.getAttribute('aria-description'),chip.title);
  await app.setLocale('en-US');
  assert.equal(app.editor.querySelector('[data-skill-file]'),chip);
  assert.equal(chip.textContent,'Product Design');
  assert.match(chip.title,/Research, design, and build interactive prototypes/);
+ assert.equal(chip.getAttribute('aria-description'),chip.title);
  assert.equal(app.ref.current.getDraft().skillMentions[0].skillFile,pinned.skillFile);
- await app.input('@创建技能');assert.match(document.querySelector('[role="option"]').textContent,/Skill Creator.*Create or update a reusable personal skill/);
+ await app.input('@创建技能');assert.equal(document.querySelectorAll('[role="option"]').length,0);
+ await app.input('/创建技能');assert.match(document.querySelector('[role="option"]').textContent,/Skill Creator.*Create or update a reusable personal skill/);
 });
 test('primary disabled, uninstalled and disabled packages never enter @, and default device @ remains available',async t=>{
  const app=await mount(t,{mentionExtensions:undefined,mentionActions:undefined});

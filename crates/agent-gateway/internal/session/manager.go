@@ -12,6 +12,7 @@ import (
 
 var ErrAgentIDRequired = errors.New("agent_id is required")
 var ErrAgentOffline = errors.New("agent offline")
+var ErrAgentCapabilityUnavailable = errors.New("agent capability unavailable")
 var ErrChatProtocolIncompatible = errors.New("desktop chat protocol is incompatible; update ZeroAgent desktop")
 var ErrConversationReferencesProtocolIncompatible = errors.New("desktop conversation references are incompatible; update ZeroAgent desktop")
 var ErrTunnelNotFound = errors.New("tunnel not found")

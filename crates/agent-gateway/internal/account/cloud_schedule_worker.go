@@ -46,26 +46,6 @@ func (r *cloudRunRuntime) cloudExecutionRefreshWorker(store *PersistentStore) {
 	}
 }
 
-func (s *Service) scheduledCloudExecutionSession(ctx context.Context, store *PersistentStore, uid int64) (*Session, error) {
-	session, bound, err := s.cloudExecutionSession(ctx, store, uid)
-	if err != nil && !bound && cloudExecutionSessionUnavailable(err) {
-		// Existing plans keep using their old session until ordinary account access
-		// is recorded. Once a shared session is bound, never fall back to old grants.
-		id, lookupErr := store.cloudScheduleSessionID(ctx, uid)
-		if lookupErr != nil || id == "" {
-			if lookupErr != nil && !errors.Is(lookupErr, ErrNotFound) {
-				return nil, lookupErr
-			}
-			return nil, sessionMissingError()
-		}
-		session, err = s.verifyCloudExecutionSession(ctx, id, uid)
-		if err == nil && session.Purpose != "cloud_schedule" {
-			return nil, sessionMissingError()
-		}
-	}
-	return session, err
-}
-
 func (r *cloudRunRuntime) dispatchSchedule(ctx context.Context, store *PersistentStore) error {
 	now := r.service.now().UTC()
 	if err := store.enqueueDueCloudSchedule(ctx, now); err != nil {
@@ -86,7 +66,7 @@ func (r *cloudRunRuntime) dispatchSchedule(ctx context.Context, store *Persisten
 	if item.readyAt.Before(now.Add(-cloudScheduleGrace)) {
 		return store.finishCloudSchedule(ctx, item, "", "skipped", "missed")
 	}
-	session, err := r.service.scheduledCloudExecutionSession(ctx, store, item.uid)
+	session, err := r.service.cloudExecutionSession(ctx, store, item.uid)
 	if err != nil {
 		var api *APIError
 		if errors.As(err, &api) && (api.Status == http.StatusUnauthorized || api.Status == http.StatusForbidden) {

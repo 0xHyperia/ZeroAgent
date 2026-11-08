@@ -956,7 +956,7 @@
 .za-document-navigation-zone[data-open="true"] {
   width: 244px;
 }
-.za-document-navigation-zone[data-open="true"] > .za-document-navigation-rail {
+.za-document-navigation-zone[data-open="true"] > .za-document-navigation-rail:where(:not(:focus)) {
   visibility: hidden;
 }
 .za-document-workspace[data-navigation-pinned="true"] {
@@ -1031,6 +1031,10 @@
 }
 .za-document-navigation-rail:hover {
   background: transparent;
+}
+.za-document-navigation-rail:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
 }
 .za-document-navigation-rail:hover span {
   background: hsl(var(--muted-foreground));
@@ -1154,6 +1158,17 @@
     width: min(232px, calc(100vw - 48px));
     box-shadow: 0 6px 24px #0002;
   }
+  .za-document-navigation-rail,
+  .za-document-navigation > header button {
+    min-width: var(--za-touch-target);
+    min-height: var(--za-touch-target);
+  }
+  .za-document-navigation-rail {
+    justify-items: center;
+  }
+  .za-document-navigation nav > button {
+    min-height: var(--za-touch-target);
+  }
   .za-document-comment-queue {
     font-size: 11px;
     gap: 2px;
@@ -1246,6 +1261,14 @@
   }
   .za-reader-inspector {
     z-index: 8;
+  }
+  .za-reader-inspector > header {
+    padding-block: 6px;
+  }
+  .za-reader-inspector > header button {
+    flex: none;
+    min-inline-size: 44px;
+    min-block-size: 44px;
   }
 }
 
@@ -1796,19 +1819,19 @@
   box-shadow: none;
 }
 .za-reader-timeline h4 {
-  margin: 8px 0 12px;
+  margin: 8px 0;
   color: hsl(var(--muted-foreground));
   font-size: 12px;
   font-weight: 400;
 }
 .za-reader-timeline ol {
   padding: 0 0 0 18px;
-  margin: 0 0 24px;
+  margin: 0 0 16px;
   list-style: none;
 }
 .za-reader-timeline li {
   position: relative;
-  padding: 0 0 20px;
+  padding: 0 0 4px;
   border-left: 1px solid var(--za-border);
 }
 .za-reader-timeline li:last-child {
@@ -1818,12 +1841,12 @@
 .za-reader-timeline-point {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   margin-left: 10px;
   width: calc(100% - 10px);
-  padding: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
   border: 0;
   border-radius: 12px;
   text-align: start;
@@ -1834,7 +1857,7 @@
 .za-reader-timeline-point::before {
   content: "";
   position: absolute;
-  top: 16px;
+  top: 19px;
   left: -14px;
   width: 5px;
   height: 5px;
@@ -1843,8 +1866,10 @@
   outline: 3px solid var(--za-surface);
 }
 .za-reader-timeline-point time {
+  flex-shrink: 0;
   color: hsl(var(--muted-foreground));
   font-size: 12px;
+  white-space: nowrap;
 }
 .za-reader-timeline-point:hover,
 .za-reader-timeline-point[aria-current="true"] {

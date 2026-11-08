@@ -16,6 +16,7 @@ import {
 export function WorkbenchNavigationRail({
   activeView,
   previewId,
+  previewableIds,
   shortcuts,
   onSelectView,
   onClose,
@@ -25,6 +26,7 @@ export function WorkbenchNavigationRail({
 }: {
   activeView: WorkbenchNavigationId;
   previewId?: string;
+  previewableIds?: readonly WorkbenchNavigationId[];
   shortcuts: SidebarShortcuts;
   onSelectView: (view: ApplicationViewId) => void;
   onClose?: () => void;
@@ -37,6 +39,7 @@ export function WorkbenchNavigationRail({
     <ApplicationRail
       activeId={activeView}
       previewId={previewId}
+      previewableIds={previewableIds}
       brand={
         onClose ? (
           <TooltipButton

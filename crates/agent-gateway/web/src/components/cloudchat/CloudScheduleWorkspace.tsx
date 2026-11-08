@@ -1,5 +1,4 @@
 import { mountWorkbenchLayout } from "@liveagent/ui/application/workbenchLayoutPortal";
-import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import { ConversationStarter } from "@liveagent/ui/components/chat/ConversationStarter";
 import {
   ArrowLeft,
@@ -7,18 +6,24 @@ import {
   CalendarDays,
   ChartColumn,
   ChevronDown,
-  ChevronRight,
   Clock3,
   FileText,
   Globe,
   Lightbulb,
+  Link2,
   ListFilter,
   MoreHorizontal,
   PanelLeft,
+  Pause,
+  Play,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
+  Share2,
   ShieldCheck,
+  SquarePen,
+  Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
 import { DocumentMarkdown } from "@liveagent/ui/components/markdown/DocumentMarkdown";
@@ -85,40 +90,62 @@ import {
   isCronRunActive,
   type ScheduledConversationRun,
 } from "@liveagent/ui/lib/automation/types";
+import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
+import { OFFICIAL_GATEWAY_URL } from "@liveagent/ui/lib/settings";
+import { toast } from "@liveagent/ui/components/ui/toast-manager";
+import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import {
   type CSSProperties,
   type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
   useEffectEvent,
   useId,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   CLOUD_CHAT_REASONING_OPTIONS,
   cloudChatReasoningEffort,
 } from "../../lib/cloudChatModelParameters";
 import type { CloudChatPresentationResource } from "../../lib/cloudChatPresentation";
 import type { CloudChatProjectsClient, CloudProject } from "../../lib/cloudChatProjects";
-import { type CloudChatRoute, type TaskStatus, taskStatuses } from "../../lib/cloudChatRoute";
-import type { createCloudChatRunsClient } from "../../lib/cloudChatRuns";
+import {
+  type CloudChatRoute,
+  cloudChatRouteHref,
+  type TaskStatus,
+  taskStatuses,
+} from "../../lib/cloudChatRoute";
+import { type createCloudChatRunsClient, readCloudChatRunView } from "../../lib/cloudChatRuns";
 import {
   type CloudTaskConversationSelection,
   cloudSchedules,
+  SCHEDULE_CONTENT_PART_LIMIT,
   type Schedule,
+  type ScheduleApprovalReceipt,
   ScheduleEndpointUnavailableError,
   type ScheduleInput,
   ScheduleRequestError,
   type ScheduleRule,
   type ScheduleRun,
 } from "../../lib/cloudSchedules";
-import type { CloudSpaceClient, CloudSpaceItem } from "../../lib/cloudSpace";
+import type { CloudSpaceClient } from "../../lib/cloudSpace";
+import {
+  DEVICE_SCHEDULE_DRAFT_RECEIVED,
+  type DeviceScheduleDraft,
+  discardDeviceScheduleDraft,
+  receiveDeviceScheduleDraft,
+  stageDeviceScheduleDraft,
+} from "../../lib/deviceScheduleDraft";
 import type { DeviceScheduleEditorProps, DeviceScheduleHost } from "../../lib/deviceScheduleHost";
 import type { ExecutionEnvironment } from "../../lib/executionTargets";
+import { ScheduleRunApprovalCard } from "./ScheduleRunApprovalCard";
+import { type ScheduleSourceMetadata, ScheduleSourcePicker } from "./ScheduleSourcePicker";
 import { useScheduledRunPreview } from "./useScheduledRunPreview";
 
 type Route = Extract<CloudChatRoute, { page: "tasks" }>;
@@ -129,7 +156,7 @@ type CreationTarget = {
   label: string;
   ready: boolean;
   inline?: boolean;
-  open: () => void | Promise<void>;
+  open: (draft: DeviceScheduleDraft) => void | Promise<void>;
 };
 type TaskRow = {
   id: string;
@@ -138,14 +165,28 @@ type TaskRow = {
   secondary: string;
   group: NonNullable<Route["status"]>;
 };
-const row =
-  "flex min-h-11 w-full min-w-0 items-center rounded-lg px-3 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9";
 const taskDetailsClass =
-  "z-20 order-1 mx-auto mt-1 max-h-[min(34dvh,16rem)] w-[calc(100%-2rem)] max-w-3xl min-w-0 shrink-0 divide-y divide-border/60 overflow-auto rounded-2xl border border-border/60 bg-popover text-sm shadow-sm @min-[56rem]:absolute @min-[56rem]:top-0 @min-[56rem]:right-3 @min-[56rem]:max-h-[calc(100%-1rem)] @min-[56rem]:w-64";
+  "za-floating-surface za-native-scroll z-20 order-1 mx-auto mt-1 max-h-[min(62dvh,24rem)] w-[calc(100%-2rem)] max-w-3xl min-w-0 shrink-0 divide-y divide-border/60 overflow-auto overscroll-contain border border-border/60 bg-popover text-sm @min-[56rem]:absolute @min-[56rem]:top-0 @min-[56rem]:right-2 @min-[56rem]:w-[17.5rem]";
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+function requiresCloudSignIn(cause: unknown) {
+  return cause instanceof ScheduleRequestError && [401, 403].includes(cause.status);
+}
+
+function formatTaskTime(locale: string, value: string, timeZone?: string) {
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+  }).format(new Date(value));
+}
 
 function status(task: Schedule): NonNullable<Route["status"]> {
   return !task.enabled ? "paused" : task.next_at ? "enabled" : "completed";
+}
+
+function devicePlanStatus(task: CronTask): NonNullable<Route["status"]> {
+  return task.remainingExecutions === 0 ? "completed" : task.enabled ? "enabled" : "paused";
 }
 
 function taskInput(task: Schedule): ScheduleInput {
@@ -180,6 +221,10 @@ function schedulePrompt(content: ScheduleInput["run"]["content"]) {
         .join("\n");
 }
 
+function scheduleApprovalKey(owner: number, taskId: string, runId: string) {
+  return `zeroagent.task-approval:${JSON.stringify([owner, taskId, runId])}`;
+}
+
 function isWorkdaySchedule(rule: ScheduleRule) {
   return (
     rule.frequency === "weekly" &&
@@ -203,6 +248,7 @@ export function CloudScheduleWorkspace({
   currentModel,
   models,
   space,
+  sourceMetadata,
   projects,
   device,
   renderDeviceEditor,
@@ -214,6 +260,7 @@ export function CloudScheduleWorkspace({
   includeCloud = true,
   onRetryCloud,
   defaultCreationTarget,
+  taskLinkOrigin,
   mobileRail,
   previewOpen,
   onPinSidebar,
@@ -231,7 +278,11 @@ export function CloudScheduleWorkspace({
     id: string,
     onChromeTarget: (element: HTMLDivElement | null) => void,
   ) => ReactNode;
-  onOpenResultResource: (conversation: string, resource: CloudChatPresentationResource) => void;
+  onOpenResultResource: (
+    conversation: string,
+    resource: CloudChatPresentationResource,
+    occurrenceId: string,
+  ) => void;
   runClient?: Pick<ReturnType<typeof createCloudChatRunsClient>, "getRun">;
   onBack: () => void;
   locale: string;
@@ -239,6 +290,7 @@ export function CloudScheduleWorkspace({
   currentModel: Model;
   models: readonly Model[];
   space?: CloudSpaceClient;
+  sourceMetadata?: ScheduleSourceMetadata;
   projects?: Pick<CloudChatProjectsClient, "listProjects">;
   device?: DeviceScheduleHost;
   renderDeviceEditor?: (props: DeviceScheduleEditorProps) => ReactNode;
@@ -255,6 +307,7 @@ export function CloudScheduleWorkspace({
   includeCloud?: boolean;
   onRetryCloud?: () => void;
   defaultCreationTarget?: string;
+  taskLinkOrigin?: string;
   mobileRail?: ReactNode;
   previewOpen?: boolean;
   onPinSidebar?: () => void;
@@ -266,32 +319,106 @@ export function CloudScheduleWorkspace({
   const text: Text = (zh, en) => (locale === "zh-CN" ? zh : en);
   const { isMobile, open, openMobile, setOpenMobile } = useSidebar();
   const [items, setItems] = useState<Awaited<ReturnType<typeof cloudSchedules.list>> | null>(null);
-  const [history, setHistory] = useState<{ task: string; runs: ScheduleRun[] }>({
+  const cloudPlanRead = useRef<AbortController | null>(null);
+  const [history, setHistory] = useState<{
+    owner: number;
+    task: string;
+    runs: ScheduleRun[];
+    error?: string;
+    exact?: { id: string; run?: ScheduleRun; error?: string };
+  }>({
+    owner,
     task: "",
     runs: [],
   });
-  const [deviceTasks, setDeviceTasks] = useState<Awaited<ReturnType<DeviceScheduleHost["list"]>>>();
+  const [deviceSnapshot, setDeviceSnapshot] = useState<{
+    host: DeviceScheduleHost;
+    items: Awaited<ReturnType<DeviceScheduleHost["list"]>>;
+    readAt: number;
+  }>();
+  const currentDeviceSnapshot = deviceSnapshot?.host === device ? deviceSnapshot : undefined;
+  const deviceTasks = currentDeviceSnapshot?.items;
+  const deviceReadAt = currentDeviceSnapshot?.readAt;
   const [deviceHistory, setDeviceHistory] = useState<{
+    owner: number;
     target: string;
     task: string;
     runs: Awaited<ReturnType<DeviceScheduleHost["runs"]>>;
-  }>({ target: "", task: "", runs: [] });
+    error?: true;
+  }>();
   const [deviceFailure, setDeviceFailure] = useState("");
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
-  const taskDetailsInset = taskDetailsOpen ? "@min-[56rem]:pr-[17.5rem] @min-[83rem]:pr-0" : "";
+  const taskDetailsInset = taskDetailsOpen ? "@min-[56rem]:pr-[18.5rem] @min-[83rem]:pr-0" : "";
   const taskDetailsId = useId();
+  const taskConversationArea = useRef<HTMLDivElement>(null);
   const [chromeHost, setChromeHost] = useState<{ id: string; element: HTMLDivElement }>();
   const taskDetailsTrigger = useRef<HTMLElement>(null);
+  const taskDetailsReturnFocus = useRef<boolean | { approvalKey: string }>(true);
+  const detailsTarget = route.target ?? "cloud";
+  const detailsPosition = useMemo(
+    () => ({
+      owner,
+      target: detailsTarget,
+      task: route.id,
+      top: 0,
+      resource: undefined as { occurrenceId: string; key: string } | undefined,
+    }),
+    [owner, detailsTarget, route.id],
+  );
+  const [openHistory, setOpenHistory] = useState<typeof detailsPosition>();
+  const mobileHistorySummary = useRef<HTMLElement>(null);
+  const mobileHistoryRetry = useRef<HTMLButtonElement>(null);
+  const mobileHistoryVisible = isMobile && taskDetailsOpen && openHistory === detailsPosition;
+  const historyDisclosure = {
+    open: openHistory === detailsPosition,
+    onOpenChange: (open: boolean) => setOpenHistory(open ? detailsPosition : undefined),
+    summaryRef: mobileHistorySummary,
+  };
+  const restoreMobileHistoryFocus = useEffectEvent(() => {
+    if (mobileHistoryRetry.current && document.activeElement === mobileHistoryRetry.current)
+      mobileHistorySummary.current?.focus({ preventScroll: true });
+  });
+  const taskTitle = useRef<HTMLHeadingElement>(null);
+  const createdTaskFocus = useRef<{ owner: number; id: string } | undefined>(undefined);
+  const returnRun = useRef<
+    { owner: number; target: string; task: string; run: string } | undefined
+  >(undefined);
+  const selectedCloudRunRetry = useRef<HTMLButtonElement>(null);
+  const restoreSelectedCloudRunFocus = useEffectEvent(() => {
+    if (selectedCloudRunRetry.current && document.activeElement === selectedCloudRunRetry.current)
+      taskTitle.current?.focus({ preventScroll: true });
+  });
+  const approvalTitle = useRef<HTMLHeadingElement>(null);
+  const [focusApproval, setFocusApproval] = useState<string>();
+  const [lastApprovalReceipt, setLastApprovalReceipt] = useState<{
+    key: string;
+    outcome: Exclude<ScheduleApprovalReceipt, "pending">;
+  }>();
   function closeTaskDetails() {
     setTaskDetailsOpen(false);
-    taskDetailsTrigger.current?.focus({ preventScroll: true });
+    if (!isMobile) taskDetailsTrigger.current?.focus({ preventScroll: true });
+  }
+  function leaveMobileTaskDetails(focusDestination: typeof taskDetailsReturnFocus.current) {
+    if (!isMobile || !taskDetailsOpen) return;
+    taskDetailsReturnFocus.current = focusDestination;
+    closeTaskDetails();
   }
   const [runResources, setRunResources] = useState<{
-    id: string;
+    key: string;
+    attempt: number;
     items: CloudChatPresentationResource[];
     messageId?: string;
     error?: boolean;
   }>();
+  const [runDetailsAttempt, setRunDetailsAttempt] = useState(0);
+  const runDetailsRetry = useRef<HTMLButtonElement>(null);
+  const restoreRunDetailsFocus = useEffectEvent(() => {
+    if (document.activeElement !== runDetailsRetry.current) return;
+    const target = taskDetailsOpen
+      ? document.getElementById(taskDetailsId)
+      : taskDetailsTrigger.current;
+    target?.focus({ preventScroll: true });
+  });
   const [manualCloudRun, setManualCloudRun] = useState<{
     owner: typeof owner;
     taskId: string;
@@ -300,7 +427,6 @@ export function CloudScheduleWorkspace({
   }>();
   const [cloudJumpSequence, setCloudJumpSequence] = useState(0);
   const [unavailableCloudJump, setUnavailableCloudJump] = useState<string>();
-  const [deviceReadAt, setDeviceReadAt] = useState(0);
   const [deviceJumpSequence, setDeviceJumpSequence] = useState(0);
   const [manualDeviceRun, setManualDeviceRun] = useState<string>();
   const [deviceAnchorResult, setDeviceAnchorResult] = useState<{
@@ -317,6 +443,7 @@ export function CloudScheduleWorkspace({
       }
     >
   >({});
+  const [remoteRefresh, setRemoteRefresh] = useState(0);
   const onlineDevices = JSON.stringify(
     environments
       .filter(
@@ -327,8 +454,20 @@ export function CloudScheduleWorkspace({
   );
   const searchKey = `zeroagent.task-search:${owner}`;
   const [query, setQuery] = useState(() => sessionStorage.getItem(searchKey) ?? "");
-  const [searchOpen, setSearchOpen] = useState(!!query);
+  const [requestedRowRun, setRequestedRowRun] = useState<{
+    owner: number;
+    target: string;
+    id: string;
+    fromId?: string;
+    fromTarget?: string;
+  }>();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<TaskStatus>>(() => new Set());
+  const [searchOpen, setSearchOpen] = useState(!!query);
+  const filterButton = useRef<HTMLElement>(null);
+  const mobileListViewport = useRef<HTMLDivElement>(null);
+  const mobileListReturn = useRef<
+    { key: string; row: string; top: number; offset: number } | undefined
+  >(undefined);
   const searchButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
@@ -336,17 +475,74 @@ export function CloudScheduleWorkspace({
   const [busy, setBusy] = useState(false);
   const { confirm, dialog: authorityDialog } = useConfirmDialog();
   const [refresh, setRefresh] = useState(0);
+  const deviceHistoryError = text(
+    "暂时无法读取设备运行记录。",
+    "Device run history is temporarily unavailable.",
+  );
+  function mobileHistoryFeedback(loading: boolean, failure?: string) {
+    if (!mobileHistoryVisible) return null;
+    if (failure)
+      return (
+        <StatusNotice
+          compact
+          stackActions
+          tone="warning"
+          message={failure}
+          actions={
+            <Button
+              ref={mobileHistoryRetry}
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              onClick={() => setRefresh((value) => value + 1)}
+            >
+              {text("重试读取运行记录", "Retry run history")}
+            </Button>
+          }
+        />
+      );
+    if (loading)
+      return (
+        <p role="status" className="text-muted-foreground">
+          {text("正在读取运行记录…", "Loading run history…")}
+        </p>
+      );
+    return null;
+  }
   const [editor, setEditor] = useState<{
     existing?: Schedule;
     input: ScheduleInput;
     id: string;
     target?: string;
+    resumeAfterEdit?: boolean;
+    editSources?: boolean;
   }>();
   const [deviceEditor, setDeviceEditor] = useState<{
     id: string;
     task?: CronTask;
+    name?: string;
     prompt?: string;
   }>();
+  const pendingDeviceDraft = useRef("");
+  const readyDeviceEditor =
+    !sidebarOnly && device && deviceTasks && !deviceFailure && renderDeviceEditor && !deviceEditor
+      ? device.targetId
+      : "";
+  useEffect(() => {
+    if (!readyDeviceEditor) return;
+    const draft = receiveDeviceScheduleDraft(owner, readyDeviceEditor);
+    if (draft) setDeviceEditor(draft);
+  }, [owner, readyDeviceEditor]);
+  useEffect(() => {
+    const onReceived = (event: Event) => {
+      const { detail } = event as CustomEvent<{ owner: number; id: string }>;
+      if (detail?.owner !== owner || detail.id !== pendingDeviceDraft.current) return;
+      pendingDeviceDraft.current = "";
+      setEditor((current) => (current?.id === detail.id ? undefined : current));
+    };
+    window.addEventListener(DEVICE_SCHEDULE_DRAFT_RECEIVED, onReceived);
+    return () => window.removeEventListener(DEVICE_SCHEDULE_DRAFT_RECEIVED, onReceived);
+  }, [owner]);
   const currentWrite = useRef(false);
   const scope = route.scope ?? (!route.id ? route.target : undefined);
   const onDevice = !!device && route.target === device.targetId;
@@ -354,16 +550,93 @@ export function CloudScheduleWorkspace({
     !route.target || route.target === "cloud"
       ? items?.tasks.find((item) => item.id === route.id)
       : undefined;
+  const selectedCloudTaskId = task?.id;
+  useLayoutEffect(() => {
+    if (
+      createdTaskFocus.current?.owner !== owner ||
+      createdTaskFocus.current.id !== selectedCloudTaskId ||
+      !taskTitle.current
+    )
+      return;
+    createdTaskFocus.current = undefined;
+    taskTitle.current.focus({ preventScroll: true });
+  }, [owner, selectedCloudTaskId]);
   const pendingRunKey = task ? `zeroagent.task-manual:${owner}:${task.id}` : undefined;
-  const hasPendingRun = pendingRunKey ? Boolean(sessionStorage.getItem(pendingRunKey)) : false;
+  const pendingCloudRun = pendingRunKey ? sessionStorage.getItem(pendingRunKey) : null;
+  const [cloudRunFeedback, setCloudRunFeedback] = useState<{
+    request: string;
+    state: "submitting" | "checking" | "missing" | "unavailable" | "sign-in";
+  }>();
+  const cloudRunFeedbackState =
+    cloudRunFeedback?.request === pendingCloudRun ? cloudRunFeedback.state : undefined;
+  const cloudRunChecking =
+    cloudRunFeedbackState === "submitting" || cloudRunFeedbackState === "checking";
   const deviceTask = onDevice ? deviceTasks?.tasks.find((item) => item.id === route.id) : undefined;
-  const deviceRuns =
-    deviceTask && deviceHistory.task === deviceTask.id && deviceHistory.target === route.target
-      ? deviceHistory.runs
-      : [];
+  const [missingDeviceRun, setMissingDeviceRun] = useState<string>();
+  const deviceRunKey =
+    deviceTask && device
+      ? `zeroagent.device-task-manual:${JSON.stringify([owner, device.targetId, deviceTask.id])}`
+      : undefined;
+  const pendingDeviceRun = deviceRunKey ? sessionStorage.getItem(deviceRunKey) : null;
+  const deviceRunSelection = useMemo(
+    () => ({ key: deviceRunKey, run: route.run }),
+    [deviceRunKey, route.run],
+  );
+  const cloudRunSelection = useMemo(
+    () => ({ key: pendingRunKey, run: route.run, schedules }),
+    [pendingRunKey, route.run, schedules],
+  );
+  const currentRunView = useRef<{
+    owner: number;
+    cloud: typeof cloudRunSelection;
+    device: typeof deviceRunSelection;
+    route: typeof route;
+    onNavigate: typeof onNavigate;
+  } | null>(null);
+  useLayoutEffect(() => {
+    currentRunView.current = {
+      owner,
+      cloud: cloudRunSelection,
+      device: deviceRunSelection,
+      route,
+      onNavigate,
+    };
+    return () => {
+      currentRunView.current = null;
+    };
+  }, [cloudRunSelection, deviceRunSelection, onNavigate, owner, route]);
+  const currentDeviceHistory =
+    deviceTask &&
+    deviceHistory?.owner === owner &&
+    deviceHistory.task === deviceTask.id &&
+    deviceHistory.target === route.target
+      ? deviceHistory
+      : undefined;
+  const deviceRuns = currentDeviceHistory?.runs ?? [];
   const deviceRun = route.run
     ? deviceRuns.find((run) => run.id === route.run || run.runId === route.run)
     : deviceRuns[0];
+  const deviceHistoryUnavailable = Boolean(deviceFailure || currentDeviceHistory?.error);
+  const deviceRunSelectionState =
+    route.run && !deviceRun && route.run !== pendingDeviceRun
+      ? route.run === manualDeviceRun
+        ? "accepted"
+        : deviceHistoryUnavailable
+          ? "unavailable"
+          : currentDeviceHistory
+            ? "missing"
+            : "loading"
+      : undefined;
+  const deviceRunAwaitingRecord = deviceRunSelectionState === "accepted";
+  const deviceRunRetry = useRef<HTMLButtonElement>(null);
+  const restoreDeviceRunFocus = useEffectEvent((runs: typeof deviceRuns) => {
+    if (
+      deviceRunRetry.current &&
+      document.activeElement === deviceRunRetry.current &&
+      runs.some((run) => run.id === route.run || run.runId === route.run)
+    )
+      taskTitle.current?.focus({ preventScroll: true });
+  });
   const resultSessionId =
     deviceTask?.type === "prompt" && renderDeviceConversation ? deviceRun?.sessionId : undefined;
   const deviceConversationId = deviceFailure ? undefined : resultSessionId;
@@ -428,6 +701,9 @@ export function CloudScheduleWorkspace({
     };
   }, [anchorExecutionId, anchorRunId, anchorTaskId, deviceAnchorKey, deviceConversationId]);
   const deviceAnchor = deviceAnchorResult?.key === deviceAnchorKey ? deviceAnchorResult : undefined;
+  const showDeviceRunResult =
+    !deviceRunSelectionState &&
+    (!deviceConversationId || (deviceAnchor && !deviceAnchor.messageId));
   const deviceMessageJump: TranscriptMessageJump | undefined = deviceAnchor?.messageId
     ? {
         key: deviceAnchor.key,
@@ -447,16 +723,59 @@ export function CloudScheduleWorkspace({
   );
   const remoteSummary = unavailable?.device_id ? remoteSummaries[unavailable.device_id] : undefined;
   const remoteTask = remoteSummary?.items.find((item) => item.id === route.id);
-  const runs = history.task === route.id ? history.runs : [];
-  const cloudHistoryLoading = Boolean(task && history.task !== task.id && !loadError);
+  const currentHistory = history.owner === owner && history.task === route.id ? history : undefined;
+  const runs = currentHistory?.runs ?? [];
+  const exact = currentHistory?.exact?.id === route.run ? currentHistory?.exact : undefined;
+  const cloudHistoryError = currentHistory?.error;
+  const cloudHistoryLoading = Boolean(task && !currentHistory && !loadError);
   const targetLabel =
     scope === "cloud"
       ? text("云端", "Cloud")
       : scope === device?.targetId
         ? device?.label
         : environments.find((environment) => environment.device_id === scope)?.name;
-  const selectedRun = route.run ? runs.find((run) => run.id === route.run) : runs[0];
-  const cloudRunBusy = runs.some((run) =>
+  const awaitingApproval = runs.find((run) => run.state === "awaiting_approval");
+  const listedRun = route.run ? runs.find((run) => run.id === route.run) : undefined;
+  const selectedRun = route.run ? (listedRun ?? exact?.run) : (awaitingApproval ?? runs[0]);
+  const cancelableCloudRun =
+    selectedRun &&
+    (selectedRun.state === "pending" ||
+      (selectedRun.run_id && ["queued", "running"].includes(selectedRun.state)))
+      ? selectedRun
+      : undefined;
+  const displayedRuns = exact?.run && !listedRun ? [exact.run, ...runs] : runs;
+  const selectedApproval =
+    selectedRun?.state === "awaiting_approval" ? selectedRun.approval : undefined;
+  const approvalRunId = selectedRun?.id ?? route.run;
+  const approvalKey =
+    task && approvalRunId ? scheduleApprovalKey(owner, task.id, approvalRunId) : undefined;
+  const recordedApproval =
+    approvalKey && lastApprovalReceipt?.key === approvalKey
+      ? lastApprovalReceipt.outcome
+      : undefined;
+  const reviewApproval = Boolean(
+    selectedApproval || recordedApproval || (approvalKey && sessionStorage.getItem(approvalKey)),
+  );
+  const mobileTaskDetails = isMobile
+    ? {
+        open: taskDetailsOpen,
+        position: detailsPosition,
+        returnFocus: (): HTMLElement | null | false => {
+          const destination = taskDetailsReturnFocus.current;
+          if (typeof destination === "object") {
+            if (destination.approvalKey !== approvalKey) return false;
+            return approvalTitle.current ?? taskDetailsTrigger.current;
+          }
+          return destination ? taskDetailsTrigger.current : false;
+        },
+      }
+    : undefined;
+  useLayoutEffect(() => {
+    if (!focusApproval || !approvalTitle.current || approvalKey !== focusApproval) return;
+    approvalTitle.current.focus();
+    setFocusApproval(undefined);
+  }, [approvalKey, focusApproval]);
+  const cloudRunBusy = displayedRuns.some((run) =>
     ["pending", "awaiting_approval", "queued", "running", "cancelling"].includes(run.state),
   );
   const selectedConversationId = selectedRun?.conversation_id;
@@ -465,6 +784,26 @@ export function CloudScheduleWorkspace({
     manualCloudRun?.owner === owner &&
     manualCloudRun.taskId === task?.id &&
     manualCloudRun.runId === route.run;
+  const awaitingSelectedRun = Boolean(
+    route.run && !selectedRun && !isManualSelection && !reviewApproval,
+  );
+  const selectedRunLoading = awaitingSelectedRun && !exact && !cloudHistoryLoading && !loadError;
+  const manualRunAwaitingRecord = isManualSelection && !selectedRun;
+  const acceptedRunReadFailure =
+    manualRunAwaitingRecord && (exact || loadError)
+      ? exact?.error ||
+        loadError ||
+        text(
+          "暂时读不到这次运行的记录，可以重试。",
+          "This run's record is temporarily unavailable. You can retry.",
+        )
+      : undefined;
+  const selectedRunNotice = acceptedRunReadFailure
+    ? text("云端已接受这次运行", "The cloud accepted this run")
+    : !listedRun && !isManualSelection && !reviewApproval && exact
+      ? exact.error ||
+        (!exact.run && text("所选运行已不可用。", "The selected run is unavailable."))
+      : undefined;
   const followLatestCloudRun = !route.run || isManualSelection;
   const cloudJumpKey =
     !followLatestCloudRun && selectedConversationId && selectedCloudRunId
@@ -477,11 +816,16 @@ export function CloudScheduleWorkspace({
           cloudJumpSequence,
         ])
       : undefined;
-  const selectedRunResources = runResources?.id === selectedCloudRunId ? runResources : undefined;
+  const runDetailsKey =
+    task && selectedRun && selectedCloudRunId && selectedConversationId
+      ? JSON.stringify([owner, task.id, selectedRun.id, selectedCloudRunId, selectedConversationId])
+      : undefined;
+  const selectedRunResources = runResources?.key === runDetailsKey ? runResources : undefined;
   const selectedMessageId = cloudJumpKey ? selectedRunResources?.messageId : undefined;
   const cloudJumpUnavailable = Boolean(
     cloudJumpKey &&
-      (unavailableCloudJump === cloudJumpKey || (selectedRunResources && !selectedMessageId)),
+      (unavailableCloudJump === cloudJumpKey ||
+        (selectedRunResources && !selectedRunResources.error && !selectedMessageId)),
   );
   // Keep the same transcript mounted between the manual receipt and Cloud Run admission.
   const previousConversationId = manualCloudRun?.previousConversationId;
@@ -513,6 +857,11 @@ export function CloudScheduleWorkspace({
   );
   const taskChromeTarget = chromeHost?.id === liveConversationId ? chromeHost?.element : undefined;
   const inspectorTarget = isMobile ? undefined : taskChromeTarget;
+
+  const showTaskConversation =
+    (!cloudHistoryLoading || !route.run) &&
+    !awaitingSelectedRun &&
+    (!liveConversationId || cloudJumpUnavailable);
   const selectConversation = useEffectEvent((selection: CloudTaskConversationSelection) =>
     onSelectConversation?.(selection),
   );
@@ -521,6 +870,7 @@ export function CloudScheduleWorkspace({
     selectConversation({
       id: liveConversationId,
       runId: selectedCloudRunId,
+      occurrenceId: selectedRun?.id,
       followLatest: followLatestCloudRun,
       jump:
         cloudJumpKey && selectedMessageId
@@ -537,20 +887,64 @@ export function CloudScheduleWorkspace({
     liveConversationId,
     selectedMessageId,
     selectedCloudRunId,
+    selectedRun?.id,
   ]);
   const terminal = ["completed", "failed", "cancelled", "interrupted"].includes(
     selectedRun?.state ?? "",
   );
-  const time = (value: string, timeZone?: string) =>
-    new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(
-      new Date(value),
-    );
+  const runDetailsExpected = Boolean(
+    runDetailsKey && (cloudJumpKey || (taskDetailsOpen && terminal)),
+  );
+  const runDetailsLoading = Boolean(
+    runDetailsExpected && runClient && selectedRunResources?.attempt !== runDetailsAttempt,
+  );
+  const runDetailsUnavailable = Boolean(
+    runDetailsExpected && (!runClient || selectedRunResources?.error),
+  );
+  const fallbackRunOutput =
+    !liveConversationId || cloudJumpUnavailable || runDetailsUnavailable
+      ? selectedRun?.output
+      : undefined;
+  const runDetailsNotice = (
+    <StatusNotice
+      compact
+      stackActions={taskDetailsOpen}
+      busy={runDetailsLoading}
+      tone={runDetailsLoading ? "info" : "warning"}
+      message={
+        runDetailsLoading
+          ? text("正在读取本次运行的详情…", "Reading details for this run…")
+          : text("暂时无法读取本次运行的详情。", "Run details are temporarily unavailable.")
+      }
+      actions={
+        runClient && selectedRunResources?.error ? (
+          <Button
+            ref={runDetailsRetry}
+            type="button"
+            variant="ghost"
+            className="min-h-11 md:min-h-9"
+            aria-disabled={runDetailsLoading}
+            onClick={() => {
+              if (!runDetailsLoading) setRunDetailsAttempt((attempt) => attempt + 1);
+            }}
+          >
+            {text("重试读取运行详情", "Retry reading run details")}
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+  const time = (value: string, timeZone?: string) => formatTaskTime(locale, value, timeZone);
   const labels = {
-    enabled: text("已启用", "Active"),
+    enabled: text("已开启", "Active"),
     paused: text("已暂停", "Paused"),
     completed: text("已完成", "Completed"),
   };
   function backToList() {
+    returnRun.current =
+      route.id && route.run
+        ? { owner, target: route.target ?? "cloud", task: route.id, run: route.run }
+        : undefined;
     onNavigate({ page: "tasks", scope, status: route.status, statuses: route.statuses });
   }
   function updateQuery(value: string) {
@@ -577,11 +971,16 @@ export function CloudScheduleWorkspace({
     submitted: text("运行记录不可用", "Run record unavailable"),
     completed: text("已完成", "Completed"),
   };
-  const manualRunAwaitingRecord = isManualSelection && !selectedRun;
-  const runCardState = liveConversationId ? (selectedRun?.state ?? "pending") : undefined;
-  const runCardStatus = runCardState ?? (manualRunAwaitingRecord ? "pending" : undefined);
+  const liveCancellationStatus =
+    liveConversationId &&
+    (selectedRun?.state === "cancelling" || selectedRun?.state === "cancelled")
+      ? runLabels[selectedRun.state]
+      : undefined;
   const runReasons: Record<string, string> = {
-    authorization_required: text("账户登录已失效，请重新登录后恢复计划。", "Sign in again, then resume the schedule."),
+    authorization_required: text(
+      "账户登录已失效，请重新登录后恢复计划。",
+      "Sign in again, then resume the schedule.",
+    ),
     cloud_execution_unavailable: text(
       "当前服务暂不支持从桌面启用云端任务。你可以在网页端用同一账户操作。",
       "Cloud execution from the desktop is unavailable. You can use the same account on the web.",
@@ -590,28 +989,62 @@ export function CloudScheduleWorkspace({
       "所选项目或结果对话的项目归属已变更。请编辑任务并核对项目。",
       "The selected project or result chat's project changed. Review the project's settings on this task.",
     ),
+    cloud_schedules_disabled: text("云端定时触发暂不可用。", "Cloud scheduling is unavailable."),
+    request_conflict: text(
+      "任务或运行状态已变化。请刷新核对后重试。",
+      "The task or run has changed. Refresh to check, then try again.",
+    ),
+    run_active: text("已有运行正在进行。", "A run is already in progress."),
+    account_queue_full: text(
+      "账户队列已满。请等待已有任务完成后再试。",
+      "The account queue is full. Wait for an existing task to finish and try again.",
+    ),
     missed: text("已超过五分钟补发窗口。", "The five-minute catch-up window has passed."),
     overlap: text("上一轮仍在运行。", "The previous run is still active."),
   };
+  function cloudWriteMessage(cause: unknown) {
+    if (requiresCloudSignIn(cause))
+      return text("请重新登录后再操作云端任务。", "Sign in again to manage cloud tasks.");
+    if (cause instanceof ScheduleRequestError) {
+      if (cause.reason && Object.hasOwn(runReasons, cause.reason)) return runReasons[cause.reason];
+      if (cause.status === 400)
+        return text("请检查任务设置后重试。", "Check the task settings and try again.");
+      if (cause.status === 404)
+        return text("该任务或运行已不可用。", "This task or run is no longer available.");
+      if (cause.status === 413)
+        return text(
+          "任务内容超过大小限制。请缩短说明或减少资料后重试。",
+          "The task exceeds the size limit. Shorten the instructions or remove resources and try again.",
+        );
+    }
+    return text(
+      "暂时无法确认云端任务操作结果。请刷新核对。",
+      "The cloud task operation could not be confirmed. Refresh to check.",
+    );
+  }
   function deviceRunStatus(run: (typeof deviceRuns)[number]) {
     if (run.terminationReason === "cancelled") return runLabels.cancelled;
     if (run.state === "done") return run.success ? labels.completed : runLabels.failed;
     if (run.state === "leased") return runLabels.running;
     return run.state === "expired" ? runLabels.interrupted : runLabels.pending;
   }
+  const taskDetailsLabel = text("任务详情", "Task details");
   const taskDetailsButton = (
     <TooltipButton
       ref={taskDetailsTrigger}
+      data-cloud-task-details-trigger=""
       size="icon"
       variant="ghost"
-      title={text("任务详情", "Task details")}
-      aria-label={text("任务详情", "Task details")}
+      title={taskDetailsLabel}
+      aria-label={taskDetailsLabel}
       aria-expanded={taskDetailsOpen}
+      aria-haspopup={isMobile ? "dialog" : undefined}
       aria-controls={taskDetailsOpen ? taskDetailsId : undefined}
-      className={taskDetailsOpen ? "bg-muted" : undefined}
+      className={`max-md:size-11 @min-[36rem]:w-auto @min-[36rem]:gap-1.5 @min-[36rem]:px-2.5 ${taskDetailsOpen ? "bg-muted" : ""}`}
       onClick={(event) => {
+        taskDetailsReturnFocus.current = true;
         setTaskDetailsOpen(!taskDetailsOpen);
-        if (!taskDetailsOpen && event.detail === 0) {
+        if (!isMobile && !taskDetailsOpen && event.detail === 0) {
           requestAnimationFrame(() => {
             const panel = document.getElementById(taskDetailsId);
             const firstAction = panel?.querySelector<HTMLElement>(
@@ -622,10 +1055,11 @@ export function CloudScheduleWorkspace({
         }
       }}
     >
-      <Settings2 className="size-4" />
+      <Settings2 aria-hidden="true" className="size-4" />
     </TooltipButton>
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: An explicit list retry refreshes remote summaries.
   useEffect(() => {
     if (!schedules) return;
     const client = schedules;
@@ -673,17 +1107,33 @@ export function CloudScheduleWorkspace({
       abort.abort();
       window.clearTimeout(timer);
     };
-  }, [onlineDevices, schedules]);
+  }, [onlineDevices, remoteRefresh, schedules]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Completion may add resources to a run already read for its anchor.
   useEffect(() => {
     if (
       !runClient ||
+      !runDetailsKey ||
       !selectedCloudRunId ||
       !selectedConversationId ||
-      (!cloudJumpKey && !(taskDetailsOpen && terminal))
+      !runDetailsExpected
     )
       return;
     const abort = new AbortController();
+    const markUnavailable = () => {
+      if (abort.signal.aborted) return;
+      setRunResources((current) => ({
+        key: runDetailsKey,
+        attempt: runDetailsAttempt,
+        items: current?.key === runDetailsKey ? current.items : [],
+        messageId: current?.key === runDetailsKey ? current.messageId : undefined,
+        error: true,
+      }));
+    };
+    const deadline = window.setTimeout(() => {
+      markUnavailable();
+      abort.abort();
+    }, 8_000);
     void runClient
       .getRun(selectedCloudRunId, abort.signal)
       .then((run) => {
@@ -697,23 +1147,28 @@ export function CloudScheduleWorkspace({
               resources.set(`${item.kind}:${item.id}`, item);
           }
         }
+        restoreRunDetailsFocus();
         setRunResources({
-          id: run.id,
+          key: runDetailsKey,
+          attempt: runDetailsAttempt,
           items: [...resources.values()],
           messageId: run.user_message_id || run.assistant_message_id || undefined,
         });
       })
-      .catch(() => {
-        if (!abort.signal.aborted)
-          setRunResources({ id: selectedCloudRunId, items: [], error: true });
-      });
-    return () => abort.abort();
+      .catch(markUnavailable)
+      .finally(() => window.clearTimeout(deadline));
+    return () => {
+      window.clearTimeout(deadline);
+      abort.abort();
+    };
   }, [
     cloudJumpKey,
     runClient,
+    runDetailsAttempt,
+    runDetailsExpected,
+    runDetailsKey,
     selectedCloudRunId,
     selectedConversationId,
-    taskDetailsOpen,
     terminal,
   ]);
 
@@ -726,30 +1181,86 @@ export function CloudScheduleWorkspace({
     }
     const client = schedules;
     const abort = new AbortController();
+    cloudPlanRead.current = abort;
     let timer: number;
     async function load() {
       try {
-        const snapshot = await client.list(abort.signal);
+        const snapshot = await readCloudChatRunView(abort.signal, (signal) => client.list(signal));
         if (abort.signal.aborted) return;
         setItems(snapshot);
+        setLoadError("");
+        const taskId = route.id;
         if (
-          route.id &&
-          (!route.target || route.target === "cloud") &&
-          snapshot.tasks.some((item) => item.id === route.id)
-        ) {
-          const { runs } = await client.runs(route.id, abort.signal);
-          if (!abort.signal.aborted) setHistory({ task: route.id, runs });
+          !taskId ||
+          (route.target && route.target !== "cloud") ||
+          !snapshot.tasks.some((item) => item.id === taskId)
+        )
+          return;
+        let runs: ScheduleRun[] | undefined;
+        let historyError: string | undefined;
+        try {
+          ({ runs } = await readCloudChatRunView(abort.signal, (signal) =>
+            client.runs(taskId, signal),
+          ));
+          if (!abort.signal.aborted) restoreMobileHistoryFocus();
+        } catch (cause) {
+          historyError = requiresCloudSignIn(cause)
+            ? text("请重新登录以读取运行记录。", "Sign in again to read run history.")
+            : text("暂时无法读取运行记录。", "Run history is temporarily unavailable.");
         }
-        if (!abort.signal.aborted) setLoadError("");
+        if (abort.signal.aborted) return;
+        const occurrence = runs?.some((run) => run.id === route.run) ? undefined : route.run;
+        if (route.run && !occurrence) restoreSelectedCloudRunFocus();
+        setHistory((current) => {
+          const cached = current.owner === owner && current.task === taskId ? current : undefined;
+          const previousExact = cached?.exact;
+          return {
+            owner,
+            task: taskId,
+            runs: runs ?? cached?.runs ?? [],
+            exact: occurrence && previousExact?.id === occurrence ? previousExact : undefined,
+            error: historyError,
+          };
+        });
+        if (!occurrence) return;
+        try {
+          const { run } = await readCloudChatRunView(abort.signal, (signal) =>
+            client.readRun(taskId, occurrence, signal),
+          );
+          if (run?.id !== occurrence) throw new Error("Unexpected schedule run identity");
+          if (abort.signal.aborted) return;
+          restoreSelectedCloudRunFocus();
+          setHistory((current) => ({
+            ...current,
+            runs: current.runs.map((item) => (item.id === occurrence ? run : item)),
+            exact: { id: occurrence, run },
+          }));
+        } catch (cause) {
+          if (abort.signal.aborted) return;
+          const notFound =
+            cause instanceof ScheduleRequestError &&
+            !(cause instanceof ScheduleEndpointUnavailableError) &&
+            cause.status === 404;
+          setHistory((current) => ({
+            ...current,
+            runs: notFound ? current.runs.filter((item) => item.id !== occurrence) : current.runs,
+            exact: notFound
+              ? { id: occurrence }
+              : {
+                  id: occurrence,
+                  run: current.exact?.id === occurrence ? current.exact.run : undefined,
+                  error: requiresCloudSignIn(cause)
+                    ? text("请重新登录以读取所选运行。", "Sign in again to read the selected run.")
+                    : text("暂时无法读取所选运行。", "Couldn't read the selected run."),
+                },
+          }));
+        }
       } catch (cause) {
         if (!abort.signal.aborted)
           setLoadError(
-            cause instanceof ScheduleEndpointUnavailableError
-              ? text(
-                  "无法连接云端定时任务。请重试。",
-                  "Cloud scheduled tasks are unreachable. Try again.",
-                )
-              : message(cause),
+            requiresCloudSignIn(cause)
+              ? text("请重新登录以读取云端任务。", "Sign in again to read cloud tasks.")
+              : text("暂时无法读取云端任务。", "Cloud tasks are temporarily unavailable."),
           );
       } finally {
         if (!abort.signal.aborted) timer = window.setTimeout(() => void load(), 5000);
@@ -758,9 +1269,10 @@ export function CloudScheduleWorkspace({
     void load();
     return () => {
       abort.abort();
+      if (cloudPlanRead.current === abort) cloudPlanRead.current = null;
       window.clearTimeout(timer);
     };
-  }, [refresh, route.id, route.target, schedules, locale]);
+  }, [refresh, route.id, route.run, route.target, schedules, locale, owner]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: A mutation requests an immediate reload.
   useEffect(() => {
@@ -772,12 +1284,31 @@ export function CloudScheduleWorkspace({
         if (!device) return;
         const next = await device.list();
         if (!current) return;
-        setDeviceTasks(next);
-        setDeviceReadAt(Date.now());
+        setDeviceSnapshot({ host: device, items: next, readAt: Date.now() });
         setDeviceFailure("");
         if (onDevice && route.id && next.tasks.some((item) => item.id === route.id)) {
-          const runs = await device.runs(route.id);
-          if (current) setDeviceHistory({ target: device.targetId, task: route.id, runs });
+          const task = route.id;
+          const target = device.targetId;
+          try {
+            const runs = await device.runs(task);
+            if (current) {
+              restoreMobileHistoryFocus();
+              restoreDeviceRunFocus(runs);
+              setDeviceHistory({ owner, target, task, runs });
+            }
+          } catch {
+            if (current)
+              setDeviceHistory((previous) => ({
+                owner,
+                target,
+                task,
+                runs:
+                  previous?.owner === owner && previous.target === target && previous.task === task
+                    ? previous.runs
+                    : [],
+                error: true,
+              }));
+          }
         }
       } catch (cause) {
         if (current) setDeviceFailure(message(cause));
@@ -790,9 +1321,9 @@ export function CloudScheduleWorkspace({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [device, onDevice, refresh, route.id]);
+  }, [device, onDevice, owner, refresh, route.id]);
 
-  async function write(action: () => Promise<void>) {
+  async function write(action: () => Promise<void>, errorMessage = message) {
     if (currentWrite.current) return;
     currentWrite.current = true;
     setBusy(true);
@@ -800,8 +1331,7 @@ export function CloudScheduleWorkspace({
     try {
       await action();
     } catch (cause) {
-      const reason = cause instanceof ScheduleRequestError ? cause.reason : undefined;
-      setError(reason && Object.hasOwn(runReasons, reason) ? runReasons[reason] : message(cause));
+      setError(errorMessage(cause));
     } finally {
       currentWrite.current = false;
       setBusy(false);
@@ -809,16 +1339,25 @@ export function CloudScheduleWorkspace({
     }
   }
 
-  function newTask(prompt = "", research = false) {
-    if (device && renderDeviceEditor && !items?.enabled && !deviceFailure) {
+  const writeCloud = (action: () => Promise<void>) => write(action, cloudWriteMessage);
+
+  function newTask(prompt = "", research = false, fromDevice?: DeviceScheduleDraft) {
+    const target =
+      (fromDevice || prompt) && items?.enabled ? "cloud" : (scope ?? defaultCreationTarget);
+    if (
+      device &&
+      renderDeviceEditor &&
+      !deviceFailure &&
+      (target === device.targetId || (!items?.enabled && !target))
+    ) {
       openDeviceEditor(undefined, prompt);
       return;
     }
     setEditor({
-      id: createUuid(),
-      target: prompt ? "cloud" : undefined,
+      id: fromDevice?.id ?? createUuid(),
+      target,
       input: {
-        name: "",
+        name: fromDevice?.name ?? "",
         rule: {
           frequency: "daily",
           start: localStart(),
@@ -836,38 +1375,90 @@ export function CloudScheduleWorkspace({
     });
   }
 
-  function openDeviceEditor(task?: CronTask, prompt?: string) {
+  function openDeviceEditor(task?: CronTask, prompt?: string, seed?: DeviceScheduleDraft) {
+    leaveMobileTaskDetails(false);
     setError("");
     setEditor(undefined);
-    setDeviceEditor({ id: task?.id ?? createUuid(), task, prompt });
+    setDeviceEditor({ id: task?.id ?? seed?.id ?? createUuid(), task, name: seed?.name, prompt });
   }
 
-  const deviceRunDisabled = !!deviceFailure || busy || deviceRuns.some(isCronRunActive);
+  const deviceRunDisabled =
+    !!deviceFailure ||
+    busy ||
+    deviceRunAwaitingRecord ||
+    (!pendingDeviceRun && deviceRuns.some(isCronRunActive));
+  const deviceRunLabel = pendingDeviceRun
+    ? text("核对运行", "Check run")
+    : text("立即运行", "Run now");
 
   function runDeviceTask(item: CronTask) {
-    if (!device) return;
+    if (!device || !deviceRunKey || item.id !== deviceTask?.id || deviceRunDisabled) return;
     void write(async () => {
-      const receipt = await device.runNow(item.id);
-      setManualDeviceRun(receipt.executionId);
-      onNavigate({ ...route, run: receipt.executionId });
+      const prior = sessionStorage.getItem(deviceRunKey);
+      const executionId = prior ?? `manual-${createUuid()}`;
+      if (!prior) sessionStorage.setItem(deviceRunKey, executionId);
+      setMissingDeviceRun(undefined);
+      const receipt = await (prior
+        ? device.readRunReceipt(item.id, executionId)
+        : device.runNowOnce(item.id, executionId)
+      ).catch(() => null);
+      if (!receipt || sessionStorage.getItem(deviceRunKey) !== executionId) return;
+      const current = currentRunView.current;
+      const sameSelection = current?.device === deviceRunSelection;
+      if (receipt.status === "unsupported") {
+        if (!prior) sessionStorage.removeItem(deviceRunKey);
+        if (!sameSelection) return;
+        throw new Error(
+          text("请更新所选设备后再运行。", "Update the selected device before running the task."),
+        );
+      }
+      if (receipt.status === "rejected" && !prior) {
+        sessionStorage.removeItem(deviceRunKey);
+        if (!sameSelection) return;
+        throw new Error(
+          text(
+            "设备未接受运行。请检查任务状态后重试。",
+            "The device did not accept the run. Check the task state and try again.",
+          ),
+        );
+      }
+      if (receipt.status === "missing" && prior) {
+        if (sameSelection) setMissingDeviceRun(executionId);
+        return;
+      }
+      if (!sameSelection || receipt.status !== "admitted" || receipt.executionId !== executionId)
+        return;
+      sessionStorage.removeItem(deviceRunKey);
+      setManualDeviceRun(executionId);
+      current.onNavigate({ ...current.route, run: executionId });
+    });
+  }
+
+  function dismissDeviceRunCheck() {
+    if (!deviceRunKey || !pendingDeviceRun || missingDeviceRun !== pendingDeviceRun) return;
+    void write(async () => {
+      const confirmed = await confirm({
+        title: text("结束本次核对？", "Stop checking this run?"),
+        description: text(
+          "设备未找到这次运行的回执。结束核对后，再点立即运行会发起一次新执行。",
+          "The device has no receipt for this run. If you select Run now later, it starts a new execution.",
+        ),
+        confirmLabel: text("结束核对", "Stop checking"),
+        cancelLabel: text("继续核对", "Keep checking"),
+        preferCancel: true,
+        touchActions: true,
+      });
+      if (!confirmed || sessionStorage.getItem(deviceRunKey) !== pendingDeviceRun) return;
+      sessionStorage.removeItem(deviceRunKey);
+      setMissingDeviceRun(undefined);
     });
   }
 
   function deviceTaskMenu(item: CronTask, showRunActions = false) {
     if (!device) return null;
+    const selected = item.id === deviceTask?.id;
     return (
       <>
-        {showRunActions && (
-          <DropdownMenuItem disabled={deviceRunDisabled} onClick={() => runDeviceTask(item)}>
-            {text("立即运行", "Run now")}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem
-          disabled={!!deviceFailure || busy || !renderDeviceEditor}
-          onClick={() => openDeviceEditor(item)}
-        >
-          {text("编辑任务", "Edit task")}
-        </DropdownMenuItem>
         <DropdownMenuItem
           disabled={!!deviceFailure || busy || item.remainingExecutions === 0}
           onClick={() =>
@@ -876,8 +1467,31 @@ export function CloudScheduleWorkspace({
             })
           }
         >
-          {item.enabled ? text("暂停", "Pause") : text("恢复", "Resume")}
+          {item.enabled ? <Pause /> : <Play />}
+          {item.enabled ? text("暂停", "Pause") : text("继续", "Resume")}
         </DropdownMenuItem>
+        {(showRunActions || !sidebarOnly) && (
+          <DropdownMenuItem
+            disabled={selected ? deviceRunDisabled : Boolean(deviceFailure || busy)}
+            onClick={() => requestTaskRun(device.targetId, item.id)}
+          >
+            <RefreshCw />
+            {selected ? deviceRunLabel : text("立即运行", "Run now")}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          disabled={!!deviceFailure || busy || !renderDeviceEditor}
+          onClick={() => openDeviceEditor(item)}
+        >
+          <SquarePen />
+          {text("编辑", "Edit")}
+        </DropdownMenuItem>
+        {route.deviceView && (
+          <DropdownMenuItem onClick={() => void copyTaskLink(device.targetId, item.id)}>
+            <Link2 />
+            {text("分享", "Share")}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive data-[highlighted]:text-destructive"
@@ -905,75 +1519,290 @@ export function CloudScheduleWorkspace({
             })
           }
         >
-          {text("删除任务", "Delete task")}
+          <Trash2 />
+          {text("删除", "Delete")}
         </DropdownMenuItem>
       </>
     );
   }
 
-
   function runNow(task: Schedule) {
     if (!schedules || !pendingRunKey || currentWrite.current) return;
-    const request = sessionStorage.getItem(pendingRunKey) ?? createUuid();
-    sessionStorage.setItem(pendingRunKey, request);
-    void write(async () => {
-      const run = await schedules.run(task.id, request);
-      sessionStorage.removeItem(pendingRunKey);
-      setManualCloudRun({
-        owner,
-        taskId: task.id,
-        runId: run.id,
-        previousConversationId: task.new_conversation ? undefined : liveConversationId,
+    const prior = sessionStorage.getItem(pendingRunKey);
+    if (
+      !prior &&
+      (!items?.enabled || cloudHistoryLoading || cloudRunBusy || manualRunAwaitingRecord)
+    )
+      return;
+    const request = prior ?? createUuid();
+    if (!prior) sessionStorage.setItem(pendingRunKey, request);
+    void writeCloud(async () => {
+      setCloudRunFeedback({ request, state: prior ? "checking" : "submitting" });
+      try {
+        const receipt = prior
+          ? await schedules.readRunReceipt(task.id, request)
+          : { status: "admitted" as const, id: (await schedules.run(task.id, request)).id };
+        if (sessionStorage.getItem(pendingRunKey) !== request) return;
+        if (receipt?.status === "missing") {
+          setCloudRunFeedback({ request, state: "missing" });
+          return;
+        }
+        if (receipt?.status !== "admitted" || typeof receipt.id !== "string" || !receipt.id)
+          throw new Error("Invalid cloud run receipt");
+        const current = currentRunView.current;
+        if (current?.cloud !== cloudRunSelection) return;
+        sessionStorage.removeItem(pendingRunKey);
+        setManualCloudRun({
+          owner,
+          taskId: task.id,
+          runId: receipt.id,
+          previousConversationId: task.new_conversation ? undefined : liveConversationId,
+        });
+        current.onNavigate({ ...current.route, id: task.id, run: receipt.id });
+      } catch (cause) {
+        if (sessionStorage.getItem(pendingRunKey) !== request) return;
+        if (
+          !prior &&
+          cause instanceof ScheduleRequestError &&
+          [400, 401, 403, 404, 409, 413, 422].includes(cause.status)
+        ) {
+          sessionStorage.removeItem(pendingRunKey);
+          if (currentRunView.current?.cloud === cloudRunSelection) throw cause;
+          return;
+        }
+        if (prior)
+          setCloudRunFeedback({
+            request,
+            state: requiresCloudSignIn(cause) ? "sign-in" : "unavailable",
+          });
+      } finally {
+        setCloudRunFeedback((current) =>
+          current?.request === request &&
+          (current.state === "submitting" || current.state === "checking")
+            ? undefined
+            : current,
+        );
+      }
+    });
+  }
+
+  function dismissCloudRunCheck() {
+    if (!pendingRunKey || !pendingCloudRun || cloudRunFeedbackState !== "missing") return;
+    void writeCloud(async () => {
+      const confirmed = await confirm({
+        title: text("结束本次核对？", "Stop checking this run?"),
+        description: text(
+          "原提交仍可能完成。结束核对后，再点立即运行会发起一次新请求。",
+          "The original submission may still finish. If you stop checking, the next Run now starts a new execution.",
+        ),
+        confirmLabel: text("结束核对", "Stop checking"),
+        cancelLabel: text("继续核对", "Keep checking"),
+        preferCancel: true,
+        touchActions: true,
       });
-      onNavigate({ ...route, id: task.id, run: run.id });
+      if (
+        !confirmed ||
+        currentRunView.current?.cloud !== cloudRunSelection ||
+        sessionStorage.getItem(pendingRunKey) !== pendingCloudRun
+      )
+        return;
+      sessionStorage.removeItem(pendingRunKey);
+      setCloudRunFeedback(undefined);
     });
   }
 
   function cancelCloudRun(task: Schedule, run: ScheduleRun) {
     if (!schedules) return;
-    return write(async () => {
+    return writeCloud(async () => {
       if (run.run_id) await schedules.cancel(run.run_id);
       else await schedules.cancelPending(task.id, run.id);
     });
   }
 
-  function openCloudEditor(item: Schedule) {
-    setEditor({ existing: item, input: taskInput(item), id: createUuid() });
+  function openCloudEditor(item: Schedule, resumeAfterEdit = false, editSources = false) {
+    leaveMobileTaskDetails(false);
+    setEditor({
+      existing: item,
+      input: taskInput(item),
+      id: createUuid(),
+      resumeAfterEdit,
+      editSources,
+    });
+  }
+
+  function acceptCloudPlan(existing: Schedule | undefined, saved: Schedule | undefined) {
+    const active = currentRunView.current;
+    if (
+      active?.owner !== owner ||
+      active.cloud.schedules !== schedules ||
+      !saved?.id ||
+      !Number.isSafeInteger(saved.revision) ||
+      (existing && (saved.id !== existing.id || saved.revision <= existing.revision))
+    )
+      return;
+    cloudPlanRead.current?.abort();
+    setItems((current) => {
+      if (!current) return current;
+      const previous = current.tasks.find((item) => item.id === saved.id);
+      if (previous && previous.revision > saved.revision) return current;
+      const confirmed = { ...saved, latest_state: saved.latest_state ?? previous?.latest_state };
+      return {
+        ...current,
+        tasks: previous
+          ? current.tasks.map((item) => (item.id === saved.id ? confirmed : item))
+          : [confirmed, ...current.tasks],
+      };
+    });
+  }
+
+  function toggleCloudSchedule(item: Schedule) {
+    if (!schedules) return;
+    const view = currentRunView.current?.cloud;
+    const input = taskInput(item);
+    void writeCloud(async () => {
+      if (!item.enabled) {
+        const next = await schedules
+          .preview(input.rule, item.admitted, AbortSignal.timeout(15_000))
+          .catch((cause: unknown) => {
+            if (currentRunView.current?.cloud !== view) return;
+            if (cause instanceof ScheduleRequestError && cause.status === 400) {
+              openCloudEditor(item, true);
+              return;
+            }
+            setError(
+              requiresCloudSignIn(cause)
+                ? text("请重新登录后恢复计划。", "Sign in again to resume the schedule.")
+                : text(
+                    `暂时无法检查「${item.name}」的下次运行时间。请重试恢复。`,
+                    `Couldn't check the next run for “${item.name}”. Try resuming again.`,
+                  ),
+            );
+          });
+        if (!next || currentRunView.current?.cloud !== view) return;
+        if (!next.next_at) {
+          openCloudEditor(item, true);
+          return;
+        }
+      }
+      const saved = await schedules.save(input, !item.enabled, createUuid(), item);
+      acceptCloudPlan(item, saved);
+    });
   }
 
   const cloudRunDisabled =
-    !items?.enabled ||
     busy ||
-    (!hasPendingRun && (cloudRunBusy || manualRunAwaitingRecord));
-  const cloudRunLabel = hasPendingRun
-    ? text("核对运行", "Check submission")
+    (!pendingCloudRun &&
+      (!items?.enabled || cloudHistoryLoading || cloudRunBusy || manualRunAwaitingRecord));
+  const cloudRunLabel = pendingCloudRun
+    ? text("核对运行", "Check run")
     : text("立即运行", "Run now");
 
+  function requestTaskRun(target: string, id: string) {
+    if (busy || currentWrite.current) return;
+    if (id === route.id && target === (route.target ?? "cloud")) {
+      if (target === "cloud" && task?.id === id && !cloudRunDisabled) runNow(task);
+      else if (deviceTask?.id === id) runDeviceTask(deviceTask);
+      return;
+    }
+    setRequestedRowRun({ owner, target, id, fromId: route.id, fromTarget: route.target });
+    onNavigate({ ...route, id, target, run: undefined, reader: undefined });
+  }
+
+  const submitRowRun = useEffectEvent(() => {
+    if (requestedRowRun?.target === "cloud") {
+      if (task && !cloudRunDisabled) runNow(task);
+    } else if (deviceTask && !deviceRunDisabled) {
+      runDeviceTask(deviceTask);
+    }
+  });
+  useEffect(() => {
+    if (!requestedRowRun) return;
+    const { id, target, fromId, fromTarget } = requestedRowRun;
+    const matches = id === route.id && target === (route.target ?? "cloud");
+    if (
+      requestedRowRun.owner !== owner ||
+      (!matches && (route.id !== fromId || route.target !== fromTarget))
+    ) {
+      setRequestedRowRun(undefined);
+      return;
+    }
+    if (!matches) return;
+    const ready =
+      target === "cloud"
+        ? task?.id === id && !cloudHistoryLoading
+        : deviceTask?.id === id && Boolean(currentDeviceHistory || deviceFailure);
+    if (!ready) return;
+    if (target === "cloud" ? !cloudHistoryError : !deviceHistoryUnavailable) submitRowRun();
+    setRequestedRowRun(undefined);
+  }, [
+    requestedRowRun,
+    owner,
+    route.id,
+    route.target,
+    task?.id,
+    deviceTask?.id,
+    cloudHistoryLoading,
+    cloudHistoryError,
+    currentDeviceHistory,
+    deviceHistoryUnavailable,
+    deviceFailure,
+  ]);
+
+  async function copyTaskLink(target: string, id: string) {
+    const origin =
+      taskLinkOrigin ??
+      (defaultCreationTarget === "local" || !/^https?:$/.test(window.location.protocol)
+        ? OFFICIAL_GATEWAY_URL
+        : window.location.origin);
+    const base = new URL(origin);
+    const href = cloudChatRouteHref(
+      { page: "tasks", id, target, deviceView: target !== "cloud" ? true : undefined },
+      base,
+    );
+    if (await copyTextToClipboard(new URL(href, base).href)) {
+      toast.success(text("已复制任务链接", "Task link copied"));
+    } else {
+      toast.error(text("无法复制任务链接", "Couldn't copy the task link"));
+    }
+  }
+
   function cloudTaskMenu(item: Schedule, showRunActions = false) {
+    const selected = item.id === task?.id;
     return (
       <>
-        {showRunActions && (
-          <DropdownMenuItem disabled={cloudRunDisabled} onClick={() => runNow(item)}>
-            {cloudRunLabel}
+        {(!item.enabled || item.next_at) && (
+          <DropdownMenuItem
+            disabled={!schedules || !items?.enabled || busy}
+            onClick={() => toggleCloudSchedule(item)}
+          >
+            {item.enabled ? <Pause /> : <Play />}
+            {item.enabled ? text("暂停", "Pause") : text("继续", "Resume")}
           </DropdownMenuItem>
         )}
-        {showRunActions && waitingInPreviousConversation && selectedRun && (
-          <DropdownMenuItem disabled={busy} onClick={() => void cancelCloudRun(item, selectedRun)}>
+        {(showRunActions || !sidebarOnly) && (
+          <DropdownMenuItem
+            disabled={selected ? cloudRunDisabled : !items?.enabled || busy}
+            onClick={() => requestTaskRun("cloud", item.id)}
+          >
+            <RefreshCw />
+            {selected ? cloudRunLabel : text("立即运行", "Run now")}
+          </DropdownMenuItem>
+        )}
+        {showRunActions && cancelableCloudRun && (
+          <DropdownMenuItem
+            disabled={busy}
+            onClick={() => void cancelCloudRun(item, cancelableCloudRun)}
+          >
             {text("取消本次运行", "Cancel this run")}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem disabled={!items?.enabled || busy} onClick={() => openCloudEditor(item)}>
-          {text("编辑任务", "Edit task")}
+          <SquarePen />
+          {text("编辑", "Edit")}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!schedules || !items?.enabled || busy}
-          onClick={() =>
-            void write(async () => {
-              await schedules?.save(taskInput(item), !item.enabled, createUuid(), item);
-            })
-          }
-        >
-          {item.enabled ? text("暂停", "Pause") : text("恢复", "Resume")}
+        <DropdownMenuItem onClick={() => void copyTaskLink("cloud", item.id)}>
+          <Link2 />
+          {text("分享", "Share")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -981,7 +1810,7 @@ export function CloudScheduleWorkspace({
           disabled={busy || !schedules}
           onClick={() => {
             if (!schedules) return;
-            void write(async () => {
+            void writeCloud(async () => {
               if (
                 !(await confirm({
                   title: text(`删除「${item.name}」？`, `Delete “${item.name}”?`),
@@ -1003,12 +1832,23 @@ export function CloudScheduleWorkspace({
             });
           }}
         >
+          <Trash2 />
           {text("删除", "Delete")}
         </DropdownMenuItem>
       </>
     );
   }
 
+  const repeatLabel = (rule: ScheduleRule) => {
+    if (isWorkdaySchedule(rule)) return text("工作日", "Weekdays");
+    return {
+      once: text("一次", "Once"),
+      daily: text("每天", "Daily"),
+      weekly: text("每周", "Weekly"),
+      monthly: text("每月", "Monthly"),
+      interval: text("按间隔", "At intervals"),
+    }[rule.frequency];
+  };
   const groups = route.statuses ?? (route.status ? [route.status] : taskStatuses);
   const cloudRows: TaskRow[] =
     !scope || scope === "cloud"
@@ -1025,16 +1865,17 @@ export function CloudScheduleWorkspace({
               "submitted",
             ].includes(latest);
           const showNotice =
-            item.notification !== "none" &&
-            (attention || (latest === "completed" && item.notification === "all"));
+            latest === "awaiting_approval" ||
+            (item.notification !== "none" &&
+              (attention || (latest === "completed" && item.notification === "all")));
           return {
             id: item.id,
             target: "cloud",
             name: item.name,
             group: status(item),
             secondary: [
-              text("云端", "Cloud"),
               item.next_at ? time(item.next_at, item.rule.time_zone) : labels[status(item)],
+              item.rule && repeatLabel(item.rule),
               showNotice && latest ? runLabels[latest] : undefined,
             ]
               .filter(Boolean)
@@ -1045,8 +1886,7 @@ export function CloudScheduleWorkspace({
   const deviceRows: TaskRow[] =
     device && deviceTasks && (!scope || scope === device.targetId)
       ? deviceTasks.tasks.map((item) => {
-          const group =
-            item.remainingExecutions === 0 ? "completed" : item.enabled ? "enabled" : "paused";
+          const group = devicePlanStatus(item);
           const next = deviceTasks.next[item.id];
           return {
             id: item.id,
@@ -1081,7 +1921,76 @@ export function CloudScheduleWorkspace({
   );
   const statusFiltered = groups.length < taskStatuses.length;
   const filtersActive = !!(query.trim() || statusFiltered || scope);
-  const showMobileListOnly = isMobile && !route.id && (taskRows.length > 0 || filtersActive);
+  const cloudInScope = includeCloud && (!scope || scope === "cloud");
+  const localInScope = !!device && (!scope || scope === device.targetId);
+  const remoteInScope = environments.flatMap(({ runtime_kind, device_id, online }) =>
+    runtime_kind === "device_agent" && device_id && (!scope || scope === device_id)
+      ? [{ id: device_id, online }]
+      : [],
+  );
+  const listLoading =
+    (cloudInScope && !items && !loadError && (!!schedules || !onRetryCloud)) ||
+    (localInScope && !deviceTasks && !deviceFailure) ||
+    (!!schedules && remoteInScope.some(({ id, online }) => online && !remoteSummaries[id]));
+  const mobileListKey = JSON.stringify([
+    owner,
+    includeCloud,
+    device?.targetId,
+    scope,
+    groups,
+    query,
+  ]);
+  useLayoutEffect(() => {
+    const saved = mobileListReturn.current;
+    if (!saved) return;
+    if (saved.key !== mobileListKey) {
+      mobileListReturn.current = undefined;
+      return;
+    }
+    const viewport = mobileListViewport.current;
+    if (!isMobile || route.id || openMobile || !viewport) return;
+    const row = [...viewport.querySelectorAll<HTMLElement>("[data-mobile-task-row]")].find(
+      (item) => item.dataset.mobileTaskRow === saved.row,
+    );
+    if (!row && listLoading) return;
+    mobileListReturn.current = undefined;
+    viewport.scrollTop = row
+      ? viewport.scrollTop +
+        row.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top -
+        saved.offset
+      : saved.top;
+    if (document.activeElement === document.body)
+      (row ?? filterButton.current)?.focus({ preventScroll: true });
+  }, [isMobile, listLoading, mobileListKey, openMobile, route.id]);
+  const listUnavailable =
+    (!!scope && !cloudInScope && !localInScope && !remoteInScope.length) ||
+    (cloudInScope && (!!loadError || (!schedules && !!onRetryCloud))) ||
+    (localInScope && !!deviceFailure) ||
+    remoteInScope.some(
+      ({ id, online }) => !online || !schedules || remoteSummaries[id]?.unavailable,
+    );
+  const noMatches = !taskRows.length && filtersActive && !listLoading && !listUnavailable;
+  const showMobileListOnly = isMobile && !route.id && (taskRows.length > 0 || noMatches);
+  const canRetryCloud = cloudInScope && (!!loadError || (!schedules && !!onRetryCloud));
+  const canRetryDevice = localInScope && !!deviceFailure;
+  const canRetryRemote =
+    !!schedules &&
+    remoteInScope.some(({ id, online }) => online && remoteSummaries[id]?.unavailable);
+  function retryCloudList() {
+    if (onRetryCloud) {
+      onRetryCloud();
+      return;
+    }
+    setLoadError("");
+    setRefresh((value) => value + 1);
+  }
+  function retryTaskLists() {
+    if (canRetryCloud && onRetryCloud) onRetryCloud();
+    if (canRetryCloud && !onRetryCloud) setLoadError("");
+    if ((canRetryCloud && !onRetryCloud) || canRetryDevice) setRefresh((value) => value + 1);
+    if (canRetryRemote) setRemoteRefresh((value) => value + 1);
+  }
   const creationTargets: CreationTarget[] = [];
   if (device && renderDeviceEditor)
     creationTargets.push({
@@ -1089,8 +1998,7 @@ export function CloudScheduleWorkspace({
       label: device.label,
       ready: !deviceFailure,
       inline: true,
-      open: () =>
-        openDeviceEditor(undefined, editor ? schedulePrompt(editor.input.run.content) : undefined),
+      open: (draft) => openDeviceEditor(undefined, draft.prompt, draft),
     });
   for (const environment of environments) {
     if (environment.runtime_kind !== "device_agent" || !environment.device_id) continue;
@@ -1098,7 +2006,12 @@ export function CloudScheduleWorkspace({
       id: environment.device_id,
       label: environment.name,
       ready: environment.online && environment.workspaces.length > 0,
-      open: () => onOpenDevice(environment),
+      open: () =>
+        onOpenDevice(environment, {
+          page: "tasks",
+          status: route.status,
+          statuses: route.statuses,
+        }),
     });
   }
   const templates = [
@@ -1173,6 +2086,17 @@ export function CloudScheduleWorkspace({
       statuses: statuses.length === 0 || statuses.length === 2 ? statuses : undefined,
     });
   };
+  function clearTaskFilters() {
+    updateQuery("");
+    onNavigate({
+      ...route,
+      scope: undefined,
+      status: undefined,
+      statuses: undefined,
+      target: route.id ? route.target : undefined,
+    });
+    (searchOpen ? searchInput : filterButton).current?.focus({ preventScroll: true });
+  }
   const targets = [
     { id: "all", label: text("所有执行位置", "All targets") },
     ...(schedules || onRetryCloud ? [{ id: "cloud", label: text("云端", "Cloud") }] : []),
@@ -1184,11 +2108,91 @@ export function CloudScheduleWorkspace({
     ),
   ];
   const filterLabel = text("筛选任务", "Filter tasks");
+  const clearFiltersLabel = text("清除筛选", "Clear filters");
+  const scopedTargetLabel = scope
+    ? (targetLabel ?? text("执行位置不可用", "Execution target unavailable"))
+    : undefined;
+  const statusFilterLabel = statusFiltered
+    ? groups.length
+      ? groups.map((status) => labels[status]).join(text("、", ", "))
+      : text("未选择状态", "No statuses selected")
+    : undefined;
+  const hasSidebarFilters = Boolean(scopedTargetLabel || statusFilterLabel);
+  const showSidebarNoMatches = noMatches && (isMobile || Boolean(route.id));
+  const showSearchReset =
+    !hasSidebarFilters && !!query.trim() && !taskRows.length && !unavailable && !listLoading;
   const newTaskLabel = text("新建任务", "New task");
   const searchLabel = text("搜索任务", "Search tasks");
   const canCreate = items?.enabled || creationTargets.some((target) => target.ready);
-  const filterTrigger = (
+  const cloudTaskLink = Boolean(
+    includeCloud && route.id && (!route.target || route.target === "cloud"),
+  );
+  const cloudTaskLinkLoading =
+    cloudTaskLink && !items && !loadError && Boolean(schedules || !onRetryCloud);
+  const canRetryCloudTaskLink = cloudTaskLink && Boolean(loadError || (!schedules && onRetryCloud));
+  const landing = route.id
+    ? cloudTaskLinkLoading
+      ? "loading"
+      : "missing-task"
+    : taskRows.length
+      ? "browse"
+      : listLoading
+        ? "loading"
+        : listUnavailable
+          ? "unavailable"
+          : noMatches
+            ? "no-matches"
+            : "empty";
+  const landingCopy = {
+    "missing-task": [
+      text("暂时无法打开任务", "Task unavailable"),
+      (cloudTaskLink && loadError) ||
+        text("返回列表，或在连接恢复后重试。", "Return to the list or try again when connected."),
+    ],
+    browse: [
+      text("安排任务", "Schedule tasks"),
+      text(
+        "为重复工作设定时间，回来查看每次运行的结果。",
+        "Schedule recurring work and come back to view its results.",
+      ),
+    ],
+    loading: [
+      text("正在读取任务", "Loading tasks"),
+      text("正在读取当前执行位置的任务。", "Getting tasks from the selected execution targets."),
+    ],
+    unavailable: [
+      text("暂时无法读取任务", "Tasks are temporarily unavailable"),
+      text(
+        "检查连接，或筛选到其他执行位置。",
+        "Check the connection or filter by a different execution target.",
+      ),
+    ],
+    "no-matches": [
+      text("没有匹配的任务", "No matching tasks"),
+      text(
+        "更改搜索或筛选条件，查看其他任务。",
+        "Change your search or filters to see other tasks.",
+      ),
+    ],
+    empty: canCreate
+      ? [
+          text("安排任务", "Schedule a task"),
+          text(
+            "为重复工作设定时间，回来查看每次运行的结果。",
+            "Schedule recurring work and come back here to see the results.",
+          ),
+        ]
+      : [
+          text("还没有定时任务", "No scheduled tasks yet"),
+          text(
+            "连接可用的执行位置后即可新建任务。",
+            "Connect an available execution target to create a task.",
+          ),
+        ],
+  }[landing];
+  const filterTrigger = (focusable: boolean) => (
     <TooltipButton
+      ref={focusable ? filterButton : undefined}
       variant="ghost"
       size="icon-sm"
       className={`${isMobile ? "size-11" : "size-8"} shrink-0 rounded-lg text-muted-foreground hover:text-foreground data-[active=true]:bg-settings-active data-[active=true]:text-foreground`}
@@ -1199,7 +2203,7 @@ export function CloudScheduleWorkspace({
       <ListFilter className="size-4" />
     </TooltipButton>
   );
-  const renderSidebarContents = (focusable: boolean) => (
+  const renderSidebarContents = (focusable: boolean, showCreate = true, mobileList = false) => (
     <>
       <SidebarHeader className="shrink-0 px-3 pb-2 pt-2.5">
         <SidebarHeaderRow
@@ -1207,7 +2211,7 @@ export function CloudScheduleWorkspace({
             <>
               {isMobile ? (
                 <Dialog>
-                  <DialogTrigger render={filterTrigger} />
+                  <DialogTrigger render={filterTrigger(focusable)} />
                   <DialogContent
                     layout="bottom-sheet-mobile"
                     showCloseButton
@@ -1247,7 +2251,7 @@ export function CloudScheduleWorkspace({
                           className="min-h-11"
                           aria-label={text("筛选执行位置", "Filter by target")}
                         >
-                          <SelectValue>{targetLabel ?? targets[0].label}</SelectValue>
+                          <SelectValue>{scopedTargetLabel ?? targets[0].label}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {targets.map(({ id, label }) => (
@@ -1267,7 +2271,7 @@ export function CloudScheduleWorkspace({
                 </Dialog>
               ) : (
                 <DropdownMenu>
-                  <DropdownMenuTrigger render={filterTrigger} />
+                  <DropdownMenuTrigger render={filterTrigger(focusable)} />
                   <DropdownMenuContent align="end" variant="soft" className="sidebar-context-menu">
                     <DropdownMenuLabel>{text("状态", "Status")}</DropdownMenuLabel>
                     {taskStatuses.map((status) => (
@@ -1381,22 +2385,53 @@ export function CloudScheduleWorkspace({
             aria-label={searchLabel}
           />
         )}
-        <SidebarMenu className="mt-2.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              variant="navigation"
-              className={`sidebar-list-row ${isMobile ? "min-h-11" : "min-h-9"}`}
-              disabled={!canCreate}
-              onClick={() => newTask()}
+        {showCreate && (
+          <SidebarMenu className="mt-2.5">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                variant="navigation"
+                className={`sidebar-list-row ${isMobile ? "min-h-11" : "min-h-9"}`}
+                disabled={!canCreate}
+                onClick={() => newTask()}
+              >
+                <Plus className="size-4" />
+                <span>{newTaskLabel}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
+        {hasSidebarFilters && (
+          <section
+            aria-label={text("当前筛选", "Active filters")}
+            className="mt-1 flex min-w-0 items-center gap-1 border-t border-border/60 pt-1.5"
+          >
+            <div className="min-w-0 flex-1 px-2 text-xs leading-4 text-muted-foreground">
+              {scopedTargetLabel && (
+                <p className="truncate" title={scopedTargetLabel}>
+                  {scopedTargetLabel}
+                </p>
+              )}
+              {statusFilterLabel && (
+                <p className="truncate" title={statusFilterLabel}>
+                  {statusFilterLabel}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              className={`${isMobile ? "min-h-11" : "min-h-8"} h-auto shrink-0 whitespace-nowrap px-2 text-xs`}
+              onClick={clearTaskFilters}
             >
-              <Plus className="size-4" />
-              <span>{newTaskLabel}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+              {clearFiltersLabel}
+            </Button>
+          </section>
+        )}
       </SidebarHeader>
       <SidebarContent className="overflow-hidden">
-        <div className="za-native-scroll scroll-fade flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3 pb-3">
+        <div
+          ref={mobileList ? mobileListViewport : undefined}
+          className="za-native-scroll scroll-fade flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3 pb-3"
+        >
           {groups.map((group) => {
             const rows = taskRows.filter((item) => item.group === group);
             return rows.length ? (
@@ -1439,6 +2474,9 @@ export function CloudScheduleWorkspace({
                       const hasMenu = !!cloudItem || !!localItem;
                       const selected =
                         item.id === route.id && item.target === (route.target ?? "cloud");
+                      const mobileRow = mobileList
+                        ? JSON.stringify([item.target, item.id])
+                        : undefined;
                       return (
                         <SidebarMenuItem key={`${item.target}:${item.id}`}>
                           <SidebarMenuButton
@@ -1446,15 +2484,38 @@ export function CloudScheduleWorkspace({
                             variant="navigation"
                             isActive={selected}
                             aria-current={selected ? "page" : undefined}
+                            data-mobile-task-row={mobileRow}
                             className={`h-auto min-w-0 py-1 ${isMobile ? "min-h-11 group-has-data-[sidebar=menu-action]/menu-item:pr-13" : "min-h-10 group-has-data-[sidebar=menu-action]/menu-item:pr-9"}`}
-                            onClick={() => {
+                            onClick={(event) => {
+                              const viewport = mobileListViewport.current;
+                              if (mobileRow && viewport) {
+                                mobileListReturn.current = {
+                                  key: mobileListKey,
+                                  row: mobileRow,
+                                  top: viewport.scrollTop,
+                                  offset:
+                                    event.currentTarget.getBoundingClientRect().top -
+                                    viewport.getBoundingClientRect().top,
+                                };
+                              }
                               setOpenMobile(false);
+                              if (selected) {
+                                if (sidebarOnly) onNavigate(route);
+                                return;
+                              }
+                              const previous = returnRun.current;
+                              returnRun.current = undefined;
                               onNavigate({
                                 ...route,
                                 scope,
                                 target: item.target,
                                 id: item.id,
-                                run: undefined,
+                                run:
+                                  previous?.owner === owner &&
+                                  previous.target === item.target &&
+                                  previous.task === item.id
+                                    ? previous.run
+                                    : undefined,
                               });
                             }}
                           >
@@ -1502,39 +2563,26 @@ export function CloudScheduleWorkspace({
               </SidebarGroup>
             ) : null;
           })}
-          {!taskRows.length &&
-          filtersActive &&
-          !unavailable &&
-          (!schedules || items || loadError) &&
-          (!device || deviceTasks || deviceFailure) ? (
+          {(showSidebarNoMatches || showSearchReset) && (
             <EmptyState className="h-auto gap-2 px-2 py-7">
-              <span>{text("没有匹配的任务", "No matching tasks")}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  updateQuery("");
-                  onNavigate({
-                    ...route,
-                    scope: undefined,
-                    status: undefined,
-                    statuses: undefined,
-                    target: route.id ? route.target : undefined,
-                  });
-                }}
-              >
-                {text("清除筛选", "Clear filters")}
-              </Button>
+              {showSidebarNoMatches && <span>{text("没有匹配的任务", "No matching tasks")}</span>}
+              {showSearchReset && (
+                <Button
+                  variant="ghost"
+                  className={isMobile ? "min-h-11" : undefined}
+                  size="sm"
+                  onClick={clearTaskFilters}
+                >
+                  {clearFiltersLabel}
+                </Button>
+              )}
             </EmptyState>
-          ) : null}
-          {!taskRows.length &&
-          !filtersActive &&
-          (!schedules || items) &&
-          (!device || deviceTasks) ? (
+          )}
+          {!isMobile && landing === "empty" && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               {text("还没有定时任务", "No scheduled tasks yet")}
             </p>
-          ) : null}
+          )}
           {schedules && !items && !loadError && !onDevice ? (
             <p role="status" className="px-2 py-3 text-xs text-muted-foreground">
               {text("正在读取云端任务", "Loading cloud tasks")}
@@ -1564,17 +2612,7 @@ export function CloudScheduleWorkspace({
               className="mt-2"
               actions={
                 loadError || onRetryCloud ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (onRetryCloud) onRetryCloud();
-                      else {
-                        setLoadError("");
-                        setRefresh((value) => value + 1);
-                      }
-                    }}
-                  >
+                  <Button variant="ghost" size="sm" onClick={retryCloudList}>
                     {text("重试", "Retry")}
                   </Button>
                 ) : undefined
@@ -1613,24 +2651,22 @@ export function CloudScheduleWorkspace({
       {renderSidebarContents(!isMobile || openMobile)}
     </Sidebar>
   );
+  const showSidebarTrigger = !open && !isMobile && !hostSidebarTrigger;
   const cloudTaskHeader = task && (
     <TaskDetailHeader
       name={task.name}
-      compact
-      leading={!open && !isMobile && !hostSidebarTrigger ? <SidebarTrigger /> : undefined}
+      titleRef={taskTitle}
+      target={text("云端", "Cloud")}
+      planStatus={labels[status(task)]}
       text={text}
+      leading={showSidebarTrigger ? <SidebarTrigger /> : undefined}
       onBack={isMobile ? backToList : undefined}
       menu={cloudTaskMenu(task, Boolean(liveConversationId))}
+      onShare={() => void copyTaskLink("cloud", task.id)}
     >
-      {waitingInPreviousConversation && (
-        <span role="status" className="max-w-24 truncate text-xs text-muted-foreground">
-          {runLabels.pending}
-        </span>
-      )}
       {taskDetailsButton}
     </TaskDetailHeader>
   );
-
   return (
     <section
       aria-label={text("定时任务", "Scheduled tasks")}
@@ -1643,20 +2679,20 @@ export function CloudScheduleWorkspace({
       {!hideSidebar &&
         (isMobile || sidebarTarget === undefined
           ? navigation
-          : sidebarTarget && createPortal(navigation, sidebarTarget))}
+          : sidebarTarget && mountWorkbenchLayout(navigation, sidebarTarget, "account-sidebar"))}
       {!sidebarOnly && isMobile && !route.id && (
         <div
           className={`zone-font-scale flex min-h-0 min-w-0 flex-col bg-background ${showMobileListOnly ? "flex-1" : "shrink-0"}`}
           style={{ "--zone-font-scale": fontScale } as CSSProperties}
         >
-          {renderSidebarContents(!openMobile)}
+          {renderSidebarContents(!openMobile, landing !== "empty" || !canCreate, true)}
         </div>
       )}
       {!sidebarOnly && (
         <div
           className={`@container min-h-0 min-w-0 flex-1 flex-col ${liveConversationId || deviceConversationId ? "overflow-hidden" : "overflow-auto"} ${showMobileListOnly ? "hidden" : "flex"}`}
         >
-          {!task && !open && !isMobile && !hostSidebarTrigger && (
+          {showSidebarTrigger && !(task && schedules) && (
             <div className="px-3 pt-2">
               <SidebarTrigger />
             </div>
@@ -1686,77 +2722,168 @@ export function CloudScheduleWorkspace({
             <>
               <TaskDetailHeader
                 name={deviceTask.name}
-                compact
+                titleRef={taskTitle}
+                target={device.label}
+                planStatus={labels[devicePlanStatus(deviceTask)]}
                 text={text}
                 onBack={isMobile ? backToList : undefined}
                 menu={deviceTaskMenu(deviceTask, Boolean(deviceConversationId))}
               >
                 {taskDetailsButton}
               </TaskDetailHeader>
-              <div
-                className={`relative flex min-h-0 min-w-0 flex-1 flex-col px-4 md:px-6 ${deviceConversationId ? "gap-2" : "gap-4 pb-8"} ${taskDetailsInset}`}
-              >
-                {(!deviceConversationId || (deviceAnchor && !deviceAnchor.messageId)) && (
-                  <main
-                    className={`order-2 mx-auto w-full max-w-3xl min-w-0 ${deviceConversationId ? "shrink-0 space-y-2 pt-2" : "space-y-7 pt-5"}`}
-                    aria-label={text("任务结果", "Task results")}
-                  >
-                    {!deviceConversationId && deviceTask.prompt && (
-                      <TaskPromptBubble>{deviceTask.prompt}</TaskPromptBubble>
-                    )}
-                    {!deviceConversationId && (
-                      <div className="space-y-3">
-                        <p className="text-sm leading-relaxed">
-                          {deviceNext
-                            ? `${text("下次运行", "Next run")} · ${time(new Date(deviceNext).toISOString(), deviceTasks?.timeZone)}`
-                            : deviceTask.enabled
-                              ? text("暂无下次运行时间。", "No upcoming run is available.")
-                              : text("任务已暂停。", "This task is paused.")}
-                        </p>
-                        <TaskPlanCard
-                          name={deviceTask.name}
-                          metadata={`${device.label} · ${
-                            labels[
-                              deviceTask.remainingExecutions === 0
-                                ? "completed"
-                                : deviceTask.enabled
-                                  ? "enabled"
-                                  : "paused"
-                            ]
-                          }`}
-                        >
+              {pendingDeviceRun && (
+                <div className="mx-auto w-full max-w-3xl px-4 pt-3">
+                  <StatusNotice
+                    compact
+                    tone="warning"
+                    message={text("运行结果待核对", "Run result unconfirmed")}
+                    description={
+                      missingDeviceRun === pendingDeviceRun
+                        ? text(
+                            "设备未找到这次运行的回执。",
+                            "The device has no receipt for this execution.",
+                          )
+                        : text(
+                            "核对会读取这次运行的原回执。",
+                            "Checking looks up the original receipt for this run.",
+                          )
+                    }
+                    actions={
+                      <>
+                        {deviceConversationId && (
                           <Button
                             variant="ghost"
-                            size="sm"
-                            disabled={!!deviceFailure || busy || !renderDeviceEditor}
-                            onClick={() => openDeviceEditor(deviceTask)}
-                          >
-                            {text("打开", "Open")}
-                          </Button>
-                          <Button
                             size="sm"
                             disabled={deviceRunDisabled}
                             onClick={() => runDeviceTask(deviceTask)}
                           >
-                            {text("立即运行", "Run now")}
+                            {deviceRunLabel}
                           </Button>
-                        </TaskPlanCard>
-                      </div>
+                        )}
+                        {missingDeviceRun === pendingDeviceRun && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={dismissDeviceRunCheck}
+                          >
+                            {text("结束核对", "Stop checking")}
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
+                </div>
+              )}
+              <div
+                className={`relative flex min-h-0 min-w-0 flex-1 flex-col px-4 md:px-6 ${deviceConversationId ? "gap-2" : "gap-4 pb-8"} ${taskDetailsInset}`}
+              >
+                {currentDeviceHistory?.error &&
+                  !deviceRunSelectionState &&
+                  !mobileHistoryVisible && (
+                    <div className="order-1 mx-auto w-full max-w-3xl shrink-0 pt-4">
+                      <StatusNotice
+                        compact
+                        tone="warning"
+                        message={deviceHistoryError}
+                        actions={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="min-h-11 md:min-h-9"
+                            onClick={() => setRefresh((value) => value + 1)}
+                          >
+                            {text("重试", "Retry")}
+                          </Button>
+                        }
+                      />
+                    </div>
+                  )}
+                {deviceRunSelectionState === "loading" ? (
+                  <p
+                    role="status"
+                    className="order-1 mx-auto w-full max-w-3xl pt-4 text-sm text-muted-foreground"
+                  >
+                    {text("正在读取所选运行…", "Reading the selected run…")}
+                  </p>
+                ) : deviceRunSelectionState ? (
+                  <div className="order-1 mx-auto w-full max-w-3xl shrink-0 pt-4">
+                    <StatusNotice
+                      compact
+                      stackActions
+                      tone={
+                        deviceRunAwaitingRecord && !deviceHistoryUnavailable ? "info" : "warning"
+                      }
+                      message={
+                        deviceRunAwaitingRecord
+                          ? text("设备已接受这次运行", "The device accepted this run")
+                          : deviceRunSelectionState === "unavailable"
+                            ? deviceHistoryError
+                            : text(
+                                "该设备当前可读取的历史中没有所选运行。",
+                                "The selected run is unavailable in this device's history.",
+                              )
+                      }
+                      description={
+                        deviceRunAwaitingRecord
+                          ? deviceHistoryUnavailable
+                            ? text(
+                                "暂时无法读取本次运行记录，可以重试。",
+                                "The record for this run is temporarily unavailable. You can retry.",
+                              )
+                            : text(
+                                "正在等待设备提供这次运行的记录。",
+                                "Waiting for the device to return this run's record.",
+                              )
+                          : undefined
+                      }
+                      actions={
+                        <>
+                          <Button
+                            ref={deviceRunRetry}
+                            type="button"
+                            variant="ghost"
+                            className="min-h-11 md:min-h-9"
+                            onClick={() => setRefresh((value) => value + 1)}
+                          >
+                            {text("重试读取所选运行", "Retry selected run")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="min-h-11 md:min-h-9"
+                            onClick={() => {
+                              taskTitle.current?.focus({ preventScroll: true });
+                              onNavigate({ ...route, run: undefined });
+                            }}
+                          >
+                            {text("返回任务", "Back to task")}
+                          </Button>
+                        </>
+                      }
+                    />
+                  </div>
+                ) : null}
+                {showDeviceRunResult && (
+                  <main
+                    className={`order-2 mx-auto w-full max-w-3xl min-w-0 ${deviceConversationId ? "shrink-0 space-y-2 pt-2" : "space-y-7 pt-5"}`}
+                    aria-label={text("任务结果", "Task results")}
+                  >
+                    {!deviceConversationId && !deviceRun && deviceTask.prompt && (
+                      <TaskPromptBubble>{deviceTask.prompt}</TaskPromptBubble>
                     )}
                     {deviceRun && !deviceConversationId && (
                       <article className="space-y-4" aria-label={text("运行结果", "Run result")}>
-                        <p className="text-center text-xs text-muted-foreground">
-                          {time(new Date(deviceRun.startedAt).toISOString(), deviceTasks?.timeZone)}
-                        </p>
-                        {deviceRun.counted === false && (
-                          <TaskPromptBubble>{text("立即运行", "Run now")}</TaskPromptBubble>
-                        )}
-                        <p
-                          className="border-b border-border/60 pb-2 text-sm text-muted-foreground"
-                          role="status"
-                        >
-                          {deviceRunStatus(deviceRun)}
-                        </p>
+                        <TaskStoredRunHeader
+                          text={text}
+                          triggeredAt={new Date(deviceRun.startedAt).toISOString()}
+                          triggerLabel={time(
+                            new Date(deviceRun.startedAt).toISOString(),
+                            deviceTasks?.timeZone,
+                          )}
+                          status={deviceRunStatus(deviceRun)}
+                          manual={deviceRun.counted === false}
+                        />
                         {deviceRun.output && (
                           <pre className="whitespace-pre-wrap break-words text-sm">
                             {deviceRun.output}
@@ -1766,6 +2893,7 @@ export function CloudScheduleWorkspace({
                           <Button
                             variant="outline"
                             size="sm"
+                            className="max-md:min-h-11"
                             onClick={() => {
                               if (deviceRun.sessionId)
                                 onOpenDeviceConversation(deviceRun.sessionId);
@@ -1776,6 +2904,42 @@ export function CloudScheduleWorkspace({
                         )}
                         {cancelDeviceRun}
                       </article>
+                    )}
+                    {!deviceConversationId && (
+                      <section aria-label={text("当前计划", "Current plan")} className="space-y-3">
+                        {deviceRun && (
+                          <h3 className="text-sm font-medium">
+                            {text("当前计划", "Current plan")}
+                          </h3>
+                        )}
+                        <p className="text-sm leading-relaxed">
+                          {deviceNext
+                            ? `${text("下次运行", "Next run")} · ${time(new Date(deviceNext).toISOString(), deviceTasks?.timeZone)}`
+                            : deviceTask.enabled
+                              ? text("暂无下次运行时间。", "No upcoming run is available.")
+                              : text("任务已暂停。", "This task is paused.")}
+                        </p>
+                        <TaskPlanCard
+                          name={deviceTask.name}
+                          metadata={`${device.label} · ${labels[devicePlanStatus(deviceTask)]}`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!!deviceFailure || busy || !renderDeviceEditor}
+                            onClick={() => openDeviceEditor(deviceTask)}
+                          >
+                            {text("编辑任务", "Edit task")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={deviceRunDisabled}
+                            onClick={() => runDeviceTask(deviceTask)}
+                          >
+                            {deviceRunLabel}
+                          </Button>
+                        </TaskPlanCard>
+                      </section>
                     )}
                     {deviceAnchor && !deviceAnchor.messageId && (
                       <p className="px-2 text-xs text-muted-foreground" role="status">
@@ -1805,20 +2969,17 @@ export function CloudScheduleWorkspace({
                     )}
                   </div>
                 )}
-                {taskDetailsOpen && (
-                  <TaskInspector id={taskDetailsId} text={text} onClose={closeTaskDetails}>
+                {(taskDetailsOpen || mobileTaskDetails) && (
+                  <TaskInspector
+                    id={taskDetailsId}
+                    text={text}
+                    mobile={mobileTaskDetails}
+                    onClose={closeTaskDetails}
+                  >
                     <TaskInspectorGroup title={text("定时任务", "Scheduled task")}>
                       <TaskInspectorPlan
                         name={deviceTask.name}
-                        status={
-                          labels[
-                            deviceTask.remainingExecutions === 0
-                              ? "completed"
-                              : deviceTask.enabled
-                                ? "enabled"
-                                : "paused"
-                          ]
-                        }
+                        status={labels[devicePlanStatus(deviceTask)]}
                         disabled={!!deviceFailure || busy || !renderDeviceEditor}
                         onOpen={() => openDeviceEditor(deviceTask)}
                       />
@@ -1831,9 +2992,16 @@ export function CloudScheduleWorkspace({
                           {time(new Date(deviceNext).toISOString(), deviceTasks?.timeZone)}
                         </p>
                       )}
-                      <ScheduleDisclosure title={text("运行记录", "Run history")}>
+                      <ScheduleDisclosure
+                        title={text("运行记录", "Run history")}
+                        {...historyDisclosure}
+                      >
+                        {mobileHistoryFeedback(
+                          !currentDeviceHistory && !deviceFailure,
+                          currentDeviceHistory?.error ? deviceHistoryError : undefined,
+                        )}
                         {deviceRuns.length ? (
-                          <div className="max-h-56 overflow-y-auto">
+                          <div className={isMobile ? undefined : "max-h-56 overflow-y-auto"}>
                             {deviceRuns.map((run) => (
                               <Button
                                 type="button"
@@ -1844,6 +3012,7 @@ export function CloudScheduleWorkspace({
                                 onClick={() => {
                                   setManualDeviceRun(undefined);
                                   setDeviceJumpSequence((sequence) => sequence + 1);
+                                  leaveMobileTaskDetails(true);
                                   onNavigate({ ...route, run: run.id });
                                 }}
                               >
@@ -1854,17 +3023,21 @@ export function CloudScheduleWorkspace({
                               </Button>
                             ))}
                           </div>
-                        ) : (
+                        ) : currentDeviceHistory && !currentDeviceHistory.error ? (
                           <p className="text-muted-foreground">
-                            {text("暂无运行记录", "No runs yet")}
+                            {deviceRunSelectionState
+                              ? text("暂无可读取的运行记录", "No available run history")
+                              : text("暂无运行记录", "No runs yet")}
                           </p>
-                        )}
+                        ) : null}
                       </ScheduleDisclosure>
                     </TaskInspectorGroup>
-                    {deviceConversationId && deviceRun && (
+                    {deviceRun && (
                       <TaskInspectorGroup title={text("输出", "Outputs")}>
                         {deviceRun.output ? (
-                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">
+                          <pre
+                            className={`whitespace-pre-wrap break-words text-xs ${isMobile ? "" : "max-h-48 overflow-auto"}`}
+                          >
                             {deviceRun.output}
                           </pre>
                         ) : (
@@ -1872,11 +3045,14 @@ export function CloudScheduleWorkspace({
                             {text("暂无输出", "No output yet")}
                           </p>
                         )}
-                        {onOpenDeviceConversation && (
+                        {deviceConversationId && onOpenDeviceConversation && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onOpenDeviceConversation(deviceConversationId)}
+                            onClick={() => {
+                              leaveMobileTaskDetails(false);
+                              onOpenDeviceConversation(deviceConversationId);
+                            }}
                           >
                             {text("打开结果对话", "Open result conversation")}
                           </Button>
@@ -1931,10 +3107,144 @@ export function CloudScheduleWorkspace({
               {taskChromeTarget
                 ? mountWorkbenchLayout(cloudTaskHeader, taskChromeTarget, "task-header")
                 : cloudTaskHeader}
+              {isMobile && loadError && (
+                <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-3">
+                  <StatusNotice
+                    compact
+                    stackActions
+                    tone="warning"
+                    message={loadError}
+                    actions={
+                      <Button variant="ghost" className="min-h-11" onClick={retryCloudList}>
+                        {text("重试读取任务", "Retry loading tasks")}
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+              {(liveCancellationStatus ||
+                (waitingInPreviousConversation && !acceptedRunReadFailure)) && (
+                <p
+                  role="status"
+                  className="mx-auto w-full max-w-3xl px-4 pt-2 text-xs text-muted-foreground md:px-6"
+                >
+                  {liveCancellationStatus ?? runLabels.pending}
+                </p>
+              )}
+              {awaitingApproval && awaitingApproval.id !== selectedRun?.id && (
+                <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-3">
+                  <StatusNotice
+                    compact
+                    stackActions={isMobile}
+                    tone="warning"
+                    message={text("有一次运行待审批", "A run awaits approval")}
+                    actions={
+                      <Button
+                        variant="ghost"
+                        className="min-h-11 md:min-h-9"
+                        onClick={() => {
+                          setManualCloudRun(undefined);
+                          setFocusApproval(
+                            scheduleApprovalKey(owner, task.id, awaitingApproval.id),
+                          );
+                          onNavigate({ ...route, run: awaitingApproval.id });
+                        }}
+                      >
+                        {text("审阅待审批运行", "Review pending run")}
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+              {pendingCloudRun && (
+                <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-3">
+                  <StatusNotice
+                    compact
+                    stackActions={isMobile || cloudRunFeedbackState === "missing"}
+                    busy={cloudRunChecking}
+                    tone={cloudRunChecking ? "info" : "warning"}
+                    message={
+                      cloudRunFeedbackState === "submitting"
+                        ? text("正在提交这次运行…", "Submitting this run…")
+                        : cloudRunFeedbackState === "checking"
+                          ? text("正在核对原回执…", "Checking the original receipt…")
+                          : text("运行结果待核对", "Run result unconfirmed")
+                    }
+                    description={
+                      cloudRunChecking
+                        ? undefined
+                        : cloudRunFeedbackState === "missing"
+                          ? text(
+                              "暂未找到这次运行的回执，可以稍后再查。",
+                              "No receipt is available yet. You can check again later.",
+                            )
+                          : cloudRunFeedbackState === "sign-in"
+                            ? text(
+                                "请重新登录后核对，原提交编号已保留。",
+                                "Sign in again to check. The original request was retained.",
+                              )
+                            : cloudRunFeedbackState === "unavailable"
+                              ? text(
+                                  "暂时无法读取原回执，可以重试。",
+                                  "The original receipt is temporarily unavailable. Try checking again.",
+                                )
+                              : text(
+                                  "核对会读取原回执。",
+                                  "Checking looks up the original receipt.",
+                                )
+                    }
+                    actions={
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-11 aria-disabled:opacity-50 md:min-h-9"
+                          aria-disabled={cloudRunDisabled}
+                          onClick={() => {
+                            if (!cloudRunDisabled) runNow(task);
+                          }}
+                        >
+                          {cloudRunLabel}
+                        </Button>
+                        {cloudRunFeedbackState === "missing" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="min-h-11 md:min-h-9"
+                            disabled={busy}
+                            onClick={dismissCloudRunCheck}
+                          >
+                            {text("结束核对", "Stop checking")}
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
+                </div>
+              )}
               <div
-                className={`relative flex min-h-0 min-w-0 flex-1 flex-col gap-4 ${liveConversationId ? "" : "px-4 pb-8 md:px-6"} ${inspectorTarget ? "" : taskDetailsInset}`}
+                className={`relative flex min-h-0 min-w-0 flex-1 flex-col gap-4 ${liveConversationId ? "" : "px-4 pb-8 md:px-6"} ${taskChromeTarget ? "" : taskDetailsInset}`}
               >
-                {cloudHistoryLoading && (
+                {cloudHistoryError && !mobileHistoryVisible && (
+                  <div className="order-2 mx-auto w-full max-w-3xl shrink-0 px-4 pt-4">
+                    <StatusNotice
+                      compact
+                      tone="warning"
+                      message={cloudHistoryError}
+                      actions={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-11 md:min-h-9"
+                          onClick={() => setRefresh((value) => value + 1)}
+                        >
+                          {text("重试", "Retry")}
+                        </Button>
+                      }
+                    />
+                  </div>
+                )}
+                {cloudHistoryLoading && !mobileHistoryVisible && (
                   <p
                     role="status"
                     className="order-2 mx-auto w-full max-w-3xl px-4 pt-4 text-sm text-muted-foreground"
@@ -1942,49 +3252,108 @@ export function CloudScheduleWorkspace({
                     {text("正在读取运行记录…", "Loading run history…")}
                   </p>
                 )}
-                {!cloudHistoryLoading && (!liveConversationId || cloudJumpUnavailable) && (
+                {selectedRunLoading && (
+                  <p
+                    role="status"
+                    className="order-2 mx-auto w-full max-w-3xl px-4 pt-4 text-sm text-muted-foreground"
+                  >
+                    {text("正在读取所选运行…", "Reading the selected run…")}
+                  </p>
+                )}
+                {selectedRunNotice && (
+                  <div className="order-2 mx-auto w-full max-w-3xl shrink-0 px-4 pt-4">
+                    <StatusNotice
+                      compact
+                      stackActions={isMobile}
+                      tone="warning"
+                      message={selectedRunNotice}
+                      description={acceptedRunReadFailure}
+                      actions={
+                        <>
+                          <Button
+                            ref={selectedCloudRunRetry}
+                            type="button"
+                            variant="ghost"
+                            className="min-h-11 md:min-h-9"
+                            onClick={() => setRefresh((value) => value + 1)}
+                          >
+                            {text("重试读取所选运行", "Retry selected run")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="min-h-11 md:min-h-9"
+                            onClick={() => onNavigate({ ...route, run: undefined })}
+                          >
+                            {text("返回任务", "Back to task")}
+                          </Button>
+                        </>
+                      }
+                    />
+                  </div>
+                )}
+                {cloudJumpKey &&
+                  runDetailsUnavailable &&
+                  !selectedMessageId &&
+                  !taskDetailsOpen && (
+                    <div className="order-2 mx-auto w-full max-w-3xl shrink-0 px-4 pt-4">
+                      {runDetailsNotice}
+                    </div>
+                  )}
+                {reviewApproval && approvalRunId && approvalKey && (
+                  <div
+                    className={`order-1 mx-auto w-full max-w-3xl shrink-0 pt-4 ${liveConversationId ? "px-4 md:px-6" : ""}`}
+                  >
+                    <ScheduleRunApprovalCard
+                      key={approvalKey}
+                      client={schedules}
+                      storageKey={approvalKey}
+                      taskId={task.id}
+                      runId={approvalRunId}
+                      input={selectedApproval}
+                      prompt={selectedApproval && schedulePrompt(selectedApproval.run.content)}
+                      triggerLabel={
+                        selectedRun &&
+                        time(
+                          selectedRun.trigger_at,
+                          selectedApproval?.rule.time_zone ?? task.rule.time_zone,
+                        )
+                      }
+                      disabledReason={
+                        loadError ||
+                        cloudHistoryError ||
+                        (!items?.enabled
+                          ? text("云端审批暂不可用。", "Cloud approvals are unavailable.")
+                          : busy
+                            ? text(
+                                "请等待当前任务操作完成。",
+                                "Wait for the current task action to finish.",
+                              )
+                            : undefined)
+                      }
+                      recorded={recordedApproval}
+                      titleRef={approvalTitle}
+                      text={text}
+                      onSubmitting={() => {
+                        if (route.run === approvalRunId) return;
+                        setManualCloudRun(undefined);
+                        onNavigate({ ...route, run: approvalRunId });
+                      }}
+                      onResolved={(outcome, restoreFocus) => {
+                        if (restoreFocus) taskTitle.current?.focus({ preventScroll: true });
+                        setLastApprovalReceipt({ key: approvalKey, outcome });
+                        setRefresh((value) => value + 1);
+                      }}
+                    />
+                  </div>
+                )}
+                {showTaskConversation && (
                   <main
                     className={`order-2 mx-auto w-full max-w-3xl min-w-0 shrink-0 ${liveConversationId ? "px-4 md:px-6" : "space-y-7 pt-5"}`}
                     aria-label={text("任务对话", "Task conversation")}
                   >
-                    {!liveConversationId && (
+                    {!liveConversationId && !selectedRun && !reviewApproval && (
                       <TaskPromptBubble>{schedulePrompt(task.run.content)}</TaskPromptBubble>
-                    )}
-                    {!liveConversationId && (
-                      <div className="space-y-3">
-                        <p className="text-sm leading-relaxed">
-                          {task.next_at
-                            ? `${text("任务已安排。下次运行", "Task scheduled. Next run")} · ${time(task.next_at, task.rule.time_zone)}`
-                            : task.enabled
-                              ? text("此任务暂无下次运行。", "This task has no upcoming run.")
-                              : text("任务已暂停。", "This task is paused.")}
-                        </p>
-                        <TaskPlanCard
-                          name={task.name}
-                          metadata={`${text("云端", "Cloud")} · ${labels[status(task)]}${runCardStatus ? ` · ${runLabels[runCardStatus] ?? runCardStatus}` : ""}`}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!items?.enabled || busy}
-                            onClick={() => openCloudEditor(task)}
-                          >
-                            {text("打开", "Open")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={cloudRunDisabled}
-                            onClick={() => runNow(task)}
-                          >
-                            {cloudRunLabel}
-                          </Button>
-                        </TaskPlanCard>
-                      </div>
-                    )}
-                    {selectedRun?.archived && !liveConversationId && (
-                      <p className="text-sm text-muted-foreground">
-                        {text("结果对话已归档", "Result conversation archived")}
-                      </p>
                     )}
                     {cloudJumpUnavailable && (
                       <p role="status" className="text-xs text-muted-foreground">
@@ -1994,108 +3363,131 @@ export function CloudScheduleWorkspace({
                         )}
                       </p>
                     )}
-                    {selectedRun && !liveConversationId ? (
+                    {selectedRun && !liveConversationId && !selectedApproval ? (
                       <article className="space-y-4" aria-label={text("运行结果", "Run result")}>
-                        <p className="text-center text-xs text-muted-foreground">
-                          {time(selectedRun.trigger_at, task.rule.time_zone)}
-                        </p>
-                        {selectedRun.manual && (
-                          <div className="flex justify-end">
-                            <span className="rounded-full bg-foreground px-4 py-2 text-sm text-background">
-                              {text("立即运行", "Run now")}
-                            </span>
-                          </div>
+                        <TaskStoredRunHeader
+                          text={text}
+                          triggeredAt={selectedRun.trigger_at}
+                          triggerLabel={time(selectedRun.trigger_at, task.rule.time_zone)}
+                          status={runLabels[selectedRun.state] ?? selectedRun.state}
+                          manual={selectedRun.manual}
+                        />
+                        {selectedRun.archived && (
+                          <p className="text-xs text-muted-foreground">
+                            {text("结果对话已归档", "Result conversation archived")}
+                          </p>
                         )}
-                        <div
-                          className="border-b border-border/60 pb-2 text-sm text-muted-foreground"
-                          role="status"
-                        >
-                          {runLabels[selectedRun.state] ?? selectedRun.state}
-                        </div>
-                        {selectedRun.approval && (
-                          <div className="space-y-3">
-                            <h4 className="font-medium">
-                              {text("批准这次运行？", "Approve this run?")}
-                            </h4>
-                            <p className="whitespace-pre-wrap break-words text-sm">
-                              {typeof selectedRun.approval.run.content === "string"
-                                ? selectedRun.approval.run.content
-                                : selectedRun.approval.run.content
-                                    .filter((part) => part.type === "text")
-                                    .map((part) => part.text)
-                                    .join("\n")}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {selectedRun.approval.run.model} ·{" "}
-                              {text("关联资料", "Attached resources")}{" "}
-                              {Array.isArray(selectedRun.approval.run.content)
-                                ? selectedRun.approval.run.content.filter(
-                                    (part) => part.type !== "text",
-                                  ).length
-                                : 0}
-                            </p>
-                            {selectedRun.approval.run.public_research && (
-                              <p className="break-words text-xs text-muted-foreground">
-                                {text("公开主题", "Public topic")} ·{" "}
-                                {selectedRun.approval.run.public_research.topic}
-                              </p>
+                        {selectedRun.state === "awaiting_approval" && !reviewApproval && (
+                          <StatusNotice
+                            compact
+                            stackActions
+                            tone="warning"
+                            message={text(
+                              "暂时无法读取本次运行的审批内容。",
+                              "The approval details for this run are unavailable.",
                             )}
-                            <div className="flex flex-wrap gap-2">
+                            actions={
                               <Button
-                                variant="outline"
-                                disabled={busy || !items?.enabled}
-                                onClick={() =>
-                                  void write(() =>
-                                    schedules.decide(task.id, selectedRun.id, "reject"),
-                                  )
-                                }
+                                variant="ghost"
+                                className="min-h-11 md:min-h-9"
+                                onClick={() => setRefresh((value) => value + 1)}
                               >
-                                {text("拒绝", "Reject")}
+                                {text("重新读取审批内容", "Reload approval details")}
                               </Button>
-                              <Button
-                                disabled={busy || !items?.enabled}
-                                onClick={() =>
-                                  void write(() =>
-                                    schedules.decide(task.id, selectedRun.id, "approve"),
-                                  )
-                                }
-                              >
-                                {text("批准本次运行", "Approve this run")}
-                              </Button>
-                            </div>
-                          </div>
+                            }
+                          />
                         )}
                         {selectedRun.output && (
                           <DocumentMarkdown content={selectedRun.output} readOnly />
                         )}
                         {selectedRun.error_code && (
                           <p className="text-xs text-muted-foreground">
-                            {runReasons[selectedRun.error_code] ?? selectedRun.error_code}
+                            {Object.hasOwn(runReasons, selectedRun.error_code)
+                              ? runReasons[selectedRun.error_code]
+                              : text(
+                                  "本次运行未能正常完成。请查看运行状态后重试。",
+                                  "The run did not complete normally. Check its status before trying again.",
+                                )}
                           </p>
                         )}
-                        {["pending", "queued", "running"].includes(selectedRun.state) && (
+                        {cancelableCloudRun && (
                           <Button
                             variant="ghost"
+                            className="min-h-11 md:min-h-9"
                             disabled={busy}
-                            onClick={() => void cancelCloudRun(task, selectedRun)}
+                            onClick={() => void cancelCloudRun(task, cancelableCloudRun)}
                           >
                             {text("取消本次运行", "Cancel this run")}
                           </Button>
                         )}
                       </article>
                     ) : null}
+                    {!liveConversationId && (
+                      <section aria-label={text("当前计划", "Current plan")} className="space-y-3">
+                        {(selectedRun || reviewApproval) && (
+                          <h3 className="text-sm font-medium">
+                            {text("当前计划", "Current plan")}
+                          </h3>
+                        )}
+                        <p className="text-sm leading-relaxed">
+                          {task.next_at
+                            ? `${text("任务已安排。下次运行", "Task scheduled. Next run")} · ${time(task.next_at, task.rule.time_zone)}`
+                            : task.enabled
+                              ? text("此任务暂无下次运行。", "This task has no upcoming run.")
+                              : text("任务已暂停。", "This task is paused.")}
+                        </p>
+                        <TaskPlanCard
+                          name={task.name}
+                          metadata={`${text("云端", "Cloud")} · ${labels[status(task)]}`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!items?.enabled || busy}
+                            onClick={() => openCloudEditor(task)}
+                          >
+                            {text("编辑任务", "Edit task")}
+                          </Button>
+                          {!pendingCloudRun && (
+                            <Button
+                              size="sm"
+                              disabled={cloudRunDisabled}
+                              onClick={() => runNow(task)}
+                            >
+                              {cloudRunLabel}
+                            </Button>
+                          )}
+                        </TaskPlanCard>
+                      </section>
+                    )}
                   </main>
                 )}
                 {liveConversationId && (
-                  <div className="relative order-3 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                  <div
+                    ref={taskConversationArea}
+                    className="relative order-3 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                  >
                     {renderConversation?.(liveConversationId, onTaskChromeTarget)}
                   </div>
                 )}
-                {taskDetailsOpen && (
+                {(taskDetailsOpen || mobileTaskDetails) && (
                   <TaskInspector
                     id={taskDetailsId}
-                    text={text}
                     anchorTarget={inspectorTarget}
+                    text={text}
+                    mobile={
+                      mobileTaskDetails && {
+                        ...mobileTaskDetails,
+                        takeResourceFocus: () => {
+                          if (route.reader) return undefined;
+                          const resource = detailsPosition.resource;
+                          detailsPosition.resource = undefined;
+                          return resource?.occurrenceId === selectedRun?.id
+                            ? resource?.key
+                            : undefined;
+                        },
+                      }
+                    }
                     onClose={closeTaskDetails}
                   >
                     <TaskInspectorGroup title={text("定时任务", "Scheduled task")}>
@@ -2118,14 +3510,18 @@ export function CloudScheduleWorkspace({
                           {time(task.next_at, task.rule.time_zone)} · {task.rule.time_zone}
                         </p>
                       )}
-                      <ScheduleDisclosure title={text("运行记录", "Run history")}>
-                        {cloudHistoryLoading ? (
+                      <ScheduleDisclosure
+                        title={text("运行记录", "Run history")}
+                        {...historyDisclosure}
+                      >
+                        {mobileHistoryFeedback(cloudHistoryLoading, cloudHistoryError)}
+                        {cloudHistoryLoading && !mobileHistoryVisible ? (
                           <p role="status" className="text-muted-foreground">
                             {text("正在读取运行记录…", "Loading run history…")}
                           </p>
-                        ) : runs.length ? (
-                          <div className="max-h-56 overflow-y-auto">
-                            {runs.map((run) => (
+                        ) : displayedRuns.length ? (
+                          <div className={isMobile ? undefined : "max-h-56 overflow-y-auto"}>
+                            {displayedRuns.map((run) => (
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2133,8 +3529,16 @@ export function CloudScheduleWorkspace({
                                 aria-current={selectedRun?.id === run.id ? "true" : undefined}
                                 className={`h-auto min-h-11 w-full flex-col items-start justify-center gap-0.5 px-2 py-1 font-normal ${selectedRun?.id === run.id ? "bg-muted" : ""}`}
                                 onClick={() => {
+                                  const reviewKey =
+                                    run.state === "awaiting_approval" && run.approval
+                                      ? scheduleApprovalKey(owner, task.id, run.id)
+                                      : undefined;
                                   setManualCloudRun(undefined);
                                   setCloudJumpSequence((sequence) => sequence + 1);
+                                  leaveMobileTaskDetails(
+                                    reviewKey ? { approvalKey: reviewKey } : true,
+                                  );
+                                  if (reviewKey && !isMobile) setFocusApproval(reviewKey);
                                   onNavigate({ ...route, run: run.id });
                                 }}
                               >
@@ -2148,13 +3552,16 @@ export function CloudScheduleWorkspace({
                               </Button>
                             ))}
                           </div>
-                        ) : (
+                        ) : !cloudHistoryError && !cloudHistoryLoading ? (
                           <p className="text-sm text-muted-foreground">
                             {text("暂无运行记录", "No runs yet")}
                           </p>
-                        )}
+                        ) : null}
                       </ScheduleDisclosure>
                     </TaskInspectorGroup>
+                    {(runDetailsLoading || runDetailsUnavailable) && (
+                      <div className="px-3 py-2.5">{runDetailsNotice}</div>
+                    )}
                     {(
                       [
                         ["outputs", text("输出", "Outputs")],
@@ -2164,56 +3571,117 @@ export function CloudScheduleWorkspace({
                       const resources = selectedRunResources?.items.filter((item) =>
                         category === "outputs" ? item.role === "output" : item.role !== "output",
                       );
+                      const savedOutput = category === "outputs" ? fallbackRunOutput : undefined;
+                      if (
+                        (runDetailsLoading || runDetailsUnavailable) &&
+                        !savedOutput &&
+                        !resources?.length
+                      )
+                        return null;
+                      const webSources = resources?.filter((item) => item.kind === "source");
+                      const otherResources = resources?.filter((item) => item.kind !== "source");
+                      const resourceList = (entries: CloudChatPresentationResource[]) => (
+                        <ul>
+                          {entries.map((item) => {
+                            const key = `${item.kind}:${item.id}`;
+                            return (
+                              <li key={key}>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  data-task-result-resource={key}
+                                  className="h-auto min-h-11 w-full min-w-0 justify-start px-2 font-normal md:min-h-8"
+                                  onClick={() => {
+                                    if (selectedConversationId && selectedRun) {
+                                      if (isMobile)
+                                        detailsPosition.resource = {
+                                          occurrenceId: selectedRun.id,
+                                          key,
+                                        };
+                                      leaveMobileTaskDetails(false);
+                                      onOpenResultResource(
+                                        selectedConversationId,
+                                        item,
+                                        selectedRun.id,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  {item.kind === "source" ? (
+                                    <Globe className="size-4 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <FileText className="size-4 shrink-0 text-muted-foreground" />
+                                  )}
+                                  <span className="truncate" title={item.name}>
+                                    {item.name}
+                                  </span>
+                                </Button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      );
                       return (
-                        <TaskInspectorGroup key={category} title={title}>
-                          {category === "outputs" &&
-                            cloudJumpUnavailable &&
-                            selectedRun?.output && (
-                              <div className="max-h-48 overflow-auto">
-                                <DocumentMarkdown content={selectedRun.output} readOnly />
+                        <TaskInspectorGroup
+                          key={category}
+                          title={title}
+                          action={
+                            category === "sources" && items?.enabled && space
+                              ? {
+                                  label: text("添加来源", "Add sources"),
+                                  onClick: () => openCloudEditor(task, false, true),
+                                }
+                              : category === "outputs" && liveConversationId
+                                ? {
+                                    label: text(
+                                      "在结果对话中创建输出",
+                                      "Create output in the result chat",
+                                    ),
+                                    onClick: () => {
+                                      leaveMobileTaskDetails(false);
+                                      requestAnimationFrame(() =>
+                                        taskConversationArea.current
+                                          ?.querySelector<HTMLElement>(
+                                            'textarea:not([disabled]), [contenteditable="true"]',
+                                          )
+                                          ?.focus(),
+                                      );
+                                    },
+                                  }
+                                : undefined
+                          }
+                        >
+                          {savedOutput && (
+                            <ScheduleDisclosure title={text("查看运行结果", "View run result")}>
+                              <div className={isMobile ? undefined : "max-h-40 overflow-auto"}>
+                                <DocumentMarkdown content={savedOutput} readOnly />
                               </div>
-                            )}
-                          {selectedCloudRunId && terminal && !selectedRunResources ? (
-                            <p className="text-muted-foreground" role="status">
-                              {text("正在读取", "Loading")}
-                            </p>
-                          ) : !resources?.length ? (
-                            <p className="text-muted-foreground">
-                              {selectedRunResources?.error
-                                ? text(
-                                    "暂时无法读取本次运行的资料。",
-                                    "Resources for this run are unavailable.",
-                                  )
-                                : category === "outputs"
-                                  ? text("暂无输出", "No outputs yet")
-                                  : text("暂无来源", "No sources yet")}
-                            </p>
-                          ) : (
-                            <ul>
-                              {resources.map((item) => (
-                                <li key={`${item.kind}:${item.id}`}>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    className="h-auto min-h-11 w-full min-w-0 justify-start px-2 font-normal md:min-h-8"
-                                    onClick={() => {
-                                      if (selectedConversationId)
-                                        onOpenResultResource(selectedConversationId, item);
-                                    }}
-                                  >
-                                    {item.kind === "source" ? (
-                                      <Globe className="size-4 shrink-0 text-muted-foreground" />
-                                    ) : (
-                                      <FileText className="size-4 shrink-0 text-muted-foreground" />
-                                    )}
-                                    <span className="truncate" title={item.name}>
-                                      {item.name}
-                                    </span>
-                                  </Button>
-                                </li>
-                              ))}
-                            </ul>
+                            </ScheduleDisclosure>
                           )}
+                          {resources?.length ? (
+                            <>
+                              {webSources?.length ? (
+                                <details open className="group/web-sources">
+                                  <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted [&::-webkit-details-marker]:hidden">
+                                    <Globe className="size-4" />
+                                    <span className="flex-1">{text("网页搜索", "Web search")}</span>
+                                    <ChevronDown
+                                      className="size-3 group-open/web-sources:rotate-180"
+                                      aria-hidden="true"
+                                    />
+                                  </summary>
+                                  {resourceList(webSources)}
+                                </details>
+                              ) : null}
+                              {otherResources?.length ? resourceList(otherResources) : null}
+                            </>
+                          ) : !savedOutput ? (
+                            <p className="text-muted-foreground">
+                              {category === "outputs"
+                                ? text("暂无输出", "No outputs yet")
+                                : text("暂无来源", "No sources yet")}
+                            </p>
+                          ) : null}
                         </TaskInspectorGroup>
                       );
                     })}
@@ -2233,7 +3701,10 @@ export function CloudScheduleWorkspace({
               )}
             </>
           ) : (
-            <EmptyState className="mx-auto h-auto w-full max-w-3xl flex-1 gap-3 px-5 py-8">
+            <EmptyState
+              aria-busy={landing === "loading" || undefined}
+              className="mx-auto h-auto w-full max-w-3xl flex-1 gap-4 px-5 py-8 @min-[32rem]:px-8"
+            >
               {isMobile && route.id && (
                 <Button variant="ghost" className="min-h-11 self-start" onClick={backToList}>
                   <ArrowLeft className="size-4" />
@@ -2243,26 +3714,36 @@ export function CloudScheduleWorkspace({
               <span className="grid size-12 place-items-center rounded-2xl bg-muted text-foreground">
                 <Clock3 className="size-6" aria-hidden="true" />
               </span>
-              <div className="space-y-1">
-                <h2 className="text-lg font-medium tracking-tight text-foreground">
-                  {route.id
-                    ? text("暂时无法打开任务", "Task unavailable")
-                    : text("安排任务", "Schedule a task")}
+              <div className="max-w-sm space-y-1.5">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                  {landingCopy[0]}
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  {route.id
-                    ? text(
-                        "返回列表，或在连接恢复后重试。",
-                        "Return to the list or try again when connected.",
-                      )
-                    : text(
-                        "选择执行位置和时间，回到这里查看结果。",
-                        "Choose when and where to run, then come back here for the results.",
-                      )}
-                </p>
+                <p className="text-sm leading-6 text-muted-foreground">{landingCopy[1]}</p>
               </div>
-              {items?.enabled && !route.id && !filtersActive && (
-                <div className="mt-6 grid w-full max-w-2xl gap-3 min-[480px]:grid-cols-2">
+              {(landing === "empty" || landing === "browse") &&
+                canCreate &&
+                (!items?.enabled || !open || isMobile || hideSidebar) && (
+                  <Button
+                    className="min-h-11 gap-2 rounded-full md:min-h-9"
+                    onClick={() => newTask()}
+                  >
+                    <Plus className="size-4" />
+                    {newTaskLabel}
+                  </Button>
+                )}
+              {((landing === "unavailable" &&
+                (canRetryCloud || canRetryDevice || canRetryRemote)) ||
+                (landing === "missing-task" && canRetryCloudTaskLink)) && (
+                <Button
+                  variant="outline"
+                  className="min-h-11 rounded-full md:min-h-9"
+                  onClick={landing === "missing-task" ? retryCloudList : retryTaskLists}
+                >
+                  {text("重试读取任务", "Retry loading tasks")}
+                </Button>
+              )}
+              {items?.enabled && (landing === "empty" || landing === "browse") && (
+                <div className="mt-3 grid w-full max-w-2xl gap-3 @min-[32rem]:grid-cols-2">
                   {templates.map(([name, prompt, research, Icon]) => (
                     <ConversationStarter
                       key={name}
@@ -2286,16 +3767,29 @@ export function CloudScheduleWorkspace({
           target: device.label,
           timeZone: deviceTasks?.timeZone,
           task: deviceEditor.task,
+          name: deviceEditor.name,
           prompt: deviceEditor.prompt,
+          onUseCloud:
+            defaultCreationTarget === device.targetId && items?.enabled && !deviceEditor.task
+              ? (name, prompt) => {
+                  newTask(prompt, false, { id: deviceEditor.id, name, prompt });
+                  setDeviceEditor(undefined);
+                }
+              : undefined,
+          preview: device.preview,
           onSave: async (data) => {
             const saved = await device.save(data, deviceEditor.id, deviceEditor.task);
-            setDeviceTasks((current) => {
-              const next = { ...current?.next };
+            setDeviceSnapshot((current) => {
+              if (current?.host !== device) return current;
+              const next = { ...current.items.next };
               if (deviceEditor.task?.cron !== saved.cron) delete next[saved.id];
               return {
                 ...current,
-                tasks: [...(current?.tasks ?? []).filter((item) => item.id !== saved.id), saved],
-                next,
+                items: {
+                  ...current.items,
+                  tasks: [...current.items.tasks.filter((item) => item.id !== saved.id), saved],
+                  next,
+                },
               };
             });
             setDeviceEditor(undefined);
@@ -2311,12 +3805,16 @@ export function CloudScheduleWorkspace({
         })}
       {editor && (
         <ScheduleEditor
+          key={editor.id}
           input={editor.input}
           existing={editor.existing}
+          resumeAfterEdit={editor.resumeAfterEdit}
+          editSources={editor.editSources}
           text={text}
           locale={locale}
           models={models}
           space={space}
+          sourceMetadata={sourceMetadata}
           projects={projects}
           schedules={schedules}
           cloudEnabled={items?.enabled === true}
@@ -2334,30 +3832,65 @@ export function CloudScheduleWorkspace({
           error={error}
           creationTargets={creationTargets}
           onOpenTarget={(target) =>
-            void write(async () => {
-              await target.open();
-              setEditor(undefined);
-            })
+            void write(
+              async () => {
+                const draft = {
+                  id: editor.id,
+                  name: editor.input.name,
+                  prompt: schedulePrompt(editor.input.run.content),
+                };
+                if (pendingDeviceDraft.current)
+                  discardDeviceScheduleDraft(owner, pendingDeviceDraft.current);
+                if (!target.inline) {
+                  stageDeviceScheduleDraft(owner, target.id, draft);
+                  pendingDeviceDraft.current = draft.id;
+                }
+                try {
+                  await target.open(draft);
+                } catch (error) {
+                  discardDeviceScheduleDraft(owner, draft.id);
+                  pendingDeviceDraft.current = "";
+                  throw error;
+                }
+              },
+              () =>
+                text(
+                  "无法打开所选设备。请检查连接后重试。",
+                  "Couldn't open the device. Check the connection and try again.",
+                ),
+            )
           }
           onChange={(input) => setEditor({ ...editor, input })}
           onClose={() => {
+            discardDeviceScheduleDraft(owner, editor.id);
+            pendingDeviceDraft.current = "";
             setEditor(undefined);
             setError("");
           }}
           onSave={(input) =>
-            void write(async () => {
+            void writeCloud(async () => {
               if (!schedules) return;
+              const view = currentRunView.current?.cloud;
+              discardDeviceScheduleDraft(owner, editor.id);
+              pendingDeviceDraft.current = "";
               const saved = await schedules.save(
                 input,
-                editor.existing?.enabled ?? true,
+                editor.resumeAfterEdit || (editor.existing?.enabled ?? true),
                 editor.id,
                 editor.existing,
               );
-              setEditor(undefined);
-              onNavigate({
+              const active = currentRunView.current;
+              if (active?.owner !== owner || active.cloud.schedules !== schedules) return;
+              acceptCloudPlan(editor.existing, saved);
+              setEditor((current) => (current?.id === editor.id ? undefined : current));
+              if (active.cloud !== view) return;
+              if (!editor.existing) createdTaskFocus.current = { owner, id: saved.id };
+              active.onNavigate({
                 page: "tasks",
                 id: saved.id,
                 target: "cloud",
+                run:
+                  editor.existing?.id === saved.id && task?.id === saved.id ? route.run : undefined,
                 scope,
                 status: route.status,
                 statuses: route.statuses,
@@ -2380,6 +3913,38 @@ function TaskPromptBubble({ children }: { children: ReactNode }) {
   );
 }
 
+function TaskStoredRunHeader({
+  text,
+  triggeredAt,
+  triggerLabel,
+  status,
+  manual,
+}: {
+  text: Text;
+  triggeredAt: string;
+  triggerLabel: string;
+  status: string;
+  manual?: boolean;
+}) {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-border/60 pb-3">
+      <div className="min-w-0 space-y-1">
+        <h3 className="text-base font-semibold">{text("运行结果", "Run result")}</h3>
+        <p className="text-xs leading-5 text-muted-foreground">
+          <time dateTime={triggeredAt}>{triggerLabel}</time>
+          {manual && text(" · 手动触发", " · Manual trigger")}
+        </p>
+      </div>
+      <span
+        role="status"
+        className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
+      >
+        {status}
+      </span>
+    </header>
+  );
+}
+
 function TaskPlanCard({
   name,
   metadata,
@@ -2390,7 +3955,7 @@ function TaskPlanCard({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 p-3 max-md:[&>button]:min-h-11">
       <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
         <Clock3 aria-hidden="true" className="size-4" />
       </span>
@@ -2407,31 +3972,31 @@ function TaskPlanCard({
 
 function TaskDetailHeader({
   name,
+  titleRef,
   target,
-  compact,
-  leading,
+  planStatus,
   text,
+  leading,
   onBack,
   menu,
+  onShare,
   children,
 }: {
   name: string;
-  target?: string;
-  compact?: boolean;
-  leading?: ReactNode;
+  titleRef?: Ref<HTMLHeadingElement>;
+  target: string;
+  planStatus: string;
   text: Text;
+  leading?: ReactNode;
   onBack?: () => void;
   menu: ReactNode;
+  onShare?: () => void;
   children: ReactNode;
 }) {
   const actions = text("任务操作", "Task actions");
   return (
-    <header
-      className={`sticky top-0 z-10 bg-background ${compact ? "" : "border-b border-border/60"}`}
-    >
-      <div
-        className={`mx-auto flex w-full flex-wrap items-center gap-2 px-4 py-2 ${compact ? "min-h-12" : "min-h-14 max-w-6xl sm:px-6 lg:px-8"}`}
-      >
+    <header className="sticky top-0 z-10 shrink-0 bg-background">
+      <div className="flex min-h-12 w-full min-w-0 items-center gap-2 px-3 py-1.5 md:px-4">
         {leading}
         {onBack && (
           <TooltipButton
@@ -2446,15 +4011,23 @@ function TaskDetailHeader({
           </TooltipButton>
         )}
         <div className="min-w-0 flex-1">
-          {target && <p className="truncate text-xs text-muted-foreground">{target}</p>}
           <h2
-            className={`truncate leading-6 ${compact ? "text-sm font-medium" : "text-[17px] font-semibold"}`}
+            ref={titleRef}
+            tabIndex={titleRef ? -1 : undefined}
+            className="truncate text-sm font-semibold leading-5"
             title={name}
           >
             {name}
           </h2>
+          <p className="sr-only">
+            <span className="truncate" title={target}>
+              {target}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="shrink-0">{planStatus}</span>
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 max-md:[&>button]:min-h-11">
+        <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -2473,6 +4046,19 @@ function TaskDetailHeader({
               {menu}
             </DropdownMenuContent>
           </DropdownMenu>
+          {onShare && (
+            <TooltipButton
+              variant="ghost"
+              size="sm"
+              title={text("分享", "Share")}
+              aria-label={text("分享", "Share")}
+              className="max-md:min-h-11"
+              onClick={onShare}
+            >
+              <Share2 className="size-4" />
+              {text("分享", "Share")}
+            </TooltipButton>
+          )}
           {children}
         </div>
       </div>
@@ -2483,24 +4069,100 @@ function TaskDetailHeader({
 function TaskInspector({
   id,
   text,
+  mobile,
   anchorTarget,
   onClose,
   children,
 }: {
   id: string;
   text: Text;
+  mobile?: {
+    open: boolean;
+    position: { top: number };
+    returnFocus: () => HTMLElement | null | false;
+    takeResourceFocus?: () => string | undefined;
+  };
   anchorTarget?: HTMLElement;
   onClose: () => void;
   children: ReactNode;
 }) {
-  const panel = (
+  const label = text("任务详情", "Task details");
+  const mobileCloseButton = useRef<HTMLElement>(null);
+  const mobileBody = useRef<HTMLDivElement>(null);
+  const position = mobile?.position;
+  const restorePosition = useCallback(
+    (body: HTMLDivElement | null) => {
+      mobileBody.current = body;
+      if (body && position) body.scrollTop = position.top;
+    },
+    [position],
+  );
+  if (mobile) {
+    const closeLabel = text("关闭任务详情", "Close task details");
+    return (
+      <Dialog
+        open={mobile.open}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+      >
+        <DialogContent
+          id={id}
+          layout="bottom-sheet-mobile"
+          initialFocus={() => {
+            const key = mobile.takeResourceFocus?.();
+            const resource = key
+              ? [
+                  ...(mobileBody.current?.querySelectorAll<HTMLButtonElement>(
+                    "[data-task-result-resource]",
+                  ) ?? []),
+                ].find((button) => button.dataset.taskResultResource === key)
+              : undefined;
+            return resource ?? mobileCloseButton.current;
+          }}
+          finalFocus={mobile.returnFocus}
+          className="flex max-h-[min(78dvh,42rem)] min-w-0 flex-col overflow-hidden"
+        >
+          <DialogHeader className="flex-row items-center justify-between gap-2 border-b border-border/60 px-4 py-1.5">
+            <DialogTitle className="text-base">{label}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {text("查看计划、运行记录和输出。", "Review the schedule, run history and outputs.")}
+            </DialogDescription>
+            <DialogClose
+              render={
+                <Button
+                  ref={mobileCloseButton}
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0"
+                  aria-label={closeLabel}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+          </DialogHeader>
+          <DialogBody
+            ref={restorePosition}
+            onScroll={(event) => {
+              if (mobile.open) mobile.position.top = event.currentTarget.scrollTop;
+            }}
+            className="divide-y divide-border/60 px-1 pt-1 pb-safe-bottom-compact max-[820px]:px-1 max-[820px]:pt-1 max-[820px]:pb-safe-bottom-compact"
+          >
+            {children}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  const inspector = (
     <aside
       id={id}
       tabIndex={-1}
-      aria-label={text("任务详情", "Task details")}
+      aria-label={label}
       className={
         anchorTarget
-          ? "za-floating-surface absolute top-full right-3 z-20 max-h-[min(64dvh,34rem)] w-[min(calc(100%-1.5rem),17.5rem)] divide-y divide-border/60 overflow-auto rounded-2xl text-sm"
+          ? "za-floating-surface za-native-scroll absolute top-full right-2 z-20 mt-1 max-h-[min(62dvh,24rem)] w-[min(17.5rem,calc(100%-1rem))] divide-y divide-border/60 overflow-auto overscroll-contain border border-border/60 bg-popover text-sm"
           : taskDetailsClass
       }
       onKeyDown={(event) => {
@@ -2513,13 +4175,35 @@ function TaskInspector({
       {children}
     </aside>
   );
-  return anchorTarget ? mountWorkbenchLayout(panel, anchorTarget, "task-inspector") : panel;
+  return anchorTarget ? mountWorkbenchLayout(inspector, anchorTarget, "task-inspector") : inspector;
 }
 
-function TaskInspectorGroup({ title, children }: { title: string; children: ReactNode }) {
+function TaskInspectorGroup({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: { label: string; onClick: () => void };
+  children: ReactNode;
+}) {
   return (
     <section className="space-y-1 px-3 py-2.5">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <div className="flex min-h-5 items-center justify-between gap-2 px-1">
+        <h3 className="text-xs font-normal text-muted-foreground">{title}</h3>
+        {action && (
+          <TooltipButton
+            variant="ghost"
+            size="icon-sm"
+            className="-mr-1 size-7 text-muted-foreground max-md:size-11"
+            title={action.label}
+            aria-label={action.label}
+            onClick={action.onClick}
+          >
+            <Plus className="size-4" />
+          </TooltipButton>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -2548,15 +4232,33 @@ function TaskInspectorPlan({
         {name}
       </span>
       <span className="shrink-0 text-xs text-muted-foreground">{status}</span>
-      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
     </Button>
   );
 }
 
-function ScheduleDisclosure({ title, children }: { title: string; children: ReactNode }) {
+function ScheduleDisclosure({
+  title,
+  open,
+  onOpenChange,
+  summaryRef,
+  children,
+}: {
+  title: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  summaryRef?: React.Ref<HTMLElement>;
+  children: ReactNode;
+}) {
   return (
-    <details className="group">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2 text-sm text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8 [&::-webkit-details-marker]:hidden">
+    <details
+      className="group"
+      open={open}
+      onToggle={(event) => onOpenChange?.(event.currentTarget.open)}
+    >
+      <summary
+        ref={summaryRef}
+        className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2 text-sm text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8 [&::-webkit-details-marker]:hidden"
+      >
         {title}
         <ChevronDown
           aria-hidden="true"
@@ -2646,6 +4348,7 @@ function ScheduleSwitch({
       <Switch
         id={id}
         size="sm"
+        className="data-[checked]:bg-foreground dark:data-[checked]:bg-primary"
         checked={checked}
         disabled={disabled}
         aria-describedby={hint ? `${id}-hint` : undefined}
@@ -2655,13 +4358,31 @@ function ScheduleSwitch({
   );
 }
 
+function scheduleDraftSnapshot(input: ScheduleInput) {
+  const { archive_successful_runs, require_approval, notification, run, ...draft } = input;
+  const { content, ...model } = run;
+  return JSON.stringify({
+    ...draft,
+    archive_successful_runs: Boolean(archive_successful_runs),
+    require_approval: Boolean(require_approval),
+    notification: notification ?? "attention",
+    run: {
+      ...model,
+      content: typeof content === "string" ? [{ type: "text", text: content }] : content,
+    },
+  });
+}
+
 function ScheduleEditor({
   input,
   existing,
+  resumeAfterEdit = false,
+  editSources,
   text,
   locale,
   models,
   space,
+  sourceMetadata,
   projects,
   schedules,
   cloudEnabled,
@@ -2676,10 +4397,13 @@ function ScheduleEditor({
 }: {
   input: ScheduleInput;
   existing?: Schedule;
+  resumeAfterEdit?: boolean;
+  editSources?: boolean;
   text: Text;
   locale: string;
   models: readonly Model[];
   space?: CloudSpaceClient;
+  sourceMetadata?: ScheduleSourceMetadata;
   projects?: Pick<CloudChatProjectsClient, "listProjects">;
   schedules: typeof cloudSchedules | null;
   cloudEnabled: boolean;
@@ -2692,18 +4416,29 @@ function ScheduleEditor({
   onClose: () => void;
   onSave: (input: ScheduleInput) => void;
 }) {
-  const [next, setNext] = useState<string | null>();
-  const [previewError, setPreviewError] = useState("");
-  const [resources, setResources] = useState<CloudSpaceItem[]>([]);
-  const [resourceQuery, setResourceQuery] = useState("");
-  const [resourcesOpen, setResourcesOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const original = useRef({ input, target: initialTarget });
+  const { confirm: confirmDiscard, dialog: discardDialog } = useConfirmDialog();
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(editSources));
   const [projectItems, setProjectItems] = useState<CloudProject[]>();
   const [projectLoadFailed, setProjectLoadFailed] = useState(false);
   const [projectRetry, setProjectRetry] = useState(0);
-  const [targetId, setTargetId] = useState(initialTarget);
-  const target = !existing ? creationTargets.find((item) => item.id === targetId) : undefined;
-  const isDeviceTarget = !!target;
+  const [location, setLocation] = useState(() => ({
+    id: initialTarget,
+    label: creationTargets.find((item) => item.id === initialTarget)?.label,
+  }));
+  const startTime = useRef<HTMLInputElement>(null);
+  const instructions = useRef<HTMLTextAreaElement>(null);
+  const taskName = useRef<HTMLInputElement>(null);
+  const sourceEditor = useRef<HTMLDivElement>(null);
+  const isDeviceTarget = !existing && location.id !== "cloud";
+  const target = isDeviceTarget
+    ? creationTargets.find((item) => item.id === location.id)
+    : undefined;
+  const deviceLabel = target?.label ?? location.label ?? text("所选设备", "Selected device");
+  const cloudTargetLabel = cloudEnabled
+    ? text("云端", "Cloud")
+    : text("云端暂不可用", "Cloud unavailable");
   const projectKey = input.project_id || "none";
   const projectOptions: [string, string][] = [["none", text("无", "None")]];
   for (const project of projectItems ?? []) projectOptions.push([project.id, project.name]);
@@ -2717,6 +4452,19 @@ function ScheduleEditor({
   }
   const labelId = useId();
   const { rule } = input;
+  const admitted = existing?.admitted ?? 0;
+  const previewRequest = useMemo(
+    () =>
+      schedules && cloudEnabled && !isDeviceTarget
+        ? { client: schedules, rule, admitted, attempt: previewAttempt }
+        : undefined,
+    [admitted, cloudEnabled, isDeviceTarget, previewAttempt, rule, schedules],
+  );
+  const [previewResponse, setPreviewResponse] = useState<{
+    request: NonNullable<typeof previewRequest>;
+    result: { next: string | null } | { error: "invalid" | "unavailable" };
+  }>();
+  const preview = previewResponse?.request === previewRequest ? previewResponse?.result : undefined;
   const previousRepeat = useRef<
     | Pick<ScheduleRule, "frequency" | "weekdays" | "interval_minutes" | "count" | "end_date">
     | undefined
@@ -2728,11 +4476,36 @@ function ScheduleEditor({
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+  const deviceSetupInstructions =
+    input.name.trim() || prompt.trim()
+      ? text(
+          "任务名称和说明会保留。请在此设备确认时间、模型、工作区及执行权限。",
+          "Your task name and instructions will carry over. Confirm the time, model, workspace, and permissions on this device.",
+        )
+      : text(
+          "下一步在此设备填写任务，并确认运行时间和工作区。",
+          "Continue on this device to enter the task and confirm its schedule and workspace.",
+        );
   const refs = content.filter((part) => part.type !== "text");
+  const hasSavedSources = Boolean(existing && refs.length);
+  const sourcesOnly = hasSavedSources && !prompt.trim();
+  const exceedsContentLimit = content.length > SCHEDULE_CONTENT_PART_LIMIT;
   const inferredName = Array.from(prompt.trim().split(/\r?\n/, 1)[0] ?? "")
     .slice(0, 60)
     .join("");
   const publicTopic = input.run.public_research?.topic;
+  const canSave = Boolean(
+    !isDeviceTarget &&
+      cloudEnabled &&
+      !busy &&
+      (prompt.trim() || hasSavedSources) &&
+      !exceedsContentLimit &&
+      input.run.model &&
+      (publicTopic === undefined || publicTopic.trim()) &&
+      preview &&
+      "next" in preview &&
+      (preview.next || (existing && !resumeAfterEdit)),
+  );
   const frequency = isWorkdaySchedule(rule) ? "workdays" : rule.frequency;
   const endMode = rule.count ? "count" : rule.end_date ? "date" : "never";
   const modelKey = `${input.run.provider_key_id ?? 0}:${input.run.model}`;
@@ -2755,45 +4528,62 @@ function ScheduleEditor({
     onChange({ ...input, rule: { ...rule, ...patch } });
   const setRun = (patch: Partial<ScheduleInput["run"]>) =>
     onChange({ ...input, run: { ...input.run, ...patch } });
+  async function requestClose() {
+    if (busy || discardDialog) return;
+    const changed =
+      location.id !== original.current.target ||
+      (input !== original.current.input &&
+        scheduleDraftSnapshot(input) !== scheduleDraftSnapshot(original.current.input));
+    if (
+      changed &&
+      !(await confirmDiscard({
+        title: text("放弃任务修改？", "Discard task changes?"),
+        description: text(
+          "这次填写的任务内容和设置尚未保存。",
+          "Your changes to this task have not been saved.",
+        ),
+        confirmLabel: text("放弃修改", "Discard changes"),
+        cancelLabel: text("继续编辑", "Keep editing"),
+        preferCancel: true,
+        touchActions: true,
+      }))
+    )
+      return;
+    onClose();
+  }
   useEffect(() => {
-    if (!schedules || isDeviceTarget) return;
-    const client = schedules;
+    if (!previewRequest) return;
     const controller = new AbortController();
-    setNext(undefined);
-    setPreviewError("");
-    const timer = window.setTimeout(
-      () =>
-        void client
-          .preview(rule, existing?.admitted ?? 0, controller.signal)
-          .then((result) => {
-            if (!controller.signal.aborted) setNext(result.next_at);
-          })
-          .catch((cause) => {
-            if (!controller.signal.aborted) setPreviewError(message(cause));
+    const { client, rule, admitted } = previewRequest;
+    let deadline: number;
+    const finish = (result: NonNullable<typeof previewResponse>["result"]) => {
+      window.clearTimeout(deadline);
+      if (!controller.signal.aborted) setPreviewResponse({ request: previewRequest, result });
+    };
+    const timer = window.setTimeout(() => {
+      deadline = window.setTimeout(() => {
+        finish({ error: "unavailable" });
+        controller.abort();
+      }, 8_000);
+      void client
+        .preview(rule, admitted, controller.signal)
+        .then((result) => finish({ next: result.next_at }))
+        .catch((cause) =>
+          finish({
+            error:
+              cause instanceof ScheduleRequestError && cause.status === 400
+                ? "invalid"
+                : "unavailable",
           }),
-      200,
-    );
+        );
+    }, 200);
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(deadline);
       controller.abort();
     };
-  }, [rule, existing?.admitted, schedules, isDeviceTarget]);
-  useEffect(() => {
-    if (!resourcesOpen || !space) return;
-    const controller = new AbortController();
-    void space
-      .list(undefined, resourceQuery, "updated", "", controller.signal)
-      .then((page) => {
-        if (!controller.signal.aborted)
-          setResources(
-            page.items.filter((item) => item.kind !== "folder" && item.state === "ready"),
-          );
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setResources([]);
-      });
-    return () => controller.abort();
-  }, [resourceQuery, resourcesOpen, space]);
+  }, [previewRequest]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly reloads the project list.
   useEffect(() => {
     if (!advancedOpen || isDeviceTarget || !projects) return;
     const client = projects;
@@ -2823,51 +4613,71 @@ function ScheduleEditor({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) onClose();
+        if (!open) void requestClose();
       }}
     >
       <DialogContent
         layout="fullscreen-mobile"
+        initialFocus={() =>
+          editSources
+            ? (sourceEditor.current?.querySelector("button") ?? taskName.current)
+            : resumeAfterEdit
+              ? startTime.current
+              : existing
+                ? taskName.current
+                : instructions.current
+        }
         showCloseButton
         closeDisabled={busy}
         closeLabel={text("关闭", "Close")}
-        className="flex max-h-[min(90dvh,760px)] flex-col overflow-hidden max-[720px]:max-h-none sm:max-w-xl"
+        className="flex max-h-[min(90dvh,760px)] flex-col overflow-hidden max-[720px]:max-h-none sm:max-w-[38rem]"
       >
-        <DialogHeader>
+        <DialogHeader className="min-h-16 justify-center">
           <DialogTitle>
-            {existing ? text("编辑任务", "Edit task") : text("设置定时任务", "Schedule a task")}
+            {resumeAfterEdit
+              ? text("调整计划并恢复", "Edit schedule to resume")
+              : existing
+                ? text("编辑任务", "Edit task")
+                : text("设置定时任务", "Schedule a task")}
           </DialogTitle>
-          <DialogDescription className="sr-only">
-            {text(
-              "选择执行位置，按计划运行并在任务中查看结果。",
-              "Choose where to run and find the results in the task.",
-            )}
+          <DialogDescription className={resumeAfterEdit ? undefined : "sr-only"}>
+            {resumeAfterEdit
+              ? text(
+                  "调整时间或重复规则。保存并恢复前，任务仍保持暂停。",
+                  "Adjust the time or repeat rule. The task stays paused until you save and resume.",
+                )
+              : text(
+                  "填写任务说明和时间，按计划运行后查看结果。",
+                  "Enter instructions and a schedule, then return to the task for results.",
+                )}
           </DialogDescription>
         </DialogHeader>
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            if (
-              !target &&
-              cloudEnabled &&
-              !busy &&
-              prompt.trim() &&
-              input.run.model &&
-              (publicTopic === undefined || publicTopic.trim()) &&
-              !previewError &&
-              (existing || next)
-            )
-              onSave({ ...input, name: input.name.trim() || inferredName });
+            if (canSave) onSave({ ...input, name: input.name.trim() || inferredName });
           }}
         >
           <DialogBody className="space-y-3">
+            {existing && (
+              <Input
+                ref={taskName}
+                aria-label={text("名称", "Name")}
+                className="min-h-11 rounded-2xl px-4"
+                value={input.name}
+                maxLength={80}
+                onChange={(event) => onChange({ ...input, name: event.target.value })}
+              />
+            )}
             <label className="block space-y-1 text-sm" htmlFor={`${labelId}-prompt`}>
               <span className="sr-only">{text("任务说明", "Task instructions")}</span>
               <Textarea
                 id={`${labelId}-prompt`}
-                required={!target}
-                className="min-h-28 rounded-2xl px-4 py-3.5"
+                ref={instructions}
+                required={!hasSavedSources}
+                aria-describedby={sourcesOnly ? `${labelId}-saved-sources` : undefined}
+                className="min-h-28 rounded-2xl px-4 py-3.5 focus-visible:ring-1 focus-visible:ring-ring/40"
                 placeholder={text("说明…", "Instructions…")}
                 value={prompt}
                 onChange={(event) =>
@@ -2879,7 +4689,27 @@ function ScheduleEditor({
                 }
               />
             </label>
-            <fieldset hidden={!!target} disabled={!!target} className="min-w-0 space-y-3">
+            <fieldset
+              hidden={isDeviceTarget}
+              disabled={isDeviceTarget}
+              className="min-w-0 space-y-3"
+            >
+              {sourcesOnly && (
+                <p id={`${labelId}-saved-sources`} className="text-xs text-muted-foreground">
+                  {text(
+                    "此任务使用已保存的来源，可在「高级」中查看。",
+                    "This task uses saved sources. Find them under Advanced.",
+                  )}
+                </p>
+              )}
+              {exceedsContentLimit && (
+                <p role="alert" className="text-xs text-destructive">
+                  {text(
+                    "任务最多包含 32 个内容块，请先移除一项来源。",
+                    "A task can include up to 32 content items. Remove a source to save.",
+                  )}
+                </p>
+              )}
               {publicTopic !== undefined && (
                 <label className="block space-y-1.5 text-sm" htmlFor={`${labelId}-topic`}>
                   <span>{text("公开检索主题", "Public search topic")}</span>
@@ -2961,13 +4791,19 @@ function ScheduleEditor({
                     {text("时间", "Time")}
                   </label>
                   <Input
+                    ref={startTime}
                     id={`${labelId}-start`}
-                    className="w-auto max-w-full min-w-0 border-transparent bg-transparent text-muted-foreground"
+                    aria-describedby={`${labelId}-start-zone`}
+                    className="min-h-11 w-auto max-w-full min-w-0 border-transparent bg-transparent text-muted-foreground md:min-h-9"
                     type="datetime-local"
                     required
                     value={rule.start}
                     onChange={(event) => setRule({ start: event.target.value })}
                   />
+                  <span id={`${labelId}-start-zone`} className="sr-only">
+                    {text("按计划时区输入时间", "Enter the time in the schedule's time zone")} ·{" "}
+                    {rule.time_zone}
+                  </span>
                 </ScheduleFormRow>
                 {rule.frequency === "weekly" && frequency !== "workdays" && (
                   <fieldset className="flex min-w-0 flex-wrap gap-2 px-3 pb-2">
@@ -3071,115 +4907,134 @@ function ScheduleEditor({
                   </ScheduleFormRow>
                 )}
               </div>
-              <p aria-live="polite" className="px-2 text-xs text-muted-foreground">
-                {text("下次运行", "Next run")} ·{" "}
-                {previewError ||
-                  (next
-                    ? new Intl.DateTimeFormat(locale, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                        timeZone: rule.time_zone,
-                      }).format(new Date(next))
-                    : next === null
-                      ? text("暂无", "None")
-                      : text("正在计算", "Calculating"))}{" "}
-                · {rule.time_zone}
-              </p>
+              {preview && "error" in preview ? (
+                <StatusNotice
+                  compact
+                  tone="error"
+                  message={text("无法预览下次运行", "Unable to preview the next run")}
+                  description={
+                    preview.error === "invalid"
+                      ? text(
+                          "请检查时间、时区和重复规则。",
+                          "Check the time, time zone and repeat rule.",
+                        )
+                      : text("草稿已保留。", "Your draft is still here.")
+                  }
+                  actions={
+                    preview.error === "unavailable" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="min-h-11 md:min-h-9"
+                        onClick={() => setPreviewAttempt((attempt) => attempt + 1)}
+                      >
+                        {text("重试预览", "Retry preview")}
+                      </Button>
+                    )
+                  }
+                />
+              ) : (
+                <p role="status" className="px-2 text-xs text-muted-foreground">
+                  {text("下次运行", "Next run")} ·{" "}
+                  {preview?.next
+                    ? formatTaskTime(locale, preview.next, rule.time_zone)
+                    : preview?.next === null
+                      ? text("没有后续运行", "No future run")
+                      : previewRequest
+                        ? text("正在计算", "Calculating")
+                        : text("预览不可用", "Preview unavailable")}{" "}
+                  · {rule.time_zone}
+                </p>
+              )}
             </fieldset>
             <details
               className="group"
+              open={advancedOpen}
               onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
             >
               <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                 {text("高级", "Advanced")}
                 <ChevronDown aria-hidden="true" className="size-3 group-open:rotate-180" />
               </summary>
-              {!existing && creationTargets.length ? (
-                <div className="space-y-1 text-sm">
-                  <label htmlFor={`${labelId}-target`}>{text("执行位置", "Runs on")}</label>
-                  <Select value={targetId} onValueChange={setTargetId}>
-                    <SelectTrigger id={`${labelId}-target`} className="min-h-11 w-full md:min-h-9">
-                      <SelectValue>{target?.label ?? text("云端", "Cloud")}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cloud" disabled={!cloudEnabled}>
-                        {cloudEnabled
-                          ? text("云端", "Cloud")
-                          : text("云端暂不可用", "Cloud unavailable")}
-                      </SelectItem>
-                      {creationTargets.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.label}
+              <div className="space-y-2">
+                {!existing && (creationTargets.length > 0 || isDeviceTarget) ? (
+                  <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border/60 px-3 text-sm">
+                    <label htmlFor={`${labelId}-target`}>{text("执行位置", "Runs on")}</label>
+                    <Select
+                      value={location.id}
+                      onValueChange={(id) =>
+                        setLocation({
+                          id,
+                          label: creationTargets.find((item) => item.id === id)?.label,
+                        })
+                      }
+                    >
+                      <SelectTrigger
+                        id={`${labelId}-target`}
+                        aria-describedby={isDeviceTarget ? `${labelId}-target-status` : undefined}
+                        variant="plain"
+                        className="min-h-11 w-fit min-w-0 max-w-[68%] justify-end bg-transparent text-muted-foreground md:min-h-9"
+                      >
+                        <SelectValue>{isDeviceTarget ? deviceLabel : cloudTargetLabel}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cloud" disabled={!cloudEnabled}>
+                          {cloudTargetLabel}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
-              {target ? (
-                <p className="text-sm text-muted-foreground">
-                  {target.ready
-                    ? text(
-                        target.inline
-                          ? "使用此设备的时区、模型和工作区安排任务。"
-                          : "在设备的定时任务中填写计划和执行选项。",
-                        target.inline
-                          ? "Schedule with this device’s time zone, models and workspace."
-                          : "Configure the schedule and execution options on the device.",
-                      )
-                    : text(
-                        "设备暂时不可用，请连接后继续。",
-                        "This device is unavailable. Connect it to continue.",
-                      )}
-                </p>
-              ) : null}
-              <fieldset hidden={!!target} disabled={!!target} className="min-w-0 divide-y divide-border/60 rounded-2xl border border-border/60">
+                        {creationTargets.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.ready
+                              ? item.label
+                              : `${item.label} · ${text("暂不可用", "Unavailable")}`}
+                          </SelectItem>
+                        ))}
+                        {isDeviceTarget && !target && (
+                          <SelectItem value={location.id} disabled>
+                            {deviceLabel}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+                {isDeviceTarget ? (
+                  <p
+                    id={`${labelId}-target-status`}
+                    role={target?.ready ? undefined : "status"}
+                    className="text-sm text-muted-foreground"
+                  >
+                    {target?.ready
+                      ? deviceSetupInstructions
+                      : target
+                        ? text(
+                            "设备暂时不可用。请重新连接或改选执行位置。",
+                            "This device is unavailable. Reconnect it or choose another location.",
+                          )
+                        : text(
+                            "所选设备暂不可用。草稿已保留，可重新连接或改选执行位置。",
+                            "The selected device is unavailable. Your draft is kept. Reconnect it or choose another location.",
+                          )}
+                  </p>
+                ) : null}
+              </div>
+              <fieldset
+                hidden={isDeviceTarget}
+                disabled={isDeviceTarget}
+                className="mt-2 min-w-0 space-y-2 [&>div]:rounded-xl [&>div]:border [&>div]:border-border/60"
+              >
                 <ScheduleFormRow>
-                  <label htmlFor={`${labelId}-name`}>{text("名称", "Name")}</label>
-                  <Input
-                    id={`${labelId}-name`}
-                    className="max-w-[68%] border-transparent bg-transparent text-right"
-                    value={input.name}
-                    placeholder={inferredName || text("根据说明生成", "From instructions")}
-                    maxLength={80}
-                    onChange={(event) => onChange({ ...input, name: event.target.value })}
-                  />
-                </ScheduleFormRow>
-                <ScheduleFormRow>
-                  <label htmlFor={`${labelId}-timezone`}>{text("时区", "Time zone")}</label>
+                  <label className="shrink-0" htmlFor={`${labelId}-timezone`}>
+                    {text("时区", "Time zone")}
+                  </label>
                   <TimeZonePicker
                     id={`${labelId}-timezone`}
+                    compactLabel
                     label={text("时区", "Time zone")}
-                    triggerClassName="w-fit max-w-[72%] border-transparent bg-transparent"
+                    triggerClassName="min-h-11 w-fit max-w-[72%] border-transparent bg-transparent md:min-h-9"
                     value={rule.time_zone}
                     onChange={(time_zone) => setRule({ time_zone })}
                   />
                 </ScheduleFormRow>
-                <ScheduleSelect
-                  id={`${labelId}-notification`}
-                  label={text("任务列表通知", "Task list notifications")}
-                  value={input.notification ?? "attention"}
-                  options={[
-                    ["attention", text("需要处理时", "When attention is needed")],
-                    [
-                      "all",
-                      text("完成或需要处理时", "On completion or when attention is needed"),
-                    ],
-                    ["none", text("关闭", "Off")],
-                  ]}
-                  onChange={(notification) =>
-                    onChange({
-                      ...input,
-                      notification,
-                    })
-                  }
-                />
-                <ScheduleSwitch
-                  id={`${labelId}-approval`}
-                  label={text("每次运行前需要批准", "Require approval before each run")}
-                  checked={input.require_approval ?? false}
-                  onChange={(require_approval) => onChange({ ...input, require_approval })}
-                />
                 <ScheduleSwitch
                   id={`${labelId}-new-conversation`}
                   label={text("每次运行时都开启新对话", "Start a new chat for each run")}
@@ -3194,55 +5049,6 @@ function ScheduleEditor({
                     })
                   }
                 />
-                <ScheduleSwitch
-                  id={`${labelId}-archive`}
-                  label={text("归档成功运行记录", "Archive successful runs")}
-                  disabled={!input.new_conversation}
-                  checked={input.archive_successful_runs ?? false}
-                  hint={
-                    input.new_conversation
-                      ? undefined
-                      : text(
-                          "仅在每次新建对话时可用",
-                          "Available when each run starts a new chat",
-                        )
-                  }
-                  onChange={(archive_successful_runs) =>
-                    onChange({ ...input, archive_successful_runs })
-                  }
-                />
-                {projects && (
-                  <>
-                    <ScheduleSelect
-                      id={`${labelId}-project`}
-                      label={text("项目", "Project")}
-                      options={projectOptions}
-                      value={projectKey}
-                      onChange={(value) =>
-                        onChange({ ...input, project_id: value === "none" ? undefined : value })
-                      }
-                    />
-                    {advancedOpen && (projectLoadFailed || !projectItems) && (
-                      <ScheduleFormRow>
-                        <span className="text-xs text-muted-foreground" role="status">
-                          {projectLoadFailed
-                            ? text("暂时无法读取项目", "Projects are unavailable")
-                            : text("正在读取项目", "Loading projects")}
-                        </span>
-                        {projectLoadFailed && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setProjectRetry((value) => value + 1)}
-                          >
-                            {text("重试", "Retry")}
-                          </Button>
-                        )}
-                      </ScheduleFormRow>
-                    )}
-                  </>
-                )}
                 <ScheduleFormRow>
                   <span className="shrink-0">{text("模型", "Model")}</span>
                   <div className="w-full max-w-[68%] min-w-0">
@@ -3284,81 +5090,120 @@ function ScheduleEditor({
                     setRun({ reasoning_effort: effort === "default" ? undefined : effort })
                   }
                 />
-                <ScheduleSwitch
-                  id={`${labelId}-research`}
-                  label={text("公开网页调研", "Research the public web")}
-                  checked={!!input.run.public_research}
-                  onChange={(checked) =>
-                    setRun({ public_research: checked ? { topic: "" } : undefined })
-                  }
-                />
-                <ScheduleFormRow>
-                  <span>{text("来源", "Sources")}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    aria-expanded={resourcesOpen}
-                    disabled={!space}
-                    onClick={() => setResourcesOpen(!resourcesOpen)}
-                  >
-                    {text("从资料空间选择", "Choose from library")} · {refs.length}
-                  </Button>
-                </ScheduleFormRow>
-                {resourcesOpen && (
-                  <div className="space-y-2 p-3">
-                    <Input
-                      value={resourceQuery}
-                      aria-label={text("搜索资料", "Search files")}
-                      onChange={(event) => setResourceQuery(event.target.value)}
+                <details open={editSources || undefined} className="group/more">
+                  <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                    {text("更多设置", "More settings")}
+                    <ChevronDown aria-hidden="true" className="size-3 group-open/more:rotate-180" />
+                  </summary>
+                  <div className="space-y-2 [&>div]:rounded-xl [&>div]:border [&>div]:border-border/60">
+                    {!existing && (
+                      <ScheduleFormRow>
+                        <label htmlFor={`${labelId}-name`}>{text("名称", "Name")}</label>
+                        <Input
+                          id={`${labelId}-name`}
+                          className="max-w-[68%] border-transparent bg-transparent text-right"
+                          value={input.name}
+                          placeholder={inferredName || text("根据说明生成", "From instructions")}
+                          maxLength={80}
+                          onChange={(event) => onChange({ ...input, name: event.target.value })}
+                        />
+                      </ScheduleFormRow>
+                    )}
+                    <ScheduleSelect
+                      id={`${labelId}-notification`}
+                      label={text("任务列表通知", "Task list notifications")}
+                      value={input.notification ?? "attention"}
+                      options={[
+                        ["attention", text("需要处理时", "When attention is needed")],
+                        [
+                          "all",
+                          text("完成或需要处理时", "On completion or when attention is needed"),
+                        ],
+                        ["none", text("关闭", "Off")],
+                      ]}
+                      onChange={(notification) =>
+                        onChange({
+                          ...input,
+                          notification,
+                        })
+                      }
                     />
-                    <div className="max-h-36 overflow-auto">
-                      {resources.map((item) => {
-                        const id = item.target_id;
-                        const selected = refs.some((part) =>
-                          part.type === "file_reference"
-                            ? part.file_id === id
-                            : part.version_id === id,
-                        );
-                        return (
-                          <label
-                            key={item.id}
-                            htmlFor={`${labelId}-resource-${item.id}`}
-                            className={`${row} gap-2`}
-                          >
-                            <Checkbox
-                              id={`${labelId}-resource-${item.id}`}
-                              checked={selected}
-                              disabled={!selected && refs.length >= 8}
-                              onCheckedChange={() =>
-                                setRun({
-                                  content: [
-                                    { type: "text", text: prompt },
-                                    ...(selected
-                                      ? refs.filter((part) =>
-                                          part.type === "file_reference"
-                                            ? part.file_id !== id
-                                            : part.version_id !== id,
-                                        )
-                                      : [
-                                          ...refs,
-                                          item.kind === "file"
-                                            ? { type: "file_reference" as const, file_id: id }
-                                            : {
-                                                type: "artifact_reference" as const,
-                                                version_id: id,
-                                              },
-                                        ]),
-                                  ],
-                                })
-                              }
-                            />
-                            <span className="truncate">{item.name}</span>
-                          </label>
-                        );
-                      })}
+                    <ScheduleSwitch
+                      id={`${labelId}-approval`}
+                      label={text("每次运行前需要批准", "Require approval before each run")}
+                      checked={input.require_approval ?? false}
+                      onChange={(require_approval) => onChange({ ...input, require_approval })}
+                    />
+                    <ScheduleSwitch
+                      id={`${labelId}-archive`}
+                      label={text("归档成功运行记录", "Archive successful runs")}
+                      disabled={!input.new_conversation}
+                      checked={input.archive_successful_runs ?? false}
+                      hint={
+                        input.new_conversation
+                          ? undefined
+                          : text(
+                              "仅在每次新建对话时可用",
+                              "Available when each run starts a new chat",
+                            )
+                      }
+                      onChange={(archive_successful_runs) =>
+                        onChange({ ...input, archive_successful_runs })
+                      }
+                    />
+                    {projects && (
+                      <>
+                        <ScheduleSelect
+                          id={`${labelId}-project`}
+                          label={text("项目", "Project")}
+                          options={projectOptions}
+                          value={projectKey}
+                          onChange={(value) =>
+                            onChange({ ...input, project_id: value === "none" ? undefined : value })
+                          }
+                        />
+                        {advancedOpen && (projectLoadFailed || !projectItems) && (
+                          <ScheduleFormRow>
+                            <span className="text-xs text-muted-foreground" role="status">
+                              {projectLoadFailed
+                                ? text("暂时无法读取项目", "Projects are unavailable")
+                                : text("正在读取项目", "Loading projects")}
+                            </span>
+                            {projectLoadFailed && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setProjectRetry((value) => value + 1)}
+                              >
+                                {text("重试", "Retry")}
+                              </Button>
+                            )}
+                          </ScheduleFormRow>
+                        )}
+                      </>
+                    )}
+                    <ScheduleSwitch
+                      id={`${labelId}-research`}
+                      label={text("公开网页调研", "Research the public web")}
+                      checked={!!input.run.public_research}
+                      onChange={(checked) =>
+                        setRun({ public_research: checked ? { topic: "" } : undefined })
+                      }
+                    />
+                    <div ref={sourceEditor} className="border-0">
+                      <ScheduleSourcePicker
+                        content={input.run.content}
+                        active={advancedOpen}
+                        space={space}
+                        files={sourceMetadata?.files}
+                        artifacts={sourceMetadata?.artifacts}
+                        text={text}
+                        onChange={(content) => setRun({ content })}
+                      />
                     </div>
                   </div>
-                )}
+                </details>
               </fieldset>
             </details>
             {error && (
@@ -3368,39 +5213,44 @@ function ScheduleEditor({
             )}
           </DialogBody>
           <DialogFooter>
-            <DialogActions>
-              <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+            <DialogActions
+              className={
+                !existing || resumeAfterEdit ? "max-[720px]:[&>button]:min-h-11" : undefined
+              }
+            >
+              <Button
+                type="button"
+                variant="secondary"
+                className="rounded-full"
+                disabled={busy}
+                onClick={() => void requestClose()}
+              >
                 {text("取消", "Cancel")}
               </Button>
-              {target ? (
+              {isDeviceTarget ? (
                 <Button
                   type="button"
-                  disabled={busy || !target.ready}
-                  onClick={() => onOpenTarget(target)}
+                  className="rounded-full"
+                  disabled={busy || !target?.ready}
+                  onClick={() => {
+                    if (target?.ready) onOpenTarget(target);
+                  }}
                 >
-                  {target.inline
-                    ? text("继续", "Continue")
-                    : text("打开设备任务", "Open device tasks")}
+                  {text("继续设置", "Continue to task editor")}
                 </Button>
               ) : (
-                <Button
-                  type="submit"
-                  disabled={
-                    busy ||
-                    !prompt.trim() ||
-                    !input.run.model ||
-                    (publicTopic !== undefined && !publicTopic.trim()) ||
-                    !cloudEnabled ||
-                    !!previewError ||
-                    (!existing && !next)
-                  }
-                >
-                  {existing ? text("保存", "Save") : text("创建", "Create")}
+                <Button type="submit" className="rounded-full" disabled={!canSave}>
+                  {resumeAfterEdit
+                    ? text("保存并恢复", "Save and resume")
+                    : existing
+                      ? text("保存", "Save")
+                      : text("创建", "Create")}
                 </Button>
               )}
             </DialogActions>
           </DialogFooter>
         </form>
+        {discardDialog}
       </DialogContent>
     </Dialog>
   );

@@ -186,6 +186,9 @@ message WorkspaceHandoffRequest {
   string operation_id = 2;
   string file_name = 3;
   bytes content = 4;
+  // A receipt lookup carries no file name or content, so old writers reject it safely.
+  bool check_only = 5;
+  string expected_workspace_path = 6;
 }
 
 message WorkspaceHandoffResponse {

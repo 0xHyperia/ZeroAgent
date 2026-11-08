@@ -24,6 +24,7 @@ export function useWorkbenchAccountSurface({
   dismissPreview,
   close,
   openTasks,
+  onUseDeviceSkill,
 }: {
   bind?: (surface: WorkbenchAccountSurface | null) => void;
   enabled: boolean;
@@ -34,6 +35,7 @@ export function useWorkbenchAccountSurface({
   dismissPreview: () => void;
   close?: () => void;
   openTasks?: () => void;
+  onUseDeviceSkill?: WorkbenchAccountSurface["layout"]["onUseDeviceSkill"];
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const [sidebarTarget, setSidebarTarget] = useState<HTMLDivElement | null>(null);
@@ -52,6 +54,7 @@ export function useWorkbenchAccountSurface({
           setSidebarOpen(true);
         },
         onClose: close,
+        onUseDeviceSkill,
       },
     });
   }, [
@@ -66,6 +69,7 @@ export function useWorkbenchAccountSurface({
     dismissPreview,
     close,
     openTasks,
+    onUseDeviceSkill,
   ]);
   useLayoutEffect(() => {
     if (enabled && bind) return () => bind(null);

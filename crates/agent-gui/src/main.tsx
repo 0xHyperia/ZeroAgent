@@ -12,10 +12,15 @@ import {
   isNativeProfileAuthenticationError,
   notifyFrontendReady,
 } from "./lib/kbrain/bootstrap";
-import { type NativeProfileCredential, setBootProfileScope } from "./lib/kbrain/profile";
+import {
+  type NativeProfileCredential,
+  nativeProfileOriginMatches,
+  setBootProfileScope,
+} from "./lib/kbrain/profile";
 import {
   getNativeProfileCredential,
   nativeProfileCredentialMatches,
+  RELAY_ORIGIN,
   RELAY_SESSION_CHANGED_EVENT,
   rejectNativeProfileCredential,
 } from "./lib/relay/client";
@@ -41,6 +46,11 @@ let profileReloadInstalled = false;
 
 const bootstrap = createKBrainBootstrapRunner(async () => {
   const screen = createStartupRenderer();
+  const retry = () => {
+    void (currentBootstrap ?? Promise.resolve()).then(() => {
+      currentBootstrap = bootstrap();
+    });
+  };
   let accountCredential: NativeProfileCredential | null = null;
   try {
     const native = isTauriHost();
@@ -55,11 +65,17 @@ const bootstrap = createKBrainBootstrapRunner(async () => {
       if (accountScope === undefined || !nativeProfileCredentialMatches(accountCredential)) {
         throw new Error("USA-Zero account changed during native profile verification");
       }
+      if (!nativeProfileOriginMatches(accountScope, RELAY_ORIGIN)) {
+        screen.fail(retry, "configuration");
+        return;
+      }
       setBootProfileScope(accountScope);
       if (!profileReloadInstalled) {
         // Expiry/logout disposes every old client before the next profile is activated. Token
         // refresh uses a separate event, so ordinary refreshes do not discard conversation drafts.
-        window.addEventListener(RELAY_SESSION_CHANGED_EVENT, () => window.location.reload());
+        window.addEventListener(RELAY_SESSION_CHANGED_EVENT, () => {
+          if (!nativeProfileCredentialMatches(accountCredential)) window.location.reload();
+        });
         profileReloadInstalled = true;
       }
     }
@@ -75,14 +91,7 @@ const bootstrap = createKBrainBootstrapRunner(async () => {
     console.error("Application startup failed", error);
     const needsLogin =
       isNativeProfileAuthenticationError(error) && rejectNativeProfileCredential(accountCredential);
-    screen.fail(
-      () => {
-        void (currentBootstrap ?? Promise.resolve()).then(() => {
-          currentBootstrap = bootstrap();
-        });
-      },
-      needsLogin ? "authentication" : "startup",
-    );
+    screen.fail(retry, needsLogin ? "authentication" : "startup");
   } finally {
     await notifyFrontendReady().catch(() => undefined);
   }

@@ -1,4 +1,4 @@
-import { ChevronDown, Loader2, MonitorSmartphone } from "@liveagent/ui/components/IconSet";
+import { ChevronDown, Cloud, Loader2, MonitorSmartphone } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   Dialog,
@@ -14,6 +14,8 @@ type Props = {
   environments: DesktopEnvironment[];
   localDeviceId: string;
   selectedDeviceId: string;
+  cloudSelected?: boolean;
+  onOpenCloud?: () => void;
   authorizedDeviceIds?: ReadonlySet<string>;
   onSwitch: (environment: DesktopEnvironment) => Promise<void>;
 };
@@ -22,6 +24,8 @@ export function DesktopExecutionSwitcher({
   environments,
   localDeviceId,
   selectedDeviceId,
+  cloudSelected = false,
+  onOpenCloud,
   authorizedDeviceIds = new Set(),
   onSwitch,
 }: Props) {
@@ -39,7 +43,12 @@ export function DesktopExecutionSwitcher({
       environments.find((item) => item.device_id === localDeviceId);
     return environment;
   }, [environments, localDeviceId, selectedDeviceId]);
-  const label = current?.device_id === localDeviceId ? localLabel : (current?.name ?? localLabel);
+  const cloudLabel = text("云端", "Cloud");
+  const label = cloudSelected
+    ? cloudLabel
+    : current?.device_id === localDeviceId
+      ? localLabel
+      : (current?.name ?? localLabel);
 
   useEffect(() => {
     if (!open) return;
@@ -80,11 +89,11 @@ export function DesktopExecutionSwitcher({
           variant="outline"
           className="h-8 max-w-[min(260px,28vw)] gap-2 bg-background/95 px-3 shadow-sm max-[900px]:w-8 max-[900px]:px-0"
           title={label}
-          aria-label={text(`选择设备，当前：${label}`, `Choose device, current: ${label}`)}
+          aria-label={text(`切换工作台，当前：${label}`, `Switch workbench, current: ${label}`)}
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
-          <MonitorSmartphone className="h-4 w-4" />
+          {cloudSelected ? <Cloud className="size-4" /> : <MonitorSmartphone className="size-4" />}
           <span className="truncate text-xs max-[900px]:hidden">{label}</span>
           <ChevronDown className="h-3.5 w-3.5 max-[900px]:hidden" />
         </Button>
@@ -94,11 +103,11 @@ export function DesktopExecutionSwitcher({
               <button
                 type="button"
                 key={environment.device_id}
-                aria-current={environment.device_id === selectedDeviceId ? "true" : undefined}
+                aria-current={!cloudSelected && environment.device_id === selectedDeviceId ? "true" : undefined}
                 className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-xs hover:bg-accent"
                 onClick={() => {
                   if (
-                    environment.device_id === selectedDeviceId &&
+                    !cloudSelected && environment.device_id === selectedDeviceId &&
                     (environment.device_id === localDeviceId ||
                       authorizedDeviceIds.has(environment.device_id))
                   ) {
@@ -131,6 +140,22 @@ export function DesktopExecutionSwitcher({
                 </span>
               </button>
             ))}
+            {onOpenCloud && (
+              <div className="mt-1 border-t border-border/60 pt-1">
+                <button
+                  type="button"
+                  aria-current={cloudSelected ? "true" : undefined}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-xs hover:bg-accent"
+                  onClick={() => {
+                    setOpen(false);
+                    if (!cloudSelected) onOpenCloud();
+                  }}
+                >
+                  <Cloud className="size-3.5" />
+                  {cloudLabel}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

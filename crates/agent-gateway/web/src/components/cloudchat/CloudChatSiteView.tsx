@@ -21,7 +21,7 @@ import {
 } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState } from "react";
 import { ACCOUNT_CHANGED_EVENT } from "@/lib/accountRequest";
 import type { CloudChatArtifactVersion } from "@/lib/cloudChatArtifacts";
 import {
@@ -33,6 +33,7 @@ import {
 import { CloudChatFeedback } from "./CloudChatFeedback";
 import "../../cloud-site.css";
 import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
+import type { ResourceVersionHistory } from "@liveagent/ui/components/resource-preview/ResourceVersionTimeline";
 import { CloudSiteWorkspace } from "./CloudSiteWorkspace";
 
 /** The owner host supplies authentication and the current immutable artifact. */
@@ -44,13 +45,22 @@ export function CloudChatSiteView(props: {
   onPreviewChange?: (open: boolean) => void;
   workspace?: {
     onClose: () => void;
+    closeControlRef?: Ref<HTMLElement>;
     onContinue?: () => void;
+    onHandoff?: () => void;
+    continueLabel?: string;
+    source?: { label: string; onOpen: () => void; busy: boolean };
     onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean>;
     versions: CloudChatArtifactVersion[];
     onVersion: (id: string) => void;
+    versionBusy?: boolean;
+    openingVersion?: string;
+    selectedVersionRef?: Ref<HTMLButtonElement>;
+    versionHistory?: ResourceVersionHistory;
+    readerFeedback?: ReactNode;
     displayName?: string;
     onRename?: (name: string) => Promise<void>;
-    initialAction?: "share" | "settings";
+    initialAction?: "share" | "settings" | "versions";
   };
 }) {
   const [enabled, setEnabled] = useState(false),
@@ -64,6 +74,9 @@ export function CloudChatSiteView(props: {
     [shares, setShares] = useState<CloudSiteGrant[]>([]),
     [days, setDays] = useState(7),
     [copied, setCopied] = useState("");
+  const [shareListState, setShareListState] = useState<"idle" | "ready" | "failed">("idle");
+  const [shareError, setShareError] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [unconfirmed, setUnconfirmed] = useState(false);
   const pendingShare = useRef<{ id: string; days: number } | null>(null);
   const pendingRevoke = useRef<CloudSiteGrant | null>(null);
@@ -106,6 +119,12 @@ export function CloudChatSiteView(props: {
       current.current.onPreviewChange?.(false);
       setSharing(false);
       setShares([]);
+      setShareListState("idle");
+      setShareError("");
+      setShareNotice("");
+      pendingShare.current = null;
+      pendingRevoke.current = null;
+      setUnconfirmed(false);
     };
     window.addEventListener(ACCOUNT_CHANGED_EVENT, retire);
     void props.client
@@ -166,26 +185,17 @@ export function CloudChatSiteView(props: {
     );
     return () => clearTimeout(timer);
   }, [preview]);
-  async function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>, onFailure: (cause: unknown) => void) {
     if (mutation.current) return;
     mutation.current = true;
     try {
       valid();
       setBusy(true);
-      setError("");
-      setNotice("");
       await action();
     } catch (cause) {
       try {
         valid();
-        if (cause instanceof CloudSiteWriteUnconfirmedError) setUnconfirmed(true);
-        else {
-          pendingShare.current = null;
-          pendingRevoke.current = null;
-          privateRequest.current = null;
-          setUnconfirmed(false);
-        }
-        setError(cause instanceof Error ? cause.message : "站点操作失败。");
+        onFailure(cause);
       } catch {}
     } finally {
       mutation.current = false;
@@ -193,69 +203,124 @@ export function CloudChatSiteView(props: {
     }
   }
   function openPreview() {
-    void run(async () => {
-      const r =
-        release ?? (await props.client.register(props.artifact.id, lifetime.current?.signal));
-      valid();
-      if (r.site_id !== props.artifact.family_id) throw new Error("站点版本范围不一致。");
-      setRelease(r);
-      privateRequest.current ??= crypto.randomUUID();
-      const g = await props.client.preview(r.id, privateRequest.current, lifetime.current?.signal);
-      valid();
-      if (g.site_id !== r.site_id) throw new Error("预览授权范围不一致。");
-      privateRequest.current = null;
-      setPreview(g);
-      current.current.onPreviewChange?.(true);
-    });
+    void run(
+      async () => {
+        setError("");
+        setNotice("");
+        const r =
+          release ?? (await props.client.register(props.artifact.id, lifetime.current?.signal));
+        valid();
+        if (r.site_id !== props.artifact.family_id) throw new Error("站点版本范围不一致。");
+        setRelease(r);
+        privateRequest.current ??= crypto.randomUUID();
+        const g = await props.client.preview(
+          r.id,
+          privateRequest.current,
+          lifetime.current?.signal,
+        );
+        valid();
+        if (g.site_id !== r.site_id) throw new Error("预览授权范围不一致。");
+        privateRequest.current = null;
+        setPreview(g);
+        current.current.onPreviewChange?.(true);
+      },
+      (cause) => {
+        if (!(cause instanceof CloudSiteWriteUnconfirmedError)) privateRequest.current = null;
+        setError(cause instanceof Error ? cause.message : "站点操作失败。");
+      },
+    );
   }
   async function loadShares() {
     const list = await props.client.shares(props.artifact.family_id, lifetime.current?.signal);
     valid();
     setShares(list);
-    if (pendingShare.current && !list.some((g) => g.id === pendingShare.current?.id)) {
+    setShareListState("ready");
+    const create = pendingShare.current;
+    const revoke = pendingRevoke.current;
+    if (create && !list.some((g) => g.id === create.id && g.release_id === props.artifact.id)) {
       setUnconfirmed(true);
-      setError("分享创建结果仍待确认，可稍后刷新或使用同一次请求重试。");
-    } else if (pendingRevoke.current && list.some((g) => g.id === pendingRevoke.current?.id)) {
+      setShareError("分享创建结果仍待确认，可稍后刷新或使用同一次请求重试。");
+    } else if (revoke && list.some((g) => g.id === revoke.id)) {
       setUnconfirmed(true);
-      setError("撤销结果仍待确认，可稍后刷新或重试撤销。");
+      setShareError("撤销结果仍待确认，可稍后刷新或重试撤销。");
     } else {
       pendingShare.current = null;
       pendingRevoke.current = null;
       setUnconfirmed(false);
+      if (create) setShareNotice("已核对创建的分享链接，可复制或撤销。");
+      if (revoke) setShareNotice("已核对，原分享链接已停止访问。");
     }
-    return list;
+  }
+  function refreshShares() {
+    void run(
+      async () => {
+        setShareError("");
+        setShareNotice("");
+        await loadShares();
+      },
+      () => setShareListState("failed"),
+    );
   }
   function createShare() {
-    void run(async () => {
-      pendingShare.current ??= { id: crypto.randomUUID(), days };
-      const g = await props.client.share(
-        props.artifact.id,
-        pendingShare.current.id,
-        pendingShare.current.days,
-        lifetime.current?.signal,
-      );
-      valid();
-      if (g.site_id !== props.artifact.family_id) throw new Error("分享授权范围不一致。");
-      pendingShare.current = null;
-      await loadShares();
-      setNotice("分享链接已创建，可复制或撤销。");
-    });
+    if (pendingRevoke.current || (!pendingShare.current && shareListState !== "ready")) return;
+    void run(
+      async () => {
+        setShareError("");
+        setShareNotice("");
+        pendingShare.current ??= { id: crypto.randomUUID(), days };
+        const request = pendingShare.current;
+        const g = await props.client.share(
+          props.artifact.id,
+          request.id,
+          request.days,
+          lifetime.current?.signal,
+        );
+        valid();
+        if (
+          g.id !== request.id ||
+          g.site_id !== props.artifact.family_id ||
+          g.release_id !== props.artifact.id
+        )
+          throw new CloudSiteWriteUnconfirmedError();
+        pendingShare.current = null;
+        setUnconfirmed(false);
+        setShares((old) => [g, ...old.filter((item) => item.id !== g.id)]);
+        setShareNotice("分享链接已创建，可复制或撤销。");
+      },
+      (cause) => {
+        const uncertain = cause instanceof CloudSiteWriteUnconfirmedError;
+        if (!uncertain) pendingShare.current = null;
+        setUnconfirmed(uncertain);
+        setShareError(cause instanceof Error ? cause.message : "无法创建分享链接。");
+      },
+    );
   }
   function revoke(g: CloudSiteGrant) {
-    void run(async () => {
-      pendingRevoke.current = g;
-      await props.client.revoke(g, lifetime.current?.signal);
-      valid();
-      pendingRevoke.current = null;
-      await loadShares();
-      setNotice("分享已撤销，链接停止访问。");
-    });
+    if (pendingShare.current || (pendingRevoke.current && pendingRevoke.current.id !== g.id))
+      return;
+    void run(
+      async () => {
+        setShareError("");
+        setShareNotice("");
+        pendingRevoke.current = g;
+        await props.client.revoke(g, lifetime.current?.signal);
+        valid();
+        pendingRevoke.current = null;
+        setUnconfirmed(false);
+        setShares((old) => old.filter((item) => item.id !== g.id));
+        setShareNotice("分享已撤销，链接停止访问。");
+      },
+      (cause) => {
+        const uncertain = cause instanceof CloudSiteWriteUnconfirmedError;
+        if (!uncertain) pendingRevoke.current = null;
+        setUnconfirmed(uncertain);
+        setShareError(cause instanceof Error ? cause.message : "无法撤销分享链接。");
+      },
+    );
   }
   function openShares() {
     setSharing(true);
-    void run(async () => {
-      await loadShares();
-    });
+    refreshShares();
   }
   async function copy(g: CloudSiteGrant) {
     try {
@@ -265,7 +330,7 @@ export function CloudChatSiteView(props: {
       valid();
       setCopied(g.id);
     } catch (cause) {
-      if (live.current) setError(cause instanceof Error ? cause.message : "复制失败。");
+      if (live.current) setShareError(cause instanceof Error ? cause.message : "复制失败。");
     }
   }
   if (!enabled) {
@@ -346,12 +411,7 @@ export function CloudChatSiteView(props: {
               </span>
             </div>
             <div className="cloud-site-actions">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy || Boolean(pendingShare.current) || Boolean(pendingRevoke.current)}
-                onClick={openPreview}
-              >
+              <Button variant="outline" size="sm" disabled={busy} onClick={openPreview}>
                 {busy ? (
                   <LoaderCircle className="size-4 animate-spin" />
                 ) : preview ? (
@@ -375,27 +435,9 @@ export function CloudChatSiteView(props: {
               tone="error"
               message={error}
               actions={
-                unconfirmed ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const r = await props.client.get(
-                          props.artifact.id,
-                          lifetime.current?.signal,
-                        );
-                        valid();
-                        setRelease(r);
-                        await loadShares();
-                        setNotice("已刷新站点和分享状态。");
-                      })
-                    }
-                  >
-                    刷新核对
-                  </Button>
-                ) : undefined
+                <Button variant="ghost" size="sm" disabled={busy} onClick={openPreview}>
+                  重新打开
+                </Button>
               }
             />
           ) : null}
@@ -456,18 +498,38 @@ export function CloudChatSiteView(props: {
                 id={`site-days-${props.artifact.id}`}
                 value={days}
                 onChange={(event) => setDays(Number(event.target.value))}
-                disabled={busy || unconfirmed}
+                disabled={busy || unconfirmed || shareListState !== "ready"}
               >
                 <option value={1}>1 天</option>
                 <option value={7}>7 天</option>
                 <option value={30}>30 天</option>
               </select>
-              <Button size="sm" disabled={busy || unconfirmed} onClick={createShare}>
+              <Button
+                size="sm"
+                disabled={busy || unconfirmed || shareListState !== "ready"}
+                onClick={createShare}
+              >
                 <Share2 className="size-4" />
                 创建分享链接
               </Button>
             </div>
-            {error ? <CloudChatFeedback compact tone="error" message={error} /> : null}
+            {shareListState === "failed" ? (
+              <CloudChatFeedback
+                compact
+                tone={shares.length && !unconfirmed ? "warning" : "error"}
+                message={
+                  unconfirmed
+                    ? "无法核对分享状态，原操作仍待确认。可刷新或重试同一次操作。"
+                    : shares.length
+                      ? "暂时无法刷新完整列表。已确认的链接仍可管理。"
+                      : "暂时无法刷新分享状态，请稍后重试。"
+                }
+              />
+            ) : null}
+            {shareError ? <CloudChatFeedback compact tone="error" message={shareError} /> : null}
+            {shareNotice ? (
+              <CloudChatFeedback compact tone="success" message={shareNotice} />
+            ) : null}
             {unconfirmed && pendingShare.current ? (
               <Button variant="outline" size="sm" disabled={busy} onClick={createShare}>
                 重试未确认的创建
@@ -487,9 +549,10 @@ export function CloudChatSiteView(props: {
               </Button>
             ) : null}
             <div className="cloud-site-share-list" aria-busy={busy}>
-              {!shares.length ? (
+              {!shares.length &&
+              (shareListState === "ready" || (busy && shareListState === "idle")) ? (
                 <p className="cloud-site-caption">
-                  {busy ? "正在读取分享…" : "没有生效中的分享链接。"}
+                  {shareListState === "idle" ? "正在读取分享…" : "没有生效中的分享链接。"}
                 </p>
               ) : (
                 shares.map((g) => (
@@ -546,16 +609,7 @@ export function CloudChatSiteView(props: {
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await loadShares();
-                })
-              }
-            >
+            <Button variant="ghost" size="sm" aria-disabled={busy} onClick={refreshShares}>
               <RefreshCw className="size-4" />
               刷新分享状态
             </Button>

@@ -54,6 +54,7 @@ test("a scoped follow-up can join a device queue before the first command starts
   const { sendChat } = createGatewayChatCommandActions({
     activeProviders: [],
     api: {
+      captureActiveAgentScope: () => () => true,
       chatCommand: async (command) => {
         commands.push(command);
         return { runId: command.clientRequestId, conversationId, acceptedSeq: 0 };

@@ -35,7 +35,7 @@ func TestCloudExtensionsAccountCAS(t *testing.T) {
 			}
 			ctx := context.Background()
 			id := uuid.NewString()
-			doc := CloudExtensions{Packages: []CloudExtension{{ID: id, Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{extensionTestRevision("private instructions")}}}}
+			doc := CloudExtensions{Packages: []CloudExtension{{ID: id, Kind: "skill", Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{extensionTestRevision("private instructions")}}}}
 			var wg sync.WaitGroup
 			var winners atomic.Int64
 			for range 8 {
@@ -118,7 +118,7 @@ func TestCloudSkillResolutionPinsAndSeparatesNames(t *testing.T) {
 	first := extensionTestRevision("first immutable version")
 	second := extensionTestRevision("second version")
 	second.Number = 2
-	doc := CloudExtensions{Packages: []CloudExtension{{ID: id, Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{first, second}}, {ID: other, Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{first}}}}
+	doc := CloudExtensions{Packages: []CloudExtension{{ID: id, Kind: "skill", Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{first, second}}, {ID: other, Kind: "skill", Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{first}}}}
 	if _, err := f.store.SetCloudExtensions(ctx, 1, 0, doc); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +129,18 @@ func TestCloudSkillResolutionPinsAndSeparatesNames(t *testing.T) {
 	result, err := e.resolveSkill(ctx, "", "weekly-review", "")
 	if err != nil || result["version"] != int64(1) || !strings.Contains(result["instructions"].(string), "first immutable") {
 		t.Fatal(result, err)
+	}
+	e.run.RequestContent = cloudJSON([]map[string]any{
+		{"type": "text", "text": "Use [weekly-review](zeroagent-skill:" + id + "/1/weekly-review)."},
+		{"type": "image_url", "image_url": map[string]any{"url": "https://example.test/zeroagent-skill:" + id + "/2/weekly-review"}},
+	})
+	result, err = e.resolveSkill(ctx, "", "weekly-review", "")
+	if err != nil || result["version"] != int64(1) {
+		t.Fatal("media metadata changed the user-selected revision", result, err)
+	}
+	e.run.RequestContent = cloudJSON("Unrelated zeroagent-skill:" + id + "/1/weekly-review_other")
+	if _, err = e.resolveSkill(ctx, "", "weekly-review", ""); !errors.Is(err, ErrCloudRunConflict) {
+		t.Fatal("a longer invalid reference silently pinned a valid prefix", err)
 	}
 	e.run.RequestContent = cloudJSON("zeroagent-skill:" + id + "/99/weekly-review")
 	if _, err = e.resolveSkill(ctx, "", "weekly-review", ""); !errors.Is(err, ErrNotFound) {
@@ -197,7 +209,7 @@ func TestCloudExtensionsHTTPAuthorityAndLifecycle(t *testing.T) {
 	if status != 200 || headers.Get("Cache-Control") != "no-store" || !strings.Contains(string(body), "design-qa") {
 		t.Fatal(status, string(body))
 	}
-	mutation := cloudJSON(map[string]any{"expected_version": 0, "action": "save", "revision": extensionTestRevision("private user workflow")})
+	mutation := cloudJSON(map[string]any{"expected_version": 0, "action": "save", "kind": "skill", "revision": extensionTestRevision("private user workflow")})
 	status, _, _ = f.request(t, "POST", path, "file-owner", bytes.NewReader(mutation), http.Header{"Origin": {"https://evil.invalid"}})
 	if status != 403 {
 		t.Fatal("CSRF", status)
@@ -240,6 +252,91 @@ func TestCloudExtensionsHTTPAuthorityAndLifecycle(t *testing.T) {
 	e.skillPackages = effectiveCloudExtensions(saved)
 	if _, err := e.resolveSkill(context.Background(), id, "weekly-review", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatal("uninstalled instructions executable", err)
+	}
+}
+
+func TestCloudExtensionEnableReconcilesOnlyStandaloneSkillMemberState(t *testing.T) {
+	f, _ := imageExecutionFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("catalog invoked model") })
+	mux := http.NewServeMux()
+	NewHTTPHandler(f.service, false).registerWebChat(mux)
+	f.server.Close()
+	f.server = httptest.NewServer(mux)
+	t.Cleanup(f.server.Close)
+	ctx := context.Background()
+	const resource = "/api/web-chat/extensions"
+	var legacy CloudExtensions
+	for _, entry := range builtinCloudExtensions() {
+		if entry.ID == "imagegen" || entry.ID == "product-design" {
+			primary := entry.Revisions[len(entry.Revisions)-1].Skills[0].Name
+			legacy.Packages = append(legacy.Packages, CloudExtension{ID: entry.ID, Installed: true, Enabled: false, DisabledSkills: []string{primary}})
+		}
+	}
+	stored, err := f.store.SetCloudExtensions(ctx, 1, 0, legacy)
+	if err != nil || len(stored.Packages) != 2 {
+		t.Fatal(stored, err)
+	}
+	for i, entry := range legacy.Packages {
+		input := cloudJSON(map[string]any{"expected_version": i + 1, "action": "enable", "id": entry.ID, "enabled": true})
+		status, body, _ := f.request(t, "POST", resource, "file-owner", bytes.NewReader(input), nil)
+		if status != http.StatusOK {
+			t.Fatal(entry.ID, status, string(body))
+		}
+		status, _, _ = f.request(t, "POST", resource, "file-owner", bytes.NewReader(input), nil)
+		if status != http.StatusConflict {
+			t.Fatal("stale enable", status)
+		}
+	}
+	stored, err = f.store.GetCloudExtensions(ctx, 1)
+	if err != nil || stored.Version != 3 {
+		t.Fatal(stored, err)
+	}
+	for _, entry := range effectiveCloudExtensions(stored) {
+		if entry.ID != "imagegen" && entry.ID != "product-design" {
+			continue
+		}
+		primary := entry.Revisions[len(entry.Revisions)-1].Skills[0].Name
+		if !entry.Enabled || cloudExtensionSkillEnabled(entry, primary) != (entry.ID == "imagegen") {
+			t.Fatalf("wrong effective availability for %s, disabled skills: %v", entry.ID, entry.DisabledSkills)
+		}
+	}
+}
+
+func TestCloudExtensionHTTPReadsExactArchivedRevision(t *testing.T) {
+	f, _ := imageExecutionFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("reader invoked model") })
+	mux := http.NewServeMux()
+	NewHTTPHandler(f.service, false).registerWebChat(mux)
+	f.server.Close()
+	f.server = httptest.NewServer(mux)
+	t.Cleanup(f.server.Close)
+
+	id := uuid.NewString()
+	old := extensionTestRevision("first fixed instructions")
+	current := extensionTestRevision("current instructions")
+	current.Number = 2
+	_, err := f.store.SetCloudExtensions(context.Background(), 1, 0, CloudExtensions{Packages: []CloudExtension{
+		{ID: id, Kind: "skill", Installed: true, Enabled: true, Revisions: []CloudExtensionRevision{old, current}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/web-chat/extensions/" + id
+	for _, tc := range []struct {
+		query, account, contains string
+		status                   int
+	}{
+		{"?revision=1", "file-owner", "first fixed instructions", 200},
+		{"", "file-owner", "current instructions", 200},
+		{"?revision=3", "file-owner", "", 404},
+		{"?revision=01", "file-owner", "", 400},
+		{"?revision=1&download=true", "file-owner", "", 400},
+		{"?revision=1", "file-other", "", 404},
+	} {
+		status, body, headers := f.request(t, "GET", path+tc.query, tc.account, nil, nil)
+		if status != tc.status || headers.Get("Cache-Control") != "no-store" ||
+			(tc.contains != "" && !strings.Contains(string(body), tc.contains)) ||
+			(tc.contains == "" && strings.Contains(string(body), "first fixed instructions")) {
+			t.Errorf("query %q account %q got %d %s", tc.query, tc.account, status, body)
+		}
 	}
 }
 

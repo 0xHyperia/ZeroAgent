@@ -22,8 +22,9 @@ const fileRecord=(overrides={})=>({id:fileId,conversation_id:fileConversation,na
 const artifactVersionID="44444444-4444-4444-8444-444444444444",olderArtifactID="55555555-5555-4555-8555-555555555555",artifactFamilyID="66666666-6666-4666-8666-666666666666",artifactRunID="77777777-7777-4777-8777-777777777777";
 const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFamilyID,number:2,conversation_id:fileConversation,source_run_id:artifactRunID,name:"website.html",mime:"text/html",size:5,sha256:fixtureBodySHA,state:"ready",version:3,created_at:"2026-10-29T00:00:00Z",updated_at:"2026-10-29T00:00:00Z",download_url:`/api/web-chat/artifacts/versions/${artifactVersionID}/download`,...overrides});
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
+const fixtureTranslation = { t: key => key, useLocale: () => ({ locale: "zh-CN", t: key => key }) };
 
-async function mount(t, { initialURL, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,revisionHarness=false,readerHarness=false } = {}) {
+async function mount(t, { initialURL, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -31,6 +32,7 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
   const projectRecords=new Map();
   const projectBindings=new Map();
   let delayProjectAssociation=false,finishProjectAssociation;
+  let delayProjectCreation=false,finishProjectCreation;
   let composer, modelPopoverChange, sidebar;
   let clearCount = 0;
   let online = !uncertain;
@@ -44,13 +46,20 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
   const completeMessages=new Map(fullMessages.map(message=>[message.id,message]));
   const firstConversation=fileMode?fileConversation:defaultConversation;
   const secondConversation=fileMode?secondFileConversation:alternateConversation;
+  let finishPendingProjectRead;
+  if (pendingProjectRead) {
+    projectRecords.set(pendingProjectRead.id,pendingProjectRead);
+    projectBindings.set(firstConversation,{conversation_id:firstConversation,project_id:pendingProjectRead.id,version:1,created_at:""});
+  }
   let accountRevision=0;
+  let modelPreferencesOnline = !modelPreferencesOffline;
   let savedWebSettings={model:"test-model",reasoning_effort:initialReasoning,provider_key_id:initialProviderKeyId};
   const files=new Map(initialFiles.map((file)=>[file.id,file]));
   const artifacts=new Map(initialArtifacts.map((version)=>[version.id,version]));
   const fileBodies=new Map(initialFiles.map((file)=>[file.id,"hello"]));
   let finishUpload;
   let uploadOnline=true, fileListOnline=true;
+  let spaceOnline=true;
   let transcript, floorNav;
   const editScrolls=[];
   let projectPanel,memoryPanel,finishBranch,finishArtifact,revisionPanel;
@@ -62,6 +71,8 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
   ]);
   const runs = new Map(initialRun ? [[initialRun.id, initialRun]] : []);
   const streams = [];
+  let streamStatus = initialStreamStatus;
+  let failActiveRunList = initialActiveRunFailure, delayActiveRunList = false, finishActiveRunList;
   const calls = [];
   const renamedTitles = new Map();
   const conversationManagement = new Map();
@@ -78,6 +89,26 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
   const request = async (path, init = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body,headers:init.headers });
     const url = new URL(path, "http://localhost");
+    if (url.pathname === "/api/execution-target/select") {
+      return Response.json({ ...JSON.parse(init.body), selection_lease: "fixture-workspace-lease" });
+    }
+    if (url.pathname === "/api/files/confirmed-handoff") {
+      return Response.json({ relative_path: `ZA-copy/${url.searchParams.get("name")}` });
+    }
+    if (url.pathname === "/api/web-chat/space") {
+      if (!spaceOnline) throw new TypeError("Fixture library is offline");
+      const items = [...files.values()].filter((file) => file.state === "ready").map((file) => ({
+        ...file, kind: "file", target_id: file.id, folder_id: "", starred: false, trashed: false,
+      }));
+      return Response.json({
+        items, total: items.length, next_offset: -1, next_cursor: "", folders: [], pinned: [],
+        usage: {
+          used_bytes: 0, limit_bytes: 512, file_bytes: 0, artifact_bytes: 0, file_limit_bytes: 256,
+          artifact_limit_bytes: 256, file_count: 0, artifact_version_count: 0, trash_bytes: 0,
+          file_limit_count: 500, artifact_limit_count: 1000,
+        },
+      });
+    }
     const draftScope=url.pathname.match(/^\/api\/web-chat\/drafts\/([^/]+)$/)?.[1];
     if(draftScope){
       const key=`${user.id}:${draftScope}`,current=savedDrafts.get(key)??{scope:draftScope,version:"0",draft:null};
@@ -154,9 +185,22 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
       if(delayRename)await new Promise(resolve=>{finishRename=resolve;});
       return Response.json({conversation:metadata(id,{title})});
     }
-    if(url.pathname==="/api/web-chat/projects")return Response.json({items:[...projectRecords.values()],next_before_id:""});
+    if(url.pathname==="/api/web-chat/projects"){
+      if(init.method==="POST"){
+        if(delayProjectCreation)await new Promise(resolve=>{finishProjectCreation=resolve;});
+        const project={...composerProjectRecord(),...JSON.parse(init.body)};
+        projectRecords.set(project.id,project);
+        return Response.json(project,{status:201});
+      }
+      return Response.json({items:[...projectRecords.values()],next_before_id:""});
+    }
     if(/^\/api\/web-chat\/projects\/[^/]+\/conversations$/.test(url.pathname)){const projectId=url.pathname.split('/').at(-2);return Response.json({items:[...projectBindings.values()].filter(binding=>binding.project_id===projectId).map(binding=>({...binding,conversation:metadata(binding.conversation_id)})),next_before_id:""});}
-    if(url.pathname.startsWith('/api/web-chat/projects/')){const project=projectRecords.get(url.pathname.split('/').at(-1));return project?Response.json(project):Response.json({error:'missing'},{status:404});}
+    if(url.pathname.startsWith('/api/web-chat/projects/')){
+      const project=projectRecords.get(url.pathname.split('/').at(-1));
+      if(pendingProjectRead && project?.id===pendingProjectRead.id && !finishPendingProjectRead)
+        await new Promise(resolve=>{finishPendingProjectRead=resolve;});
+      return project?Response.json(project):Response.json({error:'missing'},{status:404});
+    }
     if(url.pathname.endsWith('/project')){
       const id=url.pathname.split('/').at(-2),current=projectBindings.get(id)??{conversation_id:id,project_id:'',version:0,created_at:''};
       if(init.method==='PUT'){
@@ -171,6 +215,8 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
       const id='88888888-8888-4888-8888-888888888888';history.set(id,[]);return Response.json({conversation:metadata(id,{title:"新对话"})});
     }
     if (url.pathname === "/api/web-settings") {
+      if (!modelPreferencesOnline && init.method !== "PATCH")
+        return Response.json({error:"synthetic upstream diagnostic"},{status:503});
       if(init.method==="PATCH")savedWebSettings={...savedWebSettings,...JSON.parse(init.body)};
       return Response.json({ settings:savedWebSettings });
     }
@@ -259,6 +305,8 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     if (url.pathname === "/api/web-chat/runs" && init.method === "POST") {
       const body = JSON.parse(init.body);
       let run = [...runs.values()].find((item) => item.client_request_id === body.client_request_id);
+      if (!run && JSON.stringify(body.content).includes("zeroagent-skill:missing-qa/1/audit"))
+        return Response.json({ reason: "skill_reference_unavailable" }, { status: 422 });
       if(!run&&queueIsFull){if(delayedQueueFull)await new Promise(resolve=>{finishQueueFull=resolve;});return Response.json({reason:"account_queue_full",error:"synthetic rejection"},{status:429});}
       if (!run) {
         let prefix = history.get(body.conversation_id) ?? [];
@@ -283,6 +331,11 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     if (url.pathname === "/api/web-chat/runs") {
       if (!online) throw new Error("lookup offline");
       const id = url.searchParams.get("conversation_id");
+      if (url.searchParams.get("active") === "true") {
+        if (delayActiveRunList && id === firstConversation)
+          await new Promise(resolve => { finishActiveRunList = resolve; });
+        if (failActiveRunList) return Response.json({ error: "unavailable" }, { status: 503 });
+      }
       if(url.searchParams.has("user_message_id")){
         if(delayedRunHead&&id===firstConversation)await new Promise(resolve=>{finishRunHead=resolve;});
         const matching=[...runs.values()].filter(run=>run.conversation_id===id&&run.user_message_id===url.searchParams.get("user_message_id"));
@@ -293,6 +346,7 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     }
     if (url.pathname.endsWith("/events")) {
       if(streamLimit)return Response.json({reason:"cloud_stream_limit"},{status:429});
+      if (streamStatus !== 200) return new Response(null, { status: streamStatus });
       const id = url.pathname.split("/").at(-2);
       let body;
       const stream = { id, closed: false, emit: (value) => body.enqueue(new TextEncoder().encode(value)) };
@@ -314,6 +368,13 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     throw new Error(`Unexpected fixture request ${path}`);
   };
 
+  const accountMock = {
+    ACCOUNT_CHANGED_EVENT: "account-changed", accountFetch: request,
+    captureAccountRequestGuard: () => {
+      const captured = accountRevision;
+      return () => { if (captured !== accountRevision) throw new Error("Account changed while the request was pending"); };
+    },
+  };
   env = await createWebDomTestEnv({ mocks: {
     // Keep parent integration independent of Vite's dynamic preview imports, which the VM loader cannot execute.
     ...(readerHarness ? {
@@ -333,9 +394,9 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     ...(realTranscript?{
       "@liveagent/ui/components/IconSet":new Proxy({}, {get:()=>()=>null}),
       [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:new Proxy({}, {get:()=>()=>null}),
-      "@liveagent/ui/i18n/LocaleContext":{useLocale:()=>({locale:"zh-CN",t:key=>key})},
-      "@liveagent/ui/i18n/index":{useLocale:()=>({locale:"zh-CN",t:key=>key})},
-      [fileURLToPath(new URL("../../../agent-ui/src/i18n/index.ts",import.meta.url))]:{useLocale:()=>({locale:"zh-CN",t:key=>key})},
+      "@liveagent/ui/i18n/LocaleContext":fixtureTranslation,
+      "@liveagent/ui/i18n/index":fixtureTranslation,
+      [fileURLToPath(new URL("../../../agent-ui/src/i18n/index.ts",import.meta.url))]:fixtureTranslation,
       "@liveagent/ui/lib/chat/useCommitDetailsLoader":{useCommitDetailsLoader:()=>async()=>null},
       "@liveagent/ui/lib/transcript-virtual/useTranscriptNavigation":{useTranscriptNavigation:()=>{}},
       "@liveagent/ui/components/chat/UserAttachmentCards":{UserAttachmentCards:()=>null},
@@ -357,22 +418,34 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
       "@liveagent/ui/components/ui/menu-surface":{menuSurfaceClassName:()=>""},
       "@liveagent/ui/components/ui/popover":{Popover:props=>{modelPopoverChange=props.onOpenChange;return props.children;},PopoverContent:props=>env.React.createElement("div",null,props.children),PopoverTrigger:props=>env.React.cloneElement(props.render,{...props.render.props,id:props.id,onClick:()=>modelPopoverChange?.(true,{reason:"trigger-press",trigger:{id:props.id}})},props.children)},
       "@liveagent/ui/components/ui/switch":{Switch:props=>env.React.createElement("input",{type:"checkbox",role:"switch","aria-label":props["aria-label"],checked:props.checked,disabled:props.disabled,onChange:event=>props.onCheckedChange(event.target.checked)})},
-      "@liveagent/ui/i18n/index":{useLocale:()=>({locale:"zh-CN",t:key=>key})},
+      "@liveagent/ui/i18n/index":fixtureTranslation,
       "@liveagent/ui/components/IconSet":new Proxy({}, {get:()=>()=>null}),
     }:{}),
     "@liveagent/ui/application/ApplicationView": { ApplicationView: (props) => props.chat.content },
-    "@liveagent/ui/application/AppWorkbenchChrome": { AppWorkbenchChrome: (props) => env.React.createElement("header",null,props.navigationActions,props.leadingActions,props.trailingActions) },
-    "@/components/cloudchat/CloudContextSidebar": { CloudContextSidebar: props => env.React.createElement('aside',{'data-context-destination':props.destination},env.React.createElement('button',{onClick:()=>props.onOpenResource('files')},'文件')) },
+    "@liveagent/ui/application/AppWorkbenchChrome": {
+      AppHeaderFrame: (props) => env.React.createElement("div", { className: props.className }, props.children),
+      AppWorkbenchChrome: (props) => env.React.createElement("header", null, props.navigationActions, props.leadingActions, props.trailingActions),
+    },
+    "@/components/cloudchat/CloudContextSidebar": { CloudContextSidebar: props => env.React.createElement('aside',{'data-context-destination':'library'},env.React.createElement('button',{onClick:()=>props.onOpenResource('files')},'文件')) },
     "@liveagent/ui/components/AppErrorBoundary": { AppErrorBoundary: (props) => props.children },
-    "@liveagent/ui/components/chat/ChatHistorySidebar": { ChatHistorySidebar: (props) => {sidebar=props;return env.React.createElement("nav", {"data-sidebar-loading":props.listStatus},
+    ...(realHistorySidebar ? {
+      "@tanstack/react-virtual": {
+        useVirtualizer: () => ({ getVirtualItems: () => [], getTotalSize: () => 0, scrollToIndex() {}, measureElement() {} }),
+      },
+    } : {}),
+    ...(!realHistorySidebar ? {
+      "@liveagent/ui/components/chat/ChatHistorySidebar": { ChatHistorySidebar: (props) => {sidebar=props;return env.React.createElement("nav", {"data-sidebar-loading":props.listStatus},
       env.React.createElement("button", {"data-new-conversation":"",onClick:props.onNewConversation}, "新对话"),
       typeof props.navigationContent === "function" ? props.navigationContent({ renderConversation: item => env.React.createElement("button", { "data-conversation": item.id, "aria-current": item.id === props.currentConversationId ? "page" : undefined, onClick: () => props.onSelectConversation(item.id) }, item.title) }) : props.navigationContent,
       props.items.map((item) => env.React.createElement("button", { key: item.id, "data-conversation": item.id, onClick: () => props.onSelectConversation(item.id) }, item.title)),
       props.hasMore?env.React.createElement("button",{"data-more-conversations":"",disabled:props.isLoadingMore,onClick:props.onLoadMore},props.isLoadingMore?"正在加载更多会话":"加载更多会话"):null,props.accountMenu,props.mobileRail,
       props.errorMessage?env.React.createElement("p",{role:"alert"},props.errorMessage):null,props.footerTrailing); } },
+    } : {}),
     "@liveagent/ui/components/ui/scroll-area": { ScrollArea: (props) => env.React.createElement("div", { ref: props.viewportRef }, props.children) },
-    "@liveagent/ui/components/ui/sidebar": { useSidebar: () => ({ isMobile: mobileLayout, open: true, openMobile: true, setOpen: () => undefined, setOpenMobile: () => undefined }) },
-    "@liveagent/ui/components/ui/dialog": {Dialog:props=>props.open===false?null:props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogHeader:props=>props.children,DialogFooter:props=>props.children,DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)},
+    ...(!realSidebar ? {
+      "@liveagent/ui/components/ui/sidebar": { useSidebar: () => ({ isMobile: mobileLayout, open: true, openMobile: true, setOpen: () => undefined, setOpenMobile: () => undefined }) },
+    } : {}),
+    "@liveagent/ui/components/ui/dialog": {Dialog:props=>props.open===false?null:props.children,DialogContent:props=>env.React.createElement("div",{role:"dialog"},props.children),DialogHeader:props=>props.children,DialogFooter:props=>props.children,DialogBody:props=>props.children,DialogActions:props=>props.children,DialogTitle:props=>env.React.createElement("h2",null,props.children),DialogDescription:props=>env.React.createElement("p",null,props.children)},
     "@liveagent/ui/lib/shared/id": { createUuid: () => fixtureUUID(++uuid) },
     "@liveagent/ui/lib/sidebar/batchDelete": { deleteSidebarConversations: async () => undefined },
     "@liveagent/ui/pages/chat/transcript/FloorNavRail": {FloorNavRail:props=>{floorNav=props;return null;}},
@@ -386,10 +459,12 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
         props.feedback,
         realModelControls?env.React.createElement(env.loadModule("../../agent-ui/src/components/chat/ComposerModelControls.tsx").ComposerModelControls,{...props,open:true,showExecutionControls:env.loadModule("@liveagent/ui/contracts/composerPresentation.ts").resolveComposerControls(props.capabilities,{executionControls:props.showExecutionControls}).executionControls}):null,
         env.React.createElement("div",{"data-pending-attachments":""},props.pendingUploadedFiles.map(file=>env.React.createElement("div",{key:file.relativePath},env.React.createElement("button",{onClick:()=>props.onOpenPendingUpload?.(file.relativePath)},file.fileName+(file.statusText?` · ${file.statusText}`:"")),env.React.createElement("button",{"aria-label":`移除 ${file.fileName}`,onClick:()=>props.onRemovePendingUpload(file.relativePath)},"移除")))),
-        env.React.createElement("button", { "data-action": "send", onClick: props.onSend, disabled: (props.isSending && !props.allowQueueWhileSending) || props.isInputDisabled }, "发送"),
+        env.React.createElement("button", { "data-action": "send", onClick: props.onSend, disabled: (props.isSending && !props.allowQueueWhileSending) || props.isInputDisabled || props.isSubmissionDisabled }, "发送"),
         env.React.createElement("button", { "data-action": "stop", onClick: props.onStop, disabled: !props.isSending }, "停止"));
     } },
-    "@liveagent/ui/pages/settings/SettingsPage": { SettingsPage: props => env.React.createElement("section", {"data-settings-page":props.presentation}, env.React.createElement("button", {"data-settings-back":"",onClick:props.onBack},"返回对话")) },
+    "@liveagent/ui/pages/settings/SettingsPage": { SettingsPage: props => env.React.createElement("section", {"data-settings-page":props.presentation},
+      env.React.createElement("button", {"data-settings-back":"",onClick:props.onBack},"返回对话"),
+      env.React.createElement("button", {"data-fixture-settings-providers":"",onClick:()=>props.onSectionChange?.("providers")},"供应商")) },
     "@/app/chatDraft": { buildTextFromComposerDraft: (value) => value.text },
     "@/app/UserMenu": { UserMenu: (props) => env.React.createElement("button", {"data-account-menu":props.variant,onClick:props.onOpenSettings}, "账户菜单") },
     "@/components/ExecutionEnvironmentSwitcher": { ExecutionEnvironmentSwitcher: () => null },
@@ -399,11 +474,12 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     "@/components/cloudchat/CloudChatMemoryPanel":{CloudChatMemoryPanel:(props)=>{memoryPanel=props;return env.React.createElement("section",{"data-memory-panel":""},"记忆测试面板");}},
     "@/components/onboarding/FirstRunOnboarding": { FirstRunOnboarding: () => null },
     "@/components/GatewayTranscript": { GatewayTranscript: (props) => {transcript=props;if(realTranscript)return env.React.createElement(env.loadModule("src/components/GatewayTranscript.tsx").GatewayTranscript,props);return env.React.createElement("section", { "data-transcript": "", "data-streaming": props.isStreaming },
-      !props.rows.length&&!props.isLoading&&props.hasModels?props.emptyState:null,
+      !props.rows.length&&!props.isLoading&&props.hasModels!==false?props.emptyState:null,
       props.hasMoreHistory?env.React.createElement("button",{onClick:props.onLoadEarlierHistory,disabled:props.isLoadingMoreHistory},props.isLoadingMoreHistory?"正在加载更早历史...":"加载更早历史"):null,
       props.rows.map((row) => env.React.createElement("p", { key: row.key, "data-message": row.key }, row.kind === "user" ? `${row.text} ${row.attachments.map(file=>file.fileName).join(" ")}` : row.rounds.flatMap((round) => round.blocks.map((block) => block.text)).join(""))),
       props.error ? env.React.createElement("p", { role: "alert" }, props.error) : null,props.footer);} },
-    "@/lib/accountRequest": { ACCOUNT_CHANGED_EVENT: "account-changed", accountFetch: request, captureAccountRequestGuard:()=>{const captured=accountRevision;return()=>{if(captured!==accountRevision)throw new Error("Account changed while the request was pending");};} },
+    "@/lib/accountRequest": accountMock,
+    ...(environments.length ? { [fileURLToPath(new URL("../src/lib/accountRequest.ts", import.meta.url))]: accountMock } : {}),
     "@/lib/chat/chatPageHelpers": { buildModelOptions: () => [{ value: "test-model", model: "test-model", providerId: "key-1" }] },
     "@/lib/providers/llm": { toModelValue: (_provider, model) => model },
     "@/lib/relay/client": {
@@ -417,21 +493,34 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     },
     "@/lib/settings": { DEFAULT_CHAT_RUNTIME_CONTROLS: { reasoning: "medium" }, getNextTheme: () => "light" },
   } });
-  const formGlobals=["HTMLInputElement","HTMLTextAreaElement","HTMLSelectElement"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]);
+  const formGlobals=["HTMLInputElement","HTMLTextAreaElement","HTMLSelectElement","sessionStorage"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]);
   for(const [key]of formGlobals)Object.defineProperty(globalThis,key,{value:env.dom.window[key],configurable:true,writable:true});
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  if (realHistorySidebar) env.dom.window.HTMLElement.prototype.scrollTo ??= () => {};
+  if (readerWidth !== undefined) {
+    const { HTMLElement, DOMRect } = env.dom.window;
+    const measure = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      return this.classList.contains("cloud-resource-workbench")
+        ? new DOMRect(0, 0, readerWidth, 760)
+        : measure.call(this);
+    };
+  }
   window.history.replaceState({}, "", initialURL ?? (newDraft ? "/" : `/?conversation=${firstConversation}`));
   const { CloudChatPage } = env.loadModule("src/pages/CloudChatPage.tsx");
+  const SidebarProvider = realSidebar
+    ? env.loadModule("../../agent-ui/src/components/ui/sidebar.tsx").SidebarProvider
+    : env.React.Fragment;
   const container = document.body.appendChild(document.createElement("div"));
   const host = document.body;
   const root = env.createRoot(container);
   const settings = { customProviders:modelSettings,stt: {}, customSettings: { fontScale: { chat: 1, sidebar: 1 } } };
   let user = { id: 1, email: "account-a@example.test" };
   const render = async () => env.act(async () => {
-    root.render(env.React.createElement(CloudChatPage, {
-      user, onUserChange: () => undefined, environments: [], selection: null, settings,
+    root.render(env.React.createElement(SidebarProvider, null, env.React.createElement(CloudChatPage, {
+      user, onUserChange: () => undefined, environments, selection: null, settings,
       setSettings: () => undefined, settingsSaveState: "saved", onSwitch: async () => undefined, onLogout: () => undefined,
-    }));
+    })));
     await tick();
   });
   t.after(async () => { await env.act(async () => root.unmount()); container.remove(); for(const [key,descriptor]of formGlobals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}env.cleanup(); });
@@ -450,11 +539,19 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     async typeDraft(value){await env.act(async()=>{draft=value;structuredDraft=null;host.querySelector('[data-fixture-composer]').dispatchEvent(new Event('input',{bubbles:true}));await tick();});},
     async flushDraft(){await env.act(async()=>{window.dispatchEvent(new Event('pagehide'));await tick();await tick();});},
     get contextPicker(){return composerContextPicker;},projectRecords,projectBindings,
+    async finishPendingProjectRead(){await env.act(async()=>{finishPendingProjectRead();await tick();});},
     set delayProjectAssociation(value){delayProjectAssociation=value;},
     async finishProjectAssociation(){await env.act(async()=>{finishProjectAssociation();await tick();});},
+    set delayProjectCreation(value){delayProjectCreation=value;},
+    async finishProjectCreation(){await env.act(async()=>{finishProjectCreation();await tick();});},
     async updateModels(providers){settings.customProviders=providers;await render();},
     set branchOnline(value){branchOnline=value;},
+    set modelPreferencesOnline(value){modelPreferencesOnline=value;},
     set online(value) { online = value; },
+    set streamStatus(value) { streamStatus = value; },
+    set failActiveRunList(value) { failActiveRunList = value; },
+    set delayActiveRunList(value) { delayActiveRunList = value; },
+    async finishActiveRunList() { await env.act(async () => { finishActiveRunList(); await tick(); }); },
     set queueFull(value){queueIsFull=value;},
     async finishQueueFull(){await env.act(async()=>{finishQueueFull();await tick();});},
     set failHistory(value){failHistory=value;},
@@ -489,6 +586,7 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
     async switchAccount(id) { user = { id, email: `account-${id}@example.test` }; accountRevision++; await render(); },
     set uploadOnline(value){uploadOnline=value;},
     set fileListOnline(value){fileListOnline=value;},
+    set spaceOnline(value){spaceOnline=value;},
     async paste(files){await env.act(async()=>{composer.onPasteFiles(files);await tick();});},
     async finishUpload(){await env.act(async()=>{finishUpload();await tick();});},
     async finishBranch(){await env.act(async()=>{finishBranch();await tick();});},
@@ -521,6 +619,67 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
   };
 }
 
+test("the library rail returns to the scoped list after a failed read and visiting tasks and chat", async (t) => {
+  const app = await mount(t, {
+    initialURL: `/space/folders/qa-folder?scope=starred&type=document&conversation=${defaultConversation}`,
+    initialRun: snapshot({ output: "继续运行的输出" }),
+    realSidebar: true,
+  });
+  const path = () => window.location.pathname + window.location.search;
+  const scopedLibrary = path();
+  assert.equal(scopedLibrary, "/space/folders/qa-folder?scope=starred&type=document");
+  await app.typeDraft("留在原会话的输入");
+  app.spaceOnline = false;
+  await app.setInput("搜索当前文件夹", "待恢复的筛选");
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 220)));
+  assert.match(app.host.textContent, /暂时无法读取资料/);
+  await app.click('[data-rail-item="cron-hub"]');
+  assert.equal(path(), "/tasks");
+  await app.click('[data-rail-item="chat"]');
+  assert.equal(path(), `/c/${defaultConversation}`);
+  assert.equal(app.draft, "留在原会话的输入");
+  assert.match(app.host.textContent, /继续运行的输出/);
+  assert.equal(app.calls.some((call) => call.path.endsWith("/cancel")), false);
+  await app.click('[data-rail-item="library"]');
+  assert.equal(path(), scopedLibrary, "reopen the previously viewed list rather than All files");
+  assert.equal(app.host.querySelector('input[aria-label^="搜索"]').value, "待恢复的筛选");
+  await app.click('[data-rail-item="chat"]');
+  await app.reload();
+  await app.click('[data-rail-item="library"]');
+  assert.equal(path(), scopedLibrary, "reopen the same list after the conversation is reloaded");
+  assert.equal(app.host.querySelector('input[aria-label^="搜索"]').value, "待恢复的筛选");
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 220)));
+  app.spaceOnline = true;
+  await app.clickText("刷新核对");
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 220)));
+  const request = app.calls.findLast((call) => call.path.startsWith("/api/web-chat/space?"));
+  assert.ok(request, "retry must read the same account library");
+  const retried = new URL(request.path, window.location.href);
+  assert.equal(retried.searchParams.get("folder"), "qa-folder");
+  assert.equal(retried.searchParams.get("scope"), "starred");
+  assert.equal(retried.searchParams.get("type"), "document");
+  assert.equal(retried.searchParams.get("q"), "待恢复的筛选");
+  assert.doesNotMatch(app.host.textContent, /暂时无法读取资料/);
+  await app.click('[aria-label="返回全部位置"]');
+  assert.equal(path(), "/space?scope=starred&type=document");
+  await app.env.act(async () => {
+    window.history.back();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  assert.equal(path(), scopedLibrary);
+  assert.equal(app.host.querySelector('input[aria-label="搜索当前文件夹"]').value, "待恢复的筛选");
+  await app.env.act(async () => {
+    window.history.forward();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  assert.equal(path(), "/space?scope=starred&type=document");
+  await app.click('[data-rail-item="chat"]');
+  await app.switchAccount(2);
+  await app.click('[data-rail-item="library"]');
+  assert.equal(path(), "/space", "another account starts from All files");
+  assert.equal(app.host.querySelector('input[aria-label^="搜索"]').value, "");
+});
+
 test("reopening a conversation restores its active run; switching views detaches without server cancellation", async (t) => {
   const app = await mount(t, { initialRun: snapshot({ output: "已生成的内容", last_seq: "2" }) });
   assert.match(app.host.textContent, /已生成的内容/);
@@ -535,6 +694,125 @@ test("reopening a conversation restores its active run; switching views detaches
   assert.match(app.host.textContent, /已生成的内容/);
   assert.equal(app.streams.length, 2);
   assert.equal(app.composer.isSending, true);
+});
+
+test("an unavailable active-run list leaves canonical history readable and retries only that status", async (t) => {
+  const run = snapshot({ output: "后台已生成的内容", last_seq: "3" });
+  const app = await mount(t, {
+    initialRun: run,
+    initialMessages: [
+      { id: "saved-reply", role: "assistant", content: "已保存的旧回复" },
+      { id: run.user_message_id, role: "user", content: "后台运行的问题" },
+    ],
+    initialActiveRunFailure: true,
+    mobileLayout: true,
+  });
+  const notice = () => app.host.querySelector("[data-cloud-run-discovery]");
+  const reads = (path) => app.calls.filter((call) => call.path.startsWith(path));
+  const history = `/api/web-chat/conversations/${defaultConversation}/messages`;
+  const priorHistoryReads = reads(history).length;
+  const activeReads = () => reads("/api/web-chat/runs?").filter((call) => call.path.includes("active=true"));
+  assert.match(notice().textContent, /暂时无法读取运行状态/);
+  assert.match(app.host.textContent, /已保存的旧回复/);
+  assert.equal(app.composer.isInputDisabled, false);
+  assert.equal(app.composer.isSubmissionDisabled, true);
+  assert.equal(app.streams.length, 0);
+  await app.typeDraft("未发送的新草稿");
+  await app.env.act(async () => { await app.composer.onSend(); await tick(); });
+  assert.equal(app.calls.some((call) => call.method === "POST" && call.path === "/api/web-chat/runs"), false);
+
+  app.failActiveRunList = false;
+  app.delayActiveRunList = true;
+  const retry = notice().querySelector("button");
+  retry.focus();
+  await app.clickText("重试读取运行状态");
+  assert.equal(notice().querySelector("button"), retry);
+  assert.equal(retry.getAttribute("aria-disabled"), "true");
+  await app.clickText("重试读取运行状态");
+  assert.equal(activeReads().length, 2);
+  await app.finishActiveRunList();
+  assert.equal(notice(), null);
+  assert.match(app.host.textContent, /已保存的旧回复/);
+  assert.match(app.host.textContent, /后台已生成的内容/);
+  assert.equal(app.draft, "未发送的新草稿");
+  assert.equal(app.composer.isSending, true);
+  assert.equal(reads(history).length, priorHistoryReads);
+  assert.deepEqual(app.streams.map((stream) => stream.id), [run.id]);
+  assert.equal(app.calls.filter((call) => call.path.endsWith("/events?after_seq=3")).length, 1);
+});
+
+test("an active-run check completing after navigation cannot subscribe or replace another conversation", async (t) => {
+  const app = await mount(t, { initialRun: snapshot(), initialActiveRunFailure: true });
+  app.failActiveRunList = false;
+  app.delayActiveRunList = true;
+  await app.clickText("重试读取运行状态");
+  await app.click(`[data-conversation="${alternateConversation}"]`);
+  await app.finishActiveRunList();
+  assert.equal(app.host.querySelector("[data-cloud-run-discovery]"), null);
+  assert.match(app.host.textContent, /另一个会话/);
+  assert.equal(app.streams.length, 0);
+});
+
+test("retry reads a newer turn only when the recovered run's user message is missing", async (t) => {
+  const run = snapshot({ user_message_id: "new-turn", output: "后台回复", last_seq: "2" });
+  const app = await mount(t, { initialRun: run, initialActiveRunFailure: true });
+  const path = `/api/web-chat/conversations/${defaultConversation}/messages`;
+  const historyReads = () => app.calls.filter((call) => call.path.startsWith(path)).length;
+  const priorReads = historyReads();
+  app.history.get(defaultConversation).push({ id: "new-turn", role: "user", content: "后台原问题" });
+  app.failActiveRunList = false;
+  await app.clickText("重试读取运行状态");
+  assert.equal(historyReads(), priorReads + 1);
+  assert.match(app.host.textContent, /原问题.*后台原问题.*后台回复/);
+  assert.equal(app.streams.length, 1);
+  assert.equal(app.calls.some((call) => call.method === "POST" && call.path === "/api/web-chat/runs"), false);
+});
+
+test("a rejected viewer can retry the same stream cursor and keeps the visible reply and draft", async (t) => {
+  const run = snapshot({ output: "已收到的正文", last_seq: "2" });
+  const app = await mount(t, { initialRun: run, initialStreamStatus: 403, mobileLayout: true });
+  const notice = () => app.host.querySelector("[data-cloud-run-recovery]");
+  assert.match(notice().textContent, /暂时无法访问这次运行/);
+  assert.match(app.host.textContent, /已收到的正文/);
+  assert.equal(app.composer.isSending, true);
+  app.draft = "另有一条未发送的草稿";
+  app.streamStatus = 200;
+  await app.clickText("重试同步");
+  assert.match(notice().textContent, /正在核对这次运行/);
+  assert.equal(notice().querySelector("button").getAttribute("aria-disabled"), "true");
+  await app.clickText("重试同步");
+  assert.equal(app.streams.length, 1);
+  await app.emit(run.id, "3", "message.delta", { delta: "和续接内容" });
+  assert.equal(notice(), null);
+  assert.match(app.host.textContent, /已收到的正文和续接内容/);
+  assert.equal(app.draft, "另有一条未发送的草稿");
+  assert.deepEqual(app.calls.filter((call) => call.path.endsWith("/events?after_seq=2")).map((call) => call.method), ["GET", "GET"]);
+  assert.equal(app.calls.some((call) => call.path.startsWith("/api/web-chat/runs") && call.method === "POST"), false);
+});
+
+test("after terminal state, retry loads canonical history without another stream or submission", async (t) => {
+  const run = snapshot({ output: "这次运行的结果", last_seq: "2" });
+  const app = await mount(t, { initialRun: run, initialStreamStatus: 403 });
+  const retryButton = app.host.querySelector("[data-cloud-run-recovery] button");
+  retryButton.focus();
+  app.draft = "保留追问草稿";
+  app.streamStatus = 200;
+  await app.clickText("重试同步");
+  app.failInitialHistory = true;
+  await app.emit(run.id, "3", "run.completed");
+  assert.match(app.host.querySelector("[data-cloud-run-recovery]").textContent, /运行已结束/);
+  assert.equal(app.host.querySelector("[data-cloud-run-recovery] button"), retryButton);
+  assert.equal(document.activeElement, retryButton);
+  assert.match(app.host.textContent, /这次运行的结果/);
+  assert.equal(app.composer.isSending, false);
+  app.failInitialHistory = false;
+  const previousReadCount = app.calls.filter((call) => call.path.includes("/messages?")).length;
+  await app.clickText("重试读取记录");
+  assert.equal(app.host.querySelector("[data-cloud-run-recovery]"), null);
+  assert.equal(app.calls.filter((call) => call.path.includes("/messages?")).length, previousReadCount + 1);
+  assert.equal(app.streams.length, 1);
+  assert.equal(app.draft, "保留追问草稿");
+  assert.equal(app.calls.some((call) => call.path.startsWith("/api/web-chat/runs") && call.method === "POST"), false);
 });
 
 test("offline terminal recovery marks the exact last turn without watching, rerunning or replacing its canonical body",async(t)=>{
@@ -657,6 +935,25 @@ test("uncertain acceptance keeps the original request and offers a reconciliatio
   assert.equal(app.composer.isSending, true);
 });
 
+test("a rejected skill reference leaves the cloud draft editable for a new submission", async (t) => {
+  const app = await mount(t);
+  const initial = "请继续核对 zeroagent-skill:missing-qa/1/audit";
+  await app.typeDraft(initial);
+  await app.click('[data-action="send"]');
+  assert.match(app.host.textContent, /请重新启用技能或从草稿中更换引用/);
+  assert.equal(app.draft, initial);
+  assert.equal(app.composer.isInputDisabled, false);
+  assert.equal(app.runs.size, 0);
+  const posts = () => app.calls.filter((call) => call.path === "/api/web-chat/runs" && call.method === "POST");
+  assert.equal(posts().length, 1);
+  await app.typeDraft("请继续核对");
+  await app.click('[data-action="send"]');
+  assert.equal(app.runs.size, 1);
+  assert.equal(posts().length, 2);
+  const [rejected, accepted] = posts().map((call) => JSON.parse(call.body));
+  assert.notEqual(accepted.client_request_id, rejected.client_request_id);
+});
+
 test("a delayed cancel acknowledgement cannot overwrite a newer terminal event", async (t) => {
   const app = await mount(t, { initialRun: snapshot({ output: "已完成的内容" }), delayedCancel: true });
   await app.click('[data-action="stop"]');
@@ -714,6 +1011,165 @@ test("a late upload is detached on conversation switch and cannot contaminate th
  assert.doesNotMatch(app.host.textContent,/private-notes/);
  assert.equal(app.calls.some(call=>call.path.includes("/files/")&&call.method==="DELETE"),false);
  assert.equal(app.files.size,1,"the original stays discoverable from the account library");
+});
+
+test("returning from the library reader while offline reuses the visible list", async (t) => {
+  const app = await mount(t, {
+    initialURL: "/space?type=document",
+    initialFiles: [fileRecord()],
+    readerHarness: true,
+  });
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+  assert.match(app.host.textContent, /notes.md/);
+  await app.click('input[aria-label="选择 notes.md"]');
+  await app.click(".cloud-space-item-main");
+  assert.ok(app.host.querySelector("[data-reader-resource]"));
+  app.spaceOnline = false;
+  const listRequests = () => app.calls.filter((call) => call.path.startsWith("/api/web-chat/space?")).length;
+  const requestsBeforeBack = listRequests();
+  await app.click('[aria-label="返回资料空间"]');
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+  assert.equal(window.location.pathname + window.location.search, "/space?type=document");
+  assert.equal(app.host.querySelector('input[aria-label="选择 notes.md"]').checked, true);
+  assert.equal(listRequests(), requestsBeforeBack);
+  assert.doesNotMatch(app.host.textContent, /暂时无法读取资料/);
+});
+
+test("library Work with AI restores the split view and original draft after task navigation and reload", async (t) => {
+  const app = await mount(t, {
+    fileMode: true,
+    initialFiles: [fileRecord()],
+    readerHarness: true,
+    readerWidth: 1320,
+    realSidebar: true,
+  });
+  const path = () => window.location.pathname + window.location.search;
+  const readerPath = `/space/files/${fileId}`;
+  const readerOnly = () => app.host.querySelector(".cloud-resource-workbench").dataset.readerOnly;
+  const traverse = (direction) => app.env.act(async () => {
+    const changed = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    window.history[direction]();
+    await changed;
+    await tick();
+  });
+  await app.typeDraft("保留原会话的草稿");
+  await app.click('[data-rail-item="library"]');
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+  await app.click(".cloud-space-item-main");
+  assert.equal(path(), readerPath);
+  assert.equal(readerOnly(), "true");
+  await app.clickText("与 AI 一起工作");
+  assert.equal(path(), `${readerPath}?work=1`);
+  assert.equal(readerOnly(), "false");
+  assert.equal(app.draft, "保留原会话的草稿");
+  assert.deepEqual(app.composer.pendingUploadedFiles.map(({ relativePath }) => relativePath), [fileId]);
+  await app.flushDraft();
+  assert.deepEqual(app.savedDrafts.get(`1:${fileConversation}`)?.draft?.draft.files.map(({ id }) => id), [fileId]);
+  await traverse("back");
+  assert.equal(path(), readerPath);
+  assert.equal(readerOnly(), "true");
+  await traverse("forward");
+  assert.equal(path(), `${readerPath}?work=1`);
+  assert.equal(readerOnly(), "false");
+  await app.click('[data-rail-item="cron-hub"]');
+  assert.equal(path(), "/tasks");
+  await traverse("back");
+  assert.equal(path(), `${readerPath}?work=1`);
+  assert.equal(readerOnly(), "false");
+  assert.deepEqual(app.composer.pendingUploadedFiles.map(({ relativePath }) => relativePath), [fileId]);
+  app.draft = "";
+  await app.reload();
+  assert.equal(path(), `${readerPath}?work=1`);
+  assert.equal(readerOnly(), "false");
+  assert.equal(app.draft, "保留原会话的草稿");
+  assert.deepEqual(app.composer.pendingUploadedFiles.map(({ relativePath }) => relativePath), [fileId]);
+  await app.click('[aria-label="关闭阅读器"]');
+  assert.equal(path(), `/c/${fileConversation}`);
+  assert.equal(app.draft, "保留原会话的草稿");
+  assert.deepEqual(app.composer.pendingUploadedFiles.map(({ relativePath }) => relativePath), [fileId]);
+  assert.equal(app.runs.size, 0);
+});
+
+test("a compact library reader action returns to the original composer with the selected file", async (t) => {
+  const app = await mount(t, {
+    initialURL: `/space/files/${fileId}?work=1&conversation=${fileConversation}`,
+    fileMode: true,
+    initialFiles: [fileRecord()],
+    initialDraftText: "",
+    readerHarness: true,
+    readerWidth: 390,
+  });
+  assert.equal(app.host.querySelector(".cloud-resource-workbench").dataset.readerOnly, "true");
+  assert.equal(app.composer.pendingUploadedFiles.length, 0, "the link only requests a layout");
+  const continueButton = ".cloud-reader-compact-action button";
+  assert.equal(app.host.querySelector(continueButton).textContent.trim(), "与 AI 一起工作");
+  await app.click(continueButton);
+  assert.equal(window.location.pathname, `/c/${fileConversation}`);
+  assert.equal(window.location.search, "");
+  assert.equal(app.host.querySelector(".cloud-workspace-primary").hidden, false);
+  assert.deepEqual(app.composer.pendingUploadedFiles.map(({ relativePath }) => relativePath), [fileId]);
+  assert.equal(app.runs.size, 0);
+});
+
+test("sending from the reader identifies the confirmed historical version and keeps it open", async (t) => {
+  const workspacePath = "/workspace/reports";
+  const earlier = artifactRecord({
+    id: olderArtifactID, number: 1, name: "earlier-report.md",
+    mime: "text/markdown", download_url: `/api/web-chat/artifacts/versions/${olderArtifactID}/download`,
+  });
+  const app = await mount(t, {
+    initialURL: `/space/artifacts/${olderArtifactID}`,
+    initialArtifacts: [artifactRecord(), earlier],
+    readerHarness: true,
+    environments: [{ runtime_kind: "device_agent", device_id: "qa-device", name: "QA Device", online: true,
+      capabilities: [], workspaces: [{ id: "reports", name: "Reports", path: workspacePath }] }],
+  });
+  const reader = app.host.querySelector("[data-reader-resource]");
+  assert.ok(reader);
+  await app.click('[aria-label="文件菜单：earlier-report.md"]');
+  await app.clickText("发送到工作区");
+  const dialog = document.querySelector('[role="dialog"]');
+  assert.match(dialog.textContent, /earlier-report\.md.*版本 1/);
+  assert.match(window.location.pathname, new RegExp(`${olderArtifactID}$`));
+  await app.clickText("取消");
+  assert.equal(app.host.querySelector("[data-reader-resource]"), reader);
+  assert.equal(app.calls.some(({ path }) => path.startsWith("/api/files/confirmed-handoff")), false);
+
+  await app.click('[aria-label="文件菜单：earlier-report.md"]');
+  await app.clickText("发送到工作区");
+  for (const [label, value, description] of [["设备", "QA Device"], ["工作区", "Reports", workspacePath]]) {
+    const trigger = document.querySelector(`[role="combobox"][aria-label="${label}"]`);
+    await app.env.act(async () => {
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    });
+    const choice = [...document.querySelectorAll('[role="option"]')].find((option) =>
+      description ? option.textContent.includes(value) && option.textContent.includes(description) : option.textContent === value);
+    assert.ok(choice);
+    await app.env.act(async () => choice.click());
+  }
+  const firstHandoffCall = app.calls.length;
+  await app.clickText("确认复制");
+  const handoffCalls = app.calls.slice(firstHandoffCall);
+  assert.ok(handoffCalls.some(({ path }) => path === `/api/web-chat/artifacts/versions/${olderArtifactID}/download`));
+  assert.ok(!handoffCalls.some(({ path }) => path.includes(artifactVersionID)));
+  const copy = handoffCalls.find(({ path, method }) => path.startsWith("/api/files/confirmed-handoff?") && method === "POST");
+  assert.ok(copy, `${handoffCalls.map(({ path }) => path).join(", ")} · ${document.querySelector('[role="dialog"]').textContent}`);
+  assert.equal(new URL(copy.path, window.location.href).searchParams.get("workspace_id"), "reports");
+  assert.equal(Buffer.from(copy.headers["X-ZeroAgent-Workspace-Path"], "base64url").toString("utf8"), workspacePath);
+  assert.equal(await copy.body.text(), "hello");
+  assert.match(document.querySelector('[role="dialog"]').textContent, /QA Device · Reports.*ZA-copy\/earlier-report\.md/);
+  await app.clickText("完成");
+  assert.equal(app.host.querySelector("[data-reader-resource]"), reader);
+
+  await app.env.act(async () => {
+    window.history.pushState(null, "", `/space/artifacts/${olderArtifactID}?scope=trash`);
+    window.dispatchEvent(new window.PopStateEvent("popstate"));
+    await tick();
+  });
+  await app.click('[aria-label="文件菜单：earlier-report.md"]');
+  assert.equal([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent.trim() === "发送到工作区"), false);
 });
 
 test("the library restores reusable originals and small-text citations target the authenticated shared reader",async(t)=>{
@@ -855,7 +1311,13 @@ test("project settings open as an overlay without replacing the conversation and
 test("continuing a saved artifact submits only its exact version ID and survives reload with an old-version download",async(t)=>{
  const older=artifactRecord({id:olderArtifactID,number:1,name:"website-v1.html",download_url:`/api/web-chat/artifacts/versions/${olderArtifactID}/download`});
  const app=await mount(t,{fileMode:true,initialArtifacts:[artifactRecord(),older]});
- await app.openArtifact();await app.chooseArtifact(olderArtifactID);await app.clickText("继续修改");
+ await app.openArtifact();
+ const historyLength=window.history.length;
+ assert.equal(new URL(window.location.href).searchParams.get("artifact"),artifactVersionID);
+ await app.chooseArtifact(olderArtifactID);
+ assert.equal(new URL(window.location.href).searchParams.get("artifact"),olderArtifactID);
+ assert.equal(window.history.length,historyLength);
+ await app.clickText("继续修改");
  assert.equal(app.host.querySelector('[data-cloud-resource-inline]'),null);assert.equal(app.draft,"新的问题");assert.equal(app.composer.pendingUploadedFiles[0].fileName,"website-v1.html");assert.match(app.composer.pendingUploadedFiles[0].statusText,/v1/);
  assert.match(app.host.querySelector('[data-pending-attachments]').textContent,/website-v1.html · 已保存 · v1/);assert.equal(app.host.textContent.match(/website-v1.html · 已保存 · v1/g).length,1);assert.doesNotMatch(app.draft,/artifact|444444|555555|workspace/);
  await app.click('[data-action="send"]');
@@ -1138,8 +1600,19 @@ test("an 8k report previews briefly but copies and edits the complete canonical 
 });
 
 test("Cloud work starters append to the existing draft without creating a paid Run or enabling research",async(t)=>{
- const app=await mount(t,{initialMessages:[]});assert.match(app.host.textContent,/我们要做什么/);const originalDraft=app.draft;
- for(const [label,prompt]of [["研究一个问题","研究一个问题"],["分析表格与数据","分析表格与数据"],["撰写或完善文档","撰写或完善"]]){const starter=[...app.host.querySelectorAll("button.conversation-starter")].find(node=>node.querySelector(".conversation-starter-title").textContent===label);assert.ok(starter);await app.env.act(async()=>{starter.click();await tick();});assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));}
+ const app=await mount(t,{initialMessages:[],newDraft:true});assert.match(app.host.textContent,/我们要做什么/);const originalDraft=app.draft;
+ const examples=app.host.querySelector(".cloud-starters-trigger");
+ assert.equal(examples.getAttribute("aria-expanded"),"false");
+ assert.equal(app.host.querySelectorAll("button.conversation-starter").length,0);
+ for(const [label,prompt]of [["研究一个问题","研究一个问题"],["分析表格与数据","分析表格与数据"],["撰写或完善文档","撰写或完善"]]){
+   await app.clickText("查看工作示例");
+   assert.equal(examples.getAttribute("aria-expanded"),"true");
+   const starter=[...app.host.querySelectorAll("button.conversation-starter")].find(node=>node.querySelector(".conversation-starter-title").textContent===label);
+   assert.ok(starter);
+   await app.env.act(async()=>{starter.click();await tick();});
+   assert.equal(examples.getAttribute("aria-expanded"),"false");
+   assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));
+ }
  assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);
  assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
  const editor=app.host.querySelector("footer");const clearBefore=app.clearCount;
@@ -1204,7 +1677,7 @@ test('an existing conversation hides the mode switch without affecting its live 
 });
 
 test('the mode switch disappears on the first send, stays hidden after completion and returns for a new empty conversation',async t=>{
- const app=await mount(t,{initialMessages:[]});assert.ok(app.host.querySelector('.cloud-mode-switch'));
+ const app=await mount(t,{initialMessages:[],newDraft:true});assert.ok(app.host.querySelector('.cloud-mode-switch'));
  await app.clickText('对话');const editor=app.host.querySelector('footer'),model=app.composer.selectedValue;
  assert.equal(app.composer.expandedInput,false);
  await app.click('[data-action="send"]');assert.equal(app.host.querySelector('.cloud-mode-switch'),null);
@@ -1216,7 +1689,7 @@ test('the mode switch disappears on the first send, stays hidden after completio
 });
 
 test('an unconfirmed first submission does not restore the mode switch',async t=>{
- const app=await mount(t,{initialMessages:[]});assert.ok(app.host.querySelector('.cloud-mode-switch'));app.online=false;
+ const app=await mount(t,{initialMessages:[],newDraft:true});assert.ok(app.host.querySelector('.cloud-mode-switch'));app.online=false;
  await app.click('[data-action="send"]');assert.match(app.host.textContent,/提交结果尚未确认/);
  assert.equal(app.host.querySelector('.cloud-mode-switch'),null);
  assert.equal(app.runs.size,1,'receipt recovery must not create another Run');
@@ -1278,7 +1751,7 @@ test('choosing a project for a blank draft preserves it without creating a conve
  const rich={text:'草稿与长文本',textWithoutLargePastes:'草稿',segments:[{type:'text',text:'草稿'},{type:'largePaste',paste}],largePastes:[paste],skillMentions:[],appMentions:[],commitMentions:[],gitFileMentions:[],codeMentions:[],isEmpty:false};app.structuredDraft=rich;
  await app.env.act(async()=>{app.contextPicker.onAttach(fileRecord());await tick();});
  await app.env.act(async()=>{await app.contextPicker.onSelectProject(project);await tick();});
- assert.equal(app.contextPicker.selectedProjectId,project.id);assert.deepEqual(app.structuredDraft,rich);
+ assert.equal(app.contextPicker.selectedProject?.id,project.id);assert.deepEqual(app.structuredDraft,rich);
  assert.equal(app.composer.pendingUploadedFiles.length,1);assert.equal(app.composer.pendingUploadedFiles[0].relativePath,fileId);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length,0);
  assert.equal(app.calls.some(call=>call.path==='/api/web-chat/runs'&&call.method==='POST'),false);
@@ -1287,6 +1760,51 @@ test('choosing a project for a blank draft preserves it without creating a conve
  assert.equal(app.projectBindings.get(id).project_id,project.id);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length,1);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/runs'&&call.method==='POST').length,1);
+});
+
+test("project creation from the composer selects it for the current blank draft",async t=>{
+ const app=await mount(t,{fileMode:true,newDraft:true,initialMessages:[],initialDraftText:"保留项目草稿"});
+ await app.env.act(async()=>{app.contextPicker.onAttach(fileRecord());app.contextPicker.onCreateProject();await tick();});
+ await app.setInput("项目名称","发布计划");
+ await app.clickText("创建并选择");
+ assert.equal(app.contextPicker.selectedProject?.id,composerProjectRecord().id);
+ assert.equal(app.projectRecords.get(composerProjectRecord().id).name,"发布计划");
+ assert.equal(app.draft,"保留项目草稿");
+ assert.equal(app.composer.pendingUploadedFiles[0].relativePath,fileId);
+ assert.equal(app.host.querySelector('input[aria-label="项目名称"]'),null);
+ assert.deepEqual(app.calls.filter(call=>call.method==="POST").map(call=>call.path),["/api/web-chat/projects"]);
+ assert.equal(app.projectBindings.size,0);
+});
+
+test("project creation from an existing composer retries only the move on conflict",async t=>{
+ const app=await mount(t,{fileMode:true,initialMessages:[],initialDraftText:"保留会话草稿"});
+ app.delayProjectAssociation=true;
+ await app.env.act(async()=>{app.contextPicker.onCreateProject();await tick();});
+ await app.setInput("项目名称","发布计划");
+ await app.clickText("创建并移入");
+ app.projectBindings.set(fileConversation,{conversation_id:fileConversation,project_id:"",version:2,created_at:""});
+ await app.finishProjectAssociation();
+ assert.match(app.host.querySelector('[role="dialog"]').textContent,/项目已创建/);
+ assert.equal(app.draft,"保留会话草稿");
+ app.delayProjectAssociation=false;
+ await app.clickText("重试移入项目");
+ assert.equal(app.projectBindings.get(fileConversation).project_id,composerProjectRecord().id);
+ assert.equal(app.contextPicker.selectedProject?.id,composerProjectRecord().id);
+ assert.deepEqual(app.calls.filter(call=>call.method==="POST").map(call=>call.path),["/api/web-chat/projects"]);
+});
+
+test("project creation from the composer cannot associate another conversation after navigation",async t=>{
+ const app=await mount(t,{fileMode:true,initialMessages:[]});
+ app.delayProjectCreation=true;
+ await app.env.act(async()=>{app.contextPicker.onCreateProject();await tick();});
+ await app.setInput("项目名称","发布计划");
+ await app.clickText("创建并移入");
+ await app.click(`[data-conversation="${secondFileConversation}"]`);
+ await app.finishProjectCreation();
+ assert.equal(app.sidebar.currentConversationId,secondFileConversation);
+ assert.equal(app.host.querySelector('input[aria-label="项目名称"]'),null);
+ assert.equal(app.contextPicker.selectedProject,undefined);
+ assert.equal(app.calls.some(call=>call.path.endsWith("/project")&&call.method==="PUT"),false);
 });
 
 test('pending project selection blocks duplicate changes and sending; late account results cannot update the current page',async t=>{
@@ -1298,16 +1816,81 @@ test('pending project selection blocks duplicate changes and sending; late accou
  assert.equal(app.calls.filter(call=>call.path.endsWith('/project')&&call.method==='PUT').length,1);
  assert.equal(app.calls.some(call=>call.path==='/api/web-chat/runs'&&call.method==='POST'),false);
  await app.invalidate();await app.finishProjectAssociation();assert.ok(await outcome instanceof Error);
- assert.doesNotMatch(app.host.textContent,/已选择项目：工作计划/);assert.equal(app.contextPicker.selectedProjectId,undefined);
+ assert.doesNotMatch(app.host.textContent,/已选择项目：工作计划/);assert.equal(app.contextPicker.selectedProject,undefined);
 });
 
 test('project conflicts remain explicit and a fresh user retry uses the new server version',async t=>{
  const app=await mount(t,{fileMode:true,initialMessages:[]});const project=composerProjectRecord();app.projectRecords.set(project.id,project);app.delayProjectAssociation=true;
+ const other={...project,id:'11111111-1111-4111-8111-111111111111',name:'另一个页面的项目'};
+ app.projectRecords.set(other.id,other);
+ app.draft='保留项目草稿';
  let outcome;await app.env.act(async()=>{outcome=app.contextPicker.onSelectProject(project).catch(error=>error);await tick();});
- app.projectBindings.set(fileConversation,{conversation_id:fileConversation,project_id:'',version:2,created_at:''});
- await app.finishProjectAssociation();assert.ok(await outcome instanceof Error);assert.equal(app.projectBindings.get(fileConversation).version,2);
+ app.projectBindings.set(fileConversation,{conversation_id:fileConversation,project_id:other.id,version:2,created_at:''});
+ await app.finishProjectAssociation();
+ assert.match((await outcome).message,/核对当前归属后重新选择/);
+ assert.equal(app.projectBindings.get(fileConversation).version,2);
+ assert.equal(app.contextPicker.selectedProject?.id,other.id);
+ assert.equal(app.draft,'保留项目草稿');
+ assert.doesNotMatch(app.host.textContent,/核对当前归属后重新选择/,'the picker owns the error feedback');
+ assert.equal(app.calls.filter(call=>call.path.endsWith('/project')&&call.method==='PUT').length,1);
  app.delayProjectAssociation=false;await app.env.act(async()=>{await app.contextPicker.onSelectProject(project);await tick();});
  assert.equal(app.projectBindings.get(fileConversation).version,3);assert.equal(app.projectBindings.get(fileConversation).project_id,project.id);
+});
+
+test("a project change before the click is read-only and a late initial read cannot undo it", async (t) => {
+  const original = { ...composerProjectRecord(), id: fixtureUUID(50), name: "原项目" };
+  const app = await mount(t, { fileMode: true, initialMessages: [], pendingProjectRead: original });
+  const target = composerProjectRecord();
+  const revised = { ...target, id: fixtureUUID(51), name: "更新后的项目" };
+  app.projectRecords.set(target.id, target);
+  app.projectRecords.set(revised.id, revised);
+  app.projectBindings.set(fileConversation, {
+    conversation_id: fileConversation, project_id: revised.id, version: 2, created_at: "",
+  });
+  const projectWrites = () => app.calls.filter(call => call.path.endsWith('/project') && call.method === 'PUT');
+  await app.env.act(async () => {
+    await assert.rejects(app.contextPicker.onSelectProject(target), /核对当前归属后重新选择/);
+  });
+  assert.equal(app.contextPicker.selectedProject?.id, revised.id);
+  assert.deepEqual(projectWrites(), []);
+  await app.finishPendingProjectRead();
+  assert.equal(app.contextPicker.selectedProject?.id, revised.id);
+  await app.env.act(async () => app.contextPicker.onSelectProject(target));
+  assert.deepEqual(projectWrites().map(call => JSON.parse(call.body).expected_version), [2]);
+  assert.equal(app.contextPicker.selectedProject?.id, target.id);
+});
+
+test("model preference failure leaves the same draft editable and retry never sends it", async (t) => {
+  const app = await mount(t, { newDraft: true, initialMessages: [], modelPreferencesOffline: true });
+  const editor = app.host.querySelector("[data-fixture-composer]");
+  const send = app.host.querySelector('[data-action="send"]');
+  const status = () => app.host.querySelector("[data-cloud-model-status]");
+  const posts = () => app.calls.filter(call => call.path === "/api/web-chat/runs" && call.method === "POST");
+  assert.match(status().textContent, /无法读取模型偏好.*仍可编辑草稿/);
+  assert.doesNotMatch(app.host.textContent, /synthetic upstream diagnostic/);
+  assert.equal(app.composer.isInputDisabled, false);
+  assert.equal(send.disabled, true);
+  await app.typeDraft("保留模型读取期间写下的草稿");
+  await app.env.act(async () => { await app.composer.onSend(); await tick(); });
+  assert.equal(posts().length, 0);
+  await app.clickText("模型设置");
+  assert.equal(window.location.pathname, "/settings/providers");
+  await app.click("[data-settings-back]");
+  assert.equal(app.host.querySelector("[data-fixture-composer]"), editor);
+  assert.equal(app.draft, "保留模型读取期间写下的草稿");
+
+  app.modelPreferencesOnline = true;
+  await app.clickText("重试");
+  assert.equal(app.host.querySelector("[data-fixture-composer]"), editor);
+  assert.equal(app.draft, "保留模型读取期间写下的草稿");
+  assert.equal(status(), null);
+  assert.equal(send.disabled, false);
+  assert.equal(posts().length, 0);
+  assert.equal(app.calls.filter(call => call.path === "/api/web-settings" && call.method === "GET").length, 2);
+
+  await app.click('[data-action="send"]');
+  assert.equal(posts().length, 1);
+  assert.match(posts()[0].body, /保留模型读取期间写下的草稿/);
 });
 
 test("a stream limit explains how to recover while the accepted Run keeps running without resubmission",async(t)=>{
@@ -1329,17 +1912,66 @@ test('CloudChat settings replaces the workspace in normal flow and preserves the
  assert.equal(workspace.getAttribute('aria-hidden'),'true');
  assert.ok(workspace.classList.contains('hidden'));
  assert.equal(app.host.querySelector('footer'),editor);
- await app.emit('run-a',2,'text_delta',{delta:'期间的输出'});
- await app.click('[data-settings-back]');
+ await app.emit("run-a","2","message.delta",{delta:"期间的输出"});
+ await app.env.act(async()=>{
+  const returned=new Promise(resolve=>window.addEventListener("popstate",resolve,{once:true}));
+  app.host.querySelector('[data-settings-back]').click();
+  await returned;
+ });
  assert.equal(app.host.querySelector('[data-settings-page]'),null);
  assert.equal(workspace.hasAttribute('inert'),false);
  assert.equal(app.host.querySelector('footer'),editor);
  assert.equal(app.draft,'保留的草稿');
+ assert.match(app.host.textContent,/已生成期间的输出/);
+ assert.equal(app.streams.length,1);
+ assert.equal(app.streams[0].closed,false);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length,0);
  assert.equal(app.calls.filter(call=>call.path.includes('/cancel')).length,0);
  await app.click('[data-account-menu]');
  await app.click('[data-rail-item="chat"]');
  assert.equal(app.host.querySelector('[data-settings-page]'),null);
+});
+
+test("settings sections use one entry and back preserves the underlying reader before and after refresh", async (t) => {
+  const readerPath = `/space/files/${fileId}?category=documents`;
+  const app = await mount(t, { initialURL: readerPath, initialFiles: [fileRecord()], readerHarness: true });
+  const url = () => window.location.pathname + window.location.search;
+  const move = (action) => app.env.act(async () => {
+    const changed = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    action();
+    await changed;
+    await tick();
+  });
+  assert.equal(url(), readerPath);
+  const reader = app.host.querySelector("[data-reader-resource]");
+  assert.ok(reader);
+  const originalLength = window.history.length;
+  await app.click("[data-account-menu]");
+  assert.match(url(), /^\/settings/);
+  assert.equal(window.history.length, originalLength + 1);
+  await app.click("[data-fixture-settings-providers]");
+  assert.equal(url(), "/settings/providers");
+  assert.equal(window.history.length, originalLength + 1);
+  await move(() => app.host.querySelector("[data-settings-back]").click());
+  assert.equal(url(), readerPath);
+  assert.equal(app.host.querySelector("[data-settings-page]"), null);
+  assert.equal(app.host.querySelector("[data-reader-resource]"), reader);
+  await move(() => window.history.forward());
+  assert.equal(url(), "/settings/providers");
+  await app.reload();
+  assert.equal(url(), "/settings/providers");
+  await move(() => app.host.querySelector("[data-settings-back]").click());
+  assert.equal(url(), readerPath);
+  assert.equal(app.host.querySelector("[data-reader-resource]")?.dataset.readerResource, reader.dataset.readerResource);
+  assert.equal(app.calls.some((call) => call.path.endsWith("/cancel")), false);
+});
+
+test("a direct settings link returns inside the account without traversing an external entry", async (t) => {
+  const app = await mount(t, { initialURL: `/settings/providers?conversation=${defaultConversation}` });
+  const length = window.history.length;
+  await app.click("[data-settings-back]");
+  assert.equal(window.location.pathname, `/c/${defaultConversation}`);
+  assert.equal(window.history.length, length);
 });
 
 test('header new conversation opens a local draft and inline rename uses the existing conversation API without changing its Run',async t=>{
@@ -1417,15 +2049,24 @@ test("rejected first-draft files do not create a conversation and a claimed uplo
  assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);await app.finishUpload();
 });
 
-test("an unknown file upload prevents further uploads until an explicit successful library check",async t=>{
+test("an unknown file upload keeps the conversation editable and reviews saved files in the composer",async t=>{
  const app=await mount(t,{fileMode:true});app.uploadOnline=false;
- const file=new File(["hello"],"notes.md");await cloudDrop(app,dropTransfer(["Files"],[file]));
- assert.match(app.host.textContent,/上传结果尚未确认/);assert.equal(app.files.size,1);
+ const file=new File(["hello"],"notes.md");await cloudDrop(app,dropTransfer(["Files"],[file,new File(["later"],"another.md")]));
+ assert.match(app.host.textContent,/上传结果尚未确认/);assert.match(app.host.textContent,/notes\.md/);assert.equal(app.files.size,1);
+ assert.match(app.host.textContent,/另有 1 个文件尚未上传/);
+ assert.equal(app.composer.isInputDisabled,false);
+ app.draft="附件核对期间继续编辑";
  await app.paste([file]);assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);
- app.fileListOnline=false;await app.clickText("刷新文件库核对");await app.paste([file]);
+ app.fileListOnline=false;await app.clickText("核对最近文件");await app.paste([file]);
  assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,1);
- app.fileListOnline=true;app.uploadOnline=true;await app.clickText("刷新文件库核对");
- assert.equal(app.host.textContent.includes("继续添加前请核对文件库"),false);
+ app.fileListOnline=true;app.uploadOnline=true;await app.clickText("核对最近文件");
+ assert.equal(app.contextPicker.kind,"files");
+ assert.equal(app.contextPicker.fileReview.name,"notes.md");
+ assert.equal(app.contextPicker.fileReview.files[0].id,fileId);
+ assert.equal(app.draft,"附件核对期间继续编辑");
+ assert.equal(app.composer.pendingUploadedFiles.length,0,"viewing recent files does not attach a match automatically");
+ await app.env.act(async()=>app.contextPicker.onAttach(app.contextPicker.fileReview.files[0]));
+ assert.equal(app.composer.pendingUploadedFiles[0].relativePath,fileId);
  await app.paste([file]);assert.equal(app.calls.filter(call=>call.path==="/api/web-chat/files"&&call.method==="POST").length,2);
 });
 
@@ -1449,6 +2090,34 @@ test("cloud reference validation cannot attach late metadata to another conversa
  api.writeCloudResourceDragPayload(data,[{kind:"artifact",id:artifactFamilyID,target_id:artifactVersionID}]);
  await cloudDrop(app,data);await app.click(`[data-conversation="${secondFileConversation}"]`);await app.finishArtifact();
  assert.equal(app.composer.pendingUploadedFiles.length,0);assert.doesNotMatch(app.host.textContent,/website.html/);
+});
+
+test("the composer library verifies an exact artifact and ignores a read canceled from the picker", async t => {
+ const app = await mount(t, {fileMode:true, initialArtifacts:[artifactRecord()], delayedArtifact:true});
+ const item = {kind:"artifact", id:artifactFamilyID, target_id:artifactVersionID};
+ const route = window.location.href;
+ const draft = app.draft;
+ const controller = new AbortController();
+ let pending;
+ await app.env.act(async () => {
+   pending = app.contextPicker.onAttachResource(item, controller.signal).catch(cause => cause);
+   await tick();
+ });
+ controller.abort();
+ await app.finishArtifact();
+ assert.equal((await pending).name, "AbortError");
+ assert.deepEqual(app.composer.pendingUploadedFiles, []);
+
+ await app.env.act(async () => {
+   pending = app.contextPicker.onAttachResource(item, new AbortController().signal);
+   await tick();
+ });
+ await app.finishArtifact();
+ await pending;
+ assert.deepEqual(app.composer.pendingUploadedFiles.map(file => file.relativePath), [`cloud-artifacts/${artifactVersionID}`]);
+ assert.equal(app.draft, draft);
+ assert.equal(window.location.href, route);
+ assert.equal(app.calls.some(call => call.path === "/api/web-chat/runs" && call.method === "POST"), false);
 });
 
 const richComposerDraft = () => {
@@ -1482,8 +2151,10 @@ test("new conversation resets only the blank draft while existing structured dra
 });
 
 test("conversation drafts retain their own input presentation and explicit research selection", async t => {
- const app = await mount(t, { initialMessages: [] }); app.draft = "A 的问题";
- await app.clickText("对话");
+ const app = await mount(t, { initialMessages: [], initialDraftText: "", initialSavedDrafts: [{ scope: defaultConversation, draft: { version: 1, draft: { composer: richComposerDraft(), files: [], artifacts: [], presentation: "chat", researchEnabled: false }, modelSelection: { model: "test-model", providerKeyId: 1, reasoningEffort: "medium" } } }] });
+ assert.equal(app.host.querySelector(".cloud-mode-switch"), null);
+ assert.equal(app.composer.expandedInput, false);
+ await app.typeDraft("A 的问题");
  await app.env.act(async () => { app.composer.onChatRuntimeControlsChange({ nativeWebSearchEnabled: true }); await tick(); });
  await app.click(`[data-conversation="${alternateConversation}"]`);
  assert.equal(app.composer.expandedInput, true); assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled, false);
@@ -1615,16 +2286,155 @@ test("saved structured drafts restore from the server and keep each conversation
  await app.click(`[data-conversation="${alternateConversation}"]`);assert.equal(app.draft,"B 的独立输入");
 });
 
-test("server history search opens the matched message window without dropping the unsent draft or starting a Run", async t => {
- const history=Array.from({length:120},(_,index)=>({id:`search-message-${index}`,role:index%2?'assistant':'user',content:index===4?'跨页验收关键词':'其他合成内容'}));
- const app=await mount(t,{initialMessages:history,initialDraftText:"搜索前的草稿"});
- assert.equal(app.transcript.rows.some(row=>row.key==='search-message-4'),false);
- const adapter=app.sidebar.conversationSearchAdapter,page=await adapter.search('跨页验收关键词',{signal:new AbortController().signal});
- assert.equal(page.items.length,1);
- await app.env.act(async()=>{adapter.onSelectResult(page.items[0]);await tick();});
- assert.ok(app.calls.some(call=>call.path.includes('/messages/search-message-4/window')));
- assert.ok(app.transcript.rows.some(row=>row.key==='search-message-4'));
- assert.equal(app.draft,"搜索前的草稿");assert.equal(app.runs.size,0);
+test("search message links restore on reload and history traversal with the unsent draft", async (t) => {
+  const history = Array.from({ length: 120 }, (_, index) => ({
+    id: `search-message-${index}`,
+    role: index % 2 ? "assistant" : "user",
+    content: index === 4 ? "跨页验收关键词甲" : index === 70 ? "跨页验收关键词乙" : "其他合成内容",
+  }));
+  const app = await mount(t, { initialMessages: history, initialDraftText: "搜索前的草稿" });
+  const path = `/c/${defaultConversation}`;
+  const visible = (id) => app.transcript.rows.some((row) => row.key === id);
+  const openResult = async (query) => {
+    const adapter = app.sidebar.conversationSearchAdapter;
+    const page = await adapter.search(query, { signal: new AbortController().signal });
+    assert.equal(page.items.length, 1);
+    await app.env.act(async () => { adapter.onSelectResult(page.items[0]); await tick(); });
+  };
+  const move = async (direction) => {
+    const changed = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    await app.env.act(async () => { window.history[direction](); await changed; await tick(); });
+  };
+  const check = (index) => {
+    const message = `search-message-${index}`;
+    assert.equal(window.location.pathname + window.location.search, `${path}?message=${message}`);
+    assert.ok(visible(message));
+    assert.equal(app.draft, "搜索前的草稿");
+  };
+  assert.equal(visible("search-message-4"), false);
+  await openResult("跨页验收关键词甲");
+  check(4);
+  const reads = () => app.calls.filter((call) => call.path.includes("/messages/search-message-4/window")).length;
+  const before = reads();
+  await app.reload();
+  check(4);
+  assert.equal(reads(), before + 1);
+  await openResult("跨页验收关键词乙");
+  check(70);
+  await move("back");
+  check(4);
+  await move("back");
+  assert.equal(window.location.pathname + window.location.search, path);
+  assert.ok(visible("search-message-119"));
+  await move("forward");
+  check(4);
+  await move("forward");
+  check(70);
+  assert.equal(app.runs.size, 0);
+  assert.equal(app.calls.some((call) => call.method === "POST" && call.path === "/api/web-chat/runs"), false);
+});
+
+test("a missing message link offers a direct return to the latest messages with the draft intact", async (t) => {
+  const path = `/c/${defaultConversation}`;
+  const app = await mount(t, {
+    initialURL: `${path}?message=removed-message`,
+    initialMessages: [{ id: "latest-user", role: "user", content: "当前会话正文" }],
+    initialDraftText: "未发送的内容",
+  });
+  assert.equal(window.location.search, "?message=removed-message");
+  assert.match(app.host.textContent, /无法打开这条消息/);
+  const actions = [...app.host.querySelectorAll(".app-status-action")];
+  assert.equal(actions.some((button) => button.textContent === "重试加载历史"), false);
+  const latest = actions.find((button) => button.textContent === "返回最新消息");
+  assert.ok(latest);
+  assert.ok(latest.closest("[data-transcript]"));
+  const historyLength = window.history.length;
+  await app.env.act(async () => { latest.click(); await tick(); });
+  assert.equal(window.location.pathname + window.location.search, path);
+  assert.equal(window.history.length, historyLength);
+  assert.ok(app.transcript.rows.some((row) => row.key === "latest-user"));
+  assert.equal(app.draft, "未发送的内容");
+  assert.equal(app.runs.size, 0);
+});
+
+test("an open conversation search is retired when its cloud account authorization changes", async (t) => {
+  const app = await mount(t, {
+    realSidebar: true,
+    realHistorySidebar: true,
+    initialMessages: [{ id: "old-owner-result", role: "user", content: "旧账户专有搜索结果" }],
+  });
+  const search = () => document.querySelector("[data-conversation-search-dialog]");
+  await app.click(".chat-history-search-button");
+  const input = search().querySelector("input");
+  await app.env.act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(input, "旧账户专有");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await app.env.act(async () => new Promise((resolve) => setTimeout(resolve, 220)));
+  assert.match(search().textContent, /旧账户专有搜索结果/);
+  await app.invalidate();
+  assert.equal(search(), null);
+  assert.equal(app.host.querySelector(".chat-history-search-button").disabled, true);
+  await app.switchAccount(2);
+  assert.equal(search(), null);
+  await app.click(".chat-history-search-button");
+  assert.equal(search().querySelector("input").value, "");
+  assert.doesNotMatch(search().textContent, /旧账户专有搜索结果/);
+});
+
+test("leaving an anchored history edit keeps the newly accepted run subscribed when restoration fails", async (t) => {
+  const app = await mount(t, {
+    initialMessages: [
+      { id: "anchored-user", role: "user", content: "锚定的原问题" },
+      { id: "previous-reply", role: "assistant", content: "旧回复" },
+    ],
+  });
+  const adapter = app.sidebar.conversationSearchAdapter;
+  const found = await adapter.search("锚定的原问题", { signal: new AbortController().signal });
+  await app.env.act(async () => { adapter.onSelectResult(found.items[0]); await tick(); });
+  assert.ok(app.calls.some((call) => call.path.includes("/messages/anchored-user/window")));
+  app.failActiveRunList = true;
+  await app.edit("anchored-user", "从历史位置编辑后重发");
+  const stream = app.streams.find((candidate) => candidate.id === "created-run");
+  assert.ok(stream && !stream.closed);
+  assert.equal(app.composer.isSending, true);
+  await app.emit("created-run", "2", "message.delta", { delta: "接收新运行输出" });
+  assert.match(app.host.textContent, /接收新运行输出/);
+  assert.equal(app.calls.filter((call) => call.path === "/api/web-chat/runs" && call.method === "POST").length, 1);
+  assert.equal(app.calls.some((call) => call.path.endsWith("/cancel")), false);
+});
+
+test("a saved cloud reading position restores the exact older page and leaves other accounts alone", async (t) => {
+ const history=Array.from({length:100},(_,index)=>({id:`reading-${index}`,role:index%2?'assistant':'user',content:`合成消息 ${index}`}));
+ const app=await mount(t,{initialMessages:history,initialDraftText:"阅读中的草稿"});
+ const {writeCloudTranscriptReading,readCloudTranscriptReading}=app.env.loadModule("src/lib/cloudTranscriptReading.ts");
+ writeCloudTranscriptReading(2,defaultConversation,{messageId:"reading-10",offset:23});
+ await app.reload();
+ const originalWindows=()=>app.calls.filter(call=>call.path.includes("/window?")).map(call=>call.path);
+ assert.deepEqual(originalWindows(),[]);
+ writeCloudTranscriptReading(1,defaultConversation,{messageId:"reading-16",offset:35});
+ await app.reload();
+ assert.equal(originalWindows().length,1);
+ assert.match(originalWindows()[0],/\/messages\/reading-16\/window\?/);
+ assert.ok(app.transcript.rows.some(row=>row.key==="reading-16"));
+ assert.deepEqual(readCloudTranscriptReading(2,defaultConversation),{messageId:"reading-10",offset:23});
+ assert.equal(app.calls.some(call=>call.method==="POST"&&call.path==="/api/web-chat/runs"),false);
+});
+
+test("an older reading position leaves a restored active Run attached until the user opens history", async (t) => {
+ const history=Array.from({length:95},(_,index)=>({id:`reading-${index}`,role:index%2?'assistant':'user',content:`合成消息 ${index}`}));
+ history.push({id:"user-a",role:"user",content:"正在运行的问题"});
+ const app=await mount(t,{initialMessages:history,initialRun:snapshot()});
+ const {writeCloudTranscriptReading}=app.env.loadModule("src/lib/cloudTranscriptReading.ts");
+ writeCloudTranscriptReading(1,defaultConversation,{messageId:"reading-17",offset:18});
+ await app.reload();
+ assert.equal(app.composer.isSending,true);
+ assert.equal(app.calls.some(call=>call.path.includes("/window?")),false);
+ assert.ok(app.transcript.rows.some(row=>row.key==="user-a"));
+ await app.clickText("返回上次阅读位置");
+ assert.ok(app.calls.some(call=>call.path.includes("/messages/reading-17/window?")));
+ assert.ok(app.transcript.rows.some(row=>row.key==="reading-17"));
+ assert.equal(app.calls.some(call=>call.method==="POST"&&call.path==="/api/web-chat/runs"),false);
 });
 
 test("an active Run allows attachments for the next pending message while project changes stay locked", async t => {
@@ -1697,7 +2507,7 @@ test('project moves relocate the sidebar row, and project New keeps context with
  assert.equal(app.draft,"现有草稿");
  const before=app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length;
  await app.env.act(async()=>{app.host.querySelector('.cloud-project-actions button[aria-label^="在"]').click();await tick();});
- assert.equal(app.contextPicker.selectedProjectId,project.id);
+ assert.equal(app.contextPicker.selectedProject?.id,project.id);
  assert.equal(app.calls.filter(call=>call.path==='/api/web-chat/conversations'&&call.method==='POST').length,before);
  assert.equal(app.runs.size,0);
  await app.env.act(async()=>{app.host.querySelector('.cloud-project-conversation button').click();await tick();});
@@ -1758,7 +2568,7 @@ test("moving the current row locks sending until its project association is conf
  assert.equal(app.calls.filter(call=>call.method==="PUT"&&call.path.endsWith('/project')).length,1);
  await app.finishProjectAssociation();await pending;
  assert.equal(app.composer.isInputDisabled,false);assert.equal(app.draft,"移动期间保留的草稿");
- assert.equal(app.contextPicker.selectedProjectId,project.id);
+ assert.equal(app.contextPicker.selectedProject?.id,project.id);
  assert.equal(app.runs.size,0);
 });
 

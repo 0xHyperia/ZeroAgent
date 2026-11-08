@@ -83,12 +83,33 @@ test("vendor view waits for a concrete group and shares its preference across mo
     assert.deepEqual(Array.from(document.querySelectorAll("[data-model-group]")).map(node => node.getAttribute("data-model-group")), ["智谱", "Moonshot"], "actual model vendors override the key's transport protocol");
     await env.act(async () => document.querySelector('[data-model-group="Moonshot"]').click());
     assert.equal(document.querySelectorAll('[data-model-id="kimi-k2.5"]').length, 1, "same model is deduplicated across groups");
-    await env.act(async () => document.querySelector('[data-model-id="kimi-k2.5"]').click());
+    const modelRow = () => document.querySelector('[data-model-id="kimi-k2.5"]');
+    const list = document.querySelector('[data-model-picker-list]');
+    const search = document.querySelector("input");
+    await env.act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(search, "Kimi");
+      search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+    list.scrollTop = 68;
+    modelRow().focus();
+    await env.act(async () => modelRow().click());
     assert.deepEqual(selected, [], "choosing a model never silently chooses a key/group");
     assert.equal(document.querySelectorAll("[data-model-route]").length, 2);
+    assert.equal(document.activeElement.dataset.modelRoute, a, "focus follows the current concrete group");
+    await env.act(async () => {
+      document.activeElement.dispatchEvent(new window.KeyboardEvent("keydown", {
+        key: "Escape", bubbles: true, cancelable: true,
+      }));
+    });
+    assert.equal(document.activeElement, modelRow());
+    assert.equal(list.scrollTop, 68);
+    assert.equal(document.querySelector("input").value, "Kimi");
+    assert.deepEqual(selected, [], "Escape only returns from the nested group page");
+    await env.act(async () => modelRow().click());
     await env.act(async () => document.querySelector("[data-model-route-back]").click());
+    assert.equal(document.activeElement, modelRow());
     assert.deepEqual(selected, [], "going back does not change the selected model");
-    await env.act(async () => document.querySelector('[data-model-id="kimi-k2.5"]').click());
+    await env.act(async () => modelRow().click());
     const route = Array.from(document.querySelectorAll("[data-model-route]")).find(node => node.getAttribute("data-model-route") === b);
     await env.act(async () => route.click());
     assert.deepEqual(selected, [b]);

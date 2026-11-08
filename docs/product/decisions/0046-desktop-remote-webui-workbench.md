@@ -14,6 +14,8 @@ WebUI 与 GUI 的 `@liveagent/app` / adapters 指向不同宿主，直接放进�
 头部设备开关与 Windows 控件通过 DOM 插槽使用原桌面 React 上下文，普通布局插槽不进入
 弹窗层级。卸载回收远程 React、样式、连接和 handler，恢复桌面根标记。
 
+桌面开发启动同时准备当前内嵌 WebUI，独立运行 Vite 时也使用该步骤。内嵌清单版本与宿主契约匹配后才打开连接。云端页面提交到 React 根后才结束加载提示，根渲染失败时保留桌面切换入口并可原位重试。回退需同时回退宿主和内嵌产物。
+
 2026-10-28 安装版复现 `process is not defined`：Vite library 模式默认保留
 `process.env.NODE_ENV`，独立内嵌产物没有后续消费者构建去替换该常量。仅为
 `embedded-desktop` 增加构建期的 production 定义，不注入 `process` 全局、不改写整包文本。

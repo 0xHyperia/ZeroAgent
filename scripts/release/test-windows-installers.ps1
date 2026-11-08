@@ -1,7 +1,7 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-Tests fresh ZeroAgent MSI/NSIS installation and removal on a disposable hosted runner.
+Tests fresh or in-place ZeroAgent MSI/NSIS installation on a disposable hosted runner.
 .DESCRIPTION
 The caller must first verify the downloaded installer signatures. This script never
 launches ZeroAgent, kills processes, changes security settings, or removes directories.
@@ -11,12 +11,20 @@ and an elevated Windows session. There is deliberately no override switch.
 ReportDir must be an empty/new directory below RUNNER_TEMP (the system temporary
 directory is also allowed for local DryRun). DryRun reads artifacts and MSI metadata,
 then writes a plan only. A dry-run report is never evidence of installation success.
+
+Upgrade mode requires PreviousArtifactDir, PreviousVersion and UpdaterConfig together.
+Supply the prior stable release's Windows MSI, NSIS, portable ZIP and latest.json.
+Before installing, the normal release verifier checks both staged installer pairs
+against the updater key in UpdaterConfig. Neither release's application is launched.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ArtifactDir,
     [Parameter(Mandatory = $true)][string]$ReportDir,
     [Parameter(Mandatory = $true)][string]$ExpectedVersion,
+    [string]$PreviousArtifactDir,
+    [string]$PreviousVersion,
+    [string]$UpdaterConfig,
     [switch]$DryRun
 )
 
@@ -92,7 +100,7 @@ function Get-EnvironmentBlockers {
     return $blockers
 }
 
-function Get-MsiMetadata([string]$Path) {
+function Get-MsiMetadata([string]$Path, [string]$Version = $ExpectedVersion) {
     $installer = $null; $database = $null; $view = $null
     try {
         $installer = New-Object -ComObject WindowsInstaller.Installer
@@ -115,7 +123,7 @@ function Get-MsiMetadata([string]$Path) {
                 throw "MSI $key is not a canonical product GUID"
             }
         }
-        if ($properties.ProductVersion -notmatch ('^' + [regex]::Escape(($ExpectedVersion -split '-')[0]) + '(\.\d+)?$')) {
+        if ($properties.ProductVersion -notmatch ('^' + [regex]::Escape(($Version -split '-')[0]) + '(\.\d+)?$')) {
             throw 'MSI numeric ProductVersion does not match the expected release base version'
         }
         [void]$view.Close(); [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view); $view = $null
@@ -265,7 +273,7 @@ function Get-MainMarker([byte[]]$Bytes) {
     return [ordered]@{ offset = $offset + $prefix.Length; value = $ascii.Substring($offset + $prefix.Length, 3) }
 }
 
-function Get-PortableInventory([string]$Path) {
+function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($Path)
@@ -298,10 +306,89 @@ function Get-PortableInventory([string]$Path) {
             }
             $inventory[$name] = $item
         }
+        # Older official installers packaged a self-contained executable.
+        if ($PreviousRelease -and $inventory.Count -eq 1 -and $inventory.ContainsKey('ZeroAgent.exe')) {
+            return $inventory
+        }
         if ($inventory.Count -ne 6) { throw 'Portable ZIP must contain exactly the six expected payload files' }
         foreach ($name in $script:payloadNames) { if (-not $inventory.ContainsKey($name)) { throw "Missing portable payload $name" } }
         return $inventory
     } finally { $zip.Dispose() }
+}
+
+function Read-PreviousRelease([string]$Directory, [string]$Version, $CandidateMsi) {
+    $base = "ZeroAgent-v$Version-Windows-x64"
+    $releaseUrl = "https://github.com/USA-Zero/ZeroAgent/releases/download/v$Version"
+    $manifestPath = Get-SafeFullPath (Join-Path $Directory 'latest.json')
+    if ((Get-Item -LiteralPath $manifestPath).Length -gt 524288) { throw 'Previous release manifest exceeds size limit' }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($manifest.version -cne $Version) { throw 'Previous release manifest version does not match PreviousVersion' }
+    $previous = [ordered]@{ version = $Version; signature = @{}; installers = @{} }
+    foreach ($spec in @(@('msi', "$base.msi"), @('nsis', "$base-Setup.exe"))) {
+        $kind, $name = $spec
+        $platform = $manifest.platforms.PSObject.Properties["windows-x86_64-$kind"]
+        if (-not $platform -or $platform.Value.url -cne "$releaseUrl/$name" -or
+            $platform.Value.signature -isnot [string] -or $platform.Value.signature -notmatch '^[A-Za-z0-9+/]{1,8192}={0,2}$') {
+            throw "Previous release manifest has no matching official Windows $kind URL and signature"
+        }
+        $path = Get-SafeFullPath (Join-Path $Directory $name)
+        $previous.installers[$kind] = $path
+        $previous.signature[$kind] = $platform.Value.signature
+        $script:report.artifacts += [ordered]@{ kind = "previous-$kind"; path = $path; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    $portablePath = Get-SafeFullPath (Join-Path $Directory "$base-portable.zip")
+    $previous.msi = Get-MsiMetadata $previous.installers['msi'] $Version
+    if ($previous.msi.upgradeCode -ine $CandidateMsi.upgradeCode -or
+        $previous.msi.productCode -ieq $CandidateMsi.productCode) {
+        throw 'Previous and candidate MSIs must share UpgradeCode and have distinct ProductCodes'
+    }
+    $previous.portable = Get-PortableInventory $portablePath -PreviousRelease
+    $script:report.artifacts += [ordered]@{ kind = 'previous-portable'; path = $portablePath; sha256 = (Get-FileHash -LiteralPath $portablePath -Algorithm SHA256).Hash.ToLowerInvariant() }
+    return $previous
+}
+
+function Get-UpgradeDataRoots {
+    $profile = Get-SafeFullPath ([Environment]::GetFolderPath('UserProfile'))
+    $roaming = Get-SafeFullPath ([Environment]::GetFolderPath('ApplicationData'))
+    $local = Get-SafeFullPath ([Environment]::GetFolderPath('LocalApplicationData'))
+    $roots = @(
+        @{ name = 'roaming-app-data'; parent = $roaming; path = 'top.usa0.zeroagent' },
+        @{ name = 'local-app-data'; parent = $local; path = 'top.usa0.zeroagent' },
+        @{ name = 'zeroagent-profile'; parent = $profile; path = '.zeroagent' },
+        @{ name = 'liveagent-profile'; parent = $profile; path = '.liveagent' }
+    )
+    foreach ($root in $roots) {
+        $path = Get-SafeFullPath (Join-Path $root.parent $root.path)
+        Assert-Below $path $profile
+        if (Test-Path -LiteralPath $path) { throw "Upgrade verification requires a disposable profile without existing $($root.name)" }
+        [ordered]@{ name = $root.name; path = $path }
+    }
+}
+
+function New-UpgradeDataFixtures($Roots, [string]$Kind) {
+    foreach ($root in $Roots) {
+        $directory = Get-SafeFullPath $root.path
+        $file = Get-SafeFullPath (Join-Path $directory ("zeroagent-installer-qa-$Kind-" + [Guid]::NewGuid().ToString('N') + '.fixture'))
+        Assert-Below $file $directory
+        [void](New-Item -ItemType Directory -Path $directory -Force)
+        [void](Get-SafeFullPath $file)
+        $stream = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+        try {
+            $bytes = [Text.Encoding]::UTF8.GetBytes("ZeroAgent QA $($root.name) $Kind $([Guid]::NewGuid().ToString('N'))")
+            $stream.Write($bytes, 0, $bytes.Length)
+        } finally { $stream.Dispose() }
+        [ordered]@{ location = $root.name; path = $file; sha256 = Get-Sha256Bytes $bytes }
+    }
+}
+
+function Assert-UpgradeDataFixtures($Fixtures) {
+    foreach ($fixture in $Fixtures) {
+        $file = Get-SafeFullPath $fixture.path
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $fixture.sha256) {
+            throw "Upgrade or uninstall lost or changed installer QA bytes in $($fixture.location)"
+        }
+    }
 }
 
 function Get-OwnedFiles([string]$InstallDir) {
@@ -341,17 +428,18 @@ function Assert-OwnedRegistration($State, [string]$Kind, [string]$InstallDir, $M
     }
 }
 
-function Test-InstalledPayloads([string]$InstallDir, [string]$Kind, $Portable, $Metadata) {
+function Test-InstalledPayloads([string]$InstallDir, [string]$Kind, $Portable, $Metadata, [string]$Version = $ExpectedVersion) {
     $result = @()
     $ownedFiles = @(Get-OwnedFiles $InstallDir)
     foreach ($file in $ownedFiles) {
         $allowedAuxiliary = ($Kind -eq 'nsis' -and $file.relativePath -ieq 'uninstall.exe') -or
             ($Kind -eq 'msi' -and $Metadata.expectedAuxiliaryFiles -contains $file.relativePath)
-        if ($script:payloadNames -notcontains $file.relativePath -and -not $allowedAuxiliary) {
+        if (-not $Portable.ContainsKey($file.relativePath) -and -not $allowedAuxiliary) {
             throw "Unexpected installed file: $($file.relativePath)"
         }
     }
     foreach ($name in $script:payloadNames) {
+        if (-not $Portable.ContainsKey($name)) { continue }
         $path = Get-SafeFullPath (Join-Path $InstallDir $name)
         Assert-Below $path $InstallDir
         $file = Get-Item -LiteralPath $path
@@ -360,9 +448,9 @@ function Test-InstalledPayloads([string]$InstallDir, [string]$Kind, $Portable, $
         $check = [ordered]@{ relativePath = $name; bytes = $file.Length; sha256 = $hash; portableSha256 = $portableFile.sha256; rawSha256MatchesPortable = ($hash -ceq $portableFile.sha256) }
         if ($file.Length -ne $portableFile.bytes) { throw "$name has an unexpected installed length" }
         if ($name -ieq 'ZeroAgent.exe') {
-            $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($path).ProductVersion
-            if ($version -cne $ExpectedVersion) { throw "Installed main ProductVersion '$version' does not equal '$ExpectedVersion'" }
-            $check.productVersion = $version
+            $installedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($path).ProductVersion
+            if ($installedVersion -cne $Version) { throw "Installed main ProductVersion '$installedVersion' does not equal '$Version'" }
+            $check.productVersion = $installedVersion
             $bytes = [IO.File]::ReadAllBytes($path); $marker = Get-MainMarker $bytes
             $expectedMarker = if ($Kind -eq 'msi') { 'MSI' } else { 'NSS' }
             if ($marker.offset -ne $portableFile.marker.offset -or $marker.value -cne $expectedMarker) { throw 'Installed main Tauri marker is not the expected installer marker' }
@@ -415,6 +503,123 @@ function Wait-OwnedRemoval([string]$InstallDir, [string]$Kind, $Metadata) {
     throw 'Uninstaller did not clear uninstall registrations, related MSI state, processes, and all owned files within 120 seconds'
 }
 
+function Assert-UpgradeRegistration($State, [string]$Kind, [string]$InstallDir, $Metadata, [string]$Version) {
+    Assert-OwnedRegistration $State $Kind $InstallDir $Metadata
+    if ($State.processes.Count -or $State.existingInstallDirectories.Count) {
+        throw "$Kind found an unexpected product process or installation directory"
+    }
+    if ($Kind -eq 'msi') {
+        if ($State.exactMsiProductState -ne 5 -or $State.relatedMsiProducts.Count -ne 1 -or
+            $State.relatedMsiProducts[0] -ine $Metadata.productCode) {
+            throw 'MSI upgrade must leave exactly the expected installed product'
+        }
+    } elseif ($State.relatedMsiProducts.Count -or $State.exactMsiProductState -ne -1 -or
+        @($State.registrations | Where-Object { $_.kind -eq 'uninstall' -and $_.displayVersion -cne $Version }).Count) {
+        throw 'NSIS upgrade must leave the expected version and no MSI product'
+    }
+}
+
+function Invoke-UpgradeInstall([string]$Kind, $Installer, [string]$InstallDir, [string]$Stage) {
+    $path = Get-SafeFullPath $Installer.path
+    Assert-Below $path $script:scratch
+    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Installer.sha256) {
+        throw 'Verified installer bytes changed'
+    }
+    $operation = "$Kind-$Stage"
+    if ($Kind -eq 'msi') {
+        $args = '/i "' + $path + '" /qn /norestart INSTALLDIR="' + $InstallDir + '" /l*v "' + (Join-Path $ReportDir "$operation.log") + '"'
+        return Invoke-OwnedProcess $script:msiexec $args $operation
+    }
+    $switches = if ($Stage -eq 'upgrade') { '/S /UPDATE' } else { '/S' }
+    return Invoke-OwnedProcess $path "$switches /D=$InstallDir" $operation
+}
+
+function Invoke-UpgradeCycle([string]$Kind, [string]$InstallDir, $Previous, $Candidate, $DataRoots) {
+    $phase = [ordered]@{ kind = "$Kind-upgrade"; installDirectory = $InstallDir; status = 'failed'; error = $null; cleanupError = $null }
+    $script:report.phases += $phase
+    $phase.before = Get-FreshnessState $Candidate.msi
+    $blockers = @(Get-FreshnessBlockers $phase.before)
+    if ($blockers.Count -or (Test-Path -LiteralPath $InstallDir)) { throw "Refusing non-fresh $Kind upgrade installation" }
+    $owned = $false
+    $fixtures = @()
+    try {
+        $installed = Invoke-UpgradeInstall $Kind $Previous.installers[$Kind] $InstallDir 'install-previous'
+        $phase.afterPreviousInstall = Get-FreshnessState $Previous.msi
+        Assert-UpgradeRegistration $phase.afterPreviousInstall $Kind $InstallDir $Previous.msi $Previous.version
+        $owned = $true
+        if ($installed.exitCode -ne 0) { throw "Previous $Kind install returned $($installed.exitCode)" }
+        $phase.previousVerification = Test-InstalledPayloads $InstallDir $Kind $Previous.portable $Previous.msi $Previous.version
+        $fixtures = @(New-UpgradeDataFixtures $DataRoots $Kind)
+        $phase.dataFixtures = $fixtures
+        $updated = Invoke-UpgradeInstall $Kind $Candidate.installers[$Kind] $InstallDir 'upgrade'
+        $phase.afterUpgrade = Get-FreshnessState $Candidate.msi
+        Assert-UpgradeRegistration $phase.afterUpgrade $Kind $InstallDir $Candidate.msi $Candidate.version
+        if ($Kind -eq 'msi' -and (Get-FreshnessState $Previous.msi).exactMsiProductState -ne -1) { throw 'Previous MSI ProductCode is still installed after upgrade' }
+        if ($updated.exitCode -ne 0) { throw "$Kind upgrade returned $($updated.exitCode)" }
+        $phase.candidateVerification = Test-InstalledPayloads $InstallDir $Kind $Candidate.portable $Candidate.msi $Candidate.version
+        Assert-UpgradeDataFixtures $fixtures
+        $phase.dataRetainedAfterUpgrade = $true
+    } catch { $phase.error = $_.Exception.Message }
+    finally {
+        if ($owned) {
+            try {
+                # If upgrade failed, remove only a single proved installation of one of the two versions.
+                $remove = $Candidate
+                try { Assert-UpgradeRegistration (Get-FreshnessState $remove.msi) $Kind $InstallDir $remove.msi $remove.version }
+                catch {
+                    $remove = $Previous
+                    Assert-UpgradeRegistration (Get-FreshnessState $remove.msi) $Kind $InstallDir $remove.msi $remove.version
+                }
+                if ($Kind -eq 'msi') {
+                    $args = '/x ' + $remove.msi.productCode + ' /qn /norestart /l*v "' + (Join-Path $ReportDir 'msi-upgrade-uninstall.log') + '"'
+                    $removed = Invoke-OwnedProcess $script:msiexec $args 'msi-upgrade-uninstall'
+                } else {
+                    $uninstaller = Get-SafeFullPath (Join-Path $InstallDir 'uninstall.exe')
+                    Assert-Below $uninstaller $script:scratch
+                    if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Owned NSIS uninstaller is missing' }
+                    $removed = Invoke-OwnedProcess $uninstaller '/S' 'nsis-upgrade-uninstall'
+                }
+                $phase.afterUninstall = Wait-OwnedRemoval $InstallDir $Kind $remove.msi
+                if ($removed.exitCode -ne 0) { throw "$Kind uninstall returned $($removed.exitCode)" }
+                if ($fixtures.Count) {
+                    Assert-UpgradeDataFixtures $fixtures
+                    $phase.dataRetainedAfterUninstall = $true
+                }
+            } catch { $phase.cleanupError = $_.Exception.Message }
+        }
+    }
+    if ($phase.error -or $phase.cleanupError) { throw "$Kind upgrade cycle failed: $($phase.error) $($phase.cleanupError)" }
+    $phase.status = 'passed'
+}
+
+function Stage-UpgradeInstaller([string]$Kind, [string]$Path, [string]$Stage, [string]$Signature) {
+    $extension = if ($Kind -eq 'msi') { 'msi' } else { 'exe' }
+    $staged = Join-Path $script:scratch "$Stage-$Kind.$extension"
+    $recordKind = if ($Stage -eq 'previous') { "previous-$Kind" } else { $Kind }
+    $sourceRecord = $script:report.artifacts | Where-Object { $_.kind -ceq $recordKind }
+    Copy-Item -LiteralPath $Path -Destination $staged
+    if ((Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash.ToLowerInvariant() -cne $sourceRecord.sha256) {
+        throw 'Installer bytes changed after release preflight'
+    }
+    [IO.File]::WriteAllText("$staged.sig", $Signature, (New-Object Text.UTF8Encoding($false)))
+    return [ordered]@{ path = $staged; sha256 = $sourceRecord.sha256 }
+}
+
+function Test-StagedUpgradeSignatures($Previous, $Candidate, [string]$Config) {
+    $staged = @($Previous.installers['msi'], $Previous.installers['nsis'], $Candidate.installers['msi'], $Candidate.installers['nsis'])
+    $paths = @($staged | ForEach-Object { $_.path })
+    $manifest = Join-Path $PSScriptRoot 'verify-updater-signatures/Cargo.toml'
+    $verified = @(& cargo run --locked --release --quiet --manifest-path $manifest -- --config $Config @paths)
+    if ($LASTEXITCODE -ne 0 -or $verified.Count -ne ($paths.Count + 1)) { throw 'Previous and candidate updater signatures did not verify' }
+    $records = @($verified | ForEach-Object { $_ | ConvertFrom-Json })
+    for ($index = 0; $index -lt $paths.Count; $index++) {
+        if ($records[$index].event -cne 'updater_signature_verified' -or $records[$index].asset -cne $paths[$index] -or
+            $records[$index].sha256 -cne $staged[$index].sha256) { throw 'Updater verification receipt did not match the staged installer bytes' }
+    }
+    if ($records[-1].event -cne 'updater_signatures_verified' -or $records[-1].assets -ne $paths.Count) { throw 'Updater verification receipt is incomplete' }
+    $script:report.updaterSignatures = $records
+}
+
 function Invoke-InstallerCycle([string]$Kind, [string]$InstallerPath, [string]$InstallDir, $Metadata, $Portable) {
     $phase = [ordered]@{ kind = $Kind; installDirectory = $InstallDir; status = 'failed'; ownershipProved = $false; error = $null; cleanupError = $null }
     $script:report.phases += $phase
@@ -465,6 +670,8 @@ function Invoke-InstallerCycle([string]$Kind, [string]$InstallerPath, [string]$I
 
 try {
     if ($ExpectedVersion -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') { throw 'ExpectedVersion must be the exact application SemVer without a v prefix' }
+    $upgrade = [bool]($PreviousArtifactDir -or $PreviousVersion -or $UpdaterConfig)
+    $script:report.mode = if ($upgrade) { 'upgrade' } else { 'fresh' }
     $environmentBlockers = @(Get-EnvironmentBlockers)
     $script:report.executionBlockers = $environmentBlockers
     $temporaryBase = if ($env:RUNNER_TEMP) { Get-SafeFullPath $env:RUNNER_TEMP } elseif ($DryRun) { Get-SafeFullPath ([IO.Path]::GetTempPath()) } else { throw 'RUNNER_TEMP is required' }
@@ -500,29 +707,78 @@ try {
     $nsisInstall = Get-SafeFullPath (Join-Path $script:scratch 'nsis-app')
     $script:msiexec = Get-SafeFullPath (Join-Path ([Environment]::GetFolderPath('System')) 'msiexec.exe')
     $script:report.scratchDirectory = $script:scratch
-    $script:report.plan = @(
-        [ordered]@{ operation = 'msi-install'; executable = $script:msiexec; switches = @('/i', 'owned staged MSI', '/qn', '/norestart', "INSTALLDIR=$msiInstall", '/l*v', (Join-Path $ReportDir 'msi-install.log')) },
-        [ordered]@{ operation = 'verify-msi'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> MSI'; expectedProductVersion = $ExpectedVersion },
-        [ordered]@{ operation = 'msi-uninstall'; executable = $script:msiexec; switches = @('/x', $metadata.productCode, '/qn', '/norestart', '/l*v', (Join-Path $ReportDir 'msi-uninstall.log')); requiresProvedOwnership = $true },
-        [ordered]@{ operation = 'nsis-install'; executable = 'owned staged Setup.exe'; switches = @('/S', "/D=$nsisInstall") },
-        [ordered]@{ operation = 'verify-nsis'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> NSS'; expectedProductVersion = $ExpectedVersion },
-        [ordered]@{ operation = 'nsis-uninstall'; executable = (Join-Path $nsisInstall 'uninstall.exe'); switches = @('/S'); requiresProvedOwnership = $true; waitFor = 'process tree, files, uninstall registry and MSI product state'; allowedResidue = 'Only an HKCU usa0/ZeroAgent install-directory preference pointing to this exact owned GUID directory; never delete user data' }
-    )
+    if ($upgrade) {
+        if (-not ($PreviousArtifactDir -and $PreviousVersion -and $UpdaterConfig)) {
+            throw 'PreviousArtifactDir, PreviousVersion and UpdaterConfig are required together'
+        }
+        if ($PreviousVersion -notmatch '^\d+\.\d+\.\d+$' -or
+            [version]($ExpectedVersion -split '-')[0] -le [version]$PreviousVersion) {
+            throw 'PreviousVersion must be a stable release with a lower Windows base version than the candidate'
+        }
+        $previousDir = Get-SafeFullPath $PreviousArtifactDir
+        $config = Get-SafeFullPath $UpdaterConfig
+        if ($previousDir -ieq $ArtifactDir -or $previousDir -ieq $ReportDir -or
+            $previousDir.StartsWith($ReportDir + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            $ReportDir.StartsWith($previousDir + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'The previous release must use a separate directory from candidate artifacts and reports'
+        }
+        if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { throw 'UpdaterConfig is missing' }
+        $previous = Read-PreviousRelease $previousDir $PreviousVersion $metadata
+        $candidate = [ordered]@{ version = $ExpectedVersion; msi = $metadata; portable = $portable; installers = @{}; signature = @{} }
+        foreach ($kind in @('msi', 'nsis')) {
+            $signaturePath = Get-SafeFullPath ($artifacts[$kind] + '.sig')
+            if ((Get-Item -LiteralPath $signaturePath).Length -gt 8192) { throw "Candidate $kind updater signature exceeds size limit" }
+            $signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+            if ($signature -notmatch '^[A-Za-z0-9+/]{1,8192}={0,2}$') { throw "Candidate $kind updater signature wrapper is invalid" }
+            $candidate.signature[$kind] = $signature
+        }
+        $script:report.previousVersion = $previous.version
+        $script:report.previousMsi = $previous.msi
+        $script:report.plan = @(
+            [ordered]@{ operation = 'verify-updater-signatures'; release = 'previous and candidate'; signedInstallers = 4 }
+            foreach ($kind in @('msi', 'nsis')) {
+                [ordered]@{ operation = "$kind-install-previous"; version = $PreviousVersion; payloadCount = $previous.portable.Count }
+                [ordered]@{ operation = "$kind-seed-user-data"; locations = @('roaming-app-data', 'local-app-data', 'zeroagent-profile', 'liveagent-profile') }
+                [ordered]@{ operation = "$kind-upgrade"; version = $ExpectedVersion; payloadCount = 6; sameDirectory = $true; compareUserDataBytes = $true }
+                [ordered]@{ operation = "$kind-upgrade-uninstall"; requiresProvedOwnership = $true; compareUserDataBytes = $true }
+            }
+        )
+    } else {
+        $script:report.plan = @(
+            [ordered]@{ operation = 'msi-install'; executable = $script:msiexec; switches = @('/i', 'owned staged MSI', '/qn', '/norestart', "INSTALLDIR=$msiInstall", '/l*v', (Join-Path $ReportDir 'msi-install.log')) },
+            [ordered]@{ operation = 'verify-msi'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> MSI'; expectedProductVersion = $ExpectedVersion },
+            [ordered]@{ operation = 'msi-uninstall'; executable = $script:msiexec; switches = @('/x', $metadata.productCode, '/qn', '/norestart', '/l*v', (Join-Path $ReportDir 'msi-uninstall.log')); requiresProvedOwnership = $true },
+            [ordered]@{ operation = 'nsis-install'; executable = 'owned staged Setup.exe'; switches = @('/S', "/D=$nsisInstall") },
+            [ordered]@{ operation = 'verify-nsis'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> NSS'; expectedProductVersion = $ExpectedVersion },
+            [ordered]@{ operation = 'nsis-uninstall'; executable = (Join-Path $nsisInstall 'uninstall.exe'); switches = @('/S'); requiresProvedOwnership = $true; waitFor = 'process tree, files, uninstall registry and MSI product state'; allowedResidue = 'Only an HKCU usa0/ZeroAgent install-directory preference pointing to this exact owned GUID directory; never delete user data' }
+        )
+    }
     if ($DryRun) {
         $script:report.status = 'dry-run'
         $script:report.executionAllowed = $false
     } else {
         if ($freshnessBlockers.Count) { throw ('Refusing non-fresh runner: ' + ($freshnessBlockers -join '; ')) }
         [void](New-Item -ItemType Directory -Path $script:scratch)
-        $stagedMsi = Join-Path $script:scratch 'ZeroAgent.msi'
-        $stagedNsis = Join-Path $script:scratch 'ZeroAgent-Setup.exe'
-        Copy-Item -LiteralPath $artifacts.msi -Destination $stagedMsi
-        Copy-Item -LiteralPath $artifacts.nsis -Destination $stagedNsis
-        foreach ($item in @(@($artifacts.msi, $stagedMsi), @($artifacts.nsis, $stagedNsis))) {
-            if ((Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $item[1] -Algorithm SHA256).Hash) { throw 'Staged installer bytes changed' }
+        if ($upgrade) {
+            $dataRoots = @(Get-UpgradeDataRoots)
+            foreach ($kind in @('msi', 'nsis')) {
+                $previous.installers[$kind] = Stage-UpgradeInstaller $kind $previous.installers[$kind] 'previous' $previous.signature[$kind]
+                $candidate.installers[$kind] = Stage-UpgradeInstaller $kind $artifacts[$kind] 'candidate' $candidate.signature[$kind]
+            }
+            Test-StagedUpgradeSignatures $previous $candidate $config
+            Invoke-UpgradeCycle 'msi' $msiInstall $previous $candidate $dataRoots
+            Invoke-UpgradeCycle 'nsis' $nsisInstall $previous $candidate $dataRoots
+        } else {
+            $stagedMsi = Join-Path $script:scratch 'ZeroAgent.msi'
+            $stagedNsis = Join-Path $script:scratch 'ZeroAgent-Setup.exe'
+            Copy-Item -LiteralPath $artifacts.msi -Destination $stagedMsi
+            Copy-Item -LiteralPath $artifacts.nsis -Destination $stagedNsis
+            foreach ($item in @(@($artifacts.msi, $stagedMsi), @($artifacts.nsis, $stagedNsis))) {
+                if ((Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $item[1] -Algorithm SHA256).Hash) { throw 'Staged installer bytes changed' }
+            }
+            Invoke-InstallerCycle 'msi' $stagedMsi $msiInstall $metadata $portable
+            Invoke-InstallerCycle 'nsis' $stagedNsis $nsisInstall $metadata $portable
         }
-        Invoke-InstallerCycle 'msi' $stagedMsi $msiInstall $metadata $portable
-        Invoke-InstallerCycle 'nsis' $stagedNsis $nsisInstall $metadata $portable
         $script:report.after = Get-FreshnessState $metadata
         $script:report.status = 'passed'
     }

@@ -6,19 +6,18 @@ import { nativeSessionHandle, requireNativeSession } from "./nativeSession";
 
 type Callbacks = Pick<
   DesktopCloudHost,
-  | "getEnvironments"
-  | "onSwitch"
-  | "onOpenDeviceTasks"
   | "onLogout"
   | "onUserChange"
-  | "onHeaderTarget"
+  | "registerNavigationGuard"
 > & { onLocationChange?: (href: string) => void };
 type CloudResponse = { status: number; headers: Record<string, string> };
 const locationEvent = "zeroagent:desktop-cloud-location";
 const routeKey = (scope: string) => `zeroagent.desktop-cloud.location:${scope}`;
 const conversationKey = (scope: string) => `${routeKey(scope)}:conversation`;
+const skillReaderReturnKey = (scope: string) => `${routeKey(scope)}:skill-reader-return`;
 
 export function desktopCloudNavigate(scope: string, href: string) {
+  localStorage.removeItem(skillReaderReturnKey(scope));
   localStorage.setItem(routeKey(scope), href);
   window.dispatchEvent(new CustomEvent(locationEvent, { detail: scope }));
 }
@@ -135,10 +134,15 @@ export async function openDesktopCloudHost(callbacks: Callbacks, signal: AbortSi
     request,
     readLocation: () => localStorage.getItem(routeKey(session.accountScope)) || "/",
     readConversation: () => localStorage.getItem(conversationKey(session.accountScope)) || "",
-    saveLocation: (href, conversation) => {
+    readSkillReaderReturn: () =>
+      localStorage.getItem(skillReaderReturnKey(session.accountScope)) ?? undefined,
+    saveLocation: (href, conversation, skillReaderReturn) => {
       if (!isCurrent()) return;
       localStorage.setItem(routeKey(session.accountScope), href);
       localStorage.setItem(conversationKey(session.accountScope), conversation);
+      if (skillReaderReturn)
+        localStorage.setItem(skillReaderReturnKey(session.accountScope), skillReaderReturn);
+      else localStorage.removeItem(skillReaderReturnKey(session.accountScope));
       callbacks.onLocationChange?.(href);
     },
     subscribeLocation: (listener) => {

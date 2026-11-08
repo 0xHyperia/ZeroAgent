@@ -268,6 +268,17 @@ func (s *Service) createCloudRun(ctx context.Context, session *Session, input Cr
 	if _, err := s.store.GetCloudConversation(ctx, session.UserID, input.ConversationID); err != nil {
 		return s.replayCloudRunAfterValidationFailure(ctx, session, input, hash, err)
 	}
+	if pins := cloudSkillPins(logical); len(pins) != 0 {
+		packages, err := s.cloudSkillCatalog(ctx, session.UserID)
+		if err != nil {
+			err = &APIError{Status: http.StatusServiceUnavailable, Reason: "skill_catalog_unavailable", Message: "The skill catalog could not be read. Try again."}
+			return s.replayCloudRunAfterValidationFailure(ctx, session, input, hash, err)
+		}
+		if problem := cloudSkillPinProblem(packages, pins); problem != "" {
+			err := &APIError{Status: http.StatusUnprocessableEntity, Reason: problem, Message: "Check the selected skills and their revisions before sending."}
+			return s.replayCloudRunAfterValidationFailure(ctx, session, input, hash, err)
+		}
+	}
 	content, err = s.canonicalCloudFileReferences(ctx, session.UserID, logical)
 	if err != nil {
 		return s.replayCloudRunAfterValidationFailure(ctx, session, input, hash, err)
@@ -359,7 +370,7 @@ func (r *cloudRunRuntime) execute(run *CloudRun, owner string) {
 				check, done := context.WithTimeout(ctx, 3*time.Second)
 				current, err := r.store.RenewCloudRunLease(check, run.UserID, run.ID, owner, run.Attempt, cloudRunLease)
 				session, sessionErr := r.sessions.GetCloudRunSession(check, run.SessionRef)
-				if sessionErr == nil && (isDesktopCloudPurpose(session.Purpose) || session.Purpose == "cloud_schedule") {
+				if sessionErr == nil && isDesktopCloudPurpose(session.Purpose) {
 					session, sessionErr = r.service.Session(check, session.ID)
 				}
 				done()

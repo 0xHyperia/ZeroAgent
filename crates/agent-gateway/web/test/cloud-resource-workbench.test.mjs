@@ -3,6 +3,7 @@ import test from "node:test";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+const reportSplit = () => {};
 
 test("a workbench DOM node attached after the first effect still enables PC split reading",async t=>{
   let env;
@@ -14,16 +15,16 @@ test("a workbench DOM node attached after the first effect still enables PC spli
   const {CloudChatResourceWorkbench}=env.loadModule("src/components/cloudchat/CloudChatResourceWorkbench.tsx");
   const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
   t.after(async()=>{await env.act(async()=>root.unmount());host.remove();window.HTMLElement.prototype.getBoundingClientRect=original;env.cleanup();});
-  await env.act(async()=>{root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,primary:"对话"},"预览"));await tick();});
+  await env.act(async()=>{root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,onSplitAvailabilityChange:reportSplit,primary:"对话"},"预览"));await tick();});
   assert.equal(host.querySelector('.cloud-resource-workbench').getAttribute('data-reader-only'),'false');
   assert.ok(host.querySelector('[aria-label="调整对话与预览宽度"]'));
-  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:false,primary:"对话"},"预览")));
+  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:false,onSplitAvailabilityChange:reportSplit,primary:"对话"},"预览")));
   assert.equal(host.querySelector('[aria-label="调整对话与预览宽度"]'),null,"a library-only canvas has no phantom splitter over the document");
   const canvas=host.querySelector('.cloud-workspace-primary');
-  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,defaultSplitRatio:0.34,primary:"对话"},"预览")));
+  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,onSplitAvailabilityChange:reportSplit,defaultSplitRatio:0.34,primary:"对话"},"预览")));
   assert.equal(host.querySelector('.cloud-workspace-primary'),canvas,"entering AI work preserves the original draft canvas");
   assert.ok(Math.abs(parseFloat(host.querySelector('.cloud-resource-workbench').style.getPropertyValue('--cloud-primary-width'))-1392*0.34)<1);
-  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,primary:"对话"},"预览")));
+  await env.act(async()=>root.render(env.React.createElement(CloudChatResourceWorkbench,{open:true,primaryVisible:true,onSplitAvailabilityChange:reportSplit,primary:"对话"},"预览")));
   assert.ok(Math.abs(parseFloat(host.querySelector('.cloud-resource-workbench').style.getPropertyValue('--cloud-primary-width'))-1392*0.44)<1,"ordinary chat retains its own default split");
 });
 
@@ -60,7 +61,7 @@ test("reading expansion and actual-canvas resizing preserve the draft, resource 
   function App() {
     const [open, setOpen] = env.React.useState(false);
     return h(CloudChatResourceWorkbench, {
-      open, primaryVisible: true,
+      open, primaryVisible: true, onSplitAvailabilityChange: reportSplit,
       header: h("header", {"data-chat-chrome":""}, "对话标题"),
       primary: h("div", null,
         h("input", { "aria-label": "草稿", defaultValue: "已有草稿" }),
@@ -103,8 +104,11 @@ test("reading expansion and actual-canvas resizing preserve the draft, resource 
   assert.equal(host.querySelector('[aria-label="阅读位置"]'), reader);
   await env.act(async () => { host.querySelector('[aria-label="恢复并排阅读"]').click(); await tick(); });
   assert.equal(primary.hidden, false);
+  await env.act(async () => host.querySelector('[data-workbench-divider="cloud-reader"]').focus());
   await env.act(async () => { width = 720; for (const notify of observers) notify(); await tick(); });
   assert.equal(primary.hidden, true, "uses the remaining workbench width, not window width");
+  assert.equal(document.activeElement, host.querySelector("[data-cloud-reader-return]"),
+    "a disappearing separator moves focus into the reader");
   assert.equal(host.querySelector('[aria-label="阅读位置"]'), reader);
   await env.act(async () => { width = 1400; for (const notify of observers) notify(); await tick(); });
   assert.equal(primary.hidden, false);

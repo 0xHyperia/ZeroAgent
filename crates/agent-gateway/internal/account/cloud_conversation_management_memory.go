@@ -199,7 +199,7 @@ func (s *MemoryStore) CloudConversationBranches(ctx context.Context, uid int64, 
 		}
 		if b.Conversation.ID == cid {
 			source, exists := s.cloudConversations[b.SourceConversationID]
-			page.Source = &CloudConversationBranchSource{ConversationID: b.SourceConversationID, MessageID: b.SourceMessageID, Action: b.Action, Available: exists && source.UserID == uid}
+			page.Source = &CloudConversationBranchSource{ConversationID: b.SourceConversationID, MessageID: b.SourceMessageID, Available: exists && source.UserID == uid}
 			if page.Source.Available {
 				page.Source.Title = source.Title
 			}
@@ -209,7 +209,7 @@ func (s *MemoryStore) CloudConversationBranches(ctx context.Context, uid int64, 
 		}
 		destination, exists := s.cloudConversations[b.Conversation.ID]
 		if exists && destination.UserID == uid && (value == "" || cloudProjectEarlier(destination.CreatedAt, destination.ID, cursor.At, cursor.ID)) {
-			page.Children = append(page.Children, CloudConversationBranchChild{destination, b.SourceMessageID, b.Action})
+			page.Children = append(page.Children, CloudConversationBranchChild{destination, b.SourceMessageID})
 		}
 	}
 	sort.Slice(page.Children, func(i, j int) bool {

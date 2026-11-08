@@ -2,7 +2,7 @@ import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbe
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
@@ -23,6 +23,7 @@ type Props = Pick<
   initialView?: "cron-hub";
   settings: AppSettings;
   environment: DesktopEnvironment;
+  selectedDeviceMissing?: boolean;
   environments: DesktopEnvironment[];
   selectionLease: string;
   expiresAt: number;
@@ -54,16 +55,27 @@ export function RemoteDeviceWorkbench(props: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  const target = useMemo(
+    () => ({ deviceId, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort }),
+    [deviceId, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort],
+  );
+  const mountedTarget = useRef<typeof target | undefined>(undefined);
+  // A listed device can reconnect on its current lease without discarding its workbench.
+  const canStartOrKeep =
+    !props.selectedDeviceMissing && (online || mountedTarget.current === target);
   const currentProps = useRef(props);
   currentProps.current = props;
 
   useEffect(() => {
+    const { deviceId, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort } = target;
     const snapshot = currentProps.current;
     if (
       snapshot.environment.device_id !== deviceId ||
-      snapshot.environment.online !== online ||
       snapshot.settings.remote.gatewayUrl !== gatewayUrl ||
-      snapshot.settings.remote.gatewayPort !== gatewayPort
+      snapshot.settings.remote.gatewayPort !== gatewayPort ||
+      snapshot.selectionLease !== selectionLease ||
+      snapshot.expiresAt !== expiresAt ||
+      snapshot.selectionError !== selectionError
     )
       return;
     const controller = new AbortController();
@@ -72,6 +84,7 @@ export function RemoteDeviceWorkbench(props: Props) {
     let removeStyles: (() => void) | undefined;
     let timer: number | undefined;
     const dispose = () => {
+      if (mountedTarget.current === target) mountedTarget.current = undefined;
       window.clearTimeout(timer);
       controller.abort();
       workbench?.dispose();
@@ -92,11 +105,14 @@ export function RemoteDeviceWorkbench(props: Props) {
       return dispose;
     }
     if (
-      !isDesktopRemoteTargetAuthorized({ device_id: deviceId, online }, selectionLease, expiresAt)
+      !canStartOrKeep ||
+      !isDesktopRemoteTargetAuthorized(snapshot.environment, selectionLease, expiresAt)
     ) {
       setLoading(false);
       setError(
-        online ? "控制权限已过期，请重新选择并验证此设备。" : "设备离线，请在设备上线后重新连接。",
+        snapshot.environment.online
+          ? "控制权限已过期，请重新选择并验证此设备。"
+          : "设备离线，请在设备上线后重新连接。",
       );
       return dispose;
     }
@@ -132,6 +148,7 @@ export function RemoteDeviceWorkbench(props: Props) {
       removeStyles = await attachDesktopRemoteStyles(prepared.styles, controller.signal);
       if (controller.signal.aborted || !container.current) return;
       workbench = prepared.factory.createDesktopRemoteRuntime().mount(container.current, host.host);
+      mountedTarget.current = target;
       setLoading(false);
     })().catch((cause) => {
       if (controller.signal.aborted) return;
@@ -143,7 +160,7 @@ export function RemoteDeviceWorkbench(props: Props) {
       window.clearTimeout(timer);
       dispose();
     };
-  }, [deviceId, online, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort]);
+  }, [target, canStartOrKeep]);
 
   async function reconnect() {
     setReconnecting(true);

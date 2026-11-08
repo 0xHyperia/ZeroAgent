@@ -391,3 +391,32 @@ test("outbound skill tokens use the same slash contract as composer and user bub
   const draft = draftFromSegments([{ type: "skillMention", skill: reviewerSkill }]);
   assert.equal(draftText.buildTextFromComposerDraft(draft), "/reviewer");
 });
+
+test("a device draft sends an account skill as a fixed reference beside a local slash skill", () => {
+  const accountSkill = {
+    ...reviewerSkill,
+    displayName: "Account [review]",
+    skillFile: "zeroagent-skill:account-package/3/reviewer",
+    baseDir: "cloud",
+  };
+  const draft = draftFromSegments([
+    { type: "text", text: "Use " },
+    { type: "skillMention", skill: accountSkill },
+    { type: "text", text: " then " },
+    { type: "skillMention", skill: reviewerSkill },
+  ]);
+  assert.equal(
+    draftText.buildTextFromComposerDraft(draft),
+    "Use [Account \\[review\\]](zeroagent-skill:account-package/3/reviewer) then /reviewer",
+  );
+});
+
+test("a device draft refuses a fifth account skill without counting local skills or repeated references", () => {
+  const file = (number, revision = 1) => `zeroagent-skill:account-${number}/${revision}/reviewer`;
+  const selections = [file(1), file(2), file(3), file(4), file(4), "/local/review/SKILL.md"];
+  assert.equal(draftText.deviceAccountSkillIssue(selections, file(5)), "limit");
+  assert.equal(draftText.deviceAccountSkillIssue(selections, file(4)), undefined);
+  assert.equal(draftText.deviceAccountSkillIssue(selections, file(4, 2)), "revision-conflict");
+  assert.equal(draftText.deviceAccountSkillIssue([file(1), file(2), file(3), file(3), "/local/review/SKILL.md"], file(5)), undefined);
+  assert.deepEqual(selections, [file(1), file(2), file(3), file(4), file(4), "/local/review/SKILL.md"]);
+});

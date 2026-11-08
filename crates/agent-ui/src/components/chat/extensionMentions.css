@@ -1,7 +1,8 @@
 /* A capability reference participates in the same text line as its surrounding draft. */
 .mention-composer .mention-chip.mention-extension {
   display: inline;
-  margin: 0;
+  margin-block: 0;
+  margin-inline: 0.125em;
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -10,17 +11,12 @@
   font-weight: 500;
   letter-spacing: inherit;
   vertical-align: baseline;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   user-select: all;
 }
 .dark .mention-composer .mention-chip.mention-extension {
   color: #93b8f0;
-}
-.mention-composer .mention-extension[data-skill-file^="zeroagent-skill:product-design/"] {
-  color: #a51c67;
-}
-.dark .mention-composer .mention-extension[data-skill-file^="zeroagent-skill:product-design/"] {
-  color: #f294c7;
 }
 .mention-composer .mention-extension[role="link"] {
   cursor: pointer;
@@ -33,6 +29,11 @@
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
   border-radius: 2px;
+}
+.mention-composer .mention-chip.mention-extension[data-extension-availability] {
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
 }
 .extension-mention-icon {
   display: inline-flex;

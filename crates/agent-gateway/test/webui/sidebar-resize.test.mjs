@@ -36,7 +36,7 @@ async function setup(t, { saved, width: initialWidth = 1200, open = true, previe
     sidebar = useSidebar();
     return env.React.createElement(env.React.Fragment, null,
       env.React.createElement(Sidebar, { label: "Navigation", previewOpen: peek }, env.React.createElement("button", null, "Conversation")),
-      Reader ? env.React.createElement(Reader, { open: true, primaryVisible: true, readingScope: "test", primary: env.React.createElement(Draft) },
+      Reader ? env.React.createElement(Reader, { open: true, primaryVisible: true, onSplitAvailabilityChange() {}, readingScope: "test", primary: env.React.createElement(Draft) },
         env.React.createElement("div", { "data-reading-content": "" }, "Reading content")) : env.React.createElement(Draft));
   }
   const registry = { surface: "web", services: {}, slots: {}, settingsSections: [{ id: "system", labelKey: "settings.system", groupKey: "settings.title", groupOrder: 0, order: 0, icon: null, render: () => "Settings content" }] };
@@ -87,11 +87,13 @@ test("sidebar drag previews once per frame, commits on release and preserves the
 test("left and reader resets are independent and keep the live editor, reading content and scroll position", async t => {
   const app = await setup(t, { saved: 380, reader: true });
   const right = () => app.host.querySelector('[data-workbench-divider="cloud-reader"]');
-  const pressRight = key => app.env.act(async () => right().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
+  const pressRight = (key, shiftKey = false) => app.env.act(async () => right().dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true })));
   const draft = app.host.querySelector("textarea"), content = app.host.querySelector("[data-reading-content]");
   draft.setSelectionRange(1, 4); content.scrollTop = 128;
   const mounts = app.draftMounts;
   assert.equal(right().getAttribute("aria-valuenow"), "44");
+  assert.equal(right().getAttribute("aria-valuemin"), "27");
+  assert.equal(right().getAttribute("aria-valuemax"), "65");
   await app.env.act(async () => app.handle().focus());
   assert.equal(app.saved, "380", "discovering the edge never resets it");
   await pressRight("ArrowRight"); await pressRight("ArrowRight");
@@ -102,6 +104,25 @@ test("left and reader resets are independent and keep the live editor, reading c
   await pressRight("ArrowRight"); await app.key("Enter");
   assert.equal(app.saved, "272"); assert.equal(right().getAttribute("aria-valuenow"), "46");
   await pressRight("Enter"); assert.equal(right().getAttribute("aria-valuenow"), "44");
+  await pressRight("Home"); assert.equal(right().getAttribute("aria-valuenow"), "27");
+  await pressRight("End"); assert.equal(right().getAttribute("aria-valuenow"), "65");
+  await pressRight("Enter");
+  await pressRight("ArrowLeft", true); assert.equal(right().getAttribute("aria-valuenow"), "36");
+  for (const cancel of ["Escape", "pointercancel", "lostpointercapture", "blur"]) {
+    await app.pointer("pointerdown", 430, 2, right());
+    await app.pointer("pointermove", 660, 2, right());
+    await app.flush();
+    assert.equal(right().getAttribute("aria-valuenow"), "55");
+    if (cancel === "Escape") await app.env.act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true })));
+    else if (cancel === "blur") await app.env.act(async () => window.dispatchEvent(new Event("blur")));
+    else await app.pointer(cancel, 660, 2, right());
+    assert.equal(right().getAttribute("aria-valuenow"), "36", cancel);
+    assert.equal(right().hasAttribute("data-resizing"), false);
+  }
+  await app.pointer("pointerdown", 430, 3, right());
+  await app.pointer("pointermove", 660, 3, right());
+  await app.pointer("pointerup", 660, 3, right());
+  assert.equal(right().getAttribute("aria-valuenow"), "55", "release commits the most recent movement");
   assert.equal(app.host.querySelector("textarea"), draft); assert.equal(app.draftMounts, mounts);
   assert.equal(draft.value, "保留草稿和选区"); assert.equal(draft.selectionStart, 1); assert.equal(draft.selectionEnd, 4);
   assert.equal(app.host.querySelector("[data-reading-content]"), content); assert.equal(content.scrollTop, 128);

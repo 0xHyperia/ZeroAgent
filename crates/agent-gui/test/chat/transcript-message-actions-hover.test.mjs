@@ -10,7 +10,7 @@ test("assistant timestamp shares the action-button hover chrome", () => {
   const source = read("../../../agent-ui/src/components/chat/TranscriptMessageActions.tsx");
   const assistantFn = source.slice(source.indexOf("export function TranscriptAssistantMessageActions"));
   const chromeOpen = assistantFn.indexOf(
-    "pointer-events-none flex items-center gap-0.5 opacity-100 transition-opacity",
+    "has-hover:[[data-assistant-row]:hover_&]:opacity-100",
   );
   const chromeClose = assistantFn.indexOf("</div>", chromeOpen);
   const timestamp = assistantFn.indexOf("<TranscriptTimestampLabel");

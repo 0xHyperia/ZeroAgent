@@ -224,12 +224,6 @@ export function createOpenConversationInitial(options: OpenConversationInitialOp
     } catch (error) {
       if (!isStale()) {
         const message = asErrorMessage(error, options.localeErrorMessage);
-        if (!fromSearch)
-          options.setSelectedHistory({
-            conversation_id: conversationId,
-            messages_json: message,
-            has_more: false,
-          });
         options.setChatError(message);
       }
       throw error;

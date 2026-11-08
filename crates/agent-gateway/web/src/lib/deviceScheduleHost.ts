@@ -3,9 +3,11 @@ import type {
   AutomationOp,
   AutomationSnapshot,
   CronApplyResponse,
+  CronDraftPreview,
+  CronDraftPreviewInput,
+  CronManualRunReceipt,
   CronOccurrencesResponse,
   CronRunAnchor,
-  CronRunNowResponse,
   CronRunProgress,
   CronRunRecord,
   CronTask,
@@ -16,7 +18,10 @@ export type DeviceScheduleEditorProps = {
   target: string;
   timeZone?: string;
   task?: CronTask;
+  name?: string;
   prompt?: string;
+  onUseCloud?: (name: string, prompt: string) => void;
+  preview: (input: CronDraftPreviewInput, signal?: AbortSignal) => Promise<CronDraftPreview>;
   onSave: (data: CronTaskFormData) => Promise<void>;
   onClose: () => void;
 };
@@ -25,12 +30,14 @@ export type DeviceScheduleHost = {
   targetId: string;
   label: string;
   list: () => Promise<{ tasks: CronTask[]; next: Record<string, number>; timeZone?: string }>;
+  preview: DeviceScheduleEditorProps["preview"];
   runs: (id: string) => Promise<CronRunRecord[]>;
   runAnchor?: (id: string, executionId: string) => Promise<Partial<CronRunAnchor>>;
   runProgress?: (id: string, executionId: string, cursor: number) => Promise<CronRunProgress>;
   toggle: (task: CronTask) => Promise<unknown>;
   remove: (task: CronTask) => Promise<void>;
-  runNow: (id: string) => Promise<CronRunNowResponse>;
+  runNowOnce: (id: string, executionId: string) => Promise<CronManualRunReceipt>;
+  readRunReceipt: (id: string, executionId: string) => Promise<CronManualRunReceipt>;
   cancel?: (task: string, run: string) => Promise<void>;
   save: (data: CronTaskFormData, id: string, existing?: CronTask) => Promise<CronTask>;
 };
@@ -39,10 +46,12 @@ type CronTransport = {
   fetchSnapshot(): Promise<AutomationSnapshot>;
   cronApply(input: AutomationApplyInput): Promise<CronApplyResponse>;
   cronOccurrences(from: number, to: number): Promise<CronOccurrencesResponse>;
+  previewCronDraft?: DeviceScheduleEditorProps["preview"];
   listRuns(id: string, limit: number): Promise<CronRunRecord[]>;
   runAnchor?(id: string, executionId: string): Promise<Partial<CronRunAnchor>>;
   runProgress?(id: string, executionId: string, cursor: number): Promise<CronRunProgress>;
-  runNow(id: string): Promise<CronRunNowResponse>;
+  runNowOnce(id: string, executionId: string): Promise<CronManualRunReceipt>;
+  readRunReceipt(id: string, executionId: string): Promise<CronManualRunReceipt>;
   cancelRun(id: string, run: string): Promise<void>;
   canCancelRun(): boolean;
 };
@@ -89,9 +98,69 @@ export function createDeviceScheduleHost({
     if (result.status !== "ok") throw conflict();
     return result.cron;
   }
+  async function manualReceipt(
+    action: "runNowOnce" | "readRunReceipt",
+    taskId: string,
+    executionId: string,
+  ): Promise<CronManualRunReceipt> {
+    return request(async () => {
+      try {
+        const receipt = await backend[action](taskId, executionId);
+        if (receipt?.status === "admitted") {
+          if (
+            receipt.executionId === executionId &&
+            Number.isSafeInteger(receipt.startedAt) &&
+            receipt.startedAt > 0
+          )
+            return receipt;
+        } else if (
+          receipt?.status === "unsupported" ||
+          (action === "readRunReceipt"
+            ? receipt?.status === "missing"
+            : receipt?.status === "rejected")
+        ) {
+          return receipt;
+        }
+        throw new Error("Invalid device run receipt");
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (
+          /\bE:unknown_request\b|\bunsupported cron action:? ["']?(?:run_now_once|run_receipt)\b|\bcron route not found\b/.test(
+            message,
+          )
+        )
+          return { status: "unsupported" };
+        throw cause;
+      }
+    });
+  }
   return {
     targetId,
     label,
+    preview: (input, signal) =>
+      request(async () => {
+        if (!backend.previewCronDraft) return { status: "unsupported" };
+        try {
+          const result = await backend.previewCronDraft(input, signal);
+          if (result?.status === "invalid" || result?.status === "unsupported") return result;
+          if (
+            result?.status === "valid" &&
+            typeof result.timeZone === "string" &&
+            Number.isInteger(result.utcOffsetSeconds) &&
+            Math.abs(result.utcOffsetSeconds) < 86_400 &&
+            (result.nextAt === undefined ||
+              (Number.isSafeInteger(result.nextAt) &&
+                Math.abs(result.nextAt + result.utcOffsetSeconds * 1_000) <= 8.64e15))
+          )
+            return result;
+          throw new Error("Invalid device schedule preview response");
+        } catch (cause) {
+          const error = cause instanceof Error ? cause.message : String(cause);
+          if (/\bE:unknown_request\b|\bunsupported cron action:? ["']?preview\b/.test(error))
+            return { status: "unsupported" };
+          throw cause;
+        }
+      }),
     async list() {
       const from = Date.now();
       const [{ cron }, planning] = await Promise.all([
@@ -147,7 +216,8 @@ export function createDeviceScheduleHost({
       }
       await apply(cron.revision, { op: "delete", id: task.id });
     },
-    runNow: (id) => request(() => backend.runNow(id)),
+    runNowOnce: (id, executionId) => manualReceipt("runNowOnce", id, executionId),
+    readRunReceipt: (id, executionId) => manualReceipt("readRunReceipt", id, executionId),
     cancel: backend.canCancelRun()
       ? (id, run) => request(() => backend.cancelRun(id, run))
       : undefined,

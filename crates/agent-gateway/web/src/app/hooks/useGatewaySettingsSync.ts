@@ -103,6 +103,8 @@ export function useGatewaySettingsSync(params: {
   const { token, api, activeAgentId } = params;
   const [settings, setSettingsState] = useState<AppSettings>(() => loadWebSettings(loadToken()));
   const [settingsSyncReady, setSettingsSyncReady] = useState(() => token.trim() === "");
+  const [settledSettingsTarget, setSettledSettingsTarget] =
+    useState<GatewayWebSocketClientLike | null>(null);
   const [settingsSyncError, setSettingsSyncError] = useState<string | null>(null);
   const [settingsSaveState, setSettingsSaveState] = useState<WebSettingsSaveState>({
     status: "saved",
@@ -143,7 +145,8 @@ export function useGatewaySettingsSync(params: {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", resolveEffectiveTheme(settings.theme) === "dark");
-  }, [settings.theme, systemThemeVersion]);
+    root.lang = settings.locale;
+  }, [settings.locale, settings.theme, systemThemeVersion]);
 
   useEffect(() => {
     applyFontFamilies({
@@ -301,6 +304,7 @@ export function useGatewaySettingsSync(params: {
     backendPromptResourcesRef.current = false;
     if (!api) {
       setSettingsSyncReady(token.trim() === "");
+      setSettledSettingsTarget(null);
       setSettingsSyncError(null);
       return;
     }
@@ -332,6 +336,7 @@ export function useGatewaySettingsSync(params: {
           }
         }
         if (!cancelled) {
+          setSettledSettingsTarget(api);
           setSettingsSyncReady(true);
           setSettingsSyncError(null);
         }
@@ -341,6 +346,7 @@ export function useGatewaySettingsSync(params: {
           setSettingsSyncError(
             asErrorMessage(error, t("app.desktopSettingsSyncFailed", settingsRef.current.locale)),
           );
+          setSettledSettingsTarget(api);
           setSettingsSyncReady(true);
         }
       });
@@ -355,6 +361,7 @@ export function useGatewaySettingsSync(params: {
     settings,
     setSettings,
     settingsSyncReady,
+    settingsSyncTargetReady: Boolean(api && settingsSyncReady && settledSettingsTarget === api),
     settingsSyncError,
     settingsSaveState,
   };

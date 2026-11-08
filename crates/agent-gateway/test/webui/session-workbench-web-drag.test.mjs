@@ -426,7 +426,7 @@ test("pane chrome owns per-conversation trajectory toggle and hides top tabs whe
   assert.match(viewSource, /setConversationView\(/);
   assert.match(
     viewSource,
-    /activeView === "chat" && hasConversationReply && !workbenchHasMultiplePanes/,
+    /!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes\s*\?\s*\(\s*<ConversationViewTabs/,
   );
 });
 

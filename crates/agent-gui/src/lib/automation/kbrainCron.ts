@@ -1,6 +1,9 @@
 import type {
   AutomationApplyInput,
   CronApplyResponse,
+  CronDraftPreview,
+  CronDraftPreviewInput,
+  CronManualRunReceipt,
   CronRunAnchor,
   CronRunNowResponse,
   CronRunProgress,
@@ -9,8 +12,8 @@ import type {
 } from "@liveagent/ui/lib/automation/types";
 import { fetchKBrain } from "../kbrain/transport";
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetchKBrain(path, init);
+async function request<T>(path: string, init: RequestInit = {}, retryRead = false): Promise<T> {
+  const response = await fetchKBrain(path, init, {}, retryRead);
   if (!response.ok) {
     const body = await response.text();
     let message = body;
@@ -24,6 +27,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const fetchKBrainCron = () => request<CronSnapshot>("/v1/cron");
+export const previewKBrainCronDraft = (input: CronDraftPreviewInput, signal?: AbortSignal) =>
+  request<CronDraftPreview>(
+    "/v1/planning",
+    { method: "POST", body: JSON.stringify({ action: "cron.preview", input }), signal },
+    true,
+  );
 export const applyKBrainCron = (input: AutomationApplyInput) =>
   request<CronApplyResponse>("/v1/cron", { method: "PUT", body: JSON.stringify(input) });
 export const listKBrainCronRuns = (taskId: string, limit = 100) =>
@@ -45,6 +54,12 @@ export const clearKBrainCronRuns = (taskId: string) =>
   }).then((value) => value.clearedCount ?? 0);
 export const runKBrainCronNow = (taskId: string) =>
   request<CronRunNowResponse>(`/v1/cron/${encodeURIComponent(taskId)}/run-now`, { method: "POST" });
+export const requestKBrainManualCron = (taskId: string, executionId: string, write: boolean) =>
+  request<CronManualRunReceipt>(
+    `/v1/cron/${encodeURIComponent(taskId)}/run-now/${encodeURIComponent(executionId)}`,
+    { method: write ? "POST" : "GET" },
+    !write,
+  );
 export const cancelKBrainCron = (taskId: string, executionId?: string) =>
   request<{ ok: boolean }>(
     executionId

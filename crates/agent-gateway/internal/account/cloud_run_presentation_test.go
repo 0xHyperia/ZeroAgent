@@ -181,19 +181,18 @@ func runCloudPresentationContract(t *testing.T, factory func(*testing.T) cloudRu
 			t.Fatal("Markdown export lost work record")
 		}
 	})
-	t.Run("legacy output and expired work preserve partial unknown outcome", func(t *testing.T) {
+	t.Run("expired work preserves partial output and unknown outcome", func(t *testing.T) {
 		f := factory(t)
 		ctx := context.Background()
 		run := presentationRun(t, f)
-		f.setOutput(run.ID, "已有前缀。")
-		commit := CloudRunCommit{OperationID: "legacy-tail", Delta: "新增正文", Payload: cloudJSON(map[string]any{"round": 1})}
+		commit := CloudRunCommit{OperationID: "active-text", Delta: "新增正文", Payload: cloudJSON(map[string]any{"round": 1})}
 		updated, err := f.runs.CommitCloudRun(ctx, run.UserID, run.ID, "presentation-test", run.Attempt, commit)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var p CloudPresentation
-		if json.Unmarshal(updated.Presentation, &p) != nil || len(p.Blocks) != 2 || p.Blocks[0].ID != "legacy:text" || p.Blocks[0].Text+p.Blocks[1].Text != updated.Output {
-			t.Fatal("structured upgrade lost legacy output prefix")
+		if json.Unmarshal(updated.Presentation, &p) != nil || len(p.Blocks) != 1 || p.Blocks[0].ID != "text:1" || p.Blocks[0].Text != updated.Output {
+			t.Fatal("structured output did not match the stored answer")
 		}
 		_, err = f.runs.CommitCloudRun(ctx, run.UserID, run.ID, "presentation-test", run.Attempt, CloudRunCommit{OperationID: "active-tool", EventType: "tool.started", Payload: cloudJSON(map[string]any{"round": 1, "tool_id": uuid.NewString(), "name": "execute_command"})})
 		if err != nil {
@@ -204,7 +203,7 @@ func runCloudPresentationContract(t *testing.T, factory func(*testing.T) cloudRu
 			t.Fatalf("recover expired: %d %v", count, err)
 		}
 		ended, err := f.runs.GetCloudRun(ctx, run.UserID, run.ID)
-		if err != nil || json.Unmarshal(ended.Presentation, &p) != nil || ended.State != CloudRunInterrupted || p.Blocks[2].State != CloudToolUnknown || p.Blocks[2].CompletedAt == nil {
+		if err != nil || json.Unmarshal(ended.Presentation, &p) != nil || ended.State != CloudRunInterrupted || p.Blocks[1].State != CloudToolUnknown || p.Blocks[1].CompletedAt == nil {
 			t.Fatal("recovery invented tool success or cancellation")
 		}
 		if _, err = f.runs.CommitCloudRun(ctx, run.UserID, run.ID, "presentation-test", run.Attempt, CloudRunCommit{OperationID: "late", Delta: "late"}); !errors.Is(err, ErrCloudRunLeaseLost) {

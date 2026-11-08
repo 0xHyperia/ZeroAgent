@@ -1,7 +1,13 @@
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bindAccountRequests } from "@/lib/accountRequest";
-import { readCloudChatRoute } from "@/lib/cloudChatRoute";
+import {
+  type CloudChatRoute,
+  cloudChatRouteHref,
+  DEVICE_CONVERSATION_POP_EVENT,
+  deviceWorkbenchRouteTarget,
+  readCloudChatRoute,
+} from "@/lib/cloudChatRoute";
 import {
   type DesktopRemoteHost,
   getDesktopRemoteHost,
@@ -9,6 +15,7 @@ import {
 } from "@/lib/desktopRemoteHost";
 import {
   canReuseDeviceSelection,
+  type DeviceDraftWorkspace,
   type ExecutionEnvironment,
   type ExecutionPresence,
   type ExecutionSelection,
@@ -32,7 +39,18 @@ import {
 import { setEphemeralCredential } from "@/lib/storage";
 
 const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";
+const DEVICE_DRAFT_INTENT_HISTORY_KEY = "zeroagentDeviceDraftIntent";
 const EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS = 5_000;
+
+type DeviceDraftIntent = {
+  accountId: number;
+  deviceId: string;
+  workspace: DeviceDraftWorkspace;
+};
+
+type SwitchExecutionOptions = {
+  prepareDeviceDraft?: (selection: ExecutionSelection) => Promise<DeviceDraftWorkspace>;
+};
 
 function readHistorySelection(): ExecutionSelection | null {
   const value = window.history.state?.[EXECUTION_SELECTION_HISTORY_KEY] as
@@ -46,23 +64,82 @@ function readHistorySelection(): ExecutionSelection | null {
     return null;
   }
   if (value.expires_at && Date.parse(value.expires_at) <= Date.now()) return null;
-  return value as ExecutionSelection;
+  return { ...value, device_draft_workspace: undefined } as ExecutionSelection;
 }
 
-function persistHistorySelection(selection: ExecutionSelection | null) {
+function readHistoryDeviceDraftIntent(
+  route: CloudChatRoute,
+  accountId: number | null,
+): DeviceDraftIntent | null {
+  if (accountId === null || route.page !== "chat" || route.id || !route.deviceId) return null;
+  const value = window.history.state?.[DEVICE_DRAFT_INTENT_HISTORY_KEY] as
+    | DeviceDraftIntent
+    | undefined;
+  return value?.accountId === accountId &&
+    value.deviceId === route.deviceId &&
+    typeof value.workspace?.id === "string" &&
+    value.workspace.id.trim() &&
+    typeof value.workspace.path === "string" &&
+    value.workspace.path.trim()
+    ? value
+    : null;
+}
+
+function persistHistorySelection(
+  selection: ExecutionSelection | null,
+  draftIntent: DeviceDraftIntent | null = null,
+) {
   const state = { ...(window.history.state ?? {}) };
   if (selection?.runtime_kind === "device_agent") {
-    state[EXECUTION_SELECTION_HISTORY_KEY] = selection;
+    const { device_draft_workspace: _draft, ...lease } = selection;
+    state[EXECUTION_SELECTION_HISTORY_KEY] = lease;
   } else {
     delete state[EXECUTION_SELECTION_HISTORY_KEY];
   }
+  if (draftIntent) state[DEVICE_DRAFT_INTENT_HISTORY_KEY] = draftIntent;
+  else delete state[DEVICE_DRAFT_INTENT_HISTORY_KEY];
   window.history.replaceState(state, "", window.location.href);
+}
+
+function defaultCloudSelection(
+  environments: ExecutionEnvironment[],
+  fromExplicitNavigation = false,
+): ExecutionSelection | null {
+  const environment = environments.find((item) => item.runtime_kind === "web_chat");
+  const workspace = environment?.workspaces[0];
+  return workspace || fromExplicitNavigation
+    ? {
+        selection_lease: "",
+        runtime_kind: "web_chat",
+        workspace_id: workspace?.id ?? "cloud",
+        target_fingerprint: environment?.target_fingerprint ?? "web_chat::cloud",
+        conversation_id: createUuid(),
+        expires_at: "",
+      }
+    : null;
+}
+
+function pushGatewayLocation(route: CloudChatRoute) {
+  const url = new URL(window.location.href);
+  const href = cloudChatRouteHref(route, url);
+  if (href !== `${url.pathname}${url.search}${url.hash}`)
+    window.history.pushState({ ...window.history.state }, "", href);
+}
+
+function pushConversationLocation(deviceId?: string) {
+  pushGatewayLocation({ page: "chat", id: "", deviceId });
 }
 
 function useBrowserGatewaySession(historyShareToken: string | null, enabled: boolean) {
   const [accountUser, setAccountUser] = useState<RelayUser | null>(null);
+  const activeAccountId = useRef<number | null>(null);
   const [environments, setEnvironments] = useState<ExecutionEnvironment[]>([]);
   const [selection, setSelection] = useState<ExecutionSelection | null>(null);
+  const activeSelection = useRef(selection);
+  activeSelection.current = selection;
+  const [deviceRouteStatus, setDeviceRouteStatus] = useState<
+    "loading" | "unavailable" | "invalid-link" | null
+  >(null);
   const [token, setToken] = useState("");
   const [authInitializing, setAuthInitializing] = useState(enabled && !historyShareToken);
   const [authSubmitting, setAuthSubmitting] = useState(false);
@@ -71,6 +148,12 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
   const executionPresenceRef = useRef<readonly ExecutionPresence[]>([]);
   const sessionEpochRef = useRef(0);
 
+  const applyAccount = useCallback((user: RelayUser | null) => {
+    bindAccountRequests(user?.id ?? null);
+    activeAccountId.current = user?.id ?? null;
+    setAccountUser(user);
+  }, []);
+
   const applyToken = useCallback((next: string) => {
     // Child effects can issue Gateway requests before parent effects run.
     // Publish the credential before the state update makes those children mount.
@@ -78,105 +161,181 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     setToken(next);
   }, []);
 
-  const loadEnvironments = useCallback(async (refreshOnly = false) => {
-    const epoch = sessionEpochRef.current;
-    const params = new URLSearchParams(window.location.search);
-    const desktopEmbedded = params.get("controller_surface") === "desktop_embed";
-    const localDeviceId = params.get("local_device_id")?.trim() ?? "";
-    const items = await getExecutionEnvironments(
-      desktopEmbedded ? "desktop" : "web",
-      localDeviceId,
-    );
-    if (epoch !== sessionEpochRef.current) return [];
-    setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
-    if (refreshOnly) return items;
-    const handoffLease = params.get("selection_lease")?.trim() ?? "";
-    const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
-    const handoffWorkspace = params.get("workspace_id")?.trim() ?? "";
-    if (handoffLease && handoffRuntime === "device_agent") {
-      const next: ExecutionSelection = {
-        selection_lease: handoffLease,
-        runtime_kind: "device_agent",
-        device_id: params.get("device_id")?.trim() ?? "",
-        agent_id: params.get("agent_id")?.trim() || params.get("device_id")?.trim() || "",
-        workspace_id: handoffWorkspace,
-        scope: handoffWorkspace ? "workspace" : "device",
-        target_fingerprint: [
-          handoffRuntime,
-          params.get("device_id")?.trim() ?? "",
-          handoffWorkspace,
-        ].join(":"),
-        conversation_id: params.get("conversation_id")?.trim() || createUuid(),
-        expires_at: "",
-      };
-      const cleanURL = new URL(window.location.href);
-      for (const key of [
-        "selection_lease",
-        "runtime_kind",
-        "device_id",
-        "agent_id",
-        "workspace_id",
-        "conversation_id",
-      ]) {
-        cleanURL.searchParams.delete(key);
+  const loadEnvironments = useCallback(
+    async (refreshOnly = false) => {
+      const epoch = sessionEpochRef.current;
+      const url = new URL(window.location.href);
+      const routeAtStart = readCloudChatRoute(url);
+      const target = deviceWorkbenchRouteTarget(routeAtStart);
+      if (!refreshOnly && target === "") {
+        resetGatewayWebSocketClient();
+        setSelection(null);
+        applyToken("");
+        persistHistorySelection(null);
+        setDeviceRouteStatus("invalid-link");
+        return [];
       }
-      window.history.replaceState(
-        { ...(window.history.state ?? {}) },
-        "",
-        `${cleanURL.pathname}${cleanURL.search}`,
-      );
-      const valid = await validateExecutionSelection(next);
+      const draftIntent = readHistoryDeviceDraftIntent(routeAtStart, activeAccountId.current);
+      if (!refreshOnly && target !== undefined) setDeviceRouteStatus("loading");
+      const params = url.searchParams;
+      const desktopEmbedded = params.get("controller_surface") === "desktop_embed";
+      const localDeviceId = params.get("local_device_id")?.trim() ?? "";
+      let items: ExecutionEnvironment[];
+      try {
+        items = await getExecutionEnvironments(desktopEmbedded ? "desktop" : "web", localDeviceId);
+      } catch (error) {
+        if (refreshOnly || target === undefined) throw error;
+        if (epoch === sessionEpochRef.current) {
+          resetGatewayWebSocketClient();
+          setSelection(null);
+          applyToken("");
+          persistHistorySelection(null, draftIntent);
+          setDeviceRouteStatus("unavailable");
+        }
+        return [];
+      }
       if (epoch !== sessionEpochRef.current) return [];
-      if (valid) {
-        setSelection(next);
-        applyToken(encodeSelectionCredential(next));
-        persistHistorySelection(next);
-        return items;
-      }
-      persistHistorySelection(null);
-    }
-    const route = readCloudChatRoute(new URL(window.location.href));
-    const explicitCloudRoute = route.page !== "chat" || !!route.id;
-    const deviceRouteTarget = route.page === "tasks" && route.deviceView ? route.target : undefined;
-    const previous = readHistorySelection();
-    const restored =
-      !explicitCloudRoute || (deviceRouteTarget && previous?.device_id === deviceRouteTarget)
-        ? previous
-        : null;
-    if (restored) {
-      const environment = items.find(
-        (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
-      );
-      const workspaceIsValid =
-        !restored.workspace_id ||
-        environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id);
-      const valid = environment && workspaceIsValid && (await validateExecutionSelection(restored));
-      if (epoch !== sessionEpochRef.current) return [];
-      if (valid) {
-        setSelection(restored);
-        applyToken(encodeSelectionCredential(restored));
-        return items;
-      }
-      persistHistorySelection(null);
-    }
-    if (explicitCloudRoute) applyToken("");
-    setSelection((current) => {
-      if (current && !explicitCloudRoute) return current;
-      const web = items.find((item) => item.runtime_kind === "web_chat");
-      const workspace = web?.workspaces[0];
-      return web && workspace
-        ? {
-            selection_lease: "",
-            runtime_kind: "web_chat",
-            workspace_id: workspace.id,
-            target_fingerprint: web.target_fingerprint ?? "web_chat::cloud",
-            conversation_id: createUuid(),
-            expires_at: "",
+      setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
+      if (refreshOnly) return items;
+      if (target !== undefined) {
+        const environment = items.find(
+          (item) =>
+            item.runtime_kind === "device_agent" && item.device_id === target && item.online,
+        );
+        const previous = readHistorySelection();
+        let next: ExecutionSelection | null = null;
+        if (target && environment) {
+          try {
+            if (
+              previous?.device_id === target &&
+              !previous.workspace_id &&
+              (await validateExecutionSelection(previous))
+            ) {
+              next = previous;
+            } else if (epoch === sessionEpochRef.current) {
+              next = await selectExecutionTarget(environment, { id: "", name: "" });
+            }
+          } catch {
+            // The explicit address remains in place so it can be retried.
           }
-        : null;
+        }
+        if (epoch !== sessionEpochRef.current) return [];
+        resetGatewayWebSocketClient();
+        if (
+          next?.runtime_kind === "device_agent" &&
+          next.device_id === target &&
+          !next.workspace_id &&
+          next.selection_lease?.trim()
+        ) {
+          next = { ...next, device_draft_workspace: draftIntent?.workspace };
+          setSelection(next);
+          applyToken(encodeSelectionCredential(next));
+          persistHistorySelection(next, draftIntent);
+          setDeviceRouteStatus(null);
+        } else {
+          setSelection(null);
+          applyToken("");
+          persistHistorySelection(null, draftIntent);
+          setDeviceRouteStatus("unavailable");
+        }
+        return items;
+      }
+      const handoffLease = params.get("selection_lease")?.trim() ?? "";
+      const handoffRuntime = params.get("runtime_kind")?.trim() ?? "";
+      const handoffWorkspace = params.get("workspace_id")?.trim() ?? "";
+      if (handoffLease && handoffRuntime === "device_agent") {
+        const next: ExecutionSelection = {
+          selection_lease: handoffLease,
+          runtime_kind: "device_agent",
+          device_id: params.get("device_id")?.trim() ?? "",
+          agent_id: params.get("agent_id")?.trim() || params.get("device_id")?.trim() || "",
+          workspace_id: handoffWorkspace,
+          scope: handoffWorkspace ? "workspace" : "device",
+          target_fingerprint: [
+            handoffRuntime,
+            params.get("device_id")?.trim() ?? "",
+            handoffWorkspace,
+          ].join(":"),
+          conversation_id: params.get("conversation_id")?.trim() || createUuid(),
+          expires_at: "",
+        };
+        const cleanURL = new URL(window.location.href);
+        for (const key of [
+          "selection_lease",
+          "runtime_kind",
+          "device_id",
+          "agent_id",
+          "workspace_id",
+          "conversation_id",
+        ]) {
+          cleanURL.searchParams.delete(key);
+        }
+        window.history.replaceState(
+          { ...(window.history.state ?? {}) },
+          "",
+          `${cleanURL.pathname}${cleanURL.search}`,
+        );
+        const valid = await validateExecutionSelection(next);
+        if (epoch !== sessionEpochRef.current) return [];
+        if (valid) {
+          setSelection(next);
+          applyToken(encodeSelectionCredential(next));
+          persistHistorySelection(next);
+          return items;
+        }
+        persistHistorySelection(null);
+      }
+      const route = readCloudChatRoute(new URL(window.location.href));
+      const explicitCloudRoute = route.page !== "chat" || !!route.id;
+      const previous = readHistorySelection();
+      const restored = !explicitCloudRoute ? previous : null;
+      if (restored) {
+        const environment = items.find(
+          (item) => item.runtime_kind === "device_agent" && item.device_id === restored.device_id,
+        );
+        const workspaceIsValid =
+          !restored.workspace_id ||
+          environment?.workspaces.some((workspace) => workspace.id === restored.workspace_id);
+        const valid =
+          environment && workspaceIsValid && (await validateExecutionSelection(restored));
+        if (epoch !== sessionEpochRef.current) return [];
+        if (valid) {
+          setSelection(restored);
+          applyToken(encodeSelectionCredential(restored));
+          return items;
+        }
+        persistHistorySelection(null);
+      }
+      if (explicitCloudRoute) applyToken("");
+      setSelection((current) => {
+        if (current && !explicitCloudRoute) return current;
+        return defaultCloudSelection(items);
+      });
+      return items;
+    },
+    [applyToken],
+  );
+
+  const retryDeviceConversationRoute = useCallback(() => {
+    const epoch = ++sessionEpochRef.current;
+    void loadEnvironments().catch(() => {
+      if (epoch === sessionEpochRef.current) setDeviceRouteStatus("unavailable");
     });
-    return items;
-  }, [applyToken]);
+  }, [loadEnvironments]);
+
+  const returnToCloudConversation = useCallback(
+    (route: CloudChatRoute = { page: "chat", id: "" }) => {
+      const cloud = defaultCloudSelection(environments, true);
+      sessionEpochRef.current++;
+      pushGatewayLocation(route);
+      resetGatewayWebSocketClient();
+      applyToken("");
+      setSelection(cloud);
+      persistHistorySelection(cloud);
+      setDeviceRouteStatus(null);
+    },
+    [applyToken, environments],
+  );
 
   const applyExecutionPresence = useCallback((presence: readonly ExecutionPresence[]) => {
     executionPresenceRef.current = [...presence];
@@ -195,12 +354,11 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     void getRelayCurrentUser()
       .then(async (user) => {
         if (cancelled || epoch !== sessionEpochRef.current) return;
-        setAccountUser(user);
-        bindAccountRequests(user.id);
+        applyAccount(user);
         await loadEnvironments();
       })
       .catch(() => {
-        if (!cancelled && epoch === sessionEpochRef.current) setAccountUser(null);
+        if (!cancelled && epoch === sessionEpochRef.current) applyAccount(null);
       })
       .finally(() => {
         if (!cancelled && epoch === sessionEpochRef.current) setAuthInitializing(false);
@@ -208,7 +366,57 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     return () => {
       cancelled = true;
     };
-  }, [enabled, historyShareToken, loadEnvironments]);
+  }, [applyAccount, enabled, historyShareToken, loadEnvironments]);
+
+  useEffect(() => {
+    if (!enabled || !accountUser || historyShareToken) return;
+    const restoreRoute = () => {
+      const route = readCloudChatRoute(new URL(window.location.href));
+      const target = deviceWorkbenchRouteTarget(route);
+      const current = activeSelection.current;
+      setAuthInitializing(false);
+      if (target !== undefined) {
+        if (!window.dispatchEvent(new Event(DEVICE_CONVERSATION_POP_EVENT, { cancelable: true })))
+          return;
+        if (
+          current?.runtime_kind === "device_agent" &&
+          current.device_id === target &&
+          !current.workspace_id &&
+          (!current.expires_at || Date.parse(current.expires_at) > Date.now())
+        ) {
+          sessionEpochRef.current++;
+          const draftIntent = readHistoryDeviceDraftIntent(route, activeAccountId.current);
+          const next =
+            current.device_draft_workspace === draftIntent?.workspace
+              ? current
+              : { ...current, device_draft_workspace: draftIntent?.workspace };
+          if (next !== current) setSelection(next);
+          persistHistorySelection(next, draftIntent);
+          setDeviceRouteStatus(null);
+        } else {
+          retryDeviceConversationRoute();
+        }
+      } else {
+        sessionEpochRef.current++;
+        if (current?.runtime_kind !== "web_chat") {
+          resetGatewayWebSocketClient();
+          applyToken("");
+          persistHistorySelection(null);
+          setSelection(defaultCloudSelection(environments, true));
+        }
+        setDeviceRouteStatus(null);
+      }
+    };
+    window.addEventListener("popstate", restoreRoute);
+    return () => window.removeEventListener("popstate", restoreRoute);
+  }, [
+    accountUser,
+    applyToken,
+    enabled,
+    environments,
+    historyShareToken,
+    retryDeviceConversationRoute,
+  ]);
 
   useEffect(() => {
     if (!enabled || !accountUser || historyShareToken) return;
@@ -233,10 +441,17 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     if (!enabled) return;
     const handleInvalidSelection = () => {
       const epoch = ++sessionEpochRef.current;
+      const route = readCloudChatRoute(new URL(window.location.href));
+      const draftIntent = readHistoryDeviceDraftIntent(route, activeAccountId.current);
       resetGatewayWebSocketClient();
-      persistHistorySelection(null);
+      persistHistorySelection(null, draftIntent);
       setSelection(null);
       applyToken("");
+      const target = deviceWorkbenchRouteTarget(route);
+      if (target !== undefined) {
+        setDeviceRouteStatus(target ? "unavailable" : "invalid-link");
+        return;
+      }
       void loadEnvironments().catch((error) => {
         if (epoch === sessionEpochRef.current)
           setAuthError(error instanceof Error ? error.message : "执行环境加载失败");
@@ -261,8 +476,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
           return "two-factor" as const;
         }
         if (!("user" in response)) return "failed" as const;
-        setAccountUser(response.user);
-        bindAccountRequests(response.user.id);
+        applyAccount(response.user);
         await loadEnvironments();
         if (epoch !== sessionEpochRef.current) return "failed" as const;
         return "authenticated" as const;
@@ -274,7 +488,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
         if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
-    [loadEnvironments],
+    [applyAccount, loadEnvironments],
   );
 
   const verifyTwoFactor = useCallback(
@@ -286,8 +500,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       try {
         const response = await loginRelay2FA(twoFactorToken, code);
         if (epoch !== sessionEpochRef.current) return false;
-        setAccountUser(response.user);
-        bindAccountRequests(response.user.id);
+        applyAccount(response.user);
         setTwoFactorToken("");
         await loadEnvironments();
         if (epoch !== sessionEpochRef.current) return false;
@@ -300,7 +513,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
         if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
-    [loadEnvironments, twoFactorToken],
+    [applyAccount, loadEnvironments, twoFactorToken],
   );
 
   const register = useCallback(
@@ -317,8 +530,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       try {
         const response = await registerRelay(input);
         if (epoch !== sessionEpochRef.current) return false;
-        setAccountUser(response.user);
-        bindAccountRequests(response.user.id);
+        applyAccount(response.user);
         await loadEnvironments();
         if (epoch !== sessionEpochRef.current) return false;
         return true;
@@ -330,25 +542,67 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
         if (epoch === sessionEpochRef.current) setAuthSubmitting(false);
       }
     },
-    [loadEnvironments],
+    [applyAccount, loadEnvironments],
   );
 
   const switchExecutionTarget = useCallback(
-    async (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => {
-      if (canReuseDeviceSelection(selection, environment)) {
+    async (
+      environment: ExecutionEnvironment,
+      workspace: ExecutionWorkspace,
+      options?: SwitchExecutionOptions,
+    ) => {
+      if (!options?.prepareDeviceDraft && canReuseDeviceSelection(selection, environment)) {
         return selection;
       }
       const epoch = ++sessionEpochRef.current;
-      const next = await selectExecutionTarget(environment, workspace);
+      let next = await selectExecutionTarget(environment, workspace);
+      if (options?.prepareDeviceDraft && epoch === sessionEpochRef.current) {
+        const deviceDraftWorkspace = await options.prepareDeviceDraft(next);
+        next = { ...next, device_draft_workspace: deviceDraftWorkspace };
+      }
       if (epoch !== sessionEpochRef.current)
         throw new Error("账号或执行目标已变更，请重新选择设备。");
+      const accountId = activeAccountId.current;
+      const draftIntent =
+        accountId !== null && next.device_id && next.device_draft_workspace
+          ? { accountId, deviceId: next.device_id, workspace: next.device_draft_workspace }
+          : null;
+      const currentRoute = readCloudChatRoute(new URL(window.location.href));
+      const currentDevice = deviceWorkbenchRouteTarget(currentRoute);
+      if (
+        next.runtime_kind === "device_agent" &&
+        (next.device_draft_workspace || next.device_id !== currentDevice)
+      ) {
+        pushConversationLocation(next.device_id);
+      } else if (next.runtime_kind === "web_chat" && currentDevice !== undefined) {
+        pushConversationLocation();
+      }
       resetGatewayWebSocketClient();
       setSelection(next);
       applyToken(next.runtime_kind === "device_agent" ? encodeSelectionCredential(next) : "");
-      persistHistorySelection(next.runtime_kind === "device_agent" ? next : null);
+      persistHistorySelection(next, draftIntent);
       return next;
     },
     [applyToken, selection],
+  );
+
+  const finishDeviceDraft = useCallback(
+    (lease: string) => {
+      if (!selection?.device_draft_workspace || selection.selection_lease !== lease) return;
+      const next = { ...selection, device_draft_workspace: undefined };
+      setSelection(next);
+      persistHistorySelection(next);
+    },
+    [selection],
+  );
+
+  const returnToCloudDraft = useCallback(
+    (lease: string) => {
+      if (!selection?.device_draft_workspace || selection.selection_lease !== lease) return;
+      persistHistorySelection(selection);
+      returnToCloudConversation();
+    },
+    [returnToCloudConversation, selection],
   );
 
   const clearSession = useCallback(
@@ -357,19 +611,19 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       executionPresenceRef.current = [];
       publishExecutionPresence([]);
       if (revokeRemotely) void logoutRelay().catch(() => undefined);
-      bindAccountRequests(null);
+      applyAccount(null);
       resetGatewayWebSocketClient();
-      setAccountUser(null);
       setEnvironments([]);
       setSelection(null);
       applyToken("");
       persistHistorySelection(null);
       setTwoFactorToken("");
       setAuthError(null);
+      setDeviceRouteStatus(null);
       setAuthSubmitting(false);
       setAuthInitializing(false);
     },
-    [applyToken],
+    [applyAccount, applyToken],
   );
 
   return {
@@ -386,6 +640,11 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     register,
     verifyTwoFactor,
     switchExecutionTarget,
+    finishDeviceDraft,
+    returnToCloudDraft,
+    deviceRouteStatus,
+    retryDeviceConversationRoute,
+    returnToCloudConversation,
     reloadEnvironments: loadEnvironments,
     applyExecutionPresence,
     clearSession,
@@ -447,6 +706,7 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
     async (
       environment: ExecutionEnvironment,
       _workspace: ExecutionWorkspace,
+      _options?: SwitchExecutionOptions,
     ): Promise<ExecutionSelection> => {
       requireCurrentDesktopRemoteHost();
       if (!host || environment.device_id !== host.environment.device_id) {
@@ -489,6 +749,11 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
     register: unavailableLogin,
     verifyTwoFactor: unavailableLogin,
     switchExecutionTarget,
+    finishDeviceDraft: (_lease: string) => {},
+    returnToCloudDraft: (_lease: string) => {},
+    deviceRouteStatus: null,
+    retryDeviceConversationRoute: () => {},
+    returnToCloudConversation: (_route?: CloudChatRoute) => {},
     reloadEnvironments,
     applyExecutionPresence,
     clearSession,

@@ -12,7 +12,7 @@ function labelWithoutKeys(button) {
 
 // 审查回归:共享 ToolApprovalBar 在多条待审批、会话级提示与可记忆授权组合下的菜单与计数;
 // 以及两种语言的新增文案键都存在。
-async function renderBar(pending) {
+async function renderBar(pending, submit) {
   const decisions = [];
   const env = await createDomTestEnv({ mocks: {
     "@liveagent/ui/components/IconSet": new Proxy({}, { get: () => () => null }),
@@ -27,21 +27,29 @@ async function renderBar(pending) {
   const { ToolApprovalBar } = env.loadModule("@liveagent/ui/components/chat/ToolApprovalBar.tsx");
   const host = document.body.appendChild(document.createElement("div"));
   const root = env.createRoot(host);
-  const onDecide = async (toolCallId, decision) => { decisions.push([toolCallId, decision]); return { ok: true }; };
-  const onDecideAll = async (decision) => { decisions.push(["*", decision]); };
-  await env.act(async () => root.render(env.React.createElement(ToolApprovalBar, { pending, onDecide, onDecideAll })));
+  const onDecide = async (toolCallId, decision) => {
+    decisions.push([toolCallId, decision]);
+    return submit ? submit(toolCallId, decision) : { ok: true };
+  };
+  const onDecideAll = submit ? undefined : async (decision) => { decisions.push(["*", decision]); };
+  const render = (items) => env.act(async () => root.render(env.React.createElement(ToolApprovalBar, { pending:items, onDecide, onDecideAll })));
+  await render(pending);
   const cleanup = async () => { await env.act(async () => root.unmount()); host.remove(); env.cleanup(); };
   const menuItems = () => [...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent);
-  return { env, host, decisions, cleanup, menuItems };
+  return { env, host, decisions, cleanup, menuItems, render };
 }
 
 test("会话级提示排在首位且后面还有待审批项:计数 1/2,菜单只有批量动作", async () => {
+  const firstDeadline = Date.now() + 60_000;
   const { env, host, decisions, cleanup, menuItems } = await renderBar([
-    { toolCallId: "c1", toolName: "computer_exec", summary: '{"action":"call","tool":"click"}', sessionScope: "call:click", sessionWide: true, allowSession: false, deadlineAt: Date.now() + 60_000 },
+    { toolCallId: "c1", toolName: "computer_exec", summary: '{"action":"call","tool":"click"}', sessionScope: "call:click", sessionWide: true, allowSession: false, deadlineAt: firstDeadline },
     { toolCallId: "c2", toolName: "Bash", summary: "rm -rf build", allowSession: false, deadlineAt: Date.now() + 30_000 },
   ]);
   try {
-    assert.match(host.querySelector('[role="timer"]').textContent, /^1 \/ 2 · /);
+    const countdown = host.querySelector('[role="timer"]').textContent.match(/^1 \/ 2 · (\d+):(\d\d)$/);
+    assert.ok(countdown);
+    const displayedSeconds = Number(countdown[1])*60 + Number(countdown[2]);
+    assert.ok(Math.abs(displayedSeconds - Math.ceil((firstDeadline-Date.now())/1000))<=1);
     assert.ok(host.querySelector('[aria-label="更多审批选项"]'), "多条待审批时仍要有菜单入口");
     assert.deepEqual(menuItems(), ["全部允许", "全部拒绝"]);
     assert.match(host.textContent, /允许后，本对话里的 Computer Use 操作不再询问/);
@@ -53,6 +61,87 @@ test("会话级提示排在首位且后面还有待审批项:计数 1/2,菜单�
     assert.deepEqual(decisions, [["*", "approve"]]);
   } finally {
     await cleanup();
+  }
+});
+
+test("only the visible request shows its deadline", async () => {
+  const first = { toolCallId:"c1", toolName:"Bash", summary:"npm test" };
+  const second = { toolCallId:"c2", toolName:"Edit", summary:"read me", deadlineAt:Date.now()+90_000 };
+  const { env, host, decisions, cleanup, render } = await renderBar([first,second]);
+  try {
+    assert.match(host.textContent, /1 \/ 2/);
+    assert.equal(host.querySelector('[role="timer"]'),null);
+    const details = host.querySelector("[data-approval-details]");
+    await env.act(async () => {
+      details.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));
+      details.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));
+    });
+    assert.deepEqual(decisions,[]);
+    await render([second]);
+    assert.match(host.querySelector('[role="timer"]').getAttribute("aria-label"), /当前请求/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("batch decisions use their original requests and retain partial failure beside the remaining one", async () => {
+  const first = {toolCallId:"c1",toolName:"Bash"};
+  const second = {toolCallId:"c2",toolName:"Edit"};
+  const later = {toolCallId:"c3",toolName:"Read"};
+  let finish;
+  const app = await renderBar([first,second], async id => id === first.toolCallId
+    ? {ok:true}
+    : new Promise(resolve => {finish=resolve;}));
+  try {
+    const [approveAll] = app.host.querySelectorAll('[role="menuitem"]');
+    await app.env.act(async () => {
+      approveAll.click();
+      approveAll.click();
+    });
+    await app.render([second,later]);
+    await app.env.act(async () => {finish({ok:false});});
+    assert.deepEqual(app.decisions, [["c1","approve"],["c2","approve"]]);
+    const alert = app.host.querySelector('[role="alert"]');
+    assert.match(alert.textContent,/有 1 项决定未能确认.*再作决定/);
+    assert.equal(alert.classList.contains("truncate"),false);
+    await app.render([later]);
+    assert.equal(app.host.querySelector('[role="alert"]'),null);
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test("a rejected decision keeps the pressed action focused and requires an explicit retry", async () => {
+  let finish;
+  const app = await renderBar([
+    { toolCallId: "c1", toolName: "Bash" },
+    { toolCallId: "c2", toolName: "Edit" },
+  ], () => new Promise(resolve => { finish = resolve; }));
+  const approve = app.host.querySelector('[aria-keyshortcuts="Enter"]');
+  const deny = app.host.querySelector('[aria-keyshortcuts="Escape 3"]');
+  const more = app.host.querySelector('[aria-label="更多审批选项"]');
+  try {
+    await app.env.act(async () => { approve.focus(); approve.click(); });
+    assert.equal(document.activeElement, approve);
+    assert.equal(approve.getAttribute("aria-busy"), "true");
+    assert.equal(approve.disabled, false);
+    assert.equal(approve.getAttribute("aria-disabled"), "true");
+    assert.equal(more.getAttribute("aria-disabled"), "true");
+    await app.env.act(async () => { approve.click(); deny.click(); });
+    assert.deepEqual(app.decisions, [["c1", "approve"]]);
+
+    await app.env.act(async () => finish({ ok: false, message: "Decision was not accepted." }));
+    assert.equal(document.activeElement, approve);
+    assert.equal(approve.hasAttribute("aria-disabled"), false);
+    const feedback = document.getElementById(approve.getAttribute("aria-describedby"));
+    assert.equal(feedback.getAttribute("role"), "alert");
+    assert.equal(feedback.textContent, "Decision was not accepted.");
+    assert.deepEqual(app.decisions, [["c1", "approve"]]);
+    await app.env.act(async () => approve.click());
+    await app.env.act(async () => finish({ ok: true }));
+    assert.deepEqual(app.decisions, [["c1", "approve"], ["c1", "approve"]]);
+  } finally {
+    await app.cleanup();
   }
 });
 

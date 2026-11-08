@@ -2,7 +2,6 @@ import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { getKBrainRuntimeConnection } from "./runtimeConnection";
 
 const mappingKey = "kbrain-session-map:v1";
-const legacyKeyPrefix = "kbrain-session:";
 
 type MappingRecord = Record<string, string>;
 
@@ -106,40 +105,12 @@ function writeState(state: MappingState) {
   }
 }
 
-function readLegacyMapping(conversationId: string, baseUrl?: string) {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-  const encodedBaseUrl = encodeURIComponent(normalizedBaseUrl);
-  const encodedConversationId = encodeURIComponent(conversationId.trim());
-  const prefix = `${legacyKeyPrefix}${encodedBaseUrl}:`;
-  const suffix = `:${encodedConversationId}`;
-  try {
-    const storage = globalThis.localStorage;
-    if (!storage) return undefined;
-    for (let index = 0; index < storage.length; index += 1) {
-      const key = storage.key(index);
-      if (!key?.startsWith(prefix) || !key.endsWith(suffix)) continue;
-      const value = storage.getItem(key)?.trim();
-      if (value) return value;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
 export function getKBrainSessionId(conversationId: string, baseUrl?: string): string | undefined {
   const localId = conversationId.trim();
   if (!localId) return undefined;
   const state = readState();
   const scope = normalizeBaseUrl(baseUrl);
-  const mapped = state.localToBackend[scopedKey(scope, localId)];
-  if (mapped) return mapped;
-  const legacy = readLegacyMapping(localId, baseUrl);
-  if (legacy) {
-    setKBrainSessionId(localId, legacy, baseUrl);
-    return legacy;
-  }
-  return undefined;
+  return state.localToBackend[scopedKey(scope, localId)];
 }
 
 export function setKBrainSessionId(

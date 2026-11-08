@@ -25,6 +25,7 @@ export type ConfirmDialogOptions = {
   hideCancel?: boolean;
   /** Give the safe cancel action primary emphasis and render confirmation as destructive text. */
   preferCancel?: boolean;
+  touchActions?: boolean;
 };
 
 type PendingConfirmDialog = ConfirmDialogOptions & {
@@ -44,9 +45,12 @@ function ConfirmDialog(
     closeLabel = cancelLabel,
     hideCancel = false,
     preferCancel = false,
+    touchActions = false,
     onCancel,
     onConfirm,
   } = props;
+  const actionHeight = touchActions ? "h-11 md:h-8" : "h-8";
+  const cancelAction = useRef<HTMLButtonElement>(null);
 
   return (
     <AlertDialog
@@ -55,7 +59,10 @@ function ConfirmDialog(
         if (!open) onCancel();
       }}
     >
-      <AlertDialogContent className="max-w-md">
+      <AlertDialogContent
+        className="max-w-md"
+        initialFocus={preferCancel && !hideCancel ? cancelAction : undefined}
+      >
         <AlertDialogHeader className="pr-14">
           <AlertDialogTitle className="break-words">{title}</AlertDialogTitle>
           {subtitle ? (
@@ -95,9 +102,10 @@ function ConfirmDialog(
               <AlertDialogClose
                 render={
                   <Button
+                    ref={cancelAction}
                     type="button"
                     variant={preferCancel ? "default" : "outline"}
-                    className="h-8"
+                    className={actionHeight}
                     autoFocus
                   />
                 }
@@ -110,7 +118,7 @@ function ConfirmDialog(
               variant={preferCancel ? "ghost" : "destructive"}
               onClick={onConfirm}
               className={cn(
-                "h-8",
+                actionHeight,
                 preferCancel && "text-destructive hover:bg-destructive/10 hover:text-destructive",
               )}
             >
@@ -161,6 +169,7 @@ export function useConfirmDialog() {
       closeLabel={pending.closeLabel}
       hideCancel={pending.hideCancel}
       preferCancel={pending.preferCancel}
+      touchActions={pending.touchActions}
       onCancel={() => close(false)}
       onConfirm={() => close(true)}
     />

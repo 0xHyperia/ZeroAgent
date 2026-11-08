@@ -5,18 +5,15 @@ import { ApplicationView, type ApplicationViewId } from "@liveagent/ui/applicati
 import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
+import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import {
   useWorkbenchAccountDestination,
   useWorkbenchAccountSurface,
 } from "@liveagent/ui/application/useWorkbenchAccountSurface";
-import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
+import { WorkbenchAccountSidebar } from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail as DesktopNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
 import { WorkbenchBody, WorkbenchShell } from "@liveagent/ui/application/WorkbenchShell";
-import {
-  WorkbenchAccountSidebar,
-  WorkbenchDestinationPreview,
-} from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import {
   createWorkbenchNavigationItem,
   DEVICE_WORKBENCH_NAVIGATION,
@@ -26,11 +23,14 @@ import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenc
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
-import type { MentionComposerDraft } from "@liveagent/ui/components/chat/MentionComposer";
+import type {
+  MentionComposerDraft,
+  MentionComposerSkillMention,
+} from "@liveagent/ui/components/chat/MentionComposer";
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { MonitorSmartphone, PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
+import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
@@ -61,7 +61,6 @@ import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPr
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { getAutomationState, useAutomation } from "@liveagent/ui/lib/automation/index";
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
-import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { formatCheckpointRewoundNotification } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type {
   ComposerCommandHost,
@@ -76,6 +75,7 @@ import {
   useInsertCodeReviewSkill,
 } from "@liveagent/ui/lib/chat/useComposerActions";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
+import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
 import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/releaseProjectToolFromDock";
@@ -108,6 +108,7 @@ import {
 } from "@liveagent/ui/lib/terminal/sessionStore";
 import type { TerminalSession } from "@liveagent/ui/lib/terminal/types";
 import { useConversationViewState } from "@liveagent/ui/lib/trajectory/useConversationViewState";
+import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import type { LocalTunnelClient } from "@liveagent/ui/lib/tunnels/constants";
 import {
   commitProjectToolDrop,
@@ -225,6 +226,7 @@ import { createTauriTunnelClient } from "../lib/tunnels/tauriTunnelClient";
 import { tauriWorkspaceActivityClient } from "../lib/workspace-activity/tauriWorkspaceActivityClient";
 import type { ChatPageProps } from "./chat/chatPageTypes";
 import { asErrorMessage } from "./chat/chatPageUtils";
+import { deviceAccountSkillIssue } from "./chat/composer/composerDraftText";
 import { createGuiComposerCommandHost } from "./chat/composer/guiComposerCommandHost";
 import { useComposerHistoryPrompts } from "./chat/composer/useComposerHistoryPrompts";
 import { useKBrainComposerSkills } from "./chat/composer/useKBrainComposerSkills";
@@ -320,7 +322,6 @@ const DESKTOP_PREVIEW_DESTINATIONS: readonly WorkbenchNavigationId[] = [
   ...DEVICE_WORKBENCH_NAVIGATION,
   "library",
   "customize",
-  "devices",
 ];
 
 const ConversationPaneHost = lazy(async () => ({
@@ -443,10 +444,6 @@ function ChatPageContent(props: ChatPageProps) {
     rightDockOpen,
     setRightDockOpen,
   } = useApplicationViewState<WorkspaceProject>();
-  const scheduledTasksRequest = props.scheduledTasksRequest;
-  useEffect(() => {
-    if (scheduledTasksRequest) setActiveView("cron-hub");
-  }, [scheduledTasksRequest, setActiveView]);
   const {
     workspaceProjects,
     setActiveWorkspaceProjectId,
@@ -517,6 +514,17 @@ function ChatPageContent(props: ChatPageProps) {
   const sidebarOpen = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
   const setSidebarOpen = sidebar.isMobile ? sidebar.setOpenMobile : sidebar.setOpen;
   const { accountNavigation } = props;
+  const leaveAccount = useCallback(
+    (navigate: () => void) => {
+      if (accountNavigation) accountNavigation.close(navigate);
+      else navigate();
+    },
+    [accountNavigation],
+  );
+  const insertAccountSkill = useRef<(skill: MentionComposerSkillMention) => void>(() => undefined);
+  const useDeviceSkill = useCallback((skill: MentionComposerSkillMention) => {
+    insertAccountSkill.current(skill);
+  }, []);
   const accountDestination = useWorkbenchAccountDestination(accountNavigation);
   const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(active && !sidebar.isMobile, props.relayUser.id, {
@@ -538,6 +546,7 @@ function ChatPageContent(props: ChatPageProps) {
     setSidebarOpen,
     dismissPreview: navigationPreview.dismiss,
     close: props.accountNavigation?.close,
+    onUseDeviceSkill: activeView === "chat" && kBrainBackendEnabled ? useDeviceSkill : undefined,
   });
   const showTaskWorkspace = activeView === "cron-hub" && !!props.renderScheduledTasks;
   const showTaskSidebar = shownSidebar === "cron-hub" && !!props.renderScheduledTasks;
@@ -1103,6 +1112,14 @@ function ChatPageContent(props: ChatPageProps) {
   // Capture while the editor is still visible. Lazy workspaces and hidden panes
   // may temporarily detach its ref; do not replace that snapshot from a hidden editor.
   const chatVisible = activeView === "chat" && !accountDestination && active;
+  const registerExecutionDeparture = props.registerExecutionDeparture;
+  useLayoutEffect(
+    () =>
+      registerExecutionDeparture?.(() => {
+        if (chatVisible) cacheActiveComposerDraft();
+      }),
+    [cacheActiveComposerDraft, chatVisible, registerExecutionDeparture],
+  );
   const wasChatVisible = useRef(chatVisible);
   useLayoutEffect(() => {
     const returned = chatVisible && !wasChatVisible.current;
@@ -1910,12 +1927,13 @@ function ChatPageContent(props: ChatPageProps) {
   ]);
 
   const handleNewRecentConversation = useCallback(() => {
-    accountNavigation?.close();
-    setActiveView("chat");
-    openController.cancel();
-    prepareComposerForConversationChange();
-    startNewConversationActionRef.current({ workdir: "" });
-  }, [accountNavigation, openController, prepareComposerForConversationChange, setActiveView]);
+    leaveAccount(() => {
+      setActiveView("chat");
+      openController.cancel();
+      prepareComposerForConversationChange();
+      startNewConversationActionRef.current({ workdir: "" });
+    });
+  }, [leaveAccount, openController, prepareComposerForConversationChange, setActiveView]);
 
   // 动作总线（Rust `app:action`）里 ChatPage 拥有的动作在下方统一监听
   // （handleSelectConversation 定义之后）；这里先备好 ref 镜像。
@@ -2503,6 +2521,69 @@ function ChatPageContent(props: ChatPageProps) {
   // conversation; it is the only pane wired to page-level composer bridging,
   // uploads, native drop and usage telemetry.
   const currentPaneRunning = isConversationRunning(currentConversationId);
+  insertAccountSkill.current = (skill) => {
+    const zh = locale === "zh-CN";
+    const composer = composerRef.current;
+    const reference = parseExtensionReference(skill.skillFile);
+    if (!active || accountNavigation?.getDestination() !== "customize" || !composer || !reference) {
+      throw new Error(
+        zh
+          ? "设备输入框已变更，请返回对话后重试。"
+          : "The device composer changed. Return to the conversation and try again.",
+      );
+    }
+    if (!isAgentMode || isComposerInputDisabled) {
+      throw new Error(
+        zh
+          ? "请在可用的设备工作对话中添加技能。"
+          : "Add this skill from an available device work conversation.",
+      );
+    }
+    const draft = composer.getDraft();
+    const issue = deviceAccountSkillIssue(
+      draft.skillMentions.map((item) => item.skillFile),
+      skill.skillFile,
+    );
+    if (issue === "revision-conflict") {
+      throw new Error(
+        zh
+          ? "草稿已引用同一技能包的另一修订，请先移除原引用。"
+          : "The draft already uses a different revision of this package. Remove that reference first.",
+      );
+    }
+    if (issue === "limit") {
+      throw new Error(
+        zh
+          ? "每次设备运行最多使用四个账户技能。请先移除草稿中的一项，再添加此技能。"
+          : "A device run can use up to four account skills. Remove one from the draft before adding this skill.",
+      );
+    }
+    if (!draft.skillMentions.some((item) => item.skillFile === skill.skillFile)) {
+      const separator = draft.isEmpty ? "" : " ";
+      const token = `${separator}/${skill.name}`;
+      composer.setDraft({
+        ...draft,
+        segments: [
+          ...draft.segments,
+          { type: "text", text: separator },
+          { type: "skillMention", skill },
+        ],
+        skillMentions: [...draft.skillMentions, skill],
+        text: draft.text + token,
+        textWithoutLargePastes: draft.textWithoutLargePastes + token,
+        isEmpty: false,
+      });
+      cacheActiveComposerDraft(currentConversationId);
+    }
+    accountNavigation.close();
+    requestAnimationFrame(() => {
+      if (
+        currentConversationIdRef.current === currentConversationId &&
+        !accountNavigation.getDestination()
+      )
+        composerRef.current?.focus({ restoreSelection: true });
+    });
+  };
   const primaryPaneBinding = useMemo<ConversationPaneBinding>(
     () => ({
       controller: conversationSurfaceController,
@@ -2669,10 +2750,12 @@ function ChatPageContent(props: ChatPageProps) {
       hasModels,
       importReadableFiles,
       isAgentDevExecutionMode,
+      isAgentMode,
       isComposerInputDisabled,
       isConversationHydrating,
       isConversationHydrationFailed,
       isFileDropActive,
+      isDraftConversation,
       isSending,
       isUploadingFiles,
       liveTranscriptStore,
@@ -4466,22 +4549,18 @@ function ChatPageContent(props: ChatPageProps) {
     if (mobile) setSidebarOpen(false);
     if (view === "library" || view === "customize") {
       if (chatVisible) cacheActiveComposerDraft();
-      props.accountNavigation?.open(href ?? (view === "library" ? "/space" : "/plugins"));
+      props.accountNavigation?.openDestination(view, href);
       return;
     }
-    if (view === "devices") {
-      props.onOpenDevices?.();
-      return;
-    }
-    props.accountNavigation?.close();
-    if (view !== "chat") {
-      if (chatVisible) cacheActiveComposerDraft();
-      if (!accountDestination) setRightDockOpen(false);
-    }
-    setActiveView(view);
+    leaveAccount(() => {
+      if (view !== "chat") {
+        if (chatVisible) cacheActiveComposerDraft();
+        if (!accountDestination) setRightDockOpen(false);
+      }
+      setActiveView(view);
+    });
   }
 
-  const text = (zh: string, en: string) => (settings.locale === "zh-CN" ? zh : en);
   const accountSidebar =
     shownSidebar === "library" || shownSidebar === "customize" ? shownSidebar : null;
   const renderTasks = (sidebarOnly: boolean) =>
@@ -4520,18 +4599,10 @@ function ChatPageContent(props: ChatPageProps) {
               ),
             ]
           : []),
-        ...(props.onOpenDevices
-          ? [
-              createWorkbenchNavigationItem(
-                "devices",
-                settings.locale === "zh-CN" ? "设备" : "Devices",
-                () => selectNavigation("devices", mobile),
-              ),
-            ]
-          : []),
       ]}
       activeView={committedDestination}
       previewId={!mobile && navigationPreview.open ? navigationPreview.destination : undefined}
+      previewableIds={mobile ? undefined : navigationPreview.previewableIds}
       shortcuts={settings.customSettings.sidebarShortcuts}
       onSelectView={(view) => selectNavigation(view, mobile)}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
@@ -4580,6 +4651,7 @@ function ChatPageContent(props: ChatPageProps) {
               onOpenSettings={() => onOpenSettings()}
               appUpdate={appUpdate}
             />
+            {headerLeadingActions}
             <span className="pointer-events-none flex-1 text-sm font-medium">
               {t("settings.navImageStudio")}
             </span>
@@ -4619,9 +4691,7 @@ function ChatPageContent(props: ChatPageProps) {
                   <SquarePen className="size-4.5" />
                 </TooltipButton>
               ) : null}
-              {!accountDestination &&
-                (activeView === "chat" || activeView === "cron-hub") &&
-                headerLeadingActions}
+              {!accountDestination && headerLeadingActions}
               {!accountDestination &&
               activeView === "chat" &&
               hasConversationReply &&
@@ -4689,23 +4759,8 @@ function ChatPageContent(props: ChatPageProps) {
             />
           </div>
         )}
-        {shownSidebar === "devices" && (
-          <WorkbenchDestinationPreview
-            title={text("设备", "Devices")}
-            fontScale={settings.customSettings.fontScale.sidebar}
-            entries={[
-              {
-                label: text("管理设备", "Manage devices"),
-                icon: <MonitorSmartphone className="size-4" />,
-                onSelect: () => selectNavigation("devices"),
-              },
-            ]}
-            onPin={() => selectNavigation("devices", false, true)}
-          />
-        )}
         {!showTaskSidebar &&
           !accountSidebar &&
-          shownSidebar !== "devices" &&
           (!showAccountSidebar || sidebar.isMobile) && (
             <ChatSidebarContainer
               mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
@@ -4769,17 +4824,16 @@ function ChatPageContent(props: ChatPageProps) {
               onUnarchiveProject={handleUnarchiveWorkspaceProject}
               archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
               onNewConversation={() => {
-                accountNavigation?.close();
-                setActiveView("chat");
-                if (activeView !== "chat" && isDraftConversation) {
-                  return;
-                }
-                handleNewConversation();
+                leaveAccount(() => {
+                  setActiveView("chat");
+                  if (activeView === "chat" || !isDraftConversation) handleNewConversation();
+                });
               }}
               onSelectConversation={(id, options) => {
-                accountNavigation?.close();
-                setActiveView("chat");
-                handleSelectConversation(id, options);
+                leaveAccount(() => {
+                  setActiveView("chat");
+                  handleSelectConversation(id, options);
+                });
               }}
               onConversationDeleted={handleConversationDeleted}
               onConversationCwdChanged={handleConversationCwdChanged}
@@ -4800,10 +4854,11 @@ function ChatPageContent(props: ChatPageProps) {
               onOpenSettings={onOpenSettings}
               appUpdate={appUpdate}
               onOpenResourceHub={(resource) => {
-                if (chatVisible) cacheActiveComposerDraft();
-                accountNavigation?.close();
-                setRightDockOpen(false);
-                setActiveView(`${resource}-hub`);
+                leaveAccount(() => {
+                  if (chatVisible) cacheActiveComposerDraft();
+                  setRightDockOpen(false);
+                  setActiveView(`${resource}-hub`);
+                });
               }}
             />
           )}

@@ -10,6 +10,9 @@ import type {
   AutomationSnapshot,
   CompletePromptRunInput,
   CronApplyResponse,
+  CronDraftPreview,
+  CronDraftPreviewInput,
+  CronManualRunReceipt,
   CronOccurrencesResponse,
   CronRunNowResponse,
   CronRunRecord,
@@ -27,7 +30,9 @@ import {
   clearKBrainCronRuns,
   fetchKBrainCron,
   listKBrainCronRuns,
+  previewKBrainCronDraft,
   readKBrainCronRunAnchor,
+  requestKBrainManualCron,
   runKBrainCronNow,
   subscribeKBrainCron,
   validateKBrainCron,
@@ -106,6 +111,12 @@ export const backend = {
     return invoke<CronOccurrencesResponse>("automation_cron_occurrences", { from, to });
   },
 
+  previewCronDraft(input: CronDraftPreviewInput, signal?: AbortSignal): Promise<CronDraftPreview> {
+    return isKBrainBackendEnabled()
+      ? previewKBrainCronDraft(input, signal)
+      : Promise.resolve({ status: "unsupported" });
+  },
+
   clearRuns(taskId: string): Promise<number> {
     if (isKBrainBackendEnabled()) return clearKBrainCronRuns(taskId);
     if (isKBrainBrowserHost()) return Promise.resolve(0);
@@ -121,6 +132,18 @@ export const backend = {
     return invoke<CronRunNowResponse>("automation_run_cron_now", {
       task_id: taskId,
     });
+  },
+
+  runNowOnce(taskId: string, executionId: string): Promise<CronManualRunReceipt> {
+    return isKBrainBackendEnabled()
+      ? requestKBrainManualCron(taskId, executionId, true)
+      : Promise.resolve({ status: "unsupported" });
+  },
+
+  readRunReceipt(taskId: string, executionId: string): Promise<CronManualRunReceipt> {
+    return isKBrainBackendEnabled()
+      ? requestKBrainManualCron(taskId, executionId, false)
+      : Promise.resolve({ status: "unsupported" });
   },
 
   cancelRun(taskId: string, executionId?: string): Promise<void> {

@@ -176,7 +176,7 @@ func TestCloudRunResearchPersistsSnippetThenPageBeforeCitations(t *testing.T) {
 			if source["page_fetched"] != true || source["sha256"] == "" || len(source["lines"].([]any)) < 1 {
 				t.Error("page lacked durable evidence")
 			}
-			emitCloudDelta(w, "参考已保存网页【来源:"+id+":L1-L1】")
+			emitCloudDelta(w, "参考已保存网页【来源:"+id+"】")
 			emitModelFinish(w, "stop", 1)
 		}
 	})

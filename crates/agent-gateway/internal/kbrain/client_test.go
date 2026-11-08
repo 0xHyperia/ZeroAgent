@@ -39,6 +39,80 @@ func TestPromptRequestUsesCanonicalWireShape(t *testing.T) {
 	}
 }
 
+func TestClientCronDraftPreviewUsesTheAuthenticatedReadOnlyAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/planning" || r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("unexpected preview request: %s %s", r.Method, r.URL.Path)
+		}
+		var request struct {
+			Action string
+			Input  map[string]any
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if request.Action != "cron.preview" || len(request.Input) != 2 || request.Input["expression"] != "0 0 9 * * *" || request.Input["remainingExecutions"] != float64(1) {
+			t.Errorf("preview request: %+v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"valid","nextAt":1783500000000,"utcOffsetSeconds":28800,"timeZone":"Local"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "token", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.CronManage(context.Background(), "preview", "", `{"expression":"0 0 9 * * *","remainingExecutions":1,"prompt":"omitted"}`)
+	if err != nil || !strings.Contains(string(response), `"nextAt":1783500000000`) {
+		t.Fatalf("preview=%s err=%v", response, err)
+	}
+}
+
+func TestClientCronManualReceiptUsesExactAuthenticatedRunPath(t *testing.T) {
+	const executionID = "manual-82075f3d-0598-402d-a5ac-508b8a93e513"
+	const executionPath = "/v1/cron/task%2F1/run-now/" + executionID
+	requests := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("missing device backend authorization")
+		}
+		if r.URL.Path == "/v1/health" {
+			http.NotFound(w, r)
+			return
+		}
+		requests <- r.Method + " " + r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"status":"missing"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"admitted","executionId":"` + executionID + `","startedAt":1}`))
+	}))
+	defer srv.Close()
+	client, err := New(srv.URL, "token", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.CronManage(ctx, "run_receipt", "task/1", `{"executionId":".."}`); err == nil {
+		t.Fatal("invalid receipt ID was accepted")
+	}
+	args := `{"executionId":"` + executionID + `"}`
+	receipt, err := client.CronManage(ctx, "run_receipt", "task/1", args)
+	if err != nil || string(receipt) != `{"status":"missing"}` {
+		t.Fatalf("lookup returned %s, %v", receipt, err)
+	}
+	started, err := client.CronManage(ctx, "run_now_once", "task/1", args)
+	if err != nil || !strings.Contains(string(started), executionID) {
+		t.Fatalf("admission returned %s, %v", started, err)
+	}
+	close(requests)
+	got := []string{<-requests, <-requests}
+	if got[0] != "GET "+executionPath || got[1] != "POST "+executionPath {
+		t.Fatalf("receipt paths = %v", got)
+	}
+}
+
 func TestClientCronManageRoutesSnapshotCancelAndRunHydration(t *testing.T) {
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

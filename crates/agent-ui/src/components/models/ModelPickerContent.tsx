@@ -56,7 +56,7 @@ export function ModelPickerContent(props: {
   /** Opt-in: reveal the current route without changing the chosen model or group. */
   revealSelected?: boolean;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const id = useId();
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
@@ -80,7 +80,10 @@ export function ModelPickerContent(props: {
       : (groups.flatMap((group) => group.entries).find((entry) => entry.id === pendingModel)
           ?.options ?? []);
   const searching = search.trim().length > 0;
+  const pickerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const routeBackRef = useRef<HTMLButtonElement>(null);
+  const modelListOrigin = useRef<{ model: string; scrollTop: number } | null>(null);
   const revealedRef = useRef("");
   const scrollPendingRef = useRef(false);
   const listPageRef = useRef(`${activeView}:${pendingModel ?? ""}`);
@@ -131,6 +134,32 @@ export function ModelPickerContent(props: {
     return () => animation?.cancel();
   }, [activeView, pendingModel]);
 
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const origin = modelListOrigin.current;
+    if (!list || !origin) return;
+    if (pendingModel !== null) {
+      list.scrollTop = 0;
+      const route =
+        list.querySelector<HTMLButtonElement>('[data-model-route][aria-pressed="true"]:not(:disabled)') ??
+        list.querySelector<HTMLButtonElement>("[data-model-route]:not(:disabled)");
+      (route ?? routeBackRef.current)?.focus({ preventScroll: true });
+      if (route) {
+        list.scrollTop = Math.max(
+          0,
+          route.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom,
+        );
+      }
+      return;
+    }
+    modelListOrigin.current = null;
+    list.scrollTop = origin.scrollTop;
+    const row = Array.from(list.querySelectorAll<HTMLButtonElement>("[data-model-id]")).find(
+      (item) => item.dataset.modelId === origin.model,
+    );
+    (row ?? pickerRef.current)?.focus({ preventScroll: true });
+  }, [pendingModel]);
+
   function changeView(next: ModelPickerView) {
     if (next === activeView) return;
     const nextGroups = buildModelPickerGroups(visibleOptions, next, search, providerFilter, sort);
@@ -147,6 +176,7 @@ export function ModelPickerContent(props: {
     setView(next);
     persistModelPickerView(next);
     setExpanded(new Set(current ? [current] : []));
+    modelListOrigin.current = null;
     setPendingModel(null);
   }
 
@@ -154,11 +184,18 @@ export function ModelPickerContent(props: {
     if (!option.disabledReason) props.onSelect(option.value);
   }
 
+  function openRoutes(model: string) {
+    modelListOrigin.current = { model, scrollTop: listRef.current?.scrollTop ?? 0 };
+    setPendingModel(model);
+  }
+
   return (
     // biome-ignore lint/a11y/useSemanticElements: A fieldset's anonymous box prevents this constrained scroll viewport from shrinking.
     <div
+      ref={pickerRef}
       role="group"
       aria-label={t("chat.selectModel")}
+      tabIndex={-1}
       className="m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 text-xs"
       data-model-picker-content
       data-model-picker-view={activeView}
@@ -310,8 +347,10 @@ export function ModelPickerContent(props: {
       ) : (
         <div className="mb-2 shrink-0 border-b border-border/60 pb-2">
           <button
+            ref={routeBackRef}
             type="button"
             data-model-route-back
+            aria-label={locale === "en-US" ? "Back to models" : "返回模型列表"}
             onClick={() => setPendingModel(null)}
             className="mb-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
@@ -496,7 +535,7 @@ export function ModelPickerContent(props: {
                             disabled={!available}
                             aria-pressed={isSelected}
                             onClick={() =>
-                              activeView === "vendor" ? setPendingModel(entry.id) : choose(option)
+                              activeView === "vendor" ? openRoutes(entry.id) : choose(option)
                             }
                             className={cn(
                               "flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",

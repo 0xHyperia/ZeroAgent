@@ -42,6 +42,7 @@ test("a failed refresh preserves the explicitly selected remote device offline",
   assert.equal(next.localDeviceId, local.device_id);
   const selected = next.environments.find(item => item.device_id === next.selectedDeviceId);
   assert.equal(selected.online, false);
+  assert.equal(next.directoryUnavailable, true);
   assert.deepEqual(selected.workspaces, remote.workspaces);
 });
 
@@ -49,9 +50,13 @@ test("a successful directory without the selected device retains its offline tar
   const missing = state.refreshDesktopExecutionState(selectedRemote(), [local], local.device_id);
   assert.equal(missing.selectedDeviceId, remote.device_id);
   assert.equal(missing.environments.find(item => item.device_id === remote.device_id).online, false);
+  assert.equal(missing.directoryUnavailable, undefined);
+  assert.equal(missing.selectedDeviceMissing, true);
+  assert.equal(state.unavailableDesktopExecutionState(missing, [local]).selectedDeviceMissing, true);
   const recovered = state.refreshDesktopExecutionState(missing, [local, remote], local.device_id);
   assert.equal(recovered.selectedDeviceId, remote.device_id);
   assert.equal(recovered.environments.find(item => item.device_id === remote.device_id).online, true);
+  assert.equal(recovered.selectedDeviceMissing, undefined);
 });
 
 test("first use and an explicit local choice remain local across failures and identity registration", () => {
@@ -83,6 +88,7 @@ const extract = (name, predicate = () => true) => {
 function appHarness(request) {
   let current = selectedRemote();
   let openRemoteTasks = false;
+  let accountNavigation = "visited";
   let leases = new Map([[remote.device_id, { lease: "fixture-lease", expiresAt: Date.now() + 60000 }]]);
   const epoch = { current: 0 };
   const context = vm.createContext({
@@ -95,12 +101,13 @@ function appHarness(request) {
     setRemoteSelectionLeases(next) { leases = typeof next === "function" ? next(leases) : next; },
     relayUser: null, rememberedExecutionOwner: { current: null },
     setOpenRemoteTasks(value) { openRemoteTasks = value; },
-    setAccountPage() {}, setScheduledTasksRequest() {}, closeAccountPage() {},
+    setVisitedAccountNavigation(value) { accountNavigation = value; },
+    setScheduledTasksRequest() {}, closeAccountPage(afterClose) { afterClose?.(); },
     setRelayReady() {}, setRelayUser() {}, setRelayStats() {}, closeSettingsOverlay() {},
   });
   const code = `${extract("buildLocalOnlyEnvironment")}\n${extract("isRemoteLeaseValid")}\nconst refresh=${extract("refresh", node => appSource.slice(node.init.start, node.init.end).includes("getDesktopEnvironments(settings)"))};\nconst handleSessionChanged=${extract("handleSessionChanged")};\n${extract("handleExecutionSwitch")}\n${extract("handleRemoteSelectionInvalid")}`;
   vm.runInContext(transpileTypeScriptModule(code, "desktop-route-fixture.ts"), context);
-  return { context, current: () => current, leases: () => leases, openRemoteTasks: () => openRemoteTasks, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
+  return { context, current: () => current, leases: () => leases, accountNavigation: () => accountNavigation, openRemoteTasks: () => openRemoteTasks, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
 }
 
 test("the actual refresh callback keeps a remote route on rejection and missing-device success", async () => {
@@ -123,6 +130,7 @@ test("account changes clear routes and leases before old refresh results or fail
     await refresh;
     assert.deepEqual(JSON.parse(JSON.stringify(harness.current())), { environments: [], localDeviceId: "", selectedDeviceId: "" });
     assert.equal(harness.leases().size, 0);
+    assert.equal(harness.accountNavigation(), null);
   }
   assert.equal(resultCallbacks.length, 2);
   for (const callback of resultCallbacks) {

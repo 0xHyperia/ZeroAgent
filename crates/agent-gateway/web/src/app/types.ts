@@ -5,6 +5,7 @@ import type { ChatCommandOutcome } from "@/lib/chat/stream/chatCommandPipeline";
 import type { ChatRuntimeControls, CustomProvider } from "@/lib/settings";
 
 export type SendChatOptions = {
+  isCurrentAgent?: () => boolean;
   conversationId?: string;
   clientRequestId?: string;
   uploadedFiles?: PendingUploadedFile[];

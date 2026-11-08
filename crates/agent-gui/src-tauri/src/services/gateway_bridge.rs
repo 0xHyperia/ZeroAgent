@@ -164,6 +164,19 @@ async fn kbrain_cron_manage(
             }
             dates
         }
+        "preview" => {
+            #[derive(Deserialize, serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct CronDraft {
+                expression: String,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                remaining_executions: Option<u64>,
+            }
+            let input = serde_json::from_str::<CronDraft>(&request.task_json)
+                .map_err(|e| format!("invalid cron preview payload: {e}"))?;
+            crate::services::planning::backend::send(connection, "cron.preview", json!(input))
+                .await?
+        }
         "validate" => {
             let expression = parse_validate_expression(&request.task_json)?;
             kbrain_prompt_request(
@@ -175,7 +188,8 @@ async fn kbrain_cron_manage(
             .await?;
             json!({ "valid": true })
         }
-        "list_runs" | "clear_runs" | "run_now" | "cancel_run" | "run_anchor" | "run_progress" => {
+        "list_runs" | "clear_runs" | "run_now" | "run_now_once" | "run_receipt" | "cancel_run"
+        | "run_anchor" | "run_progress" => {
             let task_id = parse_required_cron_task_id(&request, &action)?;
             let path = format!("/v1/cron/{}", urlencoding::encode(&task_id));
             let (method, path) = match action.as_str() {
@@ -185,6 +199,20 @@ async fn kbrain_cron_manage(
                 }
                 "clear_runs" => (Method::DELETE, format!("{path}/runs")),
                 "run_now" => (Method::POST, format!("{path}/run-now")),
+                "run_now_once" | "run_receipt" => {
+                    let args: Value = serde_json::from_str(&request.task_json)
+                        .map_err(|e| format!("invalid cron execution payload: {e}"))?;
+                    let id = args["executionId"]
+                        .as_str()
+                        .filter(|id| id.len() == 43 && id.starts_with("manual-"))
+                        .ok_or_else(|| format!("cron {action} requires a valid executionId"))?;
+                    let method = if action == "run_now_once" {
+                        Method::POST
+                    } else {
+                        Method::GET
+                    };
+                    (method, format!("{path}/run-now/{}", urlencoding::encode(id)))
+                }
                 "run_anchor" | "run_progress" => {
                     let args: Value = serde_json::from_str(&request.task_json)
                         .map_err(|e| format!("invalid cron execution payload: {e}"))?;
@@ -192,9 +220,7 @@ async fn kbrain_cron_manage(
                         .as_str()
                         .map(str::trim)
                         .filter(|id| !matches!(*id, "" | "." | ".."))
-                        .ok_or_else(|| {
-                            format!("cron {action} requires a valid executionId")
-                        })?;
+                        .ok_or_else(|| format!("cron {action} requires a valid executionId"))?;
                     let execution_path = format!("{path}/runs/{}", urlencoding::encode(id));
                     let path = if action == "run_progress" {
                         let cursor = args["cursor"]
@@ -2565,6 +2591,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn kbrain_cron_preview_forwards_only_the_schedule_to_the_device_engine() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = prompt_fixture_connection(listener.local_addr().unwrap());
+        let server = tokio::spawn(serve_one_prompt_request(
+            listener,
+            "200 OK",
+            r#"{"status":"valid","nextAt":1783500000000,"utcOffsetSeconds":28800,"timeZone":"Local"}"#,
+        ));
+        let response = super::kbrain_cron_manage(
+            &connection,
+            proto::CronManageRequest {
+                action: "preview".into(),
+                task_json:
+                    r#"{"expression":"0 0 9 * * *","remainingExecutions":1,"prompt":"omitted"}"#
+                        .into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let (headers, body) = server.await.unwrap();
+        assert!(headers.starts_with("POST /v1/planning "));
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("authorization: bearer fixture-token")
+        );
+        assert_eq!(
+            body.unwrap(),
+            json!({"action": "cron.preview", "input": {"expression": "0 0 9 * * *", "remainingExecutions": 1}})
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&response.result_json).unwrap()["utcOffsetSeconds"],
+            28800
+        );
+    }
+
+    #[tokio::test]
     async fn kbrain_cron_manage_reads_the_device_scheduler_and_targets_one_run() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let connection = prompt_fixture_connection(listener.local_addr().unwrap());
@@ -2647,6 +2711,49 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn kbrain_cron_manage_manual_receipt_reads_and_writes_only_the_exact_run() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = prompt_fixture_connection(listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (first, _) =
+                serve_one_prompt_request(&listener, "200 OK", r#"{"status":"missing"}"#).await;
+            let (second, _) =
+                serve_one_prompt_request(&listener, "200 OK", r#"{"status":"admitted"}"#).await;
+            [first, second]
+        });
+        let request = proto::CronManageRequest {
+            action: "run_receipt".into(),
+            task_id: "task/1".into(),
+            task_json: r#"{"executionId":"manual-82075f3d-0598-402d-a5ac-508b8a93e513"}"#.into(),
+        };
+        let response = super::kbrain_cron_manage(&connection, request.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&response.result_json).unwrap()["status"],
+            "missing"
+        );
+        super::kbrain_cron_manage(
+            &connection,
+            proto::CronManageRequest {
+                action: "run_now_once".into(),
+                ..request
+            },
+        )
+        .await
+        .unwrap();
+        let [read, write] = server.await.unwrap();
+        let path = "/v1/cron/task%2F1/run-now/manual-82075f3d-0598-402d-a5ac-508b8a93e513";
+        assert!(read.starts_with(&format!("GET {path} ")));
+        assert!(write.starts_with(&format!("POST {path} ")));
+        for request in [read, write] {
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer fixture-token"));
+        }
     }
 
     /// 单次请求的本地 ZeroAgent engine 替身：返回请求头与 JSON 正文，并回写给定响应。

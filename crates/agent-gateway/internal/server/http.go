@@ -81,7 +81,8 @@ func NewHTTPServerWithReadiness(
 		rootMux.Handle("/api/status", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("/api/files/import", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("/api/files/import-directory", protectedAPIHandler(cfg, sm, accounts))
-		rootMux.Handle("POST /api/files/handoff", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("POST /api/files/confirmed-handoff", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("GET /api/files/confirmed-handoff", protectedAPIHandler(cfg, sm, accounts))
 	} else {
 		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
 		rootMux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(sm, cfg.RequestTimeout, nil))
@@ -106,6 +107,12 @@ func NewHTTPServerWithReadiness(
 
 	rootMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		cleanPath := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+		// A desktop-owned Gateway does not mount the hosted account API.
+		if cleanPath == "api" || strings.HasPrefix(cleanPath, "api/") {
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "API route unavailable"})
+			return
+		}
 		if cleanPath == "." || cleanPath == "" || cleanPath == "index.html" {
 			serveIndex(w, r)
 			return
@@ -198,23 +205,28 @@ func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *acco
 			query.Set("agent_id", agentID)
 			r.URL.RawQuery = query.Encode()
 			handler.ImportDirectory(sm, cfg.RequestTimeout).ServeHTTP(w, r)
-		case "/api/files/handoff":
-			handler.WorkspaceHandoff(sm, cfg.RequestTimeout, agentID, func(workspace string) bool {
+		case "/api/files/confirmed-handoff":
+			handler.WorkspaceHandoff(sm, cfg.RequestTimeout, agentID, func(workspace, expectedPath string) int {
 				owner, current, err := accounts.ValidateSelection(r.Context(), cookie.Value, credential.Lease)
 				if err != nil || owner.UserID != accountSession.UserID || current.AgentID != agentID ||
-					(current.EffectiveScope() != account.SelectionScopeDevice && current.WorkspaceID != workspace) {
-					return false
+					current.DeviceID != lease.DeviceID ||
+					(credential.DeviceID != "" && credential.DeviceID != current.DeviceID) ||
+					current.EffectiveScope() != account.SelectionScopeWorkspace || current.WorkspaceID != workspace {
+					return http.StatusForbidden
 				}
 				device, err := accounts.Device(r.Context(), owner.UserID, agentID)
 				if err != nil || device.RevokedAt != nil {
-					return false
+					return http.StatusForbidden
 				}
 				for _, published := range device.Workspaces {
 					if published.ID == workspace && published.Path != "" {
-						return true
+						if published.Path != expectedPath {
+							return http.StatusPreconditionFailed
+						}
+						return http.StatusOK
 					}
 				}
-				return false
+				return http.StatusForbidden
 			}).ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)

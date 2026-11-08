@@ -11,8 +11,13 @@ export type ExtensionWorkspaceRoute =
   | { page: "editor"; id?: string; draftId?: string; kind?: ExtensionKind; returnTo?: string };
 export type ExtensionWorkspaceLocation = {
   route: ExtensionWorkspaceRoute;
-  reader?: { id: string; skillName?: string; returnToChat?: boolean };
+  reader?: { id: string; skillName?: string; revision?: number; returnToChat?: boolean };
 };
+export type ExtensionTryResult =
+  | "accepted"
+  | "conversation-unavailable"
+  | "skill-unavailable"
+  | "draft-reference-conflict";
 export type ExtensionPackage = {
   id: string;
   kind: ExtensionKind;
@@ -44,6 +49,7 @@ export type ExtensionRevision = {
   created_at: string;
 };
 export type ExtensionCatalog = { version: number; packages: ExtensionPackage[] };
+export class ExtensionRevisionUnavailable extends Error {}
 export type ExtensionPreparedDraft = {
   kind: ExtensionKind;
   target_id?: string;
@@ -66,7 +72,11 @@ export type ExtensionsAdapter = {
   /** An uncertain write must be reconciled by a successful catalog read before another write. */
   readonly writeUnconfirmed?: boolean;
   list(signal?: AbortSignal): Promise<ExtensionCatalog>;
-  read(id: string, signal?: AbortSignal): Promise<{ revision: ExtensionRevision; version: number }>;
+  read(
+    id: string,
+    signal?: AbortSignal,
+    revision?: number,
+  ): Promise<{ revision: ExtensionRevision; version: number }>;
   readDraft?(id: string, signal?: AbortSignal): Promise<ExtensionPreparedDraft>;
   mutate(expected: number, input: ExtensionMutation): Promise<ExtensionCatalog>;
   importArchive(expected: number, file: File, kind?: ExtensionKind): Promise<ExtensionCatalog>;
@@ -76,7 +86,8 @@ export function extensionOwned(pkg: ExtensionPackage) {
   return pkg.visibility === "personal" && pkg.owned;
 }
 export function extensionSkillEnabled(pkg: ExtensionPackage, skill: ExtensionSkill) {
-  return pkg.installed && pkg.enabled && !pkg.disabled_skills?.includes(skill.name);
+  return pkg.installed && pkg.enabled &&
+    (pkg.kind !== "plugin" || !pkg.disabled_skills?.includes(skill.name));
 }
 
 export function extensionComposerEntry(pkg: ExtensionPackage) {

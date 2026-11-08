@@ -32,7 +32,7 @@ test("exact message windows allow forward continuation without requiring the sid
 });
 
 test("lineage distinguishes unavailable source and paginated child conversations", async()=>{
-  const client=createCloudChatConversationsClient(async()=>Response.json({source:{conversation_id:"source",message_id:"message",action:"fork",title:"",available:false},children:[{conversation:conversation("child"),source_message_id:"message",action:"fork"}],has_more:false,next_cursor:""}),guard);
+  const client=createCloudChatConversationsClient(async()=>Response.json({source:{conversation_id:"source",message_id:"message",title:"",available:false},children:[{conversation:conversation("child"),source_message_id:"message"}],has_more:false,next_cursor:""}),guard);
   const page=await client.branches("current");assert.equal(page.source.available,false);assert.equal(page.children[0].conversation.id,"child");
 });
 

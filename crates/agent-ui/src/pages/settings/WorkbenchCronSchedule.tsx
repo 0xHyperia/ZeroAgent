@@ -1,4 +1,5 @@
 import { useId, useRef } from "react";
+import { timeZoneDisplayName } from "../../components/settings/TimeZonePicker";
 import { Input } from "../../components/ui/input";
 import {
   Select,
@@ -69,16 +70,12 @@ const trigger = "w-fit max-w-[70%] border-transparent bg-transparent text-muted-
 /** Only converts patterns whose six-field Cron interpretation is exact. */
 export function WorkbenchCronSchedule({
   expression,
-  remaining,
   timeZone,
   onExpression,
-  onRemaining,
 }: {
   expression: string;
-  remaining: string;
   timeZone?: string;
   onExpression: (expression: string) => void;
-  onRemaining: (remaining: string) => void;
 }) {
   const { locale, t } = useLocale();
   const id = useId();
@@ -97,27 +94,11 @@ export function WorkbenchCronSchedule({
     minutes < 60
       ? text(`${minutes} 分钟`, `${minutes} min`)
       : text(`${minutes / 60} 小时`, `${minutes / 60} hr`);
-  const endMode = remaining ? "count" : "never";
-  const once = remaining === "1";
-  const repeatedCount = useRef("");
 
   return (
     <div className="divide-y divide-border/60 rounded-2xl border border-border/60">
       <div className={row}>
-        <label htmlFor={`${id}-repeat`}>{text("重复执行任务", "Repeat task")}</label>
-        <Switch
-          id={`${id}-repeat`}
-          checked={!once}
-          onCheckedChange={(repeat) => {
-            if (!repeat) repeatedCount.current = remaining;
-            onRemaining(repeat ? repeatedCount.current : "1");
-          }}
-        />
-      </div>
-      <div className={row}>
-        <label htmlFor={`${id}-frequency`}>
-          {once ? text("匹配规则", "Schedule") : text("重复", "Repeat")}
-        </label>
+        <label htmlFor={`${id}-frequency`}>{text("重复", "Repeat")}</label>
         <Select
           value={schedule.frequency}
           onValueChange={(value) => {
@@ -239,7 +220,9 @@ export function WorkbenchCronSchedule({
             <label htmlFor={`${id}-time`}>{text("时间", "Time")}</label>
             <div className="flex min-w-0 flex-wrap items-center gap-2 text-muted-foreground">
               <span className="text-xs">
-                {timeZone && timeZone !== "Local" ? timeZone : text("设备时区", "Device time zone")}
+                {timeZone && timeZone !== "Local"
+                  ? timeZoneDisplayName(timeZone, locale)
+                  : text("设备时区", "Device time zone")}
               </span>
               <Input
                 type="time"
@@ -263,6 +246,37 @@ export function WorkbenchCronSchedule({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+export function WorkbenchCronLimits({
+  remaining,
+  onRemaining,
+}: {
+  remaining: string;
+  onRemaining: (remaining: string) => void;
+}) {
+  const { locale, t } = useLocale();
+  const id = useId();
+  const text = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
+  const endMode = remaining ? "count" : "never";
+  const once = remaining === "1";
+  const repeatedCount = useRef("");
+
+  return (
+    <div className="divide-y divide-border/60 rounded-xl border border-border/60">
+      <div className={row}>
+        <label htmlFor={`${id}-repeat`}>{text("重复执行任务", "Repeat task")}</label>
+        <Switch
+          id={`${id}-repeat`}
+          checked={!once}
+          onCheckedChange={(repeat) => {
+            if (!repeat) repeatedCount.current = remaining;
+            onRemaining(repeat ? repeatedCount.current : "1");
+          }}
+        />
+      </div>
       {once ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
           {text("仅在下次匹配的时间执行。", "Runs only at the next matching time.")}

@@ -12,7 +12,7 @@ import { useStreamingReveal } from "@liveagent/ui/lib/chat/streamingReveal";
 import { resolveThinkingDurationMs } from "@liveagent/ui/lib/chat/thinkingDurations";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Brain, ChevronRight, Loader2 } from "../../IconSet";
 
 /**
@@ -43,6 +43,8 @@ export function ThinkingDisclosure(props: {
     onOpenFileLink,
   } = props;
   const { t } = useLocale();
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   // A segment born streaming starts open so the reasoning is watchable; once
   // it settles it folds back down — unless the user toggled it, after which
   // disclosure ownership stays with them. With "expand process by default" on,
@@ -102,11 +104,12 @@ export function ThinkingDisclosure(props: {
       data-thinking-active={active ? "" : undefined}
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
-        aria-label={t("chat.thinkingProcess")}
+        aria-controls={detailsId}
         className={cn(
-          "-mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
+          "za-chat-activity-trigger -mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
           "rounded-lg px-1.5 py-1",
           "text-left text-sm font-[450] text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
         )}
@@ -121,21 +124,18 @@ export function ThinkingDisclosure(props: {
             className="size-3 shrink-0 animate-spin text-foreground/45 motion-reduce:animate-none"
           />
         ) : (
-          <Brain className="size-3 shrink-0 text-foreground/45" />
+          <Brain aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
         )}
         <span className={cn("min-w-0 truncate", active && "shimmer")}>
           {active ? t("chat.thinking") : settledLabel}
         </span>
         <ChevronRight
-          className={cn(
-            "size-3 shrink-0 text-foreground/40 opacity-0",
-            "transition-[opacity,transform] duration-150 ease-out group-hover/thinking:opacity-100 group-focus-within/thinking:opacity-100",
-            open ? "rotate-90" : "",
-          )}
+          aria-hidden="true"
+          className={cn("za-chat-activity-chevron size-3 shrink-0", open && "rotate-90")}
         />
       </button>
 
-      <LazyCollapse open={open}>
+      <LazyCollapse id={detailsId} triggerRef={triggerRef} open={open}>
         {() => (
           <div className="-mx-3 overflow-hidden px-3 pb-1 pt-1">
             <div

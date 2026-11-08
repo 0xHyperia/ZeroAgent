@@ -194,10 +194,7 @@ function serviceCommand(service) {
   if (service === "gateway") {
     ensureWebUiEmbedStub();
     mkdirSync(gatewayDataDir, { recursive: true });
-    const localOriginals = join(repoRoot, ".codex-originals");
     const listenAddress = process.env.ZEROAGENT_GATEWAY_HTTP_ADDR;
-    const loopback = /^(?:127\.0\.0\.1|\[::1\]|localhost):\d+$/.test(listenAddress ?? "");
-    const useLocalOriginals = (!listenAddress || loopback) && existsSync(localOriginals);
     return {
       args: ["-C", "crates/agent-gateway", "run", "./cmd/gateway"],
       command: "go",
@@ -206,9 +203,7 @@ function serviceCommand(service) {
         ...process.env,
         GOCACHE: process.env.GOCACHE ?? join(stateDir, "go-cache"),
         ZEROAGENT_GATEWAY_DATA_DIR: gatewayDataDir,
-        ZEROAGENT_GATEWAY_HTTP_ADDR:
-          listenAddress ?? `${useLocalOriginals ? "127.0.0.1" : ""}:${ports.gateway}`,
-        ZEROAGENT_CODEX_ORIGINALS_DIR: useLocalOriginals ? localOriginals : "",
+        ZEROAGENT_GATEWAY_HTTP_ADDR: listenAddress ?? `127.0.0.1:${ports.gateway}`,
         ZEROAGENT_GATEWAY_TOKEN: gatewayToken,
       },
     };
@@ -237,7 +232,7 @@ function serviceCommand(service) {
         build: {
           devUrl: urls.desktop,
           ...(externalDesktopFrontend
-            ? { beforeDevCommand: "pnpm prepare:kbrain && pnpm gateway:prepare" }
+            ? { beforeDevCommand: "pnpm prepare:kbrain && pnpm gateway:prepare && pnpm remote:prepare" }
             : {}),
         },
       }),

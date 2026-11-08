@@ -323,6 +323,64 @@ test("GatewayWebSocketClient falls back to status_get when chat_prepare is unsup
   resetGatewayWebSocketClient();
 });
 
+test("a device switch retires preparation and the captured send even after switching back", async (t) => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+  t.after(resetGatewayWebSocketClient);
+
+  const client = getGatewayWebSocketClient("token");
+  const originalScope = client.captureActiveAgentScope();
+  const original = assert.rejects(client.prepareChatRuntime("send", originalScope), /active device changed/i);
+  const firstSocket = await connectAndAuth(codec, 0);
+  await waitFor(() => findFrame(codec, firstSocket, "chatPrepare"), "original prepare");
+  const oldRequest = findFrame(codec, firstSocket, "chatPrepare");
+  client.setActiveAgent("next-device");
+  const next = client.prepareChatRuntime("manual-reconnect");
+  await original;
+  firstSocket.receiveBinary(codec.encodeServerFrame({ request_id: oldRequest.requestId, status: { online: true, agent_id: "desktop-agent" } }));
+  const nextSocket = await connectAndAuth(codec, 1);
+  await waitFor(() => findFrame(codec, nextSocket, "chatPrepare"), "new target prepare");
+  const currentRequest = findFrame(codec, nextSocket, "chatPrepare");
+  assert.equal(currentRequest.frame.agentId, "next-device");
+  assert.deepEqual(currentRequest.json.chat_prepare, { reason: "manual-reconnect" });
+  nextSocket.receiveBinary(codec.encodeServerFrame({ request_id: currentRequest.requestId, status: { online: true, agent_id: "next-device" } }));
+  assert.equal((await next).agent_id, "next-device");
+
+  client.setActiveAgent("desktop-agent");
+  assert.equal(originalScope(), false);
+  await assert.rejects(client.chatCommand({ type: "chat.submit", message: "old payload" }, originalScope), /active device changed/i);
+  assert.ok(FakeWebSocket.instances.every((socket) => !findFrame(codec, socket, "chatCommand")));
+});
+
+test("a device directory refresh cannot silently replace an explicit target", async (t) => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+  t.after(resetGatewayWebSocketClient);
+
+  const client = getGatewayWebSocketClient("token");
+  const startup = client.listAgents();
+  const socket = await connectAndAuth(codec);
+  await startup;
+  client.setActiveAgent("desktop-agent");
+  const scope = client.captureActiveAgentScope();
+  const refresh = client.listAgents();
+  await waitFor(() => frames(codec, socket).filter((frame) => frame.case === "agentList").length === 2, "refreshed device directory");
+  const request = frames(codec, socket).filter((frame) => frame.case === "agentList").at(-1);
+  socket.receiveBinary(codec.encodeServerFrame({ request_id: request.requestId, agent_list: { agents: [{ agent_id: "other-device", online: true }] } }));
+  assert.deepEqual((await refresh).map((agent) => agent.agent_id), ["other-device"]);
+  assert.equal(client.getActiveAgent(), "desktop-agent");
+  assert.equal(scope(), true);
+
+  const prepare = client.prepareChatRuntime("manual-reconnect");
+  await waitFor(() => findFrame(codec, socket, "chatPrepare"), "prepare for original target");
+  const frame = findFrame(codec, socket, "chatPrepare");
+  assert.equal(frame.frame.agentId, "desktop-agent");
+  socket.receiveBinary(codec.encodeServerFrame({ request_id: frame.requestId, status: { online: false, agent_id: "desktop-agent" } }));
+  assert.equal((await prepare).online, false);
+});
+
 test("GatewayWebSocketClient clears a timed-out prepare so the next wake can retry", async () => {
   const timers = createManualTimers();
   installBrowser({ ...timers });
@@ -1534,6 +1592,30 @@ test("GatewayWebSocketClient reconnects once and retries chatCommand with the sa
   assert.equal((await commandPromise).runId, "run-canonical");
   assert.equal(FakeWebSocket.instances.length, 2, "only one transparent retry is attempted");
   resetGatewayWebSocketClient();
+});
+
+test("a lost command acknowledgement cannot replay on a newly selected device", async (t) => {
+  installBrowser();
+  const { codec, getGatewayWebSocketClient, resetGatewayWebSocketClient } = loadGatewaySocket();
+  resetGatewayWebSocketClient();
+  t.after(resetGatewayWebSocketClient);
+
+  const client = getGatewayWebSocketClient("token");
+  const retired = assert.rejects(client.chatCommand({
+    type: "chat.submit", message: "original device draft", clientRequestId: "retired-command",
+  }), /active device changed/i);
+  const firstSocket = await connectAndAuth(codec, 0);
+  await waitFor(() => findFrame(codec, firstSocket, "chatCommand"), "original send");
+  client.setActiveAgent("next-device");
+  const next = client.chatCommand({ type: "chat.submit", message: "new device draft", clientRequestId: "new-command" });
+  await retired;
+  const nextSocket = await connectAndAuth(codec, 1);
+  await waitFor(() => findFrame(codec, nextSocket, "chatCommand"), "new device send");
+  const sent = nextSocket.sent.map((frame) => codec.decodeClientFrame(frame)).filter((frame) => frame.case === "chatCommand");
+  assert.equal(sent[0].frame.agentId, "next-device");
+  assert.deepEqual(sent.map((frame) => frame.json.chat_command.request.client_request_id), ["new-command"]);
+  nextSocket.receiveBinary(codec.encodeServerFrame({ request_id: sent[0].requestId, chat_accepted: { run_id: "new-run", conversation_id: "new-conversation" } }));
+  assert.equal((await next).runId, "new-run");
 });
 
 test("GatewayWebSocketClient uses a short ACK timeout and preserves a generated client id", async () => {

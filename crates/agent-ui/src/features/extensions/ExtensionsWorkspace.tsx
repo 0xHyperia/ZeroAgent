@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { mountWorkbenchLayout } from "../../application/workbenchLayoutPortal";
 import {
   ArrowLeft,
   Blend,
@@ -21,7 +31,6 @@ import {
   Upload,
   X,
 } from "../../components/IconSet";
-import { Markdown } from "../../components/Markdown";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import {
   DropdownMenu,
@@ -42,6 +51,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarHeaderRow,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuButton,
@@ -54,16 +64,21 @@ import {
   SidebarResizeHandle,
   useSidebarWidthLayout,
 } from "../../components/ui/sidebar-resize";
+import { StatusNotice } from "../../components/ui/status-notice";
 import { Switch } from "../../components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { TooltipButton as Button } from "../../components/ui/tooltip-button";
 import { useLocale } from "../../i18n";
 import {
+  builtinSkillPresentation,
   extensionDescription,
   extensionDisplayName,
   extensionOverview,
   extensionSearchText,
   extensionSkillDescription,
   extensionSkillDisplayName,
+  extensionStarterPrompts,
+  extensionTryError,
   usesExtensionPackagePresentation,
 } from "../../lib/extensions/presentation";
 import { ExtensionDirectoryItem } from "./ExtensionDirectoryItem";
@@ -81,18 +96,103 @@ import {
   type ExtensionPackage,
   type ExtensionPreparedDraft,
   type ExtensionRevision,
+  ExtensionRevisionUnavailable,
   type ExtensionSkill,
   type ExtensionsAdapter,
+  type ExtensionTryResult,
   type ExtensionWorkspaceLocation,
   type ExtensionWorkspaceRoute,
   extensionOwned,
   extensionSkillEnabled,
 } from "./extensionTypes";
-import { SkillFileIcon, SkillReaderFileTree, SkillSourceCard } from "./SkillReaderFiles";
+import {
+  SkillReaderFileMenu,
+  SkillReaderFileTree,
+  SkillReaderMarkdown,
+  SkillSourceCard,
+  skillReaderFileLinks,
+} from "./SkillReaderFiles";
 import "./extensions.css";
 
 type Route = ExtensionWorkspaceRoute;
-type SkillSelection = { pkg: ExtensionPackage; skill: ExtensionSkill; returnToChat?: boolean };
+type RemovalFailure =
+  | { kind: "failed"; message: string }
+  | { kind: "unconfirmed"; previousCatalog: ExtensionCatalog };
+type DirectoryBrowse = {
+  query: string;
+  source: "public" | "personal";
+  installation: "all" | "installed" | "uninstalled";
+  scrollTop: number;
+};
+type DirectoryInstallFocus = {
+  button: HTMLButtonElement;
+  browse: DirectoryBrowse;
+  route: string;
+  id: string;
+  neighbor: string | undefined;
+};
+const maxDirectoryQueryLength = 512;
+const maxDirectoryScrollTop = 100_000;
+
+function findDirectoryRow(viewport: HTMLDivElement | null, id: string) {
+  return Array.from(
+    viewport?.querySelectorAll<HTMLButtonElement>("[data-extension-open]") ?? [],
+  ).find((item) => item.dataset.extensionOpen === id);
+}
+
+function extensionManagementEnabled(pkg: ExtensionPackage) {
+  return pkg.installed && pkg.enabled;
+}
+
+function directoryBrowseKey(scope: string) {
+  return `zeroagent:extensions-browse:${encodeURIComponent(scope)}`;
+}
+
+function normalizeDirectoryBrowse(entry?: Partial<DirectoryBrowse>): DirectoryBrowse {
+  return {
+    query: typeof entry?.query === "string" ? entry.query.slice(0, maxDirectoryQueryLength) : "",
+    source: entry?.source === "personal" ? "personal" : "public",
+    installation:
+      entry?.installation === "installed" || entry?.installation === "uninstalled"
+        ? entry.installation
+        : "all",
+    scrollTop: Number.isFinite(entry?.scrollTop)
+      ? Math.max(0, Math.min(maxDirectoryScrollTop, Math.round(entry?.scrollTop ?? 0)))
+      : 0,
+  };
+}
+
+function readDirectoryBrowse(scope: string): Record<ExtensionKind, DirectoryBrowse> {
+  let stored: Partial<Record<ExtensionKind, DirectoryBrowse>> | undefined;
+  try {
+    const raw = extensionSessionStorage()?.getItem(directoryBrowseKey(scope));
+    if (raw && raw.length <= 8192) stored = JSON.parse(raw);
+  } catch {
+    /* The directory remains usable if tab storage is blocked or damaged. */
+  }
+  return {
+    plugin: normalizeDirectoryBrowse(stored?.plugin),
+    skill: normalizeDirectoryBrowse(stored?.skill),
+  };
+}
+type SkillSelection = {
+  pkg: ExtensionPackage;
+  skill: ExtensionSkill;
+  revision?: number;
+  returnToChat?: boolean;
+};
+type SkillReaderTarget = { id: string; skillName?: string; revision?: number };
+type ReaderManagementReturn = {
+  packageId: string;
+  location: ExtensionWorkspaceLocation;
+  selection: SkillSelection | null;
+};
+type DeviceSkillAction = (
+  pkg: ExtensionPackage,
+  skill: ExtensionSkill,
+  revision: number,
+  signal: AbortSignal,
+) => Promise<void>;
 type AppSelection = { name: string; description: string; packageId: string; local?: boolean };
 function restoredRoute(scope: string): Route {
   try {
@@ -138,7 +238,9 @@ function ExtensionsNavigationFrame({
         </Sidebar>
       </div>
     );
-    return target === undefined ? navigation : target && createPortal(navigation, target);
+    return target === undefined
+      ? navigation
+      : target && mountWorkbenchLayout(navigation, target, "account-sidebar");
   }
   return (
     <SidebarResizeContext.Provider value={sidebarLayout}>
@@ -160,7 +262,7 @@ function ExtensionsSidebarOpener() {
   );
 }
 
-export function ExtensionsWorkspace(props: {
+type ExtensionsWorkspaceProps = {
   adapter: ExtensionsAdapter;
   catalog: ExtensionCatalog | null;
   loading: boolean;
@@ -168,7 +270,9 @@ export function ExtensionsWorkspace(props: {
   onCatalog: (catalog: ExtensionCatalog) => void;
   onRefresh: () => void;
   onBack: () => void;
-  onTry: (pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) => void;
+  onTry: (pkg: ExtensionPackage, skill: ExtensionSkill, text?: string) => ExtensionTryResult;
+  onReturnToDraft?: () => void;
+  onTryOnDevice?: DeviceSkillAction;
   onConfigureImages?: () => void;
   onOpenDeviceSettings?: (section: "skills" | "mcp") => void;
   openPackage?: { id: string; key: number; draft?: boolean; skillName?: string };
@@ -180,9 +284,25 @@ export function ExtensionsWorkspace(props: {
   sidebarOnly?: boolean;
   previewOpen?: boolean;
   onPinSidebar?: () => void;
-}) {
+};
+
+export function ExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
+  return <ScopedExtensionsWorkspace key={props.adapter.scope} {...props} />;
+}
+
+function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
   const { adapter, catalog } = props;
   const { locale } = useLocale();
+  const copy = (zh: string, en: string) => (locale === "en-US" ? en : zh);
+  const installedLabel = copy("已安装", "Installed");
+  const uninstalledLabel = copy("未安装", "Not installed");
+  const manageLabel = copy("管理", "Manage");
+  const installLabel = copy("安装", "Install");
+  const uninstallLabel = copy("卸载", "Uninstall");
+  const skillsLabel = copy("技能", "Skills");
+  const backLabel = copy("返回对话", "Back to chat");
+  const customizeLabel = copy("自定义", "Customize");
+  const installedSearchLabel = copy("搜索已安装的插件", "Search installed plugins");
   const deviceScope = locale === "en-US" ? "This computer" : "此电脑";
   const deviceEntries = [
     { id: "skills", name: locale === "en-US" ? "Skills" : "技能", icon: Box },
@@ -192,28 +312,248 @@ export function ExtensionsWorkspace(props: {
   const sidebarLayout = useSidebarWidthLayout(host, props.sharedSidebar, 720);
   const [localRoute, setRoute] = useState<Route>(() => restoredRoute(adapter.scope));
   const route = props.location?.route ?? localRoute;
-  const [query, setQuery] = useState("");
+  const directoryKind = route.page === "skills" ? "skill" : "plugin";
+  const isDirectoryPage = route.page === "plugins" || route.page === "skills";
+  const [directoryBrowse, setDirectoryBrowse] = useState(() => readDirectoryBrowse(adapter.scope));
+  const { query, source, installation } = directoryBrowse[directoryKind];
+  const directoryScroll = useRef({
+    plugin: directoryBrowse.plugin.scrollTop,
+    skill: directoryBrowse.skill.scrollTop,
+  });
+  const contentViewport = useRef<HTMLDivElement>(null);
+  const hasCatalog = Boolean(catalog);
+  const visibleDirectoryKind =
+    isDirectoryPage && hasCatalog && !props.loading && !props.sidebarOnly ? directoryKind : null;
+  const latestDirectory = useRef<{
+    directoryBrowse: typeof directoryBrowse;
+    visibleDirectoryKind: ExtensionKind | null;
+  }>({ directoryBrowse, visibleDirectoryKind });
+  latestDirectory.current = { directoryBrowse, visibleDirectoryKind };
+  const savedDirectory = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const persist = () => {
+      const latest = latestDirectory.current;
+      if (latest.visibleDirectoryKind && contentViewport.current) {
+        directoryScroll.current[latest.visibleDirectoryKind] = contentViewport.current.scrollTop;
+      }
+      const value = JSON.stringify({
+        plugin: normalizeDirectoryBrowse({
+          ...latest.directoryBrowse.plugin,
+          scrollTop: directoryScroll.current.plugin,
+        }),
+        skill: normalizeDirectoryBrowse({
+          ...latest.directoryBrowse.skill,
+          scrollTop: directoryScroll.current.skill,
+        }),
+      });
+      if (savedDirectory.current === value) return;
+      try {
+        extensionSessionStorage()?.setItem(directoryBrowseKey(adapter.scope), value);
+        savedDirectory.current = value;
+      } catch {
+        /* The current view remains available in memory. */
+      }
+    };
+    window.addEventListener("pagehide", persist);
+    return () => {
+      window.removeEventListener("pagehide", persist);
+      persist();
+    };
+  }, [adapter.scope]);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const installationFilter = useRef<HTMLButtonElement>(null);
+  const previousFocusRoute = useRef<string | undefined>(undefined);
+  const directoryFocusReturn = useRef<{ kind: ExtensionKind; id: string } | null>(null);
+  const directoryInstallFocus = useRef<DirectoryInstallFocus | null>(null);
+  const searchRecoveryFocus = useRef<HTMLButtonElement | null>(null);
+  const [installingDirectoryItem, setInstallingDirectoryItem] = useState<string | null>(null);
+  const scrollRoute =
+    route.page === "plugin" || route.page === "manage" ? `${route.page}:${route.id}` : route.page;
+  const currentDirectoryBrowse = directoryBrowse[directoryKind];
+  useLayoutEffect(() => {
+    const opener = searchRecoveryFocus.current;
+    if (!opener) return;
+    searchRecoveryFocus.current = null;
+    if (!isDirectoryPage || props.sidebarOnly || !currentDirectoryBrowse.query.trim()) return;
+    const { activeElement, body } = opener.ownerDocument;
+    if (activeElement === opener || activeElement === body) {
+      contentViewport.current?.querySelector<HTMLButtonElement>("[data-extension-open]")?.focus();
+    }
+  }, [currentDirectoryBrowse, isDirectoryPage, props.sidebarOnly]);
+  useLayoutEffect(() => {
+    const operation = directoryInstallFocus.current;
+    if (!operation) return;
+    if (
+      props.sidebarOnly ||
+      operation.route !== scrollRoute ||
+      operation.browse !== currentDirectoryBrowse
+    ) {
+      directoryInstallFocus.current = null;
+      return;
+    }
+    if (installingDirectoryItem) return;
+    directoryInstallFocus.current = null;
+    if (!catalog?.packages.some((item) => item.id === operation.id && item.installed)) return;
+    const document = operation.button.ownerDocument;
+    const viewport = contentViewport.current;
+    if (
+      !viewport ||
+      viewport.closest("[hidden], [inert]") ||
+      (document.activeElement !== document.body && document.activeElement !== operation.button)
+    )
+      return;
+    const row = findDirectoryRow(viewport, operation.id);
+    const neighbor = operation.neighbor
+      ? findDirectoryRow(viewport, operation.neighbor)
+      : undefined;
+    (row ?? neighbor ?? installationFilter.current)?.focus();
+  }, [catalog, currentDirectoryBrowse, installingDirectoryItem, props.sidebarOnly, scrollRoute]);
+  const updateDirectoryBrowse = useCallback(
+    (kind: ExtensionKind, changes: Partial<DirectoryBrowse>) => {
+      setDirectoryBrowse((previous) => ({
+        ...previous,
+        [kind]: { ...previous[kind], ...changes },
+      }));
+    },
+    [],
+  );
+  const resetDirectoryBrowse = useCallback(
+    (kind: ExtensionKind, changes?: Partial<DirectoryBrowse>) => {
+      updateDirectoryBrowse(kind, { ...changes, query: "" });
+      directoryScroll.current[kind] = 0;
+      if (isDirectoryPage && directoryKind === kind && contentViewport.current) {
+        contentViewport.current.scrollTop = 0;
+      }
+    },
+    [directoryKind, isDirectoryPage, updateDirectoryBrowse],
+  );
+  useLayoutEffect(() => {
+    const viewport = contentViewport.current;
+    if (!viewport || props.loading || props.sidebarOnly || (isDirectoryPage && !hasCatalog)) return;
+    viewport.scrollTop =
+      scrollRoute === "plugins"
+        ? directoryScroll.current.plugin
+        : scrollRoute === "skills"
+          ? directoryScroll.current.skill
+          : 0;
+  }, [hasCatalog, isDirectoryPage, props.loading, props.sidebarOnly, scrollRoute]);
   const [installedSearchOpen, setInstalledSearchOpen] = useState(false);
   const [installedQuery, setInstalledQuery] = useState("");
   const installedSearchInput = useRef<HTMLInputElement>(null);
   const installedSearchButton = useRef<HTMLButtonElement>(null);
-  const [source, setSource] = useState<"public" | "personal">("public");
-  const [installation, setInstallation] = useState("all");
+  const sourceOptions = [
+    ["public", copy("公开", "Public")],
+    ["personal", copy("个人", "Personal")],
+  ] as const;
   const [localSelection, setLocalSelection] = useState<SkillSelection | null>(null);
   const reader = props.location?.reader;
   const readerPackage = reader && catalog?.packages.find((item) => item.id === reader.id);
+  const archivedSkill =
+    reader?.revision && reader.skillName
+      ? {
+          name: reader.skillName,
+          description:
+            readerPackage?.legacy_skills?.find(
+              (skill) => skill.name === reader.skillName && skill.version === reader.revision,
+            )?.description ?? "",
+          entry: "",
+        }
+      : undefined;
   const readerSkill =
     readerPackage &&
     (reader?.skillName
-      ? readerPackage.skills.find((item) => item.name === reader.skillName)
+      ? (readerPackage.skills.find((item) => item.name === reader.skillName) ?? archivedSkill)
       : readerPackage.kind === "skill"
         ? readerPackage.skills[0]
         : undefined);
   const selected: SkillSelection | null = props.location
     ? readerPackage && readerSkill
-      ? { pkg: readerPackage, skill: readerSkill, returnToChat: reader?.returnToChat }
+      ? {
+          pkg: readerPackage,
+          skill: readerSkill,
+          revision: reader?.revision,
+          returnToChat: reader?.returnToChat,
+        }
       : null
     : localSelection;
+  const readerTarget: SkillReaderTarget | undefined = reader?.revision
+    ? reader
+    : selected
+      ? { id: selected.pkg.id, skillName: selected.skill.name, revision: selected.revision }
+      : undefined;
+  const hasReader = Boolean(reader || selected);
+  const readerReturnsToChat = Boolean(selected?.returnToChat ?? reader?.returnToChat);
+  const [readerManagementReturn, setReaderManagementReturn] =
+    useState<ReaderManagementReturn | null>(null);
+  const readerReinstallFocus = useRef<HTMLButtonElement | null>(null);
+  const returnToOriginalSkillButton = useRef<HTMLButtonElement>(null);
+  const originalReader =
+    !props.sidebarOnly && route.page === "manage" && route.id === readerManagementReturn?.packageId
+      ? readerManagementReturn
+      : null;
+  useEffect(() => {
+    if (readerManagementReturn && !originalReader) setReaderManagementReturn(null);
+  }, [readerManagementReturn, originalReader]);
+  const previousReader = useRef<{ route: string; scope: string; returnsToChat: boolean } | null>(
+    null,
+  );
+  const readerOpener = useRef<{
+    element: HTMLButtonElement;
+    route: string;
+    scope: string;
+    scrollTop: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const previous = previousReader.current;
+    previousReader.current = hasReader
+      ? { route: scrollRoute, scope: adapter.scope, returnsToChat: readerReturnsToChat }
+      : null;
+    if (hasReader || !previous) return;
+    const opener = readerOpener.current;
+    readerOpener.current = null;
+    if (
+      previous.route !== scrollRoute ||
+      previous.scope !== adapter.scope ||
+      previous.returnsToChat ||
+      props.sidebarOnly
+    ) {
+      return;
+    }
+    // Restore after the dialog releases focus and the background is no longer inert.
+    const frame = requestAnimationFrame(() => {
+      const viewport = contentViewport.current;
+      if (
+        opener?.scope === adapter.scope &&
+        opener.route === scrollRoute &&
+        viewport?.contains(opener.element)
+      ) {
+        viewport.scrollTop = opener.scrollTop;
+        opener.element.focus({ preventScroll: true });
+      } else {
+        heading.current?.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [adapter.scope, hasReader, props.sidebarOnly, readerReturnsToChat, scrollRoute]);
+  useLayoutEffect(() => {
+    if (props.loading || props.sidebarOnly || hasReader || !heading.current) return;
+    const previous = previousFocusRoute.current;
+    if (previous === scrollRoute) return;
+    previousFocusRoute.current = scrollRoute;
+    if (isDirectoryPage) {
+      const target = directoryFocusReturn.current;
+      directoryFocusReturn.current = null;
+      if (!previous?.startsWith("plugin:") && !previous?.startsWith("manage:")) return;
+      const row =
+        target?.kind === directoryKind &&
+        (previous === `plugin:${target.id}` || previous === `manage:${target.id}`)
+          ? findDirectoryRow(contentViewport.current, target.id)
+          : undefined;
+      (row ?? heading.current).focus({ preventScroll: true });
+    } else {
+      heading.current.focus({ preventScroll: true });
+    }
+  }, [directoryKind, hasReader, isDirectoryPage, props.loading, props.sidebarOnly, scrollRoute]);
   const setSelected = (selection: SkillSelection | null) => {
     if (!props.onNavigate) {
       setLocalSelection(selection);
@@ -224,11 +564,24 @@ export function ExtensionsWorkspace(props: {
       reader: selection
         ? {
             id: selection.pkg.id,
-            skillName: selection.pkg.kind === "plugin" ? selection.skill.name : undefined,
+            skillName:
+              selection.pkg.kind === "plugin" || selection.revision
+                ? selection.skill.name
+                : undefined,
+            revision: selection.revision,
             returnToChat: selection.returnToChat,
           }
         : undefined,
     });
+  };
+  const openReader = (selection: SkillSelection, element: HTMLButtonElement) => {
+    readerOpener.current = {
+      element,
+      route: scrollRoute,
+      scope: adapter.scope,
+      scrollTop: contentViewport.current?.scrollTop ?? 0,
+    };
+    setSelected(selection);
   };
   const [selectedApp, setSelectedApp] = useState<AppSelection | null>(null);
   const pluginEditorApp = {
@@ -240,17 +593,80 @@ export function ExtensionsWorkspace(props: {
   };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [tryFailure, setTryFailure] = useState<Exclude<ExtensionTryResult, "accepted"> | null>(
+    null,
+  );
+  // Reset feedback when the location changes, including a browser history traversal.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the route and workspace visibility scope the notice.
+  useEffect(() => {
+    setTryFailure(null);
+  }, [scrollRoute, props.sidebarOnly]);
+  function tryInChat(item: ExtensionPackage, skill: ExtensionSkill, text?: string) {
+    const result = props.onTry(item, skill, text);
+    setTryFailure(result === "accepted" ? null : result);
+  }
+  function returnToDraft() {
+    setTryFailure(null);
+    (props.onReturnToDraft ?? props.onBack)();
+  }
   const [notice, setNotice] = useState("");
   const [expandedSkills, setExpandedSkills] = useState(false);
   const [importKind, setImportKind] = useState<ExtensionKind | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState("");
   const [remove, setRemove] = useState<ExtensionPackage | null>(null);
+  const [removalFailure, setRemovalFailure] = useState<RemovalFailure | null>(null);
   const mutationLock = useRef(false);
   const searchId = useId();
+  const installationValueId = useId();
+  const appsHeadingId = useId();
+  const removalStatusId = useId();
+  const trialStatusId = useId();
   const upload = useRef<HTMLInputElement>(null);
   const editorDirty = useRef(false);
   const writeBlocked = busy || !!adapter.writeUnconfirmed || props.loading;
+  const removalName = remove ? extensionDisplayName(remove, locale) : "";
+  const removalEntry = remove && catalog?.packages.find((item) => item.id === remove.id);
+  const removalNeedsCheck =
+    removalFailure?.kind === "unconfirmed" &&
+    (adapter.writeUnconfirmed ||
+      !catalog ||
+      catalog === removalFailure.previousCatalog ||
+      props.loading ||
+      !!props.error);
+  const removalConfirmed =
+    !!remove && !!catalog && !writeBlocked && !props.error && !removalEntry?.installed;
+  const removalActionDisabled = removalNeedsCheck
+    ? busy || props.loading
+    : !removalConfirmed && (writeBlocked || !removalEntry?.installed);
+  const removalTone = removalConfirmed
+    ? "success"
+    : removalFailure?.kind === "failed"
+      ? "error"
+      : "warning";
+  let removalMessage = removalFailure?.kind === "failed" ? removalFailure.message : "";
+  if (removalNeedsCheck) {
+    if (props.loading) {
+      removalMessage = copy("正在从目录核对安装状态…", "Checking installation status…");
+    } else {
+      removalMessage = props.error
+        ? copy("暂时无法核对卸载结果，请重试。", "Couldn't check the uninstall result. Try again.")
+        : copy(
+            "卸载结果尚未确认。请核对目录后再继续。",
+            "The uninstall result is unconfirmed. Check the directory before continuing.",
+          );
+    }
+  } else if (removalConfirmed) {
+    removalMessage = copy(
+      "已卸载。已有聊天和成果仍然保留。",
+      "Uninstalled. Existing chats and results are kept.",
+    );
+  } else if (removalFailure?.kind === "unconfirmed") {
+    removalMessage = copy(
+      "核对后发现此内容仍已安装。你可以再次确认卸载。",
+      "The directory shows this item is still installed. You can confirm uninstall again.",
+    );
+  }
   const [pendingRoute, setPendingRoute] = useState<{
     route: Route;
     reader?: SkillSelection;
@@ -278,19 +694,14 @@ export function ExtensionsWorkspace(props: {
     if (editorDirty.current) setPendingRoute({ route: next, reader });
     else {
       setRoute(next);
-      setQuery("");
+      if (targetPackage) resetDirectoryBrowse(targetPackage.kind);
       setError("");
       setNotice("");
       setLocalSelection(reader ?? null);
       setSelectedApp(null);
       setExpandedSkills(false);
-      if (reader) return;
-      const frame = requestAnimationFrame(() =>
-        host.current?.querySelector<HTMLElement>("h1")?.focus(),
-      );
-      return () => cancelAnimationFrame(frame);
     }
-  }, [props.openPackage, catalog]);
+  }, [props.openPackage, catalog, resetDirectoryBrowse]);
   useEffect(() => {
     if (props.location) return;
     try {
@@ -307,35 +718,119 @@ export function ExtensionsWorkspace(props: {
     ? (packages.find((item) => item.id === selected.pkg.id) ?? selected.pkg)
     : null;
   const pkg = "id" in route ? packages.find((item) => item.id === route.id) : undefined;
-  const navigate = (next: Route, force = false) => {
+  const packageLabel = pkg ? extensionDisplayName(pkg, locale) : "";
+  const packageExamples = pkg ? extensionStarterPrompts(pkg, locale) : [];
+  const trialSkill = pkg?.skills[0];
+  const canTryPackage = Boolean(pkg && trialSkill && extensionSkillEnabled(pkg, trialSkill));
+  const trialStatus =
+    route.page === "plugin" &&
+    pkg?.kind === "plugin" &&
+    pkg.installed &&
+    trialSkill &&
+    !canTryPackage &&
+    !props.error
+      ? !pkg.enabled
+        ? copy(
+            "此插件已停用。请在管理中启用插件后再试用。",
+            "This plugin is disabled. Enable it in Manage to try it in chat.",
+          )
+        : copy(
+            `主技能「${extensionSkillDisplayName(pkg, trialSkill, locale)}」已停用。请在管理中启用该技能后再试用。`,
+            `The primary skill “${extensionSkillDisplayName(pkg, trialSkill, locale)}” is disabled. Enable it in Manage to try it in chat.`,
+          )
+      : "";
+  useLayoutEffect(() => {
+    const opener = readerReinstallFocus.current;
+    if (!opener) return;
+    if (!originalReader) {
+      readerReinstallFocus.current = null;
+      return;
+    }
+    if (!pkg?.installed || busy) return;
+    readerReinstallFocus.current = null;
+    const { activeElement, body } = opener.ownerDocument;
+    if (activeElement === body || activeElement === opener) {
+      returnToOriginalSkillButton.current?.focus({ preventScroll: true });
+    }
+  }, [busy, originalReader, pkg?.installed]);
+  const navigate = (next: Route, force = false, readerReturn?: ReaderManagementReturn) => {
     if (!force && route.page === "editor" && editorDirty.current) {
       setPendingRoute({ route: next });
       return;
     }
+    if (isDirectoryPage && !props.loading && contentViewport.current) {
+      directoryScroll.current[directoryKind] = contentViewport.current.scrollTop;
+    }
     if (props.onNavigate) props.onNavigate({ route: next });
     else setRoute(next);
-    setQuery("");
+    setReaderManagementReturn(readerReturn ?? null);
     setError("");
     setNotice("");
+    setTryFailure(null);
     setExpandedSkills(false);
   };
-  async function mutate(input: ExtensionMutation) {
+  const closeReader = () => {
+    if (!selected && !readerReturnsToChat && route.page === "plugin" && !pkg) {
+      navigate({ page: "plugins" });
+      return;
+    }
+    setSelected(null);
+    if (readerReturnsToChat) props.onBack();
+  };
+  const backToOriginalSkill = originalReader ? (
+    <Button
+      ref={returnToOriginalSkillButton}
+      className="rounded-full"
+      onClick={() => {
+        setReaderManagementReturn(null);
+        if (props.onNavigate) props.onNavigate(originalReader.location);
+        else {
+          setRoute(originalReader.location.route);
+          setLocalSelection(originalReader.selection);
+        }
+      }}
+    >
+      <ArrowLeft className="size-4" />
+      {copy("返回原技能", "Back to original skill")}
+    </Button>
+  ) : null;
+  async function mutate(
+    input: ExtensionMutation,
+    success = copy("已保存", "Saved"),
+    onFailure?: (message: string) => void,
+  ) {
     if (!catalog || mutationLock.current || writeBlocked) return false;
     mutationLock.current = true;
     setBusy(true);
     setError("");
     setNotice("");
+    if (input.action === "uninstall") setRemovalFailure(null);
     try {
       props.onCatalog(await adapter.mutate(catalog.version, input));
-      setNotice("已保存");
+      setNotice(success);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "保存失败，请重试。");
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : copy("保存失败，请重试。", "Could not save. Try again.");
+      if (input.action === "uninstall") {
+        setRemovalFailure(
+          adapter.writeUnconfirmed
+            ? { kind: "unconfirmed", previousCatalog: catalog }
+            : { kind: "failed", message },
+        );
+      } else setError(message);
+      onFailure?.(message);
       return false;
     } finally {
       setBusy(false);
       mutationLock.current = false;
     }
+  }
+  function openUninstall(item: ExtensionPackage) {
+    setRemovalFailure(null);
+    setRemove(item);
   }
   async function download(item: ExtensionPackage) {
     setError("");
@@ -348,7 +843,11 @@ export function ExtensionsWorkspace(props: {
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "下载失败，请重试。");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : copy("下载失败，请重试。", "Could not download. Try again."),
+      );
     }
   }
   function selectImportFiles(files: File[]) {
@@ -374,9 +873,7 @@ export function ExtensionsWorkspace(props: {
     try {
       const next = await adapter.importArchive(catalog.version, importFile, kind);
       props.onCatalog(next);
-      setSource("personal");
-      setInstallation("all");
-      setQuery("");
+      resetDirectoryBrowse(kind, { source: "personal", installation: "all" });
       navigate({ page: kind === "plugin" ? "plugins" : "skills" });
       setImportKind(null);
       setNotice("已安装");
@@ -388,42 +885,114 @@ export function ExtensionsWorkspace(props: {
       mutationLock.current = false;
     }
   }
-  const directoryKind = route.page === "skills" ? "skill" : "plugin";
+  const directoryLabel =
+    directoryKind === "plugin" ? copy("插件", "Plugins") : copy("技能", "Skills");
+  const searchLabel =
+    directoryKind === "plugin"
+      ? copy("搜索插件", "Search plugins")
+      : copy("搜索技能", "Search skills");
   const pluginDirectoryActive =
     route.page === "plugins" || (pkg?.kind === "plugin" && !pkg.installed);
   const skillDirectoryActive = route.page === "skills" || pkg?.kind === "skill";
-  const filtered = packages.filter(
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matchingSearch = packages.filter(
     (item) =>
       item.kind === directoryKind &&
-      item.visibility === source &&
-      (installation === "all" || item.installed === (installation === "installed")) &&
-      extensionSearchText(item).includes(query.trim().toLocaleLowerCase()),
+      (!normalizedQuery || extensionSearchText(item).includes(normalizedQuery)),
   );
+  const matchesInstallation = (item: ExtensionPackage) =>
+    installation === "all" || item.installed === (installation === "installed");
+  const filtered = matchingSearch.filter(
+    (item) => item.visibility === source && matchesInstallation(item),
+  );
+  const recoverySource = matchingSearch.some((item) => item.visibility === source)
+    ? source
+    : source === "public"
+      ? "personal"
+      : "public";
+  const searchRecovery =
+    normalizedQuery && !filtered.length && matchingSearch.length > 0
+      ? {
+          source: recoverySource,
+          installation: matchingSearch.some(
+            (item) => item.visibility === recoverySource && matchesInstallation(item),
+          )
+            ? installation
+            : ("all" as const),
+        }
+      : null;
+  const recoverySourceLabel =
+    recoverySource === "public" ? copy("公开", "Public") : copy("个人", "Personal");
+  const searchEmptyMessage = !searchRecovery
+    ? copy("没有找到匹配结果", "No matching results")
+    : searchRecovery.source === source
+      ? copy("其他安装状态下有匹配项。", "Matches are available under another installation status.")
+      : copy(
+          `「${recoverySourceLabel}」目录中有匹配项。`,
+          `Matches are in ${recoverySourceLabel}.`,
+        );
+  async function installFromDirectory(
+    item: ExtensionPackage,
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    if (writeBlocked || mutationLock.current) return;
+    const button = event.currentTarget;
+    const index = filtered.indexOf(item);
+    const focus: DirectoryInstallFocus | null =
+      button.ownerDocument.activeElement === button
+        ? {
+            button,
+            browse: currentDirectoryBrowse,
+            route: scrollRoute,
+            id: item.id,
+            neighbor: (filtered[index + 1] ?? filtered[index - 1])?.id,
+          }
+        : null;
+    directoryInstallFocus.current = focus;
+    setInstallingDirectoryItem(item.id);
+    const name = extensionDisplayName(item, locale);
+    const saved = await mutate(
+      { action: "install", id: item.id },
+      copy(`已安装 ${name}`, `${name} installed`),
+    );
+    if (!saved && directoryInstallFocus.current === focus) directoryInstallFocus.current = null;
+    setInstallingDirectoryItem(null);
+  }
   const installedPlugins = packages.filter(
     (item) =>
       item.installed &&
       item.kind === "plugin" &&
       extensionSearchText(item).includes(installedQuery.trim().toLocaleLowerCase()),
   );
-  const directorySections =
+  const directorySections = (
     directoryKind === "skill" && installation === "all"
       ? [
-          { label: "已安装", items: filtered.filter((item) => item.installed) },
-          { label: "未安装", items: filtered.filter((item) => !item.installed) },
+          {
+            id: "installed",
+            label: installedLabel,
+            items: filtered.filter((item) => item.installed),
+          },
+          {
+            id: "uninstalled",
+            label: uninstalledLabel,
+            items: filtered.filter((item) => !item.installed),
+          },
         ].filter(({ items }) => items.length > 0)
       : [
           {
+            id: installation,
             label:
               installation === "installed"
-                ? "已安装"
+                ? installedLabel
                 : installation === "uninstalled"
-                  ? "未安装"
+                  ? uninstalledLabel
                   : source === "public"
-                    ? "公开目录"
-                    : "你创建的",
+                    ? copy("公开目录", "Public directory")
+                    : copy("你创建的", "Created by you"),
             items: filtered,
           },
-        ];
+        ]
+  ).filter(({ items }) => !normalizedQuery || items.length > 0);
   const pluginEditorAvailable =
     pkg?.kind === "plugin" &&
     pkg.id === "plugin-creator" &&
@@ -436,6 +1005,8 @@ export function ExtensionsWorkspace(props: {
   };
   const actionMenu = (item: ExtensionPackage, skill?: ExtensionSkill, sidebar = false) => {
     const label = extensionDisplayName(item, locale);
+    const actionLabel = skill ? extensionSkillDisplayName(item, skill, locale) : label;
+    const enabled = extensionManagementEnabled(item);
     return (
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -444,14 +1015,17 @@ export function ExtensionsWorkspace(props: {
               <SidebarMenuAction
                 type="button"
                 showOnHover
-                aria-label={`已安装插件 ${label}的操作`}
+                aria-label={copy(
+                  `已安装插件 ${label}的操作`,
+                  `Actions for installed plugin ${label}`,
+                )}
               />
             ) : (
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`${skill ? extensionSkillDisplayName(item, skill, locale) : label}的操作`}
-                title="更多"
+                aria-label={copy(`${actionLabel}的操作`, `Actions for ${actionLabel}`)}
+                title={copy("更多", "More")}
               />
             )
           }
@@ -461,15 +1035,17 @@ export function ExtensionsWorkspace(props: {
         <DropdownMenuContent align="end">
           <DropdownMenuItem
             disabled={!extensionSkillEnabled(item, skill ?? item.skills[0])}
-            onClick={() => props.onTry(item, skill ?? item.skills[0])}
+            onClick={() => tryInChat(item, skill ?? item.skills[0])}
           >
             <SquarePen className="size-4" />
-            在对话中使用
+            {copy("在对话中使用", "Use in chat")}
           </DropdownMenuItem>
           {extensionOwned(item) && (
             <DropdownMenuItem onClick={() => void download(item)}>
               <Download className="size-4" />
-              {item.kind === "plugin" ? "下载插件包" : "下载技能包"}
+              {item.kind === "plugin"
+                ? copy("下载插件包", "Download plugin package")
+                : copy("下载技能包", "Download skill package")}
             </DropdownMenuItem>
           )}
           {extensionOwned(item) && (
@@ -477,19 +1053,28 @@ export function ExtensionsWorkspace(props: {
               onClick={() => navigate({ page: "editor", id: item.id, kind: item.kind })}
             >
               <Pencil className="size-4" />
-              {item.kind === "plugin" ? "编辑插件" : "编辑技能"}
+              {item.kind === "plugin"
+                ? copy("编辑插件", "Edit plugin")
+                : copy("编辑技能", "Edit skill")}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={() => navigate({ page: "manage", id: item.id })}>
+          <DropdownMenuItem
+            onClick={() => {
+              if (!sidebar && isDirectoryPage) {
+                directoryFocusReturn.current = { kind: item.kind, id: item.id };
+              }
+              navigate({ page: "manage", id: item.id });
+            }}
+          >
             <Settings className="size-4" />
-            管理
+            {manageLabel}
           </DropdownMenuItem>
           {item.installed && (
             <DropdownMenuItem
               disabled={writeBlocked}
-              onClick={() => void mutate({ action: "enable", id: item.id, enabled: !item.enabled })}
+              onClick={() => void mutate({ action: "enable", id: item.id, enabled: !enabled })}
             >
-              {item.enabled ? "停用" : "启用"}
+              {enabled ? copy("停用", "Disable") : copy("启用", "Enable")}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -497,22 +1082,38 @@ export function ExtensionsWorkspace(props: {
             <DropdownMenuItem
               className="text-destructive"
               disabled={writeBlocked}
-              onClick={() => setRemove(item)}
+              onClick={() => openUninstall(item)}
             >
-              卸载
+              {uninstallLabel}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
               disabled={writeBlocked}
               onClick={() => void mutate({ action: "install", id: item.id })}
             >
-              安装
+              {installLabel}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
     );
   };
+  const tryNotice = tryFailure ? (
+    <StatusNotice
+      className={pkg ? "my-4" : "mx-auto my-2 w-[calc(100%-2rem)] max-w-[900px] shrink-0"}
+      data-extension-try-failure=""
+      tone="warning"
+      message={extensionTryError(tryFailure, locale)}
+      onDismiss={() => setTryFailure(null)}
+      actions={
+        tryFailure === "draft-reference-conflict" ? (
+          <button type="button" className="app-status-action" onClick={returnToDraft}>
+            {copy("返回草稿", "Back to draft")}
+          </button>
+        ) : undefined
+      }
+    />
+  ) : null;
   return (
     <div
       ref={host}
@@ -529,73 +1130,69 @@ export function ExtensionsWorkspace(props: {
           sidebarLayout={sidebarLayout}
           shared={props.sharedSidebar}
           target={props.sidebarTarget}
-          title={locale === "en-US" ? "Customize" : "自定义"}
+          title={customizeLabel}
           preview={props.previewOpen}
         >
           <ScrollArea className="h-full">
             <aside>
               <SidebarHeader className="px-3 pb-2 pt-2.5">
-                <div className="flex h-8 items-center gap-2">
+                <SidebarHeaderRow
+                  actions={
+                    <>
+                      <Button
+                        ref={installedSearchButton}
+                        variant="ghost"
+                        size="icon-sm"
+                        title={installedSearchLabel}
+                        aria-label={installedSearchLabel}
+                        aria-expanded={installedSearchOpen}
+                        onClick={() => {
+                          if (installedSearchOpen) closeInstalledSearch();
+                          else {
+                            setInstalledSearchOpen(true);
+                            requestAnimationFrame(() => installedSearchInput.current?.focus());
+                          }
+                        }}
+                      >
+                        <Search className="size-4" />
+                      </Button>
+                      {props.sharedSidebar && (
+                        <SidebarTrigger
+                          showShortcut={!props.previewOpen}
+                          aria-label={
+                            props.previewOpen ? copy("固定边栏", "Pin sidebar") : undefined
+                          }
+                          onClick={(event) => {
+                            if (props.previewOpen) {
+                              event.preventDefault();
+                              props.onPinSidebar?.();
+                            }
+                          }}
+                        />
+                      )}
+                    </>
+                  }
+                >
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    title="返回对话"
-                    aria-label="返回对话"
+                    title={backLabel}
+                    aria-label={backLabel}
                     onClick={props.onBack}
                   >
                     <ArrowLeft className="size-4" />
                   </Button>
                   <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6">
-                    {locale === "en-US" ? "Customize" : "自定义"}
+                    {customizeLabel}
                   </h2>
-                  {adapter.scope.startsWith("cloud:") && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {locale === "en-US" ? "Account" : "账户"}
-                    </span>
-                  )}
-                  <Button
-                    ref={installedSearchButton}
-                    variant="ghost"
-                    size="icon-sm"
-                    title="搜索已安装的插件"
-                    aria-label="搜索已安装的插件"
-                    aria-expanded={installedSearchOpen}
-                    onClick={() => {
-                      if (installedSearchOpen) closeInstalledSearch();
-                      else {
-                        setInstalledSearchOpen(true);
-                        requestAnimationFrame(() => installedSearchInput.current?.focus());
-                      }
-                    }}
-                  >
-                    <Search className="size-4" />
-                  </Button>
-                  {props.sharedSidebar && (
-                    <SidebarTrigger
-                      showShortcut={!props.previewOpen}
-                      aria-label={
-                        props.previewOpen
-                          ? locale === "en-US"
-                            ? "Pin sidebar"
-                            : "固定边栏"
-                          : undefined
-                      }
-                      onClick={(event) => {
-                        if (props.previewOpen) {
-                          event.preventDefault();
-                          props.onPinSidebar?.();
-                        }
-                      }}
-                    />
-                  )}
-                </div>
+                </SidebarHeaderRow>
                 {installedSearchOpen && (
                   <Input
                     ref={installedSearchInput}
                     className="mt-2 h-8"
                     type="search"
-                    aria-label="筛选已安装的插件"
-                    placeholder="搜索已安装的插件"
+                    aria-label={copy("筛选已安装的插件", "Filter installed plugins")}
+                    placeholder={installedSearchLabel}
                     value={installedQuery}
                     onChange={(event) => setInstalledQuery(event.target.value)}
                     onKeyDown={(event) => {
@@ -609,7 +1206,7 @@ export function ExtensionsWorkspace(props: {
               </SidebarHeader>
               <SidebarContent className="overflow-visible pb-3">
                 <SidebarGroup className="px-3">
-                  <nav aria-label="自定义">
+                  <nav aria-label={customizeLabel}>
                     <SidebarMenu className="gap-1">
                       <SidebarMenuItem>
                         <SidebarMenuButton
@@ -622,7 +1219,7 @@ export function ExtensionsWorkspace(props: {
                           <span className="flex size-5 shrink-0 items-center justify-center">
                             <Blend className="size-4" />
                           </span>
-                          <span>插件</span>
+                          <span>{copy("插件", "Plugins")}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                       <SidebarMenuItem>
@@ -636,14 +1233,19 @@ export function ExtensionsWorkspace(props: {
                           <span className="flex size-5 shrink-0 items-center justify-center">
                             <Box className="size-4" />
                           </span>
-                          <span>技能</span>
+                          <span>{copy("技能", "Skills")}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     </SidebarMenu>
                   </nav>
                 </SidebarGroup>
                 <SidebarGroup className="mt-4 px-3">
-                  <SidebarGroupLabel className="h-7">已安装</SidebarGroupLabel>
+                  <SidebarGroupLabel className="h-7">
+                    {installedLabel}
+                    {adapter.scope.startsWith("cloud:") && (
+                      <span className="ml-auto">{copy("账户", "Account")}</span>
+                    )}
+                  </SidebarGroupLabel>
                   <SidebarGroupContent>
                     <SidebarMenu className="gap-1">
                       {installedPlugins.map((item) => (
@@ -664,7 +1266,7 @@ export function ExtensionsWorkspace(props: {
                     </SidebarMenu>
                     {installedQuery.trim() && installedPlugins.length === 0 && (
                       <p className="px-2.5 py-2 text-xs text-muted-foreground" role="status">
-                        没有匹配的已安装插件
+                        {copy("没有匹配的已安装插件", "No installed plugins match")}
                       </p>
                     )}
                   </SidebarGroupContent>
@@ -721,8 +1323,8 @@ export function ExtensionsWorkspace(props: {
           <Button
             variant="ghost"
             size="icon"
-            title="返回对话"
-            aria-label="返回对话"
+            title={backLabel}
+            aria-label={backLabel}
             onClick={props.onBack}
           >
             <ArrowLeft className="size-4" />
@@ -731,43 +1333,54 @@ export function ExtensionsWorkspace(props: {
             variant={route.page === "plugins" ? "secondary" : "ghost"}
             onClick={() => navigate({ page: "plugins" })}
           >
-            插件
+            {copy("插件", "Plugins")}
           </Button>
           <Button
             variant={route.page === "skills" ? "secondary" : "ghost"}
             onClick={() => navigate({ page: "skills" })}
           >
-            技能
+            {copy("技能", "Skills")}
           </Button>
         </div>
         {pkg && (route.page === "plugin" || route.page === "manage") && (
-          <nav className="za-extension-breadcrumb" aria-label="当前位置">
+          <nav
+            className="za-extension-breadcrumb"
+            aria-label={copy("当前位置", "Current location")}
+          >
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate({ page: pkg.kind === "skill" ? "skills" : "plugins" })}
             >
-              {pkg.kind === "skill" ? "技能" : "插件"}
+              {pkg.kind === "skill" ? copy("技能", "Skills") : copy("插件", "Plugins")}
             </Button>
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-3.5" aria-hidden="true" />
             {route.page === "manage" ? (
               <>
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label="查看详情"
+                  className="za-extension-breadcrumb-package"
+                  aria-label={copy(
+                    `查看 ${packageLabel} 的详情`,
+                    `View details for ${packageLabel}`,
+                  )}
+                  title={packageLabel}
                   onClick={() => navigate({ page: "plugin", id: pkg.id })}
                 >
-                  {extensionDisplayName(pkg, locale)}
+                  <span className="min-w-0 truncate">{packageLabel}</span>
                 </Button>
-                <ChevronRight className="size-3.5" />
-                <span>管理</span>
+                <ChevronRight className="size-3.5" aria-hidden="true" />
+                <span className="shrink-0" aria-current="page">
+                  {manageLabel}
+                </span>
               </>
             ) : (
-              <span>{extensionDisplayName(pkg, locale)}</span>
+              <span aria-current="page">{packageLabel}</span>
             )}
           </nav>
         )}
+        {!pkg ? tryNotice : null}
         {route.page === "editor" && route.id && (!pkg || !extensionOwned(pkg)) ? (
           <Empty text="只能编辑你创建的插件或技能" />
         ) : route.page === "editor" ? (
@@ -781,9 +1394,7 @@ export function ExtensionsWorkspace(props: {
             onReconciled={props.onCatalog}
             onSaved={(next, kind) => {
               props.onCatalog(next);
-              setSource("personal");
-              setInstallation("all");
-              setQuery("");
+              resetDirectoryBrowse(kind, { source: "personal", installation: "all" });
               navigate({ page: kind === "plugin" ? "plugins" : "skills" }, true);
             }}
             onBack={() => {
@@ -807,16 +1418,32 @@ export function ExtensionsWorkspace(props: {
           <ScrollArea
             className="min-h-0 flex-1"
             contentClassName={`za-extensions-content${route.page === "plugin" || route.page === "manage" ? " za-extension-detail-content" : ""}`}
+            viewportRef={contentViewport}
+            viewportProps={{
+              onScroll(event) {
+                if (visibleDirectoryKind) {
+                  directoryScroll.current[visibleDirectoryKind] = event.currentTarget.scrollTop;
+                }
+              },
+            }}
           >
             {route.page === "plugins" || route.page === "skills" ? (
               <>
                 <header className="za-extensions-header">
                   <div>
-                    <h1>{route.page === "plugins" ? "插件" : "技能"}</h1>
+                    <h1 ref={heading} tabIndex={-1} className="outline-none">
+                      {directoryLabel}
+                    </h1>
                     <p>
                       {route.page === "plugins"
-                        ? "让 ZeroAgent 在你的工作中发挥更多作用"
-                        : "为反复进行的工作，保存一套好用的方法"}
+                        ? copy(
+                            "让 ZeroAgent 在你的工作中发挥更多作用",
+                            "Add capabilities to the way you work.",
+                          )
+                        : copy(
+                            "为反复进行的工作，保存一套好用的方法",
+                            "Save workflows you can use again.",
+                          )}
                     </p>
                   </div>
                   <div className="za-extensions-header-actions">
@@ -824,24 +1451,27 @@ export function ExtensionsWorkspace(props: {
                       <Search className="size-4" />
                       <Input
                         id={searchId}
-                        aria-label={route.page === "plugins" ? "搜索插件" : "搜索技能"}
-                        placeholder={route.page === "plugins" ? "搜索插件" : "搜索技能"}
+                        aria-label={searchLabel}
+                        placeholder={searchLabel}
+                        maxLength={maxDirectoryQueryLength}
                         value={query}
-                        onChange={(event) => setQuery(event.target.value)}
+                        onChange={(event) => {
+                          updateDirectoryBrowse(directoryKind, { query: event.target.value });
+                        }}
                       />
                     </label>
                     {route.page === "plugins" && (
                       <Button
                         variant="outline"
-                        className="rounded-full"
-                        aria-label="管理已安装插件"
-                        onClick={() => {
-                          setInstallation("installed");
-                          setQuery("");
-                        }}
+                        className="za-extension-manage-installed rounded-full"
+                        aria-label={copy("管理已安装插件", "Manage installed plugins")}
+                        title={copy("管理已安装插件", "Manage installed plugins")}
+                        onClick={() =>
+                          resetDirectoryBrowse("plugin", { installation: "installed" })
+                        }
                       >
                         <Settings className="size-4" />
-                        管理
+                        <span>{manageLabel}</span>
                       </Button>
                     )}
                     <DropdownMenu>
@@ -849,7 +1479,7 @@ export function ExtensionsWorkspace(props: {
                         render={<Button className="rounded-full" disabled={writeBlocked} />}
                       >
                         <Plus className="size-4" />
-                        添加
+                        {copy("添加", "Add")}
                         <ChevronDown className="size-3" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -860,14 +1490,20 @@ export function ExtensionsWorkspace(props: {
                             const creator = packages.find((item) => item.id === creatorId);
                             const skill = creator?.skills[0];
                             if (creator && skill && extensionSkillEnabled(creator, skill))
-                              props.onTry(
+                              tryInChat(
                                 creator,
                                 skill,
                                 usesExtensionPackagePresentation(creator)
-                                  ? creator.examples?.[0]
+                                  ? extensionStarterPrompts(creator, locale)[0]
                                   : route.page === "plugins"
-                                    ? "帮我创建一个插件。以聊天的方式交流，先问我这个插件要完成什么任务，再整理其中的技能，生成可检查的插件包。"
-                                    : "帮我创建一个技能。以聊天的方式交流，先问我这个技能要做什么，再生成可检查的技能包。",
+                                    ? copy(
+                                        "帮我创建一个插件。以聊天的方式交流，先问我这个插件要完成什么任务，再整理其中的技能，生成可检查的插件包。",
+                                        "Help me create a plugin. Ask what it should do, then organize its skills into a package I can review.",
+                                      )
+                                    : copy(
+                                        "帮我创建一个技能。以聊天的方式交流，先问我这个技能要做什么，再生成可检查的技能包。",
+                                        "Help me create a skill. Ask what it should do, then prepare a skill package I can review.",
+                                      ),
                               );
                             else
                               setError(
@@ -876,13 +1512,13 @@ export function ExtensionsWorkspace(props: {
                           }}
                         >
                           <SquarePen className="size-4" />
-                          通过聊天创建
+                          {copy("通过聊天创建", "Create in chat")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => navigate({ page: "editor", kind: directoryKind })}
                         >
                           <Pencil className="size-4" />
-                          使用编辑器创建
+                          {copy("使用编辑器创建", "Create in editor")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => {
@@ -892,193 +1528,273 @@ export function ExtensionsWorkspace(props: {
                           }}
                         >
                           <Upload className="size-4" />
-                          {directoryKind === "plugin" ? "上传插件包" : "上传技能包"}
+                          {directoryKind === "plugin"
+                            ? copy("上传插件包", "Upload plugin package")
+                            : copy("上传技能包", "Upload skill package")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 </header>
                 {props.loading && !catalog ? (
-                  <div className="za-extension-directory" role="status" aria-label="正在加载">
+                  <div
+                    className="za-extension-directory"
+                    role="status"
+                    aria-label={copy("正在加载", "Loading")}
+                  >
                     <ExtensionSkeleton />
                     <ExtensionSkeleton />
                     <ExtensionSkeleton />
                     <ExtensionSkeleton />
                   </div>
                 ) : (
-                  <>
+                  <Tabs
+                    value={source}
+                    onValueChange={(value) => {
+                      if (value === "public" || value === "personal") {
+                        updateDirectoryBrowse(directoryKind, { source: value });
+                      }
+                    }}
+                  >
                     <div className="za-extension-filters">
-                      <div
-                        role="tablist"
-                        aria-label="内容来源"
+                      <TabsList
+                        variant="plain"
+                        activateOnFocus
+                        aria-label={copy("内容来源", "Source")}
                         className="za-extension-source-tabs"
-                        onKeyDown={(event) => {
-                          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-                            return;
-                          event.preventDefault();
-                          const next =
-                            event.key === "Home"
-                              ? "public"
-                              : event.key === "End"
-                                ? "personal"
-                                : source === "public"
-                                  ? "personal"
-                                  : "public";
-                          setSource(next);
-                          event.currentTarget
-                            .querySelector<HTMLButtonElement>(`[data-source="${next}"]`)
-                            ?.focus();
-                        }}
                       >
-                        {(
-                          [
-                            ["public", "公开"],
-                            ["personal", "个人"],
-                          ] as const
-                        ).map(([value, label]) => (
-                          <button
-                            type="button"
-                            role="tab"
-                            key={value}
-                            data-source={value}
-                            aria-selected={source === value}
-                            tabIndex={source === value ? 0 : -1}
-                            onClick={() => setSource(value)}
-                          >
+                        {sourceOptions.map(([value, label]) => (
+                          <TabsTrigger key={value} value={value} variant="plain">
                             {label}
-                          </button>
+                          </TabsTrigger>
                         ))}
-                      </div>
+                      </TabsList>
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
                             <Button
+                              ref={installationFilter}
                               variant="ghost"
                               size="sm"
                               className="rounded-full"
-                              aria-label="安装状态"
+                              aria-label={copy("安装状态", "Installation status")}
+                              aria-describedby={installationValueId}
                             />
                           }
                         >
-                          {installation === "all"
-                            ? "全部"
-                            : installation === "installed"
-                              ? "已安装"
-                              : "未安装"}
+                          <span id={installationValueId}>
+                            {installation === "all"
+                              ? copy("全部", "All")
+                              : installation === "installed"
+                                ? installedLabel
+                                : uninstalledLabel}
+                          </span>
                           <ChevronDown className="size-3" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuRadioGroup
                             value={installation}
-                            onValueChange={setInstallation}
+                            onValueChange={(value) => {
+                              if (
+                                value === "all" ||
+                                value === "installed" ||
+                                value === "uninstalled"
+                              ) {
+                                updateDirectoryBrowse(directoryKind, { installation: value });
+                              }
+                            }}
                           >
                             <DropdownMenuRadioItem value="all" closeOnClick>
-                              全部
+                              {copy("全部", "All")}
                             </DropdownMenuRadioItem>
                             <DropdownMenuRadioItem value="installed" closeOnClick>
-                              已安装
+                              {installedLabel}
                             </DropdownMenuRadioItem>
                             <DropdownMenuRadioItem value="uninstalled" closeOnClick>
-                              未安装
+                              {uninstalledLabel}
                             </DropdownMenuRadioItem>
                           </DropdownMenuRadioGroup>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                    {directorySections.map((section) => (
-                      <section className="za-extension-directory-section" key={section.label}>
-                        <h2 className="za-extension-section-label">{section.label}</h2>
-                        <ul
-                          className="za-extension-directory"
-                          aria-label={
-                            directoryKind === "plugin" ? "插件目录" : section.label + "技能"
-                          }
-                        >
-                          {section.items.map((item) => (
-                            <ExtensionDirectoryItem
-                              key={item.id}
-                              item={item}
-                              onOpen={() =>
-                                item.kind === "skill"
-                                  ? setSelected({ pkg: item, skill: item.skills[0] })
-                                  : navigate({ page: "plugin", id: item.id })
-                              }
-                            >
-                              {item.installed ? (
-                                <>
-                                  <span className="za-extension-row-state">
-                                    {item.enabled ? "已安装" : "已停用"}
-                                  </span>
-                                  {actionMenu(
-                                    item,
-                                    item.kind === "skill" ? item.skills[0] : undefined,
-                                  )}
-                                </>
-                              ) : (
-                                <>
+                    {sourceOptions.map(([value]) => (
+                      <TabsContent key={value} value={value} keepMounted>
+                        {source === value && (
+                          <>
+                            {directorySections.map((section) => (
+                              <section className="za-extension-directory-section" key={section.id}>
+                                <h2 className="za-extension-section-label">{section.label}</h2>
+                                <ul
+                                  className="za-extension-directory"
+                                  aria-label={
+                                    directoryKind === "plugin"
+                                      ? copy("插件目录", "Plugin directory")
+                                      : copy(`${section.label}技能`, `${section.label} skills`)
+                                  }
+                                >
+                                  {section.items.map((item) => (
+                                    <ExtensionDirectoryItem
+                                      key={item.id}
+                                      item={item}
+                                      onOpen={(event) => {
+                                        if (item.kind === "skill") {
+                                          openReader(
+                                            { pkg: item, skill: item.skills[0] },
+                                            event.currentTarget,
+                                          );
+                                          return;
+                                        }
+                                        directoryFocusReturn.current = {
+                                          kind: item.kind,
+                                          id: item.id,
+                                        };
+                                        navigate({ page: "plugin", id: item.id });
+                                      }}
+                                    >
+                                      {item.installed ? (
+                                        <>
+                                          <span className="za-extension-row-state">
+                                            {extensionManagementEnabled(item)
+                                              ? installedLabel
+                                              : copy("已停用", "Disabled")}
+                                          </span>
+                                          {actionMenu(
+                                            item,
+                                            item.kind === "skill" ? item.skills[0] : undefined,
+                                          )}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="aria-disabled:opacity-50"
+                                            aria-label={`${installLabel} ${extensionDisplayName(item, locale)}`}
+                                            title={`${installLabel} ${extensionDisplayName(item, locale)}`}
+                                            aria-disabled={writeBlocked || undefined}
+                                            aria-busy={
+                                              installingDirectoryItem === item.id || undefined
+                                            }
+                                            onBlur={(event) => {
+                                              if (
+                                                event.relatedTarget &&
+                                                directoryInstallFocus.current?.button ===
+                                                  event.currentTarget
+                                              )
+                                                directoryInstallFocus.current = null;
+                                            }}
+                                            onClick={(event) =>
+                                              void installFromDirectory(item, event)
+                                            }
+                                          >
+                                            {installingDirectoryItem === item.id ? (
+                                              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+                                            ) : (
+                                              <Plus className="size-4" />
+                                            )}
+                                          </Button>
+                                          {extensionOwned(item) &&
+                                            actionMenu(
+                                              item,
+                                              item.kind === "skill" ? item.skills[0] : undefined,
+                                            )}
+                                        </>
+                                      )}
+                                    </ExtensionDirectoryItem>
+                                  ))}
+                                </ul>
+                              </section>
+                            ))}
+                            {!filtered.length && !props.error && (
+                              <Empty
+                                text={
+                                  normalizedQuery
+                                    ? searchEmptyMessage
+                                    : !packages.some(
+                                          (item) =>
+                                            item.kind === directoryKind &&
+                                            item.visibility === source,
+                                        )
+                                      ? source === "personal"
+                                        ? copy(
+                                            "还没有个人内容，可通过聊天创建或上传。",
+                                            "Create or upload your first personal extension.",
+                                          )
+                                        : copy(
+                                            `暂无公开${directoryLabel}`,
+                                            `No public ${directoryLabel.toLowerCase()}`,
+                                          )
+                                      : installation === "uninstalled"
+                                        ? copy(
+                                            `没有未安装的${directoryLabel}`,
+                                            `All ${directoryLabel.toLowerCase()} are installed`,
+                                          )
+                                        : installation === "installed"
+                                          ? copy(
+                                              `没有已安装的${directoryLabel}`,
+                                              `No installed ${directoryLabel.toLowerCase()}`,
+                                            )
+                                          : copy(
+                                              "没有符合筛选的内容",
+                                              "Nothing matches the filters",
+                                            )
+                                }
+                              >
+                                {searchRecovery && (
                                   <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={`安装 ${extensionDisplayName(item, locale)}`}
-                                    title={`安装 ${extensionDisplayName(item, locale)}`}
-                                    disabled={writeBlocked}
-                                    onClick={() => void mutate({ action: "install", id: item.id })}
+                                    variant="outline"
+                                    className="h-auto min-h-11 max-w-full whitespace-normal rounded-full text-center"
+                                    onClick={(event) => {
+                                      searchRecoveryFocus.current = event.currentTarget;
+                                      updateDirectoryBrowse(directoryKind, searchRecovery);
+                                    }}
                                   >
-                                    <Plus className="size-4" />
+                                    {searchRecovery.source === source
+                                      ? copy("查看全部安装状态", "Show all installation statuses")
+                                      : searchRecovery.installation !== installation
+                                        ? copy(
+                                            `查看${recoverySourceLabel} · 全部状态`,
+                                            `View ${recoverySourceLabel} · All statuses`,
+                                          )
+                                        : copy(
+                                            `查看${recoverySourceLabel}`,
+                                            `View ${recoverySourceLabel}`,
+                                          )}
                                   </Button>
-                                  {extensionOwned(item) &&
-                                    actionMenu(
-                                      item,
-                                      item.kind === "skill" ? item.skills[0] : undefined,
-                                    )}
-                                </>
-                              )}
-                            </ExtensionDirectoryItem>
-                          ))}
-                        </ul>
-                      </section>
+                                )}
+                              </Empty>
+                            )}
+                          </>
+                        )}
+                      </TabsContent>
                     ))}
-                    {!filtered.length && !props.error && (
-                      <Empty
-                        text={
-                          query
-                            ? "没有找到匹配结果"
-                            : !packages.some(
-                                  (item) =>
-                                    item.kind === directoryKind && item.visibility === source,
-                                )
-                              ? source === "personal"
-                                ? "还没有个人内容，可通过聊天创建或上传。"
-                                : `暂无公开${directoryKind === "plugin" ? "插件" : "技能"}`
-                              : installation === "uninstalled"
-                                ? `没有未安装的${directoryKind === "plugin" ? "插件" : "技能"}`
-                                : installation === "installed"
-                                  ? `没有已安装的${directoryKind === "plugin" ? "插件" : "技能"}`
-                                  : "没有符合筛选的内容"
-                        }
-                      />
-                    )}
-                  </>
+                  </Tabs>
                 )}
               </>
             ) : pkg ? (
               <>
                 <header className="za-extension-detail-header">
-                  <ExtensionMark id={pkg.id} />
-                  <div>
-                    <h1 tabIndex={-1} className="outline-none">
-                      {extensionDisplayName(pkg, locale)}
-                    </h1>
-                    <p>
-                      {pkg.publisher} · {pkg.visibility === "public" ? "公开" : "个人"}
-                    </p>
+                  <div className="za-extension-detail-identity">
+                    <ExtensionMark id={pkg.id} />
+                    <div>
+                      <h1 ref={heading} tabIndex={-1} className="outline-none">
+                        {extensionDisplayName(pkg, locale)}
+                      </h1>
+                      <p>
+                        {pkg.publisher} ·{" "}
+                        {pkg.visibility === "public"
+                          ? copy("公开", "Public")
+                          : copy("个人", "Personal")}
+                      </p>
+                    </div>
                   </div>
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="za-extension-detail-actions">
                     {pkg.installed ? (
                       <>
                         <Button
                           variant="outline"
                           className="rounded-full"
+                          aria-describedby={trialStatus ? trialStatusId : undefined}
                           onClick={() =>
                             navigate({
                               page: route.page === "manage" ? "plugin" : "manage",
@@ -1087,48 +1803,87 @@ export function ExtensionsWorkspace(props: {
                           }
                         >
                           <Settings className="size-4" />
-                          {route.page === "manage" ? "详情" : "管理"}
+                          {route.page === "manage" ? copy("详情", "Details") : manageLabel}
                         </Button>
-                        <Button
-                          className="rounded-full"
-                          disabled={!extensionSkillEnabled(pkg, pkg.skills[0]) || busy}
-                          onClick={() => props.onTry(pkg, pkg.skills[0])}
-                        >
-                          <SquarePen className="size-4" />
-                          在聊天中试用
-                        </Button>
+                        {!originalReader && (
+                          <Button
+                            className="rounded-full"
+                            disabled={!canTryPackage || busy}
+                            onClick={() => tryInChat(pkg, pkg.skills[0])}
+                          >
+                            <SquarePen className="size-4" />
+                            {copy("在聊天中试用", "Try in chat")}
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Button
-                        className="rounded-full"
-                        disabled={writeBlocked}
-                        onClick={() => void mutate({ action: "install", id: pkg.id })}
+                        variant={originalReader ? "outline" : "default"}
+                        className="rounded-full aria-disabled:opacity-50"
+                        disabled={!originalReader && writeBlocked}
+                        aria-disabled={originalReader && writeBlocked ? true : undefined}
+                        onBlur={(event) => {
+                          if (
+                            event.relatedTarget &&
+                            readerReinstallFocus.current === event.currentTarget
+                          )
+                            readerReinstallFocus.current = null;
+                        }}
+                        onClick={(event) => {
+                          if (writeBlocked || mutationLock.current) return;
+                          const opener = event.currentTarget;
+                          if (originalReader && opener.ownerDocument.activeElement === opener) {
+                            readerReinstallFocus.current = opener;
+                          }
+                          void mutate({ action: "install", id: pkg.id }).then((saved) => {
+                            if (!saved && readerReinstallFocus.current === opener) {
+                              readerReinstallFocus.current = null;
+                            }
+                          });
+                        }}
                       >
-                        安装
+                        {installLabel}
                       </Button>
                     )}
+                    {backToOriginalSkill}
                   </div>
                 </header>
+                {trialStatus && (
+                  <StatusNotice
+                    id={trialStatusId}
+                    data-extension-trial-status=""
+                    className="my-4"
+                    tone="warning"
+                    message={trialStatus}
+                  />
+                )}
+                {tryNotice}
                 {route.page === "plugin" &&
-                  (pkg.examples?.length > 0 || !usesExtensionPackagePresentation(pkg)) && (
+                  (packageExamples.length > 0 || !usesExtensionPackagePresentation(pkg)) && (
                     <>
-                      <h2 className="sr-only">从这里开始</h2>
+                      <h2 className="sr-only">{copy("从这里开始", "Start here")}</h2>
                       <div className="za-extension-starters">
-                        {(pkg.examples?.length ? pkg.examples : ["使用这个技能帮我完成工作"]).map(
-                          (example) => (
-                            <button
-                              type="button"
-                              key={example}
-                              disabled={!extensionSkillEnabled(pkg, pkg.skills[0])}
-                              onClick={() => props.onTry(pkg, pkg.skills[0], example)}
-                            >
-                              <ExtensionMark id={pkg.id} small />
-                              <strong>{extensionDisplayName(pkg, locale)}</strong>
-                              <span>{example}</span>
-                              <ChevronRight className="size-4 shrink-0" />
-                            </button>
-                          ),
-                        )}
+                        {(packageExamples.length
+                          ? packageExamples
+                          : [
+                              copy(
+                                "使用这个技能帮我完成工作",
+                                "Use this skill to help with my work",
+                              ),
+                            ]
+                        ).map((example) => (
+                          <button
+                            type="button"
+                            key={example}
+                            disabled={!canTryPackage}
+                            onClick={() => tryInChat(pkg, pkg.skills[0], example)}
+                          >
+                            <ExtensionMark id={pkg.id} small />
+                            <strong>{extensionDisplayName(pkg, locale)}</strong>
+                            <span>{example}</span>
+                            <ChevronRight className="size-4 shrink-0" />
+                          </button>
+                        ))}
                       </div>
                     </>
                   )}
@@ -1140,12 +1895,9 @@ export function ExtensionsWorkspace(props: {
                 <div className="za-extension-management">
                   {route.page === "plugin" &&
                     (pluginEditorAvailable || !!pkg.unavailable_apps?.length) && (
-                      <section
-                        className="za-extension-apps"
-                        aria-labelledby="extension-apps-heading"
-                      >
-                        <h2 id="extension-apps-heading" className="za-extension-section-label">
-                          应用{" "}
+                      <section className="za-extension-apps" aria-labelledby={appsHeadingId}>
+                        <h2 id={appsHeadingId} className="za-extension-section-label">
+                          {copy("应用", "Apps")}{" "}
                           <span className="za-extension-section-count">
                             {Number(pluginEditorAvailable) + (pkg.unavailable_apps?.length ?? 0)}
                           </span>
@@ -1186,12 +1938,20 @@ export function ExtensionsWorkspace(props: {
                   {route.page === "manage" && (
                     <div className="za-extension-setting-row">
                       <div>
-                        <h2>在对话中使用</h2>
-                        <p>启用后，ZeroAgent 可以按任务需要读取技能指令。</p>
+                        <h2>{copy("在对话中使用", "Use in chat")}</h2>
+                        <p>
+                          {copy(
+                            "启用后，ZeroAgent 可以按任务需要读取技能指令。",
+                            "Allow ZeroAgent to read skill instructions when the task needs them.",
+                          )}
+                        </p>
                       </div>
                       <Switch
-                        aria-label={`启用${pkg.kind === "plugin" ? "插件" : "技能"} ${extensionDisplayName(pkg, locale)}`}
-                        checked={pkg.installed && pkg.enabled}
+                        aria-label={copy(
+                          `启用${pkg.kind === "plugin" ? "插件" : "技能"} ${extensionDisplayName(pkg, locale)}`,
+                          `Enable ${pkg.kind === "plugin" ? "plugin" : "skill"} ${extensionDisplayName(pkg, locale)}`,
+                        )}
+                        checked={extensionManagementEnabled(pkg)}
                         disabled={!pkg.installed || writeBlocked}
                         onCheckedChange={(enabled) =>
                           void mutate({ action: "enable", id: pkg.id, enabled })
@@ -1199,15 +1959,15 @@ export function ExtensionsWorkspace(props: {
                       />
                     </div>
                   )}
-                  <section className="za-extension-skills" aria-label="技能">
+                  <section className="za-extension-skills" aria-label={skillsLabel}>
                     <h2 className="za-extension-section-label">
                       {pkg.kind === "plugin" ? (
                         <>
-                          技能{" "}
+                          {skillsLabel}{" "}
                           <span className="za-extension-section-count">{pkg.skills.length}</span>
                         </>
                       ) : (
-                        "技能指令"
+                        copy("技能指令", "Skill instructions")
                       )}
                     </h2>
                     {(route.page === "manage" || expandedSkills
@@ -1221,7 +1981,7 @@ export function ExtensionsWorkspace(props: {
                         <button
                           className="za-extension-skill-link"
                           type="button"
-                          onClick={() => setSelected({ pkg, skill })}
+                          onClick={(event) => openReader({ pkg, skill }, event.currentTarget)}
                         >
                           <ExtensionMark id={pkg.id} small />
                           <span>
@@ -1231,9 +1991,12 @@ export function ExtensionsWorkspace(props: {
                             <span>{extensionSkillDescription(pkg, skill, locale)}</span>
                           </span>
                         </button>
-                        {route.page === "manage" ? (
+                        {route.page === "manage" && pkg.kind === "plugin" ? (
                           <Switch
-                            aria-label={`启用技能 ${extensionSkillDisplayName(pkg, skill, locale)}`}
+                            aria-label={copy(
+                              `启用技能 ${extensionSkillDisplayName(pkg, skill, locale)}`,
+                              `Enable skill ${extensionSkillDisplayName(pkg, skill, locale)}`,
+                            )}
                             checked={extensionSkillEnabled(pkg, skill)}
                             disabled={!pkg.installed || !pkg.enabled || writeBlocked}
                             onCheckedChange={(enabled) =>
@@ -1258,15 +2021,25 @@ export function ExtensionsWorkspace(props: {
                         onClick={() => setExpandedSkills(!expandedSkills)}
                       >
                         <ChevronDown className={expandedSkills ? "size-4 rotate-180" : "size-4"} />
-                        {expandedSkills ? "收起技能" : `查看其余 ${pkg.skills.length - 5} 项技能`}
+                        {expandedSkills
+                          ? copy("收起技能", "Show fewer skills")
+                          : copy(
+                              `查看其余 ${pkg.skills.length - 5} 项技能`,
+                              `Show ${pkg.skills.length - 5} more`,
+                            )}
                       </Button>
                     )}
                   </section>
                   {pkg.id === "imagegen" && props.onConfigureImages && (
                     <div className="za-extension-setting-row">
                       <div>
-                        <h2>默认生图模型</h2>
-                        <p>使用设置中已配置的生图模型。</p>
+                        <h2>{copy("默认生图模型", "Default image model")}</h2>
+                        <p>
+                          {copy(
+                            "使用设置中已配置的生图模型。",
+                            "Uses the image model selected in settings.",
+                          )}
+                        </p>
                       </div>
                       <Button
                         variant="outline"
@@ -1274,15 +2047,24 @@ export function ExtensionsWorkspace(props: {
                         data-extension-configure-images=""
                         onClick={props.onConfigureImages}
                       >
-                        配置模型
+                        {copy("配置模型", "Configure model")}
                       </Button>
                     </div>
                   )}
                   {extensionOwned(pkg) && (
                     <div className="za-extension-setting-row">
                       <div>
-                        <h2>{pkg.kind === "plugin" ? "插件文件" : "技能文件"}</h2>
-                        <p>查看完整指令，或下载一份副本。</p>
+                        <h2>
+                          {pkg.kind === "plugin"
+                            ? copy("插件文件", "Plugin files")
+                            : copy("技能文件", "Skill files")}
+                        </h2>
+                        <p>
+                          {copy(
+                            "查看完整指令，或下载一份副本。",
+                            "View the full instructions or download a copy.",
+                          )}
+                        </p>
                       </div>
                       <Button
                         variant="ghost"
@@ -1290,69 +2072,97 @@ export function ExtensionsWorkspace(props: {
                         onClick={() => void download(pkg)}
                       >
                         <Download className="size-4" />
-                        下载
+                        {copy("下载", "Download")}
                       </Button>
                     </div>
                   )}
                   {extensionOwned(pkg) && (
                     <div className="za-extension-setting-row">
                       <div>
-                        <h2>编辑{pkg.kind === "plugin" ? "插件" : "技能"}</h2>
-                        <p>修改说明和指令，保存后用于之后的工作。</p>
+                        <h2>
+                          {pkg.kind === "plugin"
+                            ? copy("编辑插件", "Edit plugin")
+                            : copy("编辑技能", "Edit skill")}
+                        </h2>
+                        <p>
+                          {copy(
+                            "修改说明和指令，保存后用于之后的工作。",
+                            "Update the description and instructions for future use.",
+                          )}
+                        </p>
                       </div>
                       <Button
                         variant="outline"
                         className="rounded-full"
                         onClick={() => navigate({ page: "editor", id: pkg.id, kind: pkg.kind })}
                       >
-                        编辑
+                        {copy("编辑", "Edit")}
                       </Button>
                     </div>
                   )}
                   {route.page === "manage" && pkg.installed && (
                     <div className="za-extension-setting-row">
                       <div>
-                        <h2>卸载</h2>
-                        <p>保留已有对话和工作成果。</p>
+                        <h2>{uninstallLabel}</h2>
+                        <p>
+                          {copy(
+                            "保留已有对话和工作成果。",
+                            "Existing conversations and work are kept.",
+                          )}
+                        </p>
                       </div>
                       <Button
                         variant="ghost"
                         className="rounded-full text-destructive"
-                        onClick={() => setRemove(pkg)}
+                        onClick={() => openUninstall(pkg)}
                       >
-                        卸载
+                        {uninstallLabel}
                       </Button>
                     </div>
                   )}
                   {route.page === "plugin" && (
                     <section className="za-extension-info">
-                      <h2 className="za-extension-section-label">信息</h2>
+                      <h2 className="za-extension-section-label">{copy("信息", "Information")}</h2>
                       <dl>
-                        <dt>发布者</dt>
+                        <dt>{copy("发布者", "Publisher")}</dt>
                         <dd>{pkg.publisher}</dd>
-                        <dt>类型</dt>
-                        <dd>{pkg.kind === "plugin" ? "插件" : "独立技能"}</dd>
-                        <dt>来源</dt>
-                        <dd>{pkg.visibility === "public" ? "公开目录" : "个人内容"}</dd>
+                        <dt>{copy("类型", "Type")}</dt>
+                        <dd>
+                          {pkg.kind === "plugin"
+                            ? copy("插件", "Plugin")
+                            : copy("独立技能", "Standalone skill")}
+                        </dd>
+                        <dt>{copy("来源", "Source")}</dt>
+                        <dd>
+                          {pkg.visibility === "public"
+                            ? copy("公开目录", "Public directory")
+                            : copy("个人内容", "Personal content")}
+                        </dd>
                       </dl>
                     </section>
                   )}
                 </div>
               </>
             ) : (
-              <Empty text="这个插件已不可用">
+              <Empty text={copy("这个插件已不可用", "This plugin is unavailable.")}>
+                {backToOriginalSkill}
                 <Button variant="ghost" onClick={() => navigate({ page: "plugins" })}>
-                  返回目录
+                  {copy("返回目录", "Back to directory")}
                 </Button>
               </Empty>
             )}
-            {(error || props.error || adapter.writeUnconfirmed) && (
+            {!remove && (error || props.error || adapter.writeUnconfirmed) && (
               <div className="za-extension-feedback" role="alert">
                 <span>
-                  {error || props.error || "上次操作结果尚未确认，请刷新目录核对后再继续。"}
+                  {error ||
+                    props.error ||
+                    copy(
+                      "上次操作结果尚未确认，请刷新目录核对后再继续。",
+                      "The last action is unconfirmed. Refresh the directory to check its status.",
+                    )}
                 </span>
                 <Button variant="ghost" size="sm" onClick={props.onRefresh}>
-                  刷新目录
+                  {copy("刷新目录", "Refresh directory")}
                 </Button>
               </div>
             )}
@@ -1394,37 +2204,84 @@ export function ExtensionsWorkspace(props: {
       />
       {busy && (
         <span className="sr-only" role="status">
-          正在保存
+          {copy("正在保存", "Saving")}
         </span>
       )}
-      {reader && catalog && !props.loading && !selected && (
-        <Dialog open onOpenChange={(open) => !open && setSelected(null)}>
-          <DialogContent className="max-w-sm p-6" showCloseButton closeLabel="关闭技能详情">
-            <DialogTitle>技能不可用</DialogTitle>
+      {reader && !readerTarget && (
+        <Dialog open onOpenChange={(open) => !open && closeReader()}>
+          <DialogContent
+            className="max-w-sm p-6"
+            showCloseButton
+            closeLabel={copy("关闭技能详情", "Close skill details")}
+          >
+            <DialogTitle>
+              {props.loading || (!catalog && !props.error)
+                ? copy("正在读取技能信息", "Loading skill information")
+                : props.error
+                  ? copy("暂时无法读取技能信息", "Could not load skill information")
+                  : copy("技能不可用", "Skill unavailable")}
+            </DialogTitle>
             <DialogDescription className="mt-2">
-              此技能已移除，或当前账户没有访问权限。
+              {props.loading || (!catalog && !props.error)
+                ? copy("正在核对目录中的技能。", "Checking the skill in your directory.")
+                : props.error
+                  ? copy(
+                      "请重试目录，读取此技能的信息。",
+                      "Retry the directory to look up this skill.",
+                    )
+                  : copy(
+                      "此技能已移除，或当前账户没有访问权限。",
+                      "This skill was removed or your account does not have access.",
+                    )}
             </DialogDescription>
-            <Button className="mt-4 justify-self-end" onClick={() => setSelected(null)}>
-              返回目录
-            </Button>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" onClick={closeReader}>
+                {reader.returnToChat ? backLabel : copy("返回目录", "Back to directory")}
+              </Button>
+              {props.error ? (
+                <Button disabled={props.loading} onClick={props.onRefresh}>
+                  {copy("重试目录", "Retry directory")}
+                </Button>
+              ) : null}
+            </div>
           </DialogContent>
         </Dialog>
       )}
-      {selected && (
+      {readerTarget && (
         <SkillReader
-          key={`${adapter.scope}:${selected.pkg.id}:${selected.skill.entry}`}
+          key={`${adapter.scope}:${readerTarget.id}:${readerTarget.revision ?? ""}:${readerTarget.skillName ?? ""}`}
           adapter={adapter}
-          selection={{ ...selected, pkg: selectedPackage ?? selected.pkg }}
-          busy={writeBlocked}
-          onInstall={() => void mutate({ action: "install", id: selected.pkg.id })}
-          onClose={() => {
-            setSelected(null);
-            if (selected.returnToChat) props.onBack();
+          target={readerTarget}
+          pkg={readerPackage ?? selectedPackage ?? undefined}
+          skill={selected?.skill}
+          catalog={catalog}
+          directoryLoading={props.loading}
+          directoryError={Boolean(props.error)}
+          busy={busy}
+          onInstall={(onFailure) =>
+            mutate({ action: "install", id: readerTarget.id }, undefined, onFailure)
+          }
+          onClose={closeReader}
+          onRefreshDirectory={props.onRefresh}
+          onManage={() => {
+            if (!props.onNavigate) setLocalSelection(null);
+            navigate({ page: "manage", id: readerTarget.id }, false, {
+              packageId: readerTarget.id,
+              location: { route, reader },
+              selection: selected,
+            });
           }}
           onConfigureImages={props.onConfigureImages}
-          onTry={() => {
-            props.onTry(selectedPackage ?? selected.pkg, selected.skill);
+          onTryOnDevice={props.onTryOnDevice}
+          onReturnToDraft={() => {
             setSelected(null);
+            returnToDraft();
+          }}
+          onTry={() => {
+            if (!selected) return "skill-unavailable";
+            const result = props.onTry(selectedPackage ?? selected.pkg, selected.skill);
+            if (result === "accepted") setSelected(null);
+            return result;
           }}
         />
       )}
@@ -1494,35 +2351,60 @@ export function ExtensionsWorkspace(props: {
         }}
       >
         <DialogContent className="p-6">
-          <DialogTitle>卸载 {remove ? extensionDisplayName(remove, locale) : ""}？</DialogTitle>
-          <DialogDescription className="mt-3 text-muted-foreground">
-            卸载后将不再用于新的对话。已有聊天和成果会保留。
-          </DialogDescription>
-          {error && (
-            <p role="alert" className="za-extension-feedback">
-              {error}
-              {adapter.writeUnconfirmed && (
-                <Button variant="ghost" onClick={props.onRefresh}>
-                  刷新目录核对
-                </Button>
+          <DialogTitle>
+            {removalConfirmed
+              ? copy(`已卸载 ${removalName}`, `${removalName} uninstalled`)
+              : `${uninstallLabel} ${removalName}${copy("？", "?")}`}
+          </DialogTitle>
+          {!removalConfirmed && (
+            <DialogDescription className="mt-3 text-muted-foreground">
+              {copy(
+                "卸载后将不再用于新的对话。已有聊天和成果会保留。",
+                "Uninstalling removes access in new chats. Existing chats and results are kept.",
               )}
-            </p>
+            </DialogDescription>
           )}
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="ghost" disabled={busy} onClick={() => setRemove(null)}>
-              取消
-            </Button>
+          {removalMessage && (
+            <StatusNotice
+              id={removalStatusId}
+              className="mt-4"
+              compact
+              tone={removalTone}
+              busy={removalNeedsCheck && props.loading}
+              message={removalMessage}
+            />
+          )}
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            {!removalConfirmed && (
+              <Button variant="ghost" disabled={busy} onClick={() => setRemove(null)}>
+                {copy("取消", "Cancel")}
+              </Button>
+            )}
             <Button
-              variant="destructive"
-              disabled={writeBlocked}
+              variant={removalNeedsCheck || removalConfirmed ? "default" : "destructive"}
+              aria-disabled={removalActionDisabled || undefined}
+              aria-busy={busy || (removalNeedsCheck && props.loading) || undefined}
+              aria-describedby={removalMessage ? removalStatusId : undefined}
+              className="min-h-11 aria-disabled:opacity-50"
               onClick={() => {
-                if (remove)
+                if (!remove || removalActionDisabled) return;
+                if (removalConfirmed) setRemove(null);
+                else if (removalNeedsCheck) props.onRefresh();
+                else
                   void mutate({ action: "uninstall", id: remove.id }).then((saved) => {
                     if (saved) setRemove(null);
                   });
               }}
             >
-              卸载
+              {removalNeedsCheck
+                ? props.loading
+                  ? copy("正在核对…", "Checking…")
+                  : copy("刷新目录核对", "Refresh directory to check")
+                : removalConfirmed
+                  ? copy("完成", "Done")
+                  : busy
+                    ? copy("正在卸载…", "Uninstalling…")
+                    : uninstallLabel}
             </Button>
           </div>
         </DialogContent>
@@ -1534,7 +2416,7 @@ function Empty({ text, children }: { text: string; children?: React.ReactNode })
   return (
     <div className="za-extension-empty">
       <Box className="size-7 text-muted-foreground/50" />
-      <p>{text}</p>
+      <p className="text-center">{text}</p>
       {children}
     </div>
   );
@@ -1577,75 +2459,337 @@ function ExtensionAppRow({
   );
 }
 
+type SkillFileView = {
+  path: string;
+  scrollTop: number;
+  origin?: { target: string; index: number };
+};
+
 function SkillReader({
   adapter,
-  selection,
+  target,
+  pkg,
+  skill,
+  catalog,
+  directoryLoading,
+  directoryError,
   onClose,
+  onRefreshDirectory,
+  onManage,
   onTry,
   onInstall,
   busy,
   onConfigureImages,
+  onTryOnDevice,
+  onReturnToDraft,
 }: {
   adapter: ExtensionsAdapter;
-  selection: SkillSelection;
+  target: SkillReaderTarget;
+  pkg?: ExtensionPackage;
+  skill?: ExtensionSkill;
+  catalog: ExtensionCatalog | null;
+  directoryLoading: boolean;
+  directoryError: boolean;
   onClose: () => void;
-  onTry: () => void;
-  onInstall: () => void;
+  onRefreshDirectory: () => void;
+  onManage: () => void;
+  onTry: () => ExtensionTryResult;
+  onInstall: (onFailure: (message: string) => void) => Promise<boolean>;
   busy: boolean;
   onConfigureImages?: () => void;
+  onTryOnDevice?: DeviceSkillAction;
+  onReturnToDraft: () => void;
 }) {
   const { locale } = useLocale();
+  const english = locale === "en-US";
   const [revision, setRevision] = useState<ExtensionRevision | null>(null),
-    [file, setFile] = useState(selection.skill.entry),
+    [selectedFile, setFile] = useState<string | null>(null),
     [source, setSource] = useState(false),
-    [error, setError] = useState(""),
+    [requestError, setError] = useState<"changed" | "failed" | "unavailable" | null>(null),
     [retry, setRetry] = useState(0);
+  const [fileHistory, setFileHistory] = useState<SkillFileView[]>([]);
+  const fileTitleRef = useRef<HTMLSpanElement>(null);
+  const fileViewportRef = useRef<HTMLDivElement>(null);
+  const pendingFileView = useRef<SkillFileView | null>(null);
+  const { id, revision: pinnedRevision, skillName } = target;
+  const requestedRevision = pinnedRevision ?? pkg?.version;
+  const [devicePending, setDevicePending] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [tryError, setTryError] = useState<Exclude<ExtensionTryResult, "accepted"> | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installFailure, setInstallFailure] = useState<
+    { kind: "failed"; message: string } | { kind: "unconfirmed"; previous: ExtensionCatalog } | null
+  >(null);
+  const installStatusId = useId();
+  const catalogAvailable = Boolean(catalog && !directoryError);
+  const writeBlocked = busy || !!adapter.writeUnconfirmed || directoryLoading;
+  const actionError = deviceError || (tryError ? extensionTryError(tryError, locale) : "");
+  const deviceRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => deviceRequest.current?.abort(), []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly re-reads the same selection.
   useEffect(() => {
     const controller = new AbortController();
-    setError("");
+    setError(null);
     setRevision(null);
     void adapter
-      .read(selection.pkg.id, controller.signal)
+      .read(id, controller.signal, pinnedRevision)
       .then((result) => {
-        if (result.revision.number !== selection.pkg.version)
-          throw new Error("内容已更新，请刷新目录后重新打开。");
-        if (!controller.signal.aborted) setRevision(result.revision);
+        if (controller.signal.aborted) return;
+        if (result.revision.number === requestedRevision) setRevision(result.revision);
+        else setError("changed");
       })
       .catch((cause) => {
         if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "加载失败");
+          setError(cause instanceof ExtensionRevisionUnavailable ? "unavailable" : "failed");
       });
     return () => controller.abort();
-  }, [adapter, selection.pkg.id, selection.pkg.version, retry]);
-  const entry = selection.skill.entry;
-  const isEntry = file === entry;
-  const title =
-    selection.pkg.kind === "skill"
-      ? extensionDisplayName(selection.pkg, locale)
-      : extensionSkillDisplayName(selection.pkg, selection.skill, locale);
-  const publishedAt = new Date(selection.pkg.updated_at);
-  const hasDate = Number.isFinite(publishedAt.getTime()) && publishedAt.getUTCFullYear() >= 1970;
-  const siblingEntries = new Set(
-    revision?.skills.filter((skill) => skill.entry !== entry).map((skill) => skill.entry),
+  }, [adapter, id, pinnedRevision, requestedRevision, retry]);
+  const aliases = revision?.aliases;
+  const canonicalSkillName =
+    skillName && aliases && Object.hasOwn(aliases, skillName) ? aliases[skillName] : skillName;
+  const loadedSkill = canonicalSkillName
+    ? revision?.skills.find((item) => item.name === canonicalSkillName)
+    : revision?.skills.length === 1
+      ? revision.skills[0]
+      : undefined;
+  const selectedSkill =
+    loadedSkill ?? (pinnedRevision && pinnedRevision !== pkg?.version ? undefined : skill);
+  const skillDisabled = pkg?.kind === "plugin" && pkg.disabled_skills?.some(
+    (name) => name === skillName || name === selectedSkill?.name,
   );
-  const supportingFiles = Object.keys(revision?.files ?? {})
-    .filter((path) => path !== entry && !siblingEntries.has(path))
-    .sort();
+  const disabledReason =
+    catalogAvailable && pkg?.installed && (!pkg.enabled || skillDisabled)
+      ? !pkg.enabled && pkg.kind === "plugin"
+        ? english
+          ? "This plugin is disabled."
+          : "此插件已停用。"
+        : english
+          ? "This skill is disabled."
+          : "此技能已停用。"
+      : "";
+  const pinnedUninstalled =
+    catalogAvailable && pkg && !pkg.installed && pinnedRevision !== undefined;
+  const managementReason =
+    pinnedUninstalled && loadedSkill
+      ? pkg.kind === "plugin"
+        ? english
+          ? "This plugin is not installed. You can reinstall it in Manage."
+          : "此插件未安装，可以在管理页重新安装。"
+        : english
+          ? "This skill is not installed. You can reinstall it in Manage."
+          : "此技能未安装，可以在管理页重新安装。"
+      : disabledReason;
+  const unavailable = requestError === "unavailable" || Boolean(revision && !loadedSkill);
+  const refreshDirectory = requestError === "changed" && pinnedRevision === undefined;
+  const error = unavailable
+    ? english
+      ? "This skill revision is unavailable or your account cannot access it."
+      : "此技能修订已不可用，或当前账户无权访问。"
+    : requestError === "changed"
+      ? refreshDirectory
+        ? english
+          ? "This skill changed. Refresh the directory to view the current skill."
+          : "技能已更新，请刷新目录后查看。"
+        : english
+          ? "The response did not match the requested revision. Try again."
+          : "返回内容与请求的修订不符，请重试。"
+      : requestError === "failed"
+        ? english
+          ? "Unable to load the skill. Try again."
+          : "暂时无法加载技能，请重试。"
+        : "";
+  const installNeedsCheck =
+    pkg?.kind === "skill" &&
+    pinnedRevision === undefined &&
+    ((!pkg.installed && !!adapter.writeUnconfirmed) ||
+      (installFailure?.kind === "unconfirmed" &&
+        (!catalogAvailable || catalog === installFailure.previous || writeBlocked)));
+  const primaryActionDisabled = installNeedsCheck
+    ? busy || directoryLoading
+    : writeBlocked ||
+      devicePending ||
+      installing ||
+      !revision ||
+      !!error ||
+      Boolean(pkg?.installed && (!loadedSkill || !pkg.enabled || skillDisabled));
+  const installingLabel = installNeedsCheck
+    ? directoryLoading
+      ? english
+        ? "Checking…"
+        : "正在核对…"
+      : english
+        ? "Check installation"
+        : "核对安装状态"
+    : installing
+      ? english
+        ? "Installing…"
+        : "正在安装…"
+      : "";
+  let installStatus = installFailure?.kind === "failed" ? installFailure.message : "";
+  if (installNeedsCheck) {
+    installStatus = directoryLoading
+      ? english
+        ? "Checking the directory for this skill…"
+        : "正在从目录核对此技能的安装状态…"
+      : directoryError
+        ? english
+          ? "Couldn't check installation. Try again."
+          : "暂时无法核对安装状态，请重试。"
+        : installFailure?.kind === "unconfirmed"
+          ? english
+            ? "The installation result is unconfirmed. Check its status before installing again."
+            : "安装结果尚未确认。请核对安装状态后再继续。"
+          : english
+            ? "Check the directory before installing this skill."
+            : "请先核对目录，再安装此技能。";
+  } else if (installFailure?.kind === "unconfirmed") {
+    installStatus = pkg?.installed
+      ? english
+        ? "The directory confirms this skill is installed."
+        : "目录确认此技能已安装。"
+      : english
+        ? "The directory shows this skill is still uninstalled. You can install it again."
+        : "目录显示此技能仍未安装，可以再次安装。";
+  }
+  async function installSkill() {
+    if (!catalog) return;
+    setInstalling(true);
+    setInstallFailure(null);
+    try {
+      await onInstall((message) =>
+        setInstallFailure(
+          adapter.writeUnconfirmed
+            ? { kind: "unconfirmed", previous: catalog }
+            : { kind: "failed", message },
+        ),
+      );
+    } finally {
+      setInstalling(false);
+    }
+  }
+  const entry = selectedSkill?.entry ?? "";
+  const showFileTree = Boolean(loadedSkill && entry && !error);
+  const supportingFiles = useMemo(() => {
+    if (!revision || !loadedSkill) return [];
+    const siblingEntries = new Set(
+      revision.skills.filter((skill) => skill.entry !== entry).map((skill) => skill.entry),
+    );
+    return Object.keys(revision.files)
+      .filter((path) => path !== entry && !siblingEntries.has(path))
+      .sort();
+  }, [entry, loadedSkill, revision]);
+  const readableFiles = useMemo(
+    () => new Set([entry, ...supportingFiles]),
+    [entry, supportingFiles],
+  );
+  const file = selectedFile && readableFiles.has(selectedFile) ? selectedFile : entry;
+  const isEntry = file === entry;
+  const displaySkillName = selectedSkill?.name ?? skillName ?? "";
+  const builtinCopy = pkg ? undefined : builtinSkillPresentation(id, displaySkillName, locale);
+  const title =
+    pkg && selectedSkill
+      ? pkg.kind === "skill" && requestedRevision === pkg.version
+        ? extensionDisplayName(pkg, locale)
+        : extensionSkillDisplayName(pkg, selectedSkill, locale)
+      : builtinCopy?.title ||
+        selectedSkill?.display_name ||
+        selectedSkill?.name ||
+        skillName ||
+        (english ? "Skill details" : "技能详情");
+  const publishedAt = new Date(revision?.created_at || pkg?.updated_at || "");
+  const hasDate = Number.isFinite(publishedAt.getTime()) && publishedAt.getUTCFullYear() >= 1970;
   const body = revision?.files[file] ?? "";
   const isMarkdown = /\.md$/i.test(file);
   const markdown = body.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)(?:\r?\n)*/, "");
   const firstLineEnd = markdown.indexOf("\n");
   const heading = firstLineEnd === -1 ? markdown : markdown.slice(0, firstLineEnd).trimEnd();
-  const sourceTitle = extensionSkillDisplayName(selection.pkg, selection.skill, "en-US");
+  const sourceTitle =
+    pkg && selectedSkill
+      ? extensionSkillDisplayName(pkg, selectedSkill, "en-US")
+      : (builtinSkillPresentation(id, displaySkillName, "en-US")?.title ?? title);
   const displayMarkdown =
     isEntry && (heading === `# ${title}` || heading === `# ${sourceTitle}`)
       ? markdown.slice(firstLineEnd === -1 ? markdown.length : firstLineEnd + 1)
       : markdown;
   const openFile = (path: string) => {
+    setFileHistory([]);
     setFile(path);
     setSource(false);
   };
+  const followFile = useCallback(
+    (path: string, opener: HTMLButtonElement) => {
+      const viewport = fileViewportRef.current;
+      const index = skillReaderFileLinks(viewport, path).indexOf(opener);
+      const previous = {
+        path: file,
+        scrollTop: viewport?.scrollTop ?? 0,
+        origin: index >= 0 ? { target: path, index } : undefined,
+      };
+      setFileHistory((current) => [...current.slice(-31), previous]);
+      pendingFileView.current = { path, scrollTop: 0 };
+      setFile(path);
+      setSource(false);
+    },
+    [file],
+  );
+  const previousFile = fileHistory.at(-1);
+  const backFile = previousFile && readableFiles.has(previousFile.path) ? previousFile.path : entry;
+  const backToEntry = backFile === entry;
+  const backLabel = backToEntry
+    ? english
+      ? "Back to skill instructions"
+      : "返回技能正文"
+    : english
+      ? "Back to previous file"
+      : "返回上一个文件";
+  const goBackToFile = () => {
+    setFileHistory((current) => current.slice(0, -1));
+    pendingFileView.current =
+      previousFile?.path === backFile ? previousFile : { path: backFile, scrollTop: 0 };
+    setFile(backFile);
+    setSource(false);
+  };
+  useLayoutEffect(() => {
+    const view = pendingFileView.current;
+    if (view?.path !== file) return;
+    pendingFileView.current = null;
+    const viewport = fileViewportRef.current;
+    if (viewport) viewport.scrollTop = view.scrollTop;
+    const opener = view.origin
+      ? skillReaderFileLinks(viewport, view.origin.target)[view.origin.index]
+      : undefined;
+    (opener ?? fileTitleRef.current)?.focus({ preventScroll: true });
+  }, [file]);
+  async function prepareForDevice() {
+    if (!onTryOnDevice || !pkg || !loadedSkill || !requestedRevision || deviceRequest.current)
+      return;
+    const controller = new AbortController();
+    deviceRequest.current = controller;
+    setDevicePending(true);
+    setDeviceError("");
+    setTryError(null);
+    try {
+      await onTryOnDevice(
+        pkg,
+        { ...loadedSkill, name: skillName ?? loadedSkill.name },
+        requestedRevision,
+        controller.signal,
+      );
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        setDeviceError(
+          cause instanceof Error
+            ? cause.message
+            : locale === "en-US"
+              ? "The skill could not be checked. Try again."
+              : "暂时无法检查技能，请重试。",
+        );
+      }
+    } finally {
+      deviceRequest.current = null;
+      if (!controller.signal.aborted) setDevicePending(false);
+    }
+  }
   return (
     <Dialog
       open
@@ -1661,14 +2805,12 @@ function SkillReader({
       >
         <header>
           <div className="flex items-center gap-3">
-            <ExtensionMark id={selection.pkg.id} />
+            <ExtensionMark id={id} />
             <DialogTitle className="min-w-0 break-words">{title}</DialogTitle>
           </div>
           <div className="za-skill-reader-meta">
-            <span>{selection.pkg.publisher}</span>
-            {selection.pkg.kind === "plugin" && (
-              <span>{extensionDisplayName(selection.pkg, locale)}</span>
-            )}
+            {pkg?.publisher ? <span>{pkg.publisher}</span> : null}
+            {pkg?.kind === "plugin" && <span>{extensionDisplayName(pkg, locale)}</span>}
             {hasDate && (
               <time dateTime={publishedAt.toISOString()}>
                 {new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(publishedAt)}
@@ -1676,34 +2818,72 @@ function SkillReader({
             )}
           </div>
           <DialogDescription className="za-skill-reader-description">
-            {extensionSkillDescription(selection.pkg, selection.skill, locale)}
+            {pkg && selectedSkill
+              ? extensionSkillDescription(pkg, selectedSkill, locale)
+              : builtinCopy?.description ||
+                selectedSkill?.description ||
+                (english ? "Read the pinned skill revision." : "阅读固定修订的技能内容。")}
           </DialogDescription>
         </header>
-        <div className="za-skill-reader-body">
-          <SkillReaderFileTree
-            entry={entry}
-            files={supportingFiles}
-            selected={file}
-            onSelect={openFile}
+        {managementReason && (
+          <StatusNotice
+            className="za-skill-reader-availability"
+            tone="warning"
+            message={managementReason}
+            actions={
+              <button type="button" className="app-status-action" onClick={onManage}>
+                {pkg?.kind === "plugin"
+                  ? english
+                    ? "Manage plugin"
+                    : "管理插件"
+                  : english
+                    ? "Manage skill"
+                    : "管理技能"}
+              </button>
+            }
           />
+        )}
+        <div className="za-skill-reader-body" data-file-tree={showFileTree || undefined}>
+          {showFileTree && (
+            <SkillReaderFileTree
+              entry={entry}
+              files={supportingFiles}
+              selected={file}
+              onSelect={openFile}
+            />
+          )}
           <div className="za-skill-reader-document">
-            <div className="za-skill-file-bar" data-source-file={!isMarkdown}>
+            <div className="za-skill-file-bar">
               <div className="za-skill-file-identity" aria-live="polite">
-                {isEntry ? (
-                  <span className="font-medium">技能正文</span>
+                {isEntry && !previousFile ? (
+                  <span
+                    className="za-skill-file-title font-medium"
+                    ref={fileTitleRef}
+                    tabIndex={-1}
+                  >
+                    {english ? "Skill instructions" : "技能正文"}
+                  </span>
                 ) : (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="返回技能正文"
-                      onClick={() => openFile(entry)}
-                    >
+                    <Button variant="ghost" size="sm" aria-label={backLabel} onClick={goBackToFile}>
                       <ArrowLeft className="size-4" />
-                      <span className="hidden sm:inline">正文</span>
+                      <span className="hidden sm:inline">
+                        {backToEntry
+                          ? english
+                            ? "Instructions"
+                            : "正文"
+                          : english
+                            ? "Back"
+                            : "返回"}
+                      </span>
                     </Button>
-                    <span className="truncate" title={file}>
-                      {file}
+                    <span
+                      className="za-skill-file-title truncate"
+                      title={file}
+                      ref={fileTitleRef}
+                      tabIndex={-1}
+                    >
+                      {isEntry ? (english ? "Skill instructions" : "技能正文") : file}
                     </span>
                   </>
                 )}
@@ -1711,33 +2891,16 @@ function SkillReader({
               <div className="flex shrink-0 items-center gap-1">
                 {isMarkdown && (
                   <Button variant="ghost" size="sm" onClick={() => setSource(!source)}>
-                    {source ? "阅读" : "原文"}
+                    {source ? (english ? "Read" : "阅读") : english ? "Source" : "原文"}
                   </Button>
                 )}
                 {supportingFiles.length > 0 && (
-                  <div className="za-skill-mobile-files">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button variant="ghost" size="sm" aria-label="浏览包内资料" />}
-                      >
-                        <FileText className="size-4" />
-                        <span>资料</span>
-                        <ChevronDown className="size-3" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="za-skill-file-menu max-w-[calc(100vw-32px)] max-h-[60dvh] overflow-y-auto"
-                      >
-                        {supportingFiles.map((path) => (
-                          <DropdownMenuItem key={path} onClick={() => openFile(path)}>
-                            <SkillFileIcon path={path} />
-                            <span className="min-w-0 flex-1 truncate">{path}</span>
-                            {file === path && <Check className="size-4 shrink-0" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  <SkillReaderFileMenu
+                    entry={entry}
+                    files={supportingFiles}
+                    selected={file}
+                    onSelect={openFile}
+                  />
                 )}
               </div>
             </div>
@@ -1745,21 +2908,57 @@ function SkillReader({
               key={file}
               className="min-h-0 flex-1"
               contentClassName="za-skill-reader-content"
+              viewportRef={fileViewportRef}
+              viewportProps={{
+                "aria-label": english ? `Read ${file || title}` : `阅读 ${file || title}`,
+                className:
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+              }}
             >
               {error ? (
-                <div role="alert">
-                  {error}
-                  <Button variant="ghost" onClick={() => setRetry(retry + 1)}>
-                    重试
-                  </Button>
-                </div>
+                <StatusNotice
+                  className="mx-1 my-3"
+                  tone={unavailable ? "warning" : "error"}
+                  role="alert"
+                  message={error}
+                  actions={
+                    !unavailable ? (
+                      <button
+                        type="button"
+                        className="app-status-action"
+                        onClick={() => {
+                          fileTitleRef.current?.focus({ preventScroll: true });
+                          if (refreshDirectory) onRefreshDirectory();
+                          else setRetry((count) => count + 1);
+                        }}
+                      >
+                        {refreshDirectory
+                          ? english
+                            ? "Refresh directory"
+                            : "刷新目录"
+                          : english
+                            ? "Retry"
+                            : "重试"}
+                      </button>
+                    ) : null
+                  }
+                />
               ) : !revision ? (
-                <div className="space-y-4" role="status" aria-label="正在加载技能">
+                <div
+                  className="space-y-4"
+                  role="status"
+                  aria-label={english ? "Loading skill" : "正在加载技能"}
+                >
                   <div className="h-5 w-2/3 animate-pulse rounded bg-muted" />
                   <div className="h-32 animate-pulse rounded bg-muted" />
                 </div>
               ) : isMarkdown && !source ? (
-                <Markdown content={displayMarkdown} readOnly />
+                <SkillReaderMarkdown
+                  file={file}
+                  content={displayMarkdown}
+                  readableFiles={readableFiles}
+                  onFollow={followFile}
+                />
               ) : (
                 <SkillSourceCard key={file} path={file} text={body} />
               )}
@@ -1767,39 +2966,97 @@ function SkillReader({
           </div>
         </div>
         <footer>
-          {selection.pkg.id === "imagegen" && onConfigureImages ? (
+          {installStatus && (
+            <StatusNotice
+              id={installStatusId}
+              className="basis-full"
+              compact
+              tone={
+                installFailure?.kind === "failed" || (installNeedsCheck && directoryError)
+                  ? "error"
+                  : installNeedsCheck
+                    ? "warning"
+                    : pkg?.installed
+                      ? "success"
+                      : "info"
+              }
+              busy={installNeedsCheck && directoryLoading}
+              message={installStatus}
+            />
+          )}
+          {actionError && (
+            <p className="za-skill-action-error" role="alert">
+              {actionError}
+            </p>
+          )}
+          {tryError === "draft-reference-conflict" && !deviceError ? (
+            <Button variant="ghost" className="rounded-full" onClick={onReturnToDraft}>
+              {english ? "Back to draft" : "返回草稿"}
+            </Button>
+          ) : null}
+          {catalogAvailable && pkg?.id === "imagegen" && onConfigureImages ? (
             <Button
               data-extension-configure-images
               variant="outline"
               className="ml-auto rounded-full"
               onClick={onConfigureImages}
             >
-              配置生图模型
+              {english ? "Configure image model" : "配置生图模型"}
             </Button>
           ) : null}
-          {selection.pkg.kind === "plugin" ? (
+          {catalogAvailable && onTryOnDevice && pkg?.installed && pkg.enabled && (
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={writeBlocked || devicePending || !loadedSkill || !!error || skillDisabled}
+              onClick={() => void prepareForDevice()}
+            >
+              {devicePending
+                ? locale === "en-US"
+                  ? "Checking skill…"
+                  : "正在检查技能…"
+                : locale === "en-US"
+                  ? "Use on this computer"
+                  : "在此电脑中使用"}
+            </Button>
+          )}
+          {!installNeedsCheck &&
+          (!catalogAvailable ||
+            !pkg ||
+            pinnedUninstalled ||
+            pkg.kind === "plugin" ||
+            requestedRevision !== pkg.version) ? (
             <Button className="rounded-full" onClick={onClose}>
               {locale === "en-US" ? "Close" : "关闭"}
             </Button>
           ) : (
             <Button
-              className="rounded-full"
-              disabled={
-                busy ||
-                !revision ||
-                !!error ||
-                (selection.pkg.installed && !extensionSkillEnabled(selection.pkg, selection.skill))
-              }
-              onClick={selection.pkg.installed ? onTry : onInstall}
+              className="min-h-11 rounded-full aria-disabled:opacity-50"
+              aria-disabled={primaryActionDisabled || undefined}
+              aria-busy={installing || (installNeedsCheck && directoryLoading) || undefined}
+              aria-describedby={installStatus ? installStatusId : undefined}
+              onClick={() => {
+                if (primaryActionDisabled) return;
+                if (installNeedsCheck) onRefreshDirectory();
+                else if (pkg?.installed) {
+                  setDeviceError("");
+                  const result = onTry();
+                  if (result !== "accepted") setTryError(result);
+                } else void installSkill();
+              }}
             >
-              <SquarePen className="size-4" />
-              {selection.pkg.installed
-                ? locale === "en-US"
-                  ? "Try in chat"
-                  : "在对话中使用"
-                : locale === "en-US"
-                  ? "Install skill"
-                  : "安装技能"}
+              {installingLabel ||
+                (pkg?.installed ? (
+                  <>
+                    <SquarePen className="size-4" />
+                    {english ? "Try in chat" : "在对话中使用"}
+                  </>
+                ) : (
+                  <>
+                    <Plus className="size-4" />
+                    {english ? "Install skill" : "安装技能"}
+                  </>
+                ))}
             </Button>
           )}
         </footer>

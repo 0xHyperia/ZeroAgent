@@ -56,6 +56,7 @@ import {
   RECONNECT_NOTICE_DELAY_MS,
   replayTerminalSnapshot,
   requestRequiresAgentId,
+  requireCurrentGatewayAgent,
   type SettingsListener,
   type SftpTransferListener,
   SOCKET_AUTH_TIMEOUT_MS,
@@ -136,13 +137,16 @@ export class GatewayWebSocketTransport {
   // A hidden tab must not paint offline state the user cannot see from
   // throttled timers; the verdict is deferred until a foreground recheck.
   protected offlineReassessmentPending = false;
-  protected prepareRuntimePromise: Promise<AgentStatus> | null = null;
+  protected prepareRuntimeRequest: { revision: number; promise: Promise<AgentStatus> } | null =
+    null;
   protected readonly reconnectWakeup = (event?: Event) => {
     this.noteForegroundWakeup(event);
   };
 
   // activeAgentId 始终是明确目标；首次连接从 Agent 目录自动选择并持久化。
   protected activeAgentId = "";
+  protected activeAgentRevision = 0;
+  protected activeAgentExplicit = false;
   protected activeAgentSelectionPromise: Promise<string> | null = null;
   // agents 目录：由打标 status 事件与 agent_list 响应维护，含离线条目。
   protected agents = new Map<string, AgentStatus>();
@@ -167,18 +171,32 @@ export class GatewayWebSocketTransport {
     return this.activeAgentId;
   }
 
+  captureActiveAgentScope(): () => boolean {
+    const revision = this.activeAgentRevision;
+    return () => !this.disposed && this.activeAgentRevision === revision;
+  }
+
   // setActiveAgent 只接受明确目标；切换后重连，以目标 Agent 的快照重画状态。
   setActiveAgent(agentId: string): void {
     const next = agentId.trim();
     if (!next) {
       throw new Error("agent_id is required");
     }
+    this.activeAgentExplicit = true;
     this.switchActiveAgent(next, true);
   }
 
   protected switchActiveAgent(agentId: string, reconnect: boolean): void {
     if (agentId === this.activeAgentId) {
       return;
+    }
+    // Initial automatic discovery can bind requests created before the device
+    // directory arrived. Every replacement of a selected device retires them.
+    if (this.activeAgentId || reconnect) {
+      this.activeAgentRevision++;
+      this.statusRefreshInFlight = false;
+      this.lastStatus = null;
+      this.lastStatusError = null;
     }
     this.activeAgentId = agentId;
     persistActiveAgent(agentId);
@@ -229,7 +247,10 @@ export class GatewayWebSocketTransport {
 
   protected reconcileActiveAgent(agents: AgentStatus[], reconnect = true): string {
     const current = this.activeAgentId;
-    if (current && agents.some((agent) => (agent.agent_id ?? "").trim() === current)) {
+    if (
+      current &&
+      (this.activeAgentExplicit || agents.some((agent) => agent.agent_id?.trim() === current))
+    ) {
       return current;
     }
     const preferred = [...agents]
@@ -356,20 +377,31 @@ export class GatewayWebSocketTransport {
     };
   }
 
-  async getStatus(): Promise<AgentStatus> {
-    const status = await this.requestWithRecovery<AgentStatus>("status.get", {});
+  async getStatus(isCurrentAgent = this.captureActiveAgentScope()): Promise<AgentStatus> {
+    const status = await this.requestWithRecovery<AgentStatus>(
+      "status.get",
+      {},
+      { isCurrentAgent },
+    );
+    requireCurrentGatewayAgent(isCurrentAgent);
     this.lastStatus = status;
     this.lastStatusError = null;
     return status;
   }
 
-  async prepareChatRuntime(reason?: string): Promise<AgentStatus> {
-    if (this.prepareRuntimePromise) {
-      return this.prepareRuntimePromise;
+  async prepareChatRuntime(
+    reason?: string,
+    isCurrentAgent = this.captureActiveAgentScope(),
+  ): Promise<AgentStatus> {
+    requireCurrentGatewayAgent(isCurrentAgent);
+    const revision = this.activeAgentRevision;
+    if (this.prepareRuntimeRequest?.revision === revision) {
+      const status = await this.prepareRuntimeRequest.promise;
+      requireCurrentGatewayAgent(isCurrentAgent);
+      return status;
     }
     this.noteForegroundWakeup();
-    this.prepareRuntimePromise = (async () => {
-      await this.ensureConnected();
+    const promise = (async () => {
       let status: AgentStatus;
       try {
         status = await this.request<AgentStatus>(
@@ -377,23 +409,26 @@ export class GatewayWebSocketTransport {
           {
             reason: reason?.trim() || "",
           },
-          { timeoutMs: CHAT_PREPARE_REQUEST_TIMEOUT_MS },
+          { timeoutMs: CHAT_PREPARE_REQUEST_TIMEOUT_MS, isCurrentAgent },
         );
       } catch (error) {
+        requireCurrentGatewayAgent(isCurrentAgent);
         if (!isUnsupportedChatPrepareError(error)) {
           throw error;
         }
         // Rolling-upgrade compatibility: old gateways do not expose the real
         // prepare route. A status read preserves the old behavior until the
         // server is upgraded, while new gateways actively wake the runtime.
-        status = await this.getStatus();
+        status = await this.getStatus(isCurrentAgent);
       }
+      requireCurrentGatewayAgent(isCurrentAgent);
       this.emitStatus(status, null);
       return status;
     })().finally(() => {
-      this.prepareRuntimePromise = null;
+      if (this.prepareRuntimeRequest?.promise === promise) this.prepareRuntimeRequest = null;
     });
-    return this.prepareRuntimePromise;
+    this.prepareRuntimeRequest = { revision, promise };
+    return promise;
   }
 
   subscribeStatus(listener: StatusListener): () => void {
@@ -812,11 +847,14 @@ export class GatewayWebSocketTransport {
       return;
     }
     this.statusRefreshInFlight = true;
+    const isCurrentAgent = this.captureActiveAgentScope();
     try {
-      const status = await this.getStatus();
+      const status = await this.getStatus(isCurrentAgent);
+      if (!isCurrentAgent()) return;
       this.clearReconnectNoticeTimer();
       this.emitStatus(status, null);
     } catch (error) {
+      if (!isCurrentAgent()) return;
       if (isRecoverableGatewayTransportError(error) && this.shouldMaintainConnection()) {
         this.scheduleReconnect();
         this.scheduleReconnectNotice();
@@ -844,7 +882,7 @@ export class GatewayWebSocketTransport {
       this.lastStatusError = message;
       this.emitStatus(offlineStatus, message);
     } finally {
-      this.statusRefreshInFlight = false;
+      if (isCurrentAgent()) this.statusRefreshInFlight = false;
     }
   }
 
@@ -929,6 +967,7 @@ export class GatewayWebSocketTransport {
     try {
       return await this.request<T>(type, payload, options);
     } catch (error) {
+      requireCurrentGatewayAgent(options?.isCurrentAgent);
       if (!isRecoverableGatewayTransportError(error) || this.disposed) {
         throw error;
       }
@@ -942,14 +981,22 @@ export class GatewayWebSocketTransport {
     payload: unknown,
     options?: GatewayRequestOptions,
   ): Promise<T> {
+    const isCurrentAgent = options?.isCurrentAgent;
+    requireCurrentGatewayAgent(isCurrentAgent);
     await this.ensureConnected();
+    requireCurrentGatewayAgent(isCurrentAgent);
     let agentId = this.activeAgentId;
     if (requestRequiresAgentId(type)) {
       agentId = await this.ensureActiveAgent();
       // 首次自动选中会主动重连，以便只回放目标 Agent 的快照。
       await this.ensureConnected();
     }
-    return this.sendConnectedRequest<T>(type, payload, options, agentId);
+    requireCurrentGatewayAgent(isCurrentAgent);
+    const response = this.sendConnectedRequest<T>(type, payload, options, agentId);
+    if (!isCurrentAgent) return response;
+    const value = await response;
+    requireCurrentGatewayAgent(isCurrentAgent);
+    return value;
   }
 
   protected sendConnectedRequest<T>(

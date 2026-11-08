@@ -47,7 +47,7 @@ func TestCloudArtifactReferenceCanonicalContextAndBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	message := CloudMessage{ID: uuid.NewString(), ConversationID: conversation.ID, UserID: 1, Role: "user", Content: cloudJSON("原问题"), CreatedAt: time.Now()}
+	message := CloudMessage{ID: uuid.NewString(), ConversationID: conversation.ID, UserID: 1, Role: "user", Content: canonical, CreatedAt: time.Now()}
 	if err = f.store.AddCloudMessage(context.Background(), &message); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestCloudArtifactReferenceCanonicalContextAndBranch(t *testing.T) {
 	NewHTTPHandler(f.service, false).registerCloudBranches(mux)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: message.ID, Action: "edit", Content: raw}
+	input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: message.ID, Action: "fork"}
 	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/web-chat/conversations/"+conversation.ID+"/branch", strings.NewReader(string(cloudJSON(input))))
 	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "file-owner"})
 	response, err := server.Client().Do(request)
@@ -66,8 +66,12 @@ func TestCloudArtifactReferenceCanonicalContextAndBranch(t *testing.T) {
 	var body struct {
 		Branch CloudBranch `json:"branch"`
 	}
-	if response.StatusCode != 201 || json.NewDecoder(response.Body).Decode(&body) != nil || string(body.Branch.DraftContent) != string(canonical) {
-		t.Fatal("edit branch lost canonical typed artifact snapshot")
+	if response.StatusCode != 201 || json.NewDecoder(response.Body).Decode(&body) != nil || body.Branch.Conversation == nil {
+		t.Fatal("could not fork the conversation")
+	}
+	messages, err := f.store.ListCloudMessages(context.Background(), 1, body.Branch.Conversation.ID)
+	if err != nil || len(messages) != 1 || string(messages[0].Content) != string(canonical) {
+		t.Fatal("fork lost the stored artifact reference")
 	}
 	if _, err = f.store.DeleteCloudArtifactFamily(context.Background(), 1, version.FamilyID); err != nil {
 		t.Fatal(err)
@@ -77,17 +81,6 @@ func TestCloudArtifactReferenceCanonicalContextAndBranch(t *testing.T) {
 	}
 	if _, code = f.service.cloudModelMessages(context.Background(), 1, []CloudMessage{{Role: "user", Content: canonical}}); code != "artifact_unavailable" {
 		t.Fatal("deleted artifact history expanded")
-	}
-	input.ClientRequestID = uuid.NewString()
-	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/web-chat/conversations/"+conversation.ID+"/branch", strings.NewReader(string(cloudJSON(input))))
-	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "file-owner"})
-	response, err = server.Client().Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusNotFound {
-		t.Fatalf("deleted artifact branch status=%d", response.StatusCode)
 	}
 }
 

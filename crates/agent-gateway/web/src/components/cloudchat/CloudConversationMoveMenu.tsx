@@ -6,6 +6,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useEffect, useState } from "react";
 import type {
   CloudAccountGuard,
@@ -24,6 +25,8 @@ export function CloudConversationMoveMenu(props: {
   onCreate: () => void;
   onError: (message: string) => void;
 }) {
+  const { locale } = useLocale();
+  const english = locale === "en-US";
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<CloudProject[]>([]);
   const [projectId, setProjectId] = useState("");
@@ -75,7 +78,13 @@ export function CloudConversationMoveMenu(props: {
     void props.onMove(project).catch((cause) => {
       try {
         guard();
-        props.onError(cause instanceof Error ? cause.message : "移动失败，请重试。");
+        props.onError(
+          cause instanceof Error
+            ? cause.message
+            : english
+              ? "Couldn't move the conversation. Try again."
+              : "移动失败，请重试。",
+        );
       } catch {
         /* Retired account. */
       }
@@ -85,7 +94,7 @@ export function CloudConversationMoveMenu(props: {
     <DropdownMenuSub open={open} onOpenChange={setOpen}>
       <DropdownMenuSubTrigger disabled={props.disabled} className="gap-2 text-xs">
         <FolderOpen className="size-3.5 shrink-0" />
-        移至项目
+        {english ? "Move to project" : "移至项目"}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent
         side="right"
@@ -94,7 +103,7 @@ export function CloudConversationMoveMenu(props: {
       >
         <DropdownMenuItem className="gap-2" disabled={props.disabled} onClick={props.onCreate}>
           <Plus className="size-4" />
-          新建项目
+          {english ? "New project" : "新建项目"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {items.map((project) => (
@@ -111,27 +120,29 @@ export function CloudConversationMoveMenu(props: {
         ))}
         {loading ? (
           <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
-            正在加载项目…
+            {english ? "Loading projects…" : "正在加载项目…"}
           </p>
         ) : null}
         {error ? (
           <DropdownMenuItem closeOnClick={false} onClick={() => setRetry((value) => value + 1)}>
-            项目加载失败，重试
+            {english ? "Couldn't load projects. Retry" : "项目加载失败，重试"}
           </DropdownMenuItem>
         ) : null}
         {!loading && !error && !items.length ? (
-          <p className="px-2.5 py-2 text-xs text-muted-foreground">还没有项目</p>
+          <p className="px-2.5 py-2 text-xs text-muted-foreground">
+            {english ? "No projects yet" : "还没有项目"}
+          </p>
         ) : null}
         {next && !error ? (
           <DropdownMenuItem closeOnClick={false} disabled={loading} onClick={() => setCursor(next)}>
-            查看更多项目
+            {english ? "Show more projects" : "查看更多项目"}
           </DropdownMenuItem>
         ) : null}
         {projectId && !error ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem disabled={props.disabled || loading} onClick={() => move(null)}>
-              移出项目
+              {english ? "Remove from project" : "移出项目"}
             </DropdownMenuItem>
           </>
         ) : null}

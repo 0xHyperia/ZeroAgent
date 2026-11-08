@@ -3,15 +3,13 @@ type CaptureGuard = () => () => void;
 export type CloudBranchRequest = {
   client_request_id: string;
   message_id: string;
-  action: "edit" | "regenerate" | "fork";
-  content?: unknown;
+  action: "fork";
 };
 export type CloudBranch = {
   conversation: { id: string; title: string; model: string; updated_at: string };
   source_conversation_id: string;
   source_message_id: string;
   action: CloudBranchRequest["action"];
-  draft_content?: unknown;
 };
 export class CloudBranchUnconfirmedError extends Error {
   constructor() {
@@ -73,7 +71,7 @@ export function createCloudChatBranchesClient(request: Request, captureGuard: Ca
       typeof branch.conversation.updated_at !== "string" ||
       typeof branch.source_conversation_id !== "string" ||
       typeof branch.source_message_id !== "string" ||
-      !["edit", "regenerate", "fork"].includes(branch.action)
+      branch.action !== "fork"
     )
       throw new Error("分支响应无效");
     return branch;

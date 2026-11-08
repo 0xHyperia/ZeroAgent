@@ -575,7 +575,7 @@ func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string
 	// Starting or scheduling agent work needs a valid handshake; reads, cancels,
 	// clears and changes that only remove or disable tasks stay available on a
 	// broken backend so users can still stop scheduled work.
-	if action == "run_now" || action == "cron_apply" && cronOpsAdvanceWork(input) {
+	if action == "run_now" || action == "run_now_once" || action == "cron_apply" && cronOpsAdvanceWork(input) {
 		if err := c.requireHandshake(ctx, ""); err != nil {
 			return nil, err
 		}
@@ -595,6 +595,15 @@ func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string
 		return json.Marshal(map[string]json.RawMessage{"cron": cron, "hooks": hooks})
 	case "occurrences":
 		return c.cronRequest(ctx, http.MethodPost, "/v1/planning", map[string]any{"action": "cron.occurrences", "input": input})
+	case "preview":
+		var draft struct {
+			Expression          string  `json:"expression"`
+			RemainingExecutions *uint64 `json:"remainingExecutions,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(taskJSON), &draft); err != nil {
+			return nil, fmt.Errorf("invalid cron preview payload: %w", err)
+		}
+		return c.cronRequest(ctx, http.MethodPost, "/v1/planning", map[string]any{"action": "cron.preview", "input": draft})
 	case "cron_apply":
 		method, path, body = http.MethodPut, "/v1/cron", input
 	case "hooks_apply":
@@ -639,6 +648,17 @@ func (c *Client) CronManage(ctx context.Context, action, taskID, taskJSON string
 			return nil, errors.New("cron run_now requires task_id")
 		}
 		method, path = http.MethodPost, "/v1/cron/"+url.PathEscape(taskID)+"/run-now"
+	case "run_now_once", "run_receipt":
+		obj, _ := input.(map[string]any)
+		executionID, _ := obj["executionId"].(string)
+		if taskID == "" || taskID == "." || taskID == ".." ||
+			len(executionID) != 43 || !strings.HasPrefix(executionID, "manual-") {
+			return nil, fmt.Errorf("cron %s requires a valid task_id and executionId", action)
+		}
+		method, path = http.MethodGet, "/v1/cron/"+url.PathEscape(taskID)+"/run-now/"+url.PathEscape(executionID)
+		if action == "run_now_once" {
+			method = http.MethodPost
+		}
 	case "cancel_run":
 		if taskID == "" {
 			return nil, errors.New("cron cancel_run requires task_id")

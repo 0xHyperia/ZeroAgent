@@ -11,12 +11,15 @@ export type ScheduleRule = {
   end_date?: string;
 };
 
+export const SCHEDULE_CONTENT_PART_LIMIT = 32;
+
 export type ScheduleContent =
   | string
   | Array<
       | { type: "text"; text: string }
       | { type: "file_reference"; file_id: string }
       | { type: "artifact_reference"; version_id: string }
+      | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
     >;
 
 export type ScheduleInput = {
@@ -60,9 +63,13 @@ export type ScheduleRun = {
   approval?: ScheduleInput;
 };
 
+export type ScheduleApprovalDecision = "approve" | "reject";
+export type ScheduleApprovalReceipt = ScheduleApprovalDecision | "pending" | "unavailable";
+
 export type CloudTaskConversationSelection = {
   id: string;
   runId?: string;
+  occurrenceId?: string;
   followLatest?: boolean;
   jump?: TranscriptMessageJump;
 };
@@ -127,6 +134,11 @@ export function createCloudSchedulesClient(
       request<{ tasks: Schedule[]; enabled: boolean }>(base, { signal }),
     runs: (id: string, signal?: AbortSignal) =>
       request<{ runs: ScheduleRun[] }>(`${base}/${encodeURIComponent(id)}/runs`, { signal }),
+    readRun: (task: string, run: string, signal?: AbortSignal) =>
+      request<{ run: ScheduleRun }>(
+        `${base}/${encodeURIComponent(task)}/runs/${encodeURIComponent(run)}`,
+        { signal },
+      ),
     remove: (id: string) =>
       request<void>(`${base}/${encodeURIComponent(id)}`, { method: "DELETE" }),
     preview: (rule: ScheduleRule, admitted: number, signal: AbortSignal) =>
@@ -149,13 +161,21 @@ export function createCloudSchedulesClient(
         `${base}/${encodeURIComponent(id)}/run-now`,
         body("POST", { request_id: requestId }),
       ),
+    readRunReceipt: (id: string, requestId: string) =>
+      request<{ status: "admitted"; id: string } | { status: "missing" }>(
+        `${base}/${encodeURIComponent(id)}/run-now?request_id=${encodeURIComponent(requestId)}`,
+      ),
     cancel: (id: string) =>
       request(`/api/web-chat/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
     cancelPending: (task: string, run: string) =>
       request<void>(`${base}/${encodeURIComponent(task)}/runs/${encodeURIComponent(run)}/cancel`, {
         method: "POST",
       }),
-    decide: (task: string, run: string, decision: "approve" | "reject") =>
+    readApprovalDecision: (task: string, run: string) =>
+      request<{ decision: ScheduleApprovalReceipt }>(
+        `${base}/${encodeURIComponent(task)}/runs/${encodeURIComponent(run)}/approval`,
+      ),
+    decide: (task: string, run: string, decision: ScheduleApprovalDecision) =>
       request<void>(
         `${base}/${encodeURIComponent(task)}/runs/${encodeURIComponent(run)}/approval`,
         body("POST", { decision }),

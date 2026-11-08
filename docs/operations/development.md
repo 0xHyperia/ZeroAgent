@@ -137,6 +137,8 @@ Gateway token 为 `dev-token`。脚本遇到已由外部进程占用且健康的
 Vite WebUI。桌面本机托管模式不会自动接管或复用 `dev-stack` 的 Gateway，已有桌面连接配置也不会
 被脚本替换。
 
+联调 Web 控制桌面设备时，WebUI 的 API 和 WebSocket 代理必须与桌面远程访问指向同一个 Gateway 进程。设备在线记录可通过 Redis 被另一进程读取，但设备的实时连接只存在于接入的进程。若桌面连接本地 15052，启动 WebUI 时也设置 `ZEROAGENT_DEV_GATEWAY_PORT=15052`。浏览器端口可继续用 `ZEROAGENT_DEV_WEBUI_PORT=5174`。分开启动时沿用 Gateway 的 `ZEROAGENT_DEV_STATE_DIR`（若已设置）。
+
 调试构建可以通过构建时的 `ZEROAGENT_USA_ZERO_ORIGIN` 指定 loopback 或数字私网 IP 的
 HTTP Sub2API 根地址；发布构建仍要求 HTTPS。`ZEROAGENT_GATEWAY_URL` 和
 `ZEROAGENT_GATEWAY_PORT` 在桌面构建时固化为默认值，安装后不必再设置运行时变量；
@@ -145,8 +147,8 @@ Gateway 使用对应的
 `USA_ZERO_ORIGIN`、`USA_ZERO_AUTHORIZATION_ORIGIN`，以及匹配的 Web OAuth 客户端密钥。
 
 需要让桌面前端跨账号切换引发的原生进程重启持续可用时，应先独立启动桌面 Vite，设置
-`ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND=1`，再启动 `desktop`。此时 Tauri 只准备 sidecar，
-不再接管前端进程；调用者负责独立前端的生命周期。启动器通过 Native 应用标识、debug 标志、
+`ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND=1`，再启动 `desktop`。此时 Tauri 准备 sidecar 和当前内嵌 WebUI，
+调用者负责独立前端的生命周期。启动器通过 Native 应用标识、debug 标志、
 checkout 路径及窗口状态核对已运行实例，重复启动不会创建第二个桌面实例。
 
 ## 统一编译与检查

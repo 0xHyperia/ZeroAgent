@@ -128,17 +128,6 @@ test("sequence replay, gaps and run identity guard projection as well as text", 
   assert.equal(initial.presentation, undefined);
 });
 
-test("legacy output stays visible when an active run first receives structured events", () => {
-  const old = base({ output: "旧正文。" });
-  const next = apply(old, "message.delta", { block_id: "text:0", round: 0, delta: "新正文。", started_at: end });
-  assert.equal(next.output, "旧正文。新正文。");
-  assert.deepEqual(next.presentation.blocks.map(block => [block.id, block.text]), [
-    ["legacy:text", "旧正文。"], ["text:0", "新正文。"],
-  ]);
-  assert.deepEqual(projection.parseCloudChatPresentation(next.presentation), next.presentation);
-  assert.equal(apply(old, "message.delta", { delta: "旧事件" }).presentation, undefined);
-});
-
 test("interrupted runs preserve partial thoughts and do not claim external tools were cancelled", () => {
   let run = apply(base(), "reasoning.delta", { block_id: "reasoning:0", round: 0, delta: "partial" });
   run = apply(run, "tool.started", tool());

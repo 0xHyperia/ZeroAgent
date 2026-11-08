@@ -1,10 +1,10 @@
 import {
+  Blend,
   BookOpen,
   ChartColumn,
   Check,
   FolderOpen,
   Globe,
-  Palette,
   Paperclip,
   Plus,
 } from "@liveagent/ui/components/IconSet";
@@ -38,21 +38,23 @@ export function CloudChatComposerMenu(props: {
   onUpload: () => void;
   onOpenFiles: (anchor: HTMLElement | null) => void;
   onOpenProjects: (anchor: HTMLElement | null) => void;
+  onOpenExtensions: (anchor: HTMLElement | null) => void;
   onToggleResearch: () => void;
-  onCreateImage: () => void;
-  onProductDesign: () => void;
-  onCustomize: () => void;
-  extensions?: ExtensionPackage[];
-  onTryExtension?: (pkg: ExtensionPackage, skill: ExtensionSkill) => void;
+  extensions: ExtensionPackage[];
+  onTryExtension: (pkg: ExtensionPackage, skill: ExtensionSkill) => void;
   onDataAnalysis?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
   const { locale } = useLocale();
+  const copy = (zh: string, en: string) => (locale === "en-US" ? en : zh);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [localOpen, setLocalOpen] = useState(false);
   const isOpen = props.open ?? localOpen;
+  const image = props.extensions.find((pkg) => pkg.id === "imagegen");
+  const imageSkill = image && extensionComposerEntry(image);
+  const addLabel = copy("添加资料与工具", "Add context and tools");
   return (
     <DropdownMenu
       open={isOpen}
@@ -64,8 +66,8 @@ export function CloudChatComposerMenu(props: {
     >
       <DropdownMenuTrigger
         render={<Button ref={triggerRef} variant="ghost" size="icon-sm" />}
-        aria-label="添加资料与工具"
-        title={isOpen ? "关闭添加菜单" : "添加资料与工具"}
+        aria-label={addLabel}
+        title={isOpen ? copy("关闭添加菜单", "Close add menu") : addLabel}
         disabled={props.disabled}
         className="cloud-composer-add"
         data-open={isOpen || undefined}
@@ -80,19 +82,21 @@ export function CloudChatComposerMenu(props: {
         anchor={anchor ?? undefined}
         className="cloud-composer-menu max-w-[calc(100vw-32px)]"
       >
-        <DropdownMenuLabel className="cloud-composer-menu-heading">添加到对话</DropdownMenuLabel>
+        <DropdownMenuLabel className="cloud-composer-menu-heading">
+          {copy("添加到对话", "Add to conversation")}
+        </DropdownMenuLabel>
         <DropdownMenuItem className="gap-3" onClick={props.onUpload}>
           <Paperclip className="size-4 shrink-0" />
           <span>
-            <span className="block">添加照片和文件</span>
-            <span className="block text-xs text-muted-foreground">从设备上传资料</span>
+            <span>{copy("添加照片和文件", "Upload photos and files")}</span>
+            <span>{copy("从设备上传资料", "From this device")}</span>
           </span>
         </DropdownMenuItem>
         <DropdownMenuItem className="gap-3" onClick={() => props.onOpenFiles(triggerRef.current)}>
           <BookOpen className="size-4 shrink-0" />
           <span>
-            <span className="block">从资料库添加</span>
-            <span className="block text-xs text-muted-foreground">引用已保存的文件</span>
+            <span>{copy("从资料库添加", "Add from library")}</span>
+            <span>{copy("引用已保存的文件", "Reference saved files")}</span>
           </span>
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -102,66 +106,33 @@ export function CloudChatComposerMenu(props: {
         >
           <FolderOpen className="size-4 shrink-0" />
           <span>
-            <span className="block">选择项目</span>
-            <span className="block text-xs text-muted-foreground">使用项目资料与指令</span>
+            <span>{copy("选择项目", "Choose a project")}</span>
+            <span>{copy("使用项目资料与指令", "Use project files and instructions")}</span>
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {props.extensions ? (
-          props.extensions.flatMap((pkg) => {
-            const skill = extensionComposerEntry(pkg);
-            if (!skill) return [];
-            return (
-              <DropdownMenuItem
-                key={pkg.id}
-                className="gap-3"
-                onClick={() => props.onTryExtension?.(pkg, skill)}
-              >
-                <ExtensionMark id={pkg.id} small />
-                <span>
-                  <span className="block">{extensionDisplayName(pkg, locale)}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {extensionDescription(pkg, locale)}
-                  </span>
-                </span>
-              </DropdownMenuItem>
-            );
-          })
-        ) : (
-          <>
-            <DropdownMenuItem className="gap-3" onClick={props.onCreateImage}>
-              <ExtensionMark id="imagegen" small />
-              <span>
-                <span className="block">生成图像</span>
-                <span className="block text-xs text-muted-foreground">
-                  从想法生成图片，或继续修改参考图
-                </span>
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="gap-3" onClick={props.onProductDesign}>
-              <ExtensionMark id="product-design" small />
-              <span>
-                <span className="block">产品设计</span>
-                <span className="block text-xs text-muted-foreground">
-                  梳理体验、探索视觉方案并实现设计
-                </span>
-              </span>
-            </DropdownMenuItem>
-          </>
+        {image && imageSkill && (
+          <DropdownMenuItem onClick={() => props.onTryExtension(image, imageSkill)}>
+            <ExtensionMark id={image.id} small />
+            <span>
+              <span>{extensionDisplayName(image, locale)}</span>
+              <span>{extensionDescription(image, locale)}</span>
+            </span>
+          </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={props.onCustomize}>
-          <Palette className="size-4" />
-          发现插件与技能
+        <DropdownMenuItem onClick={() => props.onOpenExtensions(triggerRef.current)}>
+          <Blend className="size-4 shrink-0" />
+          <span>
+            <span>{copy("插件与技能", "Plugins and skills")}</span>
+            <span>{copy("选择可用扩展", "Choose an available extension")}</span>
+          </span>
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
         {props.onDataAnalysis && (
           <DropdownMenuItem className="gap-3" onClick={props.onDataAnalysis}>
             <ChartColumn className="size-4" />
             <span>
-              <span className="block">数据分析</span>
-              <span className="block text-xs text-muted-foreground">
-                先确认数据来源、目标和交付格式
-              </span>
+              <span>{copy("数据分析", "Data analysis")}</span>
+              <span>{copy("准备分析请求", "Draft an analysis request")}</span>
             </span>
           </DropdownMenuItem>
         )}
@@ -173,8 +144,8 @@ export function CloudChatComposerMenu(props: {
         >
           <Globe className="size-4 shrink-0" />
           <span className="flex-1">
-            <span className="block">公开联网研究</span>
-            <span className="block text-xs text-muted-foreground">发送前确认公开研究主题</span>
+            <span>{copy("公开联网研究", "Public web research")}</span>
+            <span>{copy("发送前确认研究主题", "Confirm the topic before sending")}</span>
           </span>
           {props.researchEnabled ? <Check className="size-4" /> : null}
         </DropdownMenuItem>
@@ -191,15 +162,25 @@ export function CloudChatModeSwitch({
   value: CloudChatPresentation;
   onChange: (value: CloudChatPresentation) => void;
 }) {
+  const { locale } = useLocale();
+  const en = locale === "en-US";
   return (
     <SegmentedControl
       value={value}
       onChange={onChange}
-      label="输入体验"
+      label={en ? "Conversation mode" : "输入体验"}
       className="cloud-mode-switch"
       options={[
-        { value: "chat", label: "对话", description: "提问并探索想法" },
-        { value: "work", label: "工作", description: "完成任务与交付成果" },
+        {
+          value: "chat",
+          label: en ? "Chat" : "对话",
+          description: en ? "Ask questions and explore ideas" : "提问并探索想法",
+        },
+        {
+          value: "work",
+          label: en ? "Work" : "工作",
+          description: en ? "Complete tasks and deliver results" : "完成任务与交付成果",
+        },
       ]}
     />
   );

@@ -54,7 +54,7 @@ export async function prepareDesktopRemote() {
   const styles = (await readdir(output)).filter((name) => name.endsWith(".css")).sort();
   if (styles.length !== 1) throw new Error("Desktop WebUI must have one removable stylesheet");
   await writeFile(join(output, "manifest.json"), `${JSON.stringify({
-    schemaVersion: 1, entry: "runtime.js", styles,
+    schemaVersion: 2, entry: "runtime.js", styles,
     sha256: createHash("sha256").update(wrapped).digest("hex"),
   }, null, 2)}\n`);
 }

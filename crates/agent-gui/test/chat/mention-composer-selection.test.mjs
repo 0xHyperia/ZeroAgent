@@ -116,7 +116,7 @@ test("transient cleanup protects mention nodes and locks composer controls durin
   assert.match(composer, /clearTransientText\(false\);[\s\S]*?setBusy\(false\)/);
   assert.match(composer, /closestComposerChipFromNode/);
   const bar = source(new URL("../../../agent-ui/src/pages/chat/", import.meta.url), "ChatComposerBar.tsx");
-  assert.match(bar, /disabled=\{isInputDisabled \|\| stt\.active\}/);
+  assert.match(bar, /disabled=\{\(isInputDisabled && !draftOnly\) \|\| stt\.active\}/);
   assert.match(bar, /disabled=\{controlsDisabled\}/);
-  assert.match(bar, /const sendDisabled = isInputDisabled \|\| stt\.active \|\| isUploadingFiles \|\| !hasSendableDraft/);
+  assert.match(bar, /const sendDisabled\s*=\s*isInputDisabled \|\| isSubmissionDisabled \|\| stt\.active \|\| isUploadingFiles \|\| !hasSendableDraft/);
 });

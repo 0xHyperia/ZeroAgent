@@ -45,6 +45,9 @@ function EmbeddedCloud({
   const [user, setUser] = useState(host.accountUser);
   const locale = useLocaleContextValue(settings.locale);
   useEffect(() => {
+    host.onMountReady?.();
+  }, [host]);
+  useEffect(() => {
     if (!active || !host.isCurrent()) return;
     const preferences = host.clientPreferences?.();
     if (preferences) {
@@ -81,13 +84,11 @@ function EmbeddedCloud({
               setUser(next);
               host.onUserChange(next);
             }}
-            environments={host.getEnvironments()}
+            environments={[]}
             selection={null}
             settings={settings}
             setSettings={setSettings}
             settingsSaveState={{ status: "idle" }}
-            onSwitch={(environment) => host.onSwitch(environment)}
-            onOpenDeviceTasks={(environment) => host.onOpenDeviceTasks(environment)}
             onLogout={host.onLogout}
             desktopCloudHost={host}
             workbenchActive={active}
@@ -113,10 +114,10 @@ export function mount(
   if ("kind" in host) {
     const releaseHost = installDesktopCloudHost(host);
     bindAccountRequests(host.accountUser.id);
-    const root = ReactDOM.createRoot(container);
     const doc = document.documentElement;
     let marker: string | undefined;
     let ownsMarker = false;
+    let failed = false;
     let isActive = host.initialActive ?? true;
     let taskConversation = host.taskConversation;
     let accountLayout = host.accountLayout;
@@ -126,7 +127,17 @@ export function mount(
       else doc.dataset.liveagentWebui = marker;
       ownsMarker = false;
     };
+    const root = ReactDOM.createRoot(container, {
+      onUncaughtError: host.onMountError
+        ? () => {
+            failed = true;
+            restoreMarker();
+            host.onMountError?.();
+          }
+        : undefined,
+    });
     const render = (active: boolean) => {
+      if (failed) return;
       isActive = active;
       if (!taskConversation && !accountLayout && active && !ownsMarker) {
         marker = doc.dataset.liveagentWebui;
@@ -158,7 +169,6 @@ export function mount(
         bindAccountRequests(null);
         root.unmount();
         restoreMarker();
-        host.onHeaderTarget(null);
       },
     };
   }

@@ -128,6 +128,15 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			facts.workspace = &copy
 		}
 	}()
+	if pins := cloudSkillPins(run.RequestContent); len(pins) != 0 {
+		packages, err := execution.skillCatalog(ctx)
+		if err != nil {
+			return CloudRunFailed, "skill_catalog_unavailable"
+		}
+		if problem := cloudSkillPinProblem(packages, pins); problem != "" {
+			return CloudRunFailed, problem
+		}
+	}
 	if execution.client != nil && toolStore != nil {
 		healthCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		health, err := execution.client.Health(healthCtx)
@@ -439,7 +448,7 @@ func cloudCalendarCapabilityGuidance(now time.Time, parameters CloudRunModelPara
 	if images {
 		siteGuidance += " Ready generated images are displayed automatically below the reply. Describe the results without repeating bare artifact citations or duplicate download links."
 	}
-	return fmt.Sprintf("Current date (UTC): %s.%s Tools actually available in this model round: %s. Web search available: %t; page fetch available: %t; isolated execution available: %t; durable publication available: %t. Ordinary writing and reasoning remain available without tools. If the user asks for current or changing facts and the necessary web tools are unavailable, clearly say you cannot verify them; never claim you searched or checked the latest information without a successful tool result. Never invent execution results, files, successful external actions or download links. VM files are temporary unless %s returns a ready durable version. Cite a ready artifact using 【成果:VERSION_ID】 with its returned immutable version ID, not its family ID or VM path. Cite only persisted source IDs returned to you, using 【来源:SOURCE_ID】 or 【来源:SOURCE_ID:Lx-Ly】 for lines actually provided; do not present search snippets as fetched page content. Explain when evidence or output is truncated or incomplete. Unavailable or deleted sources cannot be recovered from old tool output.%s", now.UTC().Format("2006-01-02"), calendar, available, search, fetch, execute, publish, publication, siteGuidance)
+	return fmt.Sprintf("Current date (UTC): %s.%s Tools actually available in this model round: %s. Web search available: %t; page fetch available: %t; isolated execution available: %t; durable publication available: %t. Ordinary writing and reasoning remain available without tools. If the user asks for current or changing facts and the necessary web tools are unavailable, clearly say you cannot verify them; never claim you searched or checked the latest information without a successful tool result. Never invent execution results, files, successful external actions or download links. VM files are temporary unless %s returns a ready durable version. Cite a ready artifact using 【成果:VERSION_ID】 with its returned immutable version ID, not its family ID or VM path. Cite only persisted source IDs returned to you, using 【来源:SOURCE_ID】; do not present search snippets as fetched page content. Explain when evidence or output is truncated or incomplete. Unavailable or deleted sources cannot be recovered from old tool output.%s", now.UTC().Format("2006-01-02"), calendar, available, search, fetch, execute, publish, publication, siteGuidance)
 }
 
 func upstreamMessagesAsAny(messages []map[string]any) []any {

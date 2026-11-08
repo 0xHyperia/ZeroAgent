@@ -218,7 +218,7 @@ func (e *cloudRunToolExecution) executeExtensionDraft(ctx context.Context, round
 			return fail("extension_draft_unavailable")
 		}
 		for _, pkg := range doc.Packages {
-			if pkg.ID == input.TargetID && !cloudExtensionBuiltin(pkg.ID) && cloudExtensionKind(pkg) == input.Kind && len(pkg.Revisions) != 0 {
+			if pkg.ID == input.TargetID && !cloudExtensionBuiltin(pkg.ID) && pkg.Kind == input.Kind && len(pkg.Revisions) != 0 {
 				latest := pkg.Revisions[len(pkg.Revisions)-1]
 				if latest.Number == input.BaseRevision {
 					base = &latest

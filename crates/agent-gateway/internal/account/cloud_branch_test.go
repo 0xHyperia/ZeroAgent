@@ -2,7 +2,6 @@ package account
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -32,62 +31,46 @@ func runCloudBranchContract(t *testing.T, fixture cloudRunTestFixture) {
 		}
 		return conversation, messages
 	}
-	t.Run("edit_regenerate_fork_preserve_original", func(t *testing.T) {
+	t.Run("fork_preserves_original", func(t *testing.T) {
 		source, messages := seed()
-		for _, action := range []string{"edit", "regenerate", "fork"} {
-			input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: messages[2].ID, Action: action}
-			if action == "regenerate" {
-				input.MessageID = messages[3].ID
-			}
-			if action == "edit" {
-				input.Content = cloudJSON("改写问题")
-			}
-			branch, created, err := branches.CreateCloudBranch(ctx, 41, source.ID, input)
-			if err != nil || !created {
-				t.Fatalf("%s branch created=%v err=%v", action, created, err)
-			}
-			prefix, err := store.ListCloudMessages(ctx, 41, branch.Conversation.ID)
-			want := 2
-			if action == "fork" {
-				want = 3
-			}
-			if err != nil || len(prefix) != want {
-				t.Fatalf("%s prefix=%d expected=%d err=%v", action, len(prefix), want, err)
-			}
-			for i, m := range prefix {
-				if m.ID == messages[i].ID || m.ConversationID != branch.Conversation.ID || string(m.Content) != string(messages[i].Content) {
-					t.Fatalf("branch %s clone %d mismatch: id=%s original=%s conversation=%s want=%s content=%q want=%q time=%s", action, i, m.ID, messages[i].ID, m.ConversationID, branch.Conversation.ID, m.Content, messages[i].Content, m.CreatedAt.Format(time.RFC3339Nano))
-				}
-			}
-			if action == "edit" && string(branch.DraftContent) != `"改写问题"` {
-				t.Fatal("edit draft lost")
-			}
-			if action == "regenerate" && string(branch.DraftContent) != `"追加问题"` {
-				t.Fatal("regenerate used wrong user turn")
-			}
-			replayed, again, err := branches.CreateCloudBranch(ctx, 41, source.ID, input)
-			if err != nil || again || replayed.Conversation.ID != branch.Conversation.ID || replayed.Conversation.UserID != 41 {
-				t.Fatalf("lost receipt replay created=%v err=%v", again, err)
-			}
-			changed := input
-			changed.MessageID = messages[0].ID
-			if _, _, err = branches.CreateCloudBranch(ctx, 41, source.ID, changed); !errors.Is(err, ErrCloudRunConflict) {
-				t.Fatal("request reuse accepted different anchor")
-			}
-			original, _ := store.ListCloudMessages(ctx, 41, source.ID)
-			if len(original) != 4 || original[2].ID != messages[2].ID {
-				t.Fatal("original history changed")
-			}
-			// New user turns must sort after every copied prefix in PostgreSQL.
-			next := CloudMessage{ID: uuid.NewString(), ConversationID: branch.Conversation.ID, UserID: 41, Role: "user", Content: cloudJSON("后续"), CreatedAt: time.Now().UTC()}
-			if err = store.AddCloudMessage(ctx, &next); err != nil {
-				t.Fatal(err)
-			}
-			all, _ := store.ListCloudMessages(ctx, 41, branch.Conversation.ID)
-			if all[len(all)-1].ID != next.ID {
-				t.Fatal("copied timestamps sorted after new work")
+		input := CloudBranchInput{ClientRequestID: uuid.NewString(), MessageID: messages[2].ID, Action: "fork"}
+		branch, created, err := branches.CreateCloudBranch(ctx, 41, source.ID, input)
+		if err != nil || !created {
+			t.Fatalf("fork created=%v err=%v", created, err)
+		}
+		prefix, err := store.ListCloudMessages(ctx, 41, branch.Conversation.ID)
+		const want = 3
+		if err != nil || len(prefix) != want {
+			t.Fatalf("fork prefix=%d expected=%d err=%v", len(prefix), want, err)
+		}
+		for i, m := range prefix {
+			if m.ID == messages[i].ID || m.ConversationID != branch.Conversation.ID || string(m.Content) != string(messages[i].Content) {
+				t.Fatalf("branch clone %d mismatch: id=%s original=%s conversation=%s want=%s content=%q want=%q time=%s", i, m.ID, messages[i].ID, m.ConversationID, branch.Conversation.ID, m.Content, messages[i].Content, m.CreatedAt.Format(time.RFC3339Nano))
 			}
 		}
+		replayed, again, err := branches.CreateCloudBranch(ctx, 41, source.ID, input)
+		if err != nil || again || replayed.Conversation.ID != branch.Conversation.ID || replayed.Conversation.UserID != 41 {
+			t.Fatalf("lost receipt replay created=%v err=%v", again, err)
+		}
+		changed := input
+		changed.MessageID = messages[0].ID
+		if _, _, err = branches.CreateCloudBranch(ctx, 41, source.ID, changed); !errors.Is(err, ErrCloudRunConflict) {
+			t.Fatal("request reuse accepted different anchor")
+		}
+		original, _ := store.ListCloudMessages(ctx, 41, source.ID)
+		if len(original) != 4 || original[2].ID != messages[2].ID {
+			t.Fatal("original history changed")
+		}
+		// New user turns must sort after every copied prefix in PostgreSQL.
+		next := CloudMessage{ID: uuid.NewString(), ConversationID: branch.Conversation.ID, UserID: 41, Role: "user", Content: cloudJSON("后续"), CreatedAt: time.Now().UTC()}
+		if err = store.AddCloudMessage(ctx, &next); err != nil {
+			t.Fatal(err)
+		}
+		all, _ := store.ListCloudMessages(ctx, 41, branch.Conversation.ID)
+		if all[len(all)-1].ID != next.ID {
+			t.Fatal("copied timestamps sorted after new work")
+		}
+
 	})
 	t.Run("ownership_and_active_source", func(t *testing.T) {
 		source, messages := seed()
@@ -187,10 +170,10 @@ func TestCloudBranchPostgresContract(t *testing.T) {
 	runCloudBranchContract(t, fixture)
 }
 
-func TestCloudBranchValidationDoesNotAcceptEmptyEdits(t *testing.T) {
-	for _, content := range []json.RawMessage{nil, []byte(`""`), []byte(`{"text":"unknown shape"}`)} {
-		if _, _, _, err := validateCloudBranch(1, uuid.NewString(), CloudBranchInput{ClientRequestID: "edit", MessageID: uuid.NewString(), Action: "edit", Content: content}); err == nil {
-			t.Fatal("invalid edit accepted")
+func TestCloudBranchValidationRejectsPreviewActions(t *testing.T) {
+	for _, action := range []string{"edit", "regenerate"} {
+		if _, _, _, err := validateCloudBranch(1, uuid.NewString(), CloudBranchInput{ClientRequestID: "fork", MessageID: uuid.NewString(), Action: action}); !errors.Is(err, ErrCloudRunInvalid) {
+			t.Fatalf("accepted preview action %s", action)
 		}
 	}
 }

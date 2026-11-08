@@ -328,6 +328,8 @@ fn exercise_native_mcp_adapted_sidecar_modes(
         Some(McpCredentialOwner {
             settings_root: settings.clone(),
             profile_live: live.clone(),
+            #[cfg(desktop)]
+            device_skills: None,
         }),
     )
     .unwrap();
@@ -436,6 +438,8 @@ fn exercise_native_mcp_adapted_sidecar_modes(
         Some(McpCredentialOwner {
             settings_root: settings,
             profile_live: live.clone(),
+            #[cfg(desktop)]
+            device_skills: None,
         }),
     )
     .unwrap();

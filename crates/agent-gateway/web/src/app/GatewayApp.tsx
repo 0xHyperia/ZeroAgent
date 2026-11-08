@@ -1,10 +1,15 @@
+import { ApplicationRail } from "@liveagent/ui/application/ApplicationRail";
+import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { useApplicationViewState } from "@liveagent/ui/application/useApplicationViewState";
+import { createWorkbenchNavigationItem } from "@liveagent/ui/application/workbenchNavigation";
 import type {
   MentionComposerDraft,
   MentionComposerHandle,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import { Button } from "@liveagent/ui/components/ui/button";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { type ToastTone, toast } from "@liveagent/ui/components/ui/toast-manager";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
 import {
@@ -42,6 +47,7 @@ import type { ChatQueueTurnPreview } from "@liveagent/ui/pages/chat/ChatComposer
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -64,7 +70,12 @@ import type { ChatCommandUpdate } from "@/lib/chat/stream/streamTypes";
 import { createTranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { registerToolApprovalDecisionHandler } from "@/lib/chat/toolApprovalBridge";
 import { transcriptRowsToJumpCandidates } from "@/lib/chat/transcript/searchJumpCandidates";
-import { cloudChatRouteHref, readCloudChatRoute } from "@/lib/cloudChatRoute";
+import {
+  cloudChatRouteHref,
+  DEFAULT_EXTENSION_LOCATION,
+  readCloudChatRoute,
+} from "@/lib/cloudChatRoute";
+import { CLOUD_SPACE_HOME } from "@/lib/cloudSpace";
 import { getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import type {
   AgentStatus,
@@ -115,10 +126,32 @@ import {
 import { createGatewayConversationActions } from "./gatewayConversationActions";
 import {
   clearGatewayConversationSelection,
+  failedVisibleGatewayHistoryOpen,
+  type GatewayHistoryOpenAttempt,
+  gatewayDeviceTaskChatReturnHref,
   loadGatewayConversationSelection,
+  resolveGatewayConversationLanding,
   resolveGatewayConversationRestoreTarget,
   saveGatewayConversationSelection,
 } from "./gatewayConversationRestore";
+import {
+  clearGatewayDeviceDraft,
+  clearGatewayDeviceDraftsForAccount,
+  createGatewayDevicePaneDraftRegistry,
+  type GatewayDeviceDraftScope,
+  type GatewayDeviceDraftTarget,
+  type GatewayDeviceReplyIdentity,
+  type GatewaySavedDeviceDraftState,
+  gatewayLocalDraftCaptureTarget,
+  listGatewayLocalDeviceDrafts,
+  planGatewaySavedDeviceDraftRecovery,
+  readGatewayDeviceDraft,
+  readGatewayDeviceReplyDraft,
+  resolveGatewayDraftWorkspace,
+  restoreGatewayDeviceDraft,
+  saveGatewayDeviceDraft,
+} from "./gatewayDeviceDraftRecovery";
+import { findDeviceDraftProject } from "./gatewayDeviceDraftWorkspace";
 import {
   createOpenConversationInitial,
   createRefreshDisplayedConversationHistorySnapshot,
@@ -176,6 +209,11 @@ function useGatewayAppController() {
     register: handleRegisterSubmit,
     verifyTwoFactor,
     switchExecutionTarget,
+    finishDeviceDraft,
+    returnToCloudDraft,
+    deviceRouteStatus,
+    retryDeviceConversationRoute,
+    returnToCloudConversation,
     applyExecutionPresence,
     clearSession,
   } = useGatewaySession(historyShareToken);
@@ -283,8 +321,20 @@ function useGatewayAppController() {
   // Bumped whenever the command pipeline's pending set changes so busy state
   // re-derives.
   const [pendingCommandRevision, setPendingCommandRevision] = useState(0);
-  const { settings, setSettings, settingsSyncReady, settingsSyncError, settingsSaveState } =
-    useGatewaySettingsSync({ token, api, activeAgentId: activeAgentScope });
+  const {
+    settings,
+    setSettings,
+    settingsSyncReady,
+    settingsSyncTargetReady,
+    settingsSyncError,
+    settingsSaveState,
+  } = useGatewaySettingsSync({ token, api, activeAgentId: activeAgentScope });
+  const deviceDraft = selection?.device_draft_workspace;
+  const deviceDraftLease = deviceDraft ? selection?.selection_lease : undefined;
+  const [failedDeviceDraft, setFailedDeviceDraft] = useState<string>();
+  const attemptedDeviceDraftRef = useRef<string | undefined>(undefined);
+  const deviceDraftContext = useRef({ api, lease: deviceDraftLease, system: settings.system });
+  deviceDraftContext.current = { api, lease: deviceDraftLease, system: settings.system };
   const accountUserIdRef = useRef(accountUser?.id);
   accountUserIdRef.current = accountUser?.id;
   const [relayUserRecord, setRelayUser] = useState<RelayUser | null>(accountUser);
@@ -350,9 +400,16 @@ function useGatewayAppController() {
   } = useGatewaySettingsOverlay(setSidebarOpen);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const initialRoute = useMemo(() => readCloudChatRoute(new URL(window.location.href)), []);
+  const [browserNavigationVersion, setBrowserNavigationVersion] = useState(0);
+  useEffect(() => {
+    if (getDesktopRemoteHost()) return;
+    const navigate = () => setBrowserNavigationVersion((version) => version + 1);
+    window.addEventListener("popstate", navigate);
+    return () => window.removeEventListener("popstate", navigate);
+  }, []);
   const {
     activeView,
-    setActiveView,
+    setActiveView: setActiveViewState,
     projectSettingsProject,
     setProjectSettingsProject,
     rightDockOpen,
@@ -362,28 +419,28 @@ function useGatewayAppController() {
       (initialRoute.page === "tasks" && initialRoute.deviceView ? "cron-hub" : "chat"),
   );
   const selectedTaskDevice = selection?.runtime_kind === "device_agent" ? selection.device_id : "";
+  const returnFromDeviceTasksRef = useRef<(requestedId?: string) => void>(() => {});
+  const setActiveView = useCallback<typeof setActiveViewState>(
+    (view) => {
+      if (typeof view === "string" && view !== "cron-hub") returnFromDeviceTasksRef.current();
+      setActiveViewState(view);
+    },
+    [setActiveViewState],
+  );
   useEffect(() => {
     if (!selectedTaskDevice || getDesktopRemoteHost()) return;
-    const restoreTaskView = () => {
+    const restoreDeviceView = () => {
       const route = readCloudChatRoute(new URL(window.location.href));
       if (route.page === "tasks" && route.deviceView && route.target === selectedTaskDevice) {
-        setActiveView("cron-hub");
-      } else {
-        setActiveView((current) => (current === "cron-hub" ? "chat" : current));
+        setActiveViewState("cron-hub");
+      } else if (route.page === "chat" && route.deviceId === selectedTaskDevice) {
+        setActiveViewState("chat");
       }
     };
-    window.addEventListener("popstate", restoreTaskView);
-    return () => window.removeEventListener("popstate", restoreTaskView);
-  }, [selectedTaskDevice, setActiveView]);
-  useEffect(() => {
-    if (activeView === "cron-hub" || !selectedTaskDevice || getDesktopRemoteHost()) return;
-    const url = new URL(window.location.href);
-    const route = readCloudChatRoute(url);
-    if (route.page === "tasks" && route.deviceView && route.target === selectedTaskDevice) {
-      const href = cloudChatRouteHref({ page: "chat", id: "" }, url);
-      window.history.pushState(window.history.state, "", href);
-    }
-  }, [activeView, selectedTaskDevice]);
+    restoreDeviceView();
+    window.addEventListener("popstate", restoreDeviceView);
+    return () => window.removeEventListener("popstate", restoreDeviceView);
+  }, [selectedTaskDevice, setActiveViewState]);
   const { confirm: requestConfirmDialog, dialog: confirmDialog } = useConfirmDialog();
   // Both elements arrive via callback refs → state so the scroll-follow hook
   // re-binds on element identity change and can never keep listeners on a
@@ -425,6 +482,21 @@ function useGatewayAppController() {
     return boundComposerDraftIdsRef.current.get(conversationId) ?? conversationId;
   }, []);
   const composerDraftOwnerRef = useRef("");
+  const [paneDraftRegistry] = useState(createGatewayDevicePaneDraftRegistry);
+  const deviceDraftScopeRef = useRef<GatewayDeviceDraftScope | undefined>(undefined);
+  const recoveredLocalDraftScopeRef = useRef("");
+  const activeDeviceDraftOwnersRef = useRef(new Map<string, string>());
+  const restoredDeviceDraftFocusRef = useRef("");
+  const [savedDeviceDraft, setSavedDeviceDraft] = useState<{
+    scopeKey: string;
+    state: GatewaySavedDeviceDraftState;
+    path?: string;
+  }>();
+  const [retrySavedDeviceDraftKey, setRetrySavedDeviceDraftKey] = useState("");
+  const draftPersistenceRetiredOwnerRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!accountUser?.id) draftPersistenceRetiredOwnerRef.current = undefined;
+  }, [accountUser?.id]);
   const conversationIdRef = useRef(conversationId);
   const selectedHistoryIdRef = useRef(selectedHistoryId);
   const statusRef = useRef<AgentStatus | null>(status);
@@ -449,13 +521,17 @@ function useGatewayAppController() {
   } | null>(null);
   const displayedConversationBusyRef = useRef(false);
   const historyLoadSequenceRef = useRef(0);
+  const historyOpenAttemptRef = useRef<GatewayHistoryOpenAttempt | undefined>(undefined);
   const restoredConversationAgentRef = useRef("");
-  const restoringConversationRef = useRef<{ agentId: string; conversationId: string } | null>(null);
+  const restoringConversationRef = useRef<{
+    ownerId: number;
+    agentId: string;
+    conversationId: string;
+  } | null>(null);
   const visibleConversationRevisionRef = useRef(0);
   const previousDisplayedConversationIdRef = useRef("");
   const pendingDisplayedConversationAutoBottomRef = useRef<string | null>(null);
   const protectedConversationRef = useRef(PROTECTED_DRAFT_CONVERSATION);
-  const chatRuntimePreparePromiseRef = useRef<Promise<AgentStatus> | null>(null);
   const submitInFlightRef = useRef(false);
   // clientRequestId → draft conversation id, until the command binds.
   const draftClientRequestsRef = useRef<Map<string, string>>(new Map());
@@ -688,7 +764,11 @@ function useGatewayAppController() {
     () =>
       createConversationOpenController({
         openInitial: (id, request) => openInitialRef.current(id, request),
-        onStateChange: setConversationOpenState,
+        onStateChange: (state) => {
+          if (state.phase === "idle" || state.phase === "ready")
+            historyOpenAttemptRef.current = undefined;
+          setConversationOpenState(state);
+        },
       }),
     [],
   );
@@ -1055,6 +1135,8 @@ function useGatewayAppController() {
       if (!previousId || !nextId || previousId === nextId) {
         return;
       }
+      const scope = deviceDraftScopeRef.current;
+      if (scope) clearGatewayDeviceDraft(scope, { kind: "local", id: previousId });
 
       transcriptStoreRegistry.move(previousId, nextId);
       moveCommandRecovery(previousId, nextId);
@@ -1363,6 +1445,21 @@ function useGatewayAppController() {
 
   // Open in flight (history-window fetch, before the replace apply paints).
   const historyDetailLoading = conversationOpenState.phase === "opening";
+  const deviceHistoryOpenFailed = Boolean(
+    failedVisibleGatewayHistoryOpen(
+      conversationOpenState,
+      displayedConversationId,
+      historyOpenAttemptRef.current,
+    ),
+  );
+  const pendingHistoryRestore = restoringConversationRef.current;
+  const historyRestoreFailed =
+    conversationOpenState.phase === "failed" &&
+    pendingHistoryRestore !== null &&
+    pendingHistoryRestore.ownerId === accountUser?.id &&
+    pendingHistoryRestore.agentId === activeAgentScope &&
+    pendingHistoryRestore.conversationId === displayedConversationId &&
+    pendingHistoryRestore.conversationId === conversationOpenState.conversationId;
 
   useGatewayHistoryReconciliation({
     api,
@@ -1421,51 +1518,465 @@ function useGatewayAppController() {
     ],
   );
 
-  openInitialRef.current = openConversationInitial;
+  openInitialRef.current = (id, request) => {
+    const { isCurrent: isCurrentRequest, ...options } = request ?? {};
+    const currentApi = apiRef.current;
+    const isCurrentAgent = currentApi?.captureActiveAgentScope();
+    const isCurrent = () => apiRef.current === currentApi && isCurrentAgent?.() === true;
+    historyOpenAttemptRef.current = { conversationId: id, options, isCurrent };
+    return openConversationInitial(id, {
+      ...options,
+      isCurrent: () => isCurrent() && isCurrentRequest?.() !== false,
+    });
+  };
 
-  // Restore the last real conversation only after the authenticated client has
-  // selected an Agent. The existing open controller owns the history fetch and
-  // transcript replacement; this effect only supplies its initial target.
+  const openSavedConversation = useCallback(
+    (target: NonNullable<typeof restoringConversationRef.current>) => {
+      restoringConversationRef.current = target;
+      openController.open(target.conversationId, {
+        afterCommit: () => {
+          if (restoringConversationRef.current !== target) return;
+          restoringConversationRef.current = null;
+          setChatError(null);
+          if (isAgentMode) {
+            activateConversationWorkspace(
+              conversationWorkdirsRef.current.get(target.conversationId),
+            );
+          }
+        },
+      });
+    },
+    [activateConversationWorkspace, isAgentMode, openController],
+  );
+  const publishDeviceDraftRow = (id: string, workdir: string) => {
+    if (sidebarStore.getSnapshot().byId.has(id)) return;
+    const now = Date.now();
+    sidebarStore.upsertLocal({
+      id,
+      cwd: workdir || undefined,
+      title: settings.locale === "zh-CN" ? "未发送草稿" : "Unsent draft",
+      providerId: "",
+      model: "",
+      messageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      isPending: true,
+    });
+  };
+  const recoverUnsentDeviceDraft = useEffectEvent(
+    (ownerId: number, agentId: string, focus = false) => {
+      const scope = deviceDraftScope();
+      if (activeView !== "chat" || scope?.ownerId !== ownerId || scope.agentId !== agentId) return;
+      const current = resolveVisibleConversationId(
+        selectedHistoryIdRef.current,
+        conversationIdRef.current,
+      );
+      if (!isLocalDraftConversationId(current)) return;
+      const scopeKey = JSON.stringify([ownerId, agentId]);
+      const saved = readGatewayDeviceDraft(scope);
+      if (!saved) {
+        setSavedDeviceDraft(undefined);
+        return;
+      }
+      const workdir = workdirForConversation(current);
+      const recovery = planGatewaySavedDeviceDraftRecovery(saved, settings.system, {
+        workdir,
+        workMode: isAgentMode,
+        hasInput: Boolean(
+          composerRef.current?.hasContent() ||
+            composerDraftCacheRef.current.get(current)?.isEmpty === false ||
+            getPendingUploadsForConversation(current).length ||
+            uploadingConversationId === current,
+        ),
+      });
+      if (recovery.state !== "ready") {
+        if (recovery.state === "current-draft") publishDeviceDraftRow(current, workdir);
+        setSavedDeviceDraft({ scopeKey, state: recovery.state, path: saved.workspace?.path });
+        return;
+      }
+      // A fresh temporary id makes the normal pane hydration restore the editor.
+      // Its attachment registry never observes a project change within that id.
+      const next = createGatewayHomeConversationState();
+      const { workspace } = recovery;
+      const recovered = restoreGatewayDeviceDraft(saved);
+      conversationWorkdirsRef.current.set(next.conversationId, workspace.path);
+      composerDraftCacheRef.current.set(next.conversationId, recovered.composer);
+      setPendingUploadsForConversation(next.conversationId, recovered.attachments);
+      if (workspace.project) setActiveWorkspaceProjectId(workspace.project.id);
+      if (focus) restoredDeviceDraftFocusRef.current = next.conversationId;
+      conversationIdRef.current = next.conversationId;
+      selectedHistoryIdRef.current = next.selectedHistoryId;
+      setConversationId(next.conversationId);
+      setSelectedHistoryId(next.selectedHistoryId);
+      clearGatewayDeviceDraft(scope);
+      activeDeviceDraftOwnersRef.current.delete(scopeKey);
+      setSavedDeviceDraft(undefined);
+      if (saved.unfinishedUpload || saved.exceedsLimit) {
+        const zh = settings.locale === "zh-CN";
+        const copy = [];
+        if (saved.unfinishedUpload)
+          copy.push(
+            zh
+              ? "刷新中断的上传需要重新添加。"
+              : "Add any files whose upload was interrupted again.",
+          );
+        if (saved.exceedsLimit)
+          copy.push(
+            zh
+              ? "草稿文字超过标签页的保存上限。"
+              : "The draft text exceeded the browser tab’s recovery limit.",
+          );
+        addNotify("warning", copy.join(" "));
+      }
+    },
+  );
+  const deviceDraftScope = (): GatewayDeviceDraftScope | undefined => {
+    const ownerId = accountUser?.id;
+    const agentId = activeAgentScope.trim();
+    if (
+      !ownerId ||
+      draftPersistenceRetiredOwnerRef.current === ownerId ||
+      !agentId ||
+      !settingsSyncTargetReady ||
+      settingsSyncError ||
+      !api ||
+      api.getActiveAgent() !== agentId ||
+      historyShareToken ||
+      deviceDraftLease ||
+      getDesktopRemoteHost()
+    )
+      return;
+    return { ownerId, agentId };
+  };
+  deviceDraftScopeRef.current = deviceDraftScope();
+  const localDraftRecoveryScope = deviceDraftScopeRef.current;
+  const localDraftRecoveryScopeKey = localDraftRecoveryScope
+    ? JSON.stringify([localDraftRecoveryScope.ownerId, localDraftRecoveryScope.agentId])
+    : "";
+  const savedDeviceDraftNotice =
+    localDraftRecoveryScopeKey === savedDeviceDraft?.scopeKey &&
+    isLocalDraftConversationId(displayedConversationId)
+      ? savedDeviceDraft
+      : undefined;
+  useEffect(() => {
+    const scope = deviceDraftScopeRef.current;
+    if (
+      !scope ||
+      activeView !== "chat" ||
+      !isLocalDraftConversationId(displayedConversationId) ||
+      savedDeviceDraft?.scopeKey === localDraftRecoveryScopeKey ||
+      activeDeviceDraftOwnersRef.current.has(localDraftRecoveryScopeKey)
+    )
+      return;
+    const saved = readGatewayDeviceDraft(scope);
+    if (saved) {
+      setSavedDeviceDraft({
+        scopeKey: localDraftRecoveryScopeKey,
+        state: "saved",
+        path: saved.workspace?.path,
+      });
+    }
+  }, [activeView, displayedConversationId, localDraftRecoveryScopeKey, savedDeviceDraft?.scopeKey]);
+  useEffect(() => {
+    if (!retrySavedDeviceDraftKey) return;
+    setRetrySavedDeviceDraftKey("");
+    const scope = deviceDraftScopeRef.current;
+    if (scope && retrySavedDeviceDraftKey === localDraftRecoveryScopeKey)
+      recoverUnsentDeviceDraft(scope.ownerId, scope.agentId, true);
+  }, [localDraftRecoveryScopeKey, retrySavedDeviceDraftKey]);
+  const verifiedDeviceReplyIdentity = (
+    conversationId: string,
+    verified?: GatewayDeviceReplyIdentity,
+    forCapture = false,
+  ): GatewayDeviceReplyIdentity | undefined => {
+    if (!deviceDraftScope() || !conversationId || isLocalDraftConversationId(conversationId))
+      return;
+    if (verified?.sessionId) return verified;
+    const detail = selectedHistoryRef.current;
+    const summary =
+      detail?.conversation_id === conversationId && detail.conversation?.id === conversationId
+        ? detail.conversation
+        : undefined;
+    if (summary)
+      return {
+        sessionId: summary.session_id?.trim() || conversationId,
+        workdir: summary.cwd?.trim() ?? "",
+      };
+    const row = forCapture ? sidebarStore.peek(conversationId) : undefined;
+    if (row && !row.isPending)
+      return { sessionId: row.sessionId?.trim() || conversationId, workdir: row.cwd?.trim() ?? "" };
+  };
+  const takeDeviceReplyDraft = (conversationId: string, identity: GatewayDeviceReplyIdentity) => {
+    const scope = deviceDraftScope();
+    if (
+      !scope ||
+      composerDraftCacheRef.current.has(conversationId) ||
+      getPendingUploadsForConversation(conversationId).length
+    )
+      return;
+    const entry = readGatewayDeviceReplyDraft(scope, identity);
+    if (!entry || (entry.saved.attachments.length && !isAgentMode)) return;
+    if (
+      entry.saved.workspace?.id &&
+      !findDeviceDraftProject(settings.system, entry.saved.workspace)
+    )
+      return;
+    const key = workspaceProjectPathKey(identity.workdir);
+    if (
+      key &&
+      (archivedWorkspaceProjectPathKeys.has(key) || missingWorkspaceProjectPathKeys.has(key))
+    )
+      return;
+    const restored = restoreGatewayDeviceDraft(entry.saved);
+    clearGatewayDeviceDraft(scope, entry.target);
+    setPendingUploadsForConversation(conversationId, restored.attachments);
+    composerDraftCacheRef.current.set(conversationId, restored.composer);
+    if (entry.saved.unfinishedUpload || entry.saved.exceedsLimit) {
+      addNotify(
+        "warning",
+        settings.locale === "zh-CN"
+          ? "部分草稿内容未恢复。请重新添加刷新中断的上传，或补回超出浏览器保存上限的文字。"
+          : "Some draft content could not be restored. Add interrupted uploads again or re-enter text that exceeded the browser limit.",
+      );
+    }
+    return restored.composer;
+  };
+  const rememberDeviceDrafts = useEffectEvent(() => {
+    const scope = deviceDraftScope();
+    if (!scope) return;
+    const scopeKey = JSON.stringify([scope.ownerId, scope.agentId]);
+    const current = resolveVisibleConversationId(
+      selectedHistoryIdRef.current,
+      conversationIdRef.current,
+    );
+    const capture = (
+      id: string,
+      draft: MentionComposerDraft | undefined,
+      submitting: boolean,
+      verified?: GatewayDeviceReplyIdentity,
+    ) => {
+      const isLocal = isLocalDraftConversationId(id);
+      const identity = isLocal ? undefined : verifiedDeviceReplyIdentity(id, verified, true);
+      if (!isLocal && !identity) return;
+      const target: GatewayDeviceDraftTarget | undefined = identity
+        ? { kind: "session", id: identity.sessionId }
+        : gatewayLocalDraftCaptureTarget(
+            scope,
+            id,
+            current,
+            activeDeviceDraftOwnersRef.current.get(scopeKey),
+          );
+      const attachments = getPendingUploadsForConversation(id);
+      const unfinishedUpload = uploadingConversationId === id;
+      if (submitting || ((!draft || draft.isEmpty) && !attachments.length && !unfinishedUpload)) {
+        if (target) clearGatewayDeviceDraft(scope, target);
+        return;
+      }
+      const path = identity?.workdir ?? workdirForConversation(id);
+      const key = workspaceProjectPathKey(path);
+      const project = settings.system.workspaceProjects.find(
+        (candidate) => workspaceProjectPathKey(candidate.path) === key,
+      );
+      saveGatewayDeviceDraft(
+        scope,
+        {
+          workspace: key ? { id: project?.id ?? "", path } : null,
+          segments: draft?.segments ?? [],
+          attachments,
+          unfinishedUpload,
+        },
+        target,
+      );
+      if (isLocal && !target) {
+        activeDeviceDraftOwnersRef.current.set(scopeKey, id);
+        clearGatewayDeviceDraft(scope, { kind: "local", id });
+      }
+    };
+    const mounted = paneDraftRegistry.entries(resolveComposerDraftKey);
+    for (const [resolved, { id, snapshot }] of mounted) {
+      capture(
+        resolved,
+        snapshot.draft,
+        snapshot.submitting || (resolved === current && submitInFlightRef.current),
+        resolved === id ? snapshot.identity : undefined,
+      );
+    }
+    const captured = new Set(mounted.keys());
+    if (
+      !captured.has(current) &&
+      current &&
+      activeView === "chat" &&
+      composerDraftOwnerRef.current === current
+    ) {
+      captured.add(current);
+      capture(current, composerRef.current?.getDraft(), submitInFlightRef.current);
+    }
+    for (const [id, draft] of composerDraftCacheRef.current) {
+      if (!captured.has(id) && !id.startsWith("scheduled-task-result:")) {
+        captured.add(id);
+        capture(id, draft, false);
+      }
+    }
+    for (const id of sidebarStore.getSnapshot().byId.keys()) {
+      if (
+        !captured.has(id) &&
+        isLocalDraftConversationId(id) &&
+        (getPendingUploadsForConversation(id).length || uploadingConversationId === id)
+      ) {
+        captured.add(id);
+        capture(id, undefined, id === current && submitInFlightRef.current);
+      }
+    }
+    if (
+      current &&
+      !captured.has(current) &&
+      (getPendingUploadsForConversation(current).length || uploadingConversationId === current)
+    )
+      capture(current, undefined, submitInFlightRef.current);
+  });
+  useEffect(() => {
+    const remember = (event: PageTransitionEvent) => {
+      if (!event.persisted) rememberDeviceDrafts();
+    };
+    window.addEventListener("pagehide", remember);
+    return () => window.removeEventListener("pagehide", remember);
+  }, []);
+  const recoverLocalPaneDrafts = useEffectEvent(() => {
+    const scope = deviceDraftScope();
+    if (!scope) return;
+    const key = JSON.stringify([scope.ownerId, scope.agentId]);
+    if (recoveredLocalDraftScopeRef.current === key) return;
+    recoveredLocalDraftScopeRef.current = key;
+    for (const id of listGatewayLocalDeviceDrafts(scope)) {
+      if (!/^__local_draft__:[a-z0-9-]{1,64}$/i.test(id) || composerDraftCacheRef.current.has(id))
+        continue;
+      const target = { kind: "local", id } as const;
+      const draft = readGatewayDeviceDraft(scope, target);
+      const workspace = draft && resolveGatewayDraftWorkspace(settings.system, draft.workspace);
+      if (!draft || !workspace || (draft.attachments.length && (!workspace.path || !isAgentMode)))
+        continue;
+      const restored = restoreGatewayDeviceDraft(draft);
+      conversationWorkdirsRef.current.set(id, workspace.path);
+      composerDraftCacheRef.current.set(id, restored.composer);
+      setPendingUploadsForConversation(id, restored.attachments);
+      publishDeviceDraftRow(id, workspace.path);
+      clearGatewayDeviceDraft(scope, target);
+      if (draft.unfinishedUpload || draft.exceedsLimit)
+        addNotify(
+          "warning",
+          settings.locale === "zh-CN"
+            ? "部分分屏草稿内容需要重新添加。"
+            : "Some pane draft content needs to be added again.",
+        );
+    }
+  });
+  useEffect(() => {
+    if (localDraftRecoveryScopeKey) recoverLocalPaneDrafts();
+  }, [localDraftRecoveryScopeKey]);
+
+  useEffect(() => {
+    if (getDesktopRemoteHost()) return;
+    const retireHistory = () => {
+      restoringConversationRef.current = null;
+      invalidateHistoryLoad();
+      openController.cancel();
+    };
+    window.addEventListener("popstate", retireHistory);
+    return () => window.removeEventListener("popstate", retireHistory);
+  }, [invalidateHistoryLoad, openController]);
+
+  // Restore only after the authenticated client has settled the device's settings.
+  // The history controller owns the request and its stale-response guard.
   useEffect(() => {
     const agentId = activeAgentScope.trim();
-    if (!api || !agentId || historyShareToken || restoredConversationAgentRef.current === agentId) {
-      return;
-    }
-    restoredConversationAgentRef.current = agentId;
-    const conversationIdValue = loadGatewayConversationSelection(agentId);
-    if (!conversationIdValue || isLocalDraftConversationId(conversationIdValue)) {
-      clearGatewayConversationSelection(agentId);
-      return;
-    }
-    restoringConversationRef.current = { agentId, conversationId: conversationIdValue };
-    openController.open(conversationIdValue, {
-      afterCommit: () => {
-        const pending = restoringConversationRef.current;
-        if (
-          pending &&
-          pending.agentId === agentId &&
-          pending.conversationId === conversationIdValue
-        ) {
-          restoringConversationRef.current = null;
-        }
-      },
-    });
-  }, [activeAgentScope, api, historyShareToken, openController]);
-
-  useEffect(() => {
-    const pending = restoringConversationRef.current;
+    const ownerId = accountUser?.id;
+    const route = readCloudChatRoute(new URL(window.location.href));
+    const explicitDevice =
+      !getDesktopRemoteHost() && route.page === "chat" && route.deviceId !== undefined
+        ? route
+        : null;
+    const scope = `${ownerId}/${agentId}/${explicitDevice ? browserNavigationVersion : "legacy"}`;
     if (
-      conversationOpenState.phase !== "failed" ||
-      !pending ||
-      pending.conversationId !== conversationOpenState.conversationId
+      !api ||
+      !ownerId ||
+      !agentId ||
+      !settingsSyncTargetReady ||
+      historyShareToken ||
+      restoredConversationAgentRef.current === scope
     ) {
       return;
     }
-    restoringConversationRef.current = null;
-    clearGatewayConversationSelection(pending.agentId);
-    openController.cancel();
-    resetToFreshHomeConversation();
-  }, [conversationOpenState, openController, resetToFreshHomeConversation]);
+    const landing = resolveGatewayConversationLanding({
+      route: explicitDevice ?? { page: "chat", id: "" },
+      activeDeviceId: selectedTaskDevice,
+      savedConversationId: explicitDevice ? "" : loadGatewayConversationSelection(agentId, ownerId),
+    });
+    if (!landing) return;
+    restoredConversationAgentRef.current = scope;
+    if (deviceDraftLease) return;
+    if (landing.conversationId && !isLocalDraftConversationId(landing.conversationId)) {
+      openSavedConversation({ ownerId, agentId, conversationId: landing.conversationId });
+    } else if (landing.explicit && !isLocalDraftConversationId(getDisplayedConversationId())) {
+      startNewConversationRef.current({ preserveCurrentComposerDraft: true });
+      if (api.getActiveAgent() === agentId) recoverUnsentDeviceDraft(ownerId, agentId);
+    } else if (api.getActiveAgent() === agentId) {
+      recoverUnsentDeviceDraft(ownerId, agentId);
+    }
+  }, [
+    accountUser?.id,
+    activeAgentScope,
+    api,
+    browserNavigationVersion,
+    deviceDraftLease,
+    getDisplayedConversationId,
+    historyShareToken,
+    openSavedConversation,
+    selectedTaskDevice,
+    settingsSyncTargetReady,
+  ]);
+  const retryDeviceHistoryOpen = useCallback(() => {
+    const attempt = failedVisibleGatewayHistoryOpen(
+      openController.getState(),
+      getDisplayedConversationId(),
+      historyOpenAttemptRef.current,
+    );
+    if (!attempt?.isCurrent()) return;
+    setChatError(null);
+    openController.open(attempt.conversationId, attempt.options);
+  }, [getDisplayedConversationId, openController]);
+
+  returnFromDeviceTasksRef.current = (requestedId) => {
+    const ownerId = accountUser?.id;
+    const agentId = activeAgentScope.trim();
+    if (!ownerId || !agentId || !selectedTaskDevice || getDesktopRemoteHost()) return;
+    const url = new URL(window.location.href);
+    const explicitScope = `${ownerId}/${agentId}/${browserNavigationVersion}`;
+    const restoredHere =
+      restoredConversationAgentRef.current === explicitScope ||
+      restoredConversationAgentRef.current === `${ownerId}/${agentId}/legacy`;
+    const visibleId = getDisplayedConversationId();
+    const visibleConversation =
+      restoredHere && visibleId && !isLocalDraftConversationId(visibleId)
+        ? {
+            conversationId: visibleId,
+            historyConversationId: selectedHistory?.conversation_id,
+            historySessionId: selectedHistory?.conversation?.session_id,
+            sidebarSessionId: sidebarConversationsById.get(visibleId)?.sessionId,
+          }
+        : undefined;
+    const href = gatewayDeviceTaskChatReturnHref({
+      url,
+      deviceId: selectedTaskDevice,
+      requestedId,
+      visibleConversation,
+      restoredHere,
+      recentConversationId: restoredHere ? "" : loadGatewayConversationSelection(agentId, ownerId),
+    });
+    if (!href) return;
+    window.history.pushState(window.history.state, "", href);
+    if (restoredHere || requestedId) restoredConversationAgentRef.current = explicitScope;
+    else setBrowserNavigationVersion((version) => version + 1);
+  };
 
   // Persist only real conversations. Starting a new conversation explicitly
   // clears this key, so the new-conversation button remains a new-conversation
@@ -1474,9 +1985,13 @@ function useGatewayAppController() {
     const agentId = activeAgentScope.trim();
     const conversationIdValue = displayedConversationId.trim();
     if (
+      !accountUser?.id ||
       !agentId ||
       !conversationIdValue ||
       isLocalDraftConversationId(conversationIdValue) ||
+      !settingsSyncTargetReady ||
+      getDisplayedConversationId() !== displayedConversationId ||
+      deviceDraftLease ||
       historyShareToken
     ) {
       return;
@@ -1493,12 +2008,83 @@ function useGatewayAppController() {
     });
     // Active first turns may precede history summaries; the relay persists their alias mapping.
     if (!sessionId) return;
-    saveGatewayConversationSelection(agentId, sessionId);
+    saveGatewayConversationSelection(agentId, sessionId, accountUser.id);
   }, [
+    accountUser?.id,
     activeAgentScope,
+    deviceDraftLease,
     displayedConversationId,
+    getDisplayedConversationId,
     historyShareToken,
     selectedHistory,
+    settingsSyncTargetReady,
+    sidebarConversationsById,
+  ]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const route = readCloudChatRoute(url);
+    if (
+      route.page !== "chat" ||
+      (route.deviceId !== undefined && route.deviceId !== selectedTaskDevice)
+    )
+      return;
+    if (
+      getDesktopRemoteHost() ||
+      historyShareToken ||
+      !selectedTaskDevice ||
+      !accountUser?.id ||
+      !settingsSyncTargetReady ||
+      deviceDraftLease ||
+      activeView !== "chat" ||
+      deviceRouteStatus ||
+      historyRestoreFailed ||
+      restoredConversationAgentRef.current !==
+        `${accountUser.id}/${activeAgentScope}/${route.deviceId !== undefined ? browserNavigationVersion : "legacy"}` ||
+      getDisplayedConversationId() !== displayedConversationId ||
+      conversationOpenState.phase === "opening" ||
+      openController.getState().phase === "opening"
+    )
+      return;
+    const isDraft = isLocalDraftConversationId(displayedConversationId);
+    const routeId = isDraft
+      ? ""
+      : resolveGatewayConversationRestoreTarget({
+          conversationId: displayedConversationId,
+          historyConversationId: selectedHistory?.conversation_id,
+          historySessionId: selectedHistory?.conversation?.session_id,
+          sidebarSessionId: sidebarConversationsById.get(displayedConversationId)?.sessionId,
+        });
+    if (!isDraft && !/^[a-z0-9_-]{1,128}$/i.test(routeId)) return;
+    if (route.deviceId === selectedTaskDevice && route.id === displayedConversationId) return;
+    const href = cloudChatRouteHref(
+      { page: "chat", id: routeId, deviceId: selectedTaskDevice },
+      url,
+    );
+    if (href === url.pathname + url.search + url.hash) return;
+    const firstSend =
+      !route.id &&
+      !!routeId &&
+      openController.getState().conversationId !== displayedConversationId;
+    const mode = route.deviceId === undefined || firstSend ? "replaceState" : "pushState";
+    window.history[mode](window.history.state, "", href);
+    restoredConversationAgentRef.current = `${accountUser.id}/${activeAgentScope}/${browserNavigationVersion}`;
+  }, [
+    accountUser?.id,
+    activeAgentScope,
+    activeView,
+    browserNavigationVersion,
+    conversationOpenState.phase,
+    deviceDraftLease,
+    deviceRouteStatus,
+    displayedConversationId,
+    getDisplayedConversationId,
+    historyRestoreFailed,
+    historyShareToken,
+    openController,
+    selectedHistory,
+    selectedTaskDevice,
+    settingsSyncTargetReady,
     sidebarConversationsById,
   ]);
 
@@ -1506,7 +2092,6 @@ function useGatewayAppController() {
     api,
     historyShareToken,
     locale: settings.locale,
-    preparePromiseRef: chatRuntimePreparePromiseRef,
     setStatus,
     setStatusError,
     statusOnline: status?.online,
@@ -1536,7 +2121,10 @@ function useGatewayAppController() {
     branchInFlightRef,
     cacheVisibleComposerDraft,
     clearCachedComposerDraft,
-    clearPersistedConversationSelection: () => clearGatewayConversationSelection(activeAgentScope),
+    clearPersistedConversationSelection: () => {
+      restoringConversationRef.current = null;
+      if (accountUser?.id) clearGatewayConversationSelection(activeAgentScope, accountUser.id);
+    },
     composerDraftCacheRef,
     composerDraftOwnerRef,
     composerRef,
@@ -1573,6 +2161,41 @@ function useGatewayAppController() {
     transcriptStoreRegistry,
   });
   startNewConversationRef.current = startNewConversation;
+  const openDeviceTaskConversation = (conversationId: string) => {
+    const id = conversationId.trim();
+    if (!id) return;
+    returnFromDeviceTasksRef.current(id);
+    handleSidebarSelectConversation(id);
+  };
+
+  const openPreparedDeviceDraft = useEffectEvent(async () => {
+    if (!deviceDraft || !deviceDraftLease || !api) return;
+    const lease = deviceDraftLease;
+    const stillCurrent = () =>
+      deviceDraftContext.current.api === api && deviceDraftContext.current.lease === lease;
+    try {
+      const project = findDeviceDraftProject(settings.system, deviceDraft);
+      if (settingsSyncError || !project) throw new Error("Device workspace unavailable");
+      await api.listDirs(project.path, 1);
+      if (!stillCurrent()) return;
+      const currentProject = findDeviceDraftProject(deviceDraftContext.current.system, deviceDraft);
+      if (!currentProject || !activateWorkspaceProject(currentProject, { startConversation: true }))
+        throw new Error("Device workspace unavailable");
+      finishDeviceDraft(lease);
+    } catch {
+      if (stillCurrent()) setFailedDeviceDraft(lease);
+    }
+  });
+  useEffect(() => {
+    if (
+      !deviceDraftLease ||
+      !settingsSyncTargetReady ||
+      attemptedDeviceDraftRef.current === deviceDraftLease
+    )
+      return;
+    attemptedDeviceDraftRef.current = deviceDraftLease;
+    void openPreparedDeviceDraft();
+  }, [deviceDraftLease, settingsSyncTargetReady]);
 
   const restorePreviousMobileNavigation = useCallback(() => {
     const stack = mobileNavigationStackRef.current;
@@ -1767,12 +2390,16 @@ function useGatewayAppController() {
 
   const handleLogout = useCallback(
     async (revokeRemotely = true) => {
+      const ownerId = accountUser?.id;
+      draftPersistenceRetiredOwnerRef.current = ownerId;
       try {
         await clearSession(revokeRemotely);
       } catch {
+        draftPersistenceRetiredOwnerRef.current = undefined;
         addNotify("error", "退出登录失败，请重试。");
         return;
       }
+      if (ownerId) clearGatewayDeviceDraftsForAccount(ownerId);
       invalidateHistoryLoad();
       markVisibleConversationRevision();
       // Dropping the api swaps in a fresh (empty) sidebar store; the start/stop
@@ -1786,6 +2413,12 @@ function useGatewayAppController() {
       historyWindowStatesRef.current.clear();
       conversationWorkdirsRef.current.clear();
       composerDraftCacheRef.current.clear();
+      paneDraftRegistry.clear();
+      recoveredLocalDraftScopeRef.current = "";
+      activeDeviceDraftOwnersRef.current.clear();
+      restoredDeviceDraftFocusRef.current = "";
+      setSavedDeviceDraft(undefined);
+      setRetrySavedDeviceDraftKey("");
       boundComposerDraftIdsRef.current.clear();
       composerDraftOwnerRef.current = "";
       composerRef.current?.clear();
@@ -1812,6 +2445,7 @@ function useGatewayAppController() {
       resetToFreshHomeConversation();
     },
     [
+      accountUser?.id,
       activityStore,
       addNotify,
       chatCommandPipeline,
@@ -1820,6 +2454,7 @@ function useGatewayAppController() {
       invalidateHistoryLoad,
       markVisibleConversationRevision,
       openController,
+      paneDraftRegistry,
       resetSharedHistory,
       resetToFreshHomeConversation,
       transcriptStoreRegistry,
@@ -1832,6 +2467,7 @@ function useGatewayAppController() {
     // Expiry can belong to a stale request; never revoke whichever account now owns the cookie.
     const expired = () => handleLogout(false);
     const changed = () => {
+      if (accountUser?.id) clearGatewayDeviceDraftsForAccount(accountUser.id);
       handleLogout(false);
       window.location.reload();
     };
@@ -1846,7 +2482,7 @@ function useGatewayAppController() {
       window.removeEventListener(ACCOUNT_CHANGED_EVENT, changed);
       window.removeEventListener("storage", cookieChanged);
     };
-  }, [handleLogout]);
+  }, [accountUser?.id, handleLogout]);
 
   const currentUserLabel = translate("common.currentUser", settings.locale);
   const userMenuLabel =
@@ -1877,6 +2513,8 @@ function useGatewayAppController() {
       draftClientRequestsRef.current.clear();
       conversationWorkdirsRef.current.clear();
       composerDraftCacheRef.current.clear();
+      paneDraftRegistry.clear();
+      recoveredLocalDraftScopeRef.current = "";
       boundComposerDraftIdsRef.current.clear();
       composerDraftOwnerRef.current = "";
       composerRef.current?.clear();
@@ -1902,7 +2540,7 @@ function useGatewayAppController() {
       setProjectPickerOpen(false);
       setProjectSettingsProject(null);
       resetSettingsOverlay();
-      setActiveView(taskLanding ? "cron-hub" : "chat");
+      setActiveViewState(taskLanding ? "cron-hub" : "chat");
       setRightDockOpen(false);
       toast.dismiss();
       resetProjectToolsRuntimeRef.current();
@@ -1918,11 +2556,12 @@ function useGatewayAppController() {
       invalidateHistoryLoad,
       markVisibleConversationRevision,
       openController,
+      paneDraftRegistry,
       resetSharedHistory,
       resetToFreshHomeConversation,
       transcriptStoreRegistry,
       setRightDockOpen,
-      setActiveView,
+      setActiveViewState,
       resetSettingsOverlay,
       setProjectSettingsProject,
       setProjectPickerOpen,
@@ -2266,15 +2905,28 @@ function useGatewayAppController() {
   // 聚焦面板；与底层处理器跳过草稿的口径一致。用户手动删草稿走
   // onLocalDraftDeleted 通路。
   const handleSidebarConversationsRemovedWithWorkbench = (ids: readonly string[]) => {
+    const scope = deviceDraftScope();
+    if (scope) {
+      for (const id of ids) {
+        const identity = verifiedDeviceReplyIdentity(id, undefined, true);
+        if (identity) clearGatewayDeviceDraft(scope, { kind: "session", id: identity.sessionId });
+      }
+    }
     workbenchController.closePanesForRemovedConversations(
       ids.filter((id) => !isLocalDraftConversationId(id)),
     );
     handleSidebarConversationsRemoved(ids);
   };
   const handleSidebarLocalDraftDeletedWithWorkbench = (id: string) => {
+    const scope = deviceDraftScope();
+    if (scope) clearGatewayDeviceDraft(scope, { kind: "local", id });
     workbenchController.closePanesForRemovedConversations([id]);
     handleSidebarLocalDraftDeleted(id);
   };
+  const recoverPageReplyDraft = useEffectEvent((id: string) => {
+    const identity = verifiedDeviceReplyIdentity(id);
+    if (identity && !historyDetailLoading) return takeDeviceReplyDraft(id, identity);
+  });
   useEffect(() => {
     if (activeView !== "chat") {
       return;
@@ -2311,13 +2963,56 @@ function useGatewayAppController() {
       window.cancelAnimationFrame(frameId);
     };
   }, [activeView, displayedConversationId, restoreCachedComposerDraft]);
+  useEffect(() => {
+    if (
+      activeView !== "chat" ||
+      !displayedConversationId ||
+      restoredDeviceDraftFocusRef.current !== displayedConversationId
+    )
+      return;
+    const frame = window.requestAnimationFrame(() => {
+      restoredDeviceDraftFocusRef.current = "";
+      composerRef.current?.focus({ restoreSelection: false });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeView, displayedConversationId]);
+  useEffect(() => {
+    if (
+      sessionWorkbench.enabled ||
+      activeView !== "chat" ||
+      historyDetailLoading ||
+      selectedHistory?.conversation_id !== displayedConversationId ||
+      !selectedHistory.conversation
+    )
+      return;
+    const frame = window.requestAnimationFrame(() => {
+      const composer = composerRef.current;
+      if (
+        !composer ||
+        composerDraftOwnerRef.current !== displayedConversationId ||
+        composer.hasContent()
+      )
+        return;
+      const recovered = recoverPageReplyDraft(displayedConversationId);
+      if (recovered) composer.setDraft(recovered);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeView,
+    displayedConversationId,
+    historyDetailLoading,
+    selectedHistory?.conversation_id,
+    selectedHistory?.conversation,
+  ]);
 
   const {
     approvalBar,
     approvalConversationIds,
     canDropUpload,
+    canEditOfflineDraft,
     chatProtocolIncompatibleMessage,
     composerCompactionBlocked,
+    composerDraftOnly,
     composerInputDisabled,
     composerIsSending,
     composerPlaceholder,
@@ -2360,6 +3055,7 @@ function useGatewayAppController() {
     handlePendingFileDragOver,
     handlePendingFileDrop,
     historyDetailLoading,
+    historyOpenFailed: deviceHistoryOpenFailed,
     historyShareToken,
     isAgentMode,
     isDisplayedConversation,
@@ -2498,6 +3194,112 @@ function useGatewayAppController() {
     );
   }
 
+  if (deviceRouteStatus) {
+    const loading = deviceRouteStatus === "loading";
+    const invalidLink = deviceRouteStatus === "invalid-link";
+    const route = readCloudChatRoute(new URL(window.location.href));
+    const tasks = route.page === "tasks" && route.deviceView;
+    const zh = settings.locale === "zh-CN";
+    let message = zh ? "暂时无法访问此设备。" : "This device is unavailable.";
+    if (invalidLink)
+      message = tasks
+        ? zh
+          ? "设备定时任务链接无效。"
+          : "This device task link is invalid."
+        : zh
+          ? "设备对话链接无效。"
+          : "This device conversation link is invalid.";
+    else if (loading)
+      message = tasks
+        ? zh
+          ? "正在打开设备定时任务…"
+          : "Opening scheduled tasks on the device…"
+        : zh
+          ? "正在打开设备对话…"
+          : "Opening device conversation…";
+    return (
+      <LocaleContext.Provider value={localeContextValue}>
+        <div className={GATEWAY_SHELL_CLASS}>
+          <div className="max-820:hidden">
+            <ApplicationRail
+              activeId={tasks ? "cron-hub" : "chat"}
+              brand={<BrandMark />}
+              items={[
+                createWorkbenchNavigationItem("chat", zh ? "对话" : "Chat", () =>
+                  returnToCloudConversation(),
+                ),
+                createWorkbenchNavigationItem("library", zh ? "资料空间" : "Library", () =>
+                  returnToCloudConversation({ page: "library", location: CLOUD_SPACE_HOME }),
+                ),
+                createWorkbenchNavigationItem("customize", zh ? "自定义" : "Customize", () =>
+                  returnToCloudConversation({
+                    page: "extensions",
+                    location: DEFAULT_EXTENSION_LOCATION,
+                  }),
+                ),
+                createWorkbenchNavigationItem("cron-hub", zh ? "定时任务" : "Scheduled tasks", () =>
+                  returnToCloudConversation({ page: "tasks" }),
+                ),
+              ]}
+              footer={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  aria-label={zh ? "账户设置" : "Account settings"}
+                  onClick={() =>
+                    returnToCloudConversation({ page: "settings", section: "account" })
+                  }
+                >
+                  {userAvatarLabel}
+                </Button>
+              }
+            />
+          </div>
+          <main className={cn(GATEWAY_MAIN_SHELL_CLASS, "items-center justify-center")}>
+            <StatusNotice
+              className="mx-4 max-w-md"
+              tone={loading ? "info" : "error"}
+              busy={loading}
+              message={message}
+              description={
+                loading
+                  ? undefined
+                  : invalidLink
+                    ? zh
+                      ? "请从原设备重新打开，或请分享者提供完整链接。"
+                      : "Open it again from the original device or ask the sender for a complete link."
+                    : zh
+                      ? "检查设备连接和当前账户的访问权限，然后重试。"
+                      : "Check the device connection and your account access, then try again."
+              }
+              actions={
+                <>
+                  {!loading && !invalidLink && (
+                    <Button
+                      variant="outline"
+                      className="max-820:min-h-11"
+                      onClick={retryDeviceConversationRoute}
+                    >
+                      {zh ? "重试" : "Try again"}
+                    </Button>
+                  )}
+                  <Button
+                    variant={invalidLink ? "outline" : "ghost"}
+                    className="max-820:min-h-11"
+                    onClick={() => returnToCloudConversation()}
+                  >
+                    {zh ? "返回云端" : "Back to Cloud"}
+                  </Button>
+                </>
+              }
+            />
+          </main>
+        </div>
+      </LocaleContext.Provider>
+    );
+  }
+
   if (selection?.runtime_kind === "web_chat") {
     return (
       <LocaleContext.Provider value={localeContextValue}>
@@ -2510,18 +3312,6 @@ function useGatewayAppController() {
           setSettings={setSettings}
           settingsSaveState={settingsSaveState}
           onSwitch={switchExecutionTarget}
-          onOpenDeviceTasks={async (environment, workspace, taskRoute) => {
-            const target = await switchExecutionTarget(environment, workspace);
-            if (target?.runtime_kind !== "device_agent" || !target.device_id) return;
-            taskLandingAgentRef.current = target?.agent_id ?? environment.agent_id ?? "";
-            const url = new URL(window.location.href);
-            const href = cloudChatRouteHref(
-              { ...taskRoute, page: "tasks", target: target.device_id, deviceView: true },
-              url,
-            );
-            window.history.replaceState(window.history.state, "", href);
-            setActiveView("cron-hub");
-          }}
           onLogout={handleLogout}
         />
       </LocaleContext.Provider>
@@ -2534,7 +3324,9 @@ function useGatewayAppController() {
     return null;
   }
 
-  if (!settingsSyncReady) {
+  if (!settingsSyncReady || deviceDraftLease) {
+    const deviceDraftFailed = failedDeviceDraft === deviceDraftLease;
+    const zh = settings.locale === "zh-CN";
     return (
       <LocaleContext.Provider value={localeContextValue}>
         <div className={GATEWAY_SHELL_CLASS}>
@@ -2547,7 +3339,30 @@ function useGatewayAppController() {
                 "items-center justify-center max-820:h-full",
               )}
             >
-              <SettingsSyncLoading locale={settings.locale} />
+              {deviceDraftLease ? (
+                <StatusNotice
+                  className="mx-4 max-w-md"
+                  tone={deviceDraftFailed ? "error" : "info"}
+                  busy={!deviceDraftFailed}
+                  message={
+                    deviceDraftFailed
+                      ? zh
+                        ? "所选设备工作区暂不可用。"
+                        : "The selected device workspace is unavailable."
+                      : zh
+                        ? "正在打开设备工作区…"
+                        : "Opening device workspace…"
+                  }
+                  description={zh ? "云端草稿已保留。" : "Your cloud draft is saved."}
+                  actions={
+                    <Button variant="ghost" onClick={() => returnToCloudDraft(deviceDraftLease)}>
+                      {zh ? "返回云端" : "Return to Cloud"}
+                    </Button>
+                  }
+                />
+              ) : (
+                <SettingsSyncLoading locale={settings.locale} />
+              )}
             </div>
           </main>
         </div>
@@ -2597,6 +3412,7 @@ function useGatewayAppController() {
     availableSkills,
     branchPendingMessageId,
     canDropUpload,
+    canEditOfflineDraft,
     canShareHistory,
     cancelChat,
     cancelQueuedChatEdit,
@@ -2610,6 +3426,7 @@ function useGatewayAppController() {
     codeReviewSkill,
     commitQueuedChatEdit,
     composerCompactionBlocked,
+    composerDraftOnly,
     composerInputDisabled,
     composerIsSending,
     composerPlaceholder,
@@ -2618,6 +3435,11 @@ function useGatewayAppController() {
     contextUsageTokensSource,
     conversationId,
     conversationOpenState,
+    deviceHistoryOpenFailed,
+    openDeviceTaskConversation,
+    retryDeviceHistoryOpen,
+    savedDeviceDraftNotice,
+    retrySavedDeviceDraft: () => setRetrySavedDeviceDraftKey(localDraftRecoveryScopeKey),
     currentChatProvider,
     currentModelContextWindow,
     currentModelLabel,
@@ -2776,6 +3598,9 @@ function useGatewayAppController() {
     sendChat,
     setActiveFloorKey,
     setCachedComposerDraft,
+    verifiedDeviceReplyIdentity,
+    takeDeviceReplyDraft,
+    registerDevicePaneDraft: paneDraftRegistry.register,
     setPendingUploadsForConversation,
     setProjectPickerOpen,
     setProjectSettingsProject,

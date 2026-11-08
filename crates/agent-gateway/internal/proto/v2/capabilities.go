@@ -25,3 +25,6 @@ const ProxyDetectV1Capability = "PROXY_DETECT_V1"
 // permission_rules agent request (Settings → Permissions: list, add and delete
 // K-brain's remembered permission rules).
 const PermissionRulesV1Capability = "PERMISSION_RULES_V1"
+
+// WorkspaceHandoffPathV1Capability promises the device checks the confirmed path before any transfer.
+const WorkspaceHandoffPathV1Capability = "WORKSPACE_HANDOFF_PATH_V1"

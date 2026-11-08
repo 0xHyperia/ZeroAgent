@@ -63,7 +63,7 @@ test("the processing trace, its rows and the sparkle share one 12px icon column"
   // 工具组正文的外扩量必须大于行内元素的外扩量（行是 -mx-1.5 = 6px），
   // 否则 overflow-hidden 的裁剪线正好落在行的悬停底色与圆角上。
   assert.match(toolTraceSource, /className="-mx-3 overflow-hidden px-3 pt-0\.5"/);
-  assert.match(toolCallItemSource, /flex h-3\.5 w-3 shrink-0 items-center justify-center/);
+  assert.match(toolCallItemSource, /<ToolIcon aria-hidden="true" className="size-3 shrink-0\b/);
 });
 
 test("standalone work trace aligns its header with the assistant avatar", () => {

@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -33,7 +34,11 @@ import { PreviewLeadingTools } from "./PreviewToolbar";
 import { resourceText } from "./previewPolicy";
 import ResourceSourcePreview, { SourceViewControl } from "./ResourceSourcePreview";
 import { bindReaderZoom } from "./readerZoom";
-import { usePreviewReadingState } from "./readingSession";
+import {
+  type MarkdownReadingPosition,
+  usePreviewReadingSnapshot,
+  usePreviewReadingState,
+} from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
 import "./resource-markdown-preview.css";
 
@@ -123,11 +128,61 @@ function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: 
     if (sourceLink) setView("source");
   }, [sourceLink, setView]);
   const viewport = useRef<HTMLDivElement>(null);
+  const position = usePreviewReadingSnapshot("markdownPosition");
+  const lastPosition = useRef<MarkdownReadingPosition | undefined>(undefined);
   const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
   const latest = useRef(zoom);
   latest.current = zoom;
   const chrome = useContext(PreviewToolbarMount);
   const setFileMenu = chrome?.setFileMenu;
+  useLayoutEffect(() => {
+    const scroll = viewport.current;
+    const blocks = scroll?.querySelector(".za-markdown-blocks")?.children;
+    if (source || !scroll || !blocks) return;
+
+    const blockTop = (block: Element, origin: number) => block.getBoundingClientRect().top - origin;
+    const blockEnd = (index: number, origin: number) => {
+      const next = blocks.item(index + 1);
+      return next ? blockTop(next, origin) : scroll.scrollHeight;
+    };
+    const saved = lastPosition.current ?? position.read();
+    if (saved) {
+      const block = blocks.item(saved.block);
+      const origin = scroll.getBoundingClientRect().top - scroll.scrollTop;
+      const top = block ? blockTop(block, origin) : saved.top;
+      scroll.scrollTop = block ? top + (blockEnd(saved.block, origin) - top) * saved.progress : top;
+      lastPosition.current = saved;
+    }
+
+    const remember = () => {
+      if (!scroll.clientHeight) return;
+      const top = scroll.scrollTop;
+      const origin = scroll.getBoundingClientRect().top - top;
+      // Static Markdown's top-level blocks follow document order, including tables and code blocks.
+      let start = 0;
+      let end = blocks.length;
+      while (start < end) {
+        const middle = Math.floor((start + end) / 2);
+        if (blockTop(blocks[middle], origin) <= top) start = middle + 1;
+        else end = middle;
+      }
+      const index = start - 1;
+      const block = blocks.item(index);
+      if (!block || top <= 0) {
+        lastPosition.current = { block: -1, progress: 0, top };
+        return;
+      }
+      const beginning = blockTop(block, origin);
+      const progress = (top - beginning) / Math.max(1, blockEnd(index, origin) - beginning);
+      lastPosition.current = { block: index, progress: Math.min(1, progress), top };
+    };
+    scroll.addEventListener("scroll", remember, { passive: true });
+    return () => {
+      scroll.removeEventListener("scroll", remember);
+      // Closing or hiding the canvas may already have changed its layout during this commit.
+      if (lastPosition.current) position.write(lastPosition.current);
+    };
+  }, [source, position]);
   useEffect(() => {
     const node = viewport.current;
     if (!node) return;
@@ -261,6 +316,7 @@ const MarkdownBody = memo(function MarkdownBody({
     <article className="za-preview-markdown za-markdown-content">
       <Streamdown
         mode="static"
+        className="za-markdown-blocks"
         skipHtml
         allowedElements={allowedElements}
         components={components}

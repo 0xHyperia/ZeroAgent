@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_files (
  state TEXT NOT NULL CHECK (state IN ('uploading','uploaded','processing','ready','vision_ready','failed','deleting','deleted')),
  processing_stage TEXT NOT NULL DEFAULT '',
  extracted_text TEXT NOT NULL DEFAULT '' CHECK (octet_length(extracted_text) <= 2097152),
+ parser_task JSONB NULL,
+ parsed_segments JSONB NOT NULL DEFAULT '[]'::jsonb,
+ parse_truncated BOOLEAN NOT NULL DEFAULT false,
  error_code TEXT NOT NULL DEFAULT '',
  version BIGINT NOT NULL DEFAULT 1 CHECK (version > 0),
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,12 +38,6 @@ CREATE TABLE IF NOT EXISTS zeroagent_cloud_files (
  deleted_at TIMESTAMPTZ NULL,
  CONSTRAINT zeroagent_cloud_files_tombstone CHECK (deleted_at IS NULL OR state IN ('deleting','deleted'))
 );
-ALTER TABLE zeroagent_cloud_files ALTER COLUMN conversation_id DROP NOT NULL;
-ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parser_task JSONB NULL;
-ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parsed_segments JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE zeroagent_cloud_files ADD COLUMN IF NOT EXISTS parse_truncated BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE zeroagent_cloud_files DROP CONSTRAINT IF EXISTS zeroagent_cloud_files_state_check;
-ALTER TABLE zeroagent_cloud_files ADD CONSTRAINT zeroagent_cloud_files_state_check CHECK (state IN ('uploading','uploaded','processing','ready','vision_ready','failed','deleting','deleted'));
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_files_library_idx
  ON zeroagent_cloud_files(user_id,created_at DESC,id DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS zeroagent_cloud_files_conversation_idx

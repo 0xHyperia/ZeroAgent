@@ -37,6 +37,7 @@ export type StatusNoticeProps = Omit<ComponentProps<"div">, "children"> & {
   message: string;
   description?: ReactNode;
   actions?: ReactNode;
+  stackActions?: boolean;
   tone?: NoticeTone;
   compact?: boolean;
   busy?: boolean;
@@ -49,6 +50,7 @@ export function StatusNotice({
   message,
   description,
   actions,
+  stackActions = false,
   tone = "info",
   compact = false,
   busy = false,
@@ -74,6 +76,7 @@ export function StatusNotice({
       {...props}
       tone={tone}
       density={compact ? "compact" : undefined}
+      data-stack-actions={stackActions ? "" : undefined}
       role={role ?? (tone === "error" ? "alert" : "status")}
       aria-atomic="true"
       className={cn("app-status-notice", className)}

@@ -19,6 +19,7 @@ import type {
 import type { TranscriptStoreRegistry } from "@/lib/chat/stream/useConversationChat";
 import { buildOptimisticConversationTitle } from "@/lib/chatUi";
 import type { GatewayWebSocketClient } from "@/lib/gatewaySocket";
+import { requireCurrentGatewayAgent } from "@/lib/gatewaySocketShared";
 import type { ChatQueueSnapshot } from "@/lib/gatewayTypes";
 import {
   type AppSettings,
@@ -73,6 +74,7 @@ type GatewayChatCommandActionOptions = {
     reason: string,
     currentApi?: GatewayWebSocketClient | null,
     timeoutMs?: number,
+    capturedScope?: () => boolean,
   ) => Promise<unknown>;
   protectedConversationRef: MutableRefObject<string>;
   queuedChatEditSessionRef: MutableRefObject<QueuedEditSession | null>;
@@ -171,6 +173,8 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     sendOptions?: SendChatOptions,
   ): Promise<ChatCommandOutcome | null> => {
     if (!api) return null;
+    const isCurrentAgent = sendOptions?.isCurrentAgent ?? api.captureActiveAgentScope();
+    if (!isCurrentAgent()) return null;
     const uploadedFiles = sendOptions?.uploadedFiles ?? [];
     let activeConversationId =
       sendOptions?.conversationId?.trim() || conversationIdRef.current.trim();
@@ -233,24 +237,27 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       runtimeControls: sendOptions?.runtimeControls ?? settings.chatRuntimeControls,
     });
     const submit = async () => {
-      await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS);
-      return api.chatCommand({
-        type: sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
-        message,
-        conversationId: startedAsDraftConversation ? undefined : activeConversationId,
-        selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
-        systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
-        uploadedFiles,
-        referencedConversations: sendOptions?.referencedConversations,
-        clientRequestId,
-        runtimeControls,
-        baseMessageRef: sendOptions?.editMessageRef,
-        queuePolicy,
-        goalAction: sendOptions?.goalAction,
-        goalText: sendOptions?.goalText,
-        promptCommand: sendOptions?.promptCommand,
-        planCommand: sendOptions?.planCommand,
-      });
+      await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS, isCurrentAgent);
+      return api.chatCommand(
+        {
+          type: sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
+          message,
+          conversationId: startedAsDraftConversation ? undefined : activeConversationId,
+          selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
+          systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
+          uploadedFiles,
+          referencedConversations: sendOptions?.referencedConversations,
+          clientRequestId,
+          runtimeControls,
+          baseMessageRef: sendOptions?.editMessageRef,
+          queuePolicy,
+          goalAction: sendOptions?.goalAction,
+          goalText: sendOptions?.goalText,
+          promptCommand: sendOptions?.promptCommand,
+          planCommand: sendOptions?.planCommand,
+        },
+        isCurrentAgent,
+      );
     };
     if (queueBesidePending) {
       // Keep the current command's pending entry until its own run starts.
@@ -314,7 +321,9 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     workdir: string,
     // 大段粘贴导入期间的"上传中"状态归属会话:多 Pane 下只禁用目标 Pane。
     targetConversationId?: string,
+    isCurrentAgent = api?.captureActiveAgentScope(),
   ) => {
+    requireCurrentGatewayAgent(isCurrentAgent);
     let text = normalizeLogicalLineEndings(
       isAgentMode && draft.largePastes.length > 0
         ? draft.textWithoutLargePastes
@@ -327,12 +336,14 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       setUploadingFiles(true, targetConversationId);
       try {
         const agentID = await resolveActiveAgentID();
+        requireCurrentGatewayAgent(isCurrentAgent);
         const imported = await importPastedTextsAsFiles({
           token,
           agentId: agentID,
           workdir,
           pastes: draft.largePastes,
         });
+        requireCurrentGatewayAgent(isCurrentAgent);
         if (apiRef.current?.getActiveAgent().trim() !== agentID) {
           throw new Error("Agent 已切换，已取消发送本次大段粘贴内容。");
         }
@@ -364,6 +375,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     const uploadedFiles = pendingUploadedFiles.slice();
     let clearedComposer = false;
     if (!api || !conversationId || !queuedChatTurnHasContent(draft, uploadedFiles)) return false;
+    const isCurrentAgent = api.captureActiveAgentScope();
 
     // A first submit from the home draft may still be waiting for the gateway
     // to bind its run to a canonical conversation. Route the follow-up through
@@ -378,7 +390,12 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       targetConversationId =
         (await chatCommandPipeline.waitForConversationBinding(conversationId))?.trim() ?? "";
     }
-    if (!targetConversationId || !isDisplayedConversation(targetConversationId)) return false;
+    if (
+      !isCurrentAgent() ||
+      !targetConversationId ||
+      !isDisplayedConversation(targetConversationId)
+    )
+      return false;
 
     const workdir = (
       conversationWorkdirsRef.current.get(targetConversationId) ??
@@ -392,11 +409,14 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         uploadedFiles,
         workdir,
         targetConversationId,
+        isCurrentAgent,
       );
+      if (!isCurrentAgent()) return false;
       if (!materialized.text && materialized.uploadedFiles.length === 0) return false;
       clearCurrentComposerDraftForQueuedTurn(targetConversationId);
       clearedComposer = true;
       const outcome = await sendChat(materialized.text, {
+        isCurrentAgent,
         conversationId: targetConversationId,
         uploadedFiles: materialized.uploadedFiles,
         referencedConversations: materialized.referencedConversations,
@@ -406,7 +426,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         optimisticEcho: false,
       });
       if (!outcome) {
-        if (getDisplayedConversationId() === targetConversationId) {
+        if (isCurrentAgent() && getDisplayedConversationId() === targetConversationId) {
           if (!composerRef.current?.hasContent()) composerRef.current?.setDraft(draft);
           if (getPendingUploadsForConversation(targetConversationId).length === 0) {
             setPendingUploadsForConversation(targetConversationId, uploadedFiles);
@@ -417,6 +437,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       if (outcome.kind === "failed") throw new Error(outcome.message);
       return true;
     } catch (error) {
+      if (!isCurrentAgent()) return false;
       if (clearedComposer && getDisplayedConversationId() === targetConversationId) {
         if (!composerRef.current?.hasContent()) composerRef.current?.setDraft(draft);
         if (getPendingUploadsForConversation(targetConversationId).length === 0) {

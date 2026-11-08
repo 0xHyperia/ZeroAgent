@@ -2,11 +2,11 @@ import { ApplicationView, type ApplicationViewId } from "@liveagent/ui/applicati
 import { AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
+import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import {
   useWorkbenchAccountDestination,
   useWorkbenchAccountSurface,
 } from "@liveagent/ui/application/useWorkbenchAccountSurface";
-import { useNavigationPreview } from "@liveagent/ui/application/useNavigationPreview";
 import { WorkbenchAccountSidebar } from "@liveagent/ui/application/WorkbenchFeatureSidebar";
 import { WorkbenchNavigationMount } from "@liveagent/ui/application/WorkbenchNavigationMount";
 import { WorkbenchNavigationRail } from "@liveagent/ui/application/WorkbenchNavigationRail";
@@ -28,10 +28,10 @@ import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { TaskProgressBar } from "@liveagent/ui/components/chat/TaskProgressBar";
+import { TranscriptLatestButton } from "@liveagent/ui/components/chat/TranscriptLatestButton";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceCloneTaskOverlay } from "@liveagent/ui/components/chat/WorkspaceCloneTaskOverlay";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { ChevronDown } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
@@ -142,9 +142,9 @@ import {
   GATEWAY_CHAT_FRAME_CLASS,
   GATEWAY_MAIN_BACKDROP_CLASS,
   GATEWAY_MAIN_SHELL_CLASS,
-  GATEWAY_SCROLL_TO_BOTTOM_CLASS,
   GATEWAY_SETTINGS_OVERLAY_CLASS,
   GATEWAY_SHELL_CLASS,
+  GATEWAY_TRANSCRIPT_LATEST_BOTTOM,
   GATEWAY_TRANSCRIPT_SCROLL_CLASS,
 } from "@/lib/webStyleClasses";
 import { WorkdirPickerModal } from "@/pages/settings/WorkdirPickerModal";
@@ -154,6 +154,10 @@ import { ConversationStatsBarHost } from "./ConversationStatsBarHost";
 import { asErrorMessage } from "./chatEventUtils";
 import { CHAT_RUNTIME_FOREGROUND_PREPARE_TIMEOUT_MS } from "./constants";
 import type { GatewayAppViewModel } from "./GatewayApp";
+import {
+  GatewayDeviceConnectionNotice,
+  GatewaySavedDeviceDraftNotice,
+} from "./GatewayDeviceConnectionNotice";
 import { isLocalDraftConversationId } from "./gatewayLocalDraft";
 import { HistorySwitchLoadingOverlay } from "./HistorySwitchLoadingOverlay";
 import { useWindowFileDropGuard } from "./hooks/useWindowFileDropGuard";
@@ -213,6 +217,7 @@ export function GatewayAppView({
     availableSkills,
     branchPendingMessageId,
     canDropUpload,
+    canEditOfflineDraft,
     canShareHistory,
     cancelChat,
     changedFilesActions,
@@ -227,6 +232,7 @@ export function GatewayAppView({
     cancelQueuedChatEdit,
     commitQueuedChatEdit,
     composerCompactionBlocked,
+    composerDraftOnly,
     composerInputDisabled,
     composerIsSending,
     composerPlaceholder,
@@ -234,6 +240,11 @@ export function GatewayAppView({
     confirmDialog,
     contextUsageTokensSource,
     conversationOpenState,
+    deviceHistoryOpenFailed,
+    openDeviceTaskConversation,
+    retryDeviceHistoryOpen,
+    savedDeviceDraftNotice,
+    retrySavedDeviceDraft,
     currentChatProvider,
     currentModelContextWindow,
     currentModelLabel,
@@ -257,6 +268,9 @@ export function GatewayAppView({
     folderInputRef,
     gatewayConnectionLost,
     getCachedComposerDraft,
+    verifiedDeviceReplyIdentity,
+    takeDeviceReplyDraft,
+    registerDevicePaneDraft,
     getDisplayedConversationId,
     getPendingUploadsForConversation,
     subscribePendingUploads,
@@ -486,6 +500,8 @@ export function GatewayAppView({
     workspaceSshTerminalOpen,
     workspaceSshTerminalOpenRequest,
   } = viewModel;
+  const transportInputDisabled =
+    sidebarSectionsDisabled || Boolean(chatProtocolIncompatibleMessage);
   const sidebar = useSidebar();
   const taskDeviceId = selection?.runtime_kind === "device_agent" ? selection.device_id : undefined;
   const taskOwner = relayUser?.id;
@@ -510,6 +526,10 @@ export function GatewayAppView({
   }, [settings.locale, taskDeviceId, taskOwner]);
   const showDeviceTasks = activeView === "cron-hub" && !!taskOwner && !!taskDeviceId;
   const accountNavigation = desktopHost?.accountNavigation;
+  const leaveAccount = (navigate: () => void) => {
+    if (accountNavigation) accountNavigation.close(navigate);
+    else navigate();
+  };
   const accountDestination = useWorkbenchAccountDestination(accountNavigation);
   const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(
@@ -714,7 +734,7 @@ export function GatewayAppView({
       isUploadingFiles &&
       (!uploadingConversationId || uploadingConversationId === sendConversationId);
     if (uploadBlocksSend || isImportingPastedTextRef.current) return;
-    if (composerInputDisabled) return;
+    if (composerInputDisabled || !api) return;
     if (queuedChatEditSessionRef.current?.conversationId === getDisplayedConversationId()) {
       primarySendInFlightConversationRef.current = sendConversationId;
       void (async () => {
@@ -744,6 +764,7 @@ export function GatewayAppView({
       })();
       return;
     }
+    const isCurrentAgent = api.captureActiveAgentScope();
     primarySendInFlightConversationRef.current = sendConversationId;
     void (async () => {
       try {
@@ -758,26 +779,29 @@ export function GatewayAppView({
                 pendingUploadedFiles,
                 displayedConversationWorkdir,
                 sendConversationId,
+                isCurrentAgent,
               )
             : { text: "", uploadedFiles: pendingUploadedFiles, referencedConversations: [] };
           text = materialized.text;
           files = materialized.uploadedFiles;
           referencedConversations = materialized.referencedConversations;
         } catch (error) {
-          addNotify("error", asErrorMessage(error, "大段粘贴内容导入失败"));
+          if (isCurrentAgent()) addNotify("error", asErrorMessage(error, "大段粘贴内容导入失败"));
           return;
         }
-        if (!text && files.length === 0) return;
+        if (!isCurrentAgent() || (!text && files.length === 0)) return;
         if (getDisplayedConversationId() === sendConversationId) {
           composerRef.current?.clear();
         }
         setPendingUploadsForConversation(sendConversationId, []);
         void sendChat(text, {
+          isCurrentAgent,
           conversationId: sendConversationId,
           uploadedFiles: files,
           referencedConversations,
           runtimeControls: chatRuntimeControlsForCurrentProvider,
         }).catch(() => {
+          if (!isCurrentAgent()) return;
           updatePendingUploadsForConversation(sendConversationId, (current) =>
             mergePendingUploadedFiles(current, files),
           );
@@ -790,6 +814,7 @@ export function GatewayAppView({
     })();
   }, [
     addNotify,
+    api,
     chatRuntimeControlsForCurrentProvider,
     commitQueuedChatEdit,
     composerInputDisabled,
@@ -835,7 +860,8 @@ export function GatewayAppView({
     hasModels: modelOptions.length > 0,
     showUsage: isAgentDevExecutionMode,
     isInputDisabled: composerInputDisabled,
-    transportInputDisabled: !status?.online || Boolean(chatProtocolIncompatibleMessage),
+    transportInputDisabled,
+    canEditOfflineDraft,
     uploadingConversationId,
     inputPlaceholder: composerPlaceholder,
     modelOptions,
@@ -879,6 +905,9 @@ export function GatewayAppView({
     importFilesForConversation,
     getCachedComposerDraft,
     setCachedComposerDraft,
+    verifiedDeviceReplyIdentity,
+    takeDeviceReplyDraft,
+    registerDevicePaneDraft,
     notifyError: (message) => addNotify("error", message),
     trajectoryHost,
   };
@@ -1007,6 +1036,7 @@ export function GatewayAppView({
       isUploadingFiles &&
       (!uploadingConversationId || uploadingConversationId === displayedConversationId),
     isInputDisabled: composerInputDisabled,
+    draftOnly: composerDraftOnly,
     onSend: handlePrimaryComposerSend,
     onStop: handlePrimaryComposerStop,
     onSelectModel: handleSelectModel,
@@ -1101,6 +1131,7 @@ export function GatewayAppView({
     stageRef: transcriptStageRef,
     setTranscriptScrollAreaRoot,
     setTranscriptViewport,
+    transcriptViewport,
     isViewportFollowing: transcriptFollow.isFollowing,
     viewportFollowing: transcriptFollowing,
     onJumpToBottom: transcriptFollow.jumpToBottom,
@@ -1472,18 +1503,18 @@ export function GatewayAppView({
     navigationPreview.dismiss();
     if (pin || (!mobile && view === "chat")) setSidebarOpen(true);
     if (view === "library" || view === "customize") {
-      accountNavigation?.open(href ?? (view === "library" ? "/space" : "/plugins"));
+      accountNavigation?.openDestination(view, href);
       if (mobile) setSidebarOpen(false);
       return;
     }
-    if (view === "devices") return;
-    accountNavigation?.close();
-    if (view === "chat") setActiveView("chat");
-    else
-      handleSidebarOpenResourceHub(
-        view.replace(/-hub$/, "") as Parameters<typeof handleSidebarOpenResourceHub>[0],
-      );
-    if (mobile) setSidebarOpen(false);
+    leaveAccount(() => {
+      if (view === "chat") setActiveView("chat");
+      else
+        handleSidebarOpenResourceHub(
+          view.replace(/-hub$/, "") as Parameters<typeof handleSidebarOpenResourceHub>[0],
+        );
+      if (mobile) setSidebarOpen(false);
+    });
   }
 
   const renderConnectedTasks = (sidebarOnly = false) =>
@@ -1506,10 +1537,7 @@ export function GatewayAppView({
         requireCurrent={requireTaskDevice}
         mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
         onBack={() => setActiveView("chat")}
-        onOpenConversation={(id) => {
-          setActiveView("chat");
-          handleSidebarSelectConversation(id);
-        }}
+        onOpenConversation={openDeviceTaskConversation}
         renderConversation={(id, run, messageJump, scheduledRun) => {
           const composerScopeId = `scheduled-task-result:${taskOwner}:${taskDeviceId}:${id}`;
           const latestRun = scheduledRun?.run ?? run;
@@ -1533,10 +1561,7 @@ export function GatewayAppView({
                   ))
               }
               blockedMessage={chatProtocolIncompatibleMessage}
-              onFocusPane={(conversationId) => {
-                setActiveView("chat");
-                handleSidebarSelectConversation(conversationId);
-              }}
+              onFocusPane={openDeviceTaskConversation}
             />
           );
         }}
@@ -1565,6 +1590,7 @@ export function GatewayAppView({
       }
       shortcuts={settings.customSettings.sidebarShortcuts}
       previewId={navigationPreview.open ? navigationPreview.destination : undefined}
+      previewableIds={mobile ? undefined : navigationPreview.previewableIds}
       onSelectView={(view) => selectNavigation(view, mobile)}
       onClose={mobile ? () => setSidebarOpen(false) : undefined}
       footer={
@@ -1651,11 +1677,7 @@ export function GatewayAppView({
               onOpenSidebar={() => setSidebarOpen((open) => !open)}
               leadingActions={
                 <>
-                  {desktopHost &&
-                    !accountDestination &&
-                    (activeView === "chat" || activeView === "cron-hub") && (
-                      <DesktopHostSlot kind="header" />
-                    )}
+                  {desktopHost && !accountDestination && <DesktopHostSlot kind="header" />}
                   {!accountDestination &&
                   activeView === "chat" &&
                   hasConversationReply &&
@@ -1680,11 +1702,19 @@ export function GatewayAppView({
                       className="mr-6px max-520:mr-8px"
                       onToggle={() => setRightDockOpen((open) => !open)}
                     />
-                    {!desktopHost && (
+                    {!desktopHost && !historyShareToken && (
                       <ExecutionEnvironmentSwitcher
                         environments={environments}
                         selection={selection}
-                        onSwitch={switchExecutionTarget}
+                        disabled={isUploadingFiles}
+                        onSwitch={async (environment, workspace) => {
+                          if (activeView === "chat") {
+                            const draft = composerRef.current?.getDraft();
+                            if (draft) setCachedComposerDraft(displayedConversationId, draft);
+                          }
+                          await switchExecutionTarget(environment, workspace);
+                          setActiveView("chat");
+                        }}
                       />
                     )}
                   </>
@@ -1794,14 +1824,10 @@ export function GatewayAppView({
                   onArchiveProject={handleArchiveWorkspaceProject}
                   onUnarchiveProject={handleUnarchiveWorkspaceProject}
                   archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
-                  onNewConversation={() => {
-                    accountNavigation?.close();
-                    handleSidebarNewConversation();
-                  }}
-                  onSelectConversation={(id, options) => {
-                    accountNavigation?.close();
-                    handleSidebarSelectConversation(id, options);
-                  }}
+                  onNewConversation={() => leaveAccount(handleSidebarNewConversation)}
+                  onSelectConversation={(id, options) =>
+                    leaveAccount(() => handleSidebarSelectConversation(id, options))
+                  }
                   onConversationOpenInWorkbenchSplit={
                     sessionWorkbench.enabled
                       ? workbenchController.handleOpenConversationInSplit
@@ -1823,10 +1849,9 @@ export function GatewayAppView({
                   onConversationsRemoved={handleSidebarConversationsRemoved}
                   sidebarShortcuts={settings.customSettings.sidebarShortcuts}
                   onOpenSettings={openSettings}
-                  onOpenResourceHub={(resource) => {
-                    accountNavigation?.close();
-                    handleSidebarOpenResourceHub(resource);
-                  }}
+                  onOpenResourceHub={(resource) =>
+                    leaveAccount(() => handleSidebarOpenResourceHub(resource))
+                  }
                 />
               )}
 
@@ -1967,28 +1992,58 @@ export function GatewayAppView({
                         },
                         content: (
                           <>
-                            {statusError ? (
-                              <StatusNotice
-                                tone="error"
-                                message={statusError}
-                                className="mx-5 mt-3 max-sm:mx-3"
+                            <GatewayDeviceConnectionNotice
+                              unavailable={sidebarSectionsDisabled}
+                              connectionLost={gatewayConnectionLost}
+                              agentOnline={status?.online}
+                              statusReadFailed={Boolean(statusError)}
+                              draftEditable={composerDraftOnly && !approvalBar}
+                              onReconnect={() => prepareChatRuntime("manual-reconnect")}
+                            />
+                            {savedDeviceDraftNotice && !sidebarSectionsDisabled ? (
+                              <GatewaySavedDeviceDraftNotice
+                                state={savedDeviceDraftNotice.state}
+                                path={savedDeviceDraftNotice.path}
+                                onRetry={retrySavedDeviceDraft}
                               />
                             ) : null}
-                            {chatProtocolIncompatibleMessage && !statusError ? (
+                            {chatProtocolIncompatibleMessage && !sidebarSectionsDisabled ? (
                               <StatusNotice
                                 tone="error"
                                 message={chatProtocolIncompatibleMessage}
                                 className="mx-5 mt-3 max-sm:mx-3"
                               />
                             ) : null}
-                            {settingsSyncError ? (
+                            {settingsSyncError && !sidebarSectionsDisabled ? (
                               <StatusNotice
                                 tone="error"
                                 message={settingsSyncError}
                                 className="mx-5 mt-3 max-sm:mx-3"
                               />
                             ) : null}
-                            {chatError && displayedTranscriptRowCount === 0 ? (
+                            {deviceHistoryOpenFailed && !sidebarSectionsDisabled ? (
+                              <StatusNotice
+                                tone="error"
+                                message={
+                                  settings.locale === "zh-CN"
+                                    ? "暂时无法读取此设备会话。"
+                                    : "Couldn't read this device conversation."
+                                }
+                                description={
+                                  settings.locale === "zh-CN"
+                                    ? "草稿保留在原会话。历史读取成功后即可继续发送。"
+                                    : "Your draft stays in this conversation. Sending is available once history loads."
+                                }
+                                actions={
+                                  <Button variant="ghost" onClick={retryDeviceHistoryOpen}>
+                                    {settings.locale === "zh-CN" ? "重试" : "Retry"}
+                                  </Button>
+                                }
+                                className="mx-5 mt-3 max-sm:mx-3"
+                              />
+                            ) : !sidebarSectionsDisabled &&
+                              chatError &&
+                              displayedTranscriptRowCount === 0 ? (
                               <StatusNotice
                                 tone="error"
                                 message={chatError}
@@ -2031,6 +2086,13 @@ export function GatewayAppView({
                                     <ScrollArea
                                       ref={setTranscriptScrollAreaRoot}
                                       viewportRef={setTranscriptViewport}
+                                      viewportProps={{
+                                        className: "chat-transcript-viewport",
+                                        "aria-label": translate(
+                                          "chat.transcript.messages",
+                                          settings.locale,
+                                        ),
+                                      }}
                                       className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
                                     >
                                       <ChangedFilesActionsProvider value={changedFilesActions}>
@@ -2120,16 +2182,14 @@ export function GatewayAppView({
                                   </div>
                                 )}
                                 {renderedConversationView === "conversation" &&
+                                displayedTranscriptRowCount > 0 &&
+                                !conversationOpenState.showOverlay &&
                                 !transcriptFollowing ? (
-                                  <button
-                                    type="button"
-                                    className={GATEWAY_SCROLL_TO_BOTTOM_CLASS}
-                                    onClick={transcriptFollow.jumpToBottom}
-                                    aria-label="滚动到底部"
-                                    title="滚动到底部"
-                                  >
-                                    <ChevronDown className="size-4" />
-                                  </button>
+                                  <TranscriptLatestButton
+                                    bottom={GATEWAY_TRANSCRIPT_LATEST_BOTTOM}
+                                    viewport={transcriptViewport}
+                                    onJump={transcriptFollow.jumpToBottom}
+                                  />
                                 ) : null}
                                 <ChatComposerBar
                                   presentation="column"
@@ -2148,6 +2208,7 @@ export function GatewayAppView({
                                   isSending={composerIsSending}
                                   isUploadingFiles={isUploadingFiles}
                                   isInputDisabled={composerInputDisabled}
+                                  draftOnly={composerDraftOnly}
                                   // 麦克风在开启语音输入后显示；点击设置卡片会立即切换当前供应商。
                                   sttSessionKey={displayedConversationId}
                                   sttProvider={null}
@@ -2230,6 +2291,7 @@ export function GatewayAppView({
                                       })();
                                       return;
                                     }
+                                    const isCurrentAgent = api.captureActiveAgentScope();
                                     submitInFlightRef.current = true;
                                     void (async () => {
                                       try {
@@ -2250,6 +2312,7 @@ export function GatewayAppView({
                                                 pendingUploadedFiles,
                                                 displayedConversationWorkdir,
                                                 sendConversationId,
+                                                isCurrentAgent,
                                               )
                                             : {
                                                 text: "",
@@ -2261,14 +2324,15 @@ export function GatewayAppView({
                                           referencedConversations =
                                             materialized.referencedConversations;
                                         } catch (error) {
-                                          addNotify(
-                                            "error",
-                                            asErrorMessage(error, "大段粘贴内容导入失败"),
-                                          );
+                                          if (isCurrentAgent())
+                                            addNotify(
+                                              "error",
+                                              asErrorMessage(error, "大段粘贴内容导入失败"),
+                                            );
                                           return;
                                         }
 
-                                        if (!text && files.length === 0) {
+                                        if (!isCurrentAgent() || (!text && files.length === 0)) {
                                           return;
                                         }
                                         if (getDisplayedConversationId() === sendConversationId) {
@@ -2276,11 +2340,13 @@ export function GatewayAppView({
                                         }
                                         setPendingUploadsForConversation(sendConversationId, []);
                                         void sendChat(text, {
+                                          isCurrentAgent,
                                           conversationId: sendConversationId,
                                           uploadedFiles: files,
                                           referencedConversations,
                                           runtimeControls: chatRuntimeControlsForCurrentProvider,
                                         }).catch(() => {
+                                          if (!isCurrentAgent()) return;
                                           updatePendingUploadsForConversation(
                                             sendConversationId,
                                             (current) => mergePendingUploadedFiles(current, files),
@@ -2302,6 +2368,7 @@ export function GatewayAppView({
                                     }
                                     void cancelChat(displayedConversationId);
                                   }}
+                                  stopDisabled={transportInputDisabled}
                                   onPrepareChatRuntime={() => {
                                     if (!api || historyShareToken) {
                                       return;
@@ -2332,6 +2399,7 @@ export function GatewayAppView({
                                   queuedTurns={queuedChatTurnsForDisplayedConversation}
                                   queuePaused={queuePaused}
                                   queueControlPending={queueControlPending}
+                                  queueRunDisabled={transportInputDisabled}
                                   onQueuePausedChange={handleQueuePausedChange}
                                   onRunQueuedTurnNow={runQueuedTurnNow}
                                   onMoveQueuedTurnUp={moveQueuedTurnUp}

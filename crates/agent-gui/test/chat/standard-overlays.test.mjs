@@ -116,14 +116,15 @@ test("mention popup keeps editor focus, portals and dismisses with Escape", asyn
   function Harness() {
     const [open, setOpen] = React.useState(true);
     return open ? React.createElement(Popup, {
-      anchorRef: { current: editor }, trigger: "mention", mode: "root", suggestions: [],
-      highlightIndex: 0, isLoading: false, error: null, showEmpty: true, emptyLabel: "No matches",
-      onBack: () => {}, onSelect: () => {}, onClose: () => setOpen(false),
+      anchorRef: { current: editor }, listId: "mention-options", optionIds: [],
+      trigger: "mention", mode: "root", suggestions: [],
+      highlightIndex: 0, isLoading: false, status: "No matches", hasError: false,
+      onBack: () => {}, onSelect: () => {}, onHighlight: () => {}, onClose: () => setOpen(false),
     }) : null;
   }
   const cleanup = await mount(Harness);
   try {
-    assert.ok(document.querySelector('[role="listbox"]').closest('[data-base-ui-portal]'));
+    assert.ok(document.querySelector('#mention-options[role="listbox"]').closest('[data-base-ui-portal]'));
     assert.equal(document.activeElement, editor);
     await key("Escape");
     assert.equal(document.querySelector('[role="listbox"]'), null);

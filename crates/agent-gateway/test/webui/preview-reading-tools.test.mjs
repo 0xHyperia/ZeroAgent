@@ -19,13 +19,21 @@ test("document navigation keeps the hover path open, follows the active anchor a
  await app.env.act(async()=>mouse(rail,'pointerout',panel.querySelector('button')));
  assert.equal(app.host.querySelector('aside'),panel,'moving into the panel keeps the same preview mounted');
  await app.env.act(async()=>mouse(zone,'pointerout',document.body));assert.equal(app.host.querySelector('aside'),null);
- // Keyboard focus reveals the same panel and remains usable without a pointer.
- await app.env.act(async()=>rail.focus());assert.ok(app.host.querySelector('aside'));
+ await app.env.act(async()=>rail.focus());
+ assert.equal(document.activeElement,rail);
+ assert.equal(app.host.querySelector('aside'),null);
+ await app.env.act(async()=>rail.click());
+ assert.equal(document.activeElement.textContent,'第1页');
  await app.render(h(View,{current:3}));assert.equal(scrolled.at(-1),'第3页');
- await app.env.act(async()=>app.host.querySelector('[aria-label="固定文档导航"]').click());
  await app.env.act(async()=>zone.dispatchEvent(new window.MouseEvent('pointerout',{bubbles:true,relatedTarget:document.body})));
  assert.ok(app.host.querySelector('aside'));assert.equal(zone.dataset.pinned,'true');
+ await app.key(document.activeElement,'Escape');
+ assert.equal(app.host.querySelector('aside'),null);
+ assert.equal(document.activeElement,rail);
+ await app.env.act(async()=>rail.click());
+ assert.equal(document.activeElement.textContent,'第3页');
  await app.env.act(async()=>app.host.querySelector('[aria-label="收起文档导航"]').click());assert.equal(app.host.querySelector('aside'),null);
+ assert.equal(document.activeElement,rail);
 });
 
 test("unsent region comments retain their anchors when cancelling discard and clear only after explicit discard",async t=>{
@@ -83,6 +91,10 @@ test("snapshot store is limited to twenty recent resources and rejects unbounded
   store.read("0");store.write("20","pdfPage",21);
   assert.equal(store.read("1"),undefined);assert.equal(store.read("0").pdfPage,1);
   store.write("bad","sheetName","x".repeat(129));assert.equal(store.read("bad"),undefined);
+  const markdownPosition = { block: 70, progress: 0.32, top: 15609 };
+  store.write("0", "markdownPosition", markdownPosition);
+  store.write("0", "markdownPosition", { ...markdownPosition, progress: 2 });
+  assert.deepEqual(store.read("0").markdownPosition, markdownPosition);
 });
 
 test("PDF comment anchors survive glyph span splits and reject changed originals or invalid offsets",async t=>{
@@ -308,8 +320,16 @@ test("history groups versions by date on an uncluttered timeline and selection n
  const app=await setup(t),h=app.env.React.createElement,{ResourceVersionTimeline}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceVersionTimeline.tsx");
  const versions=[{id:'v3',number:3,created_at:'2026-10-31T10:00:00Z'},{id:'v2',number:2,created_at:'2026-10-31T09:00:00Z'},{id:'v1',number:1,created_at:'2026-10-30T08:00:00Z'}],selected=[];
  await app.render(h(ResourceVersionTimeline,{versions,selected:'v2',busy:false,onSelect:id=>selected.push(id)}));
- assert.equal(app.host.querySelectorAll('section').length,2);assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId,'v2');assert.match(app.host.textContent,/已创建/);assert.doesNotMatch(app.host.textContent,/KB|ready|已保存/);
- await app.env.act(async()=>app.host.querySelector('[data-version-id="v1"]').click());assert.deepEqual(selected,['v1']);
+ assert.equal(app.host.querySelectorAll('.za-reader-timeline > section').length,2);
+ assert.equal(app.host.querySelector('[aria-current="true"]').dataset.versionId,'v2');
+ const latest=app.host.querySelector('[data-version-id="v3"]');
+ const original=app.host.querySelector('[data-version-id="v1"]');
+ assert.equal(latest.querySelector('span').textContent,'v3 · 最新');
+ assert.equal(original.querySelector('span').textContent,'v1 · 初始版本');
+ assert.equal(original.getAttribute('aria-label'),'查看版本 v1 · 初始版本');
+ assert.doesNotMatch(app.host.textContent,/KB|ready|已保存/);
+ await app.env.act(async()=>original.click());
+ assert.deepEqual(selected,['v1']);
 });
 
 

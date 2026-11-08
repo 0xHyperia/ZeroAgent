@@ -10,7 +10,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ToolTraceItem } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { memo, useMemo } from "react";
+import { memo, useId, useMemo, useRef } from "react";
 import {
   Bot,
   Braces,
@@ -180,6 +180,8 @@ function ToolTraceGroupInner(props: {
     showTurnStatus = false,
   } = props;
   const { locale, t } = useLocale();
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const counts = useMemo(
     () => getToolGroupCounts(items, runningToolCallIds),
     [items, runningToolCallIds],
@@ -234,24 +236,24 @@ function ToolTraceGroupInner(props: {
   return (
     <div className="group/tool-trace min-w-0 max-w-full">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
-        aria-label={open ? t("chat.tool.collapseActivity") : t("chat.tool.expandActivity")}
+        aria-controls={detailsId}
         className={cn(
-          "-mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
+          "za-chat-activity-trigger -mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
           "rounded-lg px-1.5 py-1",
           "text-left text-sm font-[450] text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
         )}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <BatchIcon className="size-3 shrink-0 text-foreground/45" />
-        <span className="min-w-0 truncate">{headerLabel}</span>
+        <BatchIcon aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
+        <span className="min-w-0 truncate" title={headerLabel}>
+          {headerLabel}
+        </span>
         <ChevronRight
-          className={cn(
-            "size-3 shrink-0 text-foreground/40 opacity-0",
-            "transition-[opacity,transform] duration-150 ease-out group-hover/tool-trace:opacity-100 group-focus-within/tool-trace:opacity-100",
-            open ? "rotate-90" : "",
-          )}
+          aria-hidden="true"
+          className={cn("za-chat-activity-chevron size-3 shrink-0", open && "rotate-90")}
         />
         {showStatus ? (
           <span className="shrink-0 text-xs text-foreground/45">
@@ -269,7 +271,12 @@ function ToolTraceGroupInner(props: {
         ) : null}
       </button>
 
-      <LazyCollapse open={open} retainWhileClosed={retainRunningToolContent && counts.running > 0}>
+      <LazyCollapse
+        id={detailsId}
+        triggerRef={triggerRef}
+        open={open}
+        retainWhileClosed={retainRunningToolContent && counts.running > 0}
+      >
         {() => (
           // 横向内缩与折叠头按钮同口径（外扩量恒等于内补量），组内每行的图标
           // 才和组头图标落在同一条竖线上；12px 的外扩给行内 6px 的悬停底色和

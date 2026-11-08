@@ -7,12 +7,10 @@ import (
 	"fmt"
 )
 
-//go:embed skills skills-releases
+//go:embed skills
 var cloudBuiltinSkills embed.FS
 
-const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. When read_skill returns host_guidance, use that CloudChat mapping for the original Codex workflow. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
-
-const cloudCodexHostGuidance = "The attached source is an original Codex workflow. In CloudChat use only the tools advertised in this run. Use generate_image for the workflow's image_gen generation and edits; do not invoke an external image API or the bundled image CLI. Read bundled text with read_skill. Run code only in an advertised isolated workspace. Codex app connectors, host files, and credentials referenced in the source are unavailable; do not simulate a successful connection, publish, or write."
+const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
 
 func (e *cloudRunToolExecution) visualSchemas() []map[string]any {
 	result := []map[string]any{

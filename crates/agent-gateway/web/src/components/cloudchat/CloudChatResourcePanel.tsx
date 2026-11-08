@@ -1,7 +1,8 @@
-import { Maximize2, Minimize2, X } from "@liveagent/ui/components/IconSet";
+import { ArrowLeft, Maximize2, Minimize2, X } from "@liveagent/ui/components/IconSet";
 import { PreviewToolbarMount } from "@liveagent/ui/components/resource-preview/PreviewChrome";
 import { Sheet, SheetDescription, SheetPopup, SheetTitle } from "@liveagent/ui/components/ui/sheet";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { useLocale } from "@liveagent/ui/i18n";
 import { type ReactNode, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   type CloudResourceDragIdentity,
@@ -15,8 +16,11 @@ export function CloudChatResourcePanel(props: {
   title: ReactNode;
   description: string;
   closeLabel?: string;
+  backToLibrary?: boolean;
+  backLabel?: string;
   wide?: boolean;
   headerActions?: ReactNode;
+  continueAction?: { label: string; disabled: boolean; onClick: () => void };
   subtitle?: ReactNode;
   details?: ReactNode;
   className?: string;
@@ -26,6 +30,14 @@ export function CloudChatResourcePanel(props: {
 }) {
   const presentation = useContext(CloudChatResourcePresentation);
   const readerLayout = useContext(CloudChatReaderLayout);
+  const { locale } = useLocale();
+  const copy = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
+  const backLabel = props.backLabel ?? copy("返回资料空间", "Back to library");
+  const showBack = Boolean(props.backLabel || props.backToLibrary);
+  const closeLabel = props.closeLabel ?? copy("关闭资料面板", "Close resource panel");
+  const expandLabel = readerLayout?.expanded
+    ? copy("恢复并排阅读", "Return to split view")
+    : copy("展开阅读", "Expand reader");
   const titleId = useId();
   const reader = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -81,6 +93,18 @@ export function CloudChatResourcePanel(props: {
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
+  const { continueAction } = props;
+  const headerContinue = continueAction ? (
+    <Button
+      variant="outline"
+      size="sm"
+      className="cloud-reader-continue-action"
+      disabled={continueAction.disabled}
+      onClick={continueAction.onClick}
+    >
+      {continueAction.label}
+    </Button>
+  ) : null;
   if (presentation === "inline") {
     return (
       <PreviewToolbarMount.Provider value={toolbarMount}>
@@ -100,6 +124,20 @@ export function CloudChatResourcePanel(props: {
           }}
         >
           <header className="cloud-reader-header">
+            {showBack ? (
+              <Button
+                ref={closeButton}
+                variant="ghost"
+                size="icon-sm"
+                className="cloud-reader-back"
+                data-cloud-reader-return=""
+                onClick={props.onClose}
+                aria-label={backLabel}
+                tooltip={props.backLabel ? undefined : backLabel}
+              >
+                <ArrowLeft className="size-4" />
+              </Button>
+            ) : null}
             <div className="cloud-reader-heading">
               {props.dragResource ? (
                 <h2
@@ -125,15 +163,18 @@ export function CloudChatResourcePanel(props: {
             </div>
             <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
             <div ref={setLeadingTarget} className="cloud-reader-leading-tools" />
-            <div className="cloud-reader-actions">{props.headerActions}</div>
+            <div className="cloud-reader-actions">
+              {headerContinue}
+              {props.headerActions}
+            </div>
             <div ref={setOptionsTarget} className="cloud-reader-options-tools" />
             <div className="cloud-reader-window-actions">
               {readerLayout?.canSplit ? (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={readerLayout.expanded ? "恢复并排阅读" : "展开阅读"}
-                  tooltip={readerLayout.expanded ? "恢复并排阅读" : "进入完整视图"}
+                  aria-label={expandLabel}
+                  tooltip={expandLabel}
                   onClick={readerLayout.toggleExpanded}
                 >
                   {readerLayout.expanded ? (
@@ -143,16 +184,19 @@ export function CloudChatResourcePanel(props: {
                   )}
                 </Button>
               ) : null}
-              <Button
-                ref={closeButton}
-                variant="ghost"
-                size="icon-sm"
-                onClick={props.onClose}
-                aria-label={props.closeLabel ?? "关闭资料面板"}
-                title="关闭阅读"
-              >
-                <X className="size-4" />
-              </Button>
+              {!showBack ? (
+                <Button
+                  ref={closeButton}
+                  variant="ghost"
+                  size="icon-sm"
+                  data-cloud-reader-return=""
+                  onClick={props.onClose}
+                  aria-label={closeLabel}
+                  title={closeLabel}
+                >
+                  <X className="size-4" />
+                </Button>
+              ) : null}
             </div>
           </header>
           <div className="za-reader-stage">
@@ -160,6 +204,18 @@ export function CloudChatResourcePanel(props: {
             {props.details}
             <div ref={setPageTarget} className="cloud-reader-bottom-tools" />
           </div>
+          {continueAction && !props.details ? (
+            <footer className="cloud-reader-compact-action">
+              <Button
+                size="lg"
+                className="min-h-11 rounded-full"
+                disabled={continueAction.disabled}
+                onClick={continueAction.onClick}
+              >
+                {continueAction.label}
+              </Button>
+            </footer>
+          ) : null}
         </section>
       </PreviewToolbarMount.Provider>
     );
@@ -172,9 +228,10 @@ export function CloudChatResourcePanel(props: {
             <h1 className="text-2xl font-medium tracking-tight">{props.title}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{props.description}</p>
           </div>
+          {headerContinue}
           {props.headerActions}
           <Button variant="ghost" size="sm" onClick={props.onClose}>
-            返回对话
+            {copy("返回对话", "Back to chat")}
           </Button>
         </header>
         <div className="cloud-resource-page-content">{props.children}</div>
@@ -206,17 +263,17 @@ export function CloudChatResourcePanel(props: {
               {props.description}
             </SheetDescription>
           </div>
+          {headerContinue}
           {props.headerActions}
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={props.onClose}
-            aria-label={props.closeLabel ?? "关闭资料面板"}
-            title="关闭"
+            aria-label={closeLabel}
+            title={closeLabel}
             className="shrink-0"
           >
             <X className="size-4" />
-            <span className="sr-only">关闭</span>
           </Button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-5">

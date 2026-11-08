@@ -298,7 +298,7 @@ for (const gesture of ["click", "Enter"]) {
       mocks: {
         "../IconSet": new Proxy({}, { get: () => () => null }),
         "@liveagent/ui/components/IconSet": Object.fromEntries(
-          ["Clock3", "Loader2", "MessageSquareText", "Pin", "Search"].map((key) => [
+          ["Clock3", "Loader2", "MessageSquareText", "Pin", "Search", "X"].map((key) => [
             key,
             () => null,
           ]),

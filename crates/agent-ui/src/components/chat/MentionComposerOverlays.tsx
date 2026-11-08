@@ -45,30 +45,32 @@ function conversationUpdatedAtLabel(value: number | undefined, locale: string) {
 
 export function Popup({
   anchorRef,
+  listId,
+  optionIds,
   trigger,
   mode,
   capabilityMenu = false,
   suggestions,
   highlightIndex,
   isLoading,
-  error,
-  showEmpty,
-  emptyLabel,
+  status,
+  hasError,
   onBack,
   onClose,
   onSelect,
   onHighlight,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
+  listId?: string;
+  optionIds: readonly string[];
   trigger: MentionContext["trigger"];
   mode: MentionMenuMode;
   capabilityMenu?: boolean;
   suggestions: MentionSuggestion[];
   highlightIndex: number;
   isLoading: boolean;
-  error: string | null;
-  showEmpty: boolean;
-  emptyLabel: string;
+  status: string;
+  hasError: boolean;
   onBack: () => void;
   onClose: () => void;
   onSelect: (suggestion: MentionSuggestion) => void;
@@ -82,14 +84,14 @@ export function Popup({
   // the cursor, and scrolling it would slide the list out from under the mouse.
   const skipScrollRef = useRef(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: highlightIndex is the trigger — hlRef points at a different row after each keyboard move, and the scroll must follow it.
+  const highlightedOptionId = optionIds[highlightIndex];
   useEffect(() => {
     if (skipScrollRef.current) {
       skipScrollRef.current = false;
       return;
     }
-    hlRef.current?.scrollIntoView({ block: "nearest" });
-  }, [highlightIndex]);
+    if (highlightedOptionId) hlRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlightedOptionId]);
 
   return (
     <Popover
@@ -147,16 +149,14 @@ export function Popup({
           ) : (
             <button
               type="button"
+              tabIndex={-1}
               className={cn(
                 "flex h-6 w-full items-center gap-1.5 rounded-md px-2",
                 "text-tiny font-medium text-muted-foreground transition-colors",
                 "hover:bg-foreground/[0.05] hover:text-foreground",
                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               )}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                onBack();
-              }}
+              onClick={onBack}
             >
               <ArrowLeft className="size-3 shrink-0" />
               <span className="min-w-0 truncate">
@@ -173,9 +173,23 @@ export function Popup({
             </button>
           )}
         </div>
+        {status && (
+          <div
+            aria-hidden="true"
+            className={cn(
+              "flex h-8 shrink-0 items-center px-2 text-xs",
+              hasError ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {status}
+          </div>
+        )}
         <div
+          id={listId}
           ref={listRef}
           role="listbox"
+          aria-hidden={!listId || undefined}
+          aria-busy={isLoading || undefined}
           aria-label={
             capabilityMenu
               ? t("chat.composer.capabilitiesTitle")
@@ -194,20 +208,27 @@ export function Popup({
           className={cn(
             "relative flex min-h-0 max-h-60 flex-col gap-0.5 overflow-y-auto overscroll-contain",
             capabilityMenu && "composer-capability-list",
+            !listId && "hidden",
             "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:size-0",
           )}
         >
-          {isLoading && (
-            <div className="flex h-8 items-center px-2 text-xs text-muted-foreground">
-              {mode === "conversations"
-                ? t("chat.composer.searchingConversations")
-                : t("chat.composer.indexingFiles")}
-            </div>
-          )}
-          {error && !isLoading && (
-            <div className="flex h-8 items-center px-2 text-xs text-destructive">{error}</div>
-          )}
           {suggestions.map((suggestion, i) => {
+            const id = optionIds[i];
+            const descriptionId = `${id}-description`;
+            const selected = i === highlightIndex;
+            const optionProps = {
+              id,
+              role: "option",
+              tabIndex: -1,
+              "aria-selected": selected,
+              ref: selected ? hlRef : undefined,
+              onMouseMove: () => {
+                if (selected) return;
+                skipScrollRef.current = true;
+                onHighlight(i);
+              },
+              onClick: () => onSelect(suggestion),
+            } as const;
             if (suggestion.type === "action" || suggestion.type === "extension") {
               const action = suggestion.type === "action" ? suggestion.action : null;
               const skill = suggestion.type === "extension" ? suggestion.skill : null;
@@ -224,18 +245,11 @@ export function Popup({
                 <button
                   key={action ? `action:${action.id}` : `extension:${skill?.skillFile}`}
                   type="button"
-                  role="option"
-                  aria-selected={i === highlightIndex}
-                  ref={i === highlightIndex ? hlRef : undefined}
+                  {...optionProps}
+                  aria-label={name}
+                  aria-describedby={description ? descriptionId : undefined}
                   className="composer-capability-option"
                   title={`${name}${description ? `\n${description}` : ""}`}
-                  onMouseMove={() => {
-                    if (i !== highlightIndex) {
-                      skipScrollRef.current = true;
-                      onHighlight(i);
-                    }
-                  }}
-                  onClick={() => onSelect(suggestion)}
                 >
                   <span className="composer-capability-icon" aria-hidden="true">
                     {action ? (
@@ -245,7 +259,9 @@ export function Popup({
                     )}
                   </span>
                   <span className="composer-capability-name">{name}</span>
-                  <span className="composer-capability-description">{description}</span>
+                  <span id={descriptionId} className="composer-capability-description">
+                    {description}
+                  </span>
                 </button>
               );
             }
@@ -264,6 +280,7 @@ export function Popup({
                   {showGroupHeader ? (
                     <div
                       role="presentation"
+                      aria-hidden="true"
                       data-command-group={command.group}
                       className="flex h-5 shrink-0 items-center px-2 pt-1 text-tiny text-muted-foreground/70"
                     >
@@ -276,10 +293,10 @@ export function Popup({
                   ) : null}
                   <button
                     type="button"
-                    role="option"
-                    aria-selected={i === highlightIndex}
+                    {...optionProps}
+                    aria-labelledby={`${id}-label`}
+                    aria-describedby={command.description ? descriptionId : undefined}
                     data-command-name={command.name}
-                    ref={i === highlightIndex ? hlRef : undefined}
                     className={cn(
                       "group flex h-8 shrink-0 cursor-pointer items-center gap-2",
                       "rounded-md px-2 text-left text-xs leading-5 transition-colors",
@@ -287,15 +304,6 @@ export function Popup({
                         ? "bg-foreground/[0.07] text-foreground"
                         : "text-foreground/85 dark:text-foreground/90",
                     )}
-                    onMouseMove={() => {
-                      if (i === highlightIndex) return;
-                      skipScrollRef.current = true;
-                      onHighlight(i);
-                    }}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      onSelect(suggestion);
-                    }}
                   >
                     <span className="flex size-4 shrink-0 items-center justify-center text-foreground/85">
                       {brand ? (
@@ -305,7 +313,10 @@ export function Popup({
                       )}
                     </span>
                     <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="shrink-0 truncate font-normal text-foreground/95">
+                      <span
+                        id={`${id}-label`}
+                        className="shrink-0 truncate font-normal text-foreground/95"
+                      >
                         {command.kind === "skill"
                           ? command.skill.displayName || command.name
                           : `/${command.name}`}
@@ -314,7 +325,10 @@ export function Popup({
                         ) : null}
                       </span>
                       {command.description ? (
-                        <span className="min-w-0 flex-1 truncate text-tiny text-muted-foreground/75">
+                        <span
+                          id={descriptionId}
+                          className="min-w-0 flex-1 truncate text-tiny text-muted-foreground/75"
+                        >
                           {command.description}
                         </span>
                       ) : null}
@@ -381,8 +395,13 @@ export function Popup({
             return (
               <button
                 type="button"
-                role="option"
-                aria-selected={i === highlightIndex}
+                {...optionProps}
+                aria-label={title}
+                aria-describedby={
+                  [subtitle && descriptionId, updatedAtLabel && `${id}-timestamp`]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
                 key={
                   entry
                     ? `${entry.kind}:${entry.path}`
@@ -394,7 +413,6 @@ export function Popup({
                           ? `category:${category}`
                           : `skill:${skill?.skillFile ?? skill?.name}`
                 }
-                ref={i === highlightIndex ? hlRef : undefined}
                 className={cn(
                   "group flex h-8 shrink-0 cursor-pointer items-center gap-2",
                   "rounded-md px-2 text-left text-xs leading-5 transition-colors",
@@ -402,15 +420,6 @@ export function Popup({
                     ? "bg-foreground/[0.07] text-foreground"
                     : "text-foreground/85 dark:text-foreground/90",
                 )}
-                onMouseMove={() => {
-                  if (i === highlightIndex) return;
-                  skipScrollRef.current = true;
-                  onHighlight(i);
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onSelect(suggestion);
-                }}
               >
                 <span
                   className={cn(
@@ -441,13 +450,19 @@ export function Popup({
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="shrink-0 truncate font-normal text-foreground/95">{title}</span>
                   {subtitle && (
-                    <span className="min-w-0 flex-1 truncate text-tiny text-muted-foreground/75">
+                    <span
+                      id={descriptionId}
+                      className="min-w-0 flex-1 truncate text-tiny text-muted-foreground/75"
+                    >
                       {subtitle}
                     </span>
                   )}
                 </span>
                 {updatedAtLabel ? (
-                  <span className="shrink-0 text-tiny tabular-nums text-muted-foreground/70">
+                  <span
+                    id={`${id}-timestamp`}
+                    className="shrink-0 text-tiny tabular-nums text-muted-foreground/70"
+                  >
                     {updatedAtLabel}
                   </span>
                 ) : null}
@@ -467,11 +482,6 @@ export function Popup({
               </button>
             );
           })}
-          {showEmpty && !isLoading && !error && suggestions.length === 0 && (
-            <div className="flex h-8 items-center px-2 text-xs text-muted-foreground">
-              {emptyLabel}
-            </div>
-          )}
         </div>
       </PopoverContent>
     </Popover>

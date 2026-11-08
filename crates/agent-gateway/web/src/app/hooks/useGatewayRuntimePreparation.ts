@@ -1,9 +1,10 @@
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { isChatRuntimeProtocolIncompatible } from "@/lib/chat/runtimeCompatibility";
 import type { GatewayWebSocketClient } from "@/lib/gatewaySocket";
+import { requireCurrentGatewayAgent } from "@/lib/gatewaySocketShared";
 import type { AgentStatus } from "@/lib/gatewayTypes";
 import type { AppSettings } from "@/lib/settings";
 
@@ -18,7 +19,6 @@ type UseGatewayRuntimePreparationOptions = {
   api: GatewayWebSocketClient | null;
   historyShareToken: string | null;
   locale: AppSettings["locale"];
-  preparePromiseRef: MutableRefObject<Promise<AgentStatus> | null>;
   setStatus: Dispatch<SetStateAction<AgentStatus | null>>;
   setStatusError: Dispatch<SetStateAction<string | null>>;
   statusOnline?: boolean;
@@ -29,41 +29,40 @@ export function useGatewayRuntimePreparation({
   api,
   historyShareToken,
   locale,
-  preparePromiseRef,
   setStatus,
   setStatusError,
   statusOnline,
   statusRef,
 }: UseGatewayRuntimePreparationOptions) {
+  const activeApi = useRef(api);
+  activeApi.current = api;
   const prepareChatRuntime = useCallback(
     async (
       reason: string,
       currentApi = api,
       timeoutMs = CHAT_RUNTIME_PREPARE_TIMEOUT_MS,
+      capturedScope?: () => boolean,
     ): Promise<AgentStatus> => {
       if (!currentApi) throw new Error("Gateway client is not ready.");
-      if (!preparePromiseRef.current) {
-        preparePromiseRef.current = currentApi
-          .prepareChatRuntime(reason)
-          .then((nextStatus) => {
-            statusRef.current = nextStatus;
-            setStatus(nextStatus);
-            setStatusError(null);
-            if (isChatRuntimeProtocolIncompatible(nextStatus)) {
-              throw new Error(translate("chat.runtime.protocolIncompatible", locale));
-            }
-            return nextStatus;
-          })
-          .catch((error) => {
-            setStatusError(asErrorMessage(error, "status request failed"));
-            throw error;
-          })
-          .finally(() => {
-            preparePromiseRef.current = null;
-          });
-      }
-      const preparePromise = preparePromiseRef.current;
-      if (!preparePromise) throw new Error("Gateway chat runtime preparation did not start.");
+      const deviceScope = capturedScope ?? currentApi.captureActiveAgentScope();
+      const isCurrentAgent = () => activeApi.current === currentApi && deviceScope();
+      requireCurrentGatewayAgent(isCurrentAgent);
+      const preparePromise = currentApi
+        .prepareChatRuntime(reason, isCurrentAgent)
+        .then((nextStatus) => {
+          requireCurrentGatewayAgent(isCurrentAgent);
+          statusRef.current = nextStatus;
+          setStatus(nextStatus);
+          setStatusError(null);
+          if (isChatRuntimeProtocolIncompatible(nextStatus)) {
+            throw new Error(translate("chat.runtime.protocolIncompatible", locale));
+          }
+          return nextStatus;
+        })
+        .catch((error) => {
+          if (isCurrentAgent()) setStatusError(asErrorMessage(error, "status request failed"));
+          throw error;
+        });
       if (timeoutMs <= 0) return preparePromise;
 
       let timeoutId: number | null = null;
@@ -80,7 +79,7 @@ export function useGatewayRuntimePreparation({
         if (timeoutId !== null) window.clearTimeout(timeoutId);
       }
     },
-    [api, locale, preparePromiseRef, setStatus, setStatusError, statusRef],
+    [api, locale, setStatus, setStatusError, statusRef],
   );
 
   useEffect(() => {

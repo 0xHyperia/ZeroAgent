@@ -137,6 +137,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.groupAutomation": "Automation",
   "settings.groupConnectivity": "Connectivity",
   "settings.backToChat": "Back to Chat",
+  "settings.backToWorkbench": "Back to workbench",
   "settings.backToChatHint": "Back to chat (Esc)",
   "settings.title": "Settings",
   "settings.searchPlaceholder": "Search settings…",
@@ -646,16 +647,6 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.toolBadgeBuiltin": "Built-in",
   "settings.toolBadgeCustom": "Custom",
   "settings.toolConditionalNote": "Conditional",
-  "settings.legacyProviderImportFailed":
-    "{count} legacy provider(s) could not be imported into ZeroAgent engine",
-  "settings.legacyProviderImportFailedHint":
-    "These providers share model ids with providers already imported, but the model metadata differs, so ZeroAgent engine rejected them. Their models are unavailable in this version; editing a provider retries the import automatically.",
-  "settings.legacyProviderImportRetry": "Retry import",
-  "settings.legacyProviderImportDismiss": "Dismiss",
-  "settings.legacyProviderImportDismissTitle": "Dismiss this notice?",
-  "settings.legacyProviderImportDismissDescription":
-    "These import failures will be ignored and never shown again. This cannot be undone. The providers still won't be imported into ZeroAgent engine; editing one of them later triggers a new import attempt.",
-  "settings.legacyProviderImportDismissConfirm": "Dismiss permanently",
   "settings.addProvider": "Add Provider",
   "settings.addProviderShort": "Add",
   "settings.importProviders": "Import",

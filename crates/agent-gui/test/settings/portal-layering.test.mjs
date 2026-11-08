@@ -120,6 +120,17 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
       const attribute = (name) => attributes.find((entry) => entry.type === "JSXAttribute" && entry.name?.name === name);
       const chrome = attribute("data-desktop-remote-chrome-slot");
       const targetSource = source.slice(call.arguments[1]?.start, call.arguments[1]?.end);
+      if (
+        content?.type === "Identifier" &&
+        content.name === "surface" &&
+        targetSource === "target" &&
+        call.arguments[2]?.name === "slot" &&
+        source.includes("export function mountWorkbenchLayout(")
+      ) {
+        assert.match(source, /slot: "account-content" \| "account-sidebar" \| "task-result"/);
+        assert.doesNotMatch(source, /document\.body|aria-modal|layer-(?:popover|modal|toast|critical)/);
+        continue;
+      }
       if (content?.type === "Identifier" && content.name === "children" && targetSource === "target" && source.includes('data-navigation-rail-placeholder=""')) {
         assert.match(source, /target\?: HTMLElement \| null/);
         assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|\blayer-(?:popover|modal|toast|critical)\b|className="[^"]*\b(?:fixed|absolute)\b/);

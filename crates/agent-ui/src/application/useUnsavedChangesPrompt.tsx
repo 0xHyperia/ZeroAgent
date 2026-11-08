@@ -10,8 +10,10 @@ import {
 import { Button } from "../components/ui/button";
 
 /** A discarded draft never authorizes navigation captured under another account. */
-export function useUnsavedChangesPrompt(scope: string | number) {
+export function useUnsavedChangesPrompt(scope: string | number, locale = "zh-CN") {
   const dirty = useRef(false);
+  const continueEditing = useRef<HTMLButtonElement>(null);
+  const english = locale === "en-US";
   const currentScope = useRef(scope);
   const pending = useRef<{ scope: string | number; action: () => void } | null>(null);
   const [open, setOpen] = useState(false);
@@ -55,22 +57,27 @@ export function useUnsavedChangesPrompt(scope: string | number) {
           setOpen(next);
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent initialFocus={continueEditing}>
           <AlertDialogHeader>
-            <AlertDialogTitle>保留项目修改？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {english ? "Leave without saving?" : "保留项目修改？"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              项目中还有未保存的内容。你可以继续编辑，或放弃本次修改后离开。
+              {english
+                ? "This project has unsaved changes. You can keep editing or discard them and leave."
+                : "项目中还有未保存的内容。你可以继续编辑，或放弃本次修改后离开。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <Button
+              ref={continueEditing}
               variant="ghost"
               onClick={() => {
                 pending.current = null;
                 setOpen(false);
               }}
             >
-              继续编辑
+              {english ? "Keep editing" : "继续编辑"}
             </Button>
             <Button
               onClick={() => {
@@ -82,7 +89,7 @@ export function useUnsavedChangesPrompt(scope: string | number) {
                 navigation.action();
               }}
             >
-              放弃修改并离开
+              {english ? "Discard and leave" : "放弃修改并离开"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { LabelTooltip } from "../../components/ui/label-tooltip";
 import { useLocale } from "../../i18n";
 import { extensionDescription, extensionDisplayName } from "../../lib/extensions/presentation";
@@ -12,7 +12,7 @@ export function ExtensionDirectoryItem({
   children,
 }: {
   item: ExtensionPackage;
-  onOpen: () => void;
+  onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
   const { locale } = useLocale();

@@ -40,6 +40,10 @@ test("primary send handler cannot bypass the same page-level disabled state in m
     /const handlePrimaryComposerSend = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[/,
   )?.[0];
   assert.ok(handler);
-  assert.match(handler, /if \(composerInputDisabled\) return;/);
+  assert.match(handler, /if \(composerInputDisabled \|\| !api\) return;/);
   assert.doesNotMatch(handler, /workbenchHasMultiplePanes\s*\?/);
+  assert.match(source, /const transportInputDisabled =\s*sidebarSectionsDisabled \|\| Boolean\(chatProtocolIncompatibleMessage\)/);
+  assert.match(source, /queueRunDisabled=\{transportInputDisabled\}/);
+  const paneHost = readFileSync(`${rootDir}/src/app/workbench/GatewayConversationPaneHost.tsx`, "utf8");
+  assert.match(paneHost, /queueRunDisabled=\{context\.transportInputDisabled \|\| scheduledRunActive\}/);
 });

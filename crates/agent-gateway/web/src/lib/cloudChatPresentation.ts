@@ -251,11 +251,7 @@ function parseBlock(value: unknown): CloudChatPresentationBlock {
   if (value.type === "text" || value.type === "reasoning") {
     if (typeof value.text !== "string" || value.text.length > CLOUD_CHAT_PRESENTATION_MAX_BYTES)
       invalid();
-    if (
-      !contentBlockID(id, value.type, round) &&
-      !(id === "legacy:text" && value.type === "text" && round === 0)
-    )
-      invalid();
+    if (!contentBlockID(id, value.type, round)) invalid();
     return { id, type: value.type, round, text: value.text, ...times(value) };
   }
   if (value.type !== "tool") invalid();
@@ -361,7 +357,6 @@ export function reduceCloudChatPresentation(
   eventType: string,
   data: Record<string, unknown>,
   seed: {
-    output?: string;
     model?: string;
     reasoning_effort?: CloudChatReasoningEffort;
     state?: CloudChatPresentationState;
@@ -373,7 +368,6 @@ export function reduceCloudChatPresentation(
   const model = eventType === "model.started" || eventType === "model.completed";
   const lifecycle = eventType.startsWith("run.");
   if (!delta && !tool && !model && !lifecycle) return current;
-  // Older persisted runs have no structured projection; their Output contract remains intact.
   if ((delta || tool) && data.block_id === undefined && data.round === undefined) return current;
   if (lifecycle && !current) return current;
   const previous = current
@@ -382,17 +376,7 @@ export function reduceCloudChatPresentation(
       : parseCloudChatPresentation(current)
     : parseCloudChatPresentation({
         version: 1,
-        blocks: seed.output
-          ? [
-              {
-                id: "legacy:text",
-                type: "text",
-                round: 0,
-                text: seed.output,
-                started_at: seed.created_at,
-              },
-            ]
-          : [],
+        blocks: [],
         model: seed.model,
         reasoning_effort: seed.reasoning_effort,
         state: seed.state,

@@ -5,6 +5,9 @@ import type {
   AutomationApplyInput,
   AutomationSnapshot,
   CronApplyResponse,
+  CronDraftPreview,
+  CronDraftPreviewInput,
+  CronManualRunReceipt,
   CronOccurrencesResponse,
   CronRunAnchor,
   CronRunNowResponse,
@@ -71,6 +74,10 @@ export const backend = {
     return cronManage<CronOccurrencesResponse>("occurrences", undefined, { from, to });
   },
 
+  previewCronDraft(input: CronDraftPreviewInput): Promise<CronDraftPreview> {
+    return cronManage<CronDraftPreview>("preview", undefined, input);
+  },
+
   async clearRuns(taskId: string): Promise<number> {
     const payload = await cronManage<{ clearedCount?: number }>("clear_runs", taskId);
     return typeof payload.clearedCount === "number" ? payload.clearedCount : 0;
@@ -78,6 +85,14 @@ export const backend = {
 
   runNow(taskId: string): Promise<CronRunNowResponse> {
     return cronManage<CronRunNowResponse>("run_now", taskId);
+  },
+
+  runNowOnce(taskId: string, executionId: string): Promise<CronManualRunReceipt> {
+    return cronManage<CronManualRunReceipt>("run_now_once", taskId, { executionId });
+  },
+
+  readRunReceipt(taskId: string, executionId: string): Promise<CronManualRunReceipt> {
+    return cronManage<CronManualRunReceipt>("run_receipt", taskId, { executionId });
   },
 
   async cancelRun(taskId: string, executionId?: string): Promise<void> {

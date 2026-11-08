@@ -118,6 +118,8 @@ pub struct KBrainBackendManager {
 struct McpCredentialOwner {
     settings_root: PathBuf,
     profile_live: Arc<AtomicBool>,
+    #[cfg(desktop)]
+    device_skills: Option<crate::services::account_session::device_skills::DeviceSkillAccount>,
 }
 
 fn supports_native_mcp_credentials(binary: &Path) -> Result<bool, String> {
@@ -273,6 +275,10 @@ impl KBrainBackendManager {
                 &storage_id,
             )?;
         let token = uuid::Uuid::new_v4().to_string();
+        #[cfg(desktop)]
+        let has_device_skills = mcp_owner
+            .as_ref()
+            .is_some_and(|owner| owner.device_skills.is_some());
         let mcp_credentials = mcp_owner
             .map(|owner| {
                 crate::services::mcp_oauth::broker::NativeCredentialBroker::start(
@@ -281,6 +287,8 @@ impl KBrainBackendManager {
                     storage_id.clone(),
                     owner.profile_live,
                     crate::runtime::data_home::isolation_requested(),
+                    #[cfg(desktop)]
+                    owner.device_skills,
                 )
             })
             .transpose()?;
@@ -298,6 +306,8 @@ impl KBrainBackendManager {
             .env(PROXY_ENV, system_proxy::kbrain_proxy_value())
             .env_remove("ZEROAGENT_MCP_CREDENTIAL_ENDPOINT")
             .env_remove("ZEROAGENT_MCP_CREDENTIAL_TOKEN")
+            .env_remove("ZEROAGENT_DEVICE_SKILL_ENDPOINT")
+            .env_remove("ZEROAGENT_DEVICE_SKILL_TOKEN")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -305,6 +315,15 @@ impl KBrainBackendManager {
             command
                 .env("ZEROAGENT_MCP_CREDENTIAL_ENDPOINT", host.endpoint())
                 .env("ZEROAGENT_MCP_CREDENTIAL_TOKEN", host.capability());
+            #[cfg(desktop)]
+            if has_device_skills {
+                command
+                    .env(
+                        "ZEROAGENT_DEVICE_SKILL_ENDPOINT",
+                        host.device_skill_endpoint(),
+                    )
+                    .env("ZEROAGENT_DEVICE_SKILL_TOKEN", host.capability());
+            }
         }
         if let Some(legacy) = legacy_desktop_dir {
             command.arg("-legacy-desktop-dir").arg(legacy);
@@ -1131,6 +1150,8 @@ impl KBrainBackendState {
             Some(McpCredentialOwner {
                 settings_root: crate::commands::settings::config_dir()?,
                 profile_live: self.transport_profile_lease()?,
+                #[cfg(desktop)]
+                device_skills: self.device_skill_account()?,
             })
         } else {
             None
@@ -1140,6 +1161,8 @@ impl KBrainBackendState {
             Some(McpCredentialOwner {
                 settings_root: crate::commands::settings::config_dir()?,
                 profile_live: self.transport_profile_lease()?,
+                #[cfg(desktop)]
+                device_skills: self.device_skill_account()?,
             })
         } else {
             None
@@ -1193,6 +1216,35 @@ impl KBrainBackendState {
                     .clone()
                     .unwrap_or_else(|| Arc::new(AtomicBool::new(true)))
             })
+    }
+
+    #[cfg(desktop)]
+    fn device_skill_account(
+        &self,
+    ) -> Result<Option<crate::services::account_session::device_skills::DeviceSkillAccount>, String>
+    {
+        use crate::services::account_session::device_skills::{DeviceSkillAccount, PROTOCOL};
+
+        let receipt: serde_json::Value = serde_json::from_str(env!("ZEROAGENT_MCP_BRIDGE_RECEIPT"))
+            .map_err(|_| "Native capability receipt is invalid")?;
+        if !receipt
+            .pointer("/zeroagentPatchSet/capabilities")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(PROTOCOL)))
+        {
+            return Ok(None);
+        }
+        let handle = self
+            .bound_session
+            .lock()
+            .map_err(|_| "Account profile binding failed")?
+            .clone();
+        Ok(self
+            .account_sessions
+            .as_ref()
+            .cloned()
+            .zip(handle)
+            .map(|(session, handle)| DeviceSkillAccount::new(session, handle)))
     }
 
     fn publish_public_connection(&self, connection: PublicBackendConnection) {

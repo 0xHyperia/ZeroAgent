@@ -29,6 +29,17 @@ test("an unknown upload is never retried and directs recovery to the durable fil
  assert.equal(calls,1);
 });
 
+test("timeouts and gateway errors may hide a saved upload while explicit rejection stays actionable",async()=>{
+ const api=load();
+ for(const status of [408,502,503,504,413]){
+   let calls=0;
+   const client=api.createCloudChatFilesClient(async()=>{calls++;return Response.json({error:"fixture"},{status});},safe);
+   await assert.rejects(client.upload(new File(["hello"],"notes.md"),CONV),(error)=>
+      status===413 ? error instanceof api.CloudChatFileError && error.status===413 : error instanceof api.CloudFileUploadUnconfirmedError);
+   assert.equal(calls,1);
+ }
+});
+
 test("file JSON parsing retains the original account guard through an asynchronous body",async()=>{
  const api=load();let account=1;let release;
  const client=api.createCloudChatFilesClient(async()=>new Response(new ReadableStream({start(controller){release=()=>{account=2;controller.enqueue(new TextEncoder().encode(JSON.stringify({file:record()})));controller.close();};}})),()=>{const owner=account;return()=>{if(owner!==account)throw new Error("Account changed while the request was pending");};});
@@ -97,8 +108,8 @@ test("a server-verified original can be loaded in an isolated workspace without 
  const client=api.createCloudChatFilesClient(async()=>Response.json({file:record({workspace_loadable:"yes"})}),safe);await assert.rejects(client.get(ID),/无效/);
 });
 
-async function mountReader(t, {fromLine, attachResult=false,recordOverrides={}}={}) {
- let env,closed=0,sourceReads=0;const attached=[];
+async function mountReader(t, {fromLine, attachResult=false,recordOverrides={},getFile,locale="zh-CN",workFromSpace=false,inTrash=false,removeFile}={}) {
+ let env,closed=0,sourceReads=0;const attached=[],deleted=[],errors=[];
  const capture=()=>()=>undefined;
  const icons=new Proxy({},{get:()=>()=>null});
  const mocks={
@@ -106,22 +117,59 @@ async function mountReader(t, {fromLine, attachResult=false,recordOverrides={}}=
   [fileURLToPath(new URL("../../../agent-ui/src/components/IconSet.tsx",import.meta.url))]:icons,
   "@/lib/accountRequest":{captureAccountRequestGuard:capture},
   "@liveagent/ui/components/resource-preview/ResourcePreview":{ResourcePreview:props=>env.React.createElement("div",{"data-file-preview":"","data-source-from":props.sourceRange?.fromLine},"文件正文")},
-  [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.title,props.subtitle,props.headerActions),props.children,props.details)},
+  [fileURLToPath(new URL("../src/components/cloudchat/CloudChatResourcePanel.tsx",import.meta.url))]:{CloudChatResourcePanel:props=>env.React.createElement("section",null,env.React.createElement("header",null,props.backToLibrary?env.React.createElement("button",{onClick:props.onClose},"Back to Library"):null,props.title,props.subtitle,props.headerActions),props.children,props.details)},
  };
  env=await createWebDomTestEnv({mocks});
  const {CloudChatFilePanel}=env.loadModule("src/components/CloudChatFilePanel.tsx");
- const client={get:async()=>record(recordOverrides),source:async()=>{sourceReads++;return {from_line:fromLine??1,to_line:3,total_lines:3,lines:[{line:fromLine??1,text:"资料原文"}]};},download:async()=>{throw new Error("unexpected download");}};
+ const {LocaleContext,t:translate}=env.loadModule("../../agent-ui/src/i18n/index.ts");
+ const {CloudChatFileError}=env.loadModule("src/lib/cloudChatFiles.ts");
+ const client={get:async(id)=>getFile?getFile(id,CloudChatFileError):record(recordOverrides),source:async()=>{sourceReads++;return {from_line:fromLine??1,to_line:3,total_lines:3,lines:[{line:fromLine??1,text:"资料原文"}]};},download:async()=>{throw new Error("unexpected download");},remove:removeFile};
  const host=document.body.appendChild(document.createElement("div")),root=env.createRoot(host);
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
- await env.act(async()=>{root.render(env.React.createElement(CloudChatFilePanel,{client,initialFileId:ID,fromLine,canAttach:true,isCurrent:()=>true,onClose:()=>closed++,onAttach:file=>{attached.push(file.id);return attachResult;},onDeleted(){},onError(){}}));await flush();});
+ await env.act(async()=>{root.render(env.React.createElement(LocaleContext.Provider,{value:{locale,t:key=>translate(key,locale)}},env.React.createElement(CloudChatFilePanel,{client,initialFileId:ID,fromLine,workFromSpace,inTrash,canAttach:true,isCurrent:()=>true,onClose:()=>closed++,onAttach:file=>{attached.push(file.id);return attachResult;},onDeleted:id=>deleted.push(id),onError:cause=>errors.push(cause)})));await flush();});
  t.after(async()=>{await env.act(async()=>root.unmount());host.remove();env.cleanup();});
- return {env,host,client,attached,get closed(){return closed;},get sourceReads(){return sourceReads;},set attachResult(value){attachResult=value;},async click(label){
+ return {env,host,client,attached,deleted,errors,get closed(){return closed;},get sourceReads(){return sourceReads;},set attachResult(value){attachResult=value;},async click(label){
    let button=[...document.querySelectorAll('button,[role="menuitem"]')].find(item=>item.textContent.trim()===label);
    if(!button){const trigger=host.querySelector('[aria-label^="文件菜单："]');assert.ok(trigger,'file title menu');await env.act(async()=>{trigger.click();await flush();});button=[...document.querySelectorAll('[role="menuitem"]')].find(item=>item.textContent.trim()===label);}
    assert.ok(button,label);const menuItem=button.getAttribute('role')==='menuitem';await env.act(async()=>{button.click();await flush();});
    if(menuItem) await env.waitFor(()=>!document.querySelector('[role="menu"]'),'file menu to close');
  }};
 }
+
+test("a failed file link retries its exact file and restores focus without treating the library as empty", async (t) => {
+  const requests = [];
+  let finish;
+  const app = await mountReader(t, {
+    fromLine: 2,
+    locale: "en-US",
+    workFromSpace: true,
+    getFile: async (id, FileError) => {
+      requests.push(id);
+      if (requests.length === 1) throw new FileError("文件不存在或已删除。", 404);
+      if (requests.length === 2) throw new FileError("存储暂不可用。", 503);
+      return new Promise((resolve) => { finish = resolve; });
+    },
+  });
+  assert.match(app.host.textContent, /File unavailable/);
+  assert.doesNotMatch(app.host.textContent, /文件不存在|还没有文件|No files yet/);
+  const retry = [...app.host.querySelectorAll("button")].find((button) => button.textContent === "Try again");
+  retry.focus();
+  await app.click("Try again");
+  assert.match(app.host.textContent, /Couldn't open the file/);
+  assert.equal(document.activeElement, retry);
+  await app.click("Try again");
+  assert.equal(retry.getAttribute("aria-disabled"), "true");
+  assert.equal(retry.textContent, "Opening file…");
+  assert.equal(document.activeElement, retry);
+  assert.equal(app.closed, 0);
+  await app.env.act(async () => { finish(record()); });
+  assert.equal(app.host.querySelector("[data-file-preview]").dataset.sourceFrom, "2");
+  assert.equal(document.activeElement.getAttribute("aria-label"), `File menu for ${record().name}`);
+  assert.deepEqual(requests, [ID, ID, ID]);
+  assert.deepEqual(app.errors.map((error) => error.status), [404, 503]);
+  await app.click("Back to Library");
+  assert.equal(app.closed, 1);
+});
 
 test("a rejected file reference stays in the reader with local feedback; a successful reference closes it",async t=>{
  const app=await mountReader(t);
@@ -155,7 +203,61 @@ test("file reading menu keeps contextual actions and opening details preserves t
  await app.env.act(async()=>{app.host.querySelector('[aria-label^="文件菜单："]').click();await new Promise(resolve=>setImmediate(resolve));});
  const items=[...document.querySelectorAll('[role="menuitem"]')];
  assert.ok(!items.some(item=>/刷新状态|全部文件/.test(item.textContent)));
+ assert.ok(!items.some(item=>item.textContent.includes("彻底删除原件")));
  await app.env.act(async()=>{items.find(item=>item.textContent==="文件信息").click();await new Promise(resolve=>setImmediate(resolve));});
  assert.ok(app.host.querySelector('[aria-label="文件详情"]'));
  assert.equal(app.host.querySelector("[data-file-preview]"),preview);
+});
+
+test("the Trash file reader returns only after confirming removal of the selected original", async (t) => {
+  const requests = [];
+  let finish;
+  const app = await mountReader(t, {
+    workFromSpace: true,
+    inTrash: true,
+    removeFile(file) {
+      requests.push({ id: file.id, version: file.version });
+      return new Promise((resolve) => { finish = resolve; });
+    },
+  });
+  const alert = () => document.querySelector('[role="alertdialog"]');
+  const preview = app.host.querySelector("[data-file-preview]");
+  await app.click("彻底删除原件");
+  assert.match(alert().textContent, /notes\.md.*已有对话/);
+  assert.deepEqual(requests, []);
+  await app.click("保留文件");
+  await app.env.waitFor(() => !alert(), "the delete confirmation to close");
+  assert.equal(app.host.querySelector("[data-file-preview]"), preview);
+  await app.click("彻底删除原件");
+  await app.click("确认删除");
+  assert.deepEqual(requests, [{ id: ID, version: 4 }]);
+  assert.deepEqual(app.deleted, []);
+  assert.equal(app.closed, 0);
+  assert.match(alert().textContent, /正在删除/);
+  await app.env.act(async () => { finish(record({ state: "deleted", version: 6 })); });
+  assert.deepEqual(app.deleted, [ID]);
+  assert.equal(app.closed, 1);
+});
+
+test("an unconfirmed Trash deletion keeps the original preview and prevents a blind retry", async (t) => {
+  let requests = 0;
+  const app = await mountReader(t, {
+    workFromSpace: true,
+    inTrash: true,
+    async removeFile() { requests++; return record({ state: "deleting" }); },
+  });
+  const alert = () => document.querySelector('[role="alertdialog"]');
+  const preview = app.host.querySelector("[data-file-preview]");
+  await app.click("彻底删除原件");
+  await app.click("确认删除");
+  assert.match(alert().querySelector('[role="alert"]').textContent, /返回资料空间核对/);
+  assert.equal([...alert().querySelectorAll("button")].find((button) => button.textContent === "确认删除").disabled, true);
+  assert.deepEqual(app.deleted, []);
+  assert.equal(app.closed, 0);
+  await app.click("关闭");
+  await app.env.waitFor(() => !alert(), "the delete confirmation to close");
+  assert.equal(app.host.querySelector("[data-file-preview]"), preview);
+  await app.click("彻底删除原件");
+  assert.match(alert().querySelector('[role="alert"]').textContent, /返回资料空间核对/);
+  assert.equal(requests, 1);
 });

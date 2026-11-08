@@ -23,7 +23,7 @@ func TestBuiltinManifestMembership(t *testing.T) {
 			t.Fatal(pkg.ID)
 		}
 		latest := pkg.Revisions[len(pkg.Revisions)-1]
-		if cloudExtensionKind(pkg) != expect.kind || len(latest.Skills) != expect.count || latest.Skills[0].Name != expect.primary || len(pkg.Revisions) < 3 || pkg.Revisions[2].Number != 3 {
+		if pkg.Kind != expect.kind || len(latest.Skills) != expect.count || latest.Skills[0].Name != expect.primary || len(pkg.Revisions) != 1 {
 			t.Fatal("incorrect builtin membership", pkg.ID, latest.Skills)
 		}
 		for _, skill := range latest.Skills {
@@ -31,12 +31,7 @@ func TestBuiltinManifestMembership(t *testing.T) {
 				t.Fatal("helper or unrelated workflow registered", skill)
 			}
 		}
-		if pkg.ID == "product-design" {
-			pkg.DisabledSkills = []string{"design-audit"}
-			if cloudExtensionSkillEnabled(pkg, "audit") || cloudExtensionSkillEnabled(pkg, "design-audit") {
-				t.Fatal("existing disable choice lost during alias rename")
-			}
-		}
+
 	}
 }
 
@@ -67,22 +62,18 @@ func TestManifestInstructionImport(t *testing.T) {
 	}
 }
 
-func TestManifestAliasResolutionAndArchivedRemoval(t *testing.T) {
+func TestBuiltinManifestUsesCurrentSkillNames(t *testing.T) {
 	_, e := imageExecutionFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("read invoked provider") })
 	ctx := context.Background()
-	for old, current := range map[string]string{"design-audit": "audit", "design-research": "research", "design-implement": "image-to-code", "product-design": "index"} {
-		value, err := e.resolveSkill(ctx, "product-design", old, "")
-		if err != nil || value["path"] != "skills/"+current+"/SKILL.md" {
-			t.Fatal("renamed workflow failed", value, err)
+	for _, name := range []string{"audit", "research", "image-to-code", "index"} {
+		value, err := e.resolveSkill(ctx, "product-design", name, "")
+		if err != nil || value["path"] != "skills/"+name+"/SKILL.md" {
+			t.Fatal("current workflow unavailable", value, err)
 		}
 	}
-	if _, err := e.resolveSkill(ctx, "product-design", "skill-creator", ""); err == nil {
-		t.Fatal("removed workflow still discoverable")
-	}
-	e.run.RequestContent = cloudJSON("zeroagent-skill:product-design/2/product-design")
-	old, err := e.resolveSkill(ctx, "product-design", "skill-creator", "")
-	bytes, _ := cloudBuiltinSkills.ReadFile("skills-releases/v2/product-design/skill-creator.md")
-	if err != nil || old["instructions"] != string(bytes) || old["version"] != int64(2) {
-		t.Fatal("old fixed release lost exact content", err)
+	for _, name := range []string{"design-audit", "design-research", "design-implement", "skill-creator"} {
+		if _, err := e.resolveSkill(ctx, "product-design", name, ""); err == nil {
+			t.Fatal("retired workflow still discoverable", name)
+		}
 	}
 }
