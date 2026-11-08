@@ -91,6 +91,7 @@ export function AIApprovalSection({ kbrain }: { kbrain: KBrainSettingsAdapter })
     draft.provider && draft.model ? JSON.stringify([draft.provider, draft.model]) : "";
   const options: ModelPickerOption[] = (document?.models ?? []).map((model) => ({
     value: JSON.stringify([model.provider, model.id]),
+    model: model.id,
     label: model.name || model.id,
     description: model.name && model.name !== model.id ? model.id : undefined,
     providerId: model.provider,
@@ -185,6 +186,7 @@ export function AIApprovalSection({ kbrain }: { kbrain: KBrainSettingsAdapter })
           control={
             <div className="w-64 max-w-full">
               <ModelPicker
+                modelType="text"
                 options={options}
                 value={selectedValue}
                 disabled={!!busy || !document || draft.mode === "off"}

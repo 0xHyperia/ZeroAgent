@@ -325,6 +325,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
               </div>
               <ModelPickerContent
                 options={props.modelOptions}
+                modelType="text"
                 value={props.selectedValue}
                 revealSelected
                 searchInputRef={searchRef}

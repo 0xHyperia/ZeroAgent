@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ImageIcon, Video, WandSparkles } from "../../components/IconSet";
 import { Button } from "../../components/ui/button";
 import { useLocale } from "../../i18n";
+import type { ModelType } from "../../lib/models/modelTypes";
 import { ModelPicker, type ModelPickerOption } from "./modelPicker";
 import { DrawerSectionHeader } from "./ProviderPresentation";
 
@@ -25,6 +26,7 @@ export function ModelPreferenceField(props: {
   label: string;
   hint: string;
   options: ModelPickerOption[];
+  modelType: ModelType;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
@@ -64,6 +66,7 @@ export function ImageModelPreference(props: {
         <div className="min-w-0 flex-1 space-y-3">
           <ModelPreferenceField
             label="生图模型"
+            modelType="image"
             hint="用于新建图像创作。未配置时需先选择模型，已有草稿和任务保留原模型。"
             options={props.options}
             value={props.value}

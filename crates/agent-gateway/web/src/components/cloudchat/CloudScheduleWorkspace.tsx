@@ -3247,6 +3247,7 @@ function ScheduleEditor({
                   <span className="shrink-0">{text("模型", "Model")}</span>
                   <div className="w-full max-w-[68%] min-w-0">
                     <ModelPicker
+                      modelType="text"
                       options={modelOptions}
                       value={modelKey}
                       ariaLabel={text("模型", "Model")}

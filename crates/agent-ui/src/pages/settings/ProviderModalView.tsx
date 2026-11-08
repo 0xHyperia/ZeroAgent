@@ -15,6 +15,7 @@ import {
   EyeOff,
   FileText,
   Fingerprint,
+  Funnel,
   ImageIcon,
   Key,
   Link2,
@@ -27,6 +28,7 @@ import {
   Video,
   X,
 } from "@liveagent/ui/components/IconSet";
+import { ModelTypeFilterItems } from "@liveagent/ui/components/models/ModelTypeFilterItems";
 import {
   FormField,
   FormFieldDescription,
@@ -161,7 +163,9 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
     matchedBalanceProviders,
     modelReorderDisabledHint,
     modelSearch,
-    modelSearchQuery,
+    modelFiltered,
+    modelTypeFilter,
+    setModelTypeFilter,
     models,
     modelsUrl,
     name,
@@ -567,38 +571,61 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
               <div className="grid min-h-0 flex-1 grid-cols-2 items-stretch gap-3 max-[640px]:min-h-96 max-[640px]:grid-cols-1">
                 <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background">
                   <div className="flex items-center gap-2 border-b bg-muted/30 p-2.5 max-[720px]:flex-wrap">
-                    <div className="relative min-w-0 flex-1 max-[720px]:basis-full">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        variant="plain"
-                        value={modelSearch}
-                        className="h-8 pl-9 pr-9 text-xs shadow-none"
-                        placeholder={t("settings.searchModels")}
-                        aria-label={t("settings.searchModels")}
-                        autoComplete="off"
-                        spellCheck={false}
-                        onChange={(event) => setModelSearch(event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape" && modelSearch) {
-                            event.stopPropagation();
-                            setModelSearch("");
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5 max-[720px]:basis-full">
+                      <div className="relative min-w-0 flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          variant="plain"
+                          value={modelSearch}
+                          className="h-8 pl-9 pr-9 text-xs shadow-none"
+                          placeholder={t("settings.searchModels")}
+                          aria-label={t("settings.searchModels")}
+                          autoComplete="off"
+                          spellCheck={false}
+                          onChange={(event) => setModelSearch(event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape" && modelSearch) {
+                              event.stopPropagation();
+                              setModelSearch("");
+                            }
+                          }}
+                        />
+                        {modelSearch ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              "absolute right-0 top-0 flex size-8 items-center justify-center",
+                              "rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                            )}
+                            onClick={() => setModelSearch("")}
+                            title={t("settings.clearModelSearch")}
+                            aria-label={t("settings.clearModelSearch")}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        ) : null}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className={cn(
+                                "shrink-0 max-[720px]:size-11",
+                                modelTypeFilter && "bg-settings-active ring-1 ring-border",
+                              )}
+                            />
                           }
-                        }}
-                      />
-                      {modelSearch ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            "absolute right-0 top-0 flex size-8 items-center justify-center",
-                            "rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                          )}
-                          onClick={() => setModelSearch("")}
-                          title={t("settings.clearModelSearch")}
-                          aria-label={t("settings.clearModelSearch")}
+                          aria-label={t("chat.modelPickerFilters")}
+                          title={t("chat.modelPickerFilters")}
                         >
-                          <X className="size-3.5" />
-                        </button>
-                      ) : null}
+                          <Funnel className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" variant="soft" className="w-48">
+                          <ModelTypeFilterItems value={modelTypeFilter} onChange={setModelTypeFilter} />
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     <RefreshButton
                       aria-busy={fetchingModels}
@@ -643,7 +670,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                         />
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {modelSearchQuery
+                        {modelFiltered
                           ? t("settings.matchedModelsEnabledCount")
                               .replace("{enabled}", String(visibleActiveCount))
                               .replace("{total}", String(visibleModels.length))
@@ -659,7 +686,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                         onClick={() => void clearVisibleModels()}
                       >
                         <Trash2 className="size-3.5" />
-                        {modelSearchQuery
+                        {modelFiltered
                           ? t("settings.clearMatchedModels")
                           : t("settings.clearAllModels")}
                       </Button>
@@ -707,7 +734,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
 
                   {visibleModels.length === 0 ? (
                     <div className="flex min-h-40 flex-1 items-center justify-center px-3 py-8 text-center text-xs text-muted-foreground">
-                      {models.length > 0 && modelSearchQuery
+                      {models.length > 0 && modelFiltered
                         ? t("settings.noMatchingModels")
                         : baseUrl.trim() && apiKeyForRequest
                           ? t("settings.fetchFailed")
@@ -716,7 +743,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                   ) : (
                     <VerticalReorderList
                       itemIds={visibleModels.map((model) => model.id)}
-                      canReorder={!modelSearchQuery}
+                      canReorder={!modelFiltered}
                       reorderLabel={t("settings.reorderModel")}
                       reorderHint={t("settings.reorderVerticalHint")}
                       disabledHint={modelReorderDisabledHint}

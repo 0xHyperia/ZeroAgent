@@ -151,7 +151,7 @@ export function useGatewayChatConfiguration({
   const catalogLiveVersion = useCatalogLiveVersion();
   // biome-ignore lint/correctness/useExhaustiveDependencies: catalogLiveVersion 是刻意的失效信号，运行期目录到达后重建选项。
   const modelOptions = useMemo(
-    () => buildModelOptions(settings, { floatSelectedFirst: false }),
+    () => buildModelOptions(settings, { floatSelectedFirst: false, modelType: "text" }),
     [settings, catalogLiveVersion],
   );
   const selectedValue = activeSelectedModel

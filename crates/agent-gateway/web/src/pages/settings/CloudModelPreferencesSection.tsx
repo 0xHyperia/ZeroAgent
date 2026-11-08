@@ -1,7 +1,8 @@
 import { RefreshCw } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Switch } from "@liveagent/ui/components/ui/switch";
-import type { ModelPickerOption } from "@liveagent/ui/lib/models/modelPickerOptions";
+import { type ModelPickerOption, modelPickerTypes } from "@liveagent/ui/lib/models/modelPickerOptions";
+import { modelListEntries } from "@liveagent/ui/lib/models/modelTypes";
 import { toModelValue } from "@liveagent/ui/lib/models/modelValue";
 import {
   GenerationModelsCard,
@@ -53,21 +54,19 @@ export function CloudModelPreferencesSection(props: SettingsSectionProps & { own
             .map(async (key) => {
               const providerType =
                 relayProviderTypeForPlatform(key.group?.platform ?? "openai") ?? "codex";
-              const raw = (await getRelayProviderModels(key.id, providerType)) as {
-                data?: { id: string }[];
-              };
-              return (raw.data ?? [])
-                .filter((model) => typeof model.id === "string")
+              return modelListEntries(await getRelayProviderModels(key.id, providerType))
                 .map(
                   (model): ModelPickerOption => ({
                     value: toModelValue(relayProviderId(key.id), model.id),
                     label: model.id,
                     model: model.id,
+                    modelTypes: model.modelTypes,
                     providerId: relayProviderId(key.id),
                     providerName: key.group?.name ?? key.name,
                     providerType,
                   }),
-                );
+                )
+                .filter((option) => modelPickerTypes(option).includes("text"));
             }),
         );
         guard();
@@ -203,6 +202,7 @@ export function CloudModelPreferencesSection(props: SettingsSectionProps & { own
       generationModels={
         <GenerationModelsCard>
           <ModelPreferenceField
+            modelType="text"
             label="标题生成模型"
             hint="生成对话标题使用的模型，未选择时跟随当前对话模型。"
             options={options}

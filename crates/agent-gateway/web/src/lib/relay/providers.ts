@@ -1,3 +1,4 @@
+import { buildModelOptions } from "@liveagent/ui/lib/models/modelOptions";
 import {
   mergeManagedModels,
   normalizeFetchedModels,
@@ -194,14 +195,14 @@ export async function bindRelayKeysToSettings(
           provider.id === current.customProviderId && provider.activeModels.includes(current.model),
       )
     : false;
-  const first = customProviders.find((provider) => provider.activeModels.length > 0);
+  const first = buildModelOptions({ customProviders }, { modelType: "text" })[0];
   return {
     ...settings,
     customProviders,
     selectedModel: currentAvailable
       ? current
       : first
-        ? { customProviderId: first.id, model: first.activeModels[0] }
+        ? { customProviderId: first.providerId, model: first.model }
         : undefined,
   };
 }

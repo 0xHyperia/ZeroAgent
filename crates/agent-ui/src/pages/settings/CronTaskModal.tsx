@@ -79,7 +79,7 @@ export function useCronTaskEditorOptions(settings: AppSettings) {
       ].map(workspaceProjectPathKey),
     );
     return {
-      modelOptions: buildModelOptions(settings),
+      modelOptions: buildModelOptions(settings, { modelType: "text" }),
       workspaceOptions: settings.system.workspaceProjects
         .filter((project) => !excluded.has(workspaceProjectPathKey(project.path)))
         .map((project) => ({ path: project.path, name: project.name || project.path })),
@@ -862,6 +862,7 @@ export function CronTaskModal({
                             {t("settings.cronPromptModelLabel")}
                           </FormFieldLabel>
                           <ModelPicker
+                            modelType="text"
                             options={promptModelOptions}
                             value={selectedModelValue}
                             disabled={promptModelOptions.length === 0}

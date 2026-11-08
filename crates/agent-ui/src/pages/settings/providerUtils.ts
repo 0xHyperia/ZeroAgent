@@ -384,6 +384,7 @@ export function mergeFetchedModels(
               : {}),
             ...(model.displayName ? { displayName: model.displayName } : {}),
             ...(model.ownedBy ? { ownedBy: model.ownedBy } : {}),
+            ...(model.modelTypes ? { modelTypes: model.modelTypes } : {}),
           }
         : model,
     );

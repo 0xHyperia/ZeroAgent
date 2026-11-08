@@ -3,6 +3,7 @@ import {
   resolveProviderApi,
 } from "../providers/providerCapabilities";
 import { findCatalogModelAcrossProviders } from "./modelCatalog";
+import { type ModelType, modelTypesFor } from "./modelTypes";
 import { toModelValue } from "./modelValue";
 
 export type SharedModelOption<TProviderType extends string = string> = {
@@ -12,6 +13,7 @@ export type SharedModelOption<TProviderType extends string = string> = {
   providerName: string;
   providerType: TProviderType;
   model: string;
+  modelTypes: readonly ModelType[];
   nativeWebSearchSupported?: boolean;
   reasoning?: boolean;
   vision?: boolean;
@@ -38,6 +40,9 @@ export type ModelOptionsSettings<TProviderType extends string = string> = {
       contextWindow: number;
       limitsSource?: string;
       inputModalities?: readonly string[];
+      modelTypes?: readonly ModelType[];
+      imageModel?: boolean;
+      imageAdapter?: string;
     }[];
   }[];
   selectedModel?: {
@@ -110,18 +115,21 @@ export function sortModelOptionGroups<TProviderType extends string>(
 
 export function buildModelOptions<TProviderType extends string>(
   settings: ModelOptionsSettings<TProviderType>,
-  options?: { floatSelectedFirst?: boolean },
+  options?: { floatSelectedFirst?: boolean; modelType?: ModelType },
 ): SharedModelOption<TProviderType>[] {
   const modelOptions: SharedModelOption<TProviderType>[] = [];
   for (const provider of settings.customProviders) {
     for (const model of provider.activeModels) {
       const configured = provider.models?.find((item) => item.id === model);
+      const modelTypes = modelTypesFor(model, configured);
+      if (options?.modelType && !modelTypes.includes(options.modelType)) continue;
       const catalog = findCatalogModelAcrossProviders(model);
       modelOptions.push({
         providerType: provider.type,
         providerId: provider.id,
         providerName: provider.name,
         model,
+        modelTypes,
         value: toModelValue(provider.id, model),
         label: configured?.displayName?.trim() || model,
         nativeWebSearchSupported: providerSupportsNativeWebSearch(

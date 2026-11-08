@@ -127,7 +127,7 @@ export function useChatModelSelection(params: UseChatModelSelectionParams) {
     () =>
       buildModelOptions(
         { customProviders: settings.customProviders },
-        { floatSelectedFirst: false },
+        { floatSelectedFirst: false, modelType: "text" },
       ),
     [settings.customProviders, catalogLiveVersion],
   );

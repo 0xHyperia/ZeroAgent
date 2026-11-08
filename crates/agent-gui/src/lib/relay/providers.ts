@@ -1,3 +1,4 @@
+import { buildModelOptions } from "@liveagent/ui/lib/models/modelOptions";
 import { mergeManagedModels } from "@liveagent/ui/pages/settings/providerUtils";
 import { createKBrainClient } from "../kbrain/client";
 import {
@@ -230,11 +231,11 @@ export async function bindRelayKeysToSettings(
           provider.activeModels.includes(currentSelected.model),
       )
     : false;
-  const firstProvider = customProviders.find((provider) => provider.activeModels.length > 0);
+  const first = buildModelOptions({ customProviders }, { modelType: "text" })[0];
   const selectedModel = selectedStillAvailable
     ? currentSelected
-    : firstProvider
-      ? { customProviderId: firstProvider.id, model: firstProvider.activeModels[0] }
+    : first
+      ? { customProviderId: first.providerId, model: first.model }
       : undefined;
 
   return {

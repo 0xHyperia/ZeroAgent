@@ -115,7 +115,7 @@ export function DesktopScheduledTasks({
     return () => controller.abort();
   }, [owner, attempt]);
 
-  const models = buildModelOptions(settings, { floatSelectedFirst: false }).flatMap((option) => {
+  const models = buildModelOptions(settings, { floatSelectedFirst: false, modelType: "text" }).flatMap((option) => {
     const keyId = relayProviderKeyId(option.providerId);
     return keyId ? [{ name: option.label, model: option.model, keyId, pickerOption: option }] : [];
   });

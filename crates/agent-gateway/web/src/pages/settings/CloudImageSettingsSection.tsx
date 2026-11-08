@@ -1,4 +1,5 @@
-import type { ModelPickerOption } from "@liveagent/ui/lib/models/modelPickerOptions";
+import { type ModelPickerOption, modelPickerTypes } from "@liveagent/ui/lib/models/modelPickerOptions";
+import { modelListEntries } from "@liveagent/ui/lib/models/modelTypes";
 import { toModelValue } from "@liveagent/ui/lib/models/modelValue";
 import { ImageModelPreference } from "@liveagent/ui/pages/settings/ModelPreferenceFields";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -31,23 +32,21 @@ export function CloudImageSettingsSection() {
       const usable = keys.filter((key) => key.status === "active" && key.key_configured !== false);
       const catalogs = await Promise.allSettled(
         usable.map(async (key) => {
-          const raw = (await getRelayProviderModels(
-            key.id,
-            relayProviderTypeForPlatform(key.group?.platform ?? "openai") ?? "codex",
-          )) as { data?: { id: string }[] };
-          return (raw.data ?? [])
-            .filter((model) => typeof model.id === "string")
+          const providerType =
+            relayProviderTypeForPlatform(key.group?.platform ?? "openai") ?? "codex";
+          return modelListEntries(await getRelayProviderModels(key.id, providerType))
             .map(
               (model): ModelPickerOption => ({
                 value: toModelValue(relayProviderId(key.id), model.id),
                 label: model.id,
                 model: model.id,
+                modelTypes: model.modelTypes,
                 providerId: relayProviderId(key.id),
                 providerName: key.group?.name ?? key.name,
-                providerType:
-                  relayProviderTypeForPlatform(key.group?.platform ?? "openai") ?? "codex",
+                providerType,
               }),
-            );
+            )
+            .filter((option) => modelPickerTypes(option).includes("image"));
         }),
       );
       guard();

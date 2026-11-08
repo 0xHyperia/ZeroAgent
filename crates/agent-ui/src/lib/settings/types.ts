@@ -1,5 +1,6 @@
 import type { Locale } from "@liveagent/app/i18n/config";
 import type { ThinkingLevel } from "@liveagent/ui/lib/models/modelThinking";
+import type { ModelType } from "@liveagent/ui/lib/models/modelTypes";
 import type { WorkspaceProjectGroup } from "@liveagent/ui/lib/workspaceProjectTypes";
 
 import type { SidebarShortcuts } from "./sidebarShortcuts";
@@ -468,6 +469,8 @@ export type ProviderModelConfig = {
   displayName?: string;
   /** /models 元数据；缺失时保持旧设置格式兼容。 */
   ownedBy?: string;
+  /** Declared output capabilities from the provider's model list. */
+  modelTypes?: ModelType[];
   contextWindow: number;
   maxOutputToken: number;
   limitsSource?: ModelLimitsSource;

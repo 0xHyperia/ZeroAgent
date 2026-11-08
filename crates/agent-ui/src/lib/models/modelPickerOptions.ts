@@ -1,6 +1,7 @@
 import { MODEL_VENDOR_ORDER, resolveModelVendor } from "../providers/modelVendor";
 import type { ProviderId } from "../settings/types";
 import type { ProviderSortMode } from "./modelOptions";
+import { type ModelType, modelTypesFor } from "./modelTypes";
 import { parseModelValue } from "./modelValue";
 
 export type ModelPickerOption = {
@@ -11,6 +12,9 @@ export type ModelPickerOption = {
   providerId?: string;
   providerType?: ProviderId;
   model?: string;
+  modelTypes?: readonly ModelType[];
+  disabledReason?: string;
+  badges?: readonly string[];
   reasoning?: boolean;
   vision?: boolean;
   contextWindow?: number;
@@ -34,6 +38,10 @@ const VIEW_STORAGE_KEY = "chatModelPickerView";
 
 export function modelIdOf(option: ModelPickerOption): string {
   return option.model ?? parseModelValue(option.value)?.model ?? option.value;
+}
+
+export function modelPickerTypes(option: ModelPickerOption): readonly ModelType[] {
+  return modelTypesFor(modelIdOf(option), option);
 }
 
 export function readModelPickerView(): ModelPickerView {

@@ -18,6 +18,7 @@ import {
 } from "@liveagent/app/lib/settings";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { modelTypesFor } from "@liveagent/ui/lib/models/modelTypes";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import {
   applyCliIdentity,
@@ -270,6 +271,7 @@ function useProviderModalController({
   const [addingModel, setAddingModel] = useState(false);
   const [newModelName, setNewModelName] = useState("");
   const [modelSearch, setModelSearch] = useState("");
+  const [modelTypeFilter, setModelTypeFilter] = useState("");
   const [editingModel, setEditingModel] = useState<ModelEditDraft | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   // Plaintext read back from the backend on demand. While the field still holds exactly this
@@ -610,6 +612,7 @@ function useProviderModalController({
       maxOutputToken: String(model.maxOutputToken),
     });
     setModelSearch("");
+    setModelTypeFilter("");
     setNewModelName("");
     setAddingModel(false);
   }
@@ -905,12 +908,15 @@ function useProviderModalController({
     [models, modelDisplayOrder],
   );
   const modelSearchQuery = modelSearch.trim().toLowerCase();
+  const modelFiltered = Boolean(modelSearchQuery || modelTypeFilter);
   const visibleModels = useMemo(
     () =>
-      modelSearchQuery
-        ? orderedModels.filter((model) => model.id.toLowerCase().includes(modelSearchQuery))
-        : orderedModels,
-    [orderedModels, modelSearchQuery],
+      orderedModels.filter(
+        (model) =>
+          (!modelTypeFilter || modelTypesFor(model.id, model).some((type) => type === modelTypeFilter)) &&
+          model.id.toLowerCase().includes(modelSearchQuery),
+      ),
+    [orderedModels, modelSearchQuery, modelTypeFilter],
   );
   // 表头总开关：作用于当前可见（含搜索过滤）的模型。全部启用时视为“开”，
   // 再点一次全部禁用；部分启用时点击补全为全部启用。
@@ -936,7 +942,7 @@ function useProviderModalController({
     const confirmed = await requestConfirm({
       title: t("settings.clearModelsConfirmTitle"),
       description: t(
-        modelSearchQuery
+        modelFiltered
           ? "settings.clearMatchedModelsConfirmDescription"
           : "settings.clearAllModelsConfirmDescription",
       ).replace("{count}", String(modelIds.length)),
@@ -946,7 +952,7 @@ function useProviderModalController({
     if (!confirmed) return;
     removeModels(modelIds);
   }
-  const modelReorderDisabledHint = modelSearchQuery
+  const modelReorderDisabledHint = modelFiltered
     ? t("settings.modelReorderDisabledSearch")
     : t("settings.reorderNeedsTwoItems");
   const handleModelReorder = useCallback((nextIds: string[]) => {
@@ -1052,7 +1058,9 @@ function useProviderModalController({
     matchedBalanceProviders,
     modelReorderDisabledHint,
     modelSearch,
-    modelSearchQuery,
+    modelFiltered,
+    modelTypeFilter,
+    setModelTypeFilter,
     models,
     modelsUrl,
     name,

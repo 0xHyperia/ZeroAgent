@@ -44,6 +44,7 @@ import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/presentation";
+import { modelTypesFor } from "@liveagent/ui/lib/models/modelTypes";
 import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import {
@@ -3427,7 +3428,7 @@ export function CloudChatPage({
   // biome-ignore lint/correctness/useExhaustiveDependencies: Catalog-only changes also invalidate model badges.
   const modelOptions = useMemo(
     () =>
-      buildModelOptions(settings, { floatSelectedFirst: false }).map((option) => ({
+      buildModelOptions(settings, { floatSelectedFirst: false, modelType: "text" }).map((option) => ({
         ...option,
         nativeWebSearchSupported: true,
       })),
@@ -3437,10 +3438,17 @@ export function CloudChatPage({
     ? toModelValue(relayProviderId(providerKeyId), model)
     : modelOptions.find((option) => option.model === model)?.value;
   const selectedModelOption = modelOptions.find((option) => option.value === selectedModelValue);
+  const configuredModel = settings.customProviders
+    .find((provider) => provider.id === relayProviderId(providerKeyId))
+    ?.models.find((entry) => entry.id === model);
+  const modelTypeMismatch =
+    providerKeyId > 0 && !!model && !modelTypesFor(model, configuredModel).includes("text");
+  const scheduleModel = selectedModelOption ?? modelOptions[0];
 
   useEffect(() => {
     if (
       modelsLoading ||
+      modelTypeMismatch ||
       !webSettingsLoaded ||
       (selectedModelOption && providerKeyId > 0) ||
       modelOptions.length === 0
@@ -3464,6 +3472,7 @@ export function CloudChatPage({
   }, [
     modelOptions,
     modelsLoading,
+    modelTypeMismatch,
     reasoning,
     selectedModelOption,
     providerKeyId,
@@ -4331,7 +4340,18 @@ export function CloudChatPage({
   ]
     .filter(Boolean)
     .join(" · ");
+  const modelTypeNotice =
+    webSettingsLoaded && !modelsLoading && (modelTypeMismatch || modelOptions.length === 0)
+      ? modelOptions.length > 0
+        ? settings.locale === "en-US"
+          ? "Choose a text model to continue. Your draft is kept."
+          : "当前模型不支持文本对话，请选择文本模型。草稿会保留。"
+        : settings.locale === "en-US"
+          ? "No text models available. You can keep drafting."
+          : "暂无可用的文本模型，仍可编辑草稿。"
+      : "";
   const composerFeedback =
+    modelTypeNotice ||
     error ||
     historyError ||
     streamNotice ||
@@ -4346,6 +4366,7 @@ export function CloudChatPage({
     ["error", "unknown", "conflict"].includes(savedDraft.state.status) ||
     uploadUnconfirmed ? (
       <div className="app-status-stack" data-cloud-composer-feedback="">
+        {modelTypeNotice ? <CloudChatFeedback tone="warning" compact message={modelTypeNotice} /> : null}
         {["error", "unknown", "conflict"].includes(savedDraft.state.status) ? (
           <CloudChatFeedback
             tone="warning"
@@ -5370,6 +5391,7 @@ export function CloudChatPage({
                                 composerRef={composerRef}
                                 isSending={streaming}
                                 isUploadingFiles={uploadingFiles}
+                                isSubmissionDisabled={modelTypeMismatch || modelOptions.length === 0}
                                 isInputDisabled={
                                   projectContextBusy ||
                                   conversationMutations.get(conversationId) === "move" ||
@@ -6196,7 +6218,11 @@ export function CloudChatPage({
                 }
                 locale={settings.locale}
                 fontScale={settings.customSettings.fontScale.sidebar}
-                currentModel={{ name: model, model, keyId: providerKeyId }}
+                currentModel={{
+                  name: scheduleModel?.label ?? "",
+                  model: scheduleModel?.model ?? "",
+                  keyId: scheduleModel ? relayProviderKeyId(scheduleModel.providerId) : 0,
+                }}
                 models={modelOptions.map((option) => ({
                   name: option.label,
                   model: option.model,

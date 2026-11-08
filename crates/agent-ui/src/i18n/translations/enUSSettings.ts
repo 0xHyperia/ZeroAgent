@@ -882,7 +882,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.clearAllModelsConfirmDescription":
     "All {count} models will be removed from this provider. Changes take effect after you save.",
   "settings.clearMatchedModelsConfirmDescription":
-    "{count} models matching the current search will be removed. Changes take effect after you save.",
+    "{count} models matching the current filters will be removed. Changes take effect after you save.",
   "settings.clearModelsConfirmAction": "Remove",
   "settings.modelsEnabledCount": "{enabled} / {total} models enabled",
   "settings.matchedModelsEnabledCount": "{enabled} / {total} matched models enabled",

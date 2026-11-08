@@ -132,3 +132,66 @@ test("provider-only selectors keep their raw provider values and omit the model 
     env.cleanup();
   }
 });
+
+test("model type filters stay within the caller's output scope when searching", async () => {
+  const icon = () => null;
+  const env = await createDomTestEnv({ mocks: {
+    "@liveagent/ui/components/IconSet": new Proxy({}, { get: () => icon }),
+    "@liveagent/ui/components/ProviderBrandIcon": { ProviderBrandIcon: icon },
+    "@liveagent/ui/i18n/index": { useLocale: () => ({ t: key => key }) },
+  } });
+  const { ModelPicker } = env.loadModule("@liveagent/ui/pages/settings/modelPicker.tsx");
+  const { buildModelOptions } = env.loadModule("@liveagent/ui/lib/models/modelOptions.ts");
+  const { readModelTypes } = env.loadModule("@liveagent/ui/lib/models/modelTypes.ts");
+  const options = buildModelOptions({ customProviders: [{
+    id: "group", name: "Managed", type: "codex",
+    activeModels: ["vision-chat", "gpt-image-2", "custom-movie", "mixed"],
+    models: [
+      { id: "vision-chat", inputModalities: ["text", "image", "video"] },
+      { id: "custom-movie", modelTypes: readModelTypes({ supported_endpoints: ["/v1/videos"] }) },
+      { id: "mixed", modelTypes: readModelTypes({ output_modalities: ["text", "image"] }) },
+    ],
+  }] });
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = env.createRoot(host);
+  const values = [];
+  const modelIds = () => [...document.querySelectorAll("[data-model-id]")].map(row => row.dataset.modelId);
+  const menuItem = label => [...document.querySelectorAll('[role="menuitemradio"]')]
+    .find(row => row.textContent.trim().startsWith(label));
+  async function open(modelType) {
+    await env.act(async () => root.render(env.React.createElement(ModelPicker, {
+      key: modelType ?? "all", options, modelType, value: "", placeholder: "Model",
+      collapsibleGroups: false, onChange: value => values.push(value),
+    })));
+    await env.act(async () => host.querySelector("button").click());
+  }
+  async function search(value) {
+    const input = document.querySelector("input");
+    await env.act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+  }
+  try {
+    await open("text");
+    assert.deepEqual(modelIds(), ["vision-chat", "mixed"]);
+    await search("gpt-image");
+    assert.deepEqual(modelIds(), []);
+    await env.act(async () => document.querySelector('[aria-label="chat.modelPickerFilters"]').click());
+    assert.equal(menuItem("chat.modelPickerTypeText")?.getAttribute("aria-checked"), "true");
+    assert.equal(menuItem("chat.modelPickerTypeAll"), undefined);
+    assert.equal(menuItem("chat.modelPickerTypeImage"), undefined);
+    await open("image");
+    assert.deepEqual(modelIds(), ["gpt-image-2", "mixed"]);
+    await search("vision-chat");
+    assert.deepEqual(modelIds(), []);
+    await open();
+    await env.act(async () => document.querySelector('[aria-label="chat.modelPickerFilters"]').click());
+    await env.act(async () => menuItem("chat.modelPickerTypeVideo").click());
+    assert.deepEqual(modelIds(), ["custom-movie"]);
+    assert.deepEqual(values, [], "changing a filter never changes the selected model");
+  } finally {
+    await env.act(async () => root.unmount());
+    env.cleanup();
+  }
+});

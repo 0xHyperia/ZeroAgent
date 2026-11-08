@@ -395,6 +395,7 @@ function CustomSettingsModelField(props: {
           {
             value: selectedValue,
             label: selected.model,
+            model: selected.model,
             providerName: selected.customProviderId,
           },
         ]
@@ -402,6 +403,7 @@ function CustomSettingsModelField(props: {
 
   return (
     <ModelPreferenceField
+      modelType="text"
       label={label}
       hint={hint}
       options={options}

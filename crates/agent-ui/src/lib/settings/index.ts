@@ -21,6 +21,7 @@ import {
   resolveModelThinking,
   type ThinkingLevel,
 } from "@liveagent/ui/lib/models/modelThinking";
+import { readModelTypes } from "@liveagent/ui/lib/models/modelTypes";
 import {
   providerSupportsNativeWebSearch,
   resolveProviderApi,
@@ -1008,6 +1009,7 @@ export function normalizeProviderModelConfig(
     providerId === "codex" ? normalizePromptCacheHintMode(obj.promptCacheHintMode) : undefined;
   const inputModalities = normalizeInputModalities(obj.inputModalities);
   const imageAdapter = MODEL_IMAGE_ADAPTERS.find((value) => value === obj.imageAdapter);
+  const modelTypes = readModelTypes(obj);
   return {
     id,
     ...(typeof obj.displayName === "string"
@@ -1018,6 +1020,7 @@ export function normalizeProviderModelConfig(
           ? { displayName: obj.name.trim() }
           : {}),
     ...(ownedBy ? { ownedBy } : {}),
+    ...(modelTypes ? { modelTypes } : {}),
     contextWindow: limits.contextWindow,
     maxOutputToken: limits.maxOutputToken,
     limitsSource,

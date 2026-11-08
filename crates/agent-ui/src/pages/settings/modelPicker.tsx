@@ -4,6 +4,7 @@ import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { type ModelPickerOption, modelIdOf } from "@liveagent/ui/lib/models/modelPickerOptions";
+import type { ModelType } from "@liveagent/ui/lib/models/modelTypes";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useRef, useState } from "react";
 
@@ -33,6 +34,7 @@ export function ModelPicker({
   searchPlaceholder,
   emptyLabel,
   selectionKind = "model",
+  modelType,
   onRefresh,
   refreshing,
 }: {
@@ -48,6 +50,7 @@ export function ModelPicker({
   searchPlaceholder?: string;
   emptyLabel?: string;
   selectionKind?: "model" | "provider";
+  modelType?: ModelType;
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
@@ -111,6 +114,7 @@ export function ModelPicker({
             emptyLabel={emptyLabel}
             collapsibleGroups={collapsibleGroups}
             selectionKind={selectionKind}
+            modelType={modelType}
             onRefresh={onRefresh}
             refreshing={refreshing}
             onSelect={(next) => {

@@ -824,7 +824,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.reorderModel": "调整模型排序",
   "settings.reorderProvider": "调整供应商排序",
   "settings.reorderVerticalHint": "拖动排序，或聚焦后按上下方向键移动",
-  "settings.modelReorderDisabledSearch": "搜索过滤时不能拖拽排序",
+  "settings.modelReorderDisabledSearch": "筛选结果时不能拖拽排序",
   "settings.reorderNeedsTwoItems": "至少需要两项才能排序",
   "settings.enableAllModels": "启用全部模型",
   "settings.disableAllModels": "禁用全部模型",
@@ -833,7 +833,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.clearModelsConfirmTitle": "删除模型？",
   "settings.clearAllModelsConfirmDescription": "将删除该供应商下全部 {count} 个模型，保存后生效。",
   "settings.clearMatchedModelsConfirmDescription":
-    "将删除当前搜索匹配的 {count} 个模型，保存后生效。",
+    "将删除符合当前筛选条件的 {count} 个模型，保存后生效。",
   "settings.clearModelsConfirmAction": "删除",
   "settings.modelsEnabledCount": "已启用 {enabled} / {total} 个模型",
   "settings.matchedModelsEnabledCount": "匹配的模型已启用 {enabled} / {total} 个",

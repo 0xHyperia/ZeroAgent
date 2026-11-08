@@ -21,18 +21,23 @@ import {
   type ModelPickerOption,
   type ModelPickerView,
   modelIdOf,
+  modelPickerTypes,
   persistModelPickerView,
   readModelPickerView,
 } from "../../lib/models/modelPickerOptions";
+import type { ModelType } from "../../lib/models/modelTypes";
 import { cn } from "../../lib/shared/utils";
 import { Button, RefreshButton } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { ModelTypeFilterItems } from "./ModelTypeFilterItems";
 
 export function ModelPickerContent(props: {
   options: readonly ModelPickerOption[];
@@ -44,6 +49,7 @@ export function ModelPickerContent(props: {
   emptyLabel?: string;
   collapsibleGroups?: boolean;
   selectionKind?: "model" | "provider";
+  modelType?: ModelType;
   onOpenProvider?: (id: string) => void;
   onRefresh?: () => void | Promise<void>;
   refreshing?: boolean;
@@ -54,14 +60,20 @@ export function ModelPickerContent(props: {
   const id = useId();
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [view, setView] = useState<ModelPickerView>(readModelPickerView);
   const [sort, setSort] = useState<ProviderSortMode>(readStoredProviderSortMode);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
   const providerOnly = props.selectionKind === "provider";
   const activeView = providerOnly ? "provider" : view;
-  const groups = buildModelPickerGroups(props.options, activeView, search, providerFilter, sort);
-  const providers = buildModelPickerGroups(props.options, "provider", "", "", sort);
+  const scope = providerOnly ? undefined : props.modelType;
+  const activeType = scope ?? (providerOnly ? "" : typeFilter);
+  const visibleOptions = activeType
+    ? props.options.filter((option) => modelPickerTypes(option).some((type) => type === activeType))
+    : props.options;
+  const groups = buildModelPickerGroups(visibleOptions, activeView, search, providerFilter, sort);
+  const providers = buildModelPickerGroups(scope ? visibleOptions : props.options, "provider", "", "", sort);
   const routes =
     pendingModel === null
       ? []
@@ -121,7 +133,7 @@ export function ModelPickerContent(props: {
 
   function changeView(next: ModelPickerView) {
     if (next === activeView) return;
-    const nextGroups = buildModelPickerGroups(props.options, next, search, providerFilter, sort);
+    const nextGroups = buildModelPickerGroups(visibleOptions, next, search, providerFilter, sort);
     const current =
       props.revealSelected && props.value
         ? nextGroups.find((group) =>
@@ -139,7 +151,7 @@ export function ModelPickerContent(props: {
   }
 
   function choose(option: ModelPickerOption) {
-    props.onSelect(option.value);
+    if (!option.disabledReason) props.onSelect(option.value);
   }
 
   return (
@@ -224,11 +236,14 @@ export function ModelPickerContent(props: {
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="shrink-0 bg-settings-tile-hover"
+                  className={cn(
+                    "shrink-0 bg-settings-tile-hover",
+                    (providerFilter || (!scope && typeFilter)) && "bg-settings-active ring-1 ring-border",
+                  )}
                 />
               }
-              title={t("settings.modelAllProviders")}
-              aria-label={t("settings.modelAllProviders")}
+              title={t(providerOnly ? "settings.modelAllProviders" : "chat.modelPickerFilters")}
+              aria-label={t(providerOnly ? "settings.modelAllProviders" : "chat.modelPickerFilters")}
             >
               <Funnel className="size-3.5" />
             </DropdownMenuTrigger>
@@ -237,6 +252,13 @@ export function ModelPickerContent(props: {
               align="start"
               className="max-h-64 w-56 overflow-y-auto text-xs"
             >
+              {!providerOnly && (
+                <>
+                  <ModelTypeFilterItems scope={scope} value={typeFilter} onChange={setTypeFilter} />
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{t("chat.modelPickerByGroup")}</DropdownMenuLabel>
+                </>
+              )}
               <DropdownMenuRadioGroup value={providerFilter} onValueChange={setProviderFilter}>
                 <DropdownMenuRadioItem value="">
                   {t("settings.modelAllProviders")}
@@ -338,9 +360,11 @@ export function ModelPickerContent(props: {
                 type="button"
                 data-model-option
                 data-model-route={option.value}
+                disabled={Boolean(option.disabledReason)}
+                title={option.disabledReason}
                 aria-pressed={option.value === props.value}
                 onClick={() => choose(option)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-settings-tile-hover focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-settings-tile-hover focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
                 <ProviderBrandIcon
                   type={option.providerType}
@@ -354,9 +378,9 @@ export function ModelPickerContent(props: {
                       {option.label}
                     </span>
                   )}
-                  {option.description && (
+                  {(option.disabledReason || option.description) && (
                     <span className="block truncate text-tiny text-muted-foreground">
-                      {option.description}
+                      {option.disabledReason || option.description}
                     </span>
                   )}
                 </span>
@@ -455,7 +479,8 @@ export function ModelPickerContent(props: {
                   >
                     {isExpanded &&
                       group.entries.map((entry) => {
-                        const option = entry.options[0];
+                        const available = entry.options.find((item) => !item.disabledReason);
+                        const option = available ?? entry.options[0];
                         const isSelected = entry.options.some((item) => item.value === props.value);
                         const contextWindow = entry.options.every(
                           (item) => item.contextWindow === option.contextWindow,
@@ -468,12 +493,14 @@ export function ModelPickerContent(props: {
                             type="button"
                             data-model-option
                             data-model-id={modelIdOf(option)}
+                            disabled={!available}
                             aria-pressed={isSelected}
                             onClick={() =>
                               activeView === "vendor" ? setPendingModel(entry.id) : choose(option)
                             }
                             className={cn(
                               "flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                              !available && "opacity-50",
                               isSelected
                                 ? "bg-settings-active font-medium text-foreground hover:bg-settings-active"
                                 : "text-foreground/90 hover:bg-settings-tile-hover hover:text-foreground",
@@ -485,16 +512,21 @@ export function ModelPickerContent(props: {
                                 model={providerOnly ? undefined : modelIdOf(option)}
                                 className={cn("size-3", isSelected ? "opacity-80" : "opacity-45")}
                               />
-                              <span className="min-w-0 flex-1 truncate" title={modelIdOf(option)}>
+                              <span className="min-w-0 flex-1 truncate" title={option.disabledReason ?? modelIdOf(option)}>
                                 {entry.label}
                               </span>
-                              {activeView === "provider" && option.description && (
+                              {activeView === "provider" && (option.disabledReason || option.description) && (
                                 <span className="max-w-24 truncate text-muted-foreground">
-                                  {option.description}
+                                  {option.disabledReason || option.description}
                                 </span>
                               )}
                             </span>
                             <span className="flex shrink-0 items-center gap-1 text-tiny text-muted-foreground">
+                              {option.badges?.map((badge) => (
+                                <span key={badge} className="rounded bg-muted/60 px-1 py-px">
+                                  {badge}
+                                </span>
+                              ))}
                               {option.reasoning && (
                                 <span className="rounded bg-muted/60 px-1 py-px">
                                   {t("settings.modelBadgeReasoning")}

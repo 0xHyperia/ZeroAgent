@@ -305,6 +305,8 @@ export type ChatComposerBarProps = {
   isSending: boolean;
   isUploadingFiles: boolean;
   isInputDisabled: boolean;
+  /** Host send precondition while the draft and other controls remain editable. */
+  isSubmissionDisabled?: boolean;
   allowQueueWhileSending?: boolean;
   allowUploadsWithoutWorkspace?: boolean;
   sttProvider?: SttProviderId | null;
@@ -468,6 +470,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     isSending,
     isUploadingFiles,
     isInputDisabled,
+    isSubmissionDisabled = false,
     allowQueueWhileSending = true,
     allowUploadsWithoutWorkspace = false,
     sttProvider = null,
@@ -707,7 +710,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   // 最宽松的可用项禁用,各菜单项再单独按自身前置条件禁用。
   const composerAddMenuDisabled = isAgentMode ? controlsDisabled : uploadDisabled;
   const hasSendableDraft = !composerIsEmpty || pendingUploadedFiles.length > 0;
-  const sendDisabled = isInputDisabled || stt.active || isUploadingFiles || !hasSendableDraft;
+  const sendDisabled =
+    isInputDisabled || isSubmissionDisabled || stt.active || isUploadingFiles || !hasSendableDraft;
   const canQueueDraftWhileSending = allowQueueWhileSending && isSending && !sendDisabled;
   const primaryActionTitle = canQueueDraftWhileSending
     ? (submitLabel ?? t("chat.queue.addToQueue"))

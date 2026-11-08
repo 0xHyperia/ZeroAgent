@@ -58,6 +58,7 @@ export function DeviceImageModelPreferences({
             value: target.id,
             label: configured?.displayName || label || model,
             model,
+            modelTypes: ["image"] as const,
             providerId: provider?.id ?? target.providerId ?? target.connectionId,
             providerName:
               provider?.name ?? (separator >= 0 ? target.name.slice(0, separator) : "图像模型"),
