@@ -41,6 +41,7 @@ import {
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
+import { documentRevisionText } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
@@ -57,6 +58,7 @@ import {
 } from "@liveagent/ui/components/workbench/WorkbenchCanvas";
 import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/WorkbenchEmptyState";
 import { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
+import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import {
   WorkspaceFileReader,
   WorkspaceOverlayHost,
@@ -1808,6 +1810,50 @@ function ChatPageContent(props: ChatPageProps) {
     );
   sendActionRef.current = sendForConversationProject;
   stopSendingActionRef.current = stopSending;
+
+  const canRequestWorkspaceRevision = chatVisible && hasConversationProject && !isKBrainBrowserHost();
+  const revisionViewRef = useRef<string | null>(null);
+  revisionViewRef.current = canRequestWorkspaceRevision ? workspaceOverlays.workspaceViewScope : null;
+  const requestWorkspaceDocumentRevision = useCallback(
+    async ({ source, comments, assertCurrent }: WorkspaceDocumentRevision) => {
+      const conversationId = currentConversationId;
+      const view = workspaceOverlays.workspaceViewScope;
+      const canSend = () =>
+        revisionViewRef.current === view &&
+        currentConversationIdRef.current === conversationId &&
+        !isConversationRunning(conversationId);
+      if (!comments.length || comments.length > 20 || !canSend()) return false;
+      assertCurrent();
+      const uploadedFiles = await importReadableFiles(
+        [source],
+        { conversationId, workdir: displayedConversationWorkdir },
+        undefined,
+        false,
+      );
+      if (!canSend()) return false;
+      assertCurrent();
+      if (uploadedFiles?.length !== 1) return false;
+
+      const text = `${documentRevisionText(source.name, comments)}\n\n请在当前工作区另存修改稿并提供文件链接，保留原件和作为引用的附件。`;
+      return new Promise<boolean>((resolve, reject) => {
+        void sendActionRef.current({
+          conversationIdOverride: conversationId,
+          textOverride: text,
+          uploadedFilesOverride: uploadedFiles,
+          preserveComposerOnStart: true,
+          onRunStarted: () => resolve(true),
+        }).then(resolve, reject);
+      });
+    },
+    [
+      currentConversationId,
+      currentConversationIdRef,
+      displayedConversationWorkdir,
+      importReadableFiles,
+      isConversationRunning,
+      workspaceOverlays.workspaceViewScope,
+    ],
+  );
 
   useGatewayBridgeListeners({
     currentConversationIdRef,
@@ -5067,7 +5113,7 @@ function ChatPageContent(props: ChatPageProps) {
                       <ConversationReaderWorkbench
                         open={workspaceOverlays.workspaceFilePreviewOpen}
                         primaryVisible
-                        readingScope={`device:${terminalProjectPathKey}`}
+                        readingScope={`device:${workspaceOwner}`}
                         primary={
                           <DesktopConversationImageHost.Provider value={conversationImageHost}>
                             {chatContent}
@@ -5078,11 +5124,15 @@ function ChatPageContent(props: ChatPageProps) {
                           <WorkspaceFileReader
                             key={workspaceOverlays.workspaceViewScope}
                             locale={settings.locale}
+                            readingViewId={workspaceOverlays.workspaceViewScope}
                             isOpen={workspaceOverlays.workspaceFilePreviewOpen}
                             openRequest={workspaceOverlays.workspaceFilePreviewOpenRequest}
                             onOpenEditor={workspaceOverlays.openWorkspaceEditorFile}
                             onRequestClose={workspaceOverlays.requestWorkspaceFilePreviewClose}
                             onClose={workspaceOverlays.handleWorkspaceFilePreviewClosed}
+                            onRequestRevision={
+                              canRequestWorkspaceRevision ? requestWorkspaceDocumentRevision : undefined
+                            }
                           />
                         )}
                       </ConversationReaderWorkbench>

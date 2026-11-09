@@ -58,6 +58,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ConversationReaderPanel } from "../resource-preview/ConversationReaderPanel";
 import { PreviewIdentityContext } from "../resource-preview/PreviewChrome";
 import { PreviewLoading, PreviewUnavailable } from "../resource-preview/PreviewFeedback";
+import type { DocumentRevisionComment } from "../resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "../resource-preview/ResourcePreview";
 import { ResourceTitleMenu } from "../resource-preview/ResourceReaderDetails";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
@@ -81,6 +82,12 @@ type ReadWorkspacePreviewResponse = {
   contentHash: string;
 };
 
+export type WorkspaceDocumentRevision = {
+  source: File;
+  comments: readonly DocumentRevisionComment[];
+  assertCurrent: () => void;
+};
+
 export type WorkspaceFilePreviewOverlayProps = {
   openRequest: WorkspaceFilePreviewOpenRequest | null;
   isOpen: boolean;
@@ -88,6 +95,8 @@ export type WorkspaceFilePreviewOverlayProps = {
   onRequestClose: () => void;
   onClose: () => void;
   reader?: boolean;
+  readingViewId?: string;
+  onRequestRevision?: (revision: WorkspaceDocumentRevision) => Promise<boolean>;
 };
 
 type LoadedPreview = ReadWorkspacePreviewResponse & {
@@ -472,6 +481,27 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     currentPreview &&
       !(currentPreview.mimeType === "text/html" && /\.(doc|rtf)$/i.test(currentPreview.path)),
   );
+  const requestRevision =
+    reader &&
+    props.onRequestRevision &&
+    currentPreview &&
+    (currentPreview.kind === "pdf" ||
+      (currentPreview.kind === "document" && /\.docx$/i.test(currentPreview.path)))
+      ? (comments: readonly DocumentRevisionComment[]) => {
+          assertCurrent(currentPreview);
+          return (
+            currentProps.current.onRequestRevision?.({
+              source: new File(
+                [bytesToArrayBuffer(currentPreview.bytes)],
+                basename(currentPreview.path),
+                { type: currentPreview.mimeType },
+              ),
+              comments,
+              assertCurrent: () => assertCurrent(currentPreview),
+            }) ?? false
+          );
+        }
+      : undefined;
   const previewBody = currentPreview && (
     <PreviewBody
       preview={currentPreview}
@@ -485,8 +515,10 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       onOpenImagePath={openImagePath}
       onActionError={setError}
       reader={reader}
+      readingViewId={props.readingViewId}
       assertCurrent={() => assertCurrent(currentPreview)}
       onDownload={canDownload ? () => downloadPreview(currentPreview) : undefined}
+      onRequestRevision={requestRevision}
     />
   );
 
@@ -705,6 +737,8 @@ function PreviewBody(props: {
   assertCurrent: () => void;
   onDownload?: () => void;
   reader?: boolean;
+  readingViewId?: string;
+  onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
 }) {
   const {
     preview,
@@ -731,14 +765,15 @@ function PreviewBody(props: {
     ].includes(preview.kind) ||
     (props.reader && (preview.kind !== "image" || imagePaths.length < 2))
   ) {
+    const identity = JSON.stringify([props.readingViewId, workdir, preview.path, preview.sha256]);
     return (
       <div
         className={props.reader ? "min-h-0 flex-1" : "h-full overflow-auto bg-background px-3 pb-3"}
       >
         <ResourcePreview
-          key={`${workdir}:${preview.path}:${preview.contentHash}`}
+          key={identity}
           resource={{
-            identity: `${workdir}:${preview.path}:${preview.contentHash}`,
+            identity,
             name: basename(preview.path),
             mime: preview.mimeType,
             size: preview.bytes.byteLength,
@@ -761,6 +796,7 @@ function PreviewBody(props: {
             };
           }}
           onDownload={props.onDownload}
+          onRequestRevision={props.onRequestRevision}
         />
       </div>
     );

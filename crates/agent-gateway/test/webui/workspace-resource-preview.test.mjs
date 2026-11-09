@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const streamdown = await import(new URL("../../../agent-ui/node_modules/streamdown/dist/index.js", import.meta.url));
@@ -8,7 +9,7 @@ async function flush() { for (let i=0;i<6;i++) await new Promise(resolve=>setImm
 const request = (id, path) => ({ id, projectPathKey: "device-a:project", workdir: "D:/synthetic-project", path });
 const response = (path, mimeType, text) => ({ path, mimeType, data: Buffer.from(text).toString("base64"), sizeBytes: Buffer.byteLength(text), mtimeMs: 123, contentHash: "native-fingerprint" });
 
-async function mount(t, initial, read, save = async()=>{}) {
+async function mount(t, initial, read, save = async()=>{}, options = {}) {
   const reads=[], saves=[];
   const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: {
     streamdown,
@@ -18,11 +19,12 @@ async function mount(t, initial, read, save = async()=>{}) {
     "@liveagent/ui/components/workspace-editor/WorkspaceMarkdownPreview": { WorkspaceMarkdownPreview:()=>null },
     "@liveagent/ui/i18n/index": { useLocale:()=>({ t:translate }) },
     "@liveagent/ui/lib/tools/fsBackend": { invokeFs: async (command,args)=>{ assert.equal(command,"fs_read_workspace_image"); reads.push(args); return read(args); } },
+    ...options.mocks,
   }});
   const { WorkspaceFilePreviewOverlay } = env.loadModule("@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay.tsx");
   const host=document.body.appendChild(document.createElement("div")), root=env.createRoot(host);
   const render=async(openRequest=initial,isOpen=true)=>{
-    await env.act(async()=>{root.render(env.React.createElement(WorkspaceFilePreviewOverlay,{openRequest,isOpen,onOpenEditor(){},onRequestClose(){},onClose(){}}));await flush();});
+    await env.act(async()=>{root.render(env.React.createElement(WorkspaceFilePreviewOverlay,{openRequest,isOpen,onOpenEditor(){},onRequestClose(){},onClose(){},...options.props}));await flush();});
     await env.act(flush);
   };
   await render();
@@ -44,6 +46,40 @@ test("authorized workspace bytes use the shared PDF failure UI and keep the orig
   const save=[...app.host.querySelectorAll("button")].find(button=>button.textContent==="下载原件");
   assert.ok(save);await app.env.act(async()=>{save.click();await flush();});
   assert.deepEqual(app.saves,[{data:sample.data,fileName:"文件.pdf",mimeType:"application/pdf"}]);
+});
+
+test("the conversation reader submits the displayed document snapshot and retires callbacks on file switch", async t => {
+  const pdf = response("source.pdf", "application/pdf", "the displayed PDF bytes");
+  const legacy = response("legacy.doc", "text/html", "<p>Converted view</p>");
+  const submissions = [];
+  let previewProps;
+  const previewModule = fileURLToPath(new URL(
+    "../../../agent-ui/src/components/resource-preview/ResourcePreview.tsx", import.meta.url,
+  ));
+  const app = await mount(t, request(1, pdf.path), async ({ path }) => path === pdf.path ? pdf : legacy,
+    undefined, {
+      props: {
+        reader: true,
+        readingViewId: "conversation-A",
+        onRequestRevision: async (revision) => { submissions.push(revision); return true; },
+      },
+      mocks: { [previewModule]: { ResourcePreview: (props) => { previewProps = props; return null; } } },
+    },
+  );
+  await app.env.waitFor(() => Boolean(previewProps?.onRequestRevision));
+  const submit = previewProps.onRequestRevision;
+  const comments = [{ id: "one", page: 1, block: "pdf:1", start: 0, end: 5, quote: "Title", comment: "Rename it" }];
+  assert.equal(submissions.length, 0);
+  assert.equal(await submit(comments), true);
+  assert.equal(submissions[0].source.name, pdf.path);
+  assert.equal(await submissions[0].source.text(), "the displayed PDF bytes");
+  assert.equal(submissions[0].comments, comments);
+  await app.render(request(2, legacy.path));
+  await app.env.waitFor(() => previewProps?.resource.name === legacy.path);
+  assert.equal(previewProps.onRequestRevision, undefined);
+  assert.throws(() => submit(comments), { name: "AbortError" });
+  assert.throws(submissions[0].assertCurrent, { name: "AbortError" });
+  assert.equal(submissions.length, 1);
 });
 
 test("late workspace reads cannot replace a newer PPTX preview or paint after closing",async t=>{
