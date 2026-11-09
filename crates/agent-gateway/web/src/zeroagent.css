@@ -756,7 +756,8 @@ html[data-zeroagent-platform="android"]
 .cloud-conversation-layout[data-layout="landing"] > .gateway-transcript-scroll-shell {
   display: none;
 }
-.cloud-conversation-layout[data-layout="landing"] > .gateway-composer-layer {
+/* The composer portal stays inside the landing layout until it moves into image preview. */
+.cloud-conversation-layout[data-layout="landing"] .gateway-composer-layer {
   position: relative;
   inset: auto;
   max-height: none;
@@ -1330,7 +1331,7 @@ html[data-zeroagent-platform="android"]
   .cloud-chat-shell .gateway-composer-layer {
     --gateway-chat-column-gutter: 16px;
   }
-  .cloud-conversation-layout[data-layout="landing"] > .gateway-composer-layer {
+  .cloud-conversation-layout[data-layout="landing"] .gateway-composer-layer {
     order: 3;
   }
   .cloud-chat-shell [data-composer-context-bar] {
