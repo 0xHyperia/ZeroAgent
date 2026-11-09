@@ -2,6 +2,23 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "CHANGELOG.md",
+      "ownership": "zeroagent_owned",
+      "risk": "medium",
+      "checks": [
+        "保留 ZeroAgent 未发布与历史版本记录，变更按新增功能、优化改进、Bug 修复维护"
+      ]
+    },
+    {
+      "glob": "crates/agent-gui/src-tauri/src/services/kbrain_ssh_sync.rs",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "同步仅从当前认证 profile 读取，并绑定仍在运行的本机后端",
+        "凭据仅原生传送，禁止重定向、日志反射及跨账户复用，保留主机指纹确认"
+      ]
+    },
+    {
       "glob": "{crates/agent-gateway/internal/account/cloud_schedule*.go,crates/agent-gateway/internal/account/cloud_execution_account.go,crates/agent-gateway/internal/account/desktop_cloud_session.go,crates/agent-gateway/internal/account/cloud_run_runtime.go,crates/agent-gateway/internal/account/workbench_*.go,crates/agent-gateway/internal/handler/{device_schedule_summary,workspace_handoff}.go,crates/agent-gateway/internal/server/workspace_handoff_test.go,crates/agent-gateway/web/src/components/cloudchat/{CloudScheduleWorkspace,DeviceScheduleEditor,ScheduleRunApprovalCard,ScheduleSourcePicker,WorkspaceHandoffDialog}.tsx,crates/agent-gateway/web/src/lib/{cloudSchedules,deviceScheduleHost,workspaceHandoff}.ts,crates/agent-gateway/web/test/workspace-handoff.test.mjs,crates/agent-ui/src/pages/settings/WorkbenchCronPreview.tsx,crates/agent-gui/src/lib/relay/desktopWorkspaceHandoff.ts,crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs,crates/agent-gui/src-tauri/src/services/gateway/workspace_handoff.rs}",
       "ownership": "zeroagent_owned",
       "risk": "high",

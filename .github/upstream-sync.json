@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.8",
-  "base_commit": "68e331ead9c1f622125bfa17ac6009d7ac498d8f",
-  "commit": "514ec76d6b1fa2e4dfa70a167c2bae9a7897a3fd",
-  "integration_commit": "798908cbd09434a90b96d2f57521a7b6f965219a",
-  "previous_tag": "v2.0.0-beta.24",
-  "previous_upstream_commit": "d2966f301f1395cb57c9f62dda3442fea81fe231",
+  "tag": "v2.0.15",
+  "base_commit": "d3bb9afaa6665cd64e950afa6d374185252d063f",
+  "commit": "dab301d1e95f1d28858e9e2054deee35fddd9961",
+  "integration_commit": "450da5a898279cc1af5a4af51a83e660bb80cdd9",
+  "previous_tag": "v2.0.8",
+  "previous_upstream_commit": "514ec76d6b1fa2e4dfa70a167c2bae9a7897a3fd",
   "prerelease": false,
-  "validation_status": "local integration: Windows native and patched backend, GUI and WebUI, Gateway unit/race/vet and production image dependency recovery; macOS/Android device/signing and real-account acceptance pending",
+  "validation_status": "Windows native check and patched K-brain build, Gateway tests/vet, Proto wire check, frontend builds and focused tests; full frontend and release acceptance pending",
   "channel": "stable",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.8",
-  "published_at": "2026-11-05T06:03:51Z"
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.15",
+  "published_at": "2026-11-08T12:03:15Z"
 }

@@ -527,7 +527,7 @@
     },
     {
       "id": "kbrain-memory-control",
-      "name": "K-brain 记忆总开关与远程记忆",
+      "name": "K-brain 记忆总开关、整理计划与远程记忆",
       "status": "active",
       "owner": "shared",
       "surfaces": [
@@ -546,9 +546,11 @@
         "crates/agent-gui/test/settings/review2-memory-switch-verified.test.mjs",
         "crates/agent-gui/test/settings/review4-memory-switch-desktop-gateway.test.mjs",
         "crates/agent-gateway/web/test/memory-master-switch-settings.test.mjs",
+        "crates/agent-gateway/web/test/kbrain-settings-sync.test.mjs",
+        "crates/agent-gateway/internal/kbrain/memory_organizer_settings_test.go",
         "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs"
       ],
-      "security": "后端记忆和Native整理配置独立；从同一规范文档读取，按展示版本CAS保存并补偿。远程记忆走profile facade，响应绑定原请求流，失效取消和脱敏保持。",
+      "security": "后端记忆和整理计划从同一规范文档读取，按展示版本 CAS 保存并补偿。远程记忆走profile facade，响应绑定原请求流，失效取消和脱敏保持。",
       "upstream_relation": "adapt"
     },
     {
