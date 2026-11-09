@@ -127,6 +127,10 @@ export function observeTimeZoneResponse(
   result: unknown,
   device: string = deviceTimeZone(),
 ) {
+  // Cron occurrences describe the scheduler's clock, which can be Go's "Local".
+  // Only calendar settings and snapshots report the calendar's effective zone.
+  const isSettingsResponse = action === "timezone.get" || action === "timezone";
+  if (!isSettingsResponse && action !== "query" && action !== "export") return;
   if (!result || typeof result !== "object") return;
   const value = result as { preference?: unknown; timeZone?: unknown };
   if (typeof value.timeZone !== "string" || !value.timeZone) return;
@@ -135,7 +139,7 @@ export function observeTimeZoneResponse(
     update(scope, { kind: "unsupported", effective: value.timeZone });
     return;
   }
-  if (action === "timezone.get" || action === "timezone") {
+  if (isSettingsResponse) {
     if (typeof value.preference !== "string") return;
     const preferred = value.preference ? canonicalZone(value.preference) : effective;
     if (preferred !== effective) {

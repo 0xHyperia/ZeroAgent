@@ -2,6 +2,45 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
+test("device cron reads do not raise or clear a calendar time zone notice", async () => {
+  const settings = { preference: "Asia/Shanghai", timeZone: "Asia/Shanghai", revision: 1 };
+  let cronZone = "Local";
+  let calendarZone = settings.timeZone;
+  const loader = createTsModuleLoader({ mocks: {
+    "@liveagent/app/shims/tauriCore": { invoke: async () => {} },
+    "../host": { isTauriHost: () => true },
+    "../kbrain/mapping": { kBrainStorageScope: () => "timezone-notice-cron" },
+    "../kbrain/transport": { fetchKBrain: async (_path, init) => {
+      const { action } = JSON.parse(init.body);
+      const result = action === "cron.occurrences"
+        ? { timeZone: cronZone, occurrences: [] }
+        : action === "query" ? { timeZone: calendarZone } : settings;
+      return Response.json(result);
+    } },
+  } });
+  const { requestPlanning } = loader.loadModule("src/lib/planning/kbrain.ts");
+  const { getTimeZoneNotice } = loader.loadModule("src/lib/planning/timeZoneNotice.ts");
+  const notice = () => getTimeZoneNotice("timezone-notice-cron");
+
+  await requestPlanning("timezone.get");
+  for (let read = 0; read < 2; read++) {
+    assert.equal((await requestPlanning("cron.occurrences")).timeZone, "Local");
+    assert.equal(notice(), null);
+  }
+  calendarZone = "Custom/Unknown";
+  await requestPlanning("query");
+  const warning = notice();
+  assert.equal(warning.kind, "unsupported");
+  assert.equal(warning.effective, calendarZone);
+  await requestPlanning("cron.occurrences");
+  assert.equal(notice(), warning);
+  cronZone = "Asia/Shanghai";
+  await requestPlanning("cron.occurrences");
+  assert.equal(notice(), warning);
+  await requestPlanning("timezone.get");
+  assert.equal(notice(), null);
+});
+
 test("time zone notice is passive, scoped, dismissible, deduplicated and cleared after recovery", () => {
   const storage = new Map();
   const previous = globalThis.sessionStorage;
