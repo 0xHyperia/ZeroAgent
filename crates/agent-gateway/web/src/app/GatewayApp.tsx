@@ -29,6 +29,7 @@ import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/releaseProjectToolFromDock";
+import { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConversationRightDock";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type { ConversationOpenRequest } from "@liveagent/ui/lib/sidebar/openController";
 import {
@@ -100,7 +101,6 @@ import {
   type RelayUser,
 } from "@/lib/relay/client";
 import {
-  openRightDockSingletonTab,
   parseSelectedModelJson,
   resolveEffectiveTheme,
   type SelectedModel,
@@ -418,12 +418,14 @@ function useGatewayAppController() {
     setActiveView: setActiveViewState,
     projectSettingsProject,
     setProjectSettingsProject,
-    rightDockOpen,
-    setRightDockOpen,
   } = useApplicationViewState<WorkspaceProject>(
     getDesktopRemoteHost()?.initialView ??
       (initialRoute.page === "tasks" && initialRoute.deviceView ? "cron-hub" : "chat"),
   );
+  const displayedConversationId = resolveVisibleConversationId(selectedHistoryId, conversationId);
+  const workspaceOwner = JSON.stringify([accountUser?.id ?? "", activeAgentScope]);
+  const dock = useConversationRightDock(workspaceOwner, displayedConversationId);
+  const { rightDockOpen, setRightDockOpen, openToolTab, moveConversation, closeToolForPane } = dock;
   const selectedTaskDevice = selection?.runtime_kind === "device_agent" ? selection.device_id : "";
   const returnFromDeviceTasksRef = useRef<(requestedId?: string) => void>(() => {});
   const setActiveView = useCallback<typeof setActiveViewState>(
@@ -761,6 +763,7 @@ function useGatewayAppController() {
     displayedConversationWorkdirRef,
     setActiveView,
     setRightDockOpen,
+    openDockToolTab: openToolTab,
     setSettings,
     setSidebarOpen,
     settings,
@@ -1221,6 +1224,7 @@ function useGatewayAppController() {
         composerDraftOwnerRef.current = nextId;
       }
       moveConversationUploads(previousId, nextId);
+      moveConversation(previousId, nextId);
       if (chatQueueConversationIdRef.current === previousId) {
         chatQueueConversationIdRef.current = nextId;
       }
@@ -1271,28 +1275,29 @@ function useGatewayAppController() {
         return next;
       });
     },
-    [moveConversationUploads, sidebarStore, transcriptStoreRegistry],
+    [moveConversation, moveConversationUploads, sidebarStore, transcriptStoreRegistry],
   );
 
   const ensureTunnelToolTab = useCallback(
-    (projectPathKey?: string) => {
+    (projectPathKey: string | undefined, conversationId: string) => {
       const targetProjectPathKey =
         workspaceProjectPathKey(projectPathKey) ||
-        workspaceProjectPathKey(activeWorkspaceProjectPath);
+        workspaceProjectPathKey(conversationWorkdirsRef.current.get(conversationId)) ||
+        workspaceProjectPathKey(sidebarStore.peek(conversationId)?.cwd);
       if (!targetProjectPathKey) return;
-      setSettings((prev) => openRightDockSingletonTab(prev, targetProjectPathKey, "tunnel"));
+      openToolTab(targetProjectPathKey, "tunnel", conversationId);
     },
-    [activeWorkspaceProjectPath, setSettings],
+    [openToolTab, sidebarStore],
   );
 
   // Tunnel list refreshes arrive through the tunnel.state push; the chat
   // event only opens the tunnel tool tab when the agent creates a tunnel.
   const handleTunnelManagerChatEvent = useCallback(
-    (event: ChatEvent) => {
+    (event: ChatEvent, conversationId: string) => {
       const change = readTunnelManagerToolChange(event);
       if (!change) return;
       if (change.action === "create") {
-        ensureTunnelToolTab(change.projectPathKey);
+        ensureTunnelToolTab(change.projectPathKey, conversationId);
       }
     },
     [ensureTunnelToolTab],
@@ -1366,7 +1371,6 @@ function useGatewayAppController() {
   // persistent stream subscription (subscribed whenever the id is real —
   // regardless of running state, which is what makes GUI queue auto-sends
   // race-free: the next run's events simply flow in).
-  const displayedConversationId = resolveVisibleConversationId(selectedHistoryId, conversationId);
   const mobileNavigationStackRef = useRef<Array<{ projectId: string; conversationId: string }>>([]);
   const previousMobileNavigationRef = useRef<{ projectId: string; conversationId: string } | null>(
     null,
@@ -2204,7 +2208,6 @@ function useGatewayAppController() {
     setChatError,
     setConversationId,
     setPendingUploadsForConversation,
-    setRightDockOpen,
     setSelectedHistory,
     setSelectedHistoryId,
     setSidebarOpen,
@@ -2301,7 +2304,7 @@ function useGatewayAppController() {
         setUserMenuOpen(false);
       } else if (settingsOpen) {
         closeSettings();
-      } else if (rightDockOpen) {
+      } else if (activeView === "chat" && rightDockOpen) {
         setRightDockOpen(false);
       } else if (sidebarOpen) {
         setSidebarOpen(false);
@@ -2593,7 +2596,6 @@ function useGatewayAppController() {
       setProjectSettingsProject(null);
       resetSettingsOverlay();
       setActiveViewState(taskLanding ? "cron-hub" : "chat");
-      setRightDockOpen(false);
       toast.dismiss();
       resetProjectToolsRuntimeRef.current();
       workbenchClearRef.current();
@@ -2612,7 +2614,6 @@ function useGatewayAppController() {
       resetSharedHistory,
       resetToFreshHomeConversation,
       transcriptStoreRegistry,
-      setRightDockOpen,
       setActiveViewState,
       resetSettingsOverlay,
       setProjectSettingsProject,
@@ -2864,11 +2865,8 @@ function useGatewayAppController() {
     tunnelDisabledMessage,
     tunnelEnabled,
     workspaceActivityClient,
-    workspaceEditorCleanupPending,
-    workspaceEditorCloseRequestId,
-    workspaceEditorMounted,
-    workspaceEditorOpen,
-    workspaceEditorOpenRequest,
+    workspaceViewScope,
+    workspaceEditors,
     workspaceFilePreviewMounted,
     workspaceFilePreviewOpen,
     workspaceFilePreviewOpenRequest,
@@ -2876,6 +2874,7 @@ function useGatewayAppController() {
     workspaceSshTerminalOpen,
     workspaceSshTerminalOpenRequest,
   } = useGatewayProjectTools({
+    workspaceOwner,
     activeWorkspaceProjectPath,
     addNotify,
     api,
@@ -2886,7 +2885,7 @@ function useGatewayAppController() {
     terminalIdentity,
     isAgentMode,
     resetProjectToolsRuntimeRef,
-    setRightDockOpen,
+    dock,
     setSettings,
     settings,
     settingsSyncReady,
@@ -2943,8 +2942,10 @@ function useGatewayAppController() {
       ),
     onConversationAlreadyOpen: () =>
       addNotify("success", translate("workbench.conversationAlreadyOpen", settings.locale)),
-    onProjectToolPaneClosed: (tool, projectPathKey) =>
-      setSettings((prev) => releaseProjectToolFromDock(prev, tool, projectPathKey)),
+    onProjectToolPaneClosed: (tool, projectPathKey) => {
+      closeToolForPane(tool, projectPathKey);
+      setSettings((prev) => releaseProjectToolFromDock(prev, tool, projectPathKey));
+    },
     onTerminalCloseFailed: (message) => addNotify("error", message),
   });
   workbenchRenameConversationRef.current = workbenchController.workbench.renameConversation;
@@ -3728,11 +3729,8 @@ function useGatewayAppController() {
     workspaceActivityClient,
     workspaceCloneTasks,
     workspaceCreateModalOpen,
-    workspaceEditorCleanupPending,
-    workspaceEditorCloseRequestId,
-    workspaceEditorMounted,
-    workspaceEditorOpen,
-    workspaceEditorOpenRequest,
+    workspaceViewScope,
+    workspaceEditors,
     workspaceFilePreviewMounted,
     workspaceFilePreviewOpen,
     workspaceFilePreviewOpenRequest,

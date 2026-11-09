@@ -7,130 +7,176 @@ import type { WorkspaceSshTerminalOpenRequest } from "./WorkspaceSshTerminalOver
 import { isWorkspacePreviewPath } from "./workspaceImagePreview";
 
 type UseWorkspaceOverlaysParams = {
+  workspaceOwner: string;
+  conversationId: string;
   terminalProjectPath: string;
   terminalProjectPathKey: string;
   rightDockFileTreeOpen: boolean;
 };
 
-export function useWorkspaceOverlays(params: UseWorkspaceOverlaysParams) {
-  const { terminalProjectPath, terminalProjectPathKey, rightDockFileTreeOpen } = params;
-  const previousRightDockFileTreeOpenRef = useRef(false);
-  const [workspaceEditorMounted, setWorkspaceEditorMounted] = useState(false);
-  const workspaceEditorMountedRef = useRef(false);
-  workspaceEditorMountedRef.current = workspaceEditorMounted;
-  const [workspaceEditorOpen, setWorkspaceEditorOpen] = useState(false);
-  const [workspaceEditorCleanupPending, setWorkspaceEditorCleanupPending] = useState(false);
-  const [workspaceEditorOpenRequest, setWorkspaceEditorOpenRequest] =
-    useState<WorkspaceCodeEditorOpenRequest | null>(null);
-  const [workspaceEditorCloseRequestId, setWorkspaceEditorCloseRequestId] = useState(0);
-  const workspaceEditorRequestIdRef = useRef(0);
-  const [workspaceFilePreviewMounted, setWorkspaceFilePreviewMounted] = useState(false);
-  const [workspaceFilePreviewOpen, setWorkspaceFilePreviewOpen] = useState(false);
-  const [workspaceFilePreviewOpenRequest, setWorkspaceFilePreviewOpenRequest] =
-    useState<WorkspaceFilePreviewOpenRequest | null>(null);
-  const workspaceFilePreviewRequestIdRef = useRef(0);
-  const [workspaceSshTerminalMounted, setWorkspaceSshTerminalMounted] = useState(false);
-  const [workspaceSshTerminalOpen, setWorkspaceSshTerminalOpen] = useState(false);
-  const [workspaceSshTerminalOpenRequest, setWorkspaceSshTerminalOpenRequest] =
-    useState<WorkspaceSshTerminalOpenRequest | null>(null);
-  const workspaceSshTerminalRequestIdRef = useRef(0);
-  // Editors/previews opened from the SFTP panel return to the SSH overlay on
-  // close (the overlay stays mounted while hidden, so this is just re-show).
-  const returnToSshTerminalRef = useRef(false);
-  const workspaceSshTerminalMountedRef = useRef(false);
-  workspaceSshTerminalMountedRef.current = workspaceSshTerminalMounted;
+type EditorView = {
+  request: WorkspaceCodeEditorOpenRequest;
+  open: boolean;
+  closeRequestId: number;
+  cleanupPending?: boolean;
+};
 
-  const restoreSshTerminalIfRequested = useCallback(() => {
-    if (!returnToSshTerminalRef.current) return;
-    returnToSshTerminalRef.current = false;
-    if (workspaceSshTerminalMountedRef.current) {
-      setWorkspaceSshTerminalOpen(true);
-    }
-  }, []);
+type FileView = {
+  editor?: EditorView;
+  preview?: { request: WorkspaceFilePreviewOpenRequest; open: boolean };
+};
 
-  const hideWorkspaceSshTerminalOverlay = useCallback(() => {
-    setWorkspaceSshTerminalOpen(false);
-  }, []);
+const EMPTY_VIEWS: ReadonlyMap<string, FileView> = new Map();
 
-  const openWorkspaceSshTerminalRequest = useCallback(
-    (request: WorkspaceSshTerminalOpenRequest) => {
-      returnToSshTerminalRef.current = false;
-      setWorkspaceFilePreviewOpen(false);
-      setWorkspaceEditorOpen(false);
-      setWorkspaceSshTerminalMounted(true);
-      setWorkspaceSshTerminalOpen(true);
-      setWorkspaceSshTerminalOpenRequest(request);
+export function useWorkspaceOverlays({
+  workspaceOwner,
+  conversationId,
+  terminalProjectPath,
+  terminalProjectPathKey,
+  rightDockFileTreeOpen,
+}: UseWorkspaceOverlaysParams) {
+  const workspaceViewScope = JSON.stringify([
+    workspaceOwner,
+    conversationId,
+    terminalProjectPathKey,
+  ]);
+  const [fileViews, setFileViews] = useState({ owner: workspaceOwner, views: EMPTY_VIEWS });
+  const views = fileViews.owner === workspaceOwner ? fileViews.views : EMPTY_VIEWS;
+  const view = views.get(workspaceViewScope);
+  const activeView = useRef({ owner: workspaceOwner, scope: workspaceViewScope });
+  activeView.current = { owner: workspaceOwner, scope: workspaceViewScope };
+  const requestId = useRef(0);
+  const previousFileTree = useRef({ owner: "", scope: "", open: false });
+  const [ssh, setSsh] = useState<{
+    owner: string;
+    scope: string;
+    request: WorkspaceSshTerminalOpenRequest;
+    open: boolean;
+  } | null>(null);
+  const activeSsh = ssh?.owner === workspaceOwner && ssh.scope === workspaceViewScope ? ssh : null;
+  const returnToSsh = useRef<{ owner: string; scope: string } | null>(null);
+
+  useEffect(() => {
+    setFileViews((current) =>
+      current.owner === workspaceOwner ? current : { owner: workspaceOwner, views: EMPTY_VIEWS },
+    );
+    setSsh((current) => (current?.owner === workspaceOwner ? current : null));
+    if (returnToSsh.current?.owner !== workspaceOwner) returnToSsh.current = null;
+  }, [workspaceOwner]);
+
+  const updateView = useCallback(
+    (scope: string, update: (current: FileView) => FileView) => {
+      setFileViews((current) => {
+        if (activeView.current.owner !== workspaceOwner) return current;
+        const scopedViews = current.owner === workspaceOwner ? current.views : EMPTY_VIEWS;
+        const before = scopedViews.get(scope) ?? {};
+        const after = update(before);
+        if (after === before) return current;
+        const next = new Map(scopedViews);
+        if (after.editor || after.preview) next.set(scope, after);
+        else next.delete(scope);
+        return { owner: workspaceOwner, views: next };
+      });
     },
-    [],
+    [workspaceOwner],
   );
 
-  const requestWorkspaceEditorClose = useCallback(() => {
-    setWorkspaceEditorCloseRequestId((current) => current + 1);
-  }, []);
+  const setWorkspaceSshTerminalOpen = useCallback(
+    (open: boolean) => {
+      setSsh((current) =>
+        current?.owner === workspaceOwner && current.scope === workspaceViewScope
+          ? { ...current, open }
+          : current,
+      );
+    },
+    [workspaceOwner, workspaceViewScope],
+  );
 
-  const handleWorkspaceEditorHide = useCallback(() => {
-    setWorkspaceEditorOpen(false);
-    restoreSshTerminalIfRequested();
-  }, [restoreSshTerminalIfRequested]);
+  const hideWorkspaceSshTerminalOverlay = useCallback(
+    () => setWorkspaceSshTerminalOpen(false),
+    [setWorkspaceSshTerminalOpen],
+  );
 
-  const handleWorkspaceEditorClosed = useCallback(() => {
-    setWorkspaceEditorOpen(false);
-    setWorkspaceEditorMounted(false);
-    setWorkspaceEditorCleanupPending(false);
-    setWorkspaceEditorOpenRequest(null);
-    setWorkspaceEditorCloseRequestId(0);
-    restoreSshTerminalIfRequested();
-  }, [restoreSshTerminalIfRequested]);
+  const restoreSshTerminal = useCallback(
+    (scope: string) => {
+      if (returnToSsh.current?.owner !== workspaceOwner || returnToSsh.current.scope !== scope)
+        return;
+      returnToSsh.current = null;
+      setSsh((current) =>
+        current?.owner === workspaceOwner && current.scope === scope
+          ? { ...current, open: true }
+          : current,
+      );
+    },
+    [workspaceOwner],
+  );
 
   const openWorkspaceEditorFile = useCallback(
     (request: Omit<WorkspaceCodeEditorOpenRequest, "id">) => {
       hideWorkspaceSshTerminalOverlay();
-      setWorkspaceFilePreviewOpen(false);
-      workspaceEditorRequestIdRef.current += 1;
-      setWorkspaceEditorCleanupPending(false);
-      setWorkspaceEditorMounted(true);
-      setWorkspaceEditorOpen(true);
-      setWorkspaceEditorOpenRequest({
-        id: workspaceEditorRequestIdRef.current,
-        ...request,
-      });
+      const editor = {
+        request: { id: ++requestId.current, ...request },
+        open: true,
+        closeRequestId: 0,
+      };
+      updateView(workspaceViewScope, (current) => ({
+        editor: { ...editor, closeRequestId: current.editor?.closeRequestId ?? 0 },
+        preview: current.preview && { ...current.preview, open: false },
+      }));
     },
-    [hideWorkspaceSshTerminalOverlay],
+    [hideWorkspaceSshTerminalOverlay, updateView, workspaceViewScope],
   );
 
   const openWorkspaceFilePreview = useCallback(
     (request: Omit<WorkspaceFilePreviewOpenRequest, "id">) => {
       hideWorkspaceSshTerminalOverlay();
-      setWorkspaceEditorOpen(false);
-      workspaceFilePreviewRequestIdRef.current += 1;
-      setWorkspaceFilePreviewMounted(true);
-      setWorkspaceFilePreviewOpen(true);
-      setWorkspaceFilePreviewOpenRequest({
-        id: workspaceFilePreviewRequestIdRef.current,
-        ...request,
-        returnFocusTo:
-          request.returnFocusTo ??
-          (document.activeElement instanceof HTMLElement ? document.activeElement : undefined),
-      });
+      const preview = {
+        request: {
+          id: ++requestId.current,
+          ...request,
+          returnFocusTo:
+            request.returnFocusTo ??
+            (document.activeElement instanceof HTMLElement ? document.activeElement : undefined),
+        },
+        open: true,
+      };
+      updateView(workspaceViewScope, (current) => ({
+        editor: current.editor && { ...current.editor, open: false },
+        preview,
+      }));
     },
-    [hideWorkspaceSshTerminalOverlay],
+    [hideWorkspaceSshTerminalOverlay, updateView, workspaceViewScope],
+  );
+
+  const openWorkspaceSshTerminalRequest = useCallback(
+    (request: WorkspaceSshTerminalOpenRequest) => {
+      if (
+        activeView.current.owner !== workspaceOwner ||
+        activeView.current.scope !== workspaceViewScope
+      )
+        return;
+      returnToSsh.current = null;
+      updateView(workspaceViewScope, (current) => ({
+        editor: current.editor && { ...current.editor, open: false },
+        preview: current.preview && { ...current.preview, open: false },
+      }));
+      setSsh({ owner: workspaceOwner, scope: workspaceViewScope, request, open: true });
+    },
+    [updateView, workspaceOwner, workspaceViewScope],
   );
 
   const handleOpenWorkspaceFile = useCallback(
     (path: string, imagePaths?: string[]) => {
       if (!terminalProjectPath || !terminalProjectPathKey) return;
-      returnToSshTerminalRef.current = false;
+      returnToSsh.current = null;
       const request = {
         projectPathKey: terminalProjectPathKey,
         workdir: terminalProjectPath,
         path,
         imagePaths,
       };
-      if (isWorkspacePreviewPath(path)) {
-        openWorkspaceFilePreview(request);
-        return;
-      }
-      openWorkspaceEditorFile(request);
+      if (isWorkspacePreviewPath(path)) openWorkspaceFilePreview(request);
+      else openWorkspaceEditorFile(request);
     },
     [
       openWorkspaceEditorFile,
@@ -140,98 +186,123 @@ export function useWorkspaceOverlays(params: UseWorkspaceOverlaysParams) {
     ],
   );
 
-  // SFTP panel entry: local files reuse the workspace pipeline (the local
-  // pane root is forced to equal the SSH session's project directory by
-  // workdir_for_session on the Rust side), remote files open editor tabs
-  // backed by the session's SFTP channel.
   const handleOpenSftpFile = useCallback(
     (session: TerminalSession, request: SftpOpenFileRequest) => {
       if (!terminalProjectPath || !terminalProjectPathKey) return;
-      if (request.side === "local") {
-        handleOpenWorkspaceFile(request.path);
-        returnToSshTerminalRef.current = true;
-        return;
+      if (request.side === "local") handleOpenWorkspaceFile(request.path);
+      else {
+        openWorkspaceEditorFile({
+          projectPathKey: terminalProjectPathKey,
+          workdir: terminalProjectPath,
+          path: request.path,
+          remote: { sessionId: session.id },
+        });
       }
-      openWorkspaceEditorFile({
-        projectPathKey: terminalProjectPathKey,
-        workdir: terminalProjectPath,
-        path: request.path,
-        remote: { sessionId: session.id },
-      });
-      returnToSshTerminalRef.current = true;
+      returnToSsh.current = { owner: workspaceOwner, scope: workspaceViewScope };
     },
-    [handleOpenWorkspaceFile, openWorkspaceEditorFile, terminalProjectPath, terminalProjectPathKey],
+    [
+      handleOpenWorkspaceFile,
+      openWorkspaceEditorFile,
+      terminalProjectPath,
+      terminalProjectPathKey,
+      workspaceOwner,
+      workspaceViewScope,
+    ],
   );
 
   const handleOpenSshTerminal = useCallback(
     (session: TerminalSession, kind: WorkspaceSshTerminalOpenRequest["kind"] = "bash") => {
-      if (session.kind !== "ssh") return;
-      workspaceSshTerminalRequestIdRef.current += 1;
-      openWorkspaceSshTerminalRequest({
-        id: workspaceSshTerminalRequestIdRef.current,
-        sessionId: session.id,
-        kind,
-      });
+      if (session.kind === "ssh") {
+        openWorkspaceSshTerminalRequest({ id: ++requestId.current, sessionId: session.id, kind });
+      }
     },
     [openWorkspaceSshTerminalRequest],
   );
 
   const requestWorkspaceFilePreviewClose = useCallback(() => {
-    setWorkspaceFilePreviewOpen(false);
-  }, []);
+    updateView(workspaceViewScope, (current) =>
+      current.preview ? { ...current, preview: { ...current.preview, open: false } } : current,
+    );
+  }, [updateView, workspaceViewScope]);
 
+  const previewRequestId = view?.preview?.request.id;
   const handleWorkspaceFilePreviewClosed = useCallback(() => {
-    setWorkspaceFilePreviewOpen(false);
-    setWorkspaceFilePreviewMounted(false);
-    setWorkspaceFilePreviewOpenRequest(null);
-    // Only restore when the editor isn't taking over (preview -> editor
-    // switch closes the preview while the editor stays in front).
-    if (!workspaceEditorMountedRef.current) {
-      restoreSshTerminalIfRequested();
-    }
-  }, [restoreSshTerminalIfRequested]);
+    updateView(workspaceViewScope, (current) =>
+      current.preview?.request.id === previewRequestId && current.preview?.open === false
+        ? { ...current, preview: undefined }
+        : current,
+    );
+    if (!view?.editor) restoreSshTerminal(workspaceViewScope);
+  }, [previewRequestId, restoreSshTerminal, updateView, view?.editor, workspaceViewScope]);
+
+  const handleWorkspaceEditorHide = useCallback(
+    (scope: string, id: number) => {
+      updateView(scope, (current) =>
+        current.editor?.request.id === id
+          ? { ...current, editor: { ...current.editor, open: false } }
+          : current,
+      );
+      restoreSshTerminal(scope);
+    },
+    [restoreSshTerminal, updateView],
+  );
+
+  const handleWorkspaceEditorClosed = useCallback(
+    (scope: string, id: number) => {
+      updateView(scope, (current) =>
+        current.editor?.request.id === id ? { ...current, editor: undefined } : current,
+      );
+      restoreSshTerminal(scope);
+    },
+    [restoreSshTerminal, updateView],
+  );
 
   useEffect(() => {
-    const previousOpen = previousRightDockFileTreeOpenRef.current;
-    previousRightDockFileTreeOpenRef.current = rightDockFileTreeOpen;
-    if (rightDockFileTreeOpen && workspaceEditorCleanupPending) {
-      setWorkspaceEditorCleanupPending(false);
-    }
-    if (previousOpen && !rightDockFileTreeOpen && workspaceEditorMounted) {
-      setWorkspaceEditorCleanupPending(true);
-      setWorkspaceEditorOpen(true);
-      requestWorkspaceEditorClose();
-    }
-    if (previousOpen && !rightDockFileTreeOpen && workspaceFilePreviewMounted) {
-      requestWorkspaceFilePreviewClose();
+    const previous = previousFileTree.current;
+    previousFileTree.current = {
+      owner: workspaceOwner,
+      scope: workspaceViewScope,
+      open: rightDockFileTreeOpen,
+    };
+    if (previous.owner !== workspaceOwner || previous.scope !== workspaceViewScope) return;
+    if (rightDockFileTreeOpen && view?.editor?.cleanupPending) {
+      updateView(workspaceViewScope, (current) =>
+        current.editor
+          ? { ...current, editor: { ...current.editor, cleanupPending: false } }
+          : current,
+      );
+    } else if (previous.open && !rightDockFileTreeOpen) {
+      updateView(workspaceViewScope, (current) => ({
+        editor: current.editor && {
+          ...current.editor,
+          open: true,
+          cleanupPending: true,
+          closeRequestId: current.editor.closeRequestId + 1,
+        },
+        preview: current.preview && { ...current.preview, open: false },
+      }));
     }
   }, [
     rightDockFileTreeOpen,
-    requestWorkspaceEditorClose,
-    requestWorkspaceFilePreviewClose,
-    workspaceEditorCleanupPending,
-    workspaceEditorMounted,
-    workspaceFilePreviewMounted,
+    updateView,
+    view?.editor?.cleanupPending,
+    workspaceOwner,
+    workspaceViewScope,
   ]);
 
+  const workspaceEditors = [...views].flatMap(([scope, fileView]) =>
+    fileView.editor ? [{ ...fileView.editor, scope }] : [],
+  );
   return {
-    workspaceEditorMounted,
-    setWorkspaceEditorMounted,
-    workspaceEditorOpen,
-    setWorkspaceEditorOpen,
-    workspaceEditorCleanupPending,
-    setWorkspaceEditorCleanupPending,
-    workspaceEditorOpenRequest,
-    setWorkspaceEditorOpenRequest,
-    workspaceEditorCloseRequestId,
-    setWorkspaceEditorCloseRequestId,
-    workspaceFilePreviewMounted,
-    workspaceFilePreviewOpen,
-    workspaceFilePreviewOpenRequest,
-    workspaceSshTerminalMounted,
-    workspaceSshTerminalOpen,
+    workspaceViewScope,
+    workspaceEditors,
+    workspaceFilePreviewMounted: Boolean(view?.preview),
+    workspaceFilePreviewOpen: view?.preview?.open ?? false,
+    workspaceFilePreviewOpenRequest: view?.preview?.request ?? null,
+    workspaceSshTerminalMounted: Boolean(activeSsh),
+    workspaceSshTerminalOpen: activeSsh?.open ?? false,
     setWorkspaceSshTerminalOpen,
-    workspaceSshTerminalOpenRequest,
+    workspaceSshTerminalOpenRequest: activeSsh?.request ?? null,
     openWorkspaceSshTerminalRequest,
     openWorkspaceEditorFile,
     openWorkspaceFilePreview,

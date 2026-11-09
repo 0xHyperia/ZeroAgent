@@ -7,16 +7,13 @@ import {
   useComposerActions,
   useInsertCodeReviewSkill,
 } from "@liveagent/ui/lib/chat/useComposerActions";
+import type { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConversationRightDock";
 import { useRightDockSettings } from "@liveagent/ui/lib/projectTools/useRightDockSettings";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { MutableRefObject } from "react";
 import { useCallback, useMemo } from "react";
 
 import type { AgentStatus } from "@/lib/gatewayTypes";
-import {
-  type AppSettings,
-  isRightDockSingletonTabOpen,
-  workspaceProjectPathKey,
-} from "@/lib/settings";
+import { type AppSettings, workspaceProjectPathKey } from "@/lib/settings";
 import { createGatewayWorkspaceActivityClient } from "@/lib/workspace-activity/gatewayWorkspaceActivityClient";
 
 import { asErrorMessage } from "../chatEventUtils";
@@ -32,11 +29,12 @@ type UseGatewayProjectToolsOptions = {
   codeReviewSkill: ReturnType<typeof useGatewayChatConfiguration>["codeReviewSkill"];
   composerRef: MutableRefObject<MentionComposerHandle | null>;
   displayedConversationId: string;
+  workspaceOwner: string;
   displayedConversationWorkdir: string;
   terminalIdentity?: { conversationId?: string; runId?: string } | null;
   isAgentMode: boolean;
   resetProjectToolsRuntimeRef: MutableRefObject<() => void>;
-  setRightDockOpen: Dispatch<SetStateAction<boolean>>;
+  dock: ReturnType<typeof useConversationRightDock>;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   settings: AppSettings;
   settingsSyncReady: boolean;
@@ -51,17 +49,19 @@ export function useGatewayProjectTools({
   codeReviewSkill,
   composerRef,
   displayedConversationId,
+  workspaceOwner,
   displayedConversationWorkdir,
   terminalIdentity,
   isAgentMode,
   resetProjectToolsRuntimeRef,
-  setRightDockOpen,
+  dock,
   setSettings,
   settings,
   settingsSyncReady,
   status,
   terminalClient,
 }: UseGatewayProjectToolsOptions) {
+  const { setRightDockOpen } = dock;
   const terminalProjectPath = isAgentMode ? activeWorkspaceProjectPath.trim() : "";
   const terminalProjectPathKey = terminalProjectPath
     ? workspaceProjectPathKey(terminalProjectPath)
@@ -76,12 +76,8 @@ export function useGatewayProjectTools({
     handleRightDockProjectStateChange,
     handleRightDockFileTreeStateChange,
     handleSshProjectHostIdsChange,
-  } = useRightDockSettings({ settings, setSettings, terminalProjectPathKey });
-  const rightDockSshTunnelOpen = isRightDockSingletonTabOpen(
-    settings.customSettings,
-    terminalProjectPathKey,
-    "sshTunnel",
-  );
+  } = useRightDockSettings({ settings, setSettings, terminalProjectPathKey, dock });
+  const rightDockSshTunnelOpen = Boolean(rightDockProjectState.tools.sshTunnel);
   const projectToolsDisabledMessage = !settingsSyncReady
     ? translate("projectTools.settingsSyncing", settings.locale)
     : !isAgentMode
@@ -97,6 +93,8 @@ export function useGatewayProjectTools({
   const webTerminalSessionsEnabled =
     settings.remote.enableWebTerminal || settings.remote.enableWebSshTerminal;
   const runtime = useProjectToolsRuntime({
+    workspaceOwner,
+    conversationId: displayedConversationId,
     terminalClient,
     settingsSyncReady,
     isAgentMode,
@@ -138,8 +136,9 @@ export function useGatewayProjectTools({
     changedFilesActions,
   } = useChangedFilesActions({
     terminalProjectPathKey,
+    workspaceViewScope: runtime.workspaceViewScope,
     setRightDockOpen,
-    setSettings,
+    onDockToolStateChange: handleRightDockProjectStateChange,
     onOpenFile: handleOpenWorkspaceFile,
   });
   const notifyChatFileLinkError = useCallback(

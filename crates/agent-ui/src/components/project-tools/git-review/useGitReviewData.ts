@@ -120,7 +120,9 @@ export function useGitReviewData(options: UseGitReviewDataOptions) {
   const [remoteSetupUrl, setRemoteSetupUrl] = useState("");
   const [remoteSetupError, setRemoteSetupError] = useState("");
   const [operationNotice, setOperationNotice] = useState<GitOperationNotice | null>(null);
-  const [selectedPath, setSelectedPath] = useState("");
+  const [selectedPath, setSelectedPath] = useState(
+    () => context.git.getSelectedChangesPath?.(cwd) ?? "",
+  );
   const [reviewMode, setReviewMode] = useState<GitReviewMode>("changes");
   const [historyCommits, setHistoryCommits] = useState<GitCommitSummary[]>([]);
   const [historyGraphState, setHistoryGraphState] = useState<GitHistoryGraphState>(
@@ -139,7 +141,7 @@ export function useGitReviewData(options: UseGitReviewDataOptions) {
   const [historyDiffTitle, setHistoryDiffTitle] = useState("");
   const [historyDiffSubtitle, setHistoryDiffSubtitle] = useState("");
 
-  const selectedPathRef = useRef("");
+  const selectedPathRef = useRef(selectedPath);
   const selectedCommitShaRef = useRef("");
   const selectedCommitFilePathRef = useRef("");
   const historyCommitsRef = useRef<GitCommitSummary[]>([]);
@@ -201,7 +203,7 @@ export function useGitReviewData(options: UseGitReviewDataOptions) {
     branchDiffSignatureRef.current = "";
     worktreeDiffSignatureRef.current = "";
     diffPathRef.current = "";
-    selectedPathRef.current = "";
+    selectedPathRef.current = context.git.getSelectedChangesPath?.(cwd) ?? "";
     selectedCommitShaRef.current = "";
     selectedCommitFilePathRef.current = "";
     historyCommitsRef.current = [];
@@ -510,7 +512,7 @@ export function useGitReviewData(options: UseGitReviewDataOptions) {
           // When the selection is unchanged, reload its diff silently even on
           // interactive refreshes: the signature guard keeps identical diffs
           // from re-rendering and the header spinner from flashing.
-          void loadDiffForPath(nextPath, { silent: nextPath === currentPath });
+          void loadDiffForPath(nextPath, { silent: nextPath === diffPathRef.current });
         } else {
           clearDiffs();
         }
@@ -1143,13 +1145,15 @@ export function useGitReviewData(options: UseGitReviewDataOptions) {
     gitErrorMessage,
   ]);
 
+  const onSelectChangesPath = context.git.onSelectChangesPath;
   const selectPath = useCallback(
     (path: string) => {
       selectedPathRef.current = path;
       setSelectedPath(path);
+      onSelectChangesPath?.(cwd, path);
       void loadDiffForPath(path);
     },
-    [loadDiffForPath],
+    [cwd, loadDiffForPath, onSelectChangesPath],
   );
 
   // Chat-layer focus requests (reply-footer changed-files card): once the

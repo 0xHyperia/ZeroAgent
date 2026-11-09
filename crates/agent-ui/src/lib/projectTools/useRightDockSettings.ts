@@ -1,42 +1,33 @@
 import {
   type AppSettings,
-  getRightDockFileTreeState,
-  getRightDockProjectState,
   getSshProjectHostIds,
-  isRightDockSingletonTabOpen,
+  patchRightDockFileTreeState,
   type RightDockFileTreeStatePatch,
   type RightDockProjectState,
+  readRightDockFileTreeState,
   updateChatTranscriptWidth,
-  updateRightDockFileTreeState,
-  updateRightDockProjectState,
   updateRightDockWidth,
   updateSshProjectHostIds,
 } from "@liveagent/app/lib/settings";
 import { useCallback, useMemo } from "react";
+import type { useConversationRightDock } from "./useConversationRightDock";
 
 type UseRightDockSettingsParams = {
   settings: AppSettings;
   setSettings: (updater: (previousSettings: AppSettings) => AppSettings) => void;
   terminalProjectPathKey: string;
+  dock: ReturnType<typeof useConversationRightDock>;
 };
 
 export function useRightDockSettings(params: UseRightDockSettingsParams) {
-  const { settings, setSettings, terminalProjectPathKey } = params;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the persisted right-dock slice is read, so unrelated custom settings keep memoized references stable.
-  const rightDockProjectState = useMemo(
-    () => getRightDockProjectState(settings.customSettings, terminalProjectPathKey),
-    [settings.customSettings.rightDock, terminalProjectPathKey],
-  );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the persisted right-dock slice is read, so unrelated custom settings keep memoized references stable.
+  const { settings, setSettings, terminalProjectPathKey, dock } = params;
+  const { updateToolState } = dock;
+  const rightDockProjectState = dock.getToolState(terminalProjectPathKey);
   const rightDockFileTreeState = useMemo(
-    () => getRightDockFileTreeState(settings.customSettings, terminalProjectPathKey),
-    [settings.customSettings.rightDock, terminalProjectPathKey],
+    () => readRightDockFileTreeState(rightDockProjectState),
+    [rightDockProjectState],
   );
-  const rightDockFileTreeOpen = isRightDockSingletonTabOpen(
-    settings.customSettings,
-    terminalProjectPathKey,
-    "fileTree",
-  );
+  const rightDockFileTreeOpen = Boolean(rightDockProjectState.tools.fileTree);
   const associatedSshHostIds = useMemo(
     () => getSshProjectHostIds(settings.ssh, terminalProjectPathKey),
     [settings.ssh, terminalProjectPathKey],
@@ -55,19 +46,15 @@ export function useRightDockSettings(params: UseRightDockSettingsParams) {
   );
   const handleRightDockProjectStateChange = useCallback(
     (updater: (current: RightDockProjectState) => RightDockProjectState) => {
-      setSettings((previousSettings) =>
-        updateRightDockProjectState(previousSettings, terminalProjectPathKey, updater),
-      );
+      updateToolState(terminalProjectPathKey, updater);
     },
-    [setSettings, terminalProjectPathKey],
+    [updateToolState, terminalProjectPathKey],
   );
   const handleRightDockFileTreeStateChange = useCallback(
     (patch: RightDockFileTreeStatePatch) => {
-      setSettings((previousSettings) =>
-        updateRightDockFileTreeState(previousSettings, terminalProjectPathKey, patch),
-      );
+      updateToolState(terminalProjectPathKey, (state) => patchRightDockFileTreeState(state, patch));
     },
-    [setSettings, terminalProjectPathKey],
+    [updateToolState, terminalProjectPathKey],
   );
   const handleSshProjectHostIdsChange = useCallback(
     (hostIds: string[]) => {

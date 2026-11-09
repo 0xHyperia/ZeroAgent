@@ -6,14 +6,11 @@ export function useApplicationViewState<TResourceProject>(initialView: Applicati
   const [projectSettingsProject, setProjectSettingsProject] = useState<TResourceProject | null>(
     null,
   );
-  const [rightDockOpen, setRightDockOpen] = useState(false);
 
   return {
     activeView,
     setActiveView,
     projectSettingsProject,
     setProjectSettingsProject,
-    rightDockOpen,
-    setRightDockOpen,
   };
 }

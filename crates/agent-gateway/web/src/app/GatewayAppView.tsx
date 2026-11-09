@@ -485,11 +485,8 @@ export function GatewayAppView({
     workspaceActivityClient,
     workspaceCloneTasks,
     workspaceCreateModalOpen,
-    workspaceEditorCleanupPending,
-    workspaceEditorCloseRequestId,
-    workspaceEditorMounted,
-    workspaceEditorOpen,
-    workspaceEditorOpenRequest,
+    workspaceViewScope,
+    workspaceEditors,
     workspaceFilePreviewMounted,
     workspaceFilePreviewOpen,
     workspaceFilePreviewOpenRequest,
@@ -2468,11 +2465,8 @@ export function GatewayAppView({
                         <WorkspaceOverlayHost
                           locale={settings.locale}
                           theme={effectiveTheme}
-                          workspaceEditorMounted={workspaceEditorMounted}
-                          workspaceEditorOpenRequest={workspaceEditorOpenRequest}
-                          workspaceEditorCloseRequestId={workspaceEditorCloseRequestId}
-                          workspaceEditorOpen={workspaceEditorOpen}
-                          workspaceEditorCleanupPending={workspaceEditorCleanupPending}
+                          workspaceViewScope={workspaceViewScope}
+                          workspaceEditors={workspaceEditors}
                           onWorkspaceEditorPreviewFile={openWorkspaceFilePreview}
                           onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
                           onWorkspaceEditorHide={handleWorkspaceEditorHide}
@@ -2511,6 +2505,7 @@ export function GatewayAppView({
                 <WorkspaceToolsPanel>
                   {terminalClient ? (
                     <RightDockPanel
+                      workspaceViewScope={workspaceViewScope}
                       isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
                       fontScale={settings.customSettings.fontScale.rightDock}
                       projectPathKey={terminalProjectPathKey}

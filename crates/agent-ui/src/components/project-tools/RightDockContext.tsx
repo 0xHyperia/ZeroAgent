@@ -63,6 +63,8 @@ export type GitReviewFocusRequest = {
 };
 
 export type RightDockGitContext = {
+  getSelectedChangesPath?: (repo: string) => string;
+  onSelectChangesPath?: (repo: string, path: string) => void;
   onInsertCodeReviewSkill?: () => void;
   onInsertCommitMention?: (commit: GitCommitContextPayload) => void;
   onInsertGitFileMention?: (file: GitFileContextPayload) => void;
@@ -85,6 +87,7 @@ export type RightDockSshContext = {
 };
 
 export type RightDockToolContextValue = {
+  viewScope?: string;
   projectPathKey: string;
   cwd: string;
   theme: "light" | "dark";

@@ -30,7 +30,7 @@ import { getProviderRuntimeBackend } from "../../../lib/providers/runtime/provid
 import {
   type AppSettings,
   DEFAULT_WORKSPACE_PROJECT_ID,
-  openRightDockSingletonTab,
+  type RightDockToolKind,
   resolveWorkspaceProjects,
   updateCustomSettings,
   type WorkspaceProject,
@@ -50,6 +50,7 @@ type UseWorkspaceProjectsParams = {
   setErrorMessage: Dispatch<SetStateAction<string | null>>;
   setActiveView: Dispatch<SetStateAction<ApplicationViewId>>;
   setRightDockOpen: Dispatch<SetStateAction<boolean>>;
+  openDockToolTab: (pathKey: string, kind: RightDockToolKind, conversationId?: string) => void;
   startNewConversationActionRef: MutableRefObject<(options?: { workdir?: string }) => string>;
   prepareComposerForConversationChangeActionRef: MutableRefObject<() => void>;
 };
@@ -74,6 +75,7 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     setErrorMessage,
     setActiveView,
     setRightDockOpen,
+    openDockToolTab,
     startNewConversationActionRef,
     prepareComposerForConversationChangeActionRef,
   } = params;
@@ -383,37 +385,37 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
       setActiveView("chat");
       setRightDockOpen(true);
       activateWorkspaceProject(project);
-      setSettings((prev) => openRightDockSingletonTab(prev, pathKey, "fileTree"));
+      openDockToolTab(pathKey, "fileTree");
     },
     [
       activateWorkspaceProject,
       checkWorkspaceProjectDirectory,
       setActiveView,
       setRightDockOpen,
-      setSettings,
+      openDockToolTab,
     ],
   );
 
   const ensureTunnelToolTab = useCallback(
-    (projectPathKey?: string) => {
+    (projectPathKey?: string, conversationId?: string) => {
       const targetProjectPathKey =
         workspaceProjectPathKey(projectPathKey) ||
         workspaceProjectPathKey(activeWorkspaceProjectPath);
       if (!targetProjectPathKey) return;
-      setSettings((prev) => openRightDockSingletonTab(prev, targetProjectPathKey, "tunnel"));
+      openDockToolTab(targetProjectPathKey, "tunnel", conversationId);
     },
-    [activeWorkspaceProjectPath, setSettings],
+    [activeWorkspaceProjectPath, openDockToolTab],
   );
 
   const ensureSshTunnelToolTab = useCallback(
-    (projectPathKey?: string) => {
+    (projectPathKey?: string, conversationId?: string) => {
       const targetProjectPathKey =
         workspaceProjectPathKey(projectPathKey) ||
         workspaceProjectPathKey(activeWorkspaceProjectPath);
       if (!targetProjectPathKey) return;
-      setSettings((prev) => openRightDockSingletonTab(prev, targetProjectPathKey, "sshTunnel"));
+      openDockToolTab(targetProjectPathKey, "sshTunnel", conversationId);
     },
-    [activeWorkspaceProjectPath, setSettings],
+    [activeWorkspaceProjectPath, openDockToolTab],
   );
 
   const handleBrowseWorkspaceProjectInSystemFileManager = useCallback(

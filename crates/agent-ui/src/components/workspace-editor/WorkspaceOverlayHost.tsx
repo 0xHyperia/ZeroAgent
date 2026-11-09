@@ -13,6 +13,7 @@ import type {
 } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import type { SftpOpenFileRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSftpPanel";
 import type { WorkspaceSshTerminalOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSshTerminalOverlay";
+import type { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { CodeMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import { lockMonacoNlsLocale, preparePreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
@@ -53,15 +54,12 @@ const WorkspaceSshTerminalOverlay = lazy(async () => {
 type WorkspaceOverlayHostProps = {
   locale: AppSettings["locale"];
   theme: EffectiveTheme;
-  workspaceEditorMounted: boolean;
-  workspaceEditorOpenRequest: WorkspaceCodeEditorOpenRequest | null;
-  workspaceEditorCloseRequestId: number;
-  workspaceEditorOpen: boolean;
-  workspaceEditorCleanupPending: boolean;
+  workspaceViewScope: string;
+  workspaceEditors: ReturnType<typeof useWorkspaceOverlays>["workspaceEditors"];
   onWorkspaceEditorPreviewFile: (request: WorkspaceCodeEditorOpenRequest) => void;
   onWorkspaceEditorInsertCodeMention?: (reference: CodeMentionReference) => void;
-  onWorkspaceEditorHide: () => void;
-  onWorkspaceEditorClose: () => void;
+  onWorkspaceEditorHide: (scope: string, requestId: number) => void;
+  onWorkspaceEditorClose: (scope: string, requestId: number) => void;
   workspaceFilePreviewMounted: boolean;
   workspaceFilePreviewOpenRequest: WorkspaceFilePreviewOpenRequest | null;
   workspaceFilePreviewOpen: boolean;
@@ -149,11 +147,8 @@ export function WorkspaceOverlayHost(props: WorkspaceOverlayHostProps) {
   const {
     locale,
     theme,
-    workspaceEditorMounted,
-    workspaceEditorOpenRequest,
-    workspaceEditorCloseRequestId,
-    workspaceEditorOpen,
-    workspaceEditorCleanupPending,
+    workspaceViewScope,
+    workspaceEditors,
     onWorkspaceEditorPreviewFile,
     onWorkspaceEditorInsertCodeMention,
     onWorkspaceEditorHide,
@@ -180,36 +175,48 @@ export function WorkspaceOverlayHost(props: WorkspaceOverlayHostProps) {
 
   return (
     <>
-      {workspaceEditorMounted ? (
-        <Suspense
-          fallback={
-            <WorkspaceOverlayLoading
-              className="workspace-code-editor-overlay"
-              label={translate("workspaceEditor.loading", locale)}
-            />
-          }
-        >
-          <WorkspaceCodeEditorOverlay
-            openRequest={workspaceEditorOpenRequest}
-            closeRequestId={workspaceEditorCloseRequestId}
-            isOpen={workspaceEditorOpen}
-            finalCloseRequested={workspaceEditorCleanupPending}
-            theme={theme}
-            sftpClient={sftpClient ?? undefined}
-            onPreviewFile={onWorkspaceEditorPreviewFile}
-            onInsertCodeMention={onWorkspaceEditorInsertCodeMention}
-            onHide={onWorkspaceEditorHide}
-            onClose={onWorkspaceEditorClose}
-          />
-        </Suspense>
-      ) : null}
+      {workspaceEditors.map(({ scope, request, open, closeRequestId, cleanupPending }) => {
+        const active = scope === workspaceViewScope && open;
+        return (
+          <Suspense
+            key={scope}
+            fallback={
+              active ? (
+                <WorkspaceOverlayLoading
+                  className="workspace-code-editor-overlay"
+                  label={translate("workspaceEditor.loading", locale)}
+                />
+              ) : null
+            }
+          >
+            <div className={scope === workspaceViewScope ? "contents" : "hidden"}>
+              <WorkspaceCodeEditorOverlay
+                viewScope={scope}
+                openRequest={request}
+                closeRequestId={closeRequestId}
+                isOpen={active}
+                finalCloseRequested={cleanupPending}
+                theme={theme}
+                sftpClient={sftpClient ?? undefined}
+                onPreviewFile={onWorkspaceEditorPreviewFile}
+                onInsertCodeMention={onWorkspaceEditorInsertCodeMention}
+                onHide={() => onWorkspaceEditorHide(scope, request.id)}
+                onClose={() => onWorkspaceEditorClose(scope, request.id)}
+              />
+            </div>
+          </Suspense>
+        );
+      })}
       {workspaceFilePreviewMounted ? (
         <Suspense
+          key={workspaceViewScope}
           fallback={
-            <WorkspaceOverlayLoading
-              className="workspace-file-preview-overlay"
-              label={translate("workspaceFilePreview.loading", locale)}
-            />
+            workspaceFilePreviewOpen ? (
+              <WorkspaceOverlayLoading
+                className="workspace-file-preview-overlay"
+                label={translate("workspaceFilePreview.loading", locale)}
+              />
+            ) : null
           }
         >
           <WorkspaceFilePreviewOverlay
@@ -223,6 +230,7 @@ export function WorkspaceOverlayHost(props: WorkspaceOverlayHostProps) {
       ) : null}
       {workspaceSshTerminalMounted && terminalClient && sftpClient ? (
         <Suspense
+          key={workspaceSshTerminalOpenRequest?.id}
           fallback={
             <WorkspaceOverlayLoading
               className="workspace-ssh-terminal-overlay"

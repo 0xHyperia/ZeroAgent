@@ -2698,7 +2698,10 @@ export function getRightDockFileTreeState(
   customSettings: CustomSettings,
   projectPathKey: string,
 ): RightDockFileTreeState {
-  const projectState = getRightDockProjectState(customSettings, projectPathKey);
+  return readRightDockFileTreeState(getRightDockProjectState(customSettings, projectPathKey));
+}
+
+export function readRightDockFileTreeState(projectState: RightDockProjectState): RightDockFileTreeState {
   const state = projectState.tools.fileTree?.uiState;
   return state ? normalizeRightDockFileTreeState(state) : DEFAULT_RIGHT_DOCK_FILE_TREE_STATE;
 }
@@ -2708,9 +2711,16 @@ export function updateRightDockFileTreeState(
   projectPathKey: string,
   patch: RightDockFileTreeStatePatch,
 ): AppSettings {
-  const normalizedPathKey = workspaceProjectPathKey(projectPathKey);
-  if (!normalizedPathKey) return prev;
-  const current = getRightDockFileTreeState(prev.customSettings, normalizedPathKey);
+  return updateRightDockProjectState(prev, projectPathKey, (state) =>
+    patchRightDockFileTreeState(state, patch),
+  );
+}
+
+export function patchRightDockFileTreeState(
+  projectState: RightDockProjectState,
+  patch: RightDockFileTreeStatePatch,
+): RightDockProjectState {
+  const current = readRightDockFileTreeState(projectState);
   const next: RightDockFileTreeState = {
     query:
       patch.query !== undefined
@@ -2731,17 +2741,12 @@ export function updateRightDockFileTreeState(
         ? normalizeIntegerInRange(patch.revision, 0, Number.MAX_SAFE_INTEGER, 0)
         : current.revision,
   };
-  if (rightDockFileTreeStateEqual(current, next)) return prev;
-  return updateRightDockProjectState(prev, normalizedPathKey, (projectState) => {
-    const tab = projectState.tools.fileTree ?? createRightDockToolTab("fileTree");
-    return {
-      ...projectState,
-      tools: {
-        ...projectState.tools,
-        fileTree: { ...tab, uiState: next },
-      },
-    };
-  });
+  if (rightDockFileTreeStateEqual(current, next)) return projectState;
+  const tab = projectState.tools.fileTree ?? createRightDockToolTab("fileTree");
+  return {
+    ...projectState,
+    tools: { ...projectState.tools, fileTree: { ...tab, uiState: next } },
+  };
 }
 
 export function updateUpdateSettings(

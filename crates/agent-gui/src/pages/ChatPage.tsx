@@ -89,6 +89,7 @@ import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference"
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
 import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/releaseProjectToolFromDock";
+import { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConversationRightDock";
 import { useRightDockSettings } from "@liveagent/ui/lib/projectTools/useRightDockSettings";
 import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import { buildGatewayPublicBaseUrl } from "@liveagent/ui/lib/shared/gatewayPublicUrl";
@@ -456,9 +457,10 @@ function ChatPageContent(props: ChatPageProps) {
     setActiveView,
     projectSettingsProject,
     setProjectSettingsProject,
-    rightDockOpen,
-    setRightDockOpen,
   } = useApplicationViewState<WorkspaceProject>();
+  const workspaceOwner = String(props.relayUser.id);
+  const dock = useConversationRightDock(workspaceOwner, currentConversationId);
+  const { rightDockOpen, setRightDockOpen, openToolTab, closeToolForPane } = dock;
   const {
     workspaceProjects,
     setActiveWorkspaceProjectId,
@@ -508,6 +510,7 @@ function ChatPageContent(props: ChatPageProps) {
     setErrorMessage,
     setActiveView,
     setRightDockOpen,
+    openDockToolTab: openToolTab,
     startNewConversationActionRef,
     prepareComposerForConversationChangeActionRef,
   });
@@ -936,7 +939,7 @@ function ChatPageContent(props: ChatPageProps) {
     handleRightDockProjectStateChange,
     handleRightDockFileTreeStateChange,
     handleSshProjectHostIdsChange,
-  } = useRightDockSettings({ settings, setSettings, terminalProjectPathKey });
+  } = useRightDockSettings({ settings, setSettings, terminalProjectPathKey, dock });
   // 项目工具区（终端 / 文件树 / Git 审查 / SSH 隧道 / 内网穿透）全部依赖桌面
   // 宿主命令（`terminal_*`、`fs_*`、`git_*`、`gateway_tunnel_*`），K-brain 后端
   // 没有对应路由。浏览器宿主里整区标记为不可用并给出本地化原因，避免每个入口
@@ -975,6 +978,8 @@ function ChatPageContent(props: ChatPageProps) {
     setSettings,
   });
   const workspaceOverlays = useWorkspaceOverlays({
+    workspaceOwner,
+    conversationId: currentConversationId,
     terminalProjectPath,
     terminalProjectPathKey,
     rightDockFileTreeOpen,
@@ -992,8 +997,9 @@ function ChatPageContent(props: ChatPageProps) {
     changedFilesActions,
   } = useChangedFilesActions({
     terminalProjectPathKey,
+    workspaceViewScope: workspaceOverlays.workspaceViewScope,
     setRightDockOpen,
-    setSettings,
+    onDockToolStateChange: handleRightDockProjectStateChange,
     onOpenFile: handleOpenWorkspaceFile,
   });
   // Local runner running-state → sidebar store: diff transitions so sidebar
@@ -2939,6 +2945,7 @@ function ChatPageContent(props: ChatPageProps) {
         !workbench.layoutRef.current.panes[paneId]
       ) {
         const { kind, project } = pane.surface;
+        closeToolForPane(kind, project.projectPathKey);
         setSettings((prev) => releaseProjectToolFromDock(prev, kind, project.projectPathKey));
       }
       if (result.closedFocused && result.nextConversationId) {
@@ -2950,7 +2957,7 @@ function ChatPageContent(props: ChatPageProps) {
         );
       }
     },
-    [selectWorkbenchConversation, setConversationView, setSettings, workbench],
+    [closeToolForPane, selectWorkbenchConversation, setConversationView, setSettings, workbench],
   );
 
   // Pane 的 × / Meta+Alt+W:终端 Pane 先终止终端(运行中的会话在 Pane 内红条
@@ -4570,7 +4577,6 @@ function ChatPageContent(props: ChatPageProps) {
     leaveAccount(() => {
       if (view !== "chat") {
         if (chatVisible) cacheActiveComposerDraft();
-        if (!accountDestination) setRightDockOpen(false);
       }
       setActiveView(view);
     });
@@ -4944,7 +4950,6 @@ function ChatPageContent(props: ChatPageProps) {
               onOpenResourceHub={(resource) => {
                 leaveAccount(() => {
                   if (chatVisible) cacheActiveComposerDraft();
-                  setRightDockOpen(false);
                   setActiveView(`${resource}-hub`);
                 });
               }}
@@ -5071,6 +5076,7 @@ function ChatPageContent(props: ChatPageProps) {
                       >
                         {workspaceOverlays.workspaceFilePreviewMounted && activeView === "chat" && (
                           <WorkspaceFileReader
+                            key={workspaceOverlays.workspaceViewScope}
                             locale={settings.locale}
                             isOpen={workspaceOverlays.workspaceFilePreviewOpen}
                             openRequest={workspaceOverlays.workspaceFilePreviewOpenRequest}
@@ -5088,15 +5094,8 @@ function ChatPageContent(props: ChatPageProps) {
                     <WorkspaceOverlayHost
                       locale={settings.locale}
                       theme={effectiveTheme}
-                      workspaceEditorMounted={workspaceOverlays.workspaceEditorMounted}
-                      workspaceEditorOpenRequest={workspaceOverlays.workspaceEditorOpenRequest}
-                      workspaceEditorCloseRequestId={
-                        workspaceOverlays.workspaceEditorCloseRequestId
-                      }
-                      workspaceEditorOpen={workspaceOverlays.workspaceEditorOpen}
-                      workspaceEditorCleanupPending={
-                        workspaceOverlays.workspaceEditorCleanupPending
-                      }
+                      workspaceViewScope={workspaceOverlays.workspaceViewScope}
+                      workspaceEditors={workspaceOverlays.workspaceEditors}
                       onWorkspaceEditorPreviewFile={workspaceOverlays.openWorkspaceFilePreview}
                       onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
                       onWorkspaceEditorHide={workspaceOverlays.handleWorkspaceEditorHide}
@@ -5143,6 +5142,7 @@ function ChatPageContent(props: ChatPageProps) {
           </WorkspaceMainPanel>
           <WorkspaceToolsPanel>
             <RightDockPanel
+              workspaceViewScope={workspaceOverlays.workspaceViewScope}
               isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
               onClose={() => setRightDockOpen(false)}
               fontScale={settings.customSettings.fontScale.rightDock}

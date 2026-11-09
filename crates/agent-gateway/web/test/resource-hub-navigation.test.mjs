@@ -12,7 +12,6 @@ for (const resource of ["skills", "mcp", "memory", "cron", "planning"]) {
   test(`${resource} opens in the content area while preserving the desktop sidebar and composer draft`, () => {
     const calls = [];
     const actions = createGatewayConversationActions({
-      setRightDockOpen: (open) => calls.push(["rightDock", open]),
       setSidebarOpen: () => assert.fail("Desktop sidebar must stay open"),
       cacheVisibleComposerDraft: () => calls.push(["cacheDraft"]),
       setActiveView: (view) => calls.push(["view", view]),
@@ -20,6 +19,6 @@ for (const resource of ["skills", "mcp", "memory", "cron", "planning"]) {
       clearCachedComposerDraft: () => assert.fail("Draft must be retained"),
     });
     actions.handleSidebarOpenResourceHub(resource);
-    assert.deepEqual(calls, [["rightDock", false], ["cacheDraft"], ["view", `${resource}-hub`]]);
+    assert.deepEqual(calls, [["cacheDraft"], ["view", `${resource}-hub`]]);
   });
 }

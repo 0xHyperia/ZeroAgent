@@ -31,10 +31,8 @@ export type RightDockToolDefinition = {
 // Each tool body is a component of its own so it can read the dock context via
 // useRightDockToolContext; definition.render only instantiates it.
 function FileTreeTool(props: RightDockToolRenderInput) {
-  // FileTreePanel reads the dock context itself and keeps per-project state
-  // in an LRU bucket, so it deliberately has no projectPathKey remount key:
-  // staying mounted across project switches is what makes the bucket useful.
-  return <FileTreePanel active={props.active} />;
+  const context = useRightDockToolContext();
+  return <FileTreePanel key={context.viewScope} active={props.active} />;
 }
 
 function GitReviewTool(props: RightDockToolRenderInput) {
@@ -42,7 +40,7 @@ function GitReviewTool(props: RightDockToolRenderInput) {
   const context = useRightDockToolContext();
   // The panel reads everything else (clients, capabilities, git callbacks)
   // from the right-dock tool context itself.
-  return <GitReviewPanel key={`${context.projectPathKey}:git-review`} active={active} />;
+  return <GitReviewPanel key={context.viewScope ?? context.projectPathKey} active={active} />;
 }
 
 function TunnelTool(props: RightDockToolRenderInput) {

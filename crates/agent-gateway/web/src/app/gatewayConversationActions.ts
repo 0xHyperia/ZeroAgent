@@ -66,7 +66,6 @@ type CreateGatewayConversationActionsOptions = {
   setChatError: Dispatch<SetStateAction<string | null>>;
   setConversationId: Dispatch<SetStateAction<string>>;
   setPendingUploadsForConversation: (conversationId: string, files: PendingUploadedFile[]) => void;
-  setRightDockOpen: Dispatch<SetStateAction<boolean>>;
   setSelectedHistory: Dispatch<SetStateAction<HistoryDetail | null>>;
   setSelectedHistoryId: Dispatch<SetStateAction<string>>;
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
@@ -227,7 +226,6 @@ export function createGatewayConversationActions(options: CreateGatewayConversat
     }
   };
   const openHub = (view: Exclude<ApplicationViewId, "chat">) => {
-    options.setRightDockOpen(false);
     if (isMobileSidebarLayout()) options.setSidebarOpen(false);
     options.cacheVisibleComposerDraft();
     options.setActiveView(view);

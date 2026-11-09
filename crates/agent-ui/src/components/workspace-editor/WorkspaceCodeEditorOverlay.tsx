@@ -112,6 +112,7 @@ type EditorContextMenuState = {
 const EDITOR_OVERLAY_ANIMATION_MS = 180;
 
 type WorkspaceCodeEditorOverlayProps = {
+  viewScope: string;
   openRequest: WorkspaceCodeEditorOpenRequest | null;
   closeRequestId?: number;
   isOpen: boolean;
@@ -186,6 +187,7 @@ function getEditorContextMenuShortcuts() {
 
 export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProps) {
   const {
+    viewScope,
     openRequest,
     closeRequestId,
     isOpen,
@@ -652,9 +654,9 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   }, [cancelPendingClose, openRequest, readTab]);
 
   useEffect(() => {
-    cancelPendingClose();
+    if (isOpen && closeAnimationTimeoutRef.current !== null) return;
     setIsVisible(isOpen);
-  }, [cancelPendingClose, isOpen]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (closeRequestId == null) return;
@@ -670,11 +672,8 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   useEffect(() => {
     if (finalCloseRequested) return;
     cancelPendingClose();
-    if (isOpen) {
-      setIsVisible(true);
-    }
     setPendingDialog((current) => (current?.kind === "closeOverlay" ? null : current));
-  }, [cancelPendingClose, finalCloseRequested, isOpen]);
+  }, [cancelPendingClose, finalCloseRequested]);
 
   useEffect(() => {
     activeKeyRef.current = activeTab?.key ?? "";
@@ -728,7 +727,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       model = monaco.editor.createModel(
         activeTab.content,
         activeTab.language,
-        editorModelUri(activeTab.key),
+        editorModelUri(`${viewScope}\u0000${activeTab.key}`),
       );
       model.onDidChangeContent(() => {
         const value = model?.getValue() ?? "";
@@ -752,15 +751,15 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       if (viewState) {
         editor.restoreViewState(viewState);
       }
-      editor.focus();
+      if (isOpen) editor.focus();
     }
     editorModelKeyRef.current = activeTab.key;
-  }, [activeTab]);
+  }, [activeTab, isOpen, viewScope]);
 
   const activeTabKey = activeTab?.key;
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || !activeTabKey || !openRequest?.line) return;
+    if (!isOpen || !editor || !activeTabKey || !openRequest?.line) return;
     if (
       activeTabKey !==
       editorTabKey(openRequest.projectPathKey, openRequest.path, openRequest.remote)
@@ -782,6 +781,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
     linkedLocationKeyRef.current = locationKey;
   }, [
     activeTabKey,
+    isOpen,
     openRequest?.column,
     openRequest?.endLine,
     openRequest?.id,
@@ -1012,7 +1012,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
         ) : null}
       </div>
 
-      {contextMenu ? (
+      {isOpen && contextMenu ? (
         <ContextMenuPopup
           point={contextMenu}
           coordinateRoot={overlayRef}
@@ -1113,7 +1113,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       </div>
 
       <AlertDialog
-        open={pendingDialog !== null}
+        open={isOpen && pendingDialog !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDialog(null);
         }}

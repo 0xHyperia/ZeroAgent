@@ -1,8 +1,8 @@
 import {
-  type AppSettings,
-  getRightDockFileTreeState,
-  openRightDockSingletonTab,
-  updateRightDockFileTreeState,
+  openRightDockToolTabState,
+  patchRightDockFileTreeState,
+  type RightDockProjectState,
+  readRightDockFileTreeState,
 } from "@liveagent/app/lib/settings";
 import type { ChangedFilesActions } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import type { GitReviewFocusRequest } from "@liveagent/ui/components/project-tools/RightDockContext";
@@ -11,34 +11,42 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 type UseChangedFilesActionsParams = {
   terminalProjectPathKey: string;
+  workspaceViewScope: string;
   setRightDockOpen: (open: boolean) => void;
-  setSettings: (updater: (previousSettings: AppSettings) => AppSettings) => void;
+  onDockToolStateChange: (
+    update: (current: RightDockProjectState) => RightDockProjectState,
+  ) => void;
   onOpenFile: (path: string) => void;
 };
 
 export function useChangedFilesActions(params: UseChangedFilesActionsParams) {
-  const { terminalProjectPathKey, setRightDockOpen, setSettings, onOpenFile } = params;
+  const {
+    terminalProjectPathKey,
+    workspaceViewScope,
+    setRightDockOpen,
+    onDockToolStateChange,
+    onOpenFile,
+  } = params;
   const gitReviewFocusNonceRef = useRef(0);
-  const [gitReviewFocusRequest, setGitReviewFocusRequest] = useState<GitReviewFocusRequest | null>(
-    null,
-  );
+  const [gitReviewFocus, setGitReviewFocus] = useState<{
+    scope: string;
+    request: GitReviewFocusRequest;
+  } | null>(null);
   const handleGitReviewFocusRequestHandled = useCallback((nonce: number) => {
-    setGitReviewFocusRequest((current) => (current && current.nonce === nonce ? null : current));
+    setGitReviewFocus((current) => (current?.request.nonce === nonce ? null : current));
   }, []);
   const handleChangedFileOpenDiff = useCallback(
     (path: string | null) => {
       if (!terminalProjectPathKey) return;
       setRightDockOpen(true);
-      setSettings((previousSettings) =>
-        openRightDockSingletonTab(previousSettings, terminalProjectPathKey, "gitReview"),
-      );
+      onDockToolStateChange((state) => openRightDockToolTabState(state, "gitReview"));
       gitReviewFocusNonceRef.current += 1;
-      setGitReviewFocusRequest({
-        path: (path ?? "").trim(),
-        nonce: gitReviewFocusNonceRef.current,
+      setGitReviewFocus({
+        scope: workspaceViewScope,
+        request: { path: (path ?? "").trim(), nonce: gitReviewFocusNonceRef.current },
       });
     },
-    [setRightDockOpen, setSettings, terminalProjectPathKey],
+    [onDockToolStateChange, setRightDockOpen, terminalProjectPathKey, workspaceViewScope],
   );
   const handleChangedFileReveal = useCallback(
     (path: string) => {
@@ -49,14 +57,10 @@ export function useChangedFilesActions(params: UseChangedFilesActionsParams) {
         .replace(/^\/+|\/+$/g, "");
       if (!selectedPath) return;
       setRightDockOpen(true);
-      setSettings((previousSettings) => {
-        const opened = openRightDockSingletonTab(
-          previousSettings,
-          terminalProjectPathKey,
-          "fileTree",
-        );
-        const current = getRightDockFileTreeState(opened.customSettings, terminalProjectPathKey);
-        return updateRightDockFileTreeState(opened, terminalProjectPathKey, {
+      onDockToolStateChange((state) => {
+        const opened = openRightDockToolTabState(state, "fileTree");
+        const current = readRightDockFileTreeState(opened);
+        return patchRightDockFileTreeState(opened, {
           query: "",
           selectedPath,
           expandedPaths: Array.from(
@@ -66,7 +70,7 @@ export function useChangedFilesActions(params: UseChangedFilesActionsParams) {
         });
       });
     },
-    [setRightDockOpen, setSettings, terminalProjectPathKey],
+    [onDockToolStateChange, setRightDockOpen, terminalProjectPathKey],
   );
   const changedFilesActions = useMemo<ChangedFilesActions>(
     () => ({
@@ -78,7 +82,8 @@ export function useChangedFilesActions(params: UseChangedFilesActionsParams) {
   );
 
   return {
-    gitReviewFocusRequest,
+    gitReviewFocusRequest:
+      gitReviewFocus?.scope === workspaceViewScope ? gitReviewFocus.request : null,
     handleGitReviewFocusRequestHandled,
     handleChangedFileOpenDiff,
     handleChangedFileReveal,

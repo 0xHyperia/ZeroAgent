@@ -209,8 +209,8 @@ type UseSendChatTurnParams = {
   availableSkills: SkillSummary[];
   skillsRootDir: string;
   refreshSkills: () => Promise<{ skills: SkillSummary[]; rootDir: string } | null>;
-  ensureTunnelToolTab: (projectPathKey?: string) => void;
-  ensureSshTunnelToolTab: (projectPathKey?: string) => void;
+  ensureTunnelToolTab: (projectPathKey?: string, conversationId?: string) => void;
+  ensureSshTunnelToolTab: (projectPathKey?: string, conversationId?: string) => void;
   persistConversation: PersistConversationAction;
   replaceConversationAtMessage: (
     conversationId: string,
@@ -1565,12 +1565,12 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
               !gatewayBridgeRequest || settings.remote.enableWebSshTerminal === true,
             onSshSessionsChanged: (change) => {
               if (change.action === "create") {
-                ensureSshTunnelToolTab(change.projectPathKey);
+                ensureSshTunnelToolTab(change.projectPathKey, conversationId);
               }
             },
             onTunnelsChanged: (change) => {
               if (change.action === "create") {
-                ensureTunnelToolTab(change.projectPathKey);
+                ensureTunnelToolTab(change.projectPathKey, conversationId);
               }
             },
             sessionId,

@@ -77,7 +77,7 @@ export type RightDockTabDragProps = {
 type UseRightDockTabReorderOptions = {
   canReorderTabs: boolean;
   orderedTabIds: string[];
-  projectPathKey: string;
+  viewScope: string;
   reorderLabel: string;
   reorderHint: string;
   onDraftTabOrderChange: (nextOrder: string[] | null) => void;
@@ -112,7 +112,7 @@ function findTabElement(container: HTMLElement | null, tabId: string) {
 }
 
 export function useRightDockTabReorder(options: UseRightDockTabReorderOptions) {
-  const { projectPathKey, reorderLabel, reorderHint, onDraftTabOrderChange } = options;
+  const { viewScope, reorderLabel, reorderHint, onDraftTabOrderChange } = options;
   const tabsScrollRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<TabDragState | null>(null);
   const frameRef = useRef(0);
@@ -352,8 +352,8 @@ export function useRightDockTabReorder(options: UseRightDockTabReorderOptions) {
     }
   }, [options.orderedTabIds]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: projectPathKey is the trigger — switching projects discards every bit of in-flight drag state.
-  useEffect(() => {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The workspace view key resets in-flight drag state when the dock switches context.
+  useLayoutEffect(() => {
     onDraftTabOrderChange(null);
     setDraggingTabId("");
     setDragVisual(null);
@@ -363,7 +363,7 @@ export function useRightDockTabReorder(options: UseRightDockTabReorderOptions) {
     suppressedTabClickRef.current = "";
     stopDragFrameLoop();
     removeWindowDragListeners();
-  }, [onDraftTabOrderChange, projectPathKey, removeWindowDragListeners, stopDragFrameLoop]);
+  }, [onDraftTabOrderChange, viewScope, removeWindowDragListeners, stopDragFrameLoop]);
 
   // Runs after the post-drop render: measure where the dropped tab landed and
   // start it translated back at its release position.

@@ -62,6 +62,7 @@ import { useRightDockTabReorder } from "./useRightDockTabReorder";
 
 type RightDockPanelProps = {
   isOpen: boolean;
+  workspaceViewScope?: string;
   fontScale?: number;
   projectPathKey: string;
   cwd: string;
@@ -401,6 +402,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   const {
     isOpen,
     fontScale = 1,
+    workspaceViewScope,
     projectPathKey,
     cwd,
     workspaceProject,
@@ -451,6 +453,23 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   } = props;
   const { t } = useLocale();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const previousViewScopeRef = useRef(workspaceViewScope);
+  useLayoutEffect(() => {
+    if (previousViewScopeRef.current === workspaceViewScope) return;
+    previousViewScopeRef.current = workspaceViewScope;
+    setCreateMenuOpen(false);
+  }, [workspaceViewScope]);
+  const selectedChangesPaths = useRef(new Map<string, string>());
+  const getSelectedChangesPath = useCallback(
+    (repo: string) => selectedChangesPaths.current.get(JSON.stringify([workspaceViewScope, repo])) ?? "",
+    [workspaceViewScope],
+  );
+  const onSelectChangesPath = useCallback(
+    (repo: string, path: string) => {
+      selectedChangesPaths.current.set(JSON.stringify([workspaceViewScope, repo]), path);
+    },
+    [workspaceViewScope],
+  );
   const { externalRoots: visibleExternalFileTreeRoots, refreshExternalRoots } =
     useFileTreeExternalRoots({
       workspaceProject,
@@ -487,6 +506,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     externalSessions,
     externalSessionsLoaded,
     leasedSessionIds,
+    viewScope: workspaceViewScope,
     isOpen,
     onProjectStateChange,
     onSessionsChange,
@@ -547,17 +567,14 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       console.error("managed process init failed", error);
     });
   }, []);
-  // Visibility intent lives in the synced right-dock project state so that
-  // opening/closing the tab on one client mirrors to the others. Closing is
-  // hide-only — it snapshots the current task ids and touches no process
-  // state; a task id outside that snapshot (a newly started one) re-derives
-  // the tab everywhere. Without a project bucket to persist into (no
-  // projectPathKey), a session-local fallback keeps the launcher working.
+  // Visibility is part of the dock view. Closing snapshots the task ids;
+  // a newly started task can bring the tab back without touching processes.
   const [localBackgroundTasks, setLocalBackgroundTasks] = useState<RightDockBackgroundTasksState>({
     opened: false,
     dismissedIds: [],
   });
-  const backgroundTasksState = projectPathKey ? projectState.backgroundTasks : localBackgroundTasks;
+  const scopedBackgroundTasks = Boolean(workspaceViewScope || projectPathKey);
+  const backgroundTasksState = scopedBackgroundTasks ? projectState.backgroundTasks : localBackgroundTasks;
   const backgroundTasksVisible =
     backgroundTasksState.opened ||
     managedProcessState.processes.some(
@@ -598,24 +615,24 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   }, [createTerminal]);
 
   const openBackgroundTasks = useCallback(() => {
-    if (projectPathKey) {
+    if (scopedBackgroundTasks) {
       onProjectStateChange(openRightDockBackgroundTasksTabState);
       return;
     }
     // No project bucket: persisted writes (including tab activation) are
     // no-ops, so only the session-local visibility flips.
     setLocalBackgroundTasks({ opened: true, dismissedIds: [] });
-  }, [onProjectStateChange, projectPathKey]);
+  }, [onProjectStateChange, scopedBackgroundTasks]);
 
   const closeBackgroundTasks = useCallback(() => {
     // Hide-only; the persisted activeTabId falls back at render time.
     const visibleIds = managedProcessState.processes.map((process) => process.id);
-    if (projectPathKey) {
+    if (scopedBackgroundTasks) {
       onProjectStateChange((current) => closeRightDockBackgroundTasksTabState(current, visibleIds));
       return;
     }
     setLocalBackgroundTasks({ opened: false, dismissedIds: visibleIds });
-  }, [managedProcessState.processes, onProjectStateChange, projectPathKey]);
+  }, [managedProcessState.processes, onProjectStateChange, scopedBackgroundTasks]);
 
   const {
     consumeSuppressedTabClick,
@@ -629,7 +646,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     onCommitTabOrder: commitTabOrder,
     onDraftTabOrderChange: setDraftTabOrder,
     orderedTabIds: orderedProjectTabIds,
-    projectPathKey,
+    viewScope: workspaceViewScope ?? projectPathKey,
     reorderHint: t("projectTools.reorderTabHint"),
     reorderLabel: t("projectTools.reorderTab"),
   });
@@ -727,6 +744,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
 
   const toolContextValue = useMemo<RightDockToolContextValue>(
     () => ({
+      viewScope: workspaceViewScope,
       projectPathKey,
       cwd,
       theme,
@@ -760,6 +778,8 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
         onRevealInFileTree: revealPathInFileTree,
       },
       git: {
+        getSelectedChangesPath,
+        onSelectChangesPath,
         onInsertCodeReviewSkill,
         onInsertCommitMention,
         onInsertGitFileMention,
@@ -792,6 +812,8 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       gitDisabledMessage,
       gitReviewFocusRequest,
       gitWriteEnabled,
+      getSelectedChangesPath,
+      onSelectChangesPath,
       onFileTreeStateChange,
       onGitReviewFocusRequestHandled,
       onInsertCodeReviewSkill,
@@ -816,6 +838,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       terminalReady,
       textGenerationClient,
       theme,
+      workspaceViewScope,
       tunnelClient,
       tunnelDisabledMessage,
       tunnelEnabled,

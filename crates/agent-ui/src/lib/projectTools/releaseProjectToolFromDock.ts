@@ -1,12 +1,25 @@
 import {
   type AppSettings,
   closeRightDockBackgroundTasksTabState,
+  type RightDockProjectState,
   updateRightDockProjectState,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings";
 import { closeRightDockToolTabState } from "../../components/project-tools/rightDockModel";
 import { getManagedProcessState } from "../managed-process/store";
 import type { ProjectToolSurfaceKind } from "../workbench/types";
+
+export function closeDockToolForPane(
+  current: RightDockProjectState,
+  tool: ProjectToolSurfaceKind,
+  visibleProcessIds: readonly string[],
+): RightDockProjectState {
+  if (tool !== "backgroundTasks") return closeRightDockToolTabState(current, tool, null);
+  const visible =
+    current.backgroundTasks.opened ||
+    visibleProcessIds.some((id) => !current.backgroundTasks.dismissedIds.includes(id));
+  return visible ? closeRightDockBackgroundTasksTabState(current, visibleProcessIds) : current;
+}
 
 /**
  * Closing a project tool pane closes the tool everywhere: the dock must not
@@ -34,16 +47,13 @@ export function releaseProjectToolFromDock(
     // visible), or another project's opened tab, immediately resurfaces.
     let next = prev;
     for (const key of projectKeys) {
-      next = updateRightDockProjectState(next, key, (current) => {
-        const visible =
-          current.backgroundTasks.opened ||
-          visibleIds.some((id) => !current.backgroundTasks.dismissedIds.includes(id));
-        return visible ? closeRightDockBackgroundTasksTabState(current, visibleIds) : current;
-      });
+      next = updateRightDockProjectState(next, key, (current) =>
+        closeDockToolForPane(current, tool, visibleIds),
+      );
     }
     return next;
   }
-  return updateRightDockProjectState(prev, projectPathKey, (current) => {
-    return closeRightDockToolTabState(current, tool, null);
-  });
+  return updateRightDockProjectState(prev, projectPathKey, (current) =>
+    closeDockToolForPane(current, tool, []),
+  );
 }

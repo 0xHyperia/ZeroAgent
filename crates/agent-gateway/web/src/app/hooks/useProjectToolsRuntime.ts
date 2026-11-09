@@ -9,6 +9,8 @@ import type { TerminalClient, TerminalSession } from "@liveagent/ui/lib/terminal
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type UseProjectToolsRuntimeParams = {
+  workspaceOwner: string;
+  conversationId: string;
   terminalClient: TerminalClient | null;
   settingsSyncReady: boolean;
   isAgentMode: boolean;
@@ -24,6 +26,8 @@ type UseProjectToolsRuntimeParams = {
 
 export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
   const {
+    workspaceOwner,
+    conversationId,
     terminalClient,
     settingsSyncReady,
     isAgentMode,
@@ -43,6 +47,8 @@ export function useProjectToolsRuntime(params: UseProjectToolsRuntimeParams) {
   const terminalStatusSessionIdRef = useRef("");
 
   const workspaceOverlays = useWorkspaceOverlays({
+    workspaceOwner,
+    conversationId,
     terminalProjectPath,
     terminalProjectPathKey,
     rightDockFileTreeOpen,

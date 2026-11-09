@@ -1,6 +1,6 @@
 import type { RightDockProjectState } from "@liveagent/app/lib/settings";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { hostAwareErrorMessage } from "../../lib/shared/hostErrors";
 import type {
   TerminalClient,
@@ -36,6 +36,7 @@ type UseRightDockSessionsOptions = {
    */
   leasedSessionIds?: ReadonlySet<string>;
   isOpen: boolean;
+  viewScope?: string;
   projectPathKey: string;
   projectState: RightDockProjectState;
   terminalReady: boolean;
@@ -62,6 +63,7 @@ export function useRightDockSessions(options: UseRightDockSessionsOptions) {
     projectPathKey,
     projectState,
     terminalReady,
+    viewScope,
   } = options;
   const { t } = useLocale();
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
@@ -75,9 +77,11 @@ export function useRightDockSessions(options: UseRightDockSessionsOptions) {
   const sessionsRef = useRef<TerminalSession[]>([]);
   const initialTerminalSnapshotsRef = useRef<Map<string, TerminalSnapshot>>(new Map());
   const lastProjectPathKeyRef = useRef(projectPathKey);
+  const lastViewScopeRef = useRef(viewScope);
   const pendingCreateActivationRef = useRef<{
     knownSessionIds: Set<string>;
     requestedAt: number;
+    activate: (session: TerminalSession) => void;
   } | null>(null);
   const isControlled = externalSessions !== undefined;
   const sessionsLoaded = isControlled ? (externalSessionsLoaded ?? true) : internalSessionsLoaded;
@@ -235,6 +239,13 @@ export function useRightDockSessions(options: UseRightDockSessionsOptions) {
     }
   }, [isControlled, projectPathKey]);
 
+  useLayoutEffect(() => {
+    if (lastViewScopeRef.current === viewScope) return;
+    lastViewScopeRef.current = viewScope;
+    setPendingCloseSessionId("");
+    setError(null);
+  }, [viewScope]);
+
   useEffect(() => {
     if (!pendingCloseSessionId) return;
     if (!localSessions.some((session) => session.id === pendingCloseSessionId)) {
@@ -258,8 +269,8 @@ export function useRightDockSessions(options: UseRightDockSessionsOptions) {
     if (!createdSession) return;
     pendingCreateActivationRef.current = null;
     setError(null);
-    activateTerminalSession(createdSession);
-  }, [activateTerminalSession, localSessions]);
+    pending.activate(createdSession);
+  }, [localSessions]);
 
   const rememberTerminalSnapshot = useCallback(
     (snapshot: TerminalSnapshot) => {
@@ -315,6 +326,7 @@ export function useRightDockSessions(options: UseRightDockSessionsOptions) {
       pendingCreateActivationRef.current = {
         knownSessionIds: new Set(localSessions.map((session) => session.id)),
         requestedAt: Date.now(),
+        activate: activateTerminalSession,
       };
       void client
         .create({

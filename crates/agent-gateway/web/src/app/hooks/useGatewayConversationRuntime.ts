@@ -36,7 +36,7 @@ type UseGatewayConversationRuntimeOptions = {
   clearManualCompactPendingRequest: (conversationId: string, operationId: string) => boolean;
   displayedConversationBusyRef: MutableRefObject<boolean>;
   displayedConversationId: string;
-  handleTunnelManagerChatEvent: (event: ChatEvent) => void;
+  handleTunnelManagerChatEvent: (event: ChatEvent, conversationId: string) => void;
   isLocalDraftConversationId: (conversationId: string) => boolean;
   locale: AppSettings["locale"];
   manualCompactPendingByConversation: ReadonlyMap<string, ManualCompactPendingRequest>;
@@ -142,7 +142,7 @@ export function useGatewayConversationRuntime({
           if (liveTitle && isChatEventTitleFinal(chatEvent)) {
             applyLiveConversationTitle(targetConversationId, liveTitle);
           }
-          if (!isReplay) handleTunnelManagerChatEvent(chatEvent);
+          if (!isReplay) handleTunnelManagerChatEvent(chatEvent, targetConversationId);
         }
       }
     },

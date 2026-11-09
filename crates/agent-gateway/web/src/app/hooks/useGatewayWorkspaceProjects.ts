@@ -20,7 +20,7 @@ import type { GatewayWebSocketClientLike } from "@/lib/gatewaySocket";
 import {
   type AppSettings,
   DEFAULT_WORKSPACE_PROJECT_ID,
-  openRightDockSingletonTab,
+  type RightDockToolKind,
   resolveWorkspaceProjects,
   updateCustomSettings,
   type WorkspaceProject,
@@ -39,6 +39,7 @@ type UseGatewayWorkspaceProjectsOptions = {
   displayedConversationWorkdirRef: MutableRefObject<string>;
   setActiveView: Dispatch<SetStateAction<ApplicationViewId>>;
   setRightDockOpen: Dispatch<SetStateAction<boolean>>;
+  openDockToolTab: (pathKey: string, kind: RightDockToolKind) => void;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
   settings: AppSettings;
@@ -52,6 +53,7 @@ export function useGatewayWorkspaceProjects({
   displayedConversationWorkdirRef,
   setActiveView,
   setRightDockOpen,
+  openDockToolTab,
   setSettings,
   setSidebarOpen,
   settings,
@@ -323,14 +325,14 @@ export function useGatewayWorkspaceProjects({
       setActiveView("chat");
       setRightDockOpen(true);
       activateWorkspaceProject(project);
-      setSettings((prev) => openRightDockSingletonTab(prev, pathKey, "fileTree"));
+      openDockToolTab(pathKey, "fileTree");
     },
     [
       activateWorkspaceProject,
       checkWorkspaceProjectDirectory,
       setActiveView,
       setRightDockOpen,
-      setSettings,
+      openDockToolTab,
       setSidebarOpen,
     ],
   );
