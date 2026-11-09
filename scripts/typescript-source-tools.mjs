@@ -60,7 +60,9 @@ function loaderFor(filePath) {
 // Share compiler output, never evaluated module state or mocks, between test loaders.
 const transpilationCache = new Map();
 const MAX_TRANSPILE_CACHE_BYTES = 16 * 1024 * 1024;
-const MAX_TRANSPILE_CACHE_ENTRIES = 256;
+// The CloudChat DOM fixture loads the workbench and lazy readers together.
+// Keep the byte limit, but avoid evicting the whole graph between remounts.
+const MAX_TRANSPILE_CACHE_ENTRIES = 1024;
 let transpilationCacheBytes = 0;
 
 function sourceWithTestImportMeta(source, filePath) {

@@ -103,7 +103,7 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
   assert.match(composerSource, /<CommandSafetyModeSelector/);
   assert.ok(
     composerSource.indexOf("aria-label={addMenuTooltip}") <
-      composerSource.indexOf("<CommandSafetyModeSelector"),
+      composerSource.indexOf("<CommandSafetyModeSelector", composerSource.indexOf("composer-control-deck")),
   );
   const standardDeck = composerSource.slice(composerSource.indexOf('"composer-control-deck'), composerSource.indexOf('{fileDropOverlay}'));
   assert.ok(standardDeck.indexOf("<CommandSafetyModeSelector") < standardDeck.indexOf("{modelControls}"));
@@ -139,10 +139,7 @@ test("composer separates input actions from the stacked runtime control deck", (
     composerSource.indexOf("composer-input-surface") <
       composerSource.indexOf("composer-control-deck"),
   );
-  assert.ok(
-    composerSource.indexOf("composer-control-deck") <
-      composerSource.indexOf("<CommandSafetyModeSelector"),
-  );
+  assert.match(composerSource.slice(composerSource.indexOf("composer-control-deck")), /<CommandSafetyModeSelector/);
   assertJsxDimensions(composerSource, "ArrowUp", { width: "4", height: "4" });
   assert.doesNotMatch(composerSource, /<Send className=/);
 });

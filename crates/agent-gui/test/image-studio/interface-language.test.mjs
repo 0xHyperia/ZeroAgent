@@ -229,7 +229,13 @@ test("English workbench shows no Chinese across history, preview, pickers, notic
     await env.act(async () => document.dispatchEvent(new env.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
 
     await click(document.getElementById(host.querySelector("label[for$='-model']").htmlFor));
-    assert.match(document.body.textContent, /Unavailable/);
+    const otherGroup = [...document.querySelectorAll('button[aria-expanded="false"]')]
+      .find((button) => button.textContent.trim().startsWith("other"));
+    assert.ok(otherGroup, "the unselected provider group starts collapsed");
+    await click(otherGroup);
+    const unavailableModel = [...document.querySelectorAll("button:disabled")]
+      .find((button) => button.textContent.includes("broken-image"));
+    assert.ok(unavailableModel, "the unavailable model is visible and cannot be selected");
     assert.match(document.body.textContent, /The provider has no API key/);
     assert.match(document.body.textContent, /Text to image/);
     assert.deepEqual(screen(), [], "model picker");

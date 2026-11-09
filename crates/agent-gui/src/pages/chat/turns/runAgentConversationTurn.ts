@@ -46,6 +46,7 @@ export type PersistConversationParams = {
 };
 
 export type RunAgentConversationTurnParams = {
+  desktopHostTools?: boolean;
   imageCreation?: { target_id?: string };
   locale?: Locale;
   providerId: ProviderId;

@@ -68,11 +68,11 @@ AlertDialogOverlay.displayName = "AlertDialogOverlay";
 const ALERT_DIALOG_FONT_SCALE = 0.9;
 
 type AlertDialogContentProps = React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Popup> & {
-  backdropClassName?: string;
+  backdrop?: "default" | "image-edit";
 };
 
 export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogContentProps>(
-  ({ className, backdropClassName, children, style, ...props }, ref) => {
+  ({ className, backdrop = "default", children, style, ...props }, ref) => {
     // 同 dialog.tsx：把缩放档位经 context 带过弹层的 portal 边界。
     const inheritedFontScale = React.useContext(ZoneFontScaleContext);
     const zoneFontScale = resolveZoneFontScale(
@@ -81,7 +81,7 @@ export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogCo
     );
     return (
       <AlertDialogPortal>
-        <AlertDialogOverlay className={backdropClassName} />
+        <AlertDialogOverlay data-backdrop={backdrop} />
         <AlertDialogPrimitive.Viewport
           data-slot="alert-dialog-viewport"
           className={cn(

@@ -101,16 +101,22 @@ export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrai
   // Only policies for tools K-brain registers may be forwarded; a stale entry for a
   // frontend-only tool (e.g. Browser) would otherwise reject every run.
   const policies = canonicalKBrainToolPolicies(configured);
+  const desktopHostTools = agentMode && params.desktopHostTools === true;
+  const tunnelPolicy = configured?.TunnelManager;
+  if (desktopHostTools && (tunnelPolicy === "ask" || tunnelPolicy === "allow" || tunnelPolicy === "deny")) {
+    policies.TunnelManager = tunnelPolicy;
+  }
   const safety = agentMode && "commandSafetyMode" in params ? params.commandSafetyMode : undefined;
   const reasoning = params.runtime.reasoning;
   const sandbox = agentMode ? resolveKBrainRunSandbox(safety) : undefined;
   const mcpServerIds = agentMode ? kbrainRunMcpServerIds(params.mcpServerIds) : undefined;
   return {
     mode: agentMode ? "agent" : "chat",
+    ...(desktopHostTools ? { zeroagent_desktop_host_tools: true } : {}),
     ...(params.imageCreation ? { image_creation: params.imageCreation } : {}),
     ...(reasoning ? { reasoning } : {}),
     search: params.runtime.nativeWebSearchEnabled === true ? "enabled" : "disabled",
-    approval_policy: safety === "auto" ? "auto" : "ask",
+    approval_policy: "ask",
     permission_mode: resolveKBrainPermissionMode(
       safety,
       agentMode && params.planModeEnabled === true,

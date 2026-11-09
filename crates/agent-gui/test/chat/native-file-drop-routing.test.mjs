@@ -245,6 +245,6 @@ test("native upload marker covers only the composer dialog", () => {
   assert.doesNotMatch(conversationSurface, /data-file-upload-drop-zone/);
   assert.match(
     composer,
-    /ref=\{glassCardRef\}[\s\S]*?data-file-upload-drop-zone=""/,
+    /ref=\{glassCardRef\}[^>]*data-file-upload-drop-zone=\{imageEdit \? undefined : ""\}/,
   );
 });

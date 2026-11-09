@@ -5,7 +5,7 @@ import {createWebDomTestEnv} from '../../test/helpers/dom-test-env.mjs';
 import {createWebModuleLoader} from '../../test/helpers/load-web-module.mjs';
 
 const loader=createWebModuleLoader();
-const {cloudComposerSkills,buildCloudComposerText,parseExtensionCatalog}=loader.loadModule('src/lib/cloudExtensions.ts');
+const {cloudComposerExtensions,cloudComposerSkills,cloudComposerSlashSkills,buildCloudComposerText,parseExtensionCatalog}=loader.loadModule('src/lib/cloudExtensions.ts');
 const drafts=loader.loadModule('@liveagent/ui/features/extensions/extensionDrafts.ts');
 const skill={name:'weekly-review',description:'Review a week',entry:'SKILL.md'};
 const pkg={id:'abc',kind:'skill',visibility:'personal',owned:true,name:'weekly-review',description:'Review a week',publisher:'你',version:3,installed:true,enabled:true,builtin:false,skills:[skill],disabled_skills:[],examples:[],updated_at:''};
@@ -79,11 +79,17 @@ test('new editor revisions send only writable fields and surface server validati
 });
 
 test('cloud references preserve immutable identity without enabling disabled skills',()=>{
- const selected=cloudComposerSkills(catalog);assert.equal(selected.length,1);assert.equal(selected[0].skillFile,'zeroagent-skill:abc/3/weekly-review');
+ const selected=cloudComposerSlashSkills(catalog);assert.equal(selected.length,1);assert.equal(selected[0].skillFile,'zeroagent-skill:abc/3/weekly-review');
  const draft={segments:[{type:'text',text:'Please '},{type:'skillMention',skill:selected[0]},{type:'text',text:' with these notes'}]};
  assert.match(buildCloudComposerText(draft),/\[weekly-review\]\(zeroagent-skill:abc\/3\/weekly-review\)/);
- assert.equal(cloudComposerSkills({...catalog,packages:[{...pkg,disabled_skills:['weekly-review']}]}).length,0);
- assert.equal(cloudComposerSkills({...catalog,packages:[{...pkg,installed:false}]}).length,0);
+ assert.equal(cloudComposerSlashSkills({...catalog,packages:[{...pkg,enabled:false}]}).length,0);
+ assert.equal(cloudComposerSlashSkills({...catalog,packages:[{...pkg,installed:false}]}).length,0);
+ const pluginCatalog={...catalog,packages:[{...pkg,kind:'plugin'}]};
+ assert.equal(cloudComposerSlashSkills(pluginCatalog).length,0);
+ assert.equal(cloudComposerExtensions(pluginCatalog).length,1);
+ const disabledPluginCatalog={...catalog,packages:[{...pkg,kind:'plugin',disabled_skills:[skill.name]}]};
+ assert.equal(cloudComposerExtensions(disabledPluginCatalog).length,0);
+ assert.equal(cloudComposerSkills(disabledPluginCatalog).length,0);
  assert.throws(()=>parseExtensionCatalog({...catalog,packages:[{...pkg,skills:[null]}]}));
 });
 

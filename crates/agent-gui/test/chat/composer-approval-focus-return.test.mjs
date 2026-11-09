@@ -100,7 +100,9 @@ async function render(overrides = {}) {
 }
 
 const focusCalls = [];
-const composerRef = { current: { focus: () => focusCalls.push("composer") } };
+const composerRef = {
+  current: { focus: () => focusCalls.push("composer"), cancelTransientText: noop },
+};
 const approvalBar = () =>
   React.createElement("section", { tabIndex: -1, "data-test-approval": "" }, "approval");
 
@@ -134,3 +136,38 @@ test("rendering without an approval bar never grabs focus", async () => {
   await render({ composerRef, approvalBar: null, inputPlaceholder: "Ask again" });
   assert.deepEqual(focusCalls, []);
 });
+
+for (const surface of ["desktop", "web"]) {
+  test(`plan mode is independent of the permission menu on ${surface}`, async () => {
+    await render({ surface, showExecutionControls: true });
+    const add = container.querySelector(".composer-add-trigger");
+    await act(async () => add.click());
+    const plan = [...doc.querySelectorAll('[role="menuitemcheckbox"]')]
+      .find((item) => item.textContent === "Plan mode");
+    assert.ok(plan);
+    assert.equal(plan.getAttribute("aria-checked"), "false");
+    await act(async () => plan.click());
+    assert.deepEqual(controlChanges, [{ planModeEnabled: true }]);
+    assert.deepEqual(modeChanges, []);
+    await render({
+      surface,
+      showExecutionControls: true,
+      chatRuntimeControls: { planModeEnabled: true },
+    });
+    assert.equal(plan.getAttribute("aria-checked"), "true");
+    await act(async () => add.click());
+
+    const permission = container.querySelector('[aria-label^="Command execution mode"]');
+    await act(async () => permission.click());
+    const rows = [...doc.querySelectorAll('[role="menuitem"]')];
+    assert.equal(rows.some((row) => /^(Plan mode|Full access)/.test(row.textContent)), false);
+    const always = rows.find((row) => row.textContent.startsWith("Always allow"));
+    assert.ok(always);
+    await act(async () => always.click());
+    assert.deepEqual(modeChanges, ["always"]);
+    assert.deepEqual(controlChanges, []);
+    const planChip = container.querySelector('[aria-label="Turn off plan mode"]');
+    await act(async () => planChip.click());
+    assert.deepEqual(controlChanges, [{ planModeEnabled: false }]);
+  });
+}

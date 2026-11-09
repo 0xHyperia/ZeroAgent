@@ -743,6 +743,28 @@
       ],
       "security": "ADR0078：桌面请求直接使用经 USA-Zero 验证的现有桌面访问令牌，原生传输限制目标、路由、头部和流量。桌面与 Web 的云计划复用账户登录和 Cloud Run 私有会话引用。仅有桌面登录时，服务端复用该登录的受限交换会话，原生刷新凭据不传给 Gateway。定时触发校验账户归属、租约和幂等请求，继续执行现有公开主题及私有资料检查。需审批的触发冻结运行配置，准入前按账户确认。设备汇总只投影计划摘要。文件交接使用账户读取、设备工作区租约及稳定的原生写入回执。",
       "upstream_relation": "adapt"
+    },
+    {
+      "id": "desktop-account-host-tools",
+      "name": "桌面工作区终端读取与隧道工具",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": [
+        "desktop"
+      ],
+      "entrypoints": [
+        "crates/agent-gui/src-tauri/src/services/host_bridge/mod.rs",
+        "crates/agent-gui/src-tauri/src/services/host_bridge/registration.rs",
+        "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+        "patches/kbrain/0019-scope-desktop-host-tools.patch"
+      ],
+      "tests": [
+        "crates/agent-gui/src-tauri/src/services/host_bridge/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
+        "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs"
+      ],
+      "security": "只接收绑定已验证账户与当前 K-brain 进程的 Native 回环请求。退出、切号或重启使旧凭据失效。工具只属于本机交互 Agent，终端只读。终端和隧道限定当前工作区。隧道继续受 Remote 开关和 K-brain 审批限制。拒绝将原生桥、后端或公开运行代理本身作为隧道目标。",
+      "upstream_relation": "adapt"
     }
   ]
 }

@@ -13,6 +13,8 @@ pub mod desktop_oauth;
 pub mod device_credentials;
 pub mod gateway;
 pub mod gateway_bridge;
+#[cfg(desktop)]
+mod host_bridge;
 pub mod kbrain_backend;
 pub mod kbrain_health;
 pub mod kbrain_ssh_sync;

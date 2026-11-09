@@ -69,7 +69,7 @@ function createDefaultMocks() {
   };
 }
 
-function createIconModuleMock(specifier) {
+function createIconModuleMock(specifier, renderIcon) {
   if (specifier.endsWith("?raw")) {
     return {
       __esModule: true,
@@ -81,6 +81,7 @@ function createIconModuleMock(specifier) {
   return {
     __esModule: true,
     default(props) {
+      if (renderIcon) return renderIcon(props);
       return { type: iconName, props: props ?? {} };
     },
   };
@@ -176,7 +177,7 @@ export function createTsModuleLoader(options = {}) {
   }
 
   function resolveMock(specifier, parentDir) {
-    if (specifier.startsWith("~icons/")) return createIconModuleMock(specifier);
+    if (specifier.startsWith("~icons/")) return createIconModuleMock(specifier, options.renderIcon);
     if (mocks.has(specifier)) return mocks.get(specifier);
     if (
       specifier.startsWith(".") ||

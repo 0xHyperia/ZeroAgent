@@ -377,6 +377,11 @@ impl GatewayController {
         self.apply_config(config)
     }
 
+    #[cfg(desktop)]
+    pub(crate) fn subscribe_host_bridge_settings(&self) -> watch::Receiver<RemoteSettingsPayload> {
+        self.config_tx.subscribe()
+    }
+
     pub fn status(&self) -> GatewayStatusSnapshot {
         self.status
             .lock()

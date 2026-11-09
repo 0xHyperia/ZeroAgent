@@ -110,7 +110,12 @@ for (const executionMode of ["agent", "chat"]) {
           selected: ["missing-local-skill"],
         };
         settings.selectedModel = { customProviderId: "backend", model: "model" };
-        settings.customProviders = [{ id: "backend", type: "codex", activeModels: ["model"] }];
+        settings.customProviders = [{
+          id: "backend",
+          type: "codex",
+          models: [{ id: "model", modelTypes: ["text"] }],
+          activeModels: ["model"],
+        }];
         const { createConversationStateFromContext } = loader.loadModule(
           "src/lib/chat/conversation/conversationState.ts",
         );
@@ -159,7 +164,10 @@ for (const executionMode of ["agent", "chat"]) {
                 "hello",
               );
               assert.equal(params.trajectory, undefined);
-              if (executionMode === "agent") assert.equal(params.effectiveSkillsEnabled, false);
+              if (executionMode === "agent") {
+                assert.equal(params.effectiveSkillsEnabled, false);
+                assert.equal(params.desktopHostTools, !remote);
+              }
             },
           },
           subagentStoresRef: { current: { get: () => ({}) } },

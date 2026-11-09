@@ -361,6 +361,7 @@ export type KBrainUpdateSessionRequest = {
 };
 
 export type KBrainRunOptions = {
+  zeroagent_desktop_host_tools?: boolean;
   image_creation?: { target_id?: string; attachments?: string[] };
   reasoning?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   mode?: "chat" | "agent";

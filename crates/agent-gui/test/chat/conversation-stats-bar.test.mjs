@@ -307,7 +307,7 @@ test("approvalBar 可见时状态栏让位（ChatComposerBar 插槽互斥）", (
   );
   assert.match(
     composerSource,
-    /\{statsBar && approvalBar == null && contextDisplayMode !== "ring" \? statsBar : null\}/,
+    /\{statsBar && !imageFocus && approvalBar == null && contextDisplayMode !== "ring"\s*\? statsBar\s*: null\}/,
     "statsBar 插槽必须保持 approvalBar 互斥，且只在 ring 展示模式下不挂载（§4.7 三档）",
   );
 });

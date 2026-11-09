@@ -1552,6 +1552,8 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
                 }),
               );
             },
+            // Device WebUI requests retain their own Gateway tool permissions.
+            desktopHostTools: isTauriHost() && !gatewayBridgeRequest,
             remoteWebTunnelsEnabled: settings.remote.enableWebTunnels,
             tunnelPublicBaseUrl: buildGatewayPublicBaseUrl(
               settings.remote.gatewayUrl,

@@ -10,7 +10,9 @@ import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 const requireUI = createRequire(new URL("../../../agent-ui/package.json", import.meta.url));
 
 test("the real worker-backed grid survives reverse scrolling inside the shared React scroller", {
-  timeout: 20000,
+  // The real worker, WASM and JSDOM share CPU with the other WebUI fixtures.
+  // Keep the row-level assertions bounded; give the process watchdog headroom.
+  timeout: 60000,
 }, async () => {
   const env = await createWebDomTestEnv();
   const { window } = env.dom;

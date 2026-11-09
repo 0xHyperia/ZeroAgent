@@ -3,14 +3,12 @@ import type { CommandSafetyMode } from "@liveagent/app/lib/settings";
 import {
   Check,
   Hand,
-  Lightbulb,
   Shield,
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
   SquarePen,
   Wrench,
-  Zap,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
@@ -27,7 +25,6 @@ import { OfflineSandboxSetupDialog } from "./OfflineSandboxSetupDialog";
 
 const MODE_I18N_KEYS: Record<CommandSafetyMode, string> = {
   ask: "chat.safety.ask",
-  auto: "chat.safety.auto",
   autoEdit: "chat.safety.autoEdit",
   always: "chat.safety.always",
   autoReview: "chat.safety.autoReview",
@@ -37,7 +34,6 @@ const MODE_I18N_KEYS: Record<CommandSafetyMode, string> = {
 
 const MODE_DESC_I18N_KEYS: Record<CommandSafetyMode, string> = {
   ask: "chat.safety.askDesc",
-  auto: "chat.safety.autoDesc",
   autoEdit: "chat.safety.autoEditDesc",
   always: "chat.safety.alwaysDesc",
   autoReview: "chat.safety.autoReviewDesc",
@@ -51,7 +47,6 @@ const SAFETY_MODES = [
   "autoReview",
   "sandbox",
   "sandboxOffline",
-  "auto",
   "always",
 ] as const;
 
@@ -67,24 +62,11 @@ const SAFETY_MODES = [
  */
 const MECHANISMS_WITHOUT_READ_MASKING: ReadonlySet<string> = new Set(["restricted-token"]);
 
-function isCommandSafetyMode(value: unknown): value is CommandSafetyMode {
-  return (
-    value === "ask" ||
-    value === "auto" ||
-    value === "autoEdit" ||
-    value === "always" ||
-    value === "autoReview" ||
-    value === "sandbox" ||
-    value === "sandboxOffline"
-  );
-}
-
 function modeIcon(mode: CommandSafetyMode, className: string) {
   if (mode === "ask") return <Hand className={className} />;
   if (mode === "autoEdit") return <SquarePen className={className} />;
   if (mode === "autoReview") return <ShieldCheck className={className} />;
   if (mode === "always") return <ShieldAlert className={className} />;
-  if (mode === "auto") return <Zap className={className} />;
   if (mode === "sandboxOffline") return <ShieldOff className={className} />;
   return <Shield className={className} />;
 }
@@ -94,6 +76,7 @@ function triggerIconClass(mode: CommandSafetyMode) {
     return "size-4 shrink-0 text-emerald-600 dark:text-emerald-400";
   }
   if (mode === "ask") return "size-4 shrink-0 text-sky-600 dark:text-sky-400";
+  if (mode === "always") return "size-4 shrink-0 text-amber-600 dark:text-amber-400";
   return "size-4 shrink-0 text-muted-foreground";
 }
 
@@ -101,10 +84,8 @@ export function CommandSafetyModeSelector(props: {
   value: CommandSafetyMode;
   disabled?: boolean;
   onChange: (mode: CommandSafetyMode) => void;
-  planModeEnabled?: boolean;
-  onPlanModeChange?: (enabled: boolean) => void;
 }) {
-  const { value, disabled, onChange, planModeEnabled, onPlanModeChange } = props;
+  const { value, disabled, onChange } = props;
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const capability = useSandboxCapability();
@@ -140,10 +121,8 @@ export function CommandSafetyModeSelector(props: {
       : MODE_DESC_I18N_KEYS[mode];
   // 当前值本身不可用(如设置同步自 macOS,本机是 Windows)时仍显示,但标红提示
   // 由执行层报错兜底;这里不做静默改写,避免设置回写抖动。
-  const selected = isCommandSafetyMode(value) ? value : "auto";
-  const selectedLabel = t(
-    planModeEnabled ? "chat.runtime.planModeTitle" : MODE_I18N_KEYS[selected],
-  );
+  const selected = SAFETY_MODES.includes(value) ? value : "ask";
+  const selectedLabel = t(MODE_I18N_KEYS[selected]);
 
   return (
     <>
@@ -163,11 +142,7 @@ export function CommandSafetyModeSelector(props: {
           title={selectedLabel}
           aria-label={`${t("chat.safety.label")}: ${selectedLabel}`}
         >
-          {planModeEnabled ? (
-            <Lightbulb className="size-4 shrink-0 text-sky-600" />
-          ) : (
-            modeIcon(selected, triggerIconClass(selected))
-          )}
+          {modeIcon(selected, triggerIconClass(selected))}
         </DropdownMenuTrigger>
         <DropdownMenuContent
           variant="soft"
@@ -175,27 +150,6 @@ export function CommandSafetyModeSelector(props: {
           side="top"
           align="start"
         >
-          {onPlanModeChange ? (
-            <DropdownMenuItem
-              onSelect={() => onPlanModeChange(true)}
-              className="h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal"
-            >
-              <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium leading-4">{t("chat.runtime.planModeTitle")}</span>
-                <span className="text-tiny font-normal leading-4 text-muted-foreground">
-                  {t("chat.runtime.planModeHint")}
-                </span>
-              </span>
-              {planModeEnabled ? <Check className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
-            </DropdownMenuItem>
-          ) : null}
-          {canSetUpOffline && offlineUnavailable && (
-            <DropdownMenuItem onSelect={() => setSetupOpen(true)}>
-              <Wrench className="size-3.5" />
-              {t("chat.safety.setupOffline")}
-            </DropdownMenuItem>
-          )}
           {SAFETY_MODES.map((mode) => {
             const entryDisabled =
               mode === "sandbox"
@@ -203,14 +157,13 @@ export function CommandSafetyModeSelector(props: {
                 : mode === "sandboxOffline"
                   ? offlineUnavailable
                   : false;
-            const isSelected = !planModeEnabled && mode === selected;
-            return (
+            const isSelected = mode === selected;
+            const item = (
               <DropdownMenuItem
                 key={mode}
                 disabled={entryDisabled}
                 onSelect={() => {
                   if (entryDisabled) return;
-                  onPlanModeChange?.(false);
                   onChange(mode);
                 }}
                 className={cn(
@@ -232,6 +185,24 @@ export function CommandSafetyModeSelector(props: {
                 )}
               </DropdownMenuItem>
             );
+            if (mode !== "sandboxOffline" || !entryDisabled || !canSetUpOffline) return item;
+            return [
+              item,
+              <DropdownMenuItem
+                key="setup-offline-sandbox"
+                onSelect={() => setSetupOpen(true)}
+                title={capability?.setup_hint || undefined}
+                className="h-auto shrink-0 items-start gap-2.5 py-1.5 pl-8 text-xs whitespace-normal"
+              >
+                <Wrench className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-medium leading-4">{t("chat.safety.setupOffline")}</span>
+                  <span className="text-tiny font-normal leading-4 text-muted-foreground">
+                    {t("chat.safety.setupOfflineDesc")}
+                  </span>
+                </span>
+              </DropdownMenuItem>,
+            ];
           })}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -241,10 +212,7 @@ export function CommandSafetyModeSelector(props: {
           hint={capability?.setup_hint}
           onOpenChange={setSetupOpen}
           onRun={setUpOfflineSandbox}
-          onUseOffline={() => {
-            onPlanModeChange?.(false);
-            onChange("sandboxOffline");
-          }}
+          onUseOffline={() => onChange("sandboxOffline")}
         />
       )}
     </>

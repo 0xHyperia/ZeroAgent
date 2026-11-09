@@ -9,6 +9,20 @@ pub(crate) const WORKSPACE_HANDOFF_MAX: usize = 32 << 20;
 pub(crate) const WORKSPACE_HANDOFF_TARGET_CHANGED: &str = "workspace_target_changed";
 
 impl GatewayController {
+    #[cfg(desktop)]
+    pub(crate) async fn host_bridge_workspace(&self, path: &str) -> Result<String, String> {
+        use crate::runtime::project_path::project_path_key;
+        let key = project_path_key(path);
+        let snapshot = self.current_settings_snapshot().await?;
+        workspace_snapshot_from_settings(&snapshot)?
+            .into_iter()
+            .find(|item| {
+                !key.is_empty() && project_path_key(&item.path) == key && Path::new(&item.path).is_dir()
+            })
+            .map(|_| key)
+            .ok_or_else(|| "The current workspace is unavailable on this device".to_string())
+    }
+
     pub(crate) async fn handle_workspace_handoff(
         &self,
         request: proto::WorkspaceHandoffRequest,

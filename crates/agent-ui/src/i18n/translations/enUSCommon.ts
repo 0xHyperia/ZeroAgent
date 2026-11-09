@@ -656,7 +656,6 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.label": "Command execution mode",
   "chat.safety.ask": "Always ask",
   "chat.safety.askDesc": "Requests approval before every action that needs authorization",
-  "chat.safety.auto": "Full access",
   "chat.safety.autoEdit": "Auto edit",
   "chat.safety.autoEditDesc":
     "Automatically approve file writes and edits; confirm commands and other actions",
@@ -669,8 +668,6 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.configureReviewer": "Choose a reviewer model",
   "chat.safety.autoReviewDesc":
     "ZeroAgent engine reviews actions; low-risk actions proceed, unknown or elevated risk requires confirmation",
-  "chat.safety.autoDesc":
-    "Runs according to the tool permission policies, without per-step approval",
   "chat.safety.sandbox": "Sandbox",
   "chat.safety.sandboxDesc":
     "Commands run automatically inside the sandbox: writes stay in the workspace and sensitive directories are unreadable",
@@ -690,20 +687,20 @@ export const EN_US_COMMON_TRANSLATIONS = {
     "ZeroAgent cannot cut the sandbox off from the network on this machine",
   // Follows chat.safety.sandboxUnavailable when run_sandbox.path_protection is false.
   "chat.safety.sandboxNoPathProtection":
-    "protected paths (.liveagent, .git/hooks) can't be kept read-only with the Landlock fallback; install bubblewrap or allow unprivileged user namespaces",
+    "The Landlock fallback cannot keep agent settings and Git hooks read-only. Install bubblewrap or allow unprivileged user namespaces.",
   // Windows: K-brain's sandbox setup (POST /v1/sandbox/setup) enables the offline sandbox.
   "chat.safety.setupOffline": "Set up offline sandbox…",
   "chat.safety.setupOfflineDesc": "Needs Windows administrator approval",
   "chat.safety.setup.title": "Set up the offline sandbox?",
   "chat.safety.setup.intro":
-    "To run sandboxed commands with no network access, K-brain will make these changes to this computer:",
+    "To run sandboxed commands with no network access, ZeroAgent will make these changes to this computer:",
   "chat.safety.setup.accounts":
     "Create two hidden local Windows accounts that sandboxed commands run as: one with network access, one without.",
   "chat.safety.setup.firewall":
     "Add Windows firewall rules that block all network access for the offline account, including services on this computer.",
   "chat.safety.setup.admin": "Windows will ask you for administrator approval.",
   "chat.safety.setup.undo": "You can undo all of it later by running {command} in a terminal.",
-  "chat.safety.setup.backendNote": "K-brain: {hint}",
+  "chat.safety.setup.backendNote": "ZeroAgent: {hint}",
   "chat.safety.setup.confirm": "Set up",
   "chat.safety.setup.cancel": "Cancel",
   "chat.safety.setup.close": "Close",
@@ -716,7 +713,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.setup.useOffline": "Use offline sandbox",
   "chat.safety.setup.incomplete": "Setup finished, but the offline sandbox is still unavailable",
   "chat.safety.setup.incompleteDesc":
-    "K-brain's sandbox self-test did not pass. Run setup again to repair it.",
+    "ZeroAgent's sandbox self-test did not pass. Run setup again to repair it.",
   "chat.safety.setup.declined": "Administrator approval was declined",
   "chat.safety.setup.declinedDesc": "Nothing on this computer was changed.",
   "chat.safety.setup.busy": "Sandbox setup is already running",
@@ -726,7 +723,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.setup.failedDesc":
     "Running setup again repairs a partial install; {command} removes it.",
   "chat.safety.setup.unsupported": "Sandbox setup is not available",
-  "chat.safety.setup.unsupportedDesc": "K-brain can set up the offline sandbox only on Windows.",
+  "chat.safety.setup.unsupportedDesc": "ZeroAgent can set up the offline sandbox only on Windows.",
   "chat.safety.setup.error": "Could not run sandbox setup",
   "chat.safety.cycleShortcut": "{keys} to switch",
   "chat.safety.cycleNextTurn": "next turn",
@@ -1106,7 +1103,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.subagent.pane.showMore": "Show more",
   "chat.subagent.pane.empty": "No subagents in this conversation yet.",
   "chat.subagent.pane.unsupported":
-    "This K-brain version cannot list subagents. Update K-brain to browse them here.",
+    "This ZeroAgent version cannot list subagents. Update ZeroAgent to browse them here.",
   "chat.subagent.pane.stop": "Stop",
   "chat.subagent.pane.stopping": "Stopping",
   "chat.subagent.pane.stopFailed": "Could not stop the subagent.",

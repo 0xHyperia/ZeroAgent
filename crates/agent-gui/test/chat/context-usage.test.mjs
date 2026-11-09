@@ -147,7 +147,7 @@ test("composer expand toggle appears only after the editor overflows", () => {
     chatComposerBarSource,
     /const showComposerExpandToggle = isComposerExpanded \|\| composerHasOverflow/,
   );
-  assert.match(chatComposerBarSource, /\{showComposerExpandToggle \? \(\s*<button/);
+  assert.match(chatComposerBarSource, /\{showComposerExpandToggle && !imageFocus \? \(\s*<button/);
 });
 
 test("context usage ring resets a stale confirm popover when compaction flips unavailable", () => {
@@ -949,11 +949,11 @@ test("composer renders ring and stats bar per three-state contextDisplayMode", (
   // statsBar 插槽只在 ring 模式下不挂载——statsBar/both 两档都渲染。
   assert.match(
     chatComposerBarSource,
-    /\{contextDisplayMode === "ring" \|\| contextDisplayMode === "both" \? \(/,
+    /inlineLayout &&\s*!imageFocus &&\s*\(contextDisplayMode === "ring" \|\| contextDisplayMode === "both"\) \? \(/,
   );
   assert.match(
     chatComposerBarSource,
-    /statsBar && approvalBar == null && contextDisplayMode !== "ring"/,
+    /statsBar && !imageFocus && approvalBar == null && contextDisplayMode !== "ring"/,
   );
   assert.doesNotMatch(chatComposerBarSource, /hideBelowWarn/);
 });

@@ -6,7 +6,8 @@
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
     "zeroagent.builtin-skills.v1",
-    "zeroagent.device-skill-snapshot.v1"
+    "zeroagent.device-skill-snapshot.v1",
+    "zeroagent.account-host-bridge.v1"
   ],
   "patches": [
     {
@@ -76,7 +77,11 @@
     {
       "file": "0018-block-plan-tools-in-chat.patch",
       "sha256": "05cbd54ea2f0bc6a0a0b9a608a338bebfa96a5923dbc1e1c2449a9f0541daeae"
+    },
+    {
+      "file": "0019-scope-desktop-host-tools.patch",
+      "sha256": "e731244123eb0087527c34f606abdacede7106a6d0075e2185ccc3b0ba289038"
     }
   ],
-  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, and native conversation images; plain Chat excludes plan tools"
+  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, native conversation images, and account-scoped desktop host tools; plain Chat excludes plan tools"
 }

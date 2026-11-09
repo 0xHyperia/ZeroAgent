@@ -38,30 +38,15 @@ test("bootstrap runner shares an in-flight attempt and allows retry after failur
 
 test("desktop bootstrap uses the native connection command and keeps the token in memory", async () => {
   const calls = [];
-  const result = await bootstrap.connectKBrainBackend(async (command, args) => {
+  const result = await bootstrap.connectKBrainBackend(async (command) => {
     calls.push(command);
-    if (command === "host_bridge_status") {
-      assert.deepEqual(args, { refresh: true });
-      return { state: "registered", tools: ["ReadTerminal"] };
-    }
     return { baseUrl: "http://127.0.0.1:49123/", token: "secret", protocolVersion: "kbrain.agent.v1", storageId: "local-stable-root" };
   });
-  // After connecting, the desktop re-registers its host bridge with that K-brain.
-  assert.deepEqual(calls, ["kbrain_backend_connection", "host_bridge_status"]);
+  // Registration is part of the native account/backend lifecycle.
+  assert.deepEqual(calls, ["kbrain_backend_connection"]);
   assert.deepEqual(result, { baseUrl: "http://127.0.0.1:49123", token: "secret", protocolVersion: "kbrain.agent.v1", managedLocal: true, storageId: "local-stable-root" });
   assert.equal(globalThis.localStorage, undefined);
   assert.equal(connection.getConfiguredKBrainConnection().token, "secret");
-});
-
-test("a host bridge refresh failure never fails the K-brain connect", async () => {
-  const calls = [];
-  const result = await bootstrap.connectKBrainBackend(async (command) => {
-    calls.push(command);
-    if (command === "host_bridge_status") throw new Error("unknown command host_bridge_status");
-    return { baseUrl: "http://127.0.0.1:49124", token: "secret-2", protocolVersion: "kbrain.agent.v1", storageId: "local-stable-root" };
-  });
-  assert.deepEqual(calls, ["kbrain_backend_connection", "host_bridge_status"]);
-  assert.equal(result.baseUrl, "http://127.0.0.1:49124");
 });
 
 test("desktop reports frontend ready even when the bootstrap path fails", async () => {

@@ -111,6 +111,7 @@ export async function createDomTestEnv(options = {}) {
 
   const loader = createTsModuleLoader({
     ...options,
+    renderIcon: (props) => React.createElement("svg", { ...props, "aria-hidden": true }),
     mocks: {
       // Replace the plain-object jsx factories with the real runtime so
       // loaded TS components produce genuine React elements. Loader merge

@@ -78,7 +78,7 @@ test("Skills Hub discovers, selects and invokes the shipped code review skill", 
   assert.equal(configured.status, 200, await configured.text());
   const client = loader.loadModule("src/lib/kbrain/client.ts").createKBrainClient(connection);
   const session = await client.createSession({ cwd, model: { provider: "fixture", model: "fixture-model" } });
-  const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `review-${process.pid}`, prompt: `/${name} Read this skill to verify the runtime connection.`, options: { mode: "agent", approval_policy: "auto", permission_mode: loader.loadModule("@liveagent/ui/lib/chat/permissionModes.ts").resolveKBrainPermissionMode("auto"), workspace_roots: [{ path: cwd, access: "write" }] } });
+  const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `review-${process.pid}`, prompt: `/${name} Read this skill to verify the runtime connection.`, options: { mode: "agent", approval_policy: "ask", permission_mode: loader.loadModule("@liveagent/ui/lib/chat/permissionModes.ts").resolveKBrainPermissionMode("always"), workspace_roots: [{ path: cwd, access: "write" }] } });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   const events = []; const answers = [];

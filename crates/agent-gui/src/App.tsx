@@ -18,6 +18,7 @@ import {
 } from "@liveagent/ui/lib/resourceHost";
 import { buildGatewaySettingsSyncPayload } from "@liveagent/ui/lib/settings/sync";
 import { useSettingsOverlay } from "@liveagent/ui/lib/settings/useSettingsOverlay";
+import { notifySkillsDiscoveryUpdated } from "@liveagent/ui/lib/skills/index";
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { DeviceModelPreferencesDialog } from "@liveagent/ui/pages/settings/DeviceModelPreferencesDialog";
@@ -778,6 +779,9 @@ export default function App() {
           }
           if (persistResult.providerError) {
             throw persistResult.providerError;
+          }
+          if (persistResult.skills) {
+            notifySkillsDiscoveryUpdated();
           }
           if (publishSync) {
             // Gateway synchronization is a secondary broadcast. Keep it ordered, but do not

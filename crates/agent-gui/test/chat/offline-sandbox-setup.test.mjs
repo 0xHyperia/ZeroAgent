@@ -232,6 +232,40 @@ test("a finished setup whose self-test still fails reports the refreshed hint", 
   assert.deepEqual(await setUpOfflineSandbox(), { status: "incomplete", hint: stillLow.setup_hint });
 });
 
+test("the permission menu offers administrator setup directly below the disabled offline sandbox", async (t) => {
+  setKBrainRuntimeConnection({ baseUrl: "http://127.0.0.1:47321", token: "secret", protocolVersion: "kbrain.agent.v1" });
+  const calls = backend(200, {});
+  const { refreshSandboxCapability } = env.loadModule("src/agent-ui-adapters/sandboxCapability");
+  await refreshSandboxCapability();
+  const { CommandSafetyModeSelector } = env.loadModule("@liveagent/ui/components/chat/CommandSafetyModeSelector.tsx");
+  const { LocaleContext } = env.loadModule("@liveagent/ui/i18n/LocaleContext.tsx");
+  const { t: translate } = env.loadModule("@liveagent/ui/i18n/index");
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = env.createRoot(container);
+  t.after(async () => {
+    await env.act(async () => root.unmount());
+    container.remove();
+  });
+  await env.act(async () => root.render(env.React.createElement(
+    LocaleContext.Provider,
+    { value: { locale: "zh-CN", t: (key) => translate(key, "zh-CN") } },
+    env.React.createElement(CommandSafetyModeSelector, {
+      value: "sandbox",
+      onChange: () => assert.fail("opening setup must not change the permission mode"),
+    }),
+  )));
+  await env.act(async () => container.querySelector("button").click());
+  const rows = [...document.querySelectorAll('[role="menuitem"]')];
+  const offline = rows.findIndex((row) => row.textContent.startsWith("离线沙箱"));
+  assert.ok(offline >= 0);
+  assert.equal(rows[offline].getAttribute("aria-disabled"), "true");
+  const setup = rows[offline + 1];
+  assert.match(setup.textContent, /^设置离线沙箱.*需要 Windows 管理员授权/);
+  await env.act(async () => setup.click());
+  assert.ok(document.querySelector('[data-testid="offline-sandbox-setup-dialog"]'));
+  assert.equal(calls.some((call) => call.path === "/v1/sandbox/setup"), false);
+});
+
 test("a remote K-brain never offers setup", async () => {
   setKBrainRuntimeConnection({ baseUrl: "http://192.168.1.20:47321", token: "t", protocolVersion: "kbrain.agent.v1" });
   backend(200, {});

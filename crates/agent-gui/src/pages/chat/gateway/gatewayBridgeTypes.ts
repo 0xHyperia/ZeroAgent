@@ -176,13 +176,14 @@ export function normalizeGatewayExecutionMode(
 
 // 命令安全模式的网关归一化。返回 undefined(而非某个默认模式)表示"远端未指定",
 // 让 useSendChatTurn 的优先级链回落到本地 settings.system.commandSafetyMode;绝不
-// 默认成 "auto",以免静默下调桌面端已选的更严格模式(fail-closed)。
+// 默认成 "always",以免静默下调桌面端已选的更严格模式(fail-closed)。
 export function normalizeGatewayCommandSafetyMode(
   value: string | null | undefined,
 ): CommandSafetyMode | undefined {
   switch (value?.trim()) {
-    case "ask":
     case "auto":
+      return "always";
+    case "ask":
     case "autoEdit":
     case "always":
     case "autoReview":

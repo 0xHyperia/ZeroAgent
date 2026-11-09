@@ -243,7 +243,7 @@ fn allowed_route(method: &Method, path: &str) -> bool {
                 | Method::DELETE
                 | Method::HEAD
         )
-        && !path.split('/').any(|part| part == "secrets")
+        && !path.split('/').any(|part| matches!(part, "secrets" | "host-bridge"))
         && path != "/v1/network/proxy"
         && path != "/v1/mcp/tools/call"
 }

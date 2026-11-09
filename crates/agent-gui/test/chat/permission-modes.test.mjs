@@ -27,7 +27,7 @@ test("sandbox modes auto-edit and confine commands with the backend's OS sandbox
     assert.equal(resolveKBrainPermissionMode(mode, true), "plan");
     assert.deepEqual(resolveKBrainRunSandbox(mode), { mode: "workspace", network });
   }
-  for (const mode of ["ask", "autoEdit", "autoReview", "always", "auto", undefined]) {
+  for (const mode of ["ask", "autoEdit", "autoReview", "always", undefined]) {
     assert.equal(resolveKBrainRunSandbox(mode), undefined);
   }
 });
@@ -104,17 +104,19 @@ test("run sandbox health gate requires path protection", () => {
   assert.equal(supportsRunSandbox({ capabilities: {} }, online), false);
 });
 
-test("full access keeps its distinct backend permission mode", () => {
-  assert.equal(normalizeCommandSafetyMode("auto"), "auto");
-  assert.equal(normalizeCommandSafetyMode(" auto "), "auto");
-  // The product preserves explicit full-access and always choices separately.
-  assert.equal(resolveKBrainPermissionMode("auto"), "full_access");
-  assert.equal(resolveKBrainPermissionMode("auto", true), "plan");
+test("saved full access and older device requests resolve to always allow", () => {
+  for (const input of ["auto", " auto "]) {
+    const saved = normalizeCommandSafetyMode(input);
+    assert.equal(saved, "always");
+    assert.equal(normalizeGatewayCommandSafetyMode(input), "always");
+    assert.equal(resolveKBrainPermissionMode(saved), "always");
+    assert.equal(resolveKBrainPermissionMode(saved, true), "plan");
+  }
 });
 
 test("remote choices cannot bypass a stricter local selection", () => {
   assert.equal(strictestCommandSafetyMode("always", "ask"), "ask");
-  assert.equal(strictestCommandSafetyMode("auto", "autoReview"), "autoReview");
+  assert.equal(strictestCommandSafetyMode(normalizeGatewayCommandSafetyMode("auto"), "autoReview"), "autoReview");
   assert.equal(strictestCommandSafetyMode("always", "sandboxOffline"), "sandboxOffline");
   assert.equal(strictestCommandSafetyMode("autoEdit", "autoReview"), "ask");
   assert.equal(strictestCommandSafetyMode("autoReview", "autoEdit"), "ask");

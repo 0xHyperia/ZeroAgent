@@ -1989,7 +1989,7 @@ export function ConversationImagePreview(props: Props) {
     >
       <AlertDialogContent
         className="za-image-discard-dialog"
-        backdropClassName="za-image-discard-backdrop"
+        backdrop="image-edit"
       >
         <AlertDialogTitle>{zh ? "放弃更改？" : "Discard changes?"}</AlertDialogTitle>
         <AlertDialogDescription>

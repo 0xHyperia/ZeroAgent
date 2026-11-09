@@ -218,7 +218,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.memoryOrganizerEveryThreeDays": "Every 3 days",
   "settings.memoryOrganizerEveryHours": "Every {count} hours",
   "settings.memoryOrganizerScheduleOnDescription":
-    "K-brain organizes saved memories in the background on this schedule.",
+    "ZeroAgent organizes saved memories in the background on this schedule.",
   "settings.memoryOrganizerScheduleOffDescription":
     "Off: memories are organized only when you run it below.",
   "settings.memoryOrganizerScheduleSaveFailed":
@@ -1114,8 +1114,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.sshAgentHostKeys": "Trusted host keys",
   "settings.sshAgentNoHostKeys": "No trusted host key yet",
   "settings.sshAgentSkipped":
-    "Not available to SSHManager: K-brain does not accept this host's settings.",
-  "settings.sshAgentSyncFailed": "Could not sync SSH hosts to K-brain: {error}",
+    "Not available to SSHManager: ZeroAgent does not accept this host's settings.",
+  "settings.sshAgentSyncFailed": "Could not sync SSH hosts to ZeroAgent: {error}",
   "settings.sshReconnectPromptTitle": "Apply the updated SSH settings?",
   "settings.sshReconnectPromptDesc":
     "{count} active connection(s) to this host still use the previous settings. Reconnecting now interrupts running remote programs.",

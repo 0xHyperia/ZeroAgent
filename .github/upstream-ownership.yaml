@@ -19,6 +19,16 @@
       ]
     },
     {
+      "glob": "crates/agent-gui/src-tauri/src/services/host_bridge/**",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "原生账户租约和后端代次失效后拒绝旧凭据",
+        "工作区范围、隧道开关和既有审批，隔离 WebUI、云端与无人值守运行",
+        "仅回环监听，渲染层不能注册桥接，禁止暴露桥和后端监听端口"
+      ]
+    },
+    {
       "glob": "{crates/agent-gateway/internal/account/cloud_schedule*.go,crates/agent-gateway/internal/account/cloud_execution_account.go,crates/agent-gateway/internal/account/desktop_cloud_session.go,crates/agent-gateway/internal/account/cloud_run_runtime.go,crates/agent-gateway/internal/account/workbench_*.go,crates/agent-gateway/internal/handler/{device_schedule_summary,workspace_handoff}.go,crates/agent-gateway/internal/server/workspace_handoff_test.go,crates/agent-gateway/web/src/components/cloudchat/{CloudScheduleWorkspace,DeviceScheduleEditor,ScheduleRunApprovalCard,ScheduleSourcePicker,WorkspaceHandoffDialog}.tsx,crates/agent-gateway/web/src/lib/{cloudSchedules,deviceScheduleHost,workspaceHandoff}.ts,crates/agent-gateway/web/test/workspace-handoff.test.mjs,crates/agent-ui/src/pages/settings/WorkbenchCronPreview.tsx,crates/agent-gui/src/lib/relay/desktopWorkspaceHandoff.ts,crates/agent-gui/src-tauri/src/services/account_session/desktop_cloud.rs,crates/agent-gui/src-tauri/src/services/gateway/workspace_handoff.rs}",
       "ownership": "zeroagent_owned",
       "risk": "high",
@@ -69,7 +79,7 @@
       "risk": "high",
       "checks": [
         "Go、Rust、TS 结构化健康契约；矛盾、损坏或不支持的沙箱能力拒绝执行",
-        "保留现有 full_access 与 always 语义区别；未知持久化权限收敛为 ask",
+        "沿用 K-brain 权限协议；界面退役的 auto 读取为 always，未知持久化权限收敛为 ask",
         "健康或能力响应不能替代账号、设备租约、原生宿主或凭据来源验证"
       ]
     },

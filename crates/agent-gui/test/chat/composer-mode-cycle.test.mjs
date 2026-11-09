@@ -54,7 +54,7 @@ test("cycle order is ask, auto edit, plan, then back to ask", () => {
 });
 
 test("modes outside the cycle return to ask and always allow is never entered", () => {
-  for (const mode of ["autoReview", "always", "auto", "sandbox", "sandboxOffline", undefined]) {
+  for (const mode of ["autoReview", "always", "sandbox", "sandboxOffline", undefined]) {
     assert.deepEqual(
       nextComposerPermissionMode({ commandSafetyMode: mode, planModeEnabled: false }),
       { commandSafetyMode: "ask", planModeEnabled: false, shown: "ask" },

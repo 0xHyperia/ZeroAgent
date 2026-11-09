@@ -21,6 +21,8 @@ pub const GATEWAY_TUNNEL_STATE_EVENT: &str = "gateway:tunnel-state";
 const TUNNEL_GATEWAY_SUPPORT_TIMEOUT: Duration = Duration::from_secs(10);
 const TUNNEL_LOCAL_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
+type MutationGuard = Arc<dyn Fn() -> bool + Send + Sync>;
+
 #[derive(Debug, Clone)]
 pub struct TunnelTarget {
     pub url: Url,
@@ -269,12 +271,15 @@ impl GatewayController {
             let result = match action.as_str() {
                 "create" => {
                     controller
-                        .tunnel_create_inner(GatewayTunnelCreateInput {
-                            target_url: mutation.target_url,
-                            name: Some(mutation.name),
-                            ttl_seconds: mutation.ttl_seconds,
-                            project_path_key: Some(mutation.project_path_key),
-                        })
+                        .tunnel_create_inner(
+                            GatewayTunnelCreateInput {
+                                target_url: mutation.target_url,
+                                name: Some(mutation.name),
+                                ttl_seconds: mutation.ttl_seconds,
+                                project_path_key: Some(mutation.project_path_key),
+                            },
+                            None,
+                        )
                         .await
                 }
                 "update" => {
@@ -288,7 +293,11 @@ impl GatewayController {
                         })
                         .await
                 }
-                "close" => controller.tunnel_close_inner(mutation.tunnel_id).await,
+                "close" => {
+                    controller
+                        .tunnel_close_inner(mutation.tunnel_id, None)
+                        .await
+                }
                 "check" => {
                     let tunnel_id =
                         (!requested_tunnel_id.is_empty()).then(|| requested_tunnel_id.clone());
@@ -334,7 +343,7 @@ impl GatewayController {
         self: &Arc<Self>,
         input: GatewayTunnelCreateInput,
     ) -> Result<(), String> {
-        self.tunnel_create_inner(input)
+        self.tunnel_create_inner(input, None)
             .await
             .map(|_| ())
             .map_err(|error| error.message)
@@ -351,10 +360,17 @@ impl GatewayController {
     }
 
     pub async fn tunnel_close(self: &Arc<Self>, tunnel_id: String) -> Result<(), String> {
-        self.tunnel_close_inner(tunnel_id)
+        self.tunnel_close_inner(tunnel_id, None)
             .await
             .map(|_| ())
             .map_err(|error| error.message)
+    }
+
+    #[cfg(desktop)]
+    pub(crate) async fn check_host_bridge_tunnels(self: &Arc<Self>, ids: Vec<String>) {
+        if !ids.is_empty() {
+            self.run_tunnel_probes(Some(ids), true).await;
+        }
     }
 
     pub async fn tunnel_check(self: &Arc<Self>, tunnel_id: Option<String>) -> Result<(), String> {
@@ -364,19 +380,46 @@ impl GatewayController {
             .map_err(|error| error.message)
     }
 
+    #[cfg(desktop)]
+    pub(crate) async fn create_host_bridge_tunnel(
+        self: &Arc<Self>,
+        input: GatewayTunnelCreateInput,
+        guard: MutationGuard,
+    ) -> Result<String, String> {
+        self.tunnel_create_inner(input, Some(guard))
+            .await
+            .map_err(|error| error.message)
+    }
+
+    #[cfg(desktop)]
+    pub(crate) async fn close_host_bridge_tunnel(
+        self: &Arc<Self>,
+        id: String,
+        project: String,
+        guard: MutationGuard,
+    ) -> Result<(), String> {
+        self.tunnel_close_inner(id, Some((project, guard)))
+            .await
+            .map(|_| ())
+            .map_err(|error| error.message)
+    }
+
     async fn tunnel_create_inner(
         self: &Arc<Self>,
         input: GatewayTunnelCreateInput,
+        guard: Option<MutationGuard>,
     ) -> Result<String, TunnelMutationError> {
         let spec = self.tunnel_store().prepare_create(input)?;
-        store::persist_tunnel_spec(spec.clone())
+        store::persist_tunnel_spec_guarded(spec.clone(), guard.clone())
             .await
             .map_err(TunnelMutationError::internal)?;
         self.tunnel_store()
             .commit_spec(spec.clone())
             .map_err(TunnelMutationError::internal)?;
-        self.after_tunnel_mutation(Some(vec![spec.id.clone()]))
-            .await;
+        if guard.is_none_or(|live| live()) {
+            self.after_tunnel_mutation(Some(vec![spec.id.clone()]))
+                .await;
+        }
         Ok(spec.id)
     }
 
@@ -399,6 +442,7 @@ impl GatewayController {
     async fn tunnel_close_inner(
         self: &Arc<Self>,
         tunnel_id: String,
+        scope: Option<(String, MutationGuard)>,
     ) -> Result<String, TunnelMutationError> {
         let tunnel_id = tunnel_id.trim().to_string();
         if tunnel_id.is_empty() {
@@ -411,13 +455,23 @@ impl GatewayController {
         {
             return Err(TunnelMutationError::not_found());
         }
-        store::delete_tunnel_specs(vec![tunnel_id.clone()])
-            .await
-            .map_err(TunnelMutationError::internal)?;
+        let guard = if let Some((project, guard)) = scope {
+            store::delete_host_bridge_tunnel(tunnel_id.clone(), project, Arc::clone(&guard))
+                .await
+                .map_err(TunnelMutationError::internal)?;
+            Some(guard)
+        } else {
+            store::delete_tunnel_specs(vec![tunnel_id.clone()])
+                .await
+                .map_err(TunnelMutationError::internal)?;
+            None
+        };
         self.tunnel_store()
             .remove_spec(&tunnel_id)
             .map_err(TunnelMutationError::internal)?;
-        self.after_tunnel_mutation(None).await;
+        if guard.is_none_or(|live| live()) {
+            self.after_tunnel_mutation(None).await;
+        }
         Ok(tunnel_id)
     }
 

@@ -136,6 +136,25 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
         assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|\blayer-(?:popover|modal|toast|critical)\b|className="[^"]*\b(?:fixed|absolute)\b/);
         continue;
       }
+      if (content?.type === "Identifier" && content.name === "children" && targetSource === "mount" && source.includes("useContext(ConversationFocusComposer)")) {
+        // The composer keeps one mount and moves it inside the existing image overlay.
+        assert.match(source, /element\.style\.display = "contents"/);
+        assert.match(source, /next\.append\(mount\)/);
+        assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|className="[^"]*\b(?:fixed|absolute)\b/);
+        continue;
+      }
+      if (content?.type === "Identifier" && content.name === "focus" && targetSource === "document.body" &&
+          source.includes('className="za-conversation-image-focus"')) {
+        const styles = readShared("components/resource-preview/conversation-image-preview.css");
+        assert.match(styles, /\.za-conversation-image-focus\s*\{[^}]*z-index:\s*calc\(var\(--layer-modal\) - 1\)/);
+        continue;
+      }
+      if (content?.type === "Identifier" && content.name === "controls" && targetSource === "captionMount" &&
+          source.includes("getImagePreviewWindowChrome")) {
+        assert.match(source, /mount\.style\.display = "contents"/);
+        assert.match(source, /const target = slot \?\? home\.current;[\s\S]*target\.append\(captionMount\)/);
+        continue;
+      }
       if (source.includes("useContext(PreviewToolbarMount)") && ["target", "mount.leadingTarget", "mount.pageTarget"].includes(targetSource)) {
         // The shared reader explicitly provides in-layout toolbar mount nodes.
         // These portals move controls into that toolbar, without creating overlays.

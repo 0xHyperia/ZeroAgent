@@ -193,7 +193,7 @@ test("the composer re-reads K-brain skills once a skills switch is saved", () =>
   const appSource = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
   assert.match(
     appSource,
-    /await kbrainSkillsAdapter\.settings\(next\.skills\);[\s\S]{0,200}?notifySkillsDiscoveryUpdated\(\);/,
+    /persistSettings\(prev, next\)[\s\S]*if \(persistResult\.skills\) \{\s*notifySkillsDiscoveryUpdated\(\);/,
   );
 });
 
@@ -274,14 +274,12 @@ test("pack switches reach K-brain only when it reports skill_packs", async (t) =
   assert.deepEqual(sent.body, { enabled: true, selected: [], packs: { "reverse-skill": true } });
 
   const older = await kbrainFixture(t, {});
-  const saved = await older.adapter.settings({
+  await assert.rejects(older.adapter.settings({
     enabled: true,
     selected: ["ida"],
     packs: { "reverse-skill": true },
-  });
-  assert.deepEqual(saved.settings, { enabled: true, selected: ["ida"] });
-  const stripped = older.requests.find((r) => r.path === "/v1/skills/settings");
-  assert.deepEqual(stripped.body, { enabled: true, selected: ["ida"] });
+  }), /does not support skill packs/);
+  assert.equal(older.requests.some((r) => r.path === "/v1/skills/settings"), false);
 
   await older.adapter.settings({ enabled: false, selected: [] });
   assert.equal(

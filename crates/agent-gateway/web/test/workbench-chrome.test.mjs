@@ -86,7 +86,7 @@ test("gateway shows the conversation view switcher in chrome only after an assis
   );
   assert.match(
     composerSource,
-    /hidden && "hidden"/,
+    /\(hidden \|\| imageEdit\?\.hidden\) && "hidden"/,
   );
 });
 

@@ -15,8 +15,11 @@ const low = { risk: "low", sandbox: "low", sensitive_data: "low", model_behavior
 test("LiveAgent modes authorize actual K-brain tools and return approval events", { timeout: kbrainFixtureTimeoutMs(120_000) }, async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "permission-modes-"));
   const home = path.join(root, "home");
+  const dataDir = path.join(home, ".liveagent");
   const workdir = path.join(root, "workspace");
-  await mkdir(home);
+  // Windows masks the backend data folder. The folder must be below the
+  // isolated profile because the sandbox refuses to mask a whole profile.
+  await mkdir(dataDir, { recursive: true });
   await mkdir(workdir);
   let current;
   let reviews = 0;
@@ -56,7 +59,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
     aiApproval: { mode: "off", provider: "fixture", model: "review-model" },
     providers: { fixture: { api: "openai-completions", apiKey: "fixture-key", baseUrl: `http://127.0.0.1:${upstream.address().port}`, models: [{ id: "fixture-model", contextWindow: 32768, maxTokens: 256 }, { id: "review-model", contextWindow: 32768, maxTokens: 256 }] } },
   }));
-  child = spawn(await getKBrainBinary(), ["backend", "-listen", "127.0.0.1:0", "-data-dir", home, "-token", "modes-token", "-config", config, "-session-dir", path.join(root, "sessions")], {
+  child = spawn(await getKBrainBinary(), ["backend", "-listen", "127.0.0.1:0", "-data-dir", dataDir, "-token", "modes-token", "-config", config, "-session-dir", path.join(root, "sessions")], {
     cwd: workdir, windowsHide:true, env: isolatedKbrainFixtureEnv(home), stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -91,7 +94,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
     { name: "plan", mode: "always", plan: true, permission: false, changed: false },
     { name: "auto-edit", mode: "autoEdit", permission: false, changed: true },
     { name: "auto-edit-command", mode: "autoEdit", bash: true, permission: true, changed: false },
-    { name: "full-access", mode: "auto", bash: true, permission: false, changed: true },
+    { name: "full-access-protocol", permissionMode: "full_access", bash: true, permission: false, changed: true },
     { name: "always", mode: "always", bash: true, permission: false, changed: true },
     { name: "review-low", mode: "autoReview", permission: false, changed: true, reviewed: true },
     { name: "review-unknown", mode: "autoReview", review: { ...low, risk: "unknown" }, permission: true, changed: false, reviewed: true },
@@ -119,7 +122,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
       current = { tool: tc.bash ? "Bash" : "Write", args: tc.bash ? { command } : { path: target, content: "changed" }, review: tc.review ?? low };
       const before = reviews;
       const session = await client.createSession({ cwd: workdir, model: { provider: "fixture", model: "fixture-model" } });
-      const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `modes-${tc.name}`, prompt: "Write changed to the fixture marker in this workspace", options: { mode: "agent", approval_policy: "ask", permission_mode: resolveKBrainPermissionMode(tc.mode, tc.plan), workspace_roots: [{ path: workdir, access: "write" }], ...(sandbox ? { sandbox } : {}) } });
+      const accepted = await client.startRun({ conversation_id: session.id, client_request_id: `modes-${tc.name}`, prompt: "Write changed to the fixture marker in this workspace", options: { mode: "agent", approval_policy: "ask", permission_mode: tc.permissionMode ?? resolveKBrainPermissionMode(tc.mode, tc.plan), workspace_roots: [{ path: workdir, access: "write" }], ...(sandbox ? { sandbox } : {}) } });
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15_000);
       const events = [];
@@ -135,7 +138,7 @@ test("LiveAgent modes authorize actual K-brain tools and return approval events"
       assert.ok(events.some(event => event.type === "run.completed"), JSON.stringify(events));
       assert.equal(events.some(event => event.type === "permission.requested"), tc.permission);
       const content = await readFile(target, "utf8").catch(error => { if (error.code === "ENOENT") return ""; throw error; });
-      assert.equal(content === "changed", tc.changed);
+      assert.equal(content === "changed", tc.changed, JSON.stringify(events.filter(event => event.type.includes("tool"))));
       assert.equal(reviews > before, Boolean(tc.reviewed));
     });
   }

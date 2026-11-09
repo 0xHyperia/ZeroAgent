@@ -920,7 +920,7 @@ test("an older cloud run stays open through history-list recovery and plan edits
   assert.deepEqual(navigations, []);
 
   const originalPlan = task;
-  await app.chooseTaskAction("Edit task");
+  await app.chooseTaskAction("Edit");
   const edit = document.querySelector('[role="dialog"] textarea');
   await app.env.act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(edit, "Change the next report");
@@ -1105,7 +1105,7 @@ test("a stalled cloud run detail read preserves the selected transcript and retr
   assert.equal(draft.value, "Unsent draft");
   assert.ok(document.activeElement === inspector, "focus returns to the inspector after retry");
   assert.equal(selections.at(-1)?.jump?.messageId, "scheduled-message");
-  assert.match(inspector.textContent, /OutputsReport.txtSourcesReference/);
+  assert.match(inspector.textContent, /OutputsReport\.txtSourcesWeb searchReference/);
   await app.click("Report.txt");
   assert.deepEqual(opened, [["result", "file"]]);
   assert.equal(writes, 0);

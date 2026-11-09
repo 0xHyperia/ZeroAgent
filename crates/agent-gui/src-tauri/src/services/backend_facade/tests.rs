@@ -322,6 +322,23 @@ async fn private_routes_encoded_aliases_and_raw_backend_tokens_cannot_bypass_the
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
     }
+    for method in [Method::GET, Method::PUT, Method::DELETE] {
+        for path in [
+            "/v1/host-bridge",
+            "/v1/%68ost-bridge",
+            "/v1//host-bridge",
+            "/v1/host-bridge/",
+        ] {
+            let public = fixture.public();
+            let response = fixture.client
+                .request(method.clone(), format!("{}{path}", public.base_url))
+                .bearer_auth(public.token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {path}");
+        }
+    }
     for token in ["", "wrong-capability", PRIVATE_TOKEN] {
         assert_eq!(
             fixture

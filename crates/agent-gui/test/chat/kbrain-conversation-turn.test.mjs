@@ -369,7 +369,7 @@ for (const [mode, runTurn, decision, expectedDecision] of [
     await runTurn({
       providerId: "codex", model: "model", selectedModel: { customProviderId: "fixture", model: "model" },
       runtime: mode.endsWith("no-backend") ? {} : { backend: mode.endsWith("legacy-direct") ? "direct" : "kbrain", baseUrl: "https://must-not-be-called.invalid", apiKey: "unused-secret", reasoning: mode === "agent-controls" ? "minimal" : "max" }, sessionId: "frontend-session", conversationId,
-      trajectoryMessageId: `message-${mode}`, conversationCwd: "/workspace", ...(mode.startsWith("agent") ? { effectiveWorkdir: "/workspace", ...(mode === "agent-controls" ? { additionalRoots: [{ id: "external", alias: "external-root", path: "/tmp/external", access: "read" }], planModeEnabled: mode === "agent-controls", getToolPolicies: () => ({ Read: "allow", Write: "ask", Bash: "deny", Browser: "allow", McpManager: "deny", "group:browser": "ask", "server:cua-driver": "allow" }), commandSafetyMode: "auto" } : {}) } : {}), createdAt: 1, fallbackTitle: "Inspect", titlePromise: null,
+      trajectoryMessageId: `message-${mode}`, conversationCwd: "/workspace", ...(mode.startsWith("agent") ? { effectiveWorkdir: "/workspace", ...(mode === "agent-controls" ? { additionalRoots: [{ id: "external", alias: "external-root", path: "/tmp/external", access: "read" }], planModeEnabled: mode === "agent-controls", getToolPolicies: () => ({ Read: "allow", Write: "ask", Bash: "deny", Browser: "allow", McpManager: "deny", "group:browser": "ask", "server:cua-driver": "allow" }), commandSafetyMode: "always" } : {}) } : {}), createdAt: 1, fallbackTitle: "Inspect", titlePromise: null,
       transcriptStore: {}, cancellation: { userStop: controller },
       gatewayBridgeEvents: { queueToken() {}, queueEvent(event) { gatewayEvents.push(event); }, queueToolStatus() {}, emitError(message) { errors.push(message); } },
       hookLifecycle: Object.fromEntries(["startAgent", "startTurn", "ensureMessageEnded", "endTurn", "endAgent"].map((key) => [key, () => hooks.push(key)])),
@@ -390,7 +390,7 @@ for (const [mode, runTurn, decision, expectedDecision] of [
     assert.equal(runBody.options.mode, mode.startsWith("agent") ? "agent" : "chat");
     assert.deepEqual(runBody.options.workspace_roots, mode === "agent-controls" ? [{ path: "/workspace", access: "write" }, { path: "/tmp/external", access: "read" }] : [{ path: "/workspace", access: "write" }]);
     assert.equal(runBody.options.search, "disabled");
-    assert.equal(runBody.options.approval_policy, mode === "agent-controls" ? "auto" : "ask");
+    assert.equal(runBody.options.approval_policy, "ask");
     if (!mode.endsWith("no-backend")) assert.equal(runBody.options.reasoning, mode === "agent-controls" ? "minimal" : "max");
     if (mode === "agent-controls") {
       assert.deepEqual(runBody.options.tools.policies, { Bash: "deny", Read: "allow", Write: "ask" });

@@ -541,12 +541,67 @@ async fn load_tunnel_specs() -> Result<Vec<StoredTunnelSpec>, String> {
 }
 
 pub(super) async fn persist_tunnel_spec(spec: StoredTunnelSpec) -> Result<(), String> {
+    persist_tunnel_spec_guarded(spec, None).await
+}
+
+pub(super) async fn persist_tunnel_spec_guarded(
+    spec: StoredTunnelSpec,
+    guard: Option<super::MutationGuard>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db()?;
-        persist_tunnel_spec_sync(&conn, &spec)
+        let Some(guard) = guard else {
+            return persist_tunnel_spec_sync(&conn, &spec);
+        };
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        if !guard() {
+            return Err("Tunnel authorization ended".into());
+        }
+        persist_tunnel_spec_sync(&tx, &spec)?;
+        if !guard() {
+            return Err("Tunnel authorization ended".into());
+        }
+        tx.commit().map_err(|error| error.to_string())
     })
     .await
     .map_err(|e| format!("persist tunnel spec join failed: {e}"))?
+}
+
+pub(super) async fn delete_host_bridge_tunnel(
+    id: String,
+    project: String,
+    guard: super::MutationGuard,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = open_db()?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let payload: String = tx
+            .query_row(
+                &format!("SELECT payload_json FROM {TUNNEL_SETTINGS_TABLE} WHERE tunnel_id = ?1"),
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Tunnel not found in this workspace")?;
+        let spec: StoredTunnelSpec =
+            serde_json::from_str(&payload).map_err(|_| "Tunnel not found in this workspace")?;
+        if spec.project_path_key != project {
+            return Err("Tunnel not found in this workspace".into());
+        }
+        if !guard() {
+            return Err("Tunnel authorization ended".into());
+        }
+        delete_tunnel_spec_sync(&tx, &id)?;
+        if !guard() {
+            return Err("Tunnel authorization ended".into());
+        }
+        tx.commit().map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("close tunnel join failed: {error}"))?
 }
 
 pub(super) async fn delete_tunnel_specs(tunnel_ids: Vec<String>) -> Result<(), String> {

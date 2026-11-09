@@ -24,7 +24,7 @@ const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFa
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 const fixtureTranslation = { t: key => key, useLocale: () => ({ locale: "zh-CN", t: key => key }) };
 
-async function mount(t, { initialURL, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false } = {}) {
+async function mount(t, { initialURL, initialHistoryConversation, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -375,8 +375,8 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
       return () => { if (captured !== accountRevision) throw new Error("Account changed while the request was pending"); };
     },
   };
-  env = await createWebDomTestEnv({ mocks: {
-    // Keep parent integration independent of Vite's dynamic preview imports, which the VM loader cannot execute.
+  env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: {
+    // Keep navigation assertions independent of the format-specific renderer.
     ...(readerHarness ? {
       "@liveagent/ui/components/resource-preview/ResourcePreview": {
         ResourceThumbnail:()=>null,
@@ -506,7 +506,10 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
         : measure.call(this);
     };
   }
-  window.history.replaceState({}, "", initialURL ?? (newDraft ? "/" : `/?conversation=${firstConversation}`));
+  const initialEntry = initialHistoryConversation
+    ? { zeroagentCloudRoute: { owner: 1, index: 0, conversation: initialHistoryConversation } }
+    : {};
+  window.history.replaceState(initialEntry, "", initialURL ?? (newDraft ? "/" : `/c/${firstConversation}`));
   const { CloudChatPage } = env.loadModule("src/pages/CloudChatPage.tsx");
   const SidebarProvider = realSidebar
     ? env.loadModule("../../agent-ui/src/components/ui/sidebar.tsx").SidebarProvider
@@ -621,7 +624,8 @@ async function mount(t, { initialURL, initialRun = null, uncertain = false, dela
 
 test("the library rail returns to the scoped list after a failed read and visiting tasks and chat", async (t) => {
   const app = await mount(t, {
-    initialURL: `/space/folders/qa-folder?scope=starred&type=document&conversation=${defaultConversation}`,
+    initialURL: "/space/folders/qa-folder?scope=starred&type=document",
+    initialHistoryConversation: defaultConversation,
     initialRun: snapshot({ output: "继续运行的输出" }),
     realSidebar: true,
   });
@@ -1092,7 +1096,8 @@ test("library Work with AI restores the split view and original draft after task
 
 test("a compact library reader action returns to the original composer with the selected file", async (t) => {
   const app = await mount(t, {
-    initialURL: `/space/files/${fileId}?work=1&conversation=${fileConversation}`,
+    initialURL: `/space/files/${fileId}?work=1`,
+    initialHistoryConversation: fileConversation,
     fileMode: true,
     initialFiles: [fileRecord()],
     initialDraftText: "",
@@ -1967,10 +1972,10 @@ test("settings sections use one entry and back preserves the underlying reader b
 });
 
 test("a direct settings link returns inside the account without traversing an external entry", async (t) => {
-  const app = await mount(t, { initialURL: `/settings/providers?conversation=${defaultConversation}` });
+  const app = await mount(t, { initialURL: "/settings/providers" });
   const length = window.history.length;
   await app.click("[data-settings-back]");
-  assert.equal(window.location.pathname, `/c/${defaultConversation}`);
+  assert.equal(window.location.pathname, "/");
   assert.equal(window.history.length, length);
 });
 

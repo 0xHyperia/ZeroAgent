@@ -16,8 +16,6 @@ export function resolveKBrainPermissionMode(
   switch (mode) {
     case "autoEdit":
       return "auto_edit";
-    case "auto":
-      return "full_access";
     case "always":
       return "always";
     case "autoReview":

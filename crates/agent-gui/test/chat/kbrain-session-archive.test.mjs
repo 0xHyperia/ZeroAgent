@@ -475,7 +475,7 @@ test("the row menu offers Archive only when the backend can archive", async () =
   try {
     await openMenu(without);
     assert.ok(menuItem("chat.conversationDelete"));
-    assert.equal(menuItem("chat.conversationArchive"), undefined);
+    assert.equal(menuItem("chat.workspaceArchive"), undefined);
   } finally {
     await without.cleanup();
   }
@@ -484,7 +484,9 @@ test("the row menu offers Archive only when the backend can archive", async () =
   const row = mount(rowElement({ onSetArchived: (id, value) => archived.push([id, value]) }));
   try {
     await openMenu(row);
-    await act(async () => menuItem("chat.conversationArchive").click());
+    const archive = menuItem("chat.workspaceArchive");
+    assert.ok(archive);
+    await act(async () => archive.click());
     assert.deepEqual(archived, [["one", true]]);
   } finally {
     await row.cleanup();

@@ -338,9 +338,7 @@ func kbrainOptions(body handler.ChatRequestBody) *kbrain.RunOptions {
 	switch body.CommandSafetyMode {
 	case "autoEdit":
 		options.PermissionMode = "auto_edit"
-	case "auto":
-		options.PermissionMode = "full_access"
-	case "always":
+	case "auto", "always":
 		options.PermissionMode = "always"
 	case "autoReview":
 		options.PermissionMode = "auto_review"

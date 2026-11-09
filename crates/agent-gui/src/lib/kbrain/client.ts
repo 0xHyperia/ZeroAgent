@@ -747,6 +747,13 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     if (!health || !hasFrozenCapability(health, MCP_ELICITATION_CAPABILITY)) {
       delete scoped.mcp_elicitation;
     }
+    if (!health || !hasFrozenCapability(health, "zeroagent_account_host_bridge")) {
+      delete scoped.zeroagent_desktop_host_tools;
+      if (scoped.tools?.policies?.TunnelManager) {
+        const { TunnelManager: _unsupported, ...policies } = scoped.tools.policies;
+        scoped.tools = { ...scoped.tools, policies };
+      }
+    }
     return scoped;
   }
 

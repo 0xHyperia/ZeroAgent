@@ -306,7 +306,7 @@ export type ToolPolicy = "allow" | "ask" | "deny";
 
 // 命令执行方式(对话框内切换,单一互斥维度):
 // - ask:每次带副作用的工具调用都请求用户批准(只读工具不拦)。
-// - auto:按工具审批策略直接执行(既有默认行为)。
+// - always:跳过常规审批，仍受后端权限规则约束。
 // - sandbox / sandboxOffline:Bash 与常驻进程在 OS 级沙箱内执行(macOS
 //   Seatbelt / Linux bubblewrap / Windows 受限令牌 WRITE_RESTRICTED),写入限
 //   工作区+临时目录;offline 变体额外断网。Windows 免管理员双后端:sandbox=受限
@@ -314,7 +314,6 @@ export type ToolPolicy = "allow" | "ask" | "deny";
 //   loopback,默认拒读 ⇒ 系统目录/工作区可读、用户主目录等敏感目录读掩蔽)。
 export type CommandSafetyMode =
   | "ask"
-  | "auto"
   | "autoEdit"
   | "always"
   | "autoReview"
@@ -323,7 +322,6 @@ export type CommandSafetyMode =
 
 export const COMMAND_SAFETY_MODES: readonly CommandSafetyMode[] = [
   "ask",
-  "auto",
   "autoEdit",
   "always",
   "autoReview",

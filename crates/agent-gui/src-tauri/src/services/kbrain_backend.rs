@@ -113,6 +113,8 @@ pub struct KBrainBackendManager {
     configuration: Arc<crate::services::configuration_coordinator::ConfigurationCoordinator>,
     configuration_root: PathBuf,
     mcp_credentials: Mutex<Option<crate::services::mcp_oauth::broker::NativeCredentialBroker>>,
+    #[cfg(desktop)]
+    host_bridge: Mutex<Option<(u64, super::host_bridge::HostBridge)>>,
 }
 
 struct McpCredentialOwner {
@@ -450,6 +452,8 @@ impl KBrainBackendManager {
             configuration,
             configuration_root: backend_dir,
             mcp_credentials: Mutex::new(mcp_credentials),
+            #[cfg(desktop)]
+            host_bridge: Mutex::new(None),
         }))
     }
 
@@ -527,6 +531,10 @@ impl KBrainBackendManager {
     }
 
     pub fn shutdown(&self) {
+        #[cfg(desktop)]
+        if let Ok(mut bridge) = self.host_bridge.lock() {
+            bridge.take();
+        }
         self.stop_mcp_credentials();
         self.stop_facade();
         // Release the process mutex before waiting for the child tree.
@@ -998,14 +1006,100 @@ impl KBrainBackendState {
             .map_err(|error| format!("failed to resolve ZeroAgent app data directory: {error}"))?;
         let binary = resolve_binary()?;
         // Never inherit another product's data root or silently import unowned history.
-        self.ensure_started_with_paths(
+        let connection = self.ensure_started_with_paths(
             binary,
             profile.backend_dir(&data_dir),
             None,
             epoch,
             #[cfg(test)]
             false,
-        )
+        )?;
+        #[cfg(desktop)]
+        if self.host_bridge_epoch_live(epoch) {
+            if let Err(error) = self.ensure_host_bridge(app, &connection, epoch) {
+                eprintln!("ZeroAgent host bridge is unavailable: {error}");
+            }
+        }
+        Ok(connection)
+    }
+
+    #[cfg(desktop)]
+    fn ensure_host_bridge(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        connection: &KBrainBackendConnection,
+        epoch: u64,
+    ) -> Result<(), String> {
+        use crate::{runtime::terminal::TerminalSessionRegistry, services::gateway::GatewayController};
+        let manager = self
+            .manager
+            .lock()
+            .map_err(|_| "Backend state unavailable")?
+            .as_ref()
+            .cloned()
+            .ok_or("Backend is unavailable")?;
+        // A manager with this broker has already verified the sidecar bytes
+        // against the compiled provenance. Do not hash the binary on reconnect.
+        let receipt: serde_json::Value = serde_json::from_str(env!("ZEROAGENT_MCP_BRIDGE_RECEIPT"))
+            .map_err(|_| "Native capability receipt is invalid")?;
+        if !receipt
+            .pointer("/zeroagentPatchSet/capabilities")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|caps| caps.iter().any(|cap| cap.as_str() == Some(super::host_bridge::CAPABILITY)))
+            || manager.mcp_credential_capability().is_none()
+        {
+            return Ok(());
+        }
+        let actual = manager.connection();
+        if actual.token != connection.token || actual.base_url != connection.base_url {
+            return Err("Backend connection changed".into());
+        }
+        let mut bridge = manager
+            .host_bridge
+            .lock()
+            .map_err(|_| "Host bridge state unavailable")?;
+        if bridge.as_ref().is_some_and(|(owner, _)| *owner == epoch) {
+            return Ok(());
+        }
+        bridge.take();
+        let lease = self
+            .profile_liveness
+            .lock()
+            .map_err(|_| "Account profile lease unavailable")?
+            .as_ref()
+            .cloned()
+            .ok_or("A verified account session is required")?;
+        let public = self.connection_tx.borrow().clone().ok_or("Backend facade is unavailable")?;
+        let gateway = app
+            .try_state::<Arc<GatewayController>>()
+            .ok_or("Gateway controller is unavailable")?;
+        let terminals = app
+            .try_state::<Arc<TerminalSessionRegistry>>()
+            .ok_or("Terminal registry is unavailable")?;
+        let backend = Arc::downgrade(self);
+        let process = Arc::downgrade(&manager);
+        let is_live = move || {
+            lease.load(Ordering::SeqCst)
+                && backend.upgrade().is_some_and(|state| state.host_bridge_epoch_live(epoch))
+                && process.upgrade().is_some_and(|manager| manager.is_running())
+        };
+        if !is_live() {
+            return Err("Backend or account session ended".into());
+        }
+        let registration = super::host_bridge::HostBridge::start(
+            actual, &public.base_url, Arc::clone(terminals.inner()), gateway.inner(), is_live,
+        )?;
+        *bridge = Some((epoch, registration));
+        Ok(())
+    }
+
+    #[cfg(desktop)]
+    fn host_bridge_epoch_live(&self, epoch: u64) -> bool {
+        self.profile_initialized.load(Ordering::SeqCst)
+            && self.account_bound.load(Ordering::SeqCst)
+            && self.account_live.load(Ordering::SeqCst)
+            && !self.exiting.load(Ordering::SeqCst)
+            && self.shutdown_epoch.load(Ordering::SeqCst) == epoch
     }
 
     fn activate_profile(
@@ -2033,6 +2127,22 @@ mod tests {
         assert!(unbound
             .verify_portable_backup(&serde_json::json!({"safe":true}))
             .is_err());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn bridge_epoch_requires_a_live_bound_account_and_changes_before_backend_shutdown() {
+        let state = KBrainBackendState::default();
+        assert!(!state.host_bridge_epoch_live(0));
+        state.profile_initialized.store(true, Ordering::SeqCst);
+        state.account_bound.store(true, Ordering::SeqCst);
+        state.account_live.store(true, Ordering::SeqCst);
+        assert!(state.host_bridge_epoch_live(0));
+        state.shutdown();
+        assert!(!state.host_bridge_epoch_live(0));
+        assert!(state.host_bridge_epoch_live(1));
+        state.account_live.store(false, Ordering::SeqCst);
+        assert!(!state.host_bridge_epoch_live(1));
     }
 
     #[test]
