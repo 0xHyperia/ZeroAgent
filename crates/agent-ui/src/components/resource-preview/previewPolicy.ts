@@ -36,7 +36,7 @@ export function resourcePreviewKind(
   if (["xlsx", "xls", "xlsm", "xltx", "xltm", "csv", "tsv", "ods"].includes(extension ?? ""))
     return "sheet";
   if (extension === "svg" || file.mime === "image/svg+xml") return "svg";
-  if (["html", "htm"].includes(extension ?? "")) return "html";
+  if (["html", "htm"].includes(extension ?? "") || file.mime === "text/html") return "html";
   if (["md", "markdown"].includes(extension ?? "")) return "markdown";
   if (
     ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp"].includes(

@@ -20,7 +20,6 @@ import {
   Info,
   Loader2,
   Maximize2,
-  Minimize2,
   Minus,
   Plus,
   RefreshCw,
@@ -55,17 +54,14 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { copyTextToClipboard as copySharedTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import {
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConversationReaderPanel } from "../resource-preview/ConversationReaderPanel";
+import { PreviewIdentityContext } from "../resource-preview/PreviewChrome";
+import { PreviewLoading, PreviewUnavailable } from "../resource-preview/PreviewFeedback";
 import { ResourcePreview } from "../resource-preview/ResourcePreview";
-import { ConversationReaderLayout } from "../resource-preview/conversationReaderLayout";
+import { ResourceTitleMenu } from "../resource-preview/ResourceReaderDetails";
+import { DropdownMenuItem } from "../ui/dropdown-menu";
+import { TooltipButton } from "../ui/tooltip-button";
 
 export type WorkspaceFilePreviewOpenRequest = {
   id: number;
@@ -73,6 +69,7 @@ export type WorkspaceFilePreviewOpenRequest = {
   workdir: string;
   path: string;
   imagePaths?: string[];
+  returnFocusTo?: HTMLElement;
 };
 
 type ReadWorkspacePreviewResponse = {
@@ -271,26 +268,6 @@ function getPreviewIcon(kind: WorkspacePreviewKind): FileTypeIconComponent {
 export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayProps) {
   const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose, reader } = props;
   const { t, locale } = useLocale();
-  const layout = useContext(ConversationReaderLayout);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!reader || !isOpen) return;
-    const trigger = document.activeElement;
-    const close = closeButton.current;
-    const panel = close?.closest(".cloud-resource-reader");
-    close?.focus({ preventScroll: true });
-    return () => {
-      if (!(trigger instanceof HTMLElement)) return;
-      requestAnimationFrame(() => {
-        if (
-          trigger.isConnected &&
-          (document.activeElement === document.body || panel?.contains(document.activeElement))
-        ) {
-          trigger.focus({ preventScroll: true });
-        }
-      });
-    };
-  }, [reader, isOpen]);
   const closeAnimationTimeoutRef = useRef<number | null>(null);
   const loadSequenceRef = useRef(0);
   const previewBlobUrlRef = useRef<string | null>(null);
@@ -425,7 +402,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     };
   }, [loadPreview, openRequest]);
 
-  const activePreviewRequest = activeRequest ?? openRequest;
+  const activePreviewRequest = activeRequest?.id === openRequest?.id ? activeRequest : openRequest;
   // The request comes from the workspace file tree and retains its full logical path.
   const activePath = activePreviewRequest?.path ?? preview?.path ?? "";
   const kind = preview?.kind ?? (activePath ? getWorkspacePreviewKind(activePath) : null) ?? "text";
@@ -464,45 +441,142 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     }
   }, [activePath, activePreviewRequest, t]);
 
+  const assertCurrent = (loaded: LoadedPreview) => {
+    if (
+      !currentProps.current.isOpen ||
+      previewRef.current !== loaded ||
+      currentProps.current.openRequest !== openRequest
+    ) {
+      throw new DOMException("预览目标已切换", "AbortError");
+    }
+  };
+  const downloadPreview = (loaded: LoadedPreview) => {
+    try {
+      assertCurrent(loaded);
+      void saveWorkspacePreviewImage({
+        data: loaded.data,
+        fileName: basename(loaded.path),
+        mimeType: loaded.mimeType,
+      }).catch((cause) => {
+        if (previewRef.current === loaded && currentProps.current.isOpen)
+          setError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
+      });
+    } catch (cause) {
+      setError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
+    }
+  };
+  const currentPreview = activeRequest?.id === openRequest?.id ? preview : null;
+  // The native bridge returns converted HTML for legacy Word/RTF files.
+  // Those bytes must not be saved as the original document.
+  const canDownload = Boolean(
+    currentPreview &&
+      !(currentPreview.mimeType === "text/html" && /\.(doc|rtf)$/i.test(currentPreview.path)),
+  );
+  const previewBody = currentPreview && (
+    <PreviewBody
+      preview={currentPreview}
+      workdir={activePreviewRequest?.workdir ?? ""}
+      activePath={activePath}
+      imagePaths={imagePaths}
+      imageTransitionDirection={imageTransitionDirection}
+      isSwitchingImage={loading && currentPreview.kind === "image"}
+      canOpenImageInSystemViewer={canOpenExternal}
+      onOpenImageInSystemViewer={() => void openExternal()}
+      onOpenImagePath={openImagePath}
+      onActionError={setError}
+      reader={reader}
+      assertCurrent={() => assertCurrent(currentPreview)}
+      onDownload={canDownload ? () => downloadPreview(currentPreview) : undefined}
+    />
+  );
+
+  if (reader) {
+    if (!isOpen || !activePreviewRequest) return null;
+    const name = basename(activePath);
+    const downloadLabel = locale === "zh-CN" ? "下载原件" : "Download original";
+    const reload = () => void loadPreview(activePreviewRequest, 0);
+    return (
+      <ConversationReaderPanel
+        title={
+          <ResourceTitleMenu name={name}>
+            <DropdownMenuItem className="gap-2" disabled={loading} onClick={reload}>
+              <RefreshCw className="size-4" />
+              {t("workspaceFilePreview.reload")}
+            </DropdownMenuItem>
+            {canOpenEditor && (
+              <DropdownMenuItem
+                className="gap-2"
+                onClick={() => onOpenEditor(activePreviewRequest)}
+              >
+                <FilePenLine className="size-4" />
+                {t("workspaceFilePreview.edit")}
+              </DropdownMenuItem>
+            )}
+            {canOpenExternal && (
+              <DropdownMenuItem className="gap-2" onClick={() => void openExternal()}>
+                <ExternalLink className="size-4" />
+                {t("workspaceFilePreview.openExternal")}
+              </DropdownMenuItem>
+            )}
+          </ResourceTitleMenu>
+        }
+        description={t("workspaceFilePreview.title")}
+        closeLabel={t("workspaceFilePreview.close")}
+        returnFocusTo={activePreviewRequest.returnFocusTo}
+        headerActions={
+          <TooltipButton
+            variant="ghost"
+            size="icon-sm"
+            data-reader-secondary=""
+            aria-label={downloadLabel}
+            tooltip={downloadLabel}
+            disabled={!canDownload || loading}
+            onClick={() => canDownload && currentPreview && downloadPreview(currentPreview)}
+          >
+            <Download className="size-4" />
+          </TooltipButton>
+        }
+        onClose={onRequestClose}
+      >
+        {error && activeRequest?.id === openRequest?.id && (
+          <PreviewUnavailable message={error} onRetry={reload} />
+        )}
+        {previewBody ??
+          (loading || !error || activeRequest?.id !== openRequest?.id ? (
+            <PreviewIdentityContext.Provider value={{ name, mime: "" }}>
+              <div className="cloud-reader-opening">
+                <PreviewLoading message={t("workspaceFilePreview.loading")} />
+              </div>
+            </PreviewIdentityContext.Provider>
+          ) : null)}
+      </ConversationReaderPanel>
+    );
+  }
+
   return (
     <div
-      role={reader ? "region" : undefined}
-      aria-label={reader ? t("workspaceFilePreview.title") : undefined}
-      onKeyDown={(event) => {
-        if (reader && event.key === "Escape" && !event.defaultPrevented) {
-          event.stopPropagation();
-          onRequestClose();
-        }
-      }}
       className={cn(
-        reader
-          ? "cloud-resource-reader"
-          : cn(
-              "workspace-file-preview-overlay absolute inset-0 flex min-h-0 min-w-0 transform-gpu",
-              "flex-col overflow-hidden border-r border-border bg-background",
-              "transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
-              workspaceOverlayStackClassName,
-              isVisible
-                ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
-                : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
-            ),
+        "workspace-file-preview-overlay absolute inset-0 flex min-h-0 min-w-0 transform-gpu",
+        "flex-col overflow-hidden border-r border-border bg-background",
+        "transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
+        workspaceOverlayStackClassName,
+        isVisible
+          ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
+          : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
       )}
-      hidden={reader && !isOpen}
-      style={reader && !isOpen ? { display: "none" } : undefined}
     >
-      {!reader && <WorkspaceOverlayTitleBar />}
+      <WorkspaceOverlayTitleBar />
       <div
         className={cn(
-          "flex h-11 shrink-0 items-center gap-2",
-          reader ? "bg-background px-3" : "border-b border-border bg-muted/45 px-3",
+          "flex h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/45 px-3",
         )}
       >
         <PreviewIcon className="size-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold leading-tight">
-            {reader ? basename(activePath) : t("workspaceFilePreview.title")}
+            {t("workspaceFilePreview.title")}
           </div>
-          {!reader && <div className="truncate text-xs text-muted-foreground">{activePath}</div>}
+          <div className="truncate text-xs text-muted-foreground">{activePath}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {canOpenEditor && activePreviewRequest ? (
@@ -554,31 +628,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           >
             <RefreshCw data-refresh-icon className={cn("size-4", loading && "animate-spin")} />
           </RefreshButton>
-          {reader && layout?.canSplit && (
-            <button
-              type="button"
-              className="inline-flex size-8 items-center justify-center rounded-md hover:bg-muted"
-              aria-label={
-                layout.expanded
-                  ? locale === "zh-CN"
-                    ? "并排阅读"
-                    : "Read side by side"
-                  : locale === "zh-CN"
-                    ? "展开阅读器"
-                    : "Expand reader"
-              }
-              onClick={layout.toggleExpanded}
-            >
-              {layout.expanded ? (
-                <Minimize2 className="size-4" />
-              ) : (
-                <Maximize2 className="size-4" />
-              )}
-            </button>
-          )}
           <button
-            ref={closeButton}
-            data-cloud-reader-return={reader || undefined}
             type="button"
             className={cn(
               "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors",
@@ -606,60 +656,37 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-hidden bg-muted/25">
-        {preview ? (
-          <PreviewBody
-            preview={preview}
-            workdir={activePreviewRequest?.workdir ?? ""}
-            activePath={activePath}
-            imagePaths={imagePaths}
-            imageTransitionDirection={imageTransitionDirection}
-            isSwitchingImage={loading && preview.kind === "image"}
-            canOpenImageInSystemViewer={canOpenExternal}
-            onOpenImageInSystemViewer={() => void openExternal()}
-            onOpenImagePath={openImagePath}
-            onActionError={setError}
-            reader={reader}
-            assertCurrent={() => {
-              if (
-                !currentProps.current.isOpen ||
-                previewRef.current !== preview ||
-                currentProps.current.openRequest !== openRequest
-              )
-                throw new DOMException("预览目标已切换", "AbortError");
-            }}
-          />
-        ) : loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "flex h-full flex-col items-center justify-center gap-3",
-              "text-center text-sm text-muted-foreground",
-            )}
-          >
-            <FileText className="size-7" />
-            <span>{t("workspaceFilePreview.empty")}</span>
-          </div>
-        )}
+        {previewBody ??
+          (loading ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "flex h-full flex-col items-center justify-center gap-3",
+                "text-center text-sm text-muted-foreground",
+              )}
+            >
+              <FileText className="size-7" />
+              <span>{t("workspaceFilePreview.empty")}</span>
+            </div>
+          ))}
       </div>
 
-      {!reader && (
-        <div
-          className={cn(
-            "flex h-8 shrink-0 items-center justify-between gap-3",
-            "border-t border-border bg-muted/35 px-3 text-xs text-muted-foreground",
-          )}
-        >
-          <span className="min-w-0 truncate">{activePath}</span>
-          {preview ? (
-            <span className="shrink-0">
-              {preview.mimeType} · {formatBytes(preview.sizeBytes)}
-            </span>
-          ) : null}
-        </div>
-      )}
+      <div
+        className={cn(
+          "flex h-8 shrink-0 items-center justify-between gap-3",
+          "border-t border-border bg-muted/35 px-3 text-xs text-muted-foreground",
+        )}
+      >
+        <span className="min-w-0 truncate">{activePath}</span>
+        {preview ? (
+          <span className="shrink-0">
+            {preview.mimeType} · {formatBytes(preview.sizeBytes)}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -676,6 +703,7 @@ function PreviewBody(props: {
   onOpenImagePath: (path: string, direction?: ImagePreviewTransitionDirection) => void;
   onActionError: (message: string | null) => void;
   assertCurrent: () => void;
+  onDownload?: () => void;
   reader?: boolean;
 }) {
   const {
@@ -690,7 +718,6 @@ function PreviewBody(props: {
     onOpenImagePath,
     onActionError,
   } = props;
-  const { t } = useLocale();
   if (
     [
       "document",
@@ -702,14 +729,11 @@ function PreviewBody(props: {
       "video",
       "text",
     ].includes(preview.kind) ||
-    (props.reader &&
-      (preview.kind === "markdown" || (preview.kind === "image" && imagePaths.length < 2)))
+    (props.reader && (preview.kind !== "image" || imagePaths.length < 2))
   ) {
     return (
       <div
-        className={
-          props.reader ? "cloud-reader-body h-full" : "h-full overflow-auto bg-background px-3 pb-3"
-        }
+        className={props.reader ? "min-h-0 flex-1" : "h-full overflow-auto bg-background px-3 pb-3"}
       >
         <ResourcePreview
           key={`${workdir}:${preview.path}:${preview.contentHash}`}
@@ -736,25 +760,7 @@ function PreviewBody(props: {
               assertCurrent,
             };
           }}
-          onDownload={() => {
-            try {
-              props.assertCurrent();
-              void saveWorkspacePreviewImage({
-                data: preview.data,
-                fileName: basename(preview.path),
-                mimeType: preview.mimeType,
-              }).catch((cause) => {
-                try {
-                  props.assertCurrent();
-                } catch {
-                  return;
-                }
-                onActionError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
-              });
-            } catch (cause) {
-              onActionError(toMessage(cause, t("workspaceFilePreview.renderFailed")));
-            }
-          }}
+          onDownload={props.onDownload}
         />
       </div>
     );

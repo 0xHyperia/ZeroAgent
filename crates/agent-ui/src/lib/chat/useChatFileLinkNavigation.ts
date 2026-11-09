@@ -1,7 +1,8 @@
 import { workspaceProjectPathKey } from "@liveagent/app/lib/settings";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type { WorkspaceFilePreviewOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
-import { useCallback } from "react";
+import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import { useCallback, useRef } from "react";
 import type { ChatFileLink } from "./chatFileLinks";
 import {
   type OpenChatFileLinkParams,
@@ -45,6 +46,9 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
     openLink = openChatFileLink,
     getErrorMessage = defaultErrorMessage,
   } = params;
+  const scope = `${conversationId}\0${conversationWorkdir}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
 
   return useCallback(
     (link: ChatFileLink) => {
@@ -54,8 +58,11 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
         return;
       }
       const request = { ...link, conversationId, workdir };
+      const returnFocusTo =
+        document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
       void openLink(request)
         .then(async (result) => {
+          if (currentScope.current !== scope) return;
           if (result.action === "opened" || result.action === "revealed") return;
           const resultWorkdir = result.workdir?.trim() ?? "";
           const resultPath = result.path?.trim() ?? "";
@@ -85,8 +92,11 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
           ) {
             onRevealInFileTree(resultPath);
           }
-          if (result.action === "preview") {
-            openWorkspaceFilePreview(workspaceRequest);
+          if (
+            result.action === "preview" ||
+            (link.preferPreview && isWorkspacePreviewPath(resultPath))
+          ) {
+            openWorkspaceFilePreview({ ...workspaceRequest, returnFocusTo });
             return;
           }
           openWorkspaceEditorFile({
@@ -97,6 +107,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
           });
         })
         .catch((error: unknown) => {
+          if (currentScope.current !== scope) return;
           const message = getErrorMessage(error);
           const normalized = message.toLowerCase();
           notifyError(
@@ -117,6 +128,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
       openLink,
       openWorkspaceEditorFile,
       openWorkspaceFilePreview,
+      scope,
       terminalProjectPathKey,
     ],
   );

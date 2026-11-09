@@ -3,6 +3,9 @@ import {
   workspaceOverlayStackClassName,
 } from "@liveagent/adapters/workspacePreview";
 import type { AppSettings, EffectiveTheme } from "@liveagent/app/lib/settings";
+import { ConversationReaderPanel } from "@liveagent/ui/components/resource-preview/ConversationReaderPanel";
+import { PreviewIdentityContext } from "@liveagent/ui/components/resource-preview/PreviewChrome";
+import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type {
   WorkspaceFilePreviewOpenRequest,
@@ -110,15 +113,27 @@ export function WorkspaceFileReader(
     locale: AppSettings["locale"];
   },
 ) {
+  const { openRequest, isOpen, locale, onRequestClose } = props;
+  const name =
+    openRequest?.path.split(/[/\\]/).at(-1) || translate("workspaceFilePreview.title", locale);
   return (
     <Suspense
       fallback={
-        <div
-          className="cloud-resource-reader items-center justify-center text-sm text-muted-foreground"
-          role="status"
-        >
-          {translate("workspaceFilePreview.loading", props.locale)}
-        </div>
+        isOpen && (
+          <ConversationReaderPanel
+            title={name}
+            description={translate("workspaceFilePreview.title", locale)}
+            closeLabel={translate("workspaceFilePreview.close", locale)}
+            returnFocusTo={openRequest?.returnFocusTo}
+            onClose={onRequestClose}
+          >
+            <PreviewIdentityContext.Provider value={{ name, mime: "" }}>
+              <div className="cloud-reader-opening">
+                <PreviewLoading message={translate("workspaceFilePreview.loading", locale)} />
+              </div>
+            </PreviewIdentityContext.Provider>
+          </ConversationReaderPanel>
+        )
       }
     >
       <WorkspaceFilePreviewOverlay {...props} reader />

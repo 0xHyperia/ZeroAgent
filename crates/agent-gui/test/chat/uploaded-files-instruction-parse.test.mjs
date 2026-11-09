@@ -4,6 +4,7 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const loader = createTsModuleLoader();
 const uploadedFiles = loader.loadModule("@liveagent/ui/lib/chat/uploadedFiles.ts");
+const { chatAttachmentFileLink } = loader.loadModule("@liveagent/ui/lib/chat/chatFileLinks.ts");
 
 const {
   buildUserMessageContentWithUploads,
@@ -16,6 +17,25 @@ const {
 
 const WORKSPACE = "C:\\work\\project";
 const STAGING = "C:\\Users\\AlphaCat\\.liveagent\\uploads";
+
+test("restored Word and CSV attachment cards open the original staged file", () => {
+  const attachments = [
+    stagedFile("42", "设计方案#L2.docx", "word", 512),
+    stagedFile("42", "orders%20.csv", "spreadsheet", 256),
+  ];
+  const message = createUserMessageWithUploads("Read these", attachments, 1000);
+  const { attachments: restored } = parseUserMessageContentWithUploads(message.content, WORKSPACE);
+  assert.deepEqual(restored.map(chatAttachmentFileLink), attachments.map((file) => ({
+    path: file.absolutePath,
+    source: "absolute",
+    preferPreview: true,
+  })));
+  assert.deepEqual(chatAttachmentFileLink({ relativePath: "reports/orders.csv" }), {
+    path: "reports/orders.csv",
+    source: "relative",
+    preferPreview: true,
+  });
+});
 
 test("keeps image-edit geometry out of the live and restored message text", () => {
   const original = stagedFile("42", "original.png", "image", 2048);

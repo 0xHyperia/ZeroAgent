@@ -1,5 +1,5 @@
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
-import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import {
   type PendingUploadedFile,
@@ -45,8 +45,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
   } = props;
   const item = row.item;
   const openAttachment = props.onOpenFileLink
-    ? (file: PendingUploadedFile) =>
-        props.onOpenFileLink?.({ path: file.relativePath, source: "relative" })
+    ? (file: PendingUploadedFile) => props.onOpenFileLink?.(chatAttachmentFileLink(file))
     : undefined;
 
   const effectiveMessageRef = item.messageRef;

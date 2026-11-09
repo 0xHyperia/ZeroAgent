@@ -4,6 +4,8 @@ export type ChatFileLink = {
   endLine?: number;
   column?: number;
   source: "absolute" | "relative" | "file-url";
+  /** Attachment cards prefer the reader for file types it supports. */
+  preferPreview?: boolean;
   /** Set by the link's context menu to reveal the target in the host file
    * manager; never parsed from or encoded into message text. */
   openInFileManager?: boolean;
@@ -55,6 +57,16 @@ function isAbsolutePath(path: string) {
     ABSOLUTE_POSIX_PATH_PATTERN.test(path) ||
     HOME_ANCHORED_PATH_PATTERN.test(path)
   );
+}
+
+export function chatAttachmentFileLink(file: {
+  absolutePath?: string;
+  relativePath: string;
+}): ChatFileLink {
+  // The stored upload path is literal. Unlike a Markdown link it has no line
+  // suffix or URL encoding, and may live outside the conversation workdir.
+  const path = file.absolutePath?.trim() || file.relativePath;
+  return { path, source: isAbsolutePath(path) ? "absolute" : "relative", preferPreview: true };
 }
 
 function parseTrailingLocation(value: string) {
