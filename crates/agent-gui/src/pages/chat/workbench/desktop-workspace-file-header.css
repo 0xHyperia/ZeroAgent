@@ -1,0 +1,93 @@
+.za-workspace-file-header {
+  container: workspace-file-header / inline-size;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--za-surface);
+}
+
+.za-workspace-file-path,
+.za-workspace-file-path-segment {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.za-workspace-file-path {
+  min-width: 36px;
+  margin-inline-end: auto;
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  padding: 1px 2px;
+}
+
+.za-workspace-file-path-segment:last-child {
+  font-weight: 550;
+}
+
+.za-workspace-file-path-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 3px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+button.za-workspace-file-path-label:hover,
+button.za-workspace-file-path-label[aria-expanded="true"] {
+  background: var(--za-control-hover);
+}
+
+.za-workspace-file-actions,
+.za-workspace-file-open,
+.za-workspace-file-format-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.za-workspace-file-actions {
+  margin-inline-start: auto;
+}
+
+.za-workspace-file-actions > button,
+.za-workspace-file-open {
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+}
+
+.za-workspace-file-open {
+  gap: 0;
+}
+
+.za-workspace-file-open button:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.za-workspace-file-open button:last-child {
+  border-radius: 0 999px 999px 0;
+}
+
+.za-workspace-file-format-tools:empty {
+  display: none;
+}
+
+@container workspace-file-header (width < 560px) {
+  .za-workspace-file-action-label {
+    display: none;
+  }
+}
+
+@container workspace-file-header (width < 460px) {
+  .za-workspace-file-path-segment:not(:first-child, :last-child) {
+    display: none;
+  }
+}

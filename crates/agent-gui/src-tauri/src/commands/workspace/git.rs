@@ -19,6 +19,9 @@ use crate::runtime::process::{
     terminate_process_tree_by_pid,
 };
 
+#[path = "git_turn_review.rs"]
+pub mod turn_review;
+
 const GIT_DIFF_MAX_BYTES: usize = 512 * 1024;
 const GIT_UNTRACKED_FILE_MAX_BYTES: u64 = 128 * 1024;
 const GIT_COMMAND_TIMEOUT_SECS: u64 = 60;
@@ -132,6 +135,8 @@ pub struct GitDiffResponse {
     pub head_ref: String,
     pub mode: String,
     pub files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<GitCommitFile>,
     pub patch: String,
     pub stat: String,
     pub truncated: bool,
@@ -644,6 +649,15 @@ fn git_output_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Output, String> {
+    git_output_configured(workdir, args, timeout, |_| {})
+}
+
+fn git_output_configured(
+    workdir: &str,
+    args: &[&str],
+    timeout: Duration,
+    configure: impl FnOnce(&mut Command),
+) -> Result<Output, String> {
     // On Windows, creating a file whose name collides with an existing directory returns
     // AccessDenied, which tempfile cannot retry as AlreadyExists. Keep Git captures out of
     // the default .tmp namespace used by temporary directories and use a longer suffix.
@@ -670,7 +684,7 @@ fn git_output_with_timeout(
         .iter()
         .map(|arg| strip_windows_verbatim_prefix(PathBuf::from(arg)))
         .collect();
-    let mut child = command
+    command
         .args(process_args)
         .current_dir(process_workdir)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -680,7 +694,9 @@ fn git_output_with_timeout(
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_target))
-        .stderr(Stdio::from(stderr_target))
+        .stderr(Stdio::from(stderr_target));
+    configure(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("git 执行失败：{error}"))?;
     let Some(status) = child
@@ -1724,7 +1740,7 @@ fn append_untracked_file_patches(
     binary_files: &mut Vec<String>,
 ) -> Result<(), String> {
     for entry in entries.iter().filter(|entry| entry.untracked) {
-        if path_filter.is_some_and(|path| path != entry.path) {
+        if !repo_path_matches_filter(&entry.path, path_filter) {
             continue;
         }
         match build_untracked_file_patch(repo_root, &entry.path)? {
@@ -1748,7 +1764,7 @@ fn append_initial_worktree_file_patches(
     binary_files: &mut Vec<String>,
 ) -> Result<(), String> {
     for entry in entries {
-        if path_filter.is_some_and(|path| path != entry.path) {
+        if !repo_path_matches_filter(&entry.path, path_filter) {
             continue;
         }
         let clean_path = validate_repo_relative_path(&entry.path)?;
@@ -1766,6 +1782,25 @@ fn append_initial_worktree_file_patches(
         }
     }
     Ok(())
+}
+
+fn repo_path_matches_filter(entry: &str, path: Option<&str>) -> bool {
+    path.is_none_or(|path| {
+        let path = path.trim_end_matches('/');
+        entry == path
+            || entry
+                .strip_prefix(path)
+                .is_some_and(|rest| rest.starts_with('/'))
+    })
+}
+
+fn untracked_review_change(path: &str) -> GitCommitFile {
+    GitCommitFile {
+        path: path.to_string(),
+        old_path: None,
+        status: "A".to_string(),
+        kind: "untracked".to_string(),
+    }
 }
 
 fn operation_response(
@@ -2322,6 +2357,30 @@ fn parse_name_status_records(raw: &str) -> Vec<GitCommitFile> {
     files
 }
 
+fn read_review_changes(repo_root: &str, args: &[&str]) -> Result<Vec<GitCommitFile>, String> {
+    let mut options = true;
+    let args: Vec<&str> = args
+        .iter()
+        .map(|arg| {
+            if !options {
+                return *arg;
+            }
+            match *arg {
+                "--" => {
+                    options = false;
+                    "--"
+                }
+                "--patch" => "--name-status",
+                "--stat" => "-z",
+                other => other,
+            }
+        })
+        .collect();
+    Ok(parse_name_status_records(
+        &git_success(repo_root, &args)?.stdout,
+    ))
+}
+
 fn clean_git_ref_label(raw: &str) -> Option<String> {
     let mut value = raw.trim();
     if value.is_empty() {
@@ -2859,6 +2918,7 @@ pub(crate) fn git_compare_commit_with_remote_sync(
         head_ref: commit,
         mode: "remote_compare".to_string(),
         files,
+        changes: Vec::new(),
         patch,
         stat,
         truncated,
@@ -2886,6 +2946,7 @@ pub(crate) fn git_commit_diff_sync(
         .to_string();
     let mut args: Vec<String> = if first_parent.is_empty() {
         vec![
+            "--literal-pathspecs".to_string(),
             "show".to_string(),
             "--format=".to_string(),
             "--patch".to_string(),
@@ -2895,6 +2956,7 @@ pub(crate) fn git_commit_diff_sync(
         ]
     } else {
         vec![
+            "--literal-pathspecs".to_string(),
             "diff".to_string(),
             "--patch".to_string(),
             "--stat".to_string(),
@@ -2903,12 +2965,13 @@ pub(crate) fn git_commit_diff_sync(
             commit.clone(),
         ]
     };
+    args.push("--".to_string());
     if let Some(path) = clean_path.as_deref() {
-        args.push("--".to_string());
         args.push(path.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = git_success(&state.repo_root, &arg_refs)?;
+    let changes = read_review_changes(&state.repo_root, &arg_refs)?;
     let (stat, patch) = split_stat_and_patch(&output.stdout);
     let (patch, truncated) = truncate_patch(patch);
     Ok(GitDiffResponse {
@@ -2919,7 +2982,8 @@ pub(crate) fn git_commit_diff_sync(
         },
         head_ref: commit,
         mode: "commit".to_string(),
-        files: clean_path.into_iter().collect(),
+        files: changes.iter().map(|change| change.path.clone()).collect(),
+        changes,
         patch,
         stat,
         truncated,
@@ -2938,11 +3002,6 @@ pub(crate) fn git_diff_sync(
         .as_deref()
         .map(validate_repo_relative_path)
         .transpose()?;
-    let files = state
-        .entries
-        .iter()
-        .map(|entry| entry.path.clone())
-        .collect();
     let has_head = ref_exists(&state.repo_root, "HEAD");
     if mode == "working_tree" && !has_head {
         let mut patch = String::new();
@@ -2954,12 +3013,22 @@ pub(crate) fn git_diff_sync(
             &mut patch,
             &mut binary_files,
         )?;
+        let changes: Vec<_> = state
+            .entries
+            .iter()
+            .filter(|entry| {
+                repo_path_matches_filter(&entry.path, clean_path.as_deref())
+                    && Path::new(&state.repo_root).join(&entry.path).exists()
+            })
+            .map(|entry| untracked_review_change(&entry.path))
+            .collect();
         let (patch, truncated) = truncate_patch(patch);
         return Ok(GitDiffResponse {
             base_ref: "ROOT".to_string(),
             head_ref: "WORKTREE".to_string(),
             mode,
-            files,
+            files: changes.iter().map(|change| change.path.clone()).collect(),
+            changes,
             patch,
             stat: String::new(),
             truncated,
@@ -2969,9 +3038,11 @@ pub(crate) fn git_diff_sync(
     let mut base_ref = String::new();
     let mut head_ref = "HEAD".to_string();
     let mut args: Vec<String> = vec![
+        "--literal-pathspecs".to_string(),
         "diff".to_string(),
         "--patch".to_string(),
         "--stat".to_string(),
+        "--find-renames".to_string(),
     ];
     if mode == "working_tree" {
         args.push("HEAD".to_string());
@@ -2983,8 +3054,21 @@ pub(crate) fn git_diff_sync(
             "ROOT".to_string()
         };
         head_ref = "INDEX".to_string();
+    } else if mode == "unstaged" {
+        base_ref = "INDEX".to_string();
+        head_ref = "WORKTREE".to_string();
     } else {
-        base_ref = resolve_review_base(&state);
+        base_ref = if let Some(reference) = mode.strip_prefix("branch:") {
+            if !(reference.starts_with("refs/heads/") || reference.starts_with("refs/remotes/"))
+                || git_success(&state.repo_root, &["check-ref-format", reference]).is_err()
+                || !ref_exists(&state.repo_root, reference)
+            {
+                return Err("找不到选定的基线分支。".to_string());
+            }
+            reference.to_string()
+        } else {
+            resolve_review_base(&state)
+        };
         if base_ref.is_empty() {
             return Err(
                 "找不到可用于审查的基线分支。请先设置 upstream 或 fetch 主分支。".to_string(),
@@ -2992,15 +3076,16 @@ pub(crate) fn git_diff_sync(
         }
         args.push(format!("{base_ref}...HEAD"));
     }
+    args.push("--".to_string());
     if let Some(path) = clean_path.as_deref() {
-        args.push("--".to_string());
         args.push(path.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = git_success(&state.repo_root, &arg_refs)?;
+    let mut changes = read_review_changes(&state.repo_root, &arg_refs)?;
     let (stat, mut patch) = split_stat_and_patch(&output.stdout);
     let mut binary_files = Vec::new();
-    if mode == "working_tree" {
+    if matches!(mode.as_str(), "working_tree" | "unstaged") {
         append_untracked_file_patches(
             &state.repo_root,
             &state.entries,
@@ -3008,6 +3093,15 @@ pub(crate) fn git_diff_sync(
             &mut patch,
             &mut binary_files,
         )?;
+        changes.extend(
+            state
+                .entries
+                .iter()
+                .filter(|entry| {
+                    entry.untracked && repo_path_matches_filter(&entry.path, clean_path.as_deref())
+                })
+                .map(|entry| untracked_review_change(&entry.path)),
+        );
     }
     let (patch, truncated) = truncate_patch(patch);
     if mode == "working_tree" {
@@ -3018,7 +3112,8 @@ pub(crate) fn git_diff_sync(
         base_ref,
         head_ref,
         mode,
-        files,
+        files: changes.iter().map(|change| change.path.clone()).collect(),
+        changes,
         patch,
         stat,
         truncated,
@@ -4595,6 +4690,91 @@ mod tests {
             "staged diff included worktree-only content:\n{}",
             diff.patch
         );
+    }
+
+    #[test]
+    fn git_review_scope_keeps_index_worktree_and_literal_path_separate() {
+        if Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let temp = tempfile::tempdir().expect("temp repo");
+        let workdir = temp.path().to_string_lossy().to_string();
+        let initialized =
+            git_init_sync(workdir.clone(), "main".to_string(), None, None).expect("init repo");
+        assert!(initialized.ok, "init failed: {}", initialized.message);
+        fs::create_dir(temp.path().join("src")).expect("workspace subdirectory");
+        fs::create_dir(temp.path().join("src-other")).expect("sibling subdirectory");
+        for path in ["src/[a].txt", "src/a.txt", "src-other/no.txt"] {
+            fs::write(temp.path().join(path), "staged content\n").expect("write staged file");
+        }
+        git_success(&workdir, &["add", "."]).expect("stage repository");
+        for path in ["src/[a].txt", "src/a.txt", "src-other/no.txt"] {
+            fs::write(temp.path().join(path), "worktree content\n").expect("write worktree file");
+        }
+        fs::write(temp.path().join("src/new.txt"), "untracked content\n")
+            .expect("write untracked file");
+        let unstaged = git_diff_sync(workdir.clone(), Some("unstaged".into()), Some("src".into()))
+            .expect("unstaged directory diff");
+        assert_eq!(unstaged.base_ref, "INDEX");
+        assert_eq!(unstaged.head_ref, "WORKTREE");
+        assert!(unstaged.patch.contains("-staged content"));
+        assert!(unstaged.patch.contains("+worktree content"));
+        assert!(unstaged.patch.contains("+untracked content"));
+        assert!(!unstaged.patch.contains("src-other/no.txt"));
+        assert!(unstaged
+            .changes
+            .iter()
+            .any(|change| change.path == "src/new.txt" && change.kind == "untracked"));
+
+        let literal = git_diff_sync(
+            workdir.clone(),
+            Some("unstaged".into()),
+            Some("src/[a].txt".into()),
+        )
+        .expect("literal filename diff");
+        assert_eq!(literal.files, ["src/[a].txt"]);
+        assert!(!literal.patch.contains("src/a.txt"));
+        let staged = git_diff_sync(workdir.clone(), Some("staged".into()), Some("src".into()))
+            .expect("staged directory diff");
+        assert_eq!(staged.head_ref, "INDEX");
+        assert!(staged.patch.contains("+staged content"));
+        assert!(!staged.patch.contains("worktree content"));
+        assert!(!staged.patch.contains("src-other/no.txt"));
+
+        let commit = |message| {
+            git_success(
+                &workdir,
+                &[
+                    "-c",
+                    "user.name=Review Test",
+                    "-c",
+                    "user.email=review@example.test",
+                    "commit",
+                    "-m",
+                    message,
+                ],
+            )
+            .expect("commit test files");
+        };
+        commit("Initial");
+        git_success(&workdir, &["branch", "review-base"]).expect("create review base");
+        git_success(&workdir, &["add", "--", "src/a.txt"]).expect("stage branch change");
+        commit("Update file");
+        let branch = git_diff_sync(
+            workdir.clone(),
+            Some("branch:refs/heads/review-base".into()),
+            Some("src".into()),
+        )
+        .expect("explicit branch diff");
+        assert_eq!(branch.base_ref, "refs/heads/review-base");
+        assert_eq!(branch.files, ["src/a.txt"]);
+        assert!(branch.patch.contains("+worktree content"));
+        assert!(git_diff_sync(
+            workdir,
+            Some("branch:refs/heads/review-base~1".into()),
+            None,
+        )
+        .is_err());
     }
 
     #[test]

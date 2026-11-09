@@ -2636,6 +2636,91 @@ pub async fn fs_read_workspace_image(
     .await
 }
 
+const MAX_HTML_PREVIEW_ASSET_BYTES: usize = 5 * 1024 * 1024;
+
+#[derive(Serialize)]
+pub struct WorkspacePreviewAsset {
+    mime_type: &'static str,
+    data: String,
+}
+
+fn html_preview_asset_mime(path: &Path) -> Option<&'static str> {
+    Some(match extension_lower(path)?.as_str() {
+        "css" => "text/css",
+        "js" | "mjs" => "text/javascript",
+        "json" => "application/json",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "vtt" => "text/vtt",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "ico" => "image/x-icon",
+        _ => infer_image_mime(path)?,
+    })
+}
+
+fn read_workspace_preview_asset(
+    workdir: &str,
+    path: &str,
+) -> Result<WorkspacePreviewAsset, FsError> {
+    if path.contains([':', '\\']) {
+        return Err(FsError::Other("Invalid HTML preview resource path".into()));
+    }
+    let root = canonicalize_workdir(workdir)?;
+    let relative = Path::new(path);
+    let mime_type = html_preview_asset_mime(relative)
+        .ok_or_else(|| FsError::Other("Unsupported HTML preview resource".into()))?;
+    let mut current = root.clone();
+    for component in relative.components() {
+        let Component::Normal(segment) = component else {
+            return Err(FsError::Other("Invalid HTML preview resource path".into()));
+        };
+        current.push(segment);
+        let metadata = fs::symlink_metadata(&current)?;
+        let linked = metadata.file_type().is_symlink();
+        #[cfg(windows)]
+        let linked = {
+            use std::os::windows::fs::MetadataExt;
+            linked || metadata.file_attributes() & 0x400 != 0
+        };
+        if linked {
+            return Err(FsError::Other(
+                "HTML preview resources cannot follow links".into(),
+            ));
+        }
+    }
+    let target = resolve_existing_file_target(&root, relative)?;
+    let file = fs::File::open(target)?;
+    let mut bytes = Vec::new();
+    file.take((MAX_HTML_PREVIEW_ASSET_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_HTML_PREVIEW_ASSET_BYTES {
+        return Err(FsError::Other("HTML preview resource is too large".into()));
+    }
+    Ok(WorkspacePreviewAsset {
+        mime_type,
+        data: BASE64_STANDARD.encode(bytes),
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fs_read_workspace_preview_asset(
+    workdir: String,
+    path: String,
+) -> Result<WorkspacePreviewAsset, FsCommandError> {
+    run_blocking_fs("fs_read_workspace_preview_asset", move || {
+        read_workspace_preview_asset(&workdir, &path).map_err(FsCommandError::from)
+    })
+    .await
+}
+
 fn fs_read_text_sync(
     workdir: String,
     path: String,
@@ -3553,6 +3638,108 @@ pub async fn fs_open_workspace_path(
 ) -> Result<OpenWorkspacePathResponse, FsCommandError> {
     run_blocking_fs("fs_open_workspace_path", move || {
         fs_open_workspace_path_sync(workdir, path, mode)
+    })
+    .await
+}
+
+#[cfg(target_os = "windows")]
+const WORKSPACE_EDITORS: [(&str, &str, &str); 3] = [
+    ("vscode", "Microsoft VS Code", "Code.exe"),
+    (
+        "vscode-insiders",
+        "Microsoft VS Code Insiders",
+        "Code - Insiders.exe",
+    ),
+    ("cursor", "Cursor", "Cursor.exe"),
+];
+
+#[cfg(target_os = "windows")]
+fn workspace_editor_install_roots() -> impl Iterator<Item = PathBuf> {
+    let user_programs = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.join("Programs"));
+    user_programs.into_iter().chain(
+        ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute()),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn installed_workspace_editor(
+    target: &str,
+    roots: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    let (_, directory, binary) = WORKSPACE_EDITORS.iter().find(|(id, _, _)| *id == target)?;
+    roots.into_iter().find_map(|root| {
+        let root = root.canonicalize().ok()?;
+        let expected = root.join(directory).join(binary);
+        let executable = expected.canonicalize().ok()?;
+        let matches_install_path = executable
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&expected.to_string_lossy());
+        (matches_install_path && executable.is_file()).then_some(executable)
+    })
+}
+
+#[tauri::command]
+pub async fn fs_workspace_editor_targets() -> Result<Vec<String>, FsCommandError> {
+    run_blocking_fs("fs_workspace_editor_targets", || {
+        #[cfg(target_os = "windows")]
+        return Ok(WORKSPACE_EDITORS
+            .iter()
+            .filter(|(id, _, _)| {
+                installed_workspace_editor(id, workspace_editor_install_roots()).is_some()
+            })
+            .map(|(id, _, _)| (*id).to_string())
+            .collect());
+        #[cfg(not(target_os = "windows"))]
+        Ok(Vec::new())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fs_open_workspace_editor(
+    workdir: String,
+    path: String,
+    editor: String,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<(), FsCommandError> {
+    run_blocking_fs("fs_open_workspace_editor", move || {
+        #[cfg(target_os = "windows")]
+        {
+            let executable = installed_workspace_editor(&editor, workspace_editor_install_roots())
+                .ok_or_else(|| FsError::Other("Editor is unavailable".to_string()))?;
+            let scope = resolve_scoped_fs_path(&workdir, &path)?;
+            let file = resolve_target(&scope.root, &scope.relative_path)
+                .map_err(|error| remap_scoped_path_error(&scope, error))?;
+            if !file.is_file() {
+                return Err(FsError::Other("Only regular files can be edited".to_string()).into());
+            }
+            let mut command = Command::new(executable);
+            if let Some(line) = line.filter(|line| *line > 0) {
+                command.arg("--goto").arg(format!(
+                    "{}:{line}:{}",
+                    display_path(&file),
+                    column.unwrap_or(1).max(1),
+                ));
+            } else {
+                command.arg(file);
+            }
+            crate::runtime::process::spawn_and_reap(&mut command)
+                .map(|_| ())
+                .map_err(|error| FsError::Other(format!("Failed to open editor: {error}")).into())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (workdir, path, editor, line, column);
+            Err(FsError::Other("Editor is unavailable on this platform".to_string()).into())
+        }
     })
     .await
 }
@@ -4759,6 +4946,65 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use zip::write::SimpleFileOptions;
 
+    #[test]
+    fn html_preview_assets_stay_inside_workspace_and_obey_limits() {
+        let root = tempfile::tempdir().expect("isolated workspace");
+        let workspace = root.path().join("project");
+        fs::create_dir_all(workspace.join("styles")).unwrap();
+        let styles = workspace.join("styles/theme.css");
+        fs::write(&styles, b"body { color: red }").unwrap();
+        fs::write(root.path().join("outside.css"), b"secret").unwrap();
+        fs::write(workspace.join("script.js"), b"alert(1)").unwrap();
+        fs::write(workspace.join("module.mjs"), b"export const ok = true").unwrap();
+        fs::write(workspace.join("module.json"), br#"{"ok":true}"#).unwrap();
+        fs::write(workspace.join("unsupported.exe"), b"not executable").unwrap();
+        let workdir = workspace.to_str().unwrap();
+        let result = read_workspace_preview_asset(workdir, "styles/theme.css").unwrap();
+        assert_eq!(result.mime_type, "text/css");
+        assert_eq!(
+            BASE64_STANDARD.decode(result.data).unwrap(),
+            b"body { color: red }"
+        );
+        for (path, mime) in [
+            ("script.js", "text/javascript"),
+            ("module.mjs", "text/javascript"),
+            ("module.json", "application/json"),
+        ] {
+            assert_eq!(
+                read_workspace_preview_asset(workdir, path)
+                    .unwrap()
+                    .mime_type,
+                mime
+            );
+        }
+        for path in [
+            "../outside.css",
+            "styles/../../outside.css",
+            "styles\\theme.css",
+            "unsupported.exe",
+        ] {
+            assert!(
+                read_workspace_preview_asset(workdir, path).is_err(),
+                "{path}"
+            );
+        }
+        #[cfg(unix)]
+        let symlink = std::os::unix::fs::symlink(&styles, workspace.join("alias.css"));
+        #[cfg(windows)]
+        let symlink = std::os::windows::fs::symlink_file(&styles, workspace.join("alias.css"));
+        #[cfg(any(unix, windows))]
+        if symlink.is_ok() {
+            assert!(read_workspace_preview_asset(workdir, "alias.css").is_err());
+        }
+        fs::OpenOptions::new()
+            .write(true)
+            .open(styles)
+            .unwrap()
+            .set_len((MAX_HTML_PREVIEW_ASSET_BYTES + 1) as u64)
+            .unwrap();
+        assert!(read_workspace_preview_asset(workdir, "styles/theme.css").is_err());
+    }
+
     fn unique_test_workdir(name: &str) -> PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -4844,6 +5090,26 @@ mod tests {
 
         assert_eq!(command.get_program(), std::ffi::OsStr::new("open"));
         assert_eq!(args, vec!["-R", "/tmp/Dangerous.prefPane"]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn workspace_editor_discovery_accepts_only_known_regular_binaries() {
+        let root = tempfile::tempdir().expect("create isolated install directory");
+        let vscode = root.path().join("Microsoft VS Code");
+        fs::create_dir_all(&vscode).expect("create expected install path");
+        fs::write(vscode.join("Code.exe"), b"fixture").expect("create fixture binary");
+        fs::create_dir_all(root.path().join("Cursor").join("Cursor.exe"))
+            .expect("create non-file candidate");
+
+        let roots = || [root.path().to_path_buf()];
+        assert_eq!(
+            installed_workspace_editor("vscode", roots()),
+            Some(vscode.join("Code.exe").canonicalize().unwrap()),
+        );
+        assert!(installed_workspace_editor("cursor", roots()).is_none());
+        assert!(installed_workspace_editor("vscode-insiders", roots()).is_none());
+        assert!(installed_workspace_editor("../program.exe", roots()).is_none());
     }
 
     #[cfg(target_os = "windows")]

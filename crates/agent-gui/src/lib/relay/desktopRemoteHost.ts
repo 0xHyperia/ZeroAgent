@@ -320,7 +320,18 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
         return response;
       },
     };
-    return { host, dispose };
+    return {
+      host,
+      dispose,
+      async openPrivateBrowserPort(id: string, url: string) {
+        requireCurrent();
+        await call("workbench_browser_loopback", {
+          id,
+          request: { action: "openGateway", bridgeId, url },
+        });
+        requireCurrent();
+      },
+    };
   } catch (error) {
     dispose();
     throw error;

@@ -82,12 +82,13 @@ type tunnelStream struct {
 
 // TunnelStreamLease is one visitor connection's claim on a tunnel.
 type TunnelStreamLease struct {
-	manager   *Manager
-	stream    *tunnelStream
-	slug      string
-	targetURL string
-	agentID   string
-	once      sync.Once
+	manager      *Manager
+	stream       *tunnelStream
+	slug         string
+	targetURL    string
+	agentID      string
+	privateAgent *AgentSession
+	once         sync.Once
 }
 
 func newTunnelRuntime() *tunnelRuntime {
@@ -511,6 +512,57 @@ func (m *Manager) releaseTunnelStream(stream *tunnelStream) {
 	}
 	stream.close()
 	m.tunnels.mu.Unlock()
+}
+
+// AcquirePrivateLoopback tracks a selected-device stream without creating a
+// tunnel record or publishing a visitor slug.
+func (m *Manager) AcquirePrivateLoopback(agentID, streamID string) (*TunnelStreamLease, error) {
+	agent, err := m.resolveSession(agentID)
+	if err != nil {
+		return nil, err
+	}
+	m.tunnels.mu.Lock()
+	defer m.tunnels.mu.Unlock()
+	if !m.IsOnline(agentID) {
+		return nil, ErrAgentOffline
+	}
+	if m.tunnels.streams[streamID] != nil {
+		return nil, ErrTunnelNotFound
+	}
+	count := 0
+	for _, active := range m.tunnels.streams {
+		if active.agentID == agentID && active.tunnelID == "" {
+			count++
+		}
+	}
+	if count >= 24 {
+		return nil, fmt.Errorf("too many private streams on this device")
+	}
+	stream := &tunnelStream{
+		streamID: streamID,
+		agentID:  agentID,
+		ch:       make(chan *gatewayv2.TunnelFrame, tunnelStreamChannelDepth),
+		done:     make(chan struct{}),
+	}
+	m.tunnels.streams[streamID] = stream
+	return &TunnelStreamLease{manager: m, stream: stream, agentID: agentID, privateAgent: agent}, nil
+}
+
+func (l *TunnelStreamLease) PrivateAgentDone() <-chan struct{} {
+	return l.privateAgent.Done()
+}
+
+// SendPrivateLoopback retains the original device connection across every frame,
+// including cancellation after that device reconnects with the same ID.
+func (l *TunnelStreamLease) SendPrivateLoopback(ctx context.Context, frame *gatewayv2.TunnelFrame) error {
+	if l.privateAgent == nil || frame.GetStreamId() != l.stream.streamID {
+		return ErrTunnelNotFound
+	}
+	return l.privateAgent.SendToAgentContext(ctx, &gatewayv2.GatewayEnvelope{
+		RequestId: l.stream.streamID,
+		Timestamp: time.Now().Unix(),
+		Payload:   &gatewayv2.GatewayEnvelope_TunnelFrame{TunnelFrame: frame},
+	})
 }
 
 // SendTunnelFrameToAgent 把访问者帧送往目标 Agent。

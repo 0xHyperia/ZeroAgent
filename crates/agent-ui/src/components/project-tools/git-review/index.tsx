@@ -7,6 +7,10 @@
 
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { GitBranch } from "../../IconSet";
+import { Button } from "../../ui/button";
+import { useRightDockToolContext } from "../RightDockContext";
+import { WorkspaceFileDiff } from "../WorkspaceFileDiff";
 import { GitReviewHistoryView } from "./HistoryView";
 import type { ChangeListSection, DiffViewKind, GitReviewStackedPane } from "./model";
 import { GitReviewStatusView } from "./StatusView";
@@ -25,6 +29,71 @@ type GitReviewPanelProps = {
 };
 
 export const GitReviewPanel = memo(function GitReviewPanel(props: GitReviewPanelProps) {
+  const context = useRightDockToolContext();
+  if (context.git.workspaceReview && context.clients.git)
+    return <WorkspaceReviewPanel active={props.active} />;
+  return <GitReviewOperationsPanel {...props} />;
+});
+
+function WorkspaceReviewPanel({ active = true }: GitReviewPanelProps) {
+  const { clients, cwd, git } = useRightDockToolContext();
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
+  const [operations, setOperations] = useState(false);
+  const review = git.workspaceReview;
+  if (!review || !clients.git) return null;
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div hidden={operations} className="min-h-0 flex-1">
+        <WorkspaceFileDiff
+          active={active && !operations}
+          client={clients.git}
+          workdir={cwd}
+          comparison={review.comparison}
+          conversationId={review.conversationId}
+          onComparisonChange={review.onComparisonChange}
+          onOpenFile={review.onOpenFile}
+          workspaceActivityClient={clients.workspaceActivity ?? undefined}
+          onInsertComposerSegments={git.onInsertComposerSegments}
+          toolbarActions={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => setOperations(true)}
+            >
+              <GitBranch className="size-3.5" />
+              {zh ? "Git 操作" : "Git actions"}
+            </Button>
+          }
+        />
+      </div>
+      {operations && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-10 shrink-0 items-center border-b border-border/70 px-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setOperations(false)}
+            >
+              {zh ? "返回审查" : "Back to review"}
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <GitReviewOperationsPanel active={active} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const GitReviewOperationsPanel = memo(function GitReviewOperationsPanel(
+  props: GitReviewPanelProps,
+) {
   const { active = true } = props;
   const { t } = useLocale();
   const panelRef = useRef<HTMLDivElement | null>(null);

@@ -95,6 +95,10 @@ const (
 	TunnelFrameKind_TUNNEL_FRAME_KIND_CANCEL              TunnelFrameKind = 13
 	TunnelFrameKind_TUNNEL_FRAME_KIND_PING                TunnelFrameKind = 14
 	TunnelFrameKind_TUNNEL_FRAME_KIND_PONG                TunnelFrameKind = 15
+	TunnelFrameKind_TUNNEL_FRAME_KIND_PRIVATE_OPEN        TunnelFrameKind = 16
+	TunnelFrameKind_TUNNEL_FRAME_KIND_PRIVATE_READY       TunnelFrameKind = 17
+	TunnelFrameKind_TUNNEL_FRAME_KIND_PRIVATE_DATA        TunnelFrameKind = 18
+	TunnelFrameKind_TUNNEL_FRAME_KIND_PRIVATE_END         TunnelFrameKind = 19
 )
 
 // Enum value maps for TunnelFrameKind.
@@ -116,6 +120,10 @@ var (
 		13: "TUNNEL_FRAME_KIND_CANCEL",
 		14: "TUNNEL_FRAME_KIND_PING",
 		15: "TUNNEL_FRAME_KIND_PONG",
+		16: "TUNNEL_FRAME_KIND_PRIVATE_OPEN",
+		17: "TUNNEL_FRAME_KIND_PRIVATE_READY",
+		18: "TUNNEL_FRAME_KIND_PRIVATE_DATA",
+		19: "TUNNEL_FRAME_KIND_PRIVATE_END",
 	}
 	TunnelFrameKind_value = map[string]int32{
 		"TUNNEL_FRAME_KIND_UNSPECIFIED":         0,
@@ -134,6 +142,10 @@ var (
 		"TUNNEL_FRAME_KIND_CANCEL":              13,
 		"TUNNEL_FRAME_KIND_PING":                14,
 		"TUNNEL_FRAME_KIND_PONG":                15,
+		"TUNNEL_FRAME_KIND_PRIVATE_OPEN":        16,
+		"TUNNEL_FRAME_KIND_PRIVATE_READY":       17,
+		"TUNNEL_FRAME_KIND_PRIVATE_DATA":        18,
+		"TUNNEL_FRAME_KIND_PRIVATE_END":         19,
 	}
 )
 
@@ -4613,7 +4625,7 @@ type TunnelFrame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
 	Kind          TunnelFrameKind        `protobuf:"varint,2,opt,name=kind,proto3,enum=liveagent.gateway.v2.TunnelFrameKind" json:"kind,omitempty"`
-	TargetUrl     string                 `protobuf:"bytes,3,opt,name=target_url,json=targetUrl,proto3" json:"target_url,omitempty"` // set on HTTP_REQUEST_START and WS_DIAL only
+	TargetUrl     string                 `protobuf:"bytes,3,opt,name=target_url,json=targetUrl,proto3" json:"target_url,omitempty"` // set on HTTP_REQUEST_START, WS_DIAL and PRIVATE_OPEN
 	Method        string                 `protobuf:"bytes,4,opt,name=method,proto3" json:"method,omitempty"`
 	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"` // path+query relative to the target base
 	Headers       []*TunnelHeader        `protobuf:"bytes,6,rep,name=headers,proto3" json:"headers,omitempty"`
@@ -18186,7 +18198,7 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	" IMPORT_DIRECTORY_OPERATION_START\x10\x01\x12*\n" +
 	"&IMPORT_DIRECTORY_OPERATION_WRITE_CHUNK\x10\x02\x12%\n" +
 	"!IMPORT_DIRECTORY_OPERATION_COMMIT\x10\x03\x12$\n" +
-	" IMPORT_DIRECTORY_OPERATION_ABORT\x10\x04*\xc6\x04\n" +
+	" IMPORT_DIRECTORY_OPERATION_ABORT\x10\x04*\xd6\x05\n" +
 	"\x0fTunnelFrameKind\x12!\n" +
 	"\x1dTUNNEL_FRAME_KIND_UNSPECIFIED\x10\x00\x12(\n" +
 	"$TUNNEL_FRAME_KIND_HTTP_REQUEST_START\x10\x01\x12'\n" +
@@ -18204,7 +18216,11 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	"\x17TUNNEL_FRAME_KIND_ERROR\x10\f\x12\x1c\n" +
 	"\x18TUNNEL_FRAME_KIND_CANCEL\x10\r\x12\x1a\n" +
 	"\x16TUNNEL_FRAME_KIND_PING\x10\x0e\x12\x1a\n" +
-	"\x16TUNNEL_FRAME_KIND_PONG\x10\x0f*\x81\x01\n" +
+	"\x16TUNNEL_FRAME_KIND_PONG\x10\x0f\x12\"\n" +
+	"\x1eTUNNEL_FRAME_KIND_PRIVATE_OPEN\x10\x10\x12#\n" +
+	"\x1fTUNNEL_FRAME_KIND_PRIVATE_READY\x10\x11\x12\"\n" +
+	"\x1eTUNNEL_FRAME_KIND_PRIVATE_DATA\x10\x12\x12!\n" +
+	"\x1dTUNNEL_FRAME_KIND_PRIVATE_END\x10\x13*\x81\x01\n" +
 	"\x13TunnelWsMessageType\x12&\n" +
 	"\"TUNNEL_WS_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bTUNNEL_WS_MESSAGE_TYPE_TEXT\x10\x01\x12!\n" +

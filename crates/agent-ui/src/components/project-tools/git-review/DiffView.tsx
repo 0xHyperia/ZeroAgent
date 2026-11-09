@@ -421,8 +421,11 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   item: PatchChunk;
   isDark: boolean;
   commenting?: DiffChunkCommenting;
+  layout?: "unified" | "split";
+  wrapLines?: boolean;
+  onOpenFile?: (path: string) => void;
 }) {
-  const { item, isDark, commenting } = props;
+  const { item, isDark, commenting, layout, wrapLines, onOpenFile } = props;
   const { t } = useLocale();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Lazy parse/highlight: a chunk only builds its DiffFile once it scrolls
@@ -466,11 +469,12 @@ const DiffChunkView = memo(function DiffChunkView(props: {
       instance.initTheme(isDark ? "dark" : "light");
       instance.init();
       instance.buildUnifiedDiffLines();
+      if (layout === "split") instance.buildSplitDiffLines();
       return instance;
     } catch {
       return null;
     }
-  }, [isDark, item, visible]);
+  }, [isDark, item, layout, visible]);
 
   const rawPreview = useMemo(() => {
     if (!item.large) return item.chunk;
@@ -562,7 +566,24 @@ const DiffChunkView = memo(function DiffChunkView(props: {
           "text-xs font-medium text-muted-foreground",
         )}
       >
-        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        {onOpenFile ? (
+          <button
+            type="button"
+            title={item.label}
+            className="min-w-0 flex-1 truncate rounded px-1 text-left hover:text-foreground focus-visible:outline-ring"
+            onClick={() =>
+              onOpenFile(
+                fileNames.newFileName === "/dev/null"
+                  ? fileNames.oldFileName
+                  : fileNames.newFileName,
+              )
+            }
+          >
+            {item.label}
+          </button>
+        ) : (
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        )}
         {item.large ? (
           <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-tiny text-amber-700 dark:text-amber-300">
             {t("projectTools.gitReview.largeDiff")}
@@ -574,10 +595,10 @@ const DiffChunkView = memo(function DiffChunkView(props: {
       ) : diffFile ? (
         <DiffView
           diffFile={diffFile}
-          diffViewMode={DiffModeEnum.Unified}
+          diffViewMode={layout === "split" ? DiffModeEnum.Split : DiffModeEnum.Unified}
           diffViewTheme={isDark ? "dark" : "light"}
           diffViewHighlight
-          diffViewWrap={false}
+          diffViewWrap={wrapLines ?? false}
           diffViewFontSize={12}
           {...(commentingEnabled
             ? {
@@ -705,11 +726,24 @@ export function DiffContent(props: {
   error?: string;
   loading?: boolean;
   showStat?: boolean;
+  layout?: "unified" | "split";
+  wrapLines?: boolean;
+  onOpenFile?: (path: string) => void;
   /** Enables per-line comments; pending comments are handed over as composer
    *  segments and cleared once the composer accepts them. */
   onInsertComposerSegments?: (segments: MentionComposerDraftSegment[]) => boolean;
 }) {
-  const { diff, title, error, loading = false, showStat = true, onInsertComposerSegments } = props;
+  const {
+    diff,
+    title,
+    error,
+    loading = false,
+    showStat = true,
+    layout,
+    wrapLines,
+    onOpenFile,
+    onInsertComposerSegments,
+  } = props;
   const { locale, t } = useLocale();
   const isDark = useIsDark();
   const rootRef = useRef<HTMLElement | null>(null);
@@ -1210,6 +1244,9 @@ export function DiffContent(props: {
               item={item}
               isDark={isDark}
               commenting={chunkCommenting.get(item.key)}
+              layout={layout}
+              wrapLines={wrapLines}
+              onOpenFile={onOpenFile}
             />
           ))}
         </div>

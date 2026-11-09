@@ -813,6 +813,21 @@ impl KBrainBackendState {
                 || self.account_live.load(Ordering::SeqCst))
     }
 
+    #[cfg(target_os = "windows")]
+    pub(crate) fn workbench_browser_profile(
+        &self,
+    ) -> Result<(BackendProfile, Option<String>), String> {
+        let profile = self.profile.lock().map_err(|_| "Backend profile lock failed")?;
+        let session = self.bound_session.lock().map_err(|_| "Account profile binding failed")?;
+        if !self.allows_profile_commands()
+            || self.exiting.load(Ordering::SeqCst)
+            || matches!(*profile, BackendProfile::Account(_)) != session.is_some()
+        {
+            return Err("ZeroAgent profile is no longer active".into());
+        }
+        Ok((profile.clone(), session.clone()))
+    }
+
     #[cfg(desktop)]
     pub(crate) fn guard_account_viewer(&self, app: &AppHandle, handle: &str) -> Result<(), String> {
         if !self.profile_initialized.load(Ordering::SeqCst) {
@@ -1907,6 +1922,28 @@ mod tests {
     include!("kbrain_backend/prompt_cache_tests.rs");
     #[cfg(desktop)]
     include!("kbrain_backend/remote_managed_bindings_tests.rs");
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn workbench_browser_profile_is_bound_and_fails_closed_on_logout() {
+        let state = KBrainBackendState::default();
+        assert!(state.workbench_browser_profile().is_err());
+        state.profile_initialized.store(true, Ordering::SeqCst);
+        assert_eq!(state.workbench_browser_profile().unwrap(), (BackendProfile::Local, None));
+
+        let profile = BackendProfile::from_account_scope(Some("https://usa0.top|user:1")).unwrap();
+        *state.profile.lock().unwrap() = profile.clone();
+        assert!(state.workbench_browser_profile().is_err());
+        let liveness = Arc::new(AtomicBool::new(true));
+        *state.profile_liveness.lock().unwrap() = Some(Arc::clone(&liveness));
+        *state.bound_session.lock().unwrap() = Some("account-session".into());
+        state.account_bound.store(true, Ordering::SeqCst);
+        state.account_live.store(true, Ordering::SeqCst);
+        assert_eq!(state.workbench_browser_profile().unwrap(), (profile, Some("account-session".into())));
+
+        liveness.store(false, Ordering::SeqCst);
+        assert!(state.workbench_browser_profile().is_err());
+    }
 
     #[test]
     fn native_configuration_rebinds_managed_transport_and_rejects_external_providers() {

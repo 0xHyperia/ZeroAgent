@@ -53,12 +53,20 @@ import "../../lib/monacoWorkers";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type Ref,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
+import type { MarkdownSelectionActions } from "../resource-preview/PreviewChrome";
+import WorkspaceMarkdownEditor, {
+  type WorkspaceMarkdownEditorHandle,
+} from "./WorkspaceMarkdownEditor";
 import {
   createRemoteSftpEditorFileIo,
   type EditorFileIo,
@@ -111,12 +119,27 @@ type EditorContextMenuState = {
 
 const EDITOR_OVERLAY_ANIMATION_MS = 180;
 
+export type WorkspaceFileEditorHandle = {
+  readDraft: () => string | undefined;
+  saveForModeChange: () => Promise<boolean>;
+};
+
 type WorkspaceCodeEditorOverlayProps = {
   viewScope: string;
   openRequest: WorkspaceCodeEditorOpenRequest | null;
   closeRequestId?: number;
   isOpen: boolean;
   finalCloseRequested?: boolean;
+  embedded?: boolean;
+  embeddedMarkdownMode?: "preview" | "source";
+  markdownSelectionActions?: MarkdownSelectionActions;
+  markdownTextGeneration?: ProjectToolTextGenerationClient;
+  onOpenMarkdownLink?: (href: string) => boolean;
+  embeddedToolbarTarget?: HTMLElement | null;
+  editorHandle?: Ref<WorkspaceFileEditorHandle>;
+  onFileSaved?: () => void;
+  showDialogs?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   theme: "light" | "dark";
   sftpClient?: SftpClient;
   onPreviewFile: (request: WorkspaceCodeEditorOpenRequest) => void;
@@ -186,6 +209,9 @@ function getEditorContextMenuShortcuts() {
 }
 
 export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProps) {
+  const { embedded, embeddedToolbarTarget, editorHandle, onDirtyChange, onFileSaved, showDialogs } =
+    props;
+  const markdownMode = props.embeddedMarkdownMode;
   const {
     viewScope,
     openRequest,
@@ -204,6 +230,9 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const markdownEditorRef = useRef<WorkspaceMarkdownEditorHandle>(null);
+  const markdownSaveRef = useRef<(key: string) => Promise<boolean>>(async () => false);
+  const pendingSaves = useRef(new Map<string, { content: string; operation: Promise<boolean> }>());
   const modelsRef = useRef(new Map<string, monaco.editor.ITextModel>());
   const viewStatesRef = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const editorModelKeyRef = useRef("");
@@ -221,6 +250,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const [pendingDialog, setPendingDialog] = useState<PendingDialog | null>(null);
   const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [markdownHistory, setMarkdownHistory] = useState({ canUndo: false, canRedo: false });
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.key === activeKey) ?? tabs[0] ?? null,
@@ -312,68 +342,123 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   );
 
   const saveTab = useCallback(
-    async (tabKey: string) => {
+    (tabKey: string) => {
       const tab = tabs.find((item) => item.key === tabKey);
-      if (!tab || tab.content === tab.savedContent || tab.status === "saving") return true;
-      if (tab.status === "conflict") {
-        const message = tab.error ?? t("workspaceEditor.conflictMessage");
-        setGlobalError(message);
-        return false;
+      const pending = pendingSaves.current.get(tabKey);
+      if (pending) {
+        return pending.content === tab?.content
+          ? pending.operation
+          : pending.operation.then(() => false);
       }
+      if (!tab || tab.content === tab.savedContent) return Promise.resolve(true);
+      const save = async () => {
+        if (tab.status === "conflict") {
+          const message = tab.error ?? t("workspaceEditor.conflictMessage");
+          setGlobalError(message);
+          return false;
+        }
 
-      const contentToSave = tab.content;
-      updateTab(tabKey, (current) => ({
-        ...current,
-        status: "saving",
-        error: null,
-      }));
-      try {
-        const io = ioForSource(tab.projectPathKey, tab.remote);
-        const result = await io.write({
-          workdir: tab.workdir,
-          path: tab.path,
-          content: contentToSave,
-          expectedMtimeMs: tab.mtimeMs,
-          expectedContentHash: tab.contentHash,
-          expectedSizeBytes: tab.sizeBytes,
-        });
-        if (result.kind === "conflict") {
-          const message = t("workspaceEditor.conflictMessage");
+        const contentToSave = tab.content;
+        updateTab(tabKey, (current) => ({
+          ...current,
+          status: "saving",
+          error: null,
+        }));
+        try {
+          const io = ioForSource(tab.projectPathKey, tab.remote);
+          const result = await io.write({
+            workdir: tab.workdir,
+            path: tab.path,
+            content: contentToSave,
+            expectedMtimeMs: tab.mtimeMs,
+            expectedContentHash: tab.contentHash,
+            expectedSizeBytes: tab.sizeBytes,
+          });
+          if (result.kind === "conflict") {
+            const message = t("workspaceEditor.conflictMessage");
+            updateTab(tabKey, (current) => ({
+              ...current,
+              status: "conflict",
+              error: message,
+            }));
+            setGlobalError(message);
+            return false;
+          }
           updateTab(tabKey, (current) => ({
             ...current,
-            status: "conflict",
+            savedContent: contentToSave,
+            mtimeMs: result.mtimeMs,
+            contentHash: result.contentHash,
+            totalLines:
+              result.totalLines !== null && current.content === contentToSave
+                ? result.totalLines
+                : current.totalLines,
+            sizeBytes: result.sizeBytes,
+            status: "ready",
+            error: null,
+          }));
+          setGlobalError(null);
+          onFileSaved?.();
+          return true;
+        } catch (error) {
+          const message = toMessage(error, t("workspaceEditor.saveFailed"));
+          updateTab(tabKey, (current) => ({
+            ...current,
+            status: "ready",
             error: message,
           }));
           setGlobalError(message);
           return false;
         }
-        updateTab(tabKey, (current) => ({
-          ...current,
-          savedContent: contentToSave,
-          mtimeMs: result.mtimeMs,
-          contentHash: result.contentHash,
-          totalLines:
-            result.totalLines !== null && current.content === contentToSave
-              ? result.totalLines
-              : current.totalLines,
-          sizeBytes: result.sizeBytes,
-          status: "ready",
-          error: null,
-        }));
-        setGlobalError(null);
-        return true;
-      } catch (error) {
-        const message = toMessage(error, t("workspaceEditor.saveFailed"));
-        updateTab(tabKey, (current) => ({
-          ...current,
-          status: "ready",
-          error: message,
-        }));
-        setGlobalError(message);
-        return false;
-      }
+      };
+      const operation = save().finally(() => pendingSaves.current.delete(tabKey));
+      pendingSaves.current.set(tabKey, { content: tab.content, operation });
+      return operation;
     },
-    [ioForSource, t, tabs, updateTab],
+    [ioForSource, onFileSaved, t, tabs, updateTab],
+  );
+  markdownSaveRef.current = saveTab;
+  const markdownDirty =
+    !!markdownMode &&
+    activeTab?.status === "ready" &&
+    !activeTab.error &&
+    activeTab.content !== activeTab.savedContent;
+  const markdownTabKey = activeTab?.key;
+  const markdownDraft = activeTab?.content;
+  useEffect(() => {
+    if (!markdownDirty || !markdownTabKey || markdownDraft === undefined) return;
+    const timer = window.setTimeout(() => void markdownSaveRef.current(markdownTabKey), 3000);
+    return () => window.clearTimeout(timer);
+  }, [markdownDirty, markdownDraft, markdownTabKey]);
+
+  useImperativeHandle(
+    editorHandle,
+    () => ({
+      readDraft: () => {
+        if (!activeTab) return undefined;
+        return (
+          markdownEditorRef.current?.getValue() ??
+          modelsRef.current.get(activeTab.key)?.getValue() ??
+          activeTab.content
+        );
+      },
+      saveForModeChange: async () => {
+        if (!activeTab) return true;
+        const model = modelsRef.current.get(activeTab.key);
+        // A user may keep editing while the write is in flight. Stay in source
+        // mode if the model moved past the version that was just saved.
+        const markdown = markdownEditorRef.current;
+        if (model && model.getValue() !== activeTab.content) return false;
+        if (markdown && markdown.getValue() !== activeTab.content) return false;
+        return (
+          (await saveTab(activeTab.key)) &&
+          (!model || (!model.isDisposed() && model.getValue() === activeTab.content)) &&
+          (!markdown ||
+            (markdownEditorRef.current === markdown && markdown.getValue() === activeTab.content))
+        );
+      },
+    }),
+    [activeTab, saveTab],
   );
 
   const readTab = useCallback(
@@ -759,7 +844,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const activeTabKey = activeTab?.key;
   useEffect(() => {
     const editor = editorRef.current;
-    if (!isOpen || !editor || !activeTabKey || !openRequest?.line) return;
+    if (!isOpen || (!editor && !markdownMode) || !activeTabKey || !openRequest?.line) return;
     if (
       activeTabKey !==
       editorTabKey(openRequest.projectPathKey, openRequest.path, openRequest.remote)
@@ -768,6 +853,16 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
     }
     const locationKey = `${openRequest.id}\u0000${activeTabKey}`;
     if (linkedLocationKeyRef.current === locationKey) return;
+    if (markdownMode && markdownEditorRef.current) {
+      markdownEditorRef.current.revealLine(
+        openRequest.line,
+        openRequest.column,
+        openRequest.endLine,
+      );
+      linkedLocationKeyRef.current = locationKey;
+      return;
+    }
+    if (!editor) return;
     const model = editor.getModel();
     if (!model) return;
     const line = Math.min(Math.max(1, openRequest.line), model.getLineCount());
@@ -782,6 +877,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   }, [
     activeTabKey,
     isOpen,
+    markdownMode,
     openRequest?.column,
     openRequest?.endLine,
     openRequest?.id,
@@ -796,7 +892,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       if (event.key === "Escape") {
         setContextMenu(null);
       }
-      if (!isOpen) return;
+      if (!isOpen || event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
       const currentKey = activeKeyRef.current;
       if (!currentKey) return;
@@ -820,147 +916,190 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
         ? t("workspaceEditor.reloadDirtyDescription")
         : t("workspaceEditor.closeTabDirtyDescription");
 
+  useEffect(() => onDirtyChange?.(hasDirtyTabs), [hasDirtyTabs, onDirtyChange]);
+
+  const editorTools = (
+    <div className="flex shrink-0 items-center gap-1">
+      {markdownMode && (
+        <>
+          <IconButton
+            label={t("workspaceEditor.context.undo")}
+            disabled={!markdownHistory.canUndo}
+            onClick={() => markdownEditorRef.current?.undo()}
+          >
+            <Undo2 className="size-4" />
+          </IconButton>
+          <IconButton
+            label={t("workspaceEditor.context.redo")}
+            disabled={!markdownHistory.canRedo}
+            onClick={() => markdownEditorRef.current?.redo()}
+          >
+            <Redo2 className="size-4" />
+          </IconButton>
+        </>
+      )}
+      <IconButton
+        label={t("workspaceEditor.save")}
+        disabled={
+          !activeTab ||
+          activeTab.content === activeTab.savedContent ||
+          activeTab.status === "saving" ||
+          activeTab.status === "conflict"
+        }
+        onClick={() => activeTab && void saveTab(activeTab.key)}
+      >
+        {activeTab?.status === "saving" ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Save className="size-4" />
+        )}
+      </IconButton>
+      <IconButton
+        label={t("workspaceEditor.find")}
+        disabled={!activeTab}
+        onClick={() => (markdownMode ? markdownEditorRef.current?.find() : showFind())}
+      >
+        <Search className="size-4" />
+      </IconButton>
+      {!markdownMode && (
+        <IconButton
+          label={t("workspaceEditor.replace")}
+          disabled={!activeTab}
+          onClick={showReplace}
+        >
+          <Replace className="size-4" />
+        </IconButton>
+      )}
+      <RefreshButton
+        variant="ghost"
+        size="icon-sm"
+        aria-busy={isOpening}
+        className="rounded-md text-muted-foreground"
+        aria-label={t("workspaceEditor.reload")}
+        disabled={!activeTab || isOpening}
+        onClick={() => activeTab && requestReloadTab(activeTab.key)}
+      >
+        <RefreshCw data-refresh-icon className={cn("size-4", isOpening && "animate-spin")} />
+      </RefreshButton>
+      {!embedded && canPreviewActiveTab && activeTab && (
+        <IconButton
+          label={t("workspaceEditor.preview")}
+          onClick={() =>
+            onPreviewFile({
+              id: Date.now(),
+              projectPathKey: activeTab.projectPathKey,
+              workdir: activeTab.workdir,
+              path: activeTab.path,
+            })
+          }
+        >
+          <Eye className="size-4" />
+        </IconButton>
+      )}
+      {!embedded && (
+        <IconButton label={t("workspaceEditor.close")} onClick={hideOverlay}>
+          <X className="size-4" />
+        </IconButton>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={overlayRef}
       className={cn(
-        "workspace-code-editor-overlay absolute inset-0 flex min-h-0 min-w-0 transform-gpu",
+        "workspace-code-editor-overlay absolute inset-0 flex min-h-0 min-w-0",
         "flex-col overflow-hidden border-r border-border bg-background",
-        "transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
-        workspaceOverlayStackClassName,
-        isVisible
-          ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
-          : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
+        !embedded &&
+          "transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
+        !embedded && workspaceOverlayStackClassName,
+        !embedded &&
+          (isVisible
+            ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
+            : "pointer-events-none -translate-x-2 opacity-0 shadow-lg"),
       )}
     >
-      <WorkspaceOverlayTitleBar />
-      <div
-        className={cn(
-          "flex h-11 shrink-0 items-center gap-2",
-          "border-b border-border bg-muted/45 px-3",
-        )}
-      >
-        <FilePenLine className="size-4 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold leading-tight">
-            {t("workspaceEditor.title")}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {activeTab ? activeTab.path : t("workspaceEditor.empty")}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <IconButton
-            label={t("workspaceEditor.save")}
-            disabled={
-              !activeTab ||
-              activeTab.content === activeTab.savedContent ||
-              activeTab.status === "saving" ||
-              activeTab.status === "conflict"
-            }
-            onClick={() => activeTab && void saveTab(activeTab.key)}
-          >
-            {activeTab?.status === "saving" ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Save className="size-4" />
-            )}
-          </IconButton>
-          <IconButton label={t("workspaceEditor.find")} disabled={!activeTab} onClick={showFind}>
-            <Search className="size-4" />
-          </IconButton>
-          <IconButton
-            label={t("workspaceEditor.replace")}
-            disabled={!activeTab}
-            onClick={showReplace}
-          >
-            <Replace className="size-4" />
-          </IconButton>
-          <RefreshButton
-            variant="ghost"
-            size="icon-sm"
-            aria-busy={isOpening}
-            className="rounded-md text-muted-foreground"
-            aria-label={t("workspaceEditor.reload")}
-            disabled={!activeTab || isOpening}
-            onClick={() => activeTab && requestReloadTab(activeTab.key)}
-          >
-            <RefreshCw data-refresh-icon className={cn("size-4", isOpening && "animate-spin")} />
-          </RefreshButton>
-          {canPreviewActiveTab && activeTab ? (
-            <IconButton
-              label={t("workspaceEditor.preview")}
-              onClick={() =>
-                onPreviewFile({
-                  id: Date.now(),
-                  projectPathKey: activeTab.projectPathKey,
-                  workdir: activeTab.workdir,
-                  path: activeTab.path,
-                })
-              }
-            >
-              <Eye className="size-4" />
-            </IconButton>
-          ) : null}
-          <IconButton label={t("workspaceEditor.close")} onClick={hideOverlay}>
-            <X className="size-4" />
-          </IconButton>
-        </div>
-      </div>
-
-      <div
-        className={cn(
-          "flex h-10 shrink-0 items-end gap-1 overflow-x-auto",
-          "border-b border-border bg-background px-2 pt-1",
-        )}
-      >
-        {tabs.map((tab) => {
-          const dirty = tab.content !== tab.savedContent;
-          return (
-            <div
-              key={tab.key}
-              className={cn(
-                "group flex h-8 max-w-56 shrink-0 items-center gap-1.5",
-                "rounded-t-md border border-b-0 px-2 text-xs transition-colors",
-                tab.key === activeKey
-                  ? "border-border bg-muted text-foreground"
-                  : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-              )}
-              title={tab.remote ? `${t("workspaceEditor.remoteTabBadge")} · ${tab.path}` : tab.path}
-            >
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5"
-                onClick={() => setActiveKey(tab.key)}
-              >
-                {tab.status === "conflict" ? (
-                  <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
-                ) : tab.remote ? (
-                  <Cloud className="size-3.5 shrink-0 text-sky-500" />
-                ) : (
-                  <FilePenLine className="size-3.5 shrink-0" />
-                )}
-                <span className="min-w-0 truncate">{basename(tab.path)}</span>
-                {dirty ? <span className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "ml-0.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/75",
-                  "hover:bg-background hover:text-foreground",
-                )}
-                title={t("workspaceEditor.closeTab")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  requestCloseTab(tab.key);
-                }}
-              >
-                <X className="size-3" />
-              </button>
+      {!embedded && <WorkspaceOverlayTitleBar />}
+      {embedded ? (
+        embeddedToolbarTarget &&
+        createPortal(
+          <div className="contents" data-workspace-editor-toolbar-slot="">
+            {editorTools}
+          </div>,
+          embeddedToolbarTarget,
+        )
+      ) : (
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/45 px-3">
+          <FilePenLine className="size-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold leading-tight">
+              {t("workspaceEditor.title")}
             </div>
-          );
-        })}
-      </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {activeTab ? activeTab.path : t("workspaceEditor.empty")}
+            </div>
+          </div>
+          {editorTools}
+        </div>
+      )}
+
+      {!embedded && (
+        <div
+          className={cn(
+            "flex h-10 shrink-0 items-end gap-1 overflow-x-auto",
+            "border-b border-border bg-background px-2 pt-1",
+          )}
+        >
+          {tabs.map((tab) => {
+            const dirty = tab.content !== tab.savedContent;
+            return (
+              <div
+                key={tab.key}
+                className={cn(
+                  "group flex h-8 max-w-56 shrink-0 items-center gap-1.5",
+                  "rounded-t-md border border-b-0 px-2 text-xs transition-colors",
+                  tab.key === activeKey
+                    ? "border-border bg-muted text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+                title={
+                  tab.remote ? `${t("workspaceEditor.remoteTabBadge")} · ${tab.path}` : tab.path
+                }
+              >
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-1.5"
+                  onClick={() => setActiveKey(tab.key)}
+                >
+                  {tab.status === "conflict" ? (
+                    <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+                  ) : tab.remote ? (
+                    <Cloud className="size-3.5 shrink-0 text-sky-500" />
+                  ) : (
+                    <FilePenLine className="size-3.5 shrink-0" />
+                  )}
+                  <span className="min-w-0 truncate">{basename(tab.path)}</span>
+                  {dirty ? <span className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "ml-0.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/75",
+                    "hover:bg-background hover:text-foreground",
+                  )}
+                  title={t("workspaceEditor.closeTab")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    requestCloseTab(tab.key);
+                  }}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {globalError || activeTab?.error ? (
         <div
@@ -989,7 +1128,36 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: The editor surface exposes a pointer context menu; Monaco owns its keyboard interaction model. */}
       <div className="relative min-h-0 flex-1 bg-background" onContextMenu={openEditorContextMenu}>
-        <div ref={containerRef} className={cn("absolute inset-0", !activeTab && "hidden")} />
+        {markdownMode ? (
+          activeTab && (
+            <WorkspaceMarkdownEditor
+              key={activeTab.key}
+              handle={markdownEditorRef}
+              value={activeTab.content}
+              mode={markdownMode}
+              active={isOpen}
+              readOnly={false}
+              theme={theme}
+              selectionActions={props.markdownSelectionActions}
+              textGeneration={
+                activeTab.status !== "conflict" ? props.markdownTextGeneration : undefined
+              }
+              onOpenLink={props.onOpenMarkdownLink}
+              onChange={(content) =>
+                updateTab(activeTab.key, (tab) => ({
+                  ...tab,
+                  content,
+                  totalLines: content.split(/\r\n?|\n/).length,
+                  error: tab.status === "conflict" ? tab.error : null,
+                }))
+              }
+              onHistory={(canUndo, canRedo) => setMarkdownHistory({ canUndo, canRedo })}
+              onSave={() => void saveTab(activeTab.key)}
+            />
+          )
+        ) : (
+          <div ref={containerRef} className={cn("absolute inset-0", !activeTab && "hidden")} />
+        )}
         {!activeTab ? (
           <EmptyState variant="workspace">
             {isOpening ? (
@@ -1113,7 +1281,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       </div>
 
       <AlertDialog
-        open={isOpen && pendingDialog !== null}
+        open={(showDialogs ?? isOpen) && pendingDialog !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDialog(null);
         }}

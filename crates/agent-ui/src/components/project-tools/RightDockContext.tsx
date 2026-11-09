@@ -19,6 +19,7 @@ import type { TerminalClient, TerminalSession, TerminalSnapshot } from "../../li
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
 import type { FileTreeExternalRoot } from "./file-tree/model";
 import type { LocalTunnelClient } from "./LocalTunnelPanel";
+import type { WorkspaceGitComparison } from "./workspaceGitPaths";
 
 export type RightDockToolClients = {
   terminal: TerminalClient;
@@ -48,7 +49,7 @@ export type RightDockFileTreeContext = {
   onInitializedChange: (initialized: boolean) => void;
   onStateChange: (patch: RightDockFileTreeStatePatch) => void;
   onInsertFileMention?: (path: string, kind: "file" | "dir") => void;
-  onOpenFile?: (path: string, imagePaths?: string[]) => void;
+  onOpenFile?: (path: string, imagePaths?: string[], temporary?: boolean) => void;
   onRevealInFileTree: (path: string) => void;
 };
 
@@ -63,6 +64,12 @@ export type GitReviewFocusRequest = {
 };
 
 export type RightDockGitContext = {
+  workspaceReview?: {
+    comparison: WorkspaceGitComparison;
+    conversationId?: string;
+    onComparisonChange: (comparison: WorkspaceGitComparison) => void;
+    onOpenFile?: (path: string) => void;
+  };
   getSelectedChangesPath?: (repo: string) => string;
   onSelectChangesPath?: (repo: string, path: string) => void;
   onInsertCodeReviewSkill?: () => void;

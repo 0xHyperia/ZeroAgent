@@ -43,6 +43,8 @@ async function fixture(t, options = {}) {
       },
     },
   } });
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  window.ResizeObserver = globalThis.ResizeObserver;
   const { React, act, createRoot } = env;
   const { RemoteDeviceWorkbench } = env.loadModule("src/pages/RemoteDeviceWorkbench.tsx");
   const target = document.body.appendChild(document.createElement("div"));

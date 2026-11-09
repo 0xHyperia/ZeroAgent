@@ -11,12 +11,14 @@ import { resolveEffectiveChatModelSelection } from "./modelSelection";
 import { resolveCommitMessageModelSelection } from "./providerRuntimeConfig";
 
 export function useProjectToolTextGenerationClient(params: {
+  purpose?: "workspace-edit";
   settings: AppSettings;
   conversationRuntimeCacheRef: RefObject<Map<string, ConversationRuntimeEntry>>;
   currentConversationIdRef: RefObject<string>;
   currentConversationSessionId: string;
 }): ProjectToolTextGenerationClient {
   const {
+    purpose,
     settings,
     conversationRuntimeCacheRef,
     currentConversationIdRef,
@@ -25,7 +27,7 @@ export function useProjectToolTextGenerationClient(params: {
 
   return useMemo(() => {
     const resolveGenerationSelection = () =>
-      resolveCommitMessageModelSelection(settings) ??
+      (purpose === "workspace-edit" ? null : resolveCommitMessageModelSelection(settings)) ??
       resolveEffectiveChatModelSelection({
         settings,
         conversationSelectedModel: conversationRuntimeCacheRef.current.get(
@@ -73,6 +75,7 @@ export function useProjectToolTextGenerationClient(params: {
     conversationRuntimeCacheRef,
     currentConversationIdRef,
     currentConversationSessionId,
+    purpose,
     settings,
   ]);
 }

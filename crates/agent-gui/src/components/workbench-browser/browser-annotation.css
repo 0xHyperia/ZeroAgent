@@ -1,0 +1,176 @@
+.za-browser-annotation-card {
+  --editor-width: min(300px, calc(100% - 16px));
+  position: absolute;
+  z-index: 2;
+  inset-inline-start: clamp(
+    8px,
+    calc(var(--anchor-x) + 14px),
+    calc(100% - var(--editor-width) - 8px)
+  );
+  inset-block-start: clamp(8px, calc(var(--anchor-y) + 14px), calc(100% - 112px));
+  box-sizing: border-box;
+  display: flex;
+  width: var(--editor-width);
+  max-height: min(21rem, max(6rem, calc(100% - var(--anchor-y) - 24px)));
+  flex-direction: column;
+  overflow: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  box-shadow:
+    0 3px 10px #0002,
+    0 10px 25px #0001;
+}
+
+.za-browser-annotation-card[data-before] {
+  inset-inline-start: clamp(
+    8px,
+    calc(var(--anchor-x) - var(--editor-width) - 14px),
+    calc(100% - var(--editor-width) - 8px)
+  );
+}
+
+.za-browser-annotation-card[data-above] {
+  inset-block: auto clamp(8px, calc(100% - var(--anchor-y) + 14px), calc(100% - 112px));
+  max-height: min(21rem, max(6rem, calc(var(--anchor-y) - 24px)));
+}
+
+.za-browser-annotation-card[data-empty] {
+  inset: auto 8px 8px;
+  margin-inline: auto;
+}
+
+.za-browser-annotation-card .za-workspace-browser-annotation-form {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 5px;
+  padding: 7px;
+}
+
+.za-browser-annotation-card .za-workspace-browser-annotation-form > code {
+  max-width: calc(100% - 6px);
+  margin-inline-end: auto;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+
+.za-browser-annotation-card .za-workspace-browser-annotation-form > textarea {
+  flex: 1 0 100%;
+  min-height: 36px;
+  padding: 4px 5px;
+  resize: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.za-browser-annotation-card .za-workspace-browser-annotation-form > button[type="submit"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-inline-start: auto;
+  border-radius: 999px;
+}
+
+.za-browser-annotation-card .za-browser-annotation-style-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.za-browser-annotation-card[data-compact] {
+  border-radius: 24px;
+}
+
+.za-browser-annotation-card[data-compact] .za-workspace-browser-annotation-form {
+  flex-wrap: nowrap;
+  border: 0;
+  border-radius: inherit;
+}
+
+.za-browser-annotation-card[data-compact] .za-workspace-browser-annotation-form > code {
+  display: none;
+}
+
+.za-browser-annotation-card[data-compact] .za-workspace-browser-annotation-form > textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 28px;
+  height: 28px;
+  field-sizing: content;
+  line-height: 20px;
+}
+
+.za-workspace-browser-region {
+  border: 2px solid #2684ff;
+  border-radius: 12px;
+  background: #2684ff12;
+}
+
+.za-browser-annotation-tray {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-height: 46px;
+  padding: 4px 8px;
+  background: hsl(var(--background));
+}
+
+.za-browser-annotation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  border-radius: 11px;
+  background: #262626;
+  color: #f3f3f3;
+  box-shadow: 0 2px 8px #0002;
+}
+
+.za-browser-annotation-toolbar:empty {
+  display: none;
+}
+
+.za-browser-annotation-capturing {
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.za-browser-annotation-toolbar .za-workspace-browser-status {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.za-workspace-browser .za-browser-annotation-toolbar button:not(:disabled):hover {
+  background: #ffffff1f;
+}
+
+.za-workspace-browser .za-browser-annotation-toolbar .za-workspace-browser-annotation-commit {
+  background: #225997;
+  color: #fff;
+}
+
+.za-workspace-browser
+  .za-browser-annotation-toolbar
+  .za-workspace-browser-annotation-commit:not(:disabled):hover {
+  background: #2a6ab1;
+}
+
+.za-browser-annotation-review {
+  width: min(100%, 400px);
+  margin-block-start: 4px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+}

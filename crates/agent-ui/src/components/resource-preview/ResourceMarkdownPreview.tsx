@@ -13,6 +13,7 @@ import {
 } from "react";
 import { CodeBlock, type Components, Streamdown } from "streamdown";
 import WrapText from "~icons/lucide/wrap-text";
+import { useLocale } from "../../i18n";
 import { throttledCodePlugin } from "../../lib/markdownCodeHighlight";
 import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { COPY_FEEDBACK_DURATION, useCopyFeedback } from "../../lib/shared/useCopyFeedback";
@@ -27,6 +28,7 @@ import {
   DropdownMenuSubTrigger,
 } from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
+import { MarkdownSelectionToolbar } from "./MarkdownSelectionToolbar";
 import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
@@ -116,24 +118,28 @@ function MarkdownCover({ text }: { text: string }) {
 
 function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: () => void }) {
   const identity = useContext(PreviewIdentityContext);
+  const chrome = useContext(PreviewToolbarMount);
+  const workspaceTab = chrome?.workspaceTab;
+  const selectionActions = identity.markdownSelectionActions;
+  const { locale } = useLocale();
   const [view, setView] = usePreviewReadingState(
     "textView",
     identity.sourceRange ? "source" : "preview",
   );
-  const source = view === "source";
+  const source = !workspaceTab && view === "source";
   const fromLine = identity.sourceRange?.fromLine;
   const toLine = identity.sourceRange?.toLine;
   const sourceLink = fromLine === undefined ? "" : `${fromLine}:${toLine ?? fromLine}`;
   useEffect(() => {
-    if (sourceLink) setView("source");
-  }, [sourceLink, setView]);
+    if (sourceLink && !workspaceTab) setView("source");
+  }, [sourceLink, setView, workspaceTab]);
   const viewport = useRef<HTMLDivElement>(null);
+  const selectionRoot = useRef<HTMLDivElement>(null);
   const position = usePreviewReadingSnapshot("markdownPosition");
   const lastPosition = useRef<MarkdownReadingPosition | undefined>(undefined);
   const [zoom, setZoom] = usePreviewReadingState("textZoom", 100);
   const latest = useRef(zoom);
   latest.current = zoom;
-  const chrome = useContext(PreviewToolbarMount);
   const setFileMenu = chrome?.setFileMenu;
   useLayoutEffect(() => {
     const scroll = viewport.current;
@@ -196,7 +202,7 @@ function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: 
     );
   }, [setZoom]);
   useEffect(() => {
-    if (!setFileMenu) return;
+    if (!setFileMenu || workspaceTab) return;
     setFileMenu(
       <>
         <DropdownMenuItem onClick={() => setView(source ? "preview" : "source")}>
@@ -229,10 +235,10 @@ function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: 
       </>,
     );
     return () => setFileMenu(null);
-  }, [setFileMenu, zoom, setZoom, source, setView]);
+  }, [setFileMenu, zoom, setZoom, source, setView, workspaceTab]);
   return (
     <div className="za-markdown-views">
-      {!source ? (
+      {!workspaceTab && !source ? (
         <PreviewLeadingTools>
           <SourceViewControl source={false} onChange={() => setView("source")} />
         </PreviewLeadingTools>
@@ -245,11 +251,33 @@ function MarkdownReader({ text, assertCurrent }: { text: string; assertCurrent: 
           aria-label="Markdown 文档正文"
         >
           <div
+            ref={selectionRoot}
             className="za-markdown-column"
+            data-quote-source={selectionActions ? "markdown" : undefined}
             style={{ "--za-markdown-zoom": zoom / 100 } as CSSProperties}
           >
-            <MarkdownBody text={text} assertCurrent={assertCurrent} />
+            {workspaceTab && (
+              <div className="za-workspace-markdown-actions">
+                <MarkdownCopy
+                  label={locale === "zh-CN" ? "复制 Markdown" : "Copy Markdown"}
+                  value={() => text}
+                  assertCurrent={assertCurrent}
+                />
+              </div>
+            )}
+            <MarkdownBody
+              text={text}
+              assertCurrent={assertCurrent}
+              sourcePositions={!!selectionActions}
+            />
           </div>
+          {selectionActions && (
+            <MarkdownSelectionToolbar
+              root={selectionRoot}
+              source={text}
+              actions={selectionActions}
+            />
+          )}
         </PreviewScrollArea>
       </div>
       {source ? (
@@ -267,13 +295,26 @@ const MarkdownBody = memo(function MarkdownBody({
   text,
   thumbnail = false,
   assertCurrent,
+  sourcePositions = false,
 }: {
   text: string;
   thumbnail?: boolean;
   assertCurrent?: () => void;
+  sourcePositions?: boolean;
 }) {
   const components = useMemo<Components>(
     () => ({
+      ...(sourcePositions
+        ? {
+            p: sourcePositionBlock("p"),
+            h1: sourcePositionBlock("h1"),
+            h2: sourcePositionBlock("h2"),
+            h3: sourcePositionBlock("h3"),
+            h4: sourcePositionBlock("h4"),
+            h5: sourcePositionBlock("h5"),
+            h6: sourcePositionBlock("h6"),
+          }
+        : {}),
       a: ({ href, children }) =>
         !thumbnail && /^https?:\/\//i.test(href ?? "") ? (
           <a href={href} target="_blank" rel="noopener noreferrer">
@@ -310,7 +351,7 @@ const MarkdownBody = memo(function MarkdownBody({
         </MarkdownTable>
       ),
     }),
-    [thumbnail, assertCurrent],
+    [thumbnail, assertCurrent, sourcePositions],
   );
   return (
     <article className="za-preview-markdown za-markdown-content">
@@ -330,6 +371,23 @@ const MarkdownBody = memo(function MarkdownBody({
     </article>
   );
 });
+
+function sourcePositionBlock(Tag: "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+  return function SourcePositionBlock({
+    node,
+    ...props
+  }: ComponentProps<"p"> & {
+    node?: { position?: { start: { offset?: number }; end: { offset?: number } } };
+  }) {
+    return (
+      <Tag
+        {...props}
+        data-markdown-source-start={node?.position?.start.offset}
+        data-markdown-source-end={node?.position?.end.offset}
+      />
+    );
+  };
+}
 
 function codeText(value: ReactNode): string {
   if (typeof value === "string" || typeof value === "number") return String(value);

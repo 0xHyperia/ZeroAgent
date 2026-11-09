@@ -1,10 +1,17 @@
 import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
-import { Loader2 } from "@liveagent/ui/components/IconSet";
+import { Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
+import {
+  WorkspaceMainPanel,
+  WorkspacePanelGroup,
+  WorkspaceToolsPanel,
+} from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
+import { lazy, Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
+import { canOpenWorkbenchBrowser } from "../components/workbench-browser/WorkbenchBrowserPane";
 import type { DesktopEnvironment } from "../lib/relay/desktopExecution";
 import {
   createDesktopRemoteHost,
@@ -15,6 +22,11 @@ import {
   loadDesktopRemoteRuntime,
 } from "../lib/relay/desktopRemoteRuntime";
 import type { AppSettings } from "../lib/settings";
+
+const BrowserPane = lazy(async () => ({
+  default: (await import("../components/workbench-browser/WorkbenchBrowserPane"))
+    .WorkbenchBrowserPane,
+}));
 
 type Props = Pick<
   import("@/lib/desktopRemoteHost").DesktopRemoteHost,
@@ -55,6 +67,11 @@ export function RemoteDeviceWorkbench(props: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  const [browser, setBrowser] = useState<{ id: string; url: string } | null>(null);
+  const [browserWidth, setBrowserWidth] = useState(520);
+  const [browserConnection, setBrowserConnection] = useState<Awaited<
+    ReturnType<typeof createDesktopRemoteHost>
+  > | null>(null);
   const target = useMemo(
     () => ({ deviceId, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort }),
     [deviceId, selectionLease, expiresAt, selectionError, gatewayUrl, gatewayPort],
@@ -95,6 +112,8 @@ export function RemoteDeviceWorkbench(props: Props) {
       removeStyles = undefined;
     };
     setLoading(true);
+    setBrowser(null);
+    setBrowserConnection(null);
     setError("");
     setHeaderTarget(null);
     setWindowTarget(null);
@@ -148,6 +167,7 @@ export function RemoteDeviceWorkbench(props: Props) {
       removeStyles = await attachDesktopRemoteStyles(prepared.styles, controller.signal);
       if (controller.signal.aborted || !container.current) return;
       workbench = prepared.factory.createDesktopRemoteRuntime().mount(container.current, host.host);
+      setBrowserConnection(host);
       mountedTarget.current = target;
       setLoading(false);
     })().catch((cause) => {
@@ -182,7 +202,48 @@ export function RemoteDeviceWorkbench(props: Props) {
           <WindowsTitleBar controlsOnly />
         </div>
       )}
-      <div ref={container} className={loading || error ? "hidden" : "h-full min-h-0 flex-1"} />
+      <div className={loading || error ? "hidden" : "min-h-0 flex-1"}>
+        <WorkspacePanelGroup
+          open={Boolean(browser && browserConnection)}
+          width={browserWidth}
+          onWidthChange={setBrowserWidth}
+          onClose={() => setBrowser(null)}
+          preferBalanced
+        >
+          <WorkspaceMainPanel>
+            <div ref={container} className="h-full min-h-0 w-full" />
+          </WorkspaceMainPanel>
+          <WorkspaceToolsPanel>
+            {browser && browserConnection && !loading && !error ? (
+              <section className="flex h-full min-h-0 flex-col">
+                <header className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs">
+                  <span className="truncate">{environment.name} · 浏览器</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="关闭浏览器"
+                    onClick={() => setBrowser(null)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </header>
+                <Suspense fallback={null}>
+                  <BrowserPane
+                    key={browser.id}
+                    id={browser.id}
+                    url={browser.url}
+                    active
+                    scope={selectionLease}
+                    onNavigate={() => {}}
+                    onOpenTab={(url) => setBrowser({ id: createUuid(), url })}
+                    openPrivateBrowserPort={browserConnection.openPrivateBrowserPort}
+                  />
+                </Suspense>
+              </section>
+            ) : null}
+          </WorkspaceToolsPanel>
+        </WorkspacePanelGroup>
+      </div>
       {loading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -213,6 +274,18 @@ export function RemoteDeviceWorkbench(props: Props) {
         ? createPortal(
             <span data-desktop-remote-chrome-slot="device" className="contents">
               {headerLeadingActions}
+              {browserConnection && canOpenWorkbenchBrowser() ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={Boolean(browser)}
+                  onClick={() =>
+                    setBrowser((current) => (current ? null : { id: createUuid(), url: "" }))
+                  }
+                >
+                  <Globe className="size-4" /> 浏览器
+                </Button>
+              ) : null}
             </span>,
             headerTarget,
           )

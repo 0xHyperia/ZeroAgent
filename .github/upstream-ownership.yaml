@@ -2,6 +2,26 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "{crates/agent-gateway/internal/server/device_loopback*.go,crates/agent-gui/src-tauri/src/services/gateway/private_loopback.rs,crates/agent-gui/src-tauri/src/services/account_session/desktop_remote_loopback.rs}",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "私有回环固定当前原生设备租约和原连接，目标设备只连接批准的数值回环端口",
+        "临时浏览器来源的认证材料不得传到目标服务或公开隧道，断开、撤销和退出回收流"
+      ]
+    },
+    {
+      "glob": "{crates/agent-gui/src-tauri/src/commands/integration/workbench_browser*.{rs,js},crates/agent-gui/src-tauri/src/commands/workspace/git_turn_review.rs,crates/agent-gui/src/components/workbench-browser/**,crates/agent-gui/src/pages/chat/workbench/{DesktopWorkspaceResources,DesktopWorkspaceFileHeader,desktopWorkspaceCheckpoint,useDesktopWorkspaceTabs}.*,crates/agent-ui/src/components/project-tools/{RightWorkspaceFileTree,WorkspaceFileDiff,WorkspaceNavigationSplit,workspaceGitPaths,workspaceGitReviewState}.*,crates/agent-ui/src/components/workspace-editor/{WorkspaceHTMLPreview,workspaceHtmlDocument,WorkspaceMarkdownSelectionReview,useWorkspaceMarkdownSelectionEdit,workspaceMarkdownSelectionEdit}.*}",
+      "ownership": "zeroagent_owned",
+      "risk": "critical",
+      "checks": [
+        "右侧标签和文件树随会话切换，保护编辑、文件权限和原终端租约",
+        "Windows 第三方网页使用独立宿主，验证账户代次、窗口与导航，网页不能调用应用 IPC",
+        "原生选区批注只按明确操作加入同一会话草稿，上一轮 Git 快照保留既有变更并禁止写入用户仓库索引",
+        "扩展与回环转发由原生账户和项目授权隔离，HTML 资源限项目内，模型修改仅在接受并核对选区后写入"
+      ]
+    },
+    {
       "glob": "CHANGELOG.md",
       "ownership": "zeroagent_owned",
       "risk": "medium",

@@ -118,7 +118,7 @@ func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return session, err
 	}
-	if session.Purpose == "" {
+	if session.Purpose == "" || session.Purpose == DesktopDeviceHandoffPurpose {
 		return session, nil
 	}
 	if !isDesktopCloudPurpose(session.Purpose) {
@@ -473,6 +473,7 @@ func (s *Service) ConsumeDesktopHandoff(ctx context.Context, code string) (*Sess
 	session := &Session{
 		ID: uuid.NewString(), UserID: handoff.UserID, User: handoff.User, AccessToken: handoff.AccessToken,
 		AccessExpiresAt: now.Add(12 * time.Hour), SessionExpiresAt: now.Add(12 * time.Hour),
+		Purpose: DesktopDeviceHandoffPurpose,
 	}
 	if err := s.store.PutSession(ctx, session); err != nil {
 		return nil, nil, err

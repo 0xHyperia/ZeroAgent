@@ -62,11 +62,13 @@ export function PreviewPageControls({
   page,
   count,
   busy,
+  inline,
   onPage,
 }: {
   page: number;
   count: number;
   busy?: boolean;
+  inline?: boolean;
   onPage: (page: number) => void;
 }) {
   const mount = useContext(PreviewToolbarMount);
@@ -127,7 +129,7 @@ export function PreviewPageControls({
       </Button>
     </nav>
   );
-  return mount?.pageTarget ? createPortal(controls, mount.pageTarget) : controls;
+  return !inline && mount?.pageTarget ? createPortal(controls, mount.pageTarget) : controls;
 }
 
 export function PreviewZoomControl({

@@ -1,0 +1,53 @@
+/* Full width is temporary. Preserve the split group's measured sizes for return. */
+[data-workspace-tools-expanded] > [data-panel][id="workspace-main"] {
+  flex: 0 0 0 !important;
+  overflow: hidden !important;
+  visibility: hidden;
+}
+
+[data-workspace-tools-expanded] > [data-panel][id="workspace-tools"] {
+  flex: 1 1 0 !important;
+}
+
+[data-right-workspace-chrome] {
+  container-type: inline-size;
+  --za-right-workspace-tab-width: clamp(
+    90px,
+    calc((100cqw - 144px) / var(--za-right-workspace-tab-count, 1)),
+    240px
+  );
+}
+
+[data-right-workspace-chrome] > :is(button, [data-slot="dropdown-menu-trigger"]) {
+  flex-shrink: 0;
+}
+
+[data-desktop-workspace-tab] {
+  width: var(--za-right-workspace-tab-width);
+  color: hsl(var(--muted-foreground));
+}
+
+[data-desktop-workspace-tab]:is(:hover, :focus-within) {
+  background: var(--za-control-hover);
+  color: hsl(var(--foreground));
+}
+
+[data-desktop-workspace-tab-selected] {
+  color: hsl(var(--foreground));
+  background: var(--za-surface);
+  box-shadow: inset 0 0 0 1px var(--za-border);
+}
+
+[data-desktop-workspace-tab]:not(
+  :last-child,
+  [data-desktop-workspace-tab-selected],
+  :hover,
+  :focus-within,
+  :has(+ :is([data-desktop-workspace-tab-selected], :hover, :focus-within))
+)::after {
+  position: absolute;
+  inset: 7px 0 7px auto;
+  width: 1px;
+  background: var(--za-border);
+  content: "";
+}

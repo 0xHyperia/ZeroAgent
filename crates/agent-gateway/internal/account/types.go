@@ -6,14 +6,15 @@ import (
 )
 
 const (
-	SessionCookieName       = "zeroagent_session"
-	RuntimeKindWebChat      = "web_chat"
-	RuntimeKindDeviceAgent  = "device_agent"
-	CloudWorkspaceID        = "cloud"
-	SelectionScopeWorkspace = "workspace"
-	SelectionScopeDevice    = "device"
-	AuthKindPassword        = "password"
-	AuthKindOAuth           = "oauth"
+	SessionCookieName           = "zeroagent_session"
+	RuntimeKindWebChat          = "web_chat"
+	RuntimeKindDeviceAgent      = "device_agent"
+	CloudWorkspaceID            = "cloud"
+	SelectionScopeWorkspace     = "workspace"
+	SelectionScopeDevice        = "device"
+	AuthKindPassword            = "password"
+	AuthKindOAuth               = "oauth"
+	DesktopDeviceHandoffPurpose = "desktop_device_handoff"
 )
 
 type Session struct {

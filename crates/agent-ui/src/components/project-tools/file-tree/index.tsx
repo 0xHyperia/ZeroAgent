@@ -74,15 +74,18 @@ type ContextMenuState = {
   path: string;
 };
 
-export function FileTreePanel(props: { active: boolean }) {
+export function FileTreePanel(props: { active: boolean; integratedSearch?: boolean }) {
   const context = useRightDockToolContext();
   return (
     <FileTreeSurface
       active={props.active}
+      integratedSearch={props.integratedSearch}
       projectPathKey={context.projectPathKey}
       cwd={context.cwd}
       state={context.fileTree.state}
-      initialized={context.fileTree.initialized}
+      initialized={
+        props.integratedSearch ? context.capabilities.projectReady : context.fileTree.initialized
+      }
       externalRoots={context.fileTree.externalRoots}
       workspaceActivityClient={context.clients.workspaceActivity ?? null}
       onInitializedChange={context.fileTree.onInitializedChange}
@@ -96,6 +99,7 @@ export function FileTreePanel(props: { active: boolean }) {
 
 export type FileTreeSurfaceProps = {
   active: boolean;
+  integratedSearch?: boolean;
   projectPathKey: string;
   cwd: string;
   state: RightDockFileTreeState;
@@ -106,7 +110,7 @@ export type FileTreeSurfaceProps = {
   onRefreshExternalRoots?: () => Promise<void>;
   onStateChange: (patch: RightDockFileTreeStatePatch) => void;
   onInsertFileMention?: (path: string, kind: "file" | "dir") => void;
-  onOpenFile?: (path: string, imagePaths?: string[]) => void;
+  onOpenFile?: (path: string, imagePaths?: string[], temporary?: boolean) => void;
 };
 
 export type FileTreePaneSurfaceProps = Omit<
@@ -144,6 +148,7 @@ export function FileTreePaneSurface(props: FileTreePaneSurfaceProps) {
 export function FileTreeSurface(props: FileTreeSurfaceProps) {
   const {
     active,
+    integratedSearch = false,
     projectPathKey,
     cwd,
     state: syncState,
@@ -158,7 +163,8 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   } = props;
   const { t } = useLocale();
 
-  const [query, setQuery] = useState(syncState.query);
+  const [localQuery, setQuery] = useState(syncState.query);
+  const query = integratedSearch ? syncState.query : localQuery;
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [pendingTargetPath, setPendingTargetPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -255,12 +261,12 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     setQuery((current) => (current === syncState.query ? current : syncState.query));
   }, [syncState.query]);
   useEffect(() => {
-    if (!initialized || !projectPathKey || query === syncState.query) return;
+    if (integratedSearch || !initialized || !projectPathKey || query === syncState.query) return;
     const timer = window.setTimeout(() => {
       emitState({ query });
     }, FILE_TREE_QUERY_SYNC_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [emitState, initialized, projectPathKey, query, syncState.query]);
+  }, [emitState, initialized, integratedSearch, projectPathKey, query, syncState.query]);
 
   // Transient UI state never leaks across project switches.
   useEffect(() => {
@@ -336,7 +342,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     onOpenFileRef.current = onOpenFile;
   }, [onOpenFile]);
   const handleOpenFile = useCallback(
-    (path: string) => {
+    (path: string, temporary = false) => {
       if (isExternalPath(path)) {
         if (!FILE_TREE_HAS_OS_INTEGRATION) return;
         setActionError(null);
@@ -345,7 +351,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         });
         return;
       }
-      onOpenFileRef.current?.(path, getSiblingImagePaths(path));
+      onOpenFileRef.current?.(path, getSiblingImagePaths(path), temporary);
     },
     [getSiblingImagePaths, isExternalPath, openWorkspacePath, t],
   );
@@ -583,30 +589,32 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
 
   return (
     <div ref={panelRef} className="relative flex h-full min-h-0 select-none flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder={t("projectTools.fileTree.searchPlaceholder")}
-            className="h-8 pl-7 text-xs placeholder:text-xs"
-          />
+      {!integratedSearch && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              placeholder={t("projectTools.fileTree.searchPlaceholder")}
+              className="h-8 pl-7 text-xs placeholder:text-xs"
+            />
+          </div>
+          <RefreshButton
+            aria-busy={Object.values(nodes).some((node) => node.loading)}
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-lg"
+            title={t("projectTools.fileTree.refresh")}
+            onClick={() => {
+              void onRefreshExternalRoots?.();
+              refreshVisible();
+            }}
+          >
+            <RefreshCw data-refresh-icon className="size-4" />
+          </RefreshButton>
         </div>
-        <RefreshButton
-          aria-busy={Object.values(nodes).some((node) => node.loading)}
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-lg"
-          title={t("projectTools.fileTree.refresh")}
-          onClick={() => {
-            void onRefreshExternalRoots?.();
-            refreshVisible();
-          }}
-        >
-          <RefreshCw data-refresh-icon className="size-4" />
-        </RefreshButton>
-      </div>
+      )}
 
       {pendingAction ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
@@ -667,6 +675,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           className={cn(
             "project-file-tree-panel-scroll max-h-40 shrink-0 overflow-auto border-b border-border/60 p-2",
             "web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
+            integratedSearch && "max-h-none min-h-0 flex-1 shrink border-0 px-1",
           )}
         >
           {search.loading ? (
@@ -695,7 +704,25 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                   )}
                   style={{ minHeight: FILE_TREE_ROW_HEIGHT }}
                   title={entry.path}
-                  onClick={() => void revealPath(entry.path, entry.kind)}
+                  onClick={() => {
+                    if (integratedSearch && entry.kind === "file") {
+                      selectPath(entry.path);
+                      handleOpenFile(entry.path, true);
+                      return;
+                    }
+                    if (integratedSearch) emitState({ query: "" });
+                    void revealPath(entry.path, entry.kind);
+                  }}
+                  onDoubleClick={() => {
+                    if (integratedSearch && entry.kind === "file")
+                      handleOpenFile(entry.path, false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || !integratedSearch || entry.kind !== "file") return;
+                    event.preventDefault();
+                    selectPath(entry.path);
+                    handleOpenFile(entry.path, false);
+                  }}
                   onDragStart={(event) =>
                     handleWorkspacePathDragStart(event, entry.path, entry.kind)
                   }
@@ -718,7 +745,11 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
       <div
         role="tree"
         ref={scrollRef}
-        className="project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]"
+        className={cn(
+          "project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
+          integratedSearch && "p-1",
+          integratedSearch && query.trim() && "hidden",
+        )}
         onContextMenu={(event) => openContextMenu(event, selectedPath || ROOT_PATH)}
       >
         <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
@@ -761,6 +792,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                   onToggle={toggleDirectory}
                   onSelect={selectPath}
                   onOpen={handleOpenFile}
+                  transientFiles={integratedSearch}
                   onContextMenu={openContextMenu}
                   onDragStart={handleWorkspacePathDragStart}
                   onDragEnd={finishWorkspacePathDrag}

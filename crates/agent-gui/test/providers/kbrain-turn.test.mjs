@@ -89,6 +89,40 @@ function stream(text) {
   });
 }
 
+test("desktop Git review captures before a run request and settles after the matching terminal event", async () => {
+  storage.clear();
+  const lifecycle = [];
+  const isolated = createTsModuleLoader({ mocks: {
+    "../git/workspaceTurnReview": {
+      async beginWorkspaceTurnReview(conversationId, workdir, capture) {
+        lifecycle.push(["begin", conversationId, workdir, capture]);
+        return "snapshot-id";
+      },
+      async settleWorkspaceTurnReview(id, conversationId, completed) {
+        lifecycle.push(["settle", id, conversationId, completed]);
+      },
+    },
+  } });
+  const { runKBrainTurn: run } = isolated.loadModule("src/lib/kbrain/turn.ts");
+  const fixture = makeFetch({ calls: [], streams: [() => stream(
+    event(2, "assistant.text.delta", { text: "Done" }) + event(3, "run.completed"),
+  )] });
+  const fetch = async (url, init) => {
+    const { pathname } = new URL(String(url));
+    if (pathname.endsWith("/runs")) lifecycle.push(["request"]);
+    if (pathname.endsWith("/events")) lifecycle.push(["events"]);
+    return fixture(url, init);
+  };
+  const result = await run({ ...baseParams, fetch, workspaceReviewWorkdir: "/tmp/workspace" });
+  assert.equal(result.stopReason, "stop");
+  assert.deepEqual(lifecycle, [
+    ["begin", "conversation-1", "/tmp/workspace", true],
+    ["request"],
+    ["events"],
+    ["settle", "snapshot-id", "conversation-1", true],
+  ]);
+});
+
 async function withHttpFixture(handler, callback) {
   const server = createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

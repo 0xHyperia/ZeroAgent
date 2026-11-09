@@ -10,11 +10,17 @@ function createMarkdownModule(expanded) {
         cloneElement(element, props) {
           return { ...element, props: { ...element.props, ...props } };
         },
+        createContext(value) {
+          return { value };
+        },
         isValidElement(value) {
           return Boolean(value && typeof value === "object" && "type" in value);
         },
         memo(component) {
           return component;
+        },
+        useContext(context) {
+          return context.value;
         },
         useMemo(factory) {
           return factory();

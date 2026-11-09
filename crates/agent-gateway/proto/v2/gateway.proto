@@ -406,6 +406,10 @@ enum TunnelFrameKind {
   TUNNEL_FRAME_KIND_CANCEL = 13;
   TUNNEL_FRAME_KIND_PING = 14;
   TUNNEL_FRAME_KIND_PONG = 15;
+  TUNNEL_FRAME_KIND_PRIVATE_OPEN = 16;
+  TUNNEL_FRAME_KIND_PRIVATE_READY = 17;
+  TUNNEL_FRAME_KIND_PRIVATE_DATA = 18;
+  TUNNEL_FRAME_KIND_PRIVATE_END = 19;
 }
 
 enum TunnelWsMessageType {
@@ -417,7 +421,7 @@ enum TunnelWsMessageType {
 message TunnelFrame {
   string stream_id = 1;
   TunnelFrameKind kind = 2;
-  string target_url = 3;       // set on HTTP_REQUEST_START and WS_DIAL only
+  string target_url = 3;       // set on HTTP_REQUEST_START, WS_DIAL and PRIVATE_OPEN
   string method = 4;
   string path = 5;             // path+query relative to the target base
   repeated TunnelHeader headers = 6;

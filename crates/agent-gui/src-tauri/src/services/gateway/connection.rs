@@ -105,6 +105,16 @@ pub(crate) struct GatewayOutboundSender {
 }
 
 impl GatewayOutboundSender {
+    #[cfg(windows)]
+    pub(super) async fn closed(&self) {
+        self.lane.tx.closed().await;
+    }
+
+    #[cfg(windows)]
+    pub(super) fn is_same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.lane, &other.lane)
+    }
+
     fn lane(
         name: &'static str,
         depth: usize,

@@ -21,6 +21,27 @@
   margin-inline: auto;
   padding: 12px 32px;
 }
+[data-workspace-tab-reader] .za-markdown-reading-scroll > .za-preview-scroll-content {
+  padding: 6px 16px 32px;
+}
+[data-workspace-tab-reader] .za-markdown-column {
+  position: relative;
+  width: min(100%, 860px);
+  padding: 0 4px;
+}
+[data-workspace-tab-reader] .za-markdown-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.za-workspace-markdown-actions {
+  position: absolute;
+  inset: 0 0 auto auto;
+  z-index: 1;
+}
+[data-workspace-tab-reader] .za-markdown-content h1:first-child {
+  margin-top: 0;
+  padding-inline-end: 32px;
+}
 .za-preview-markdown.za-markdown-content {
   box-sizing: border-box;
   width: 100%;

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { usePanelRef } from "react-resizable-panels";
 import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
@@ -22,6 +23,7 @@ import {
   MIN_RIGHT_DOCK_PANEL_WIDTH,
   PROJECT_TOOLS_RESIZE_END_EVENT,
 } from "./rightDockModel";
+import "./workspace-panels.css";
 
 // Matches the `duration-200` flex-grow transition below, plus a small margin.
 const TOOLS_PANEL_TRANSITION_MS = 240;
@@ -29,6 +31,7 @@ const DEFAULT_TOOLS_PANEL_WIDTH = normalizeRightDockSettings({}).width;
 
 type PanelsState = {
   open: boolean;
+  expanded: boolean;
   width: number;
   mobile: boolean;
   resizing: boolean;
@@ -53,6 +56,8 @@ export function WorkspacePanelGroup({
   onClose,
   onWidthChange,
   immediate = false,
+  expanded = false,
+  preferBalanced = false,
   children,
 }: {
   open: boolean;
@@ -60,6 +65,8 @@ export function WorkspacePanelGroup({
   onClose: () => void;
   onWidthChange: (width: number) => void;
   immediate?: boolean;
+  expanded?: boolean;
+  preferBalanced?: boolean;
   children: ReactNode;
 }) {
   const mobile = useIsMobile();
@@ -97,13 +104,19 @@ export function WorkspacePanelGroup({
       window.removeEventListener("blur", finish);
     };
   }, [resizing]);
+  const fullWidth = open && expanded && !mobile;
+  const requestedWidth =
+    preferBalanced && width === DEFAULT_TOOLS_PANEL_WIDTH
+      ? Math.max(width, Math.round(availableWidth * 0.54))
+      : width;
   const mainMinimum = Math.min(MIN_RIGHT_DOCK_MAIN_CONTENT_WIDTH, availableWidth * 0.55);
   const toolsMinimum = Math.min(MIN_RIGHT_DOCK_PANEL_WIDTH, availableWidth * 0.4);
   const toolsMaximum = Math.min(ABSOLUTE_RIGHT_DOCK_MAX_PANEL_WIDTH, availableWidth - mainMinimum);
   const value = useMemo(
     () => ({
       open,
-      width,
+      width: requestedWidth,
+      expanded: fullWidth,
       onClose,
       immediate,
       mobile,
@@ -122,7 +135,8 @@ export function WorkspacePanelGroup({
     }),
     [
       open,
-      width,
+      requestedWidth,
+      fullWidth,
       onClose,
       onWidthChange,
       immediate,
@@ -137,6 +151,7 @@ export function WorkspacePanelGroup({
   return (
     <Context.Provider value={value}>
       <ResizablePanelGroup
+        data-workspace-tools-expanded={fullWidth ? "" : undefined}
         data-project-tools-resizing={resizing ? "true" : undefined}
         elementRef={groupElement}
         orientation="horizontal"
@@ -150,7 +165,7 @@ export function WorkspacePanelGroup({
         )}
         resizeTargetMinimumSize={{ fine: 12, coarse: 24 }}
         onLayoutChanged={(layout, meta) => {
-          if (!meta.isUserInteraction || mobile || !open) return;
+          if (!meta.isUserInteraction || mobile || !open || fullWidth) return;
           const percentage = layout["workspace-tools"];
           if (percentage === undefined) return;
           if (percentage === 0) onClose();
@@ -176,20 +191,29 @@ export function WorkspacePanelGroup({
   );
 }
 export function WorkspaceMainPanel({ children }: { children: ReactNode }) {
-  const { mobile, mainMinimum } = usePanels();
+  const { mobile, mainMinimum, expanded } = usePanels();
   return (
     <ResizablePanel
       id="workspace-main"
       minSize={mobile ? 0 : mainMinimum}
       className="flex min-h-0 min-w-0"
+      aria-hidden={expanded || undefined}
+      inert={expanded || undefined}
     >
       {children}
     </ResizablePanel>
   );
 }
-export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
+export function WorkspaceToolsPanel({
+  children,
+  retainContent = false,
+}: {
+  children: ReactNode;
+  retainContent?: boolean;
+}) {
   const {
     open,
+    expanded,
     width,
     mobile,
     resizing,
@@ -202,6 +226,18 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
     toolsMaximum,
   } = usePanels();
   const { t } = useLocale();
+  const desktopMount = useRef<HTMLDivElement>(null);
+  const [mobileMount, setMobileMount] = useState<HTMLDivElement | null>(null);
+  const [contentHost] = useState(() => {
+    if (!retainContent || typeof document === "undefined") return null;
+    const element = document.createElement("div");
+    element.className = "size-full min-h-0 min-w-0";
+    return element;
+  });
+  useLayoutEffect(() => {
+    const mount = mobile && open && mobileMount ? mobileMount : desktopMount.current;
+    if (contentHost && mount && contentHost.parentElement !== mount) mount.append(contentHost);
+  }, [contentHost, mobile, mobileMount, open]);
   const lastWidth = useRef(width);
   const wasOpen = useRef(false);
   const savedWidth = Math.max(toolsMinimum, Math.min(toolsMaximum, width));
@@ -240,14 +276,14 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
           The library caches separator-to-panel associations at registration. */}
       <LabelTooltip
         label={t("layout.resetWidthHint")}
-        disabled={resizing || !open || mobile}
+        disabled={resizing || !open || mobile || expanded}
         side="left"
         render={
           <ResizableHandle
-            disabled={mobile}
+            disabled={mobile || expanded}
             disableDoubleClick
             aria-label={t("projectTools.resizePanel")}
-            aria-hidden={!open || mobile}
+            aria-hidden={!open || mobile || expanded}
             withHandle
             onPointerDown={startResize}
             onDoubleClick={resetWidth}
@@ -257,7 +293,7 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
               event.stopPropagation();
               resetWidth();
             }}
-            className={cn((mobile || !open) && "invisible w-0 pointer-events-none")}
+            className={cn((mobile || !open || expanded) && "invisible w-0 pointer-events-none")}
           />
         }
       />
@@ -273,12 +309,12 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
         aria-hidden={!open || mobile}
         inert={!open || mobile}
       >
-        {!mobile ? (
+        {!mobile || contentHost ? (
           <div
             className="absolute inset-y-0 right-0 h-full"
-            style={{ width: resizing || settled ? "100%" : savedWidth }}
+            style={{ width: expanded || resizing || settled ? "100%" : savedWidth }}
           >
-            {children}
+            {contentHost ? <div ref={desktopMount} className="size-full" /> : children}
           </div>
         ) : null}
       </ResizablePanel>
@@ -298,10 +334,11 @@ export function WorkspaceToolsPanel({ children }: { children: ReactNode }) {
             <SheetHeader className="sr-only">
               <SheetTitle>{t("projectTools.title")}</SheetTitle>
             </SheetHeader>
-            {children}
+            {contentHost ? <div ref={setMobileMount} className="size-full min-h-0" /> : children}
           </SheetContent>
         </Sheet>
       ) : null}
+      {contentHost && createPortal(children, contentHost)}
     </>
   );
 }

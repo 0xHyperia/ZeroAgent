@@ -98,6 +98,8 @@ impl GatewayController {
             last_connection_nudge: Mutex::new(None),
             tunnel_store,
             tunnel_proxy: TunnelProxy::new(),
+            #[cfg(windows)]
+            private_loopback: super::private_loopback::DeviceLoopback::default(),
             workspace_watch,
             pending_chat_queue_requests: Mutex::new(HashMap::new()),
             pending_clarify_turns: Mutex::new(HashMap::new()),

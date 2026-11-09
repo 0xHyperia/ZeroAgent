@@ -83,6 +83,7 @@ func NewHTTPServerWithReadiness(
 		rootMux.Handle("/api/files/import-directory", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("POST /api/files/confirmed-handoff", protectedAPIHandler(cfg, sm, accounts))
 		rootMux.Handle("GET /api/files/confirmed-handoff", protectedAPIHandler(cfg, sm, accounts))
+		rootMux.Handle("GET /api/desktop/device-loopback", protectedAPIHandler(cfg, sm, accounts))
 	} else {
 		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
 		importFiles := handler.ImportReadableFiles(sm, cfg.RequestTimeout, nil)
@@ -202,6 +203,20 @@ func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *acco
 			return
 		}
 		switch r.URL.Path {
+		case "/api/desktop/device-loopback":
+			if lease.EffectiveScope() != account.SelectionScopeDevice || credential.DeviceID != lease.DeviceID || accountSession.Purpose != account.DesktopDeviceHandoffPurpose {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "desktop device selection required"})
+				return
+			}
+			privateDeviceLoopback(w, r, sm, agentID, lease.ExpiresAt, func(ctx context.Context) bool {
+				current, selected, err := accounts.ValidateSelection(ctx, cookie.Value, lease.ID)
+				if err != nil || current.UserID != accountSession.UserID || selected.AgentID != agentID ||
+					selected.EffectiveScope() != account.SelectionScopeDevice {
+					return false
+				}
+				device, err := accounts.Device(ctx, current.UserID, agentID)
+				return err == nil && device.RevokedAt == nil
+			})
 		case "/api/status":
 			writeJSON(w, http.StatusOK, map[string]any{"agents": []session.Status{sm.Status(agentID)}})
 		case "/api/files/import":

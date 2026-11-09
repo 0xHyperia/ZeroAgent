@@ -886,6 +886,30 @@
   /* Paper transforms are anchored by the reader, never by the browser's DOM scroll anchor. */
   overflow-anchor: none;
 }
+.za-pdf-floating-pages {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--za-reader-top-inset, 0px) + 8px);
+  inset-inline-end: calc(var(--za-reader-side-inset, 0px) + 12px);
+  padding: 3px 5px;
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  background: var(--za-surface);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.za-document-workspace:is(:hover, :focus-within) > .za-pdf-floating-pages {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .za-document-workspace > .za-pdf-floating-pages {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .za-document-navigation {
   position: absolute;
   inset: var(--za-reader-top-inset, 12px) auto 8px 6px;

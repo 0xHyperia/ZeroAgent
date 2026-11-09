@@ -14,6 +14,7 @@ import {
   memo,
   type ReactElement,
   type ReactNode,
+  useContext,
   useId,
   useLayoutEffect,
   useMemo,
@@ -36,6 +37,7 @@ import {
   encodeChatFileLink,
   parseChatFileLink,
 } from "../lib/chat/chatFileLinks";
+import { WorkbenchBrowserLink, workbenchBrowserLinkUrl } from "../lib/chat/workbenchBrowserLink";
 import {
   rememberExternalLinkConfirmation,
   shouldSkipExternalLinkConfirmation,
@@ -437,8 +439,12 @@ export const markdownReadOnlyComponents: Components = {
 function MarkdownExternalLink(props: MarkdownAnchorFallbackProps) {
   const { children, className, href, title } = props;
   const [modalOpen, setModalOpen] = useState(false);
+  const openWorkbenchBrowser = useContext(WorkbenchBrowserLink);
   if (!href) return <MarkdownReadOnlyLink {...props} />;
   const incomplete = href === "streamdown:incomplete-link";
+  const browserUrl = openWorkbenchBrowser ? workbenchBrowserLinkUrl(href) : null;
+  const openInWorkbench =
+    browserUrl && openWorkbenchBrowser ? () => openWorkbenchBrowser(browserUrl) : undefined;
   return (
     <>
       <button
@@ -459,7 +465,8 @@ function MarkdownExternalLink(props: MarkdownAnchorFallbackProps) {
         onClick={() => {
           if (incomplete) return;
           if (shouldSkipExternalLinkConfirmation()) {
-            void openExternalLink(href, () => window.open(href, "_blank", "noreferrer"));
+            if (openInWorkbench) openInWorkbench();
+            else void openExternalLink(href, () => window.open(href, "_blank", "noreferrer"));
           } else {
             setModalOpen(true);
           }
@@ -471,6 +478,7 @@ function MarkdownExternalLink(props: MarkdownAnchorFallbackProps) {
         isOpen={modalOpen}
         url={href}
         onClose={() => setModalOpen(false)}
+        openInWorkbench={openInWorkbench}
         onConfirm={() => window.open(href, "_blank", "noreferrer")}
       />
     </>
@@ -754,14 +762,35 @@ async function openExternalLink(url: string, fallback: () => void) {
   }
 }
 
-export function ExternalLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafetyModalProps) {
+type ExternalLinkModalProps = LinkSafetyModalProps & { openInWorkbench?: () => void };
+
+export function ExternalLinkModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  url,
+  openInWorkbench,
+}: ExternalLinkModalProps) {
   if (!isOpen || typeof document === "undefined") {
     return null;
   }
-  return <ExternalLinkDialog key={url} onClose={onClose} onConfirm={onConfirm} url={url} />;
+  return (
+    <ExternalLinkDialog
+      key={url}
+      onClose={onClose}
+      onConfirm={onConfirm}
+      url={url}
+      openInWorkbench={openInWorkbench}
+    />
+  );
 }
 
-function ExternalLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, "isOpen">) {
+function ExternalLinkDialog({
+  onClose,
+  onConfirm,
+  url,
+  openInWorkbench,
+}: Omit<ExternalLinkModalProps, "isOpen">) {
   const { t } = useLocale();
   const streamdownTranslations = useStreamdownTranslations();
   const [dontRemind, setDontRemind] = useState(false);
@@ -774,7 +803,8 @@ function ExternalLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalPro
   const handleOpenLink = async () => {
     if (dontRemind) rememberExternalLinkConfirmation();
     try {
-      await openExternalLink(url, onConfirm);
+      if (openInWorkbench) openInWorkbench();
+      else await openExternalLink(url, onConfirm);
     } finally {
       onClose();
     }

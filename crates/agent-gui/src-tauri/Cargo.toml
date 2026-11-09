@@ -97,6 +97,10 @@ rquickjs = { version = "0.8", features = ["bindgen"] }
 webpki-roots = "1.0.8"
 
 [target.'cfg(windows)'.dependencies]
+aws-lc-rs = "1.17.1"
+wry = { version = "0.55.1", default-features = false }
+webview2-com = "0.38.2"
+windows-core = "0.61.2"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security_Credentials",
@@ -111,6 +115,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Registry",
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
     # 已安装应用枚举（输入框 @ 应用提及）：SHGetFileInfoW 取图标需要
     # Shell + Com（SHGetFileInfo 要求 COM 已初始化），位图转像素走 Gdi。
     "Win32_UI_Shell",

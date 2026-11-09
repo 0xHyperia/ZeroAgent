@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useLocale } from "../../i18n";
 import { ArrowLeft, Maximize2, Minimize2, X } from "../IconSet";
 import { TooltipButton as Button } from "../ui/tooltip-button";
@@ -19,6 +20,8 @@ export type ConversationReaderPanelProps = {
   title: ReactNode;
   description: string;
   closeLabel?: string;
+  tabbed?: boolean;
+  tabbedToolbarTarget?: HTMLElement | null;
   backToLibrary?: boolean;
   backLabel?: string;
   headerActions?: ReactNode;
@@ -54,17 +57,28 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
   const [fileMenu, setFileMenu] = useState<ReactNode>(null);
   const toolbarMount = useMemo(
     () => ({
-      target: toolbarTarget,
-      leadingTarget,
-      optionsTarget,
+      target: props.tabbed ? (props.tabbedToolbarTarget ?? null) : toolbarTarget,
+      leadingTarget: props.tabbed ? props.tabbedToolbarTarget : leadingTarget,
+      optionsTarget: props.tabbed ? props.tabbedToolbarTarget : optionsTarget,
       inspectorOpen: !!props.details,
       pageTarget,
+      workspaceTab: props.tabbed,
       fileMenu,
       setFileMenu,
     }),
-    [toolbarTarget, leadingTarget, optionsTarget, props.details, pageTarget, fileMenu],
+    [
+      toolbarTarget,
+      leadingTarget,
+      optionsTarget,
+      props.tabbed,
+      props.tabbedToolbarTarget,
+      props.details,
+      pageTarget,
+      fileMenu,
+    ],
   );
   useEffect(() => {
+    if (props.tabbed) return;
     const previous = document.activeElement;
     const element = reader.current;
     closeButton.current?.focus({ preventScroll: true });
@@ -84,7 +98,7 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
         });
       }
     };
-  }, []);
+  }, [props.tabbed]);
   const { continueAction } = props;
   const headerContinue = continueAction ? (
     <Button
@@ -104,6 +118,7 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
         aria-labelledby={titleId}
         data-cloud-resource-panel=""
         data-cloud-resource-inline=""
+        data-workspace-tab-reader={props.tabbed ? "" : undefined}
         className={`cloud-resource-reader ${props.className ?? ""}`}
         onKeyDown={(event) => {
           if (event.key === "Escape" && !event.defaultPrevented) {
@@ -114,76 +129,87 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
           }
         }}
       >
-        <header className="cloud-reader-header">
-          {showBack ? (
-            <Button
-              ref={closeButton}
-              variant="ghost"
-              size="icon-sm"
-              className="cloud-reader-back"
-              data-cloud-reader-return=""
-              onClick={props.onClose}
-              aria-label={backLabel}
-              tooltip={props.backLabel ? undefined : backLabel}
-            >
-              <ArrowLeft className="size-4" />
-            </Button>
-          ) : null}
-          <div className="cloud-reader-heading">
-            {props.onTitleDragStart ? (
-              <h2
-                id={titleId}
-                className="cloud-reader-draggable-title"
-                draggable
-                onDragStart={props.onTitleDragStart}
-              >
-                {props.title}
-              </h2>
-            ) : (
-              <h2 id={titleId} title={typeof props.title === "string" ? props.title : undefined}>
-                {props.title}
-              </h2>
-            )}
-            <div className="cloud-reader-subtitle">{props.subtitle ?? props.description}</div>
-          </div>
-          <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
-          <div ref={setLeadingTarget} className="cloud-reader-leading-tools" />
-          <div className="cloud-reader-actions">
-            {headerContinue}
-            {props.headerActions}
-          </div>
-          <div ref={setOptionsTarget} className="cloud-reader-options-tools" />
-          <div className="cloud-reader-window-actions">
-            {readerLayout?.canSplit ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={expandLabel}
-                tooltip={expandLabel}
-                onClick={readerLayout.toggleExpanded}
-              >
-                {readerLayout.expanded ? (
-                  <Minimize2 className="size-4" />
-                ) : (
-                  <Maximize2 className="size-4" />
-                )}
-              </Button>
-            ) : null}
-            {!showBack ? (
+        {props.tabbed ? (
+          <>
+            <h2 id={titleId} className="sr-only">
+              {props.title}
+            </h2>
+            {props.tabbedToolbarTarget && props.headerActions
+              ? createPortal(props.headerActions, props.tabbedToolbarTarget)
+              : null}
+          </>
+        ) : (
+          <header className="cloud-reader-header">
+            {showBack ? (
               <Button
                 ref={closeButton}
                 variant="ghost"
                 size="icon-sm"
+                className="cloud-reader-back"
                 data-cloud-reader-return=""
                 onClick={props.onClose}
-                aria-label={closeLabel}
-                title={closeLabel}
+                aria-label={backLabel}
+                tooltip={props.backLabel ? undefined : backLabel}
               >
-                <X className="size-4" />
+                <ArrowLeft className="size-4" />
               </Button>
             ) : null}
-          </div>
-        </header>
+            <div className="cloud-reader-heading">
+              {props.onTitleDragStart ? (
+                <h2
+                  id={titleId}
+                  className="cloud-reader-draggable-title"
+                  draggable
+                  onDragStart={props.onTitleDragStart}
+                >
+                  {props.title}
+                </h2>
+              ) : (
+                <h2 id={titleId} title={typeof props.title === "string" ? props.title : undefined}>
+                  {props.title}
+                </h2>
+              )}
+              <div className="cloud-reader-subtitle">{props.subtitle ?? props.description}</div>
+            </div>
+            <div ref={setToolbarTarget} className="cloud-reader-format-tools" />
+            <div ref={setLeadingTarget} className="cloud-reader-leading-tools" />
+            <div className="cloud-reader-actions">
+              {headerContinue}
+              {props.headerActions}
+            </div>
+            <div ref={setOptionsTarget} className="cloud-reader-options-tools" />
+            <div className="cloud-reader-window-actions">
+              {readerLayout?.canSplit ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={expandLabel}
+                  tooltip={expandLabel}
+                  onClick={readerLayout.toggleExpanded}
+                >
+                  {readerLayout.expanded ? (
+                    <Minimize2 className="size-4" />
+                  ) : (
+                    <Maximize2 className="size-4" />
+                  )}
+                </Button>
+              ) : null}
+              {!showBack ? (
+                <Button
+                  ref={closeButton}
+                  variant="ghost"
+                  size="icon-sm"
+                  data-cloud-reader-return=""
+                  onClick={props.onClose}
+                  aria-label={closeLabel}
+                  title={closeLabel}
+                >
+                  <X className="size-4" />
+                </Button>
+              ) : null}
+            </div>
+          </header>
+        )}
         <div className="za-reader-stage">
           <div className="cloud-reader-body">{props.children}</div>
           {props.details}

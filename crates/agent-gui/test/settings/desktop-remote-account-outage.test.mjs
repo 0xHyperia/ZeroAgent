@@ -48,6 +48,8 @@ test("a directory outage preserves the authorized remote workbench across device
       },
     },
   } });
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  window.ResizeObserver = globalThis.ResizeObserver;
   const { React, act } = env;
   const { RemoteDeviceWorkbench } = env.loadModule("src/pages/RemoteDeviceWorkbench.tsx");
   const state = env.loadModule("src/lib/relay/remoteDeviceState.ts");

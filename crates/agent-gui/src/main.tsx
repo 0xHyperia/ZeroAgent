@@ -1,4 +1,5 @@
 import { startConfiguredCatalogLive } from "@liveagent/ui/lib/models/catalogLive";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
@@ -112,4 +113,15 @@ if (import.meta.env.DEV) {
   });
 }
 
-currentBootstrap = bootstrap();
+const browserWindowLease = isTauriHost()
+  ? /^workbench-browser-([a-f0-9-]{36})$/i.exec(getCurrentWindow().label)?.[1]
+  : undefined;
+if (browserWindowLease) {
+  void import("./components/workbench-browser/DetachedWorkbenchBrowser").then(
+    ({ default: Browser }) => {
+      root.render(<Browser lease={browserWindowLease} />);
+    },
+  );
+} else {
+  currentBootstrap = bootstrap();
+}

@@ -47,6 +47,8 @@ mod chat_ingress_transport;
 mod clarify;
 mod composer_action;
 mod connection;
+#[cfg(windows)]
+mod private_loopback;
 mod controller;
 mod envelope_handler;
 mod history_sync;
@@ -145,6 +147,8 @@ pub struct GatewayController {
     last_connection_nudge: Mutex<Option<Instant>>,
     pub(crate) tunnel_store: TunnelStore,
     pub(crate) tunnel_proxy: TunnelProxy,
+    #[cfg(windows)]
+    private_loopback: private_loopback::DeviceLoopback,
     pub(crate) workspace_watch: Arc<WorkspaceWatchService>,
     pending_chat_queue_requests: Mutex<HashMap<String, oneshot::Sender<proto::ChatQueueResponse>>>,
     pending_clarify_turns: Mutex<HashMap<String, oneshot::Sender<proto::ClarifyTurnResponse>>>,

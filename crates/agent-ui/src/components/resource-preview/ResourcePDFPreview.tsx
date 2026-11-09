@@ -65,6 +65,7 @@ export default function ResourcePDFPreview({
 }) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const chrome = useContext(PreviewToolbarMount);
+  const singlePage = Boolean(chrome?.workspaceTab && !thumbnail);
   const [navigation, setNavigation] = usePreviewReadingState("pdfNavigation", false);
   const [annotating, setAnnotating] = useState(false);
   const annotationExit = useRef<(() => void) | null>(null);
@@ -199,7 +200,7 @@ export default function ResourcePDFPreview({
   // biome-ignore lint/correctness/useExhaustiveDependencies: paper geometry changes require restoring the visible page after reflow.
   useLayoutEffect(() => {
     // A cover must never scroll its containing composer or file browser.
-    if (!document || thumbnail) return;
+    if (!document || thumbnail || singlePage) return;
     // A narrower pane changes every paper's height. Retain the page, rather than
     // retaining a pixel offset which could now point into a different page.
     const frame = requestAnimationFrame(() => {
@@ -208,14 +209,34 @@ export default function ResourcePDFPreview({
         ?.scrollIntoView?.({ block: "start", behavior: "instant" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [document, thumbnail, container, viewport.width, viewport.height, zoom, sideInset, navigation]);
+  }, [
+    document,
+    thumbnail,
+    singlePage,
+    container,
+    viewport.width,
+    viewport.height,
+    zoom,
+    sideInset,
+    navigation,
+  ]);
   function navigatePage(target: number) {
     if (!document || !Number.isInteger(target) || target < 1 || target > document.numPages) return;
     setPage(target);
+    if (singlePage && target !== page) {
+      setSelection(null);
+      if (container.current) container.current.scrollTop = 0;
+      return;
+    }
     container.current
       ?.querySelector(`[data-pdf-page="${target}"]`)
       ?.scrollIntoView?.({ block: "start", behavior: readerScrollBehavior() });
   }
+  const visiblePages = document
+    ? singlePage
+      ? [Math.max(1, Math.min(page, document.numPages))]
+      : Array.from({ length: thumbnail ? 1 : document.numPages }, (_, index) => index + 1)
+    : [];
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   function trackSelection() {
@@ -264,7 +285,9 @@ export default function ResourcePDFPreview({
             </Button>
           ) : null}
         </PreviewLeadingTools>
-        <PreviewPageControls page={page} count={document?.numPages ?? 0} onPage={navigatePage} />
+        {!singlePage ? (
+          <PreviewPageControls page={page} count={document?.numPages ?? 0} onPage={navigatePage} />
+        ) : null}
         <PreviewZoomControl
           label="PDF 缩放"
           value={zoom}
@@ -324,7 +347,7 @@ export default function ResourcePDFPreview({
           aria-label="PDF 阅读画布"
           aria-busy={!document && !error}
           onScroll={() => {
-            trackPage();
+            if (!singlePage) trackPage();
             trackSelection();
           }}
           tabIndex={0}
@@ -333,17 +356,16 @@ export default function ResourcePDFPreview({
           {error ? (
             <PreviewUnavailable message={error} onDownload={onDownload} onRetry={onRetry} />
           ) : document ? (
-            Array.from({ length: thumbnail ? 1 : document.numPages }, (_, index) => (
+            visiblePages.map((number) => (
               <PDFPage
-                // biome-ignore lint/suspicious/noArrayIndexKey: immutable PDF page numbers are the resource's stable identities.
-                key={index + 1}
+                key={number}
                 document={document}
-                number={index + 1}
-                selected={page === index + 1}
+                number={number}
+                selected={page === number}
                 zoom={zoom}
                 cover={thumbnail}
                 pane={paperViewport}
-                onScale={index === 0 ? setActualPercent : undefined}
+                onScale={singlePage || number === 1 ? setActualPercent : undefined}
                 root={container}
                 assertCurrent={assertCurrent}
                 onDownload={onDownload}
@@ -353,13 +375,23 @@ export default function ResourcePDFPreview({
                 workspace={workspace}
                 comments={markedComments}
                 activeSelection={selection}
-                onPainted={thumbnail || page === index + 1 ? markPainted : undefined}
+                onPainted={thumbnail || page === number ? markPainted : undefined}
                 hideLoading={!painted}
                 commentDestination={commentDestination}
               />
             ))
           ) : null}
         </PreviewScrollArea>
+        {singlePage && document && !error && document.numPages > 1 ? (
+          <div className="za-pdf-floating-pages">
+            <PreviewPageControls
+              page={page}
+              count={document.numPages}
+              onPage={navigatePage}
+              inline
+            />
+          </div>
+        ) : null}
         {!painted && !error ? (
           <div className="za-preview-frame-pending" data-cover={!!thumbnail}>
             <PreviewLoading message="正在读取 PDF…" onCancel={thumbnail ? undefined : onCancel} />

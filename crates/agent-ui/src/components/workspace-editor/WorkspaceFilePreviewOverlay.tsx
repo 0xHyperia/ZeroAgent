@@ -54,15 +54,31 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { copyTextToClipboard as copySharedTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ConversationReaderPanel } from "../resource-preview/ConversationReaderPanel";
-import { PreviewIdentityContext } from "../resource-preview/PreviewChrome";
+import {
+  type MarkdownSelectionActions,
+  PreviewIdentityContext,
+} from "../resource-preview/PreviewChrome";
 import { PreviewLoading, PreviewUnavailable } from "../resource-preview/PreviewFeedback";
 import type { DocumentRevisionComment } from "../resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "../resource-preview/ResourcePreview";
 import { ResourceTitleMenu } from "../resource-preview/ResourceReaderDetails";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
+import type { WorkspaceHTMLLink } from "./workspaceHtmlDocument";
+
+const WorkspaceHTMLPreview = lazy(() => import("./WorkspaceHTMLPreview"));
+const HTML_DOCUMENT = /\.html?$/i;
 
 export type WorkspaceFilePreviewOpenRequest = {
   id: number;
@@ -95,8 +111,12 @@ export type WorkspaceFilePreviewOverlayProps = {
   onRequestClose: () => void;
   onClose: () => void;
   reader?: boolean;
+  tabbed?: boolean;
+  tabbedToolbarTarget?: HTMLElement | null;
+  markdownSelectionActions?: MarkdownSelectionActions;
   readingViewId?: string;
   onRequestRevision?: (revision: WorkspaceDocumentRevision) => Promise<boolean>;
+  onOpenHTMLLink?: (link: WorkspaceHTMLLink) => void;
 };
 
 type LoadedPreview = ReadWorkspacePreviewResponse & {
@@ -372,7 +392,9 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         const kind = resolvePreviewKind(response.path || request.path, response.mimeType);
         const text = isTextPreviewKind(kind) ? decodePreviewText(bytes) : null;
         const blobBytes =
-          kind === "html" && text !== null
+          kind === "html" &&
+          text !== null &&
+          !(currentProps.current.tabbed && HTML_DOCUMENT.test(response.path || request.path))
             ? new TextEncoder().encode(buildSandboxedHtmlPreviewSource(text))
             : bytes;
         const blob = new Blob([bytesToArrayBuffer(blobBytes)], { type: response.mimeType });
@@ -515,7 +537,10 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       onOpenImagePath={openImagePath}
       onActionError={setError}
       reader={reader}
+      tabbed={props.tabbed}
+      onOpenHTMLLink={props.onOpenHTMLLink}
       readingViewId={props.readingViewId}
+      markdownSelectionActions={props.markdownSelectionActions}
       assertCurrent={() => assertCurrent(currentPreview)}
       onDownload={canDownload ? () => downloadPreview(currentPreview) : undefined}
       onRequestRevision={requestRevision}
@@ -530,43 +555,51 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     return (
       <ConversationReaderPanel
         title={
-          <ResourceTitleMenu name={name}>
-            <DropdownMenuItem className="gap-2" disabled={loading} onClick={reload}>
-              <RefreshCw className="size-4" />
-              {t("workspaceFilePreview.reload")}
-            </DropdownMenuItem>
-            {canOpenEditor && (
-              <DropdownMenuItem
-                className="gap-2"
-                onClick={() => onOpenEditor(activePreviewRequest)}
-              >
-                <FilePenLine className="size-4" />
-                {t("workspaceFilePreview.edit")}
+          props.tabbed ? (
+            name
+          ) : (
+            <ResourceTitleMenu name={name}>
+              <DropdownMenuItem className="gap-2" disabled={loading} onClick={reload}>
+                <RefreshCw className="size-4" />
+                {t("workspaceFilePreview.reload")}
               </DropdownMenuItem>
-            )}
-            {canOpenExternal && (
-              <DropdownMenuItem className="gap-2" onClick={() => void openExternal()}>
-                <ExternalLink className="size-4" />
-                {t("workspaceFilePreview.openExternal")}
-              </DropdownMenuItem>
-            )}
-          </ResourceTitleMenu>
+              {canOpenEditor && (
+                <DropdownMenuItem
+                  className="gap-2"
+                  onClick={() => onOpenEditor(activePreviewRequest)}
+                >
+                  <FilePenLine className="size-4" />
+                  {t("workspaceFilePreview.edit")}
+                </DropdownMenuItem>
+              )}
+              {canOpenExternal && (
+                <DropdownMenuItem className="gap-2" onClick={() => void openExternal()}>
+                  <ExternalLink className="size-4" />
+                  {t("workspaceFilePreview.openExternal")}
+                </DropdownMenuItem>
+              )}
+            </ResourceTitleMenu>
+          )
         }
         description={t("workspaceFilePreview.title")}
         closeLabel={t("workspaceFilePreview.close")}
+        tabbed={props.tabbed}
+        tabbedToolbarTarget={props.tabbedToolbarTarget}
         returnFocusTo={activePreviewRequest.returnFocusTo}
         headerActions={
-          <TooltipButton
-            variant="ghost"
-            size="icon-sm"
-            data-reader-secondary=""
-            aria-label={downloadLabel}
-            tooltip={downloadLabel}
-            disabled={!canDownload || loading}
-            onClick={() => canDownload && currentPreview && downloadPreview(currentPreview)}
-          >
-            <Download className="size-4" />
-          </TooltipButton>
+          kind !== "markdown" || !props.tabbed ? (
+            <TooltipButton
+              variant="ghost"
+              size="icon-sm"
+              data-reader-secondary=""
+              aria-label={downloadLabel}
+              tooltip={downloadLabel}
+              disabled={!canDownload || loading}
+              onClick={() => canDownload && currentPreview && downloadPreview(currentPreview)}
+            >
+              <Download className="size-4" />
+            </TooltipButton>
+          ) : null
         }
         onClose={onRequestClose}
       >
@@ -737,7 +770,10 @@ function PreviewBody(props: {
   assertCurrent: () => void;
   onDownload?: () => void;
   reader?: boolean;
+  tabbed?: boolean;
+  onOpenHTMLLink?: (link: WorkspaceHTMLLink) => void;
   readingViewId?: string;
+  markdownSelectionActions?: MarkdownSelectionActions;
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
 }) {
   const {
@@ -752,6 +788,21 @@ function PreviewBody(props: {
     onOpenImagePath,
     onActionError,
   } = props;
+  if (props.tabbed && preview.kind === "html" && HTML_DOCUMENT.test(preview.path || activePath)) {
+    return (
+      <Suspense fallback={<PreviewLoading />}>
+        <WorkspaceHTMLPreview
+          key={preview.sha256}
+          workdir={workdir}
+          path={preview.path || activePath}
+          html={preview.text ?? ""}
+          assertCurrent={props.assertCurrent}
+          onOpenLink={props.onOpenHTMLLink}
+          onDownload={props.onDownload}
+        />
+      </Suspense>
+    );
+  }
   if (
     [
       "document",
@@ -796,6 +847,7 @@ function PreviewBody(props: {
             };
           }}
           onDownload={props.onDownload}
+          markdownSelectionActions={props.markdownSelectionActions}
           onRequestRevision={props.onRequestRevision}
         />
       </div>

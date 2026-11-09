@@ -102,6 +102,20 @@ impl GatewayController {
                 Ok(())
             }
             Some(proto::gateway_envelope::Payload::TunnelFrame(frame)) => {
+                if frame.stream_id.starts_with("private-") {
+                    #[cfg(windows)]
+                    return self.private_loopback.handle(self, frame);
+                    #[cfg(not(windows))]
+                    return self.send_agent_envelope(proto::AgentEnvelope {
+                        request_id,
+                        timestamp: now_unix_seconds(),
+                        payload: Some(proto::agent_envelope::Payload::TunnelFrame(proto::TunnelFrame {
+                            stream_id: frame.stream_id,
+                            kind: proto::TunnelFrameKind::Error as i32,
+                            ..Default::default()
+                        })),
+                    }).await;
+                }
                 self.tunnel_proxy.handle_frame(self, frame)
             }
             Some(proto::gateway_envelope::Payload::WorkspaceWatch(request)) => {

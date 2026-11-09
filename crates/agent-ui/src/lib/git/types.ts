@@ -61,6 +61,7 @@ export type GitDiffResponse = {
   headRef: string;
   mode: string;
   files: string[];
+  changes?: GitCommitFile[];
   patch: string;
   stat: string;
   truncated: boolean;
@@ -215,13 +216,14 @@ export type GitClient = {
   createBranch(workdir: string, branch: string, startPoint?: string): Promise<GitOperationResponse>;
   diff(
     workdir: string,
-    mode: "branch" | "working_tree" | "staged",
+    mode: "branch" | `branch:${string}` | "working_tree" | "staged" | "unstaged",
     path?: string,
   ): Promise<GitDiffResponse>;
   log(workdir: string, options?: GitLogOptions): Promise<GitLogResponse>;
   commitDetails(workdir: string, commit: string): Promise<GitCommitDetailsResponse>;
   compareCommitWithRemote(workdir: string, commit: string): Promise<GitDiffResponse>;
   commitDiff(workdir: string, commit: string, path?: string): Promise<GitDiffResponse>;
+  lastTurnDiff?(workdir: string, conversationId: string, path?: string): Promise<GitDiffResponse>;
   stage(workdir: string, path: string): Promise<GitOperationResponse>;
   stageAll(workdir: string): Promise<GitOperationResponse>;
   unstage(workdir: string, path: string): Promise<GitOperationResponse>;
@@ -382,6 +384,9 @@ export function normalizeGitDiffResponse(input: unknown): GitDiffResponse {
     headRef: asString(source.headRef ?? source.head_ref),
     mode: asString(source.mode),
     files: stringArray(source.files),
+    ...(Array.isArray(source.changes)
+      ? { changes: source.changes.map(normalizeGitCommitFile) }
+      : {}),
     patch: asString(source.patch),
     stat: asString(source.stat),
     truncated: asBoolean(source.truncated),

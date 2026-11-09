@@ -37,6 +37,7 @@ import { withToolRunInfo } from "@liveagent/ui/lib/chat/toolRunInfo";
 import type { Locale } from "../../i18n/config";
 import type { ConversationViewState } from "../chat/conversation/conversationState";
 import { appendMessagesToConversation } from "../chat/conversation/conversationState";
+import { beginWorkspaceTurnReview, settleWorkspaceTurnReview } from "../git/workspaceTurnReview";
 import { createKBrainClient } from "./client";
 import { hookWarningNotice, parseHookWarning } from "./hookWarning";
 import { getKBrainSessionId, setKBrainSessionId } from "./mapping";
@@ -306,6 +307,8 @@ export type KBrainTurnParams = {
   goal?: { action: "set"; goal: string } | { action: "resume" };
   /** 不发起新运行，挂接到后端按目标自动发起的这一轮（goal.updated 给出的请求标识）。 */
   attachClientRequestId?: string;
+  /** Local desktop worktree at the moment the engine accepts this request. */
+  workspaceReviewWorkdir?: string;
   onGoalUpdate?: (state: KBrainGoalState) => void;
 };
 
@@ -470,6 +473,7 @@ async function waitForCancelledRun(
   const settled = new AbortController();
   const timer = setTimeout(() => settled.abort(), cancelSettleTimeoutMs);
   let seq = afterSeq;
+  let sawTerminal = false;
   try {
     while (!settled.signal.aborted) {
       const before = seq;
@@ -486,6 +490,7 @@ async function waitForCancelledRun(
                 event.type === "run.completed" ||
                 event.type === "run.failed")
             ) {
+              sawTerminal = true;
               settled.abort();
             }
           },
@@ -500,6 +505,7 @@ async function waitForCancelledRun(
   } finally {
     clearTimeout(timer);
   }
+  return sawTerminal;
 }
 
 function throwIfAborted(signal: AbortSignal) {
@@ -655,7 +661,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     params.onElicitationRequest && !params.attachClientRequestId
       ? { ...params.options, mcp_elicitation: true }
       : params.options;
-  const startRun = async () => {
+  const requestRun = async () => {
     if (params.attachClientRequestId) return attachRun();
     const run = {
       client_request_id: clientRequestId,
@@ -682,6 +688,24 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       return state.run;
     }
     return client.startRun({ conversation_id: kbrainSessionId, ...run }, params.signal);
+  };
+  let workspaceReviewId: string | null = null;
+  const startRun = async () => {
+    const snapshot = params.workspaceReviewWorkdir
+      ? await beginWorkspaceTurnReview(
+          params.conversationId,
+          params.workspaceReviewWorkdir,
+          !params.attachClientRequestId,
+        )
+      : null;
+    try {
+      const run = await requestRun();
+      workspaceReviewId = snapshot;
+      return run;
+    } catch (error) {
+      await settleWorkspaceTurnReview(snapshot, params.conversationId);
+      throw error;
+    }
   };
   // 停止上一轮后立刻发出的下一轮（排队指令插队）可能赶上后台任务仍在运行。K-brain
   // 在登记请求和改动目标之前就拒绝忙会话，所以普通运行和目标设定/续上都可以用同一
@@ -716,10 +740,17 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   }
   if (params.signal.aborted) {
     await client.cancelRun(kbrainSessionId, accepted.run_id).catch(() => undefined);
-    await waitForCancelledRun(client, kbrainSessionId, accepted.run_id, accepted.accepted_seq);
+    const cancelled = await waitForCancelledRun(
+      client,
+      kbrainSessionId,
+      accepted.run_id,
+      accepted.accepted_seq,
+    );
+    await settleWorkspaceTurnReview(workspaceReviewId, params.conversationId, cancelled);
     throw abortError();
   }
   if (accepted.conversation_id !== kbrainSessionId || !accepted.run_id) {
+    await settleWorkspaceTurnReview(workspaceReviewId, params.conversationId, false);
     throw new Error("ZeroAgent engine returned an invalid run identity");
   }
   reportProgress({ stage: "preparing" });
@@ -734,6 +765,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   let terminal: "stop" | "error" | "aborted" = "stop";
   let errorMessage: string | undefined;
   let sawTerminal = false;
+  let automaticContinuation = false;
   let permissionFailure: Error | undefined;
   const pendingPermissions = new Map<string, AbortController>();
   const pendingQuestions = new Map<string, AbortController>();
@@ -864,7 +896,11 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       }
       case "goal.updated": {
         const state = eventPayload<KBrainGoalState>(event);
-        if (state?.conversation_id === kbrainSessionId) params.onGoalUpdate?.(state);
+        if (state?.conversation_id === kbrainSessionId) {
+          automaticContinuation =
+            state.status === "continuing" && Boolean(state.next_client_request_id);
+          params.onGoalUpdate?.(state);
+        }
         break;
       }
       case "subagent.started":
@@ -1278,11 +1314,16 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     cancelPendingPermissions();
     await client.cancelRun(kbrainSessionId, accepted.run_id).catch(() => undefined);
     if (params.signal.aborted && !sawTerminal) {
-      await waitForCancelledRun(client, kbrainSessionId, accepted.run_id, afterSeq);
+      sawTerminal = await waitForCancelledRun(client, kbrainSessionId, accepted.run_id, afterSeq);
     }
   }
   if (sawTerminal) cancelPendingPermissions();
   params.signal.removeEventListener("abort", abortStream);
+  await settleWorkspaceTurnReview(
+    workspaceReviewId,
+    params.conversationId,
+    sawTerminal && !automaticContinuation,
+  );
 
   if (!sawTerminal && terminal === "stop") {
     terminal = "error";

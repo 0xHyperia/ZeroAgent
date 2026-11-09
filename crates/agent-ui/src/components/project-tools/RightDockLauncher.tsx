@@ -35,6 +35,7 @@ type RightDockLauncherActions = {
 };
 
 type RightDockCreateMenuProps = RightDockLauncherActions & {
+  compact?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   shellOptions: TerminalShellOption[];
@@ -70,6 +71,7 @@ type RightDockChooserProps = RightDockLauncherActions & {
 export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
   const {
     leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
+    compact,
     open,
     onOpenChange,
     shellOptions,
@@ -132,7 +134,7 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
           "size-8 rounded-lg text-muted-foreground hover:text-foreground",
         )}
       >
-        <Plus className="size-4" />
+        {compact ? <ChevronRight className="size-3.5 rotate-90" /> : <Plus className="size-4" />}
       </DropdownMenuTrigger>
       <DropdownMenuContent variant="soft" align="end" sideOffset={6} className="min-w-40">
         {terminalItem}

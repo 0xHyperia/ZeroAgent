@@ -13,6 +13,7 @@ function fixture(handler) {
     if (command === "account_remote_open") return { bridgeId: "captured-bridge-a", selection };
     if (command === "account_remote_http") return { status: 200, headers: { "content-type": "application/json" }, bodyBase64: Buffer.from('{"device":"device-a"}').toString("base64") };
     if (command === "account_remote_close") return;
+    if (command === "workbench_browser_loopback") return;
     assert.fail(`unexpected Native command ${command}`);
   };
   const loader = createTsModuleLoader({ mocks: {
@@ -72,6 +73,21 @@ test("Native remote HTTP preserves bytes and only passes controlled headers to t
     for (const path of ["https://foreign.invalid/api/status", "/non-api", "//foreign.invalid/api/status"]) await assert.rejects(host.request(path), /超出已配置 Gateway/);
     assert.equal(f.calls.filter((call) => call.command === "account_remote_http").length, 1);
   } finally { dispose(); }
+});
+
+test("private browser navigation uses the selected native bridge and expires with it", async () => {
+  const f = fixture();
+  const { host, dispose, openPrivateBrowserPort } = await f.api.createDesktopRemoteHost(f.input, f.dependencies);
+  const address = "http://localhost:5173/app";
+  assert.equal("openPrivateBrowserPort" in host, false);
+  await openPrivateBrowserPort("tab-1", address);
+  assert.deepEqual(f.calls.at(-1), {
+    command: "workbench_browser_loopback",
+    args: { id: "tab-1", request: { action: "openGateway", bridgeId: "captured-bridge-a", url: address } },
+  });
+  dispose();
+  await assert.rejects(openPrivateBrowserPort("tab-1", address), /已失效/);
+  assert.equal(f.calls.filter((call) => call.command === "workbench_browser_loopback").length, 1);
 });
 
 test("offline, expired or missing device authority prevents bridge open and cannot fall back to local execution", async () => {

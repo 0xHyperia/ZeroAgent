@@ -20,8 +20,12 @@ import {
   type WorkbenchNavigationId,
 } from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
+import { isConversationImageTool } from "@liveagent/ui/components/chat/assistant-bubble/assistantBubbleUtils";
+import {
+  conversationImageDeliverables,
+  parseConversationImageResult,
+} from "@liveagent/ui/components/chat/assistant-bubble/ConversationImageTool";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
-import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
 import type {
@@ -34,14 +38,16 @@ import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/Wor
 import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
+import { expandedPathsForFileTreePath } from "@liveagent/ui/components/project-tools/rightDockModel";
 import {
   WorkspaceMainPanel,
   WorkspacePanelGroup,
   WorkspaceToolsPanel,
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
-import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
+import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
 import { documentRevisionText } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
+import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
@@ -64,12 +70,9 @@ import {
   WorkspaceOverlayHost,
 } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import { workspaceImageRelativePathForCopy } from "@liveagent/ui/components/workspace-editor/workspaceImageViewer";
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { conversationImageDeliverables, parseConversationImageResult } from "@liveagent/ui/components/chat/assistant-bubble/ConversationImageTool";
-import { isConversationImageTool } from "@liveagent/ui/components/chat/assistant-bubble/assistantBubbleUtils";
-import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
-import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
 import { getAutomationState, useAutomation } from "@liveagent/ui/lib/automation/index";
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import { formatCheckpointRewoundNotification } from "@liveagent/ui/lib/chat/checkpointRewind";
@@ -77,8 +80,10 @@ import type {
   ComposerCommandHost,
   ComposerTurnCommand,
 } from "@liveagent/ui/lib/chat/composerCommands";
+import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import { searchMentionConversations } from "@liveagent/ui/lib/chat/conversationSearch";
 import { rememberSshHostNames } from "@liveagent/ui/lib/chat/sshManagerDisplay";
+import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
 import { useChangedFilesActions } from "@liveagent/ui/lib/chat/useChangedFilesActions";
 import { useChatFileLinkNavigation } from "@liveagent/ui/lib/chat/useChatFileLinkNavigation";
 import {
@@ -87,6 +92,7 @@ import {
   useInsertCodeReviewSkill,
 } from "@liveagent/ui/lib/chat/useComposerActions";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
+import { WorkbenchBrowserLink } from "@liveagent/ui/lib/chat/workbenchBrowserLink";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
@@ -95,6 +101,7 @@ import { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConv
 import { useRightDockSettings } from "@liveagent/ui/lib/projectTools/useRightDockSettings";
 import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import { buildGatewayPublicBaseUrl } from "@liveagent/ui/lib/shared/gatewayPublicUrl";
+import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type {
   ConversationOpenOptions,
@@ -310,6 +317,7 @@ import {
 import { ConversationTrajectorySurface } from "./chat/surfaces/ConversationTrajectorySurface";
 import { TerminalPaneHost } from "./chat/surfaces/TerminalPaneHost";
 import { DesktopConversationImageHost } from "./chat/surfaces/useDesktopConversationImages";
+import { useDesktopWorkspaceTabPresentation } from "./chat/workbench/DesktopWorkspaceResources";
 import { resolveWorkbenchPaneProject } from "./chat/workbench/paneProjectContext";
 import { sessionWorkbench } from "./chat/workbench/sessionWorkbench";
 import { commitTerminalDrop } from "./chat/workbench/terminalDropCommit";
@@ -322,6 +330,10 @@ import {
   terminalPaneBindings,
   terminalPaneLease,
 } from "./chat/workbench/terminalPaneRuntime";
+import {
+  useDesktopWorkspaceTabs,
+  type WorkspaceFileRequest,
+} from "./chat/workbench/useDesktopWorkspaceTabs";
 import { useWindowWorkbench } from "./chat/workbench/useWindowWorkbench";
 import {
   canSplitRectAtEdge,
@@ -454,12 +466,8 @@ function ChatPageContent(props: ChatPageProps) {
     () => "",
   );
   const prepareComposerForConversationChangeActionRef = useRef<() => void>(() => undefined);
-  const {
-    activeView,
-    setActiveView,
-    projectSettingsProject,
-    setProjectSettingsProject,
-  } = useApplicationViewState<WorkspaceProject>();
+  const { activeView, setActiveView, projectSettingsProject, setProjectSettingsProject } =
+    useApplicationViewState<WorkspaceProject>();
   const workspaceOwner = String(props.relayUser.id);
   const dock = useConversationRightDock(workspaceOwner, currentConversationId);
   const { rightDockOpen, setRightDockOpen, openToolTab, closeToolForPane } = dock;
@@ -834,6 +842,13 @@ function ChatPageContent(props: ChatPageProps) {
     currentConversationIdRef,
     currentConversationSessionId,
   });
+  const workspaceMarkdownTextGenerationClient = useProjectToolTextGenerationClient({
+    purpose: "workspace-edit",
+    settings,
+    conversationRuntimeCacheRef,
+    currentConversationIdRef,
+    currentConversationSessionId,
+  });
 
   function cancelConversationLoad() {
     conversationLoadSequenceRef.current += 1;
@@ -986,17 +1001,122 @@ function ChatPageContent(props: ChatPageProps) {
     terminalProjectPathKey,
     rightDockFileTreeOpen,
   });
-  const {
-    handleOpenWorkspaceFile,
-    handleOpenSshTerminal,
-    openWorkspaceEditorFile,
-    openWorkspaceFilePreview,
-  } = workspaceOverlays;
+  const tabbedWorkspace = !isKBrainBrowserHost();
+  const canOpenWorkspaceBrowser = tabbedWorkspace && /Windows/i.test(navigator.userAgent);
+  const revealDesktopWorkspace = useCallback(() => setRightDockOpen(true), [setRightDockOpen]);
+  const workspaceScope = workspaceOverlays.workspaceViewScope;
+  const desktopTabs = useDesktopWorkspaceTabs(
+    workspaceOwner,
+    workspaceScope,
+    revealDesktopWorkspace,
+    tabbedWorkspace && !isDraftConversation
+      ? {
+          projectPathKey: terminalProjectPathKey,
+          workdir: terminalProjectPath,
+          open: rightDockOpen,
+          setOpen: setRightDockOpen,
+        }
+      : undefined,
+  );
+  const { openFile: openWorkspaceTab } = desktopTabs;
+  const { handleOpenSshTerminal, hideWorkspaceSshTerminalOverlay } = workspaceOverlays;
+  const openWorkspaceEditorFile = useCallback(
+    (request: WorkspaceFileRequest) => {
+      if (!tabbedWorkspace || request.remote) {
+        workspaceOverlays.openWorkspaceEditorFile(request);
+        return;
+      }
+      hideWorkspaceSshTerminalOverlay();
+      openWorkspaceTab(request, "source");
+    },
+    [
+      hideWorkspaceSshTerminalOverlay,
+      openWorkspaceTab,
+      tabbedWorkspace,
+      workspaceOverlays.openWorkspaceEditorFile,
+    ],
+  );
+  const openWorkspaceFilePreview = useCallback(
+    (request: WorkspaceFileRequest) => {
+      if (!tabbedWorkspace) {
+        workspaceOverlays.openWorkspaceFilePreview(request);
+        return;
+      }
+      hideWorkspaceSshTerminalOverlay();
+      openWorkspaceTab(request, "preview");
+    },
+    [
+      hideWorkspaceSshTerminalOverlay,
+      openWorkspaceTab,
+      tabbedWorkspace,
+      workspaceOverlays.openWorkspaceFilePreview,
+    ],
+  );
+  const selectWorkspacePath = useCallback(
+    (path: string) => {
+      if (!terminalProjectPathKey) return;
+      const relative = workspaceImageRelativePathForCopy(terminalProjectPath, path);
+      if (!relative || /^([A-Z]:[/\\]|[/\\])/i.test(relative)) return;
+      handleRightDockFileTreeStateChange({
+        selectedPath: relative,
+        expandedPaths: Array.from(
+          new Set([
+            ...rightDockFileTreeState.expandedPaths,
+            ...expandedPathsForFileTreePath(relative),
+          ]),
+        ),
+        bumpRevision: true,
+      });
+    },
+    [
+      handleRightDockFileTreeStateChange,
+      rightDockFileTreeState.expandedPaths,
+      terminalProjectPath,
+      terminalProjectPathKey,
+    ],
+  );
+  const handleOpenWorkspaceFile = useCallback(
+    (path: string, imagePaths?: string[], temporary = false) => {
+      if (!terminalProjectPath || !terminalProjectPathKey) return;
+      const request = {
+        projectPathKey: terminalProjectPathKey,
+        workdir: terminalProjectPath,
+        path,
+        imagePaths,
+      };
+      if (tabbedWorkspace) {
+        hideWorkspaceSshTerminalOverlay();
+        openWorkspaceTab(request, isWorkspacePreviewPath(path) ? "preview" : "source", temporary);
+      } else if (isWorkspacePreviewPath(path)) openWorkspaceFilePreview(request);
+      else openWorkspaceEditorFile(request);
+    },
+    [
+      hideWorkspaceSshTerminalOverlay,
+      openWorkspaceEditorFile,
+      openWorkspaceFilePreview,
+      openWorkspaceTab,
+      tabbedWorkspace,
+      terminalProjectPath,
+      terminalProjectPathKey,
+    ],
+  );
+  const handleOpenWorkspaceFileDiff = useCallback(
+    (path: string, temporary = false) => {
+      if (!terminalProjectPath || !terminalProjectPathKey) return;
+      selectWorkspacePath(path);
+      openWorkspaceTab(
+        { projectPathKey: terminalProjectPathKey, workdir: terminalProjectPath, path },
+        "diff",
+        temporary,
+      );
+    },
+    [openWorkspaceTab, selectWorkspacePath, terminalProjectPath, terminalProjectPathKey],
+  );
   const {
     gitReviewFocusRequest,
     handleGitReviewFocusRequestHandled,
-    handleChangedFileReveal,
-    changedFilesActions,
+    handleChangedFileReveal: revealLegacyFileTree,
+    changedFilesActions: legacyChangedFilesActions,
   } = useChangedFilesActions({
     terminalProjectPathKey,
     workspaceViewScope: workspaceOverlays.workspaceViewScope,
@@ -1004,6 +1124,49 @@ function ChatPageContent(props: ChatPageProps) {
     onDockToolStateChange: handleRightDockProjectStateChange,
     onOpenFile: handleOpenWorkspaceFile,
   });
+  const { activate: activateWorkspaceTab, openTree: openWorkspaceTree } = desktopTabs;
+  const handleChangedFileReveal = useCallback(
+    (path: string) => {
+      if (!tabbedWorkspace) {
+        revealLegacyFileTree(path);
+        return;
+      }
+      selectWorkspacePath(path);
+      openWorkspaceTree();
+      revealDesktopWorkspace();
+    },
+    [
+      openWorkspaceTree,
+      revealDesktopWorkspace,
+      revealLegacyFileTree,
+      selectWorkspacePath,
+      tabbedWorkspace,
+    ],
+  );
+  const changedFilesActions = useMemo(
+    () =>
+      !tabbedWorkspace
+        ? legacyChangedFilesActions
+        : {
+            onOpenFile: handleOpenWorkspaceFile,
+            onRevealInFileTree: handleChangedFileReveal,
+            onOpenDiff: (path: string | null) => {
+              if (path) handleOpenWorkspaceFileDiff(path);
+              else {
+                activateWorkspaceTab(null);
+                legacyChangedFilesActions.onOpenDiff?.(path);
+              }
+            },
+          },
+    [
+      activateWorkspaceTab,
+      handleChangedFileReveal,
+      handleOpenWorkspaceFile,
+      handleOpenWorkspaceFileDiff,
+      legacyChangedFilesActions,
+      tabbedWorkspace,
+    ],
+  );
   // Local runner running-state → sidebar store: diff transitions so sidebar
   // dots (and running workdir keys) include local runs immediately; remote
   // runs arrive through the store's own event subscription.
@@ -1040,11 +1203,13 @@ function ChatPageContent(props: ChatPageProps) {
   // 语音输入失败（麦克风不可用等）以 toast 提示，不占用输入框区域。
   const handleSttError = useCallback((message: string) => addNotify("error", message), [addNotify]);
   const handleOpenChatFileLink = useChatFileLinkNavigation({
+    workspaceOwner,
     conversationId: currentConversationId,
     conversationWorkdir: displayedConversationWorkdir,
     terminalProjectPathKey,
     notifyError: notifyChatFileLinkError,
     onRevealInFileTree: handleChangedFileReveal,
+    onSelectInFileTree: tabbedWorkspace ? selectWorkspacePath : undefined,
     openWorkspaceEditorFile,
     openWorkspaceFilePreview,
   });
@@ -1811,9 +1976,12 @@ function ChatPageContent(props: ChatPageProps) {
   sendActionRef.current = sendForConversationProject;
   stopSendingActionRef.current = stopSending;
 
-  const canRequestWorkspaceRevision = chatVisible && hasConversationProject && !isKBrainBrowserHost();
+  const canRequestWorkspaceRevision =
+    chatVisible && hasConversationProject && !isKBrainBrowserHost();
   const revisionViewRef = useRef<string | null>(null);
-  revisionViewRef.current = canRequestWorkspaceRevision ? workspaceOverlays.workspaceViewScope : null;
+  revisionViewRef.current = canRequestWorkspaceRevision
+    ? workspaceOverlays.workspaceViewScope
+    : null;
   const requestWorkspaceDocumentRevision = useCallback(
     async ({ source, comments, assertCurrent }: WorkspaceDocumentRevision) => {
       const conversationId = currentConversationId;
@@ -1836,13 +2004,15 @@ function ChatPageContent(props: ChatPageProps) {
 
       const text = `${documentRevisionText(source.name, comments)}\n\n请在当前工作区另存修改稿并提供文件链接，保留原件和作为引用的附件。`;
       return new Promise<boolean>((resolve, reject) => {
-        void sendActionRef.current({
-          conversationIdOverride: conversationId,
-          textOverride: text,
-          uploadedFilesOverride: uploadedFiles,
-          preserveComposerOnStart: true,
-          onRunStarted: () => resolve(true),
-        }).then(resolve, reject);
+        void sendActionRef
+          .current({
+            conversationIdOverride: conversationId,
+            textOverride: text,
+            uploadedFilesOverride: uploadedFiles,
+            preserveComposerOnStart: true,
+            onRunStarted: () => resolve(true),
+          })
+          .then(resolve, reject);
       });
     },
     [
@@ -1854,6 +2024,199 @@ function ChatPageContent(props: ChatPageProps) {
       workspaceOverlays.workspaceViewScope,
     ],
   );
+  const workspaceVisible = chatVisible && rightDockOpen;
+  const insertWorkspaceMarkdownSelection = useCallback(
+    (text: string, path: string, comment?: string) => {
+      const selected = text.trim();
+      if (!selected || !workspaceVisible) return false;
+      const zh = settings.locale === "zh-CN";
+      const label = `${zh ? "引用文件" : "File excerpt"} ${path.replace(/[\r\n]/g, " ")}`;
+      const quote = selected
+        .split(/\r?\n/)
+        .map((line) => `> ${line}`)
+        .join("\n");
+      const note = comment?.trim();
+      const composer = composerRef.current;
+      const accepted = composer?.appendSegments([
+        { type: "text", text: `\n\n${label}\n${quote}${note ? `\n\n${note}` : ""}\n` },
+      ]);
+      if (accepted) composer?.focus();
+      else notifyChatFileLinkError(zh ? "当前输入框不可用" : "The composer is unavailable");
+      return Boolean(accepted);
+    },
+    [notifyChatFileLinkError, settings.locale, workspaceVisible],
+  );
+  const activeWorkspaceTab = desktopTabs.view.tabs.find(
+    (tab) => tab.id === desktopTabs.view.activeId,
+  );
+  const browserAnnotationScope = useRef<string | null>(null);
+  browserAnnotationScope.current =
+    workspaceVisible && activeWorkspaceTab?.kind === "browser"
+      ? JSON.stringify([workspaceScope, activeWorkspaceTab.id])
+      : null;
+  const browserAnnotationOwner = useRef({
+    owner: workspaceOwner,
+    scope: workspaceScope,
+    views: desktopTabs.views,
+    canRequestWorkspaceRevision,
+  });
+  browserAnnotationOwner.current = {
+    owner: workspaceOwner,
+    scope: workspaceScope,
+    views: desktopTabs.views,
+    canRequestWorkspaceRevision,
+  };
+  const annotateWorkspaceBrowser: Parameters<
+    typeof useDesktopWorkspaceTabPresentation
+  >[0]["onBrowserAnnotation"] = canRequestWorkspaceRevision
+    ? async (annotations, detached) => {
+        const expected = browserAnnotationScope.current;
+        const conversationId = currentConversationId;
+        const zh = settings.locale === "zh-CN";
+        const assertTarget = () => {
+          const owner = browserAnnotationOwner.current;
+          const displayed = currentConversationIdRef.current === conversationId;
+          const targetWorkdir = conversationRuntimeCacheRef.current
+            .get(conversationId)
+            ?.workdir?.trim();
+          const detachedTab =
+            detached &&
+            owner.views.get(detached.scope)?.tabs.find(({ id }) => id === detached.tabId);
+          const validDetached =
+            detached &&
+            detached.scope === workspaceScope &&
+            detached.owner === workspaceOwner &&
+            owner.owner === detached.owner &&
+            detachedTab?.kind === "browser" &&
+            (displayed
+              ? owner.scope === detached.scope && owner.canRequestWorkspaceRevision
+              : targetWorkdir === displayedConversationWorkdir.trim());
+          if (
+            !annotations.length ||
+            !conversationId ||
+            (detached
+              ? !validDetached
+              : !expected || !displayed || browserAnnotationScope.current !== expected)
+          ) {
+            throw new Error(
+              zh
+                ? "原会话或工作区已不可用"
+                : "The original conversation or workspace is unavailable",
+            );
+          }
+        };
+        assertTarget();
+        const remainingAttachments = () =>
+          MAX_UPLOAD_FILES - getPendingUploadsForConversation(conversationId).length;
+        const assertCapacity = () => {
+          if (annotations.length > remainingAttachments()) {
+            throw new Error(
+              zh ? "当前草稿的附件位置不足" : "The draft has too few attachment slots",
+            );
+          }
+        };
+        assertCapacity();
+        const batchId = createUuid().slice(0, 8);
+        const filename = (index: number) => `webpage-${batchId}-${index + 1}.png`;
+        const uploaded = await importReadableFiles(
+          annotations.map(
+            ({ image }, index) => new File([image], filename(index), { type: "image/png" }),
+          ),
+          { conversationId, workdir: displayedConversationWorkdir },
+          undefined,
+          false,
+        );
+        assertTarget();
+        if (uploaded?.length !== annotations.length)
+          throw new Error(
+            zh ? "无法添加完整的网页批注" : "Could not attach the complete annotation batch",
+          );
+        assertCapacity();
+        const percent = (value: number) => `${Math.round(value * 100)}%`;
+        const notes = annotations.map(
+          (
+            { url, x, y, width, height, target, text, siteLabel, siteMetadata, selectedText, siteControlChanges },
+            index,
+          ) => {
+            const page = new URL(url);
+            const pageLabel = `${page.origin}${page.pathname}`;
+            const topLeft = `${percent(x)}, ${percent(y)}`;
+            const position =
+              width && height
+                ? `${topLeft} → ${percent(x + width)}, ${percent(y + height)}`
+                : topLeft;
+            const description = `${index + 1}. ${filename(index)} · ${pageLabel} · ${position}`;
+            const element = target
+              ? `\n${zh ? "所选网页元素" : "Selected page element"} ${target}`
+              : "";
+            const pageContext = [siteLabel, selectedText, siteMetadata].filter(Boolean);
+            const context = pageContext.length
+              ? `\n${zh ? "网站提供的引用" : "Quoted site context"}: ${JSON.stringify(pageContext)}`
+              : "";
+            const controls = siteControlChanges
+              ? `\n${zh ? "用户确认的控件改动" : "User-confirmed control changes"}: ${siteControlChanges}`
+              : "";
+            return `${description}${element}${context}${controls}\n${text.trim()}`;
+          },
+        );
+        const text = `\n\n${zh ? "网页批注" : "Webpage annotations"}\n\n${notes.join("\n\n")}\n`;
+        const segment = { type: "text" as const, text };
+        const composer =
+          currentConversationIdRef.current === conversationId ? composerRef.current : null;
+        if (composer) {
+          if (!composer.appendSegments([segment]))
+            throw new Error(zh ? "当前输入框不可用" : "The composer is unavailable");
+        } else if (detached && currentConversationIdRef.current !== conversationId) {
+          const drafts = conversationRuntimeRegistry.drafts;
+          const draft = drafts.get(conversationId);
+          drafts.set(conversationId, {
+            largePastes: [],
+            skillMentions: [],
+            appMentions: [],
+            commitMentions: [],
+            gitFileMentions: [],
+            codeMentions: [],
+            ...draft,
+            segments: [...(draft?.segments ?? []), segment],
+            text: (draft?.text ?? "") + text,
+            textWithoutLargePastes: (draft?.textWithoutLargePastes ?? "") + text,
+            isEmpty: false,
+          });
+        } else {
+          throw new Error(zh ? "当前输入框不可用" : "The composer is unavailable");
+        }
+        setPendingUploadsForConversation(conversationId, [
+          ...getPendingUploadsForConversation(conversationId),
+          ...uploaded,
+        ]);
+        composer?.focus();
+      }
+    : undefined;
+  const desktopWorkspace = useDesktopWorkspaceTabPresentation({
+    resources: desktopTabs,
+    open: workspaceVisible,
+    scope: workspaceScope,
+    owner: workspaceOwner,
+    comparisonConversationId: currentConversationId ?? undefined,
+    projectPathKey: terminalProjectPathKey,
+    browserSshTargets: terminalSessions
+      .filter((session) =>
+        session.projectPathKey === terminalProjectPathKey &&
+        session.kind === "ssh" &&
+        session.running &&
+        session.ssh?.status === "connected",
+      )
+      .map((session) => ({ id: session.id, label: session.ssh?.hostName || session.title })),
+    theme: effectiveTheme,
+    gitClient: projectToolsDisabledMessage ? undefined : tauriGitClient,
+    activityClient: tauriWorkspaceActivityClient,
+    onInsertCodeMention: handleInsertCodeMention,
+    onInsertMarkdownSelection: insertWorkspaceMarkdownSelection,
+    markdownTextGeneration: workspaceMarkdownTextGenerationClient,
+    onDocumentRevision: canRequestWorkspaceRevision ? requestWorkspaceDocumentRevision : undefined,
+    onBrowserAnnotation: annotateWorkspaceBrowser,
+    onError: notifyChatFileLinkError,
+  });
 
   useGatewayBridgeListeners({
     currentConversationIdRef,
@@ -4697,9 +5060,23 @@ function ChatPageContent(props: ChatPageProps) {
       ? {
           studio: conversationImageStudioHost,
           configure: () => onOpenSettings("image-studio"),
-          fileReaderOpen: workspaceOverlays.workspaceFilePreviewOpen,
-          closeFileReader: workspaceOverlays.requestWorkspaceFilePreviewClose,
-          submit: async (conversationId, workdir, text, instruction, files, signal, keepPreview) => {
+          fileReaderOpen: tabbedWorkspace
+            ? workspaceVisible &&
+              activeWorkspaceTab?.kind === "file" &&
+              activeWorkspaceTab.mode === "preview"
+            : workspaceOverlays.workspaceFilePreviewOpen,
+          closeFileReader: tabbedWorkspace
+            ? () => setRightDockOpen(false)
+            : workspaceOverlays.requestWorkspaceFilePreviewClose,
+          submit: async (
+            conversationId,
+            workdir,
+            text,
+            instruction,
+            files,
+            signal,
+            keepPreview,
+          ) => {
             const wantsAttachments = isAgentMode && files.length > 0;
             const uploads = wantsAttachments
               ? await importReadableFiles(files, { conversationId, workdir }, signal, false)
@@ -4730,17 +5107,27 @@ function ChatPageContent(props: ChatPageProps) {
                     if (!keepPreview) return resolve(true);
                     const result = completion.then(
                       () => {
-                        const state = conversationRuntimeRegistry.getSnapshot(conversationId)?.state;
-                        const messages = state?.segments.flatMap((segment) => segment.messages) ?? [];
+                        const state =
+                          conversationRuntimeRegistry.getSnapshot(conversationId)?.state;
+                        const messages =
+                          state?.segments.flatMap((segment) => segment.messages) ?? [];
                         const start = messages.findIndex(
                           (message) => message.role === "user" && message.id === turnId,
                         );
                         if (start < 0) return undefined;
                         for (const message of messages.slice(start + 1)) {
                           if (message.role === "user") break;
-                          if (message.role === "toolResult" && isConversationImageTool(message.toolName)) {
-                            const output = parseConversationImageResult(toolResultMessageToText(message));
-                            const [image] = conversationImageDeliverables(output, locale === "zh-CN");
+                          if (
+                            message.role === "toolResult" &&
+                            isConversationImageTool(message.toolName)
+                          ) {
+                            const output = parseConversationImageResult(
+                              toolResultMessageToText(message),
+                            );
+                            const [image] = conversationImageDeliverables(
+                              output,
+                              locale === "zh-CN",
+                            );
                             if (image) return image;
                           }
                         }
@@ -4848,7 +5235,9 @@ function ChatPageContent(props: ChatPageProps) {
               <ProjectToolsPanelToggle
                 isOpen={rightDockOpen}
                 sessionCount={projectTerminalSessions.length}
-                disabledMessage={projectToolsUserDisabledMessage}
+                disabledMessage={
+                  canOpenWorkspaceBrowser ? undefined : projectToolsUserDisabledMessage
+                }
                 onToggle={() => setRightDockOpen((open) => !open)}
               />
             )
@@ -4899,108 +5288,106 @@ function ChatPageContent(props: ChatPageProps) {
             />
           </div>
         )}
-        {!showTaskSidebar &&
-          !accountSidebar &&
-          (!showAccountSidebar || sidebar.isMobile) && (
-            <ChatSidebarContainer
-              mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
-              previewOpen={navigationPreview.open}
-              onPinPreview={() => selectNavigation(shownSidebar, false, true)}
-              onNewRecentConversation={handleNewRecentConversation}
-              accountMenu={false}
-              pinnedOrder={settings.system.sidebarPinnedOrder}
-              onReorderPinned={(sidebarPinnedOrder) =>
-                setSettings((previous) => ({
-                  ...previous,
-                  system: { ...previous.system, sidebarPinnedOrder },
-                }))
-              }
-              projectOrder={settings.system.workspaceProjectOrder}
-              onReorderProjects={(workspaceProjectOrder) =>
-                setSettings((previous) => ({
-                  ...previous,
-                  system: { ...previous.system, workspaceProjectOrder },
-                }))
-              }
-              store={sidebarStore}
-              approvalStore={conversationRuntimeRegistry.approvals}
-              questionStore={conversationRuntimeRegistry.questions}
-              currentConversationId={currentConversationId}
-              isOpen={sidebarOpen}
-              fontScale={settings.customSettings.fontScale.sidebar}
-              conversationSearchRequestKey={conversationSearchRequestKey}
-              activeView={shownSidebar as ApplicationViewId}
-              showProjects={isAgentMode}
-              projects={workspaceProjects}
-              workspaceProjectGroups={workspaceProjectGroups}
-              activeProjectId={activeWorkspaceProject?.id ?? ""}
-              missingProjectPathKeys={missingWorkspaceProjectPathKeys}
-              projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
-              workspaceFolderDropActive={isWorkspaceFolderDropActive}
-              recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
-              onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
-              onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
-              onCreateProject={handleOpenCreateWorkspaceProject}
-              onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
-              onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
-              onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
-              onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
-              onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
-              onSelectProject={handleSelectWorkspaceProject}
-              onNewConversationForProject={async (project) => {
-                const id = await handleNewConversationForProject(project);
-                if (id) accountNavigation?.close();
-                return id;
-              }}
-              onBrowseProjectInFileTree={async (project) => {
-                await handleBrowseWorkspaceProjectInFileTree(project);
-                accountNavigation?.close();
-              }}
-              onBrowseProjectInSystemFileManager={handleBrowseWorkspaceProjectInSystemFileManager}
-              onConfigureProject={setProjectSettingsProject}
-              onSetProjectPinned={handleSetWorkspaceProjectPinned}
-              onRemoveProject={handleRemoveWorkspaceProject}
-              onArchiveProject={handleArchiveWorkspaceProject}
-              onUnarchiveProject={handleUnarchiveWorkspaceProject}
-              archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
-              onNewConversation={() => {
-                leaveAccount(() => {
-                  setActiveView("chat");
-                  if (activeView === "chat" || !isDraftConversation) handleNewConversation();
-                });
-              }}
-              onSelectConversation={(id, options) => {
-                leaveAccount(() => {
-                  setActiveView("chat");
-                  handleSelectConversation(id, options);
-                });
-              }}
-              onConversationDeleted={handleConversationDeleted}
-              onConversationCwdChanged={handleConversationCwdChanged}
-              onConversationWorkbenchDragIntent={
-                sessionWorkbench.enabled ? handleConversationWorkbenchDragIntent : undefined
-              }
-              onConversationOpenInWorkbenchSplit={
-                sessionWorkbench.enabled ? handleOpenConversationInSplit : undefined
-              }
-              onProjectWorkbenchDragIntent={
-                sessionWorkbench.enabled ? handleProjectWorkbenchDragIntent : undefined
-              }
-              canShareConversations={canShareHistory}
-              sharedConversationCount={sharedHistoryItems.length}
-              onShareConversation={handleOpenShareModal}
-              onOpenSharedConversations={handleOpenSharedHistoryManager}
-              sidebarShortcuts={settings.customSettings.sidebarShortcuts}
-              onOpenSettings={onOpenSettings}
-              appUpdate={appUpdate}
-              onOpenResourceHub={(resource) => {
-                leaveAccount(() => {
-                  if (chatVisible) cacheActiveComposerDraft();
-                  setActiveView(`${resource}-hub`);
-                });
-              }}
-            />
-          )}
+        {!showTaskSidebar && !accountSidebar && (!showAccountSidebar || sidebar.isMobile) && (
+          <ChatSidebarContainer
+            mobileRail={sidebar.isMobile ? renderNavigationRail(true) : undefined}
+            previewOpen={navigationPreview.open}
+            onPinPreview={() => selectNavigation(shownSidebar, false, true)}
+            onNewRecentConversation={handleNewRecentConversation}
+            accountMenu={false}
+            pinnedOrder={settings.system.sidebarPinnedOrder}
+            onReorderPinned={(sidebarPinnedOrder) =>
+              setSettings((previous) => ({
+                ...previous,
+                system: { ...previous.system, sidebarPinnedOrder },
+              }))
+            }
+            projectOrder={settings.system.workspaceProjectOrder}
+            onReorderProjects={(workspaceProjectOrder) =>
+              setSettings((previous) => ({
+                ...previous,
+                system: { ...previous.system, workspaceProjectOrder },
+              }))
+            }
+            store={sidebarStore}
+            approvalStore={conversationRuntimeRegistry.approvals}
+            questionStore={conversationRuntimeRegistry.questions}
+            currentConversationId={currentConversationId}
+            isOpen={sidebarOpen}
+            fontScale={settings.customSettings.fontScale.sidebar}
+            conversationSearchRequestKey={conversationSearchRequestKey}
+            activeView={shownSidebar as ApplicationViewId}
+            showProjects={isAgentMode}
+            projects={workspaceProjects}
+            workspaceProjectGroups={workspaceProjectGroups}
+            activeProjectId={activeWorkspaceProject?.id ?? ""}
+            missingProjectPathKeys={missingWorkspaceProjectPathKeys}
+            projectsCollapsed={settings.customSettings.chatSidebar.projectsCollapsed}
+            workspaceFolderDropActive={isWorkspaceFolderDropActive}
+            recentCollapsed={settings.customSettings.chatSidebar.recentCollapsed}
+            onProjectsCollapsedChange={handleSidebarProjectsCollapsedChange}
+            onRecentCollapsedChange={handleSidebarRecentCollapsedChange}
+            onCreateProject={handleOpenCreateWorkspaceProject}
+            onCreateWorkspaceGroup={handleCreateWorkspaceGroup}
+            onRenameWorkspaceGroup={handleRenameWorkspaceGroup}
+            onDeleteWorkspaceGroup={handleDeleteWorkspaceGroup}
+            onMoveProjectToGroup={handleMoveWorkspaceProjectToGroup}
+            onToggleWorkspaceGroupCollapsed={handleToggleWorkspaceGroupCollapsed}
+            onSelectProject={handleSelectWorkspaceProject}
+            onNewConversationForProject={async (project) => {
+              const id = await handleNewConversationForProject(project);
+              if (id) accountNavigation?.close();
+              return id;
+            }}
+            onBrowseProjectInFileTree={async (project) => {
+              await handleBrowseWorkspaceProjectInFileTree(project);
+              accountNavigation?.close();
+            }}
+            onBrowseProjectInSystemFileManager={handleBrowseWorkspaceProjectInSystemFileManager}
+            onConfigureProject={setProjectSettingsProject}
+            onSetProjectPinned={handleSetWorkspaceProjectPinned}
+            onRemoveProject={handleRemoveWorkspaceProject}
+            onArchiveProject={handleArchiveWorkspaceProject}
+            onUnarchiveProject={handleUnarchiveWorkspaceProject}
+            archivedProjectPathKeys={archivedWorkspaceProjectPathKeys}
+            onNewConversation={() => {
+              leaveAccount(() => {
+                setActiveView("chat");
+                if (activeView === "chat" || !isDraftConversation) handleNewConversation();
+              });
+            }}
+            onSelectConversation={(id, options) => {
+              leaveAccount(() => {
+                setActiveView("chat");
+                handleSelectConversation(id, options);
+              });
+            }}
+            onConversationDeleted={handleConversationDeleted}
+            onConversationCwdChanged={handleConversationCwdChanged}
+            onConversationWorkbenchDragIntent={
+              sessionWorkbench.enabled ? handleConversationWorkbenchDragIntent : undefined
+            }
+            onConversationOpenInWorkbenchSplit={
+              sessionWorkbench.enabled ? handleOpenConversationInSplit : undefined
+            }
+            onProjectWorkbenchDragIntent={
+              sessionWorkbench.enabled ? handleProjectWorkbenchDragIntent : undefined
+            }
+            canShareConversations={canShareHistory}
+            sharedConversationCount={sharedHistoryItems.length}
+            onShareConversation={handleOpenShareModal}
+            onOpenSharedConversations={handleOpenSharedHistoryManager}
+            sidebarShortcuts={settings.customSettings.sidebarShortcuts}
+            onOpenSettings={onOpenSettings}
+            appUpdate={appUpdate}
+            onOpenResourceHub={(resource) => {
+              leaveAccount(() => {
+                if (chatVisible) cacheActiveComposerDraft();
+                setActiveView(`${resource}-hub`);
+              });
+            }}
+          />
+        )}
 
         <WorkspacePanelGroup
           open={!accountDestination && activeView === "chat" && rightDockOpen}
@@ -5008,6 +5395,8 @@ function ChatPageContent(props: ChatPageProps) {
           onWidthChange={handleRightDockWidthChange}
           onClose={() => setRightDockOpen(false)}
           immediate={!!accountDestination || activeView !== "chat"}
+          expanded={tabbedWorkspace && desktopTabs.view.expanded}
+          preferBalanced={tabbedWorkspace && Boolean(activeWorkspaceTab)}
         >
           <WorkspaceMainPanel>
             {/* ---- Center column: workbench chrome + conversation surfaces ---- */}
@@ -5109,7 +5498,15 @@ function ChatPageContent(props: ChatPageProps) {
                     } as CSSProperties
                   }
                   chat={{
-                    content: (
+                    content: tabbedWorkspace ? (
+                      <WorkbenchBrowserLink.Provider
+                        value={canOpenWorkspaceBrowser ? desktopTabs.openBrowser : null}
+                      >
+                        <DesktopConversationImageHost.Provider value={conversationImageHost}>
+                          {chatContent}
+                        </DesktopConversationImageHost.Provider>
+                      </WorkbenchBrowserLink.Provider>
+                    ) : (
                       <ConversationReaderWorkbench
                         open={workspaceOverlays.workspaceFilePreviewOpen}
                         primaryVisible
@@ -5131,7 +5528,9 @@ function ChatPageContent(props: ChatPageProps) {
                             onRequestClose={workspaceOverlays.requestWorkspaceFilePreviewClose}
                             onClose={workspaceOverlays.handleWorkspaceFilePreviewClosed}
                             onRequestRevision={
-                              canRequestWorkspaceRevision ? requestWorkspaceDocumentRevision : undefined
+                              canRequestWorkspaceRevision
+                                ? requestWorkspaceDocumentRevision
+                                : undefined
                             }
                           />
                         )}
@@ -5190,8 +5589,35 @@ function ChatPageContent(props: ChatPageProps) {
               </div>
             </div>
           </WorkspaceMainPanel>
-          <WorkspaceToolsPanel>
+          <WorkspaceToolsPanel retainContent={tabbedWorkspace}>
             <RightDockPanel
+              workspace={
+                tabbedWorkspace
+                  ? {
+                      ...desktopWorkspace,
+                      activeTabId: desktopTabs.view.activeId,
+                      expanded: desktopTabs.view.expanded,
+                      onToggleExpanded: desktopTabs.toggleExpanded,
+                      treeOpen: desktopTabs.view.treeOpen,
+                      treeGroups: desktopTabs.view.treeGroups,
+                      treeWidth: desktopTabs.view.treeWidth,
+                      onTreeWidthChange: desktopTabs.setTreeWidth,
+                      comparison: desktopTabs.view.comparison,
+                      comparisonConversationId: currentConversationId ?? undefined,
+                      onComparisonChange: desktopTabs.setComparison,
+                      onToggleTreeGroup: desktopTabs.toggleTreeGroup,
+                      onToggleTree: desktopTabs.toggleTree,
+                      onOpenTree: desktopTabs.openTree,
+                      onOpenDiff: handleOpenWorkspaceFileDiff,
+                      onActivateTool: () => desktopTabs.activate(null),
+                      onNewBrowser: canOpenWorkspaceBrowser
+                        ? () => desktopTabs.openBrowser()
+                        : undefined,
+                      onReopenTab: desktopTabs.reopen,
+                      onMoveTab: desktopTabs.move,
+                    }
+                  : undefined
+              }
               workspaceViewScope={workspaceOverlays.workspaceViewScope}
               isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
               onClose={() => setRightDockOpen(false)}

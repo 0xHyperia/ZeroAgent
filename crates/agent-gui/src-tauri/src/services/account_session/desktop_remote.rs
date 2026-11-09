@@ -9,6 +9,10 @@ use std::{collections::HashMap, future::Future};
 use tauri::{Manager, State};
 use tokio::sync::watch;
 
+#[cfg(windows)]
+#[path = "desktop_remote_loopback.rs"]
+pub(crate) mod loopback;
+
 const COOKIE_NAME: &str = "zeroagent_session";
 const MAX_BRIDGES: usize = 8;
 // Keep the WebUI's 200 MiB directory limit, plus bounded multipart metadata.

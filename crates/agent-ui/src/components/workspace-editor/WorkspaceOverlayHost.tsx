@@ -6,6 +6,7 @@ import type { AppSettings, EffectiveTheme } from "@liveagent/app/lib/settings";
 import { ConversationReaderPanel } from "@liveagent/ui/components/resource-preview/ConversationReaderPanel";
 import { PreviewIdentityContext } from "@liveagent/ui/components/resource-preview/PreviewChrome";
 import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
+import type { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type {
   WorkspaceFilePreviewOpenRequest,
@@ -13,14 +14,13 @@ import type {
 } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import type { SftpOpenFileRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSftpPanel";
 import type { WorkspaceSshTerminalOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSshTerminalOverlay";
-import type { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
-import { t as translate } from "@liveagent/ui/i18n/index";
+import { t as translate, useLocale } from "@liveagent/ui/i18n/index";
 import type { CodeMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import { lockMonacoNlsLocale, preparePreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
 import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "@liveagent/ui/lib/terminal/types";
-import { lazy, Suspense } from "react";
+import { type ComponentProps, lazy, Suspense } from "react";
 
 const WorkspaceCodeEditorOverlay = lazy(async () => {
   await preparePreferredMonacoNlsLocale();
@@ -106,6 +106,15 @@ function WorkspaceOverlayLoading(props: { className: string; label: string }) {
   );
 }
 
+export function WorkspaceFileEditor(props: ComponentProps<typeof WorkspaceCodeEditorOverlay>) {
+  const { t } = useLocale();
+  return (
+    <Suspense fallback={<PreviewLoading message={t("workspaceEditor.opening")} />}>
+      <WorkspaceCodeEditorOverlay {...props} />
+    </Suspense>
+  );
+}
+
 export function WorkspaceFileReader(
   props: WorkspaceFilePreviewOverlayProps & {
     locale: AppSettings["locale"];
@@ -122,6 +131,8 @@ export function WorkspaceFileReader(
             title={name}
             description={translate("workspaceFilePreview.title", locale)}
             closeLabel={translate("workspaceFilePreview.close", locale)}
+            tabbed={props.tabbed}
+            tabbedToolbarTarget={props.tabbedToolbarTarget}
             returnFocusTo={openRequest?.returnFocusTo}
             onClose={onRequestClose}
           >

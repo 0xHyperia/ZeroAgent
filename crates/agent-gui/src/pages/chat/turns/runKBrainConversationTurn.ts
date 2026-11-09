@@ -103,7 +103,10 @@ export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrai
   const policies = canonicalKBrainToolPolicies(configured);
   const desktopHostTools = agentMode && params.desktopHostTools === true;
   const tunnelPolicy = configured?.TunnelManager;
-  if (desktopHostTools && (tunnelPolicy === "ask" || tunnelPolicy === "allow" || tunnelPolicy === "deny")) {
+  if (
+    desktopHostTools &&
+    (tunnelPolicy === "ask" || tunnelPolicy === "allow" || tunnelPolicy === "deny")
+  ) {
     policies.TunnelManager = tunnelPolicy;
   }
   const safety = agentMode && "commandSafetyMode" in params ? params.commandSafetyMode : undefined;
@@ -371,6 +374,10 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
             ? user.id
             : undefined,
         ...turnCommandParams(command, attachClientRequestId),
+        workspaceReviewWorkdir:
+          "effectiveWorkdir" in params && params.desktopHostTools
+            ? params.effectiveWorkdir
+            : undefined,
         onGoalUpdate: (state) => {
           latestGoalState = state;
           if (state.status === "active" || state.status === "continuing") goalInvolved = true;

@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -28,6 +29,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { TooltipPortalContainer } from "../ui/tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { usePreviewViewport } from "./usePreviewViewport";
@@ -59,6 +61,13 @@ export default function ResourceMediaPreview({
   onCancel?: () => void;
 }) {
   const media = useRef<HTMLMediaElement | null>(null);
+  const chrome = useContext(PreviewToolbarMount);
+  const workspaceTab = Boolean(chrome?.workspaceTab);
+  const workspaceAudio = workspaceTab && kind === "audio";
+  const inactive = workspaceTab && !chrome?.target;
+  useEffect(() => {
+    if (inactive) media.current?.pause();
+  }, [inactive]);
   const authority = useRef(assertCurrent);
   useLayoutEffect(() => {
     authority.current = assertCurrent;
@@ -283,6 +292,28 @@ export default function ResourceMediaPreview({
     kind === "video" && typeof document !== "undefined" && document.pictureInPictureEnabled;
   if (error)
     return <PreviewUnavailable message={error} onDownload={onDownload} onRetry={onRetry} />;
+  const play = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="za-media-play"
+      tooltip={action}
+      tooltipShortcut="Space"
+      aria-label={action}
+      onClick={() => void togglePlayback()}
+    >
+      <PlayIcon />
+    </Button>
+  );
+  const audioTitle = (
+    <div className="za-media-audio-cover">
+      <span className="za-media-audio-icon" aria-hidden="true">
+        <Headphones />
+      </span>
+      <h3 title={name}>{name}</h3>
+      {workspaceAudio ? play : <span>{playing ? "正在播放" : ended ? "播放完毕" : "音频"}</span>}
+    </div>
+  );
 
   return (
     <TooltipPortalContainer.Provider value={fullscreen ? container.current : undefined}>
@@ -290,6 +321,7 @@ export default function ResourceMediaPreview({
         ref={container}
         className="za-media-player"
         data-media-kind={kind}
+        data-workspace-media={workspaceTab ? kind : undefined}
         data-playing={playing}
         aria-label={`${kind === "video" ? "视频" : "音频"}播放器：${name}`}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the named media region provides scoped playback and seek shortcuts, without capturing document keys.
@@ -312,13 +344,7 @@ export default function ResourceMediaPreview({
             <>
               {/* biome-ignore lint/a11y/useMediaCaption: uploaded original has no caption track; do not invent one */}
               <audio ref={mediaRef} src={url} preload="metadata" />
-              <div className="za-media-audio-cover">
-                <span className="za-media-audio-icon" aria-hidden="true">
-                  <Headphones />
-                </span>
-                <h3 title={name}>{name}</h3>
-                <span>{playing ? "正在播放" : ended ? "播放完毕" : "音频"}</span>
-              </div>
+              {workspaceAudio ? null : audioTitle}
             </>
           )}
           {!ready ? (
@@ -334,23 +360,14 @@ export default function ResourceMediaPreview({
           ) : null}
         </div>
         <div className="za-media-transport-area">
+          {workspaceAudio ? audioTitle : null}
           {notice ? (
             <p className="za-media-notice" role="status">
               {notice}
             </p>
           ) : null}
           <PreviewDock className="za-media-transport" label="播放控制">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="za-media-play"
-              tooltip={action}
-              tooltipShortcut="Space"
-              aria-label={action}
-              onClick={() => void togglePlayback()}
-            >
-              <PlayIcon />
-            </Button>
+            {workspaceAudio ? null : play}
             <div className="za-media-seek">
               <div className="za-media-track" aria-hidden="true">
                 {buffered.map((range) => (

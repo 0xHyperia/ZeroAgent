@@ -143,6 +143,13 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
         assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|className="[^"]*\b(?:fixed|absolute)\b/);
         continue;
       }
+      if (content?.type === "Identifier" && content.name === "children" && targetSource === "contentHost" && source.includes("export function WorkspaceToolsPanel(")) {
+        assert.match(source, /const mount = mobile && open && mobileMount \? mobileMount : desktopMount\.current/);
+        assert.match(source, /mount\.append\(contentHost\)/);
+        assert.match(source, /<SheetContent[\s\S]*ref=\{setMobileMount\}/);
+        assert.doesNotMatch(source, /document\.body/);
+        continue;
+      }
       if (content?.type === "Identifier" && content.name === "focus" && targetSource === "document.body" &&
           source.includes('className="za-conversation-image-focus"')) {
         const styles = readShared("components/resource-preview/conversation-image-preview.css");
@@ -160,6 +167,25 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
         // These portals move controls into that toolbar, without creating overlays.
         assert.match(readShared("components/resource-preview/PreviewChrome.tsx"), /export const PreviewToolbarMount = createContext/);
         assert.doesNotMatch(source, /aria-modal|role="(?:dialog|alertdialog)"|className="[^"]*\b(?:fixed|absolute)\b/);
+        continue;
+      }
+      if (targetSource === "props.tabbedToolbarTarget" && source.includes("<PreviewToolbarMount.Provider value={toolbarMount}>")) {
+        assert.match(source, /tabbedToolbarTarget\?: HTMLElement \| null/);
+        assert.equal(source.slice(content.start, content.end), "props.headerActions");
+        continue;
+      }
+      if (attribute("data-workspace-editor-toolbar-slot") && targetSource === "embeddedToolbarTarget") {
+        assert.match(source, /embeddedToolbarTarget\?: HTMLElement \| null/);
+        assert.equal(attribute("className")?.value?.value, "contents");
+        assert.doesNotMatch(source.slice(content.start, content.end), /aria-modal|\b(?:fixed|absolute)\b|layer-(?:popover|modal|toast|critical)/);
+        continue;
+      }
+      if (content?.type === "Identifier" && content.name === "review" && targetSource === "selectionEdit.inlineHost" && source.includes("useWorkspaceMarkdownSelectionEdit(")) {
+        const host = readShared("components/workspace-editor/useWorkspaceMarkdownSelectionEdit.ts");
+        assert.match(host, /host\.className = "za-markdown-review-widget"/);
+        assert.match(host, /Decoration\.widget\(\{ widget, block: true, side: 1 \}\)/);
+        const review = readShared("components/workspace-editor/WorkspaceMarkdownSelectionReview.tsx");
+        assert.doesNotMatch(review, /document\.body|aria-modal|role="(?:dialog|alertdialog)"|className="[^"]*\b(?:fixed|absolute)\b/);
         continue;
       }
       if (chrome) {

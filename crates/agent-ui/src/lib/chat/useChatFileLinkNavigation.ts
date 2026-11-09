@@ -2,7 +2,7 @@ import { workspaceProjectPathKey } from "@liveagent/app/lib/settings";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type { WorkspaceFilePreviewOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { ChatFileLink } from "./chatFileLinks";
 import {
   type OpenChatFileLinkParams,
@@ -16,9 +16,11 @@ type WorkspacePreviewRequest = Omit<WorkspaceFilePreviewOpenRequest, "id">;
 type UseChatFileLinkNavigationParams = {
   conversationId: string;
   conversationWorkdir: string;
+  workspaceOwner?: string;
   terminalProjectPathKey: string;
   notifyError: (message: string) => void;
   onRevealInFileTree: (path: string) => void;
+  onSelectInFileTree?: (path: string) => void;
   openWorkspaceEditorFile: (request: WorkspaceOpenRequest) => void;
   openWorkspaceFilePreview: (request: WorkspacePreviewRequest) => void;
   openLink?: (params: OpenChatFileLinkParams) => Promise<OpenChatFileLinkResult>;
@@ -38,15 +40,20 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
   const {
     conversationId,
     conversationWorkdir,
+    workspaceOwner,
     terminalProjectPathKey,
     notifyError,
     onRevealInFileTree,
+    onSelectInFileTree,
     openWorkspaceEditorFile,
     openWorkspaceFilePreview,
     openLink = openChatFileLink,
     getErrorMessage = defaultErrorMessage,
   } = params;
-  const scope = `${conversationId}\0${conversationWorkdir}`;
+  const scope = useMemo(
+    () => ({ conversationId, conversationWorkdir, workspaceOwner }),
+    [conversationId, conversationWorkdir, workspaceOwner],
+  );
   const currentScope = useRef(scope);
   currentScope.current = scope;
 
@@ -76,6 +83,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
               return;
             }
             const fallback = await openLink({ ...request, openInFileManager: true });
+            if (currentScope.current !== scope) return;
             if (fallback.action !== "opened") {
               notifyError("The linked directory could not be opened.");
             }
@@ -90,7 +98,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
             !result.outsideWorkspace &&
             workspaceRequest.projectPathKey === terminalProjectPathKey
           ) {
-            onRevealInFileTree(resultPath);
+            (onSelectInFileTree ?? onRevealInFileTree)(resultPath);
           }
           if (
             result.action === "preview" ||
@@ -125,6 +133,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
       getErrorMessage,
       notifyError,
       onRevealInFileTree,
+      onSelectInFileTree,
       openLink,
       openWorkspaceEditorFile,
       openWorkspaceFilePreview,

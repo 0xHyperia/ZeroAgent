@@ -10,7 +10,14 @@ import {
 } from "@liveagent/app/lib/settings";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import type { MentionComposerDraftSegment } from "@liveagent/ui/components/chat/MentionComposer";
-import { X } from "@liveagent/ui/components/IconSet";
+import {
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import type {
   GitCommitContextPayload,
   GitFileContextPayload,
@@ -21,6 +28,7 @@ import type { GitClient } from "@liveagent/ui/lib/git/types";
 import {
   type CSSProperties,
   memo,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   type RefObject,
@@ -46,7 +54,8 @@ import {
   type RightDockToolContextValue,
 } from "./RightDockContext";
 import { RightDockChooser, RightDockCreateMenu } from "./RightDockLauncher";
-import { RightDockTabStrip } from "./RightDockTabStrip";
+import { RightDockTabStrip, type RightDockWorkspaceTab } from "./RightDockTabStrip";
+import { RightWorkspaceFileTree } from "./RightWorkspaceFileTree";
 import {
   dirname,
   expandedPathsForFileTreePath,
@@ -59,9 +68,44 @@ import {
 import { useRightDockProjectTabs } from "./useRightDockProjectTabs";
 import { useRightDockSessions } from "./useRightDockSessions";
 import { useRightDockTabReorder } from "./useRightDockTabReorder";
+import { WorkspaceNavigationSplit } from "./WorkspaceNavigationSplit";
+import type { WorkspaceGitComparison } from "./workspaceGitPaths";
+import "./workspace-panels.css";
+
+export type WorkspaceBrowserTools = {
+  changes?: () => void;
+  terminal?: () => void;
+  files?: () => void;
+  more?: readonly { label: string; run: () => void }[];
+};
+
+export type RightWorkspaceDock = {
+  tabs: readonly RightDockWorkspaceTab[];
+  activeTabId: string | null;
+  browserActive: boolean;
+  renderContent: (browserTools: WorkspaceBrowserTools) => ReactNode;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  treeOpen: boolean;
+  treeGroups: { changes: boolean; files: boolean };
+  treeWidth: number;
+  onTreeWidthChange: (width: number) => void;
+  comparison: WorkspaceGitComparison;
+  comparisonConversationId?: string;
+  onComparisonChange: (comparison: WorkspaceGitComparison) => void;
+  onToggleTreeGroup: (group: "changes" | "files") => void;
+  onToggleTree: () => void;
+  onOpenTree: () => void;
+  onOpenDiff: (path: string, temporary?: boolean) => void;
+  onActivateTool: () => void;
+  onNewBrowser?: () => void;
+  onReopenTab: () => void;
+  onMoveTab: (id: string, target: string) => void;
+};
 
 type RightDockPanelProps = {
   isOpen: boolean;
+  workspace?: RightWorkspaceDock;
   workspaceViewScope?: string;
   fontScale?: number;
   projectPathKey: string;
@@ -144,7 +188,7 @@ type RightDockPanelProps = {
    */
   onSessionGhost?: (sessionId: string) => void;
   onInsertFileMention?: (path: string, kind: "file" | "dir") => void;
-  onOpenFile?: (path: string, imagePaths?: string[]) => void;
+  onOpenFile?: (path: string, imagePaths?: string[], temporary?: boolean) => void;
   onInsertCodeReviewSkill?: () => void;
   onInsertCommitMention?: (commit: GitCommitContextPayload) => void;
   onInsertGitFileMention?: (file: GitFileContextPayload) => void;
@@ -401,6 +445,7 @@ function RightDockTabsScrollbar(props: { scrollRef: RefObject<HTMLDivElement | n
 export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanelProps) {
   const {
     isOpen,
+    workspace,
     fontScale = 1,
     workspaceViewScope,
     projectPathKey,
@@ -451,7 +496,18 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     onGitReviewFocusRequestHandled,
     onClose,
   } = props;
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const onActivateWorkspaceTool = workspace?.onActivateTool;
+  const onOpenWorkspaceTree = workspace?.onOpenTree;
+  const browserActive = workspace?.browserActive ?? false;
+  const comparison = workspace?.comparison;
+  const comparisonConversationId = workspace?.comparisonConversationId;
+  const onComparisonChange = workspace?.onComparisonChange;
+  const tabbed = Boolean(workspace);
+  const visibleLeasedTools = useMemo(
+    () => (tabbed ? new Set<RightDockLeasedToolKind>([...leasedTools, "fileTree"]) : leasedTools),
+    [tabbed, leasedTools],
+  );
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const previousViewScopeRef = useRef(workspaceViewScope);
   useLayoutEffect(() => {
@@ -461,7 +517,8 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   }, [workspaceViewScope]);
   const selectedChangesPaths = useRef(new Map<string, string>());
   const getSelectedChangesPath = useCallback(
-    (repo: string) => selectedChangesPaths.current.get(JSON.stringify([workspaceViewScope, repo])) ?? "",
+    (repo: string) =>
+      selectedChangesPaths.current.get(JSON.stringify([workspaceViewScope, repo])) ?? "",
     [workspaceViewScope],
   );
   const onSelectChangesPath = useCallback(
@@ -574,7 +631,9 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     dismissedIds: [],
   });
   const scopedBackgroundTasks = Boolean(workspaceViewScope || projectPathKey);
-  const backgroundTasksState = scopedBackgroundTasks ? projectState.backgroundTasks : localBackgroundTasks;
+  const backgroundTasksState = scopedBackgroundTasks
+    ? projectState.backgroundTasks
+    : localBackgroundTasks;
   const backgroundTasksVisible =
     backgroundTasksState.opened ||
     managedProcessState.processes.some(
@@ -601,7 +660,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     tunnelInitialized,
   } = useRightDockProjectTabs({
     backgroundTasksVisible,
-    leasedTools,
+    leasedTools: visibleLeasedTools,
     localSessions,
     onProjectStateChange,
     projectPathKey,
@@ -610,11 +669,16 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     tunnelAvailable,
   });
 
-  const handleCreate = useCallback(() => {
-    createTerminal();
-  }, [createTerminal]);
+  const handleCreate = useCallback(
+    (shell?: string) => {
+      onActivateWorkspaceTool?.();
+      createTerminal(shell);
+    },
+    [createTerminal, onActivateWorkspaceTool],
+  );
 
   const openBackgroundTasks = useCallback(() => {
+    onActivateWorkspaceTool?.();
     if (scopedBackgroundTasks) {
       onProjectStateChange(openRightDockBackgroundTasksTabState);
       return;
@@ -622,7 +686,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     // No project bucket: persisted writes (including tab activation) are
     // no-ops, so only the session-local visibility flips.
     setLocalBackgroundTasks({ opened: true, dismissedIds: [] });
-  }, [onProjectStateChange, scopedBackgroundTasks]);
+  }, [onActivateWorkspaceTool, onProjectStateChange, scopedBackgroundTasks]);
 
   const closeBackgroundTasks = useCallback(() => {
     // Hide-only; the persisted activeTabId falls back at render time.
@@ -650,6 +714,17 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     reorderHint: t("projectTools.reorderTabHint"),
     reorderLabel: t("projectTools.reorderTab"),
   });
+
+  useLayoutEffect(() => {
+    if (!workspace?.activeTabId || !isOpen) return;
+    const strip = tabsScrollRef.current;
+    const active = strip?.querySelector<HTMLElement>('[data-workspace-tab-active="true"]');
+    if (!active || !strip) return;
+    const left = active.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (left + active.offsetWidth > strip.scrollLeft + strip.clientWidth)
+      strip.scrollLeft = left + active.offsetWidth - strip.clientWidth;
+  }, [isOpen, tabsScrollRef, workspace?.activeTabId]);
 
   const handleTabsWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -699,9 +774,23 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       } else if (!tunnelClient) {
         return;
       }
+      if (kind === "fileTree" && onOpenWorkspaceTree) {
+        if (browserActive) onActivateWorkspaceTool?.();
+        onOpenWorkspaceTree();
+        return;
+      }
+      onActivateWorkspaceTool?.();
       openSingletonTab(kind);
     },
-    [leasedTools, openSingletonTab, projectReady, tunnelClient],
+    [
+      browserActive,
+      leasedTools,
+      onActivateWorkspaceTool,
+      onOpenWorkspaceTree,
+      openSingletonTab,
+      projectReady,
+      tunnelClient,
+    ],
   );
 
   const setFileTreeInitialized = useCallback(
@@ -742,6 +831,11 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     void openUrl(url);
   }, []);
 
+  const openWorkspaceDiff = workspace?.onOpenDiff;
+  const openWorkspaceReviewFile = useCallback(
+    (path: string) => openWorkspaceDiff?.(path, true),
+    [openWorkspaceDiff],
+  );
   const toolContextValue = useMemo<RightDockToolContextValue>(
     () => ({
       viewScope: workspaceViewScope,
@@ -768,7 +862,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       },
       fileTree: {
         state: fileTreeState,
-        initialized: fileTreeInitialized,
+        initialized: Boolean(onOpenWorkspaceTree) || fileTreeInitialized,
         externalRoots: visibleExternalFileTreeRoots,
         refreshExternalRoots,
         onInitializedChange: setFileTreeInitialized,
@@ -778,6 +872,15 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
         onRevealInFileTree: revealPathInFileTree,
       },
       git: {
+        workspaceReview:
+          comparison && onComparisonChange
+            ? {
+                comparison,
+                conversationId: comparisonConversationId,
+                onComparisonChange,
+                onOpenFile: openWorkspaceReviewFile,
+              }
+            : undefined,
         getSelectedChangesPath,
         onSelectChangesPath,
         onInsertCodeReviewSkill,
@@ -812,6 +915,10 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       gitDisabledMessage,
       gitReviewFocusRequest,
       gitWriteEnabled,
+      comparison,
+      comparisonConversationId,
+      onComparisonChange,
+      openWorkspaceReviewFile,
       getSelectedChangesPath,
       onSelectChangesPath,
       onFileTreeStateChange,
@@ -821,6 +928,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       onInsertComposerSegments,
       onInsertFileMention,
       onInsertGitFileMention,
+      onOpenWorkspaceTree,
       onOpenFile,
       onOpenSshSession,
       onSshProjectHostIdsChange,
@@ -864,6 +972,30 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
         inert={!isOpen}
         data-app-frame-column="right-dock"
         data-state={isOpen ? "open" : "closed"}
+        onKeyDown={
+          workspace
+            ? (event) => {
+                if (event.defaultPrevented || event.altKey) return;
+                const key = event.key.toLowerCase();
+                if (key === "escape" && workspace.expanded && !event.ctrlKey && !event.metaKey) {
+                  event.preventDefault();
+                  workspace.onToggleExpanded();
+                  return;
+                }
+                if (!event.ctrlKey && !event.metaKey) return;
+                if (key === "w" && !event.shiftKey && workspace.activeTabId) {
+                  event.preventDefault();
+                  workspace.tabs.find((tab) => tab.id === workspace.activeTabId)?.onClose();
+                } else if (key === "t" && event.shiftKey) {
+                  event.preventDefault();
+                  workspace.onReopenTab();
+                } else if (key === "t" && workspace.onNewBrowser) {
+                  event.preventDefault();
+                  workspace.onNewBrowser();
+                }
+              }
+            : undefined
+        }
         className="project-tools-panel zone-font-scale flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
       >
@@ -877,24 +1009,45 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
           />
 
           <div
+            data-right-workspace-chrome={workspace ? "" : undefined}
+            style={
+              workspace
+                ? ({
+                    "--za-right-workspace-tab-count": Math.max(
+                      1,
+                      workspace.tabs.length + orderedProjectTabs.length,
+                    ),
+                  } as CSSProperties)
+                : undefined
+            }
             className={cn(
-              "flex h-10 shrink-0 items-center gap-2 border-b border-border/60 pl-1 pr-2",
+              "flex shrink-0 items-center border-b border-border/60",
+              workspace ? "h-12 gap-1 pl-2 pr-2" : "h-10 gap-2 pl-1 pr-2",
               "web:max-820:min-h-44px web:max-820:gap-6px",
             )}
           >
             <div
-              className={cn("flex h-full min-w-0 flex-1 flex-col justify-center")}
+              className={cn("flex h-full min-w-0 flex-col justify-center", !workspace && "flex-1")}
               onWheel={handleTabsWheel}
             >
+              {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: The label is present only on the desktop tablist. */}
               <div
                 ref={tabsScrollRef}
+                role={workspace ? "tablist" : undefined}
+                aria-label={
+                  workspace ? (locale === "zh-CN" ? "工作区标签" : "Workspace tabs") : undefined
+                }
                 className={cn(
                   "project-tools-panel-tabs flex h-full min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
                   "overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:size-0",
                 )}
               >
                 <RightDockTabStrip
+                  key={tabbed ? workspaceViewScope : undefined}
                   tabs={orderedProjectTabs}
+                  workspaceTabs={workspace?.tabs}
+                  activeWorkspaceTabId={workspace?.activeTabId}
+                  onMoveWorkspaceTab={workspace?.onMoveTab}
                   currentActiveTab={currentActiveTab}
                   backgroundTasksRunning={backgroundTasksRunning}
                   onCloseBackgroundTasks={closeBackgroundTasks}
@@ -906,8 +1059,14 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   getTabDragProps={getTabDragProps}
                   getTabDragStyle={getTabDragStyle}
                   consumeSuppressedTabClick={consumeSuppressedTabClick}
-                  onActivateTab={activateTab}
-                  onActivateTerminalSession={activateTerminalSession}
+                  onActivateTab={(id) => {
+                    onActivateWorkspaceTool?.();
+                    activateTab(id);
+                  }}
+                  onActivateTerminalSession={(session) => {
+                    onActivateWorkspaceTool?.();
+                    activateTerminalSession(session);
+                  }}
                   onCloseToolTab={closeToolTab}
                   onCloseTerminalRequest={handleCloseRequest}
                   onTerminalTabDragStart={onTerminalTabDragStart}
@@ -916,10 +1075,22 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   onOpenToolInWorkbench={onOpenToolInWorkbench}
                 />
               </div>
-              <RightDockTabsScrollbar scrollRef={tabsScrollRef} />
+              {!workspace && <RightDockTabsScrollbar scrollRef={tabsScrollRef} />}
             </div>
+            {workspace?.onNewBrowser && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={workspace.onNewBrowser}
+                aria-label={locale === "zh-CN" ? "新建网页标签" : "New browser tab"}
+                title={locale === "zh-CN" ? "新建网页标签" : "New browser tab"}
+              >
+                <Plus className="size-4" />
+              </Button>
+            )}
             <RightDockCreateMenu
-              leasedTools={leasedTools}
+              leasedTools={visibleLeasedTools}
+              compact={Boolean(workspace?.onNewBrowser)}
               open={createMenuOpen}
               onOpenChange={setCreateMenuOpen}
               shellOptions={shellOptions}
@@ -928,11 +1099,49 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               projectReady={projectReady}
               tunnelAvailable={tunnelAvailable}
               creating={creating}
-              onCreateTerminal={createTerminal}
+              onCreateTerminal={handleCreate}
               onOpenNewTerminalInWorkbench={onOpenNewTerminalInWorkbench}
               onStartTool={startToolTab}
               onOpenBackgroundTasks={openBackgroundTasks}
             />
+            {workspace && (
+              <>
+                <span className="min-w-0 flex-1" aria-hidden="true" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="max-md:hidden"
+                  aria-pressed={workspace.expanded}
+                  aria-label={locale === "zh-CN" ? "切换全宽" : "Toggle full width"}
+                  title={locale === "zh-CN" ? "切换全宽" : "Toggle full width"}
+                  onClick={workspace.onToggleExpanded}
+                >
+                  {workspace.expanded ? (
+                    <Minimize2 className="size-4" />
+                  ) : (
+                    <Maximize2 className="size-4" />
+                  )}
+                </Button>
+                {projectReady && !leasedTools.has("fileTree") && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-pressed={workspace.treeOpen && !browserActive}
+                    aria-label={t("projectTools.fileTreeTitle")}
+                    title={t("projectTools.fileTreeTitle")}
+                    onClick={
+                      browserActive ? () => startToolTab("fileTree") : workspace.onToggleTree
+                    }
+                  >
+                    {workspace.treeOpen && !browserActive ? (
+                      <PanelRightClose className="size-4" />
+                    ) : (
+                      <PanelRightOpen className="size-4" />
+                    )}
+                  </Button>
+                )}
+              </>
+            )}
             {onClose ? (
               <Button
                 variant="ghost"
@@ -984,45 +1193,87 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             </div>
           ) : null}
 
-          {showDisabledMessage ? (
-            <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-              {disabledMessage}
+          <div className="relative flex min-h-0 flex-1 overflow-hidden @container">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {workspace?.renderContent({
+                changes:
+                  projectReady && !leasedTools.has("gitReview")
+                    ? () => startToolTab("gitReview")
+                    : undefined,
+                terminal: terminalReady ? () => handleCreate() : undefined,
+                files:
+                  projectReady && !leasedTools.has("fileTree")
+                    ? () => startToolTab("fileTree")
+                    : undefined,
+                more: [{ label: t("projectTools.backgroundTasksTitle"), run: openBackgroundTasks }],
+              })}
+              <div
+                className={workspace?.activeTabId ? "hidden" : "flex min-h-0 flex-1 flex-col"}
+                inert={Boolean(workspace?.activeTabId)}
+              >
+                {showDisabledMessage ? (
+                  <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                    {disabledMessage}
+                  </div>
+                ) : showRightDockChooser ? (
+                  <RightDockChooser
+                    leasedTools={visibleLeasedTools}
+                    terminalReady={terminalReady}
+                    terminalDisabledMessage={terminalDisabledMessage}
+                    disabledMessage={disabledMessage}
+                    tunnelDisabledMessage={tunnelDisabledMessage}
+                    projectReady={projectReady}
+                    tunnelAvailable={tunnelAvailable}
+                    creating={creating}
+                    loading={loading}
+                    error={error}
+                    onCreateTerminal={handleCreate}
+                    onStartTool={startToolTab}
+                    onOpenBackgroundTasks={openBackgroundTasks}
+                    onNewTerminalDragStart={onNewTerminalDragStart}
+                    onToolDragStart={onToolDragStart}
+                  />
+                ) : (
+                  <RightDockContent
+                    isOpen={isOpen && !workspace?.activeTabId}
+                    currentActiveTab={currentActiveTab}
+                    initializedTools={initializedTools}
+                    localSessions={localSessions}
+                    activeSession={activeSession}
+                    initialTerminalSnapshotsRef={initialTerminalSnapshotsRef}
+                    error={activeTerminalError ?? error}
+                    creating={creating}
+                    loading={loading}
+                    onTerminalError={handleTerminalError}
+                    onInitialTerminalSnapshotConsumed={handleInitialTerminalSnapshotConsumed}
+                    onCreateTerminal={handleCreate}
+                    leasedTools={visibleLeasedTools}
+                  />
+                )}
+              </div>
             </div>
-          ) : showRightDockChooser ? (
-            <RightDockChooser
-              leasedTools={leasedTools}
-              terminalReady={terminalReady}
-              terminalDisabledMessage={terminalDisabledMessage}
-              disabledMessage={disabledMessage}
-              tunnelDisabledMessage={tunnelDisabledMessage}
-              projectReady={projectReady}
-              tunnelAvailable={tunnelAvailable}
-              creating={creating}
-              loading={loading}
-              error={error}
-              onCreateTerminal={createTerminal}
-              onStartTool={startToolTab}
-              onOpenBackgroundTasks={openBackgroundTasks}
-              onNewTerminalDragStart={onNewTerminalDragStart}
-              onToolDragStart={onToolDragStart}
-            />
-          ) : (
-            <RightDockContent
-              isOpen={isOpen}
-              currentActiveTab={currentActiveTab}
-              initializedTools={initializedTools}
-              localSessions={localSessions}
-              activeSession={activeSession}
-              initialTerminalSnapshotsRef={initialTerminalSnapshotsRef}
-              error={activeTerminalError ?? error}
-              creating={creating}
-              loading={loading}
-              onTerminalError={handleTerminalError}
-              onInitialTerminalSnapshotConsumed={handleInitialTerminalSnapshotConsumed}
-              onCreateTerminal={handleCreate}
-              leasedTools={leasedTools}
-            />
-          )}
+            {workspace?.treeOpen &&
+              !browserActive &&
+              projectReady &&
+              !leasedTools.has("fileTree") && (
+                <WorkspaceNavigationSplit
+                  width={workspace.treeWidth}
+                  onWidthChange={workspace.onTreeWidthChange}
+                  onClose={workspace.onToggleTree}
+                >
+                  <RightWorkspaceFileTree
+                    key={workspaceViewScope}
+                    active={isOpen}
+                    groups={workspace.treeGroups}
+                    onToggleGroup={workspace.onToggleTreeGroup}
+                    comparison={workspace.comparison}
+                    conversationId={comparisonConversationId}
+                    onOpenReview={() => startToolTab("gitReview")}
+                    onOpenDiff={workspace.onOpenDiff}
+                  />
+                </WorkspaceNavigationSplit>
+              )}
+          </div>
         </div>
       </aside>
     </RightDockToolContext.Provider>

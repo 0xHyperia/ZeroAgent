@@ -24,7 +24,8 @@ export type FileTreeRowProps = {
   // an unchanged row never re-renders.
   onToggle: (path: string, expanded: boolean) => void;
   onSelect: (path: string) => void;
-  onOpen: (path: string) => void;
+  onOpen: (path: string, temporary?: boolean) => void;
+  transientFiles?: boolean;
   onContextMenu: (event: ReactMouseEvent, path: string) => void;
   onDragStart?: (event: ReactDragEvent, path: string, kind: FileTreeKind) => void;
   onDragEnd?: () => void;
@@ -44,19 +45,21 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
     onToggle,
     onSelect,
     onOpen,
+    transientFiles,
     onContextMenu,
     onDragStart,
     onDragEnd,
   } = props;
   const { t } = useLocale();
   const TypeIcon = getFileTypeIcon(path, kind, { expanded });
-  const activateRow = () => {
+  const activateRow = (temporary = false) => {
     onSelect(path);
     if (kind === "dir") {
       onToggle(path, expanded);
       return;
     }
-    onOpen(path);
+    if (transientFiles) onOpen(path, temporary);
+    else onOpen(path);
   };
   return (
     <div
@@ -74,7 +77,8 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
       draggable={Boolean(onDragStart)}
       onDragStart={(event) => onDragStart?.(event, path, kind)}
       onDragEnd={onDragEnd}
-      onClick={activateRow}
+      onClick={() => activateRow(transientFiles)}
+      onDoubleClick={transientFiles && kind === "file" ? () => onOpen(path, false) : undefined}
       onKeyDown={(event) => {
         if (event.currentTarget !== event.target || (event.key !== "Enter" && event.key !== " "))
           return;

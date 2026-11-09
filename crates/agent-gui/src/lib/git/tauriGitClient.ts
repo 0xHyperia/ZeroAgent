@@ -51,6 +51,13 @@ export const tauriGitClient: GitClient = {
   async diff(workdir, mode, path) {
     return normalizeGitDiffResponse(await invoke("git_diff", { workdir, mode, path }));
   },
+  async lastTurnDiff(workdir, conversationId, path) {
+    return normalizeGitDiffResponse(
+      await invoke("git_workspace_turn_review", {
+        request: { action: "read", workdir, conversationId, path },
+      }),
+    );
+  },
   async log(workdir, options = {}) {
     return normalizeGitLogResponse(
       await invoke("git_log", { workdir, limit: options.limit, skip: options.skip }),

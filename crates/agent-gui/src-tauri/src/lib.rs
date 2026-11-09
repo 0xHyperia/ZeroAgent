@@ -124,10 +124,13 @@ macro_rules! app_invoke_handler {
             commands::fs::fs_path_status,
             commands::fs::fs_read_image_source,
             commands::fs::fs_read_workspace_image,
+            commands::fs::fs_read_workspace_preview_asset,
             commands::fs::fs_write_text,
             commands::fs::fs_edit_text,
             commands::fs::fs_delete,
             commands::fs::fs_open_workspace_path,
+            commands::fs::fs_workspace_editor_targets,
+            commands::fs::fs_open_workspace_editor,
             commands::fs::fs_create_dir,
             commands::fs::fs_rename,
             commands::fs::fs_roots,
@@ -153,6 +156,20 @@ macro_rules! app_invoke_handler {
             commands::subagent_worktree::subagent_worktree_cleanup,
             // Browser automation
             commands::browser::browser_action,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::workbench_browser,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::workbench_browser_open,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::workbench_browser_connect,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::extensions::workbench_browser_extensions,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::extensions::workbench_browser_prepare_store_extension,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::loopback::workbench_browser_loopback,
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::annotation_relay::workbench_browser_submit_annotations,
             commands::browser::browser_status,
             commands::browser::browser_close,
             commands::browser::browser_extension_install_info,
@@ -315,6 +332,7 @@ macro_rules! app_invoke_handler {
             commands::git::git_create_worktree,
             commands::git::git_remove_worktree,
             commands::git::git_diff,
+            commands::git::turn_review::git_workspace_turn_review,
             commands::git::git_log,
             commands::git::git_commit_details,
             commands::git::git_compare_commit_with_remote,
@@ -475,6 +493,8 @@ fn start_account_session_lifecycle(app: &tauri::AppHandle) {
             tokio::select! {
                 event=ended.recv()=>{
                     let Ok(event)=event else{continue;};
+                    #[cfg(target_os = "windows")]
+                    commands::integration_commands::workbench_browser::close_for_account(&app, event.handle.clone());
                     sockets.close_session(&event.handle).await;
                     cloud.retire(&event.handle);
                     remote.close_session(&account, &event.handle).await;
@@ -1249,6 +1269,8 @@ pub fn run() {
                 return;
             }
             let app = webview.app_handle();
+            #[cfg(target_os = "windows")]
+            commands::integration_commands::workbench_browser::close_all();
             if let Some(cloud) =
                 app.try_state::<Arc<services::account_session::desktop_cloud::CloudGatewayState>>()
             {

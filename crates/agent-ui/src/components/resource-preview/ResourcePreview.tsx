@@ -1,6 +1,6 @@
 import { Component, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { File } from "../IconSet";
-import { PreviewIdentityContext } from "./PreviewChrome";
+import { type MarkdownSelectionActions, PreviewIdentityContext } from "./PreviewChrome";
 import {
   checkPreviewSignature,
   RESOURCE_PREVIEW_MAX_BYTES,
@@ -27,6 +27,7 @@ export type ResourcePreviewProps = {
   /** Source links select original lines; paths are optional host-provided display values. */
   sourceRange?: { fromLine: number; toLine?: number };
   sourcePaths?: { path?: string; relativePath?: string };
+  markdownSelectionActions?: MarkdownSelectionActions;
   onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
   /** A non-interactive, bounded cover rendered from the same verified original. */
   variant?: "reader" | "thumbnail";
@@ -165,6 +166,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
         loadingStartedAt: loadingClock.current.startedAt,
         sourceRange: props.sourceRange,
         sourcePaths: props.sourcePaths,
+        markdownSelectionActions: props.markdownSelectionActions,
         onRequestRevision: props.onRequestRevision,
       }}
     >

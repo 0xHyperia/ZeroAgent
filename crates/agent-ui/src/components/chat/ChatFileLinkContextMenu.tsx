@@ -14,8 +14,12 @@ import {
   registerChatFileLinkMenuHost,
   subscribeChatFileLinkMenu,
 } from "@liveagent/ui/lib/chat/chatFileLinkContextMenuStore";
+import {
+  WorkbenchBrowserLink,
+  workbenchBrowserLinkUrl,
+} from "@liveagent/ui/lib/chat/workbenchBrowserLink";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 
 const WEB_PAGE_PATTERN = /\.(?:html?|xhtml|svg)$/i;
 
@@ -30,7 +34,8 @@ type ChatFileLinkContextMenuHostProps = {
 export function ChatFileLinkContextMenuHost({
   canOpenWithDefaultApp = false,
 }: ChatFileLinkContextMenuHostProps) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const openWorkbenchBrowser = useContext(WorkbenchBrowserLink);
   const [hostId] = useState(() => Symbol("chat-file-link-menu-host"));
   const { menu: state, primaryHost } = useSyncExternalStore(
     subscribeChatFileLinkMenu,
@@ -39,6 +44,8 @@ export function ChatFileLinkContextMenuHost({
   );
   useEffect(() => registerChatFileLinkMenuHost(hostId), [hostId]);
   if (!state || primaryHost !== hostId || typeof document === "undefined") return null;
+  const browserUrl =
+    state.kind === "url" && openWorkbenchBrowser ? workbenchBrowserLinkUrl(state.url) : null;
   return (
     // The portal still bubbles React events through the primary host's pane;
     // keep a press here from focusing that pane instead of the link's own.
@@ -85,6 +92,19 @@ export function ChatFileLinkContextMenuHost({
             {state.url}
           </ContextMenuLabel>
           <ContextMenuSeparator />
+          {browserUrl && openWorkbenchBrowser && (
+            <ContextMenuItem
+              onClick={() => {
+                closeChatFileLinkMenu();
+                openWorkbenchBrowser(browserUrl);
+              }}
+            >
+              <Globe className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                {locale === "zh-CN" ? "在工作区打开" : "Open in workspace"}
+              </span>
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             onClick={() => {
               closeChatFileLinkMenu();
