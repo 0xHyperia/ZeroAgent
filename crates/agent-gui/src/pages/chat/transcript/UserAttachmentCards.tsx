@@ -4,6 +4,7 @@ import { loadComposerUploadedImagePreview } from "../../../agent-ui-adapters/com
 
 export function UserAttachmentCards(props: {
   files: PendingUploadedFile[];
+  imageStrip?: boolean;
   workspaceRoot?: string;
   onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;

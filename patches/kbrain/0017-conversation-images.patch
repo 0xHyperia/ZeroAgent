@@ -1,0 +1,551 @@
+diff --git a/internal/backend/client_tools.go b/internal/backend/client_tools.go
+index 7c2d4c4c93231e348ca98b214a88ab98cf9da9dd..f8fe4316bfd726e3c8d65c88f844cd45c7046ffa 100644
+--- a/internal/backend/client_tools.go
++++ b/internal/backend/client_tools.go
+@@ -48,7 +48,7 @@ func normalizeClientTools(in []protocol.ClientTool, available []tools.Tool) ([]p
+ 		if !clientToolNamePattern.MatchString(tool.Name) {
+ 			return nil, fmt.Errorf("options.client_tools[%d].name is invalid", i)
+ 		}
+-		if seen[tool.Name] || tool.Name == "ExitPlanMode" {
++		if seen[tool.Name] || tool.Name == "ExitPlanMode" || tool.Name == conversationImageToolName || tool.Name == conversationImageEditToolName {
+ 			return nil, fmt.Errorf("options.client_tools contains duplicate or reserved tool %q", tool.Name)
+ 		}
+ 		for _, existing := range available {
+diff --git a/internal/backend/conversation_images.go b/internal/backend/conversation_images.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a02f265a20052bcda79acda2ed9d82b676d3abc
+--- /dev/null
++++ b/internal/backend/conversation_images.go
+@@ -0,0 +1,241 @@
++package backend
++
++import (
++	"bufio"
++	"context"
++	"crypto/sha256"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"os"
++	"path/filepath"
++	"regexp"
++	"slices"
++	"strconv"
++	"strings"
++	"sync/atomic"
++	"time"
++
++	"github.com/Stack-Cairn/K-brain/internal/ai"
++	"github.com/Stack-Cairn/K-brain/internal/imaging"
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++	"github.com/Stack-Cairn/K-brain/internal/tools"
++)
++
++const (
++	conversationImageToolName     = "generate_image"
++	conversationImageEditToolName = "edit_image"
++)
++
++type conversationImageScopeKey struct{}
++
++var conversationImageAssetID = regexp.MustCompile(`^ia_[A-Za-z0-9_-]{1,96}$`)
++
++func (s *Server) conversationImageTools(ctx context.Context, conversationID, runID string, options protocol.RunOptions, history []ai.Message) []tools.Tool {
++	scope, allowed := ctx.Value(conversationImageScopeKey{}).(imaging.Scope)
++	module := s.image
++	if !allowed || module == nil || module.Jobs == nil || module.Store == nil || module.Settings == nil ||
++		options.ImageCreation == nil || options.PlanModeEnabled || options.ApprovalPolicy == "deny" ||
++		isUnattendedRun(ctx) || (options.Sandbox != nil && !options.Sandbox.Network) {
++		return nil
++	}
++	references := conversationImageReferences(options.ImageCreation.Attachments, history)
++	var attempted atomic.Bool
++	run := func(edit bool) func(context.Context, json.RawMessage) (string, error) {
++		return func(ctx context.Context, raw json.RawMessage) (string, error) {
++			var args conversationImageInput
++			decoder := json.NewDecoder(strings.NewReader(string(raw)))
++			decoder.DisallowUnknownFields()
++			var trailing any
++			if len(raw) > 32<<10 || decoder.Decode(&args) != nil || decoder.Decode(&trailing) != io.EOF ||
++				strings.TrimSpace(args.Prompt) == "" || (edit != (args.Reference != "")) {
++				return conversationImageReply("invalid_request", "", nil), nil
++			}
++			if edit && !slices.Contains(references, args.Reference) {
++				return conversationImageReply("reference_unavailable", "", nil), nil
++			}
++			if !attempted.CompareAndSwap(false, true) {
++				return conversationImageReply("already_requested", "", nil), nil
++			}
++			return module.createConversationImage(ctx, scope, conversationID, runID, *options.ImageCreation, options.WorkspaceRoots, args), nil
++		}
++	}
++	result := []tools.Tool{{
++		NoInherit: true,
++		Def: ai.NewTool(conversationImageToolName,
++			"Generate a new image from text when explicitly requested, including continuing an earlier generation after image-model setup. On success the app displays the image. Do not invent a link, substitute a workspace file, or retry an unconfirmed outcome.",
++			`{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"],"additionalProperties":false}`),
++		Run: run(false),
++	}}
++	if len(references) > 0 {
++		enum, _ := json.Marshal(references)
++		schema := fmt.Sprintf(`{"type":"object","properties":{"prompt":{"type":"string"},"reference":{"type":"string","enum":%s}},"required":["prompt","reference"],"additionalProperties":false}`, enum)
++		result = append(result, tools.Tool{
++			NoInherit: true,
++			Def: ai.NewTool(conversationImageEditToolName,
++				"Edit one existing image only when the user asks. Select attachment:N for the Nth image attached to the current message, or a listed asset ID from this conversation. On success the app displays the result. Never retry an unconfirmed outcome.",
++				schema),
++			Run: run(true),
++		})
++	}
++	return result
++}
++
++type conversationImageInput struct {
++	Prompt    string `json:"prompt"`
++	Reference string `json:"reference"`
++}
++
++func conversationImageReferences(attachments []string, history []ai.Message) []string {
++	var references []string
++	for i := range min(len(attachments), 16) {
++		references = append(references, "attachment:"+strconv.Itoa(i+1))
++	}
++	limit := len(references) + 8
++	for i := len(history) - 1; i >= 0 && len(references) < limit; i-- {
++		message := history[i]
++		if message.Role != "tool" || (message.Name != conversationImageToolName && message.Name != conversationImageEditToolName) {
++			continue
++		}
++		line, _, _ := strings.Cut(message.TextContent(), "\n")
++		var result struct {
++			Status   string   `json:"status"`
++			AssetIDs []string `json:"asset_ids"`
++		}
++		if json.Unmarshal([]byte(line), &result) != nil || (result.Status != "succeeded" && result.Status != "partial_succeeded") {
++			continue
++		}
++		for _, id := range result.AssetIDs {
++			if conversationImageAssetID.MatchString(id) && !slices.Contains(references, id) {
++				references = append(references, id)
++			}
++			if len(references) >= limit {
++				break
++			}
++		}
++	}
++	return references
++}
++
++func conversationImageReply(status, jobID string, assetIDs []string) string {
++	raw, _ := json.Marshal(struct {
++		Status   string   `json:"status"`
++		JobID    string   `json:"job_id,omitempty"`
++		AssetIDs []string `json:"asset_ids,omitempty"`
++	}{status, jobID, assetIDs})
++	return string(raw)
++}
++
++func (m *ImageModule) createConversationImage(ctx context.Context, scope imaging.Scope, conversationID, runID string, config protocol.RunImageCreation, roots []protocol.WorkspaceRoot, args conversationImageInput) string {
++	reply := func(status string) string { return conversationImageReply(status, "", nil) }
++	targetID := config.TargetID
++	if targetID == "" {
++		return reply("needs_configuration")
++	}
++	target, err := m.Settings.ResolveTarget(ctx, scope, targetID)
++	if err != nil {
++		return reply("model_unavailable")
++	}
++	project, err := m.Store.EnsureConversationProject(ctx, scope, conversationID)
++	if err != nil {
++		return reply("failed")
++	}
++	request := imaging.CreateJobRequest{ProjectID: project.ID, TargetID: targetID, Prompt: strings.TrimSpace(args.Prompt), Operation: imaging.OperationGenerate, Count: 1}
++	if args.Reference != "" {
++		role := "source"
++		request.Operation = imaging.OperationEdit
++		if !slices.Contains(target.Capabilities.Operations, imaging.OperationEdit) {
++			request.Operation, role = imaging.OperationReference, "reference"
++		}
++		if !slices.Contains(target.Capabilities.Operations, request.Operation) {
++			return reply("unsupported_edit")
++		}
++		assetID := args.Reference
++		if index, attached := strings.CutPrefix(assetID, "attachment:"); attached {
++			n, err := strconv.Atoi(index)
++			if m.Assets == nil || err != nil || n < 1 || n > len(config.Attachments) {
++				return reply("reference_unavailable")
++			}
++			assetID, err = m.importConversationImage(ctx, scope, roots, config.Attachments[n-1])
++			if err != nil {
++				return reply("reference_unavailable")
++			}
++		} else {
++			asset, assetErr := m.Store.ReadAsset(scope, assetID)
++			if assetErr != nil || !asset.Available || asset.JobID == "" {
++				return reply("reference_unavailable")
++			}
++			parent, parentErr := m.Jobs.GetJob(ctx, scope, asset.JobID)
++			if parentErr != nil || parent.ProjectID != project.ID || !slices.Contains(parent.AssetIDs, assetID) {
++				return reply("reference_unavailable")
++			}
++			request.ParentAssetID = assetID
++		}
++		request.Inputs = []imaging.InputAsset{{AssetID: assetID, Role: role}}
++	}
++	key := fmt.Sprintf("conversation-image:%x", sha256.Sum256([]byte(strconv.Quote(conversationID)+strconv.Quote(runID)+strconv.Quote(tools.ToolCallID(ctx)))))
++	job, _, err := m.Jobs.CreateJob(ctx, scope, key, request)
++	if err != nil {
++		return reply("failed")
++	}
++	ticker := time.NewTicker(350 * time.Millisecond)
++	defer ticker.Stop()
++	timeout := time.NewTimer(6 * time.Minute)
++	defer timeout.Stop()
++	for {
++		if imageTerminal(job.Status) {
++			return conversationImageReply(string(job.Status), job.ID, job.AssetIDs)
++		}
++		select {
++		case <-ctx.Done():
++			cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
++			_, _ = m.Jobs.CancelJob(cancelCtx, scope, job.ID)
++			cancel()
++			return conversationImageReply("cancelled", job.ID, nil)
++		case <-timeout.C:
++			return conversationImageReply("result_unknown", job.ID, nil)
++		case <-ticker.C:
++			next, err := m.Jobs.GetJob(ctx, scope, job.ID)
++			if err == nil {
++				job = next
++			}
++		}
++	}
++}
++
++func (m *ImageModule) importConversationImage(ctx context.Context, scope imaging.Scope, roots []protocol.WorkspaceRoot, absolutePath string) (string, error) {
++	if !filepath.IsAbs(absolutePath) {
++		return "", errors.New("attachment path is not absolute")
++	}
++	for _, entry := range roots {
++		relative, err := filepath.Rel(entry.Path, absolutePath)
++		if err != nil || !filepath.IsLocal(relative) || relative == "." {
++			continue
++		}
++		root, err := os.OpenRoot(entry.Path)
++		if err != nil {
++			continue
++		}
++		defer root.Close()
++		info, err := root.Stat(relative)
++		if err != nil || !info.Mode().IsRegular() {
++			break
++		}
++		file, err := root.Open(relative)
++		if err != nil {
++			break
++		}
++		defer file.Close()
++		reader := bufio.NewReader(file)
++		prefix, _ := reader.Peek(512)
++		mime := http.DetectContentType(prefix)
++		if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" {
++			break
++		}
++		asset, err := m.Assets.ImportAsset(ctx, scope, reader, mime)
++		return asset.ID, err
++	}
++	return "", errors.New("attached image unavailable")
++}
+diff --git a/internal/backend/conversation_images_test.go b/internal/backend/conversation_images_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3bd54d247891911c4822aa59aca5d4903d98bd9
+--- /dev/null
++++ b/internal/backend/conversation_images_test.go
+@@ -0,0 +1,118 @@
++package backend
++
++import (
++	"context"
++	"image"
++	"image/png"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/Stack-Cairn/K-brain/internal/ai"
++	"github.com/Stack-Cairn/K-brain/internal/config"
++	"github.com/Stack-Cairn/K-brain/internal/imaging"
++	"github.com/Stack-Cairn/K-brain/internal/protocol"
++	"github.com/Stack-Cairn/K-brain/internal/tools"
++)
++
++type finishedConversationImageJobs struct {
++	*imageHTTPJobsFake
++}
++
++func (f finishedConversationImageJobs) GetJob(ctx context.Context, scope imaging.Scope, id string) (imaging.ImageJob, error) {
++	job, err := f.imageHTTPJobsFake.GetJob(ctx, scope, id)
++	if err == nil {
++		job.Status = imaging.JobSucceeded
++		job.AssetIDs = []string{"ia_fixture"}
++	}
++	return job, err
++}
++
++func TestConversationImageToolUsesAuthorizedConversationAndCurrentAttachment(t *testing.T) {
++	s := imageHTTPFixture(t)
++	scope := imageTestScope()
++	ctx := context.WithValue(context.Background(), conversationImageScopeKey{}, scope)
++	options := protocol.RunOptions{Mode: "chat", ImageCreation: &protocol.RunImageCreation{}}
++	if got := s.conversationImageTools(context.Background(), "chat-a", "run-a", options, nil); len(got) != 0 {
++		t.Fatal("an unauthenticated run was offered images")
++	}
++	tool := s.conversationImageTools(ctx, "chat-a", "run-a", options, nil)[0]
++	result, err := tool.Run(ctx, []byte(`{"prompt":"Create a test image"}`))
++	if err != nil || !strings.Contains(result, "needs_configuration") {
++		t.Fatalf("missing model: %s %v", result, err)
++	}
++	options.Sandbox = &protocol.RunSandbox{Mode: "workspace", Network: false}
++	if got := s.conversationImageTools(ctx, "chat-a", "run-a", options, nil); len(got) != 0 {
++		t.Fatal("an offline run was offered a provider tool")
++	}
++	options.Sandbox = nil
++
++	cfg := config.Default()
++	target := imageTestTarget()
++	target.Enabled = true
++	target.Capabilities.Operations = append(target.Capabilities.Operations, imaging.OperationEdit)
++	target.Capabilities.MaxInputs = 1
++	cfg.Image = &imaging.ImageSettings{Connections: []imaging.ImageConnection{imageTestConnection()}, Targets: []imaging.ImageTarget{target}}
++	s.image.Settings, err = NewImageSettingsManager(NewSettingsStore(cfg, func(*config.Config) error { return nil }), filepath.Join(t.TempDir(), "secrets.json"), ImageSettingsOptions{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	s.image.Jobs = finishedConversationImageJobs{s.image.Jobs.(*imageHTTPJobsFake)}
++	options.ImageCreation.TargetID = target.ID
++	prior := []ai.Message{{Role: "tool", Name: conversationImageToolName, Content: `{"status":"needs_configuration"}`}}
++	textOnly := s.conversationImageTools(ctx, "chat-text", "resume-after-setup", options, prior)
++	if len(textOnly) != 1 || textOnly[0].Def.Function.Name != conversationImageToolName ||
++		string(textOnly[0].Def.Function.Parameters) != `{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"],"additionalProperties":false}` {
++		t.Fatalf("text-only generation offered reference parameters: %+v", textOnly)
++	}
++	result, err = textOnly[0].Run(tools.WithToolCallID(ctx, "text-only"), []byte(`{"prompt":"A cat in space"}`))
++	if err != nil || !strings.Contains(result, `"status":"succeeded"`) {
++		t.Fatalf("generation after choosing a model: %s %v", result, err)
++	}
++	prior = append(prior, ai.Message{Role: "tool", Name: conversationImageToolName, Content: result})
++	withPrevious := s.conversationImageTools(ctx, "chat-text", "edit-prior", options, prior)
++	if len(withPrevious) != 2 || !strings.Contains(string(withPrevious[1].Def.Function.Parameters), `"enum":["ia_fixture"]`) {
++		t.Fatalf("prior result unavailable to the edit tool: %+v", withPrevious)
++	}
++	root := t.TempDir()
++	file, err := os.Create(filepath.Join(root, "reference.png"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	err = png.Encode(file, image.NewRGBA(image.Rect(0, 0, 32, 32)))
++	file.Close()
++	if err != nil {
++		t.Fatal(err)
++	}
++	options.WorkspaceRoots = []protocol.WorkspaceRoot{{Path: root, Access: "read"}}
++	options.ImageCreation = &protocol.RunImageCreation{TargetID: target.ID, Attachments: []string{file.Name()}}
++	withAttachment := s.conversationImageTools(ctx, "chat-a", "run-b", options, nil)
++	tool = withAttachment[1]
++	if tool.Def.Function.Name != conversationImageEditToolName {
++		t.Fatalf("expected edit tool, got %s", tool.Def.Function.Name)
++	}
++	raw := []byte(`{"prompt":"Make this blue","reference":"attachment:1"}`)
++	result, err = tool.Run(tools.WithToolCallID(ctx, "call-a"), raw)
++	if err != nil || !strings.Contains(result, `"status":"succeeded"`) || !strings.Contains(result, "ia_fixture") {
++		t.Fatalf("image result: %s %v", result, err)
++	}
++	second, _ := withAttachment[0].Run(ctx, []byte(`{"prompt":"Second image"}`))
++	if !strings.Contains(second, "already_requested") {
++		t.Fatalf("unexpected second execution: %s", second)
++	}
++	project, err := s.image.Store.EnsureConversationProject(ctx, scope, "chat-a")
++	if err != nil {
++		t.Fatal(err)
++	}
++	jobs, err := s.image.Jobs.ListJobs(ctx, scope, project.ID, imaging.PageRequest{Limit: 10})
++	if err != nil || len(jobs.Items) != 1 || jobs.Items[0].Request.Operation != imaging.OperationEdit || len(jobs.Items[0].Request.Inputs) != 1 {
++		t.Fatalf("unexpected scoped job: %+v %v", jobs, err)
++	}
++	options.WorkspaceRoots = []protocol.WorkspaceRoot{{Path: t.TempDir(), Access: "read"}}
++	tool = s.conversationImageTools(ctx, "chat-b", "run-c", options, nil)[1]
++	result, _ = tool.Run(ctx, raw)
++	if !strings.Contains(result, "reference_unavailable") {
++		t.Fatalf("out-of-root attachment accepted: %s", result)
++	}
++}
+diff --git a/internal/backend/health.go b/internal/backend/health.go
+index ac06b8b147fed6331e1611708b51cb8fddfebf03..07ad34dc84290e491e4c4a2086079cf84231c2db 100644
+--- a/internal/backend/health.go
++++ b/internal/backend/health.go
+@@ -17,6 +17,7 @@ type healthCapabilities struct {
+ 	ComputerSessionApproval int                `json:"computer_session_approval"`
+ 	MemorySwitch            int                `json:"memory_switch"`
+ 	ImageModelToggle        int                `json:"image_model_toggle"`
++	ConversationImages      int                `json:"zeroagent_conversation_images"`
+ 	SessionExists           int                `json:"session_exists"`
+ 	AIReviewPerRun          int                `json:"ai_review_per_run"`
+ 	PermissionRules         int                `json:"permission_rules"`
+@@ -107,6 +108,7 @@ func (s *Server) health() healthResponse {
+ 			ComputerSessionApproval: 1,
+ 			MemorySwitch:            1,
+ 			ImageModelToggle:        1,
++			ConversationImages:      1,
+ 			SessionExists:           1,
+ 			AIReviewPerRun:          1,
+ 			PermissionRules:         1,
+diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
+index 85b69256a953dd7dc247768b6d10074b85e633b5..cc316b9b9b2576e2073ecd8f644e6a25400b10aa 100644
+--- a/internal/backend/run_options.go
++++ b/internal/backend/run_options.go
+@@ -156,11 +156,14 @@ func applyRunOptions(a *agent.Agent, options protocol.RunOptions) func() {
+ 
+ // applyRunOptionsWith also offers run-scoped extra tools (client tools) alongside the agent's
+ // own, under the same policy filtering.
+-func applyRunOptionsWith(a *agent.Agent, options protocol.RunOptions, extra []tools.Tool) func() {
++func applyRunOptionsWith(a *agent.Agent, options protocol.RunOptions, extra []tools.Tool, chatTools ...tools.Tool) func() {
+ 	oldTools := append([]tools.Tool(nil), a.RunTools...)
+ 	oldToolsSet, oldEffort, oldSearch, oldPlan := a.RunToolsSet, a.Effort, a.NativeWebSearch, a.PlanMode()
+ 	a.SetPlanMode(options.PlanModeEnabled)
+-	available := append(a.AvailableTools(), extra...)
++	available := chatTools
++	if options.Mode != "chat" {
++		available = append(append(a.AvailableTools(), extra...), chatTools...)
++	}
+ 
+ 	if options.PlanModeEnabled {
+ 		available = append(available, exitPlanModeTool())
+@@ -195,9 +198,6 @@ func applyRunOptionsWith(a *agent.Agent, options protocol.RunOptions, extra []to
+ 		}
+ 		available = filtered
+ 	}
+-	if options.Mode == "chat" {
+-		available = nil
+-	}
+ 	a.RunTools = available
+ 	a.RunToolsSet = true
+ 	a.NativeWebSearch = options.Search == "enabled"
+diff --git a/internal/backend/server.go b/internal/backend/server.go
+index 2853ccd3ae960931167fd610f87899d45fac23e8..e1942d32190d4c340854ebe486311503146b1d34 100644
+--- a/internal/backend/server.go
++++ b/internal/backend/server.go
+@@ -1266,7 +1266,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, id string) {
+ 		return
+ 	}
+ 	// A user run may answer a goal waiting for input or get a paused-goal notice; cron runs never do.
+-	accepted, status, err := s.startCanonicalRunWith(context.Background(), rt, in, s.goalUserRunAdmit(rt))
++	ctx := context.Background()
++	if in.Options != nil && in.Options.ImageCreation != nil && s.image != nil {
++		if auth, authErr := s.resolveImageScope(r); authErr == nil {
++			ctx = context.WithValue(ctx, conversationImageScopeKey{}, auth.Scope)
++		}
++	}
++	accepted, status, err := s.startCanonicalRunWith(ctx, rt, in, s.goalUserRunAdmit(rt))
+ 	if err != nil {
+ 		writeJSONError(w, status, err.Error())
+ 		return
+@@ -1278,7 +1284,11 @@ func (s *Server) executeRun(rt *runtimeSession, ctx context.Context, runID strin
+ 	progress := &runProgress{started: time.Now(), publish: rt.publish}
+ 	progress.phase("preparing")
+ 	rt.mu.Lock()
+-	restoreRunOptions := applyRunOptionsWith(rt.agent, options, s.clientTools(rt, options.ClientTools))
++	var imageTools []tools.Tool
++	if options.ImageCreation != nil {
++		imageTools = s.conversationImageTools(ctx, rt.id, runID, options, rt.agent.MessagesSnapshot())
++	}
++	restoreRunOptions := applyRunOptionsWith(rt.agent, options, s.clientTools(rt, options.ClientTools), imageTools...)
+ 	rt.mu.Unlock()
+ 	defer func() {
+ 		rt.mu.Lock()
+diff --git a/internal/imaging/projects.go b/internal/imaging/projects.go
+index 9b2416aa528da155c5691b2f03b0c2cc89e222af..f760deb30b5aa15485cd7a75bdadfc0d55d00fdb 100644
+--- a/internal/imaging/projects.go
++++ b/internal/imaging/projects.go
+@@ -35,6 +35,26 @@ func (s *Store) CreateProject(ctx context.Context, scope Scope, title, workspace
+ 	}
+ 	return out, nil
+ }
++
++func (s *Store) EnsureConversationProject(ctx context.Context, scope Scope, conversationID string) (ImageProject, error) {
++	ref := "zeroagent:conversation:" + conversationID
++	var project ImageProject
++	err := s.Update(WithScope(ctx, scope), func(tx *Transaction) error {
++		for _, record := range tx.data.Projects {
++			if record.DeletedAt == nil && record.Scope.matches(scope) && record.Value.WorkspaceRef == ref {
++				project = record.Value
++				return nil
++			}
++		}
++		id, err := newProjectID()
++		if err != nil {
++			return err
++		}
++		project = ImageProject{ID: id, Title: "Conversation images", WorkspaceRef: ref, Revision: 1, CreatedAt: tx.now, UpdatedAt: tx.now}
++		return tx.PutProject(project)
++	})
++	return project, err
++}
+ func (s *Store) UpdateProject(ctx context.Context, scope Scope, id, title string, expectedRevision uint64) (ImageProject, error) {
+ 	if strings.TrimSpace(title) == "" {
+ 		return ImageProject{}, invalid("project title required")
+diff --git a/internal/protocol/capabilities.json b/internal/protocol/capabilities.json
+index 8f10b5bef3bcb2f2e7a3124397a6be6bfb5df201..6814757309772361d890b7208f81bf9b3ddcbc2d 100644
+--- a/internal/protocol/capabilities.json
++++ b/internal/protocol/capabilities.json
+@@ -41,6 +41,14 @@
+       "evidenceCommit": "ee59580",
+       "missing": "Do not send model-level image toggles; keep legacy probing."
+     },
++    {
++      "name": "zeroagent_conversation_images",
++      "type": "integer",
++      "compare": "eq",
++      "value": 1,
++      "firstRelease": "ZeroAgent patch 0017",
++      "missing": "Omit the device-only image_creation run option."
++    },
+     {
+       "name": "session_exists",
+       "type": "integer",
+diff --git a/internal/protocol/protocol.go b/internal/protocol/protocol.go
+index 95f6b523d9fb36951552aa0c1fb4d465a086c296..b7beb799007bc46233cadfb79df2085bb8509813 100644
+--- a/internal/protocol/protocol.go
++++ b/internal/protocol/protocol.go
+@@ -429,11 +429,12 @@ type CreateSessionRequest struct {
+ }
+ 
+ type RunOptions struct {
+-	Reasoning      string `json:"reasoning,omitempty"`
+-	Mode           string `json:"mode,omitempty"`
+-	Search         string `json:"search,omitempty"`
+-	ApprovalPolicy string `json:"approval_policy,omitempty"`
+-	PermissionMode string `json:"permission_mode,omitempty"`
++	ImageCreation  *RunImageCreation `json:"image_creation,omitempty"`
++	Reasoning      string            `json:"reasoning,omitempty"`
++	Mode           string            `json:"mode,omitempty"`
++	Search         string            `json:"search,omitempty"`
++	ApprovalPolicy string            `json:"approval_policy,omitempty"`
++	PermissionMode string            `json:"permission_mode,omitempty"`
+ 	// ReviewScope "per_run" (capability ai_review_per_run) lets the permission mode alone decide
+ 	// AI review: only auto_review reviews, with the session's model when no reviewer is set.
+ 	// Without it the global aiApproval mode keeps applying as before.
+@@ -453,6 +454,11 @@ type RunOptions struct {
+ 	Sandbox *RunSandbox `json:"sandbox,omitempty"`
+ }
+ 
++type RunImageCreation struct {
++	TargetID    string   `json:"target_id,omitempty"`
++	Attachments []string `json:"attachments,omitempty"`
++}
++
+ // RunSandbox is a run's request for OS-level confinement. Mode "workspace" lets
+ // commands read the machine (credential and LiveAgent data directories masked)
+ // and write only the workspace roots and temporary directories. Network false

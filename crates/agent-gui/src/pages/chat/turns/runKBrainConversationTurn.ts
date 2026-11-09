@@ -80,6 +80,7 @@ export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrai
   const sandbox = agentMode ? resolveKBrainRunSandbox(safety) : undefined;
   return {
     mode: agentMode ? "agent" : "chat",
+    ...(params.imageCreation ? { image_creation: params.imageCreation } : {}),
     ...(reasoning ? { reasoning } : {}),
     search: params.runtime.nativeWebSearchEnabled === true ? "enabled" : "disabled",
     approval_policy: safety === "auto" ? "auto" : "ask",

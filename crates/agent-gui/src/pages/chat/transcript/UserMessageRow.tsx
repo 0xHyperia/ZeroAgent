@@ -80,6 +80,11 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
     );
   }
 
+  const imageStrip = visibleFiles.filter(
+    (file) => file.kind === "image" && file.absolutePath && workspaceRoot,
+  );
+  const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
+
   return (
     <div
       className={cn(
@@ -88,26 +93,34 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
       )}
       data-user-bubble-wrap
     >
-      <div
-        className={cn(
-          "ml-auto w-fit max-w-full",
-          "whitespace-pre-wrap rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5",
-          "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
-        )}
-      >
-        <UserAttachmentCards
-          files={visibleFiles}
-          workspaceRoot={workspaceRoot}
-          onOpen={openAttachment}
-        />
-        {item.text ? (
-          <UserMessageContent
-            text={item.text}
-            pastedTextFiles={pastedTextFiles}
-            loadCommitDetails={loadCommitDetails}
+      <UserAttachmentCards
+        files={imageStrip}
+        workspaceRoot={workspaceRoot}
+        onOpen={openAttachment}
+        imageStrip
+      />
+      {(item.text || bubbleFiles.length > 0) && (
+        <div
+          className={cn(
+            "ml-auto w-fit max-w-full",
+            "whitespace-pre-wrap rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5",
+            "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
+          )}
+        >
+          <UserAttachmentCards
+            files={bubbleFiles}
+            workspaceRoot={workspaceRoot}
+            onOpen={openAttachment}
           />
-        ) : null}
-      </div>
+          {item.text ? (
+            <UserMessageContent
+              text={item.text}
+              pastedTextFiles={pastedTextFiles}
+              loadCommitDetails={loadCommitDetails}
+            />
+          ) : null}
+        </div>
+      )}
       <UserRowFooter
         itemKey={item.key}
         text={item.text}

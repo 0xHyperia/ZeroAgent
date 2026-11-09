@@ -9,7 +9,7 @@ export type UploadedImagePreviewResult = {
 export type UploadedImagePreviewLoader = (
   workspaceRoot: string,
   absolutePath: string,
-) => Promise<UploadedImagePreviewResult | null>;
+) => Promise<UploadedImagePreviewResult | Blob | null>;
 
 type UploadedImagePreviewCacheEntry = {
   src: string;
@@ -197,6 +197,13 @@ export async function loadUploadedImagePreview(params: {
   let request: Promise<string | null>;
   request = loader(workspaceRoot, absolutePath)
     .then((result) => {
+      if (result instanceof Blob) {
+        if (!canCreateObjectUrl() || uploadedImagePreviewRevisions.get(cacheKey) !== revision)
+          return null;
+        const src = URL.createObjectURL(result);
+        writeUploadedImagePreviewCache(cacheKey, { src, revoke: () => URL.revokeObjectURL(src) });
+        return src;
+      }
       const mimeType =
         typeof result?.mimeType === "string" && result.mimeType.trim()
           ? result.mimeType.trim()

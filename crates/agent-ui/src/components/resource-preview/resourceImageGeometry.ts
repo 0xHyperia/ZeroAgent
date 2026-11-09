@@ -12,18 +12,23 @@ export function imageViewGeometry(
   size: ImageViewerSize,
   viewport: ImageViewerSize,
   rotation: number,
+  fitArea?: ImageViewerSize & { offsetY: number },
 ) {
   const rotated = rotatedImageViewerSize(size, rotation);
+  const available = fitArea ?? viewport;
   const fit =
-    rotated.width && rotated.height && viewport.width && viewport.height
-      ? Math.min(1, viewport.width / rotated.width, viewport.height / rotated.height)
+    rotated.width && rotated.height && available.width && available.height
+      ? Math.min(1, available.width / rotated.width, available.height / rotated.height)
       : 1;
-  return { size, viewport, fit };
+  return { size, viewport, fit, fitArea };
 }
 export function boundImageView(
   view: ImageView,
   geometry: ReturnType<typeof imageViewGeometry>,
 ): ImageView {
+  if (view.zoom === "fit-page" && geometry.fitArea) {
+    return { ...view, x: 0, y: geometry.fitArea.offsetY };
+  }
   const scale = view.zoom === "fit-page" ? geometry.fit : imageScaleLimit(view.zoom / 100);
   const pan = clampImageViewerPan(view, {
     imageSize: { width: geometry.size.width * scale, height: geometry.size.height * scale },

@@ -679,21 +679,21 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
 
   // Capability ai_review_per_run: runs send review_scope "per_run" so the permission mode alone
   // decides AI review (the global setting is hidden). Older backends reject unknown run options,
-  // so the answer comes from /v1/health; a failed read resolves false and is not cached. The
+  // so run options are negotiated through /v1/health; a failed read is not cached. The
   // shared read takes no caller's signal; each caller still stops waiting as soon as it aborts.
-  let perRunReview: Promise<boolean> | null = null;
-  function supportsPerRunReview(signal?: AbortSignal): Promise<boolean> {
-    if (!perRunReview) {
-      const read: Promise<boolean> = getHealth().then(
-        (health) => hasFrozenCapability(health, "ai_review_per_run"),
+  let runHealth: Promise<KBrainHealth | null> | null = null;
+  function readRunHealth(signal?: AbortSignal): Promise<KBrainHealth | null> {
+    if (!runHealth) {
+      const read: Promise<KBrainHealth | null> = getHealth().then(
+        (health) => health,
         () => {
-          if (perRunReview === read) perRunReview = null;
-          return false;
+          if (runHealth === read) runHealth = null;
+          return null;
         },
       );
-      perRunReview = read;
+      runHealth = read;
     }
-    const pending = perRunReview;
+    const pending = runHealth;
     if (!signal) return pending;
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
@@ -706,13 +706,19 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     });
   }
 
-  /** Run options with review_scope "per_run" when the backend reviews per permission mode. */
+  /** Include optional run fields only when the current backend advertises them. */
   async function scopedRunOptions<T extends KBrainRunOptions | undefined>(
     options: T,
     signal?: AbortSignal,
   ): Promise<T> {
-    if (!options || !(await supportsPerRunReview(signal))) return options;
-    return { ...options, review_scope: "per_run" as const };
+    if (!options) return options;
+    const health = await readRunHealth(signal);
+    const scoped = { ...options };
+    if (health && hasFrozenCapability(health, "ai_review_per_run")) scoped.review_scope = "per_run";
+    if (!health || !hasFrozenCapability(health, "zeroagent_conversation_images")) {
+      delete scoped.image_creation;
+    }
+    return scoped;
   }
 
   async function startRun(
@@ -723,7 +729,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     const mode = input.options?.permission_mode;
     if (mode === "always" || mode === "auto_edit" || mode === "auto_review") {
       const health = await getHealth(signal);
-      perRunReview ??= Promise.resolve(hasFrozenCapability(health, "ai_review_per_run"));
+      runHealth = Promise.resolve(health);
       if (!supportsPermissionMode(health, mode)) {
         throw new Error(
           `ZeroAgent engine does not support permission mode ${mode}; update the backend before using this mode.`,

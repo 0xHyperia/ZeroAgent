@@ -98,6 +98,14 @@ func (s *Service) cloudModelMessages(ctx context.Context, userID int64, messages
 				if !ok {
 					return nil, "invalid_history"
 				}
+				if part["type"] == "image_edit_context" {
+					instruction, valid := part["instruction"].(string)
+					if message.Role != "user" || !valid || len(instruction) > 12000 {
+						return nil, "invalid_history"
+					}
+					expanded = append(expanded, map[string]any{"type": "text", "text": instruction + "\nUse the image editing tool. The attached artifact version is the original edit target. Any selection image is a guide, not a replacement for the original."})
+					continue
+				}
 				if part["type"] != "file_reference" {
 					if part["type"] == "artifact_reference" {
 						if message.Role != "user" {

@@ -342,6 +342,7 @@ export default function App() {
   );
   const [imageStudioWorkspace, setImageStudioWorkspace] = useState(settings.system.workdir);
   const imageStudioHost = useDesktopImageStudioHost(imageStudioWorkspace);
+  const conversationImageStudioHost = useDesktopImageStudioHost("conversation-images");
   const [sttProviderOverride, setSttProviderOverride] = useState<SttProviderId | null>(null);
   const [settingsSaveState, setSettingsSaveState] = useState<SettingsSaveState>({
     status: "idle",
@@ -1273,6 +1274,7 @@ export default function App() {
                   setSettings={setSettings}
                   resourceHost={guiResourceHostCapabilities}
                   imageStudioHost={imageStudioHost}
+                  conversationImageStudioHost={conversationImageStudioHost}
                   onImageStudioWorkspaceChange={setImageStudioWorkspace}
                   sttProviderOverride={sttProviderOverride}
                   getMcpSettings={getMcpSettings}

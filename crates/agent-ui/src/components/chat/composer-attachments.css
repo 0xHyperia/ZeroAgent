@@ -208,3 +208,26 @@
     transition: none;
   }
 }
+.za-user-image-strip {
+  margin-bottom: 8px;
+}
+.za-user-image-strip-items {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.za-user-image-thumbnail {
+  width: clamp(68px, 16vw, 96px);
+  aspect-ratio: 1;
+  flex: none;
+  border-color: var(--za-border);
+  background: var(--za-surface);
+}
+.za-user-image-thumbnail :is(img, button),
+.za-user-image-thumbnail > div:first-child {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}

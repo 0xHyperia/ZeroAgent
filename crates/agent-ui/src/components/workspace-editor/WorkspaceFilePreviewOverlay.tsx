@@ -20,6 +20,7 @@ import {
   Info,
   Loader2,
   Maximize2,
+  Minimize2,
   Minus,
   Plus,
   RefreshCw,
@@ -54,8 +55,17 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { copyTextToClipboard as copySharedTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ResourcePreview } from "../resource-preview/ResourcePreview";
+import { ConversationReaderLayout } from "../resource-preview/conversationReaderLayout";
 
 export type WorkspaceFilePreviewOpenRequest = {
   id: number;
@@ -74,12 +84,13 @@ type ReadWorkspacePreviewResponse = {
   contentHash: string;
 };
 
-type WorkspaceFilePreviewOverlayProps = {
+export type WorkspaceFilePreviewOverlayProps = {
   openRequest: WorkspaceFilePreviewOpenRequest | null;
   isOpen: boolean;
   onOpenEditor: (request: WorkspaceFilePreviewOpenRequest) => void;
   onRequestClose: () => void;
   onClose: () => void;
+  reader?: boolean;
 };
 
 type LoadedPreview = ReadWorkspacePreviewResponse & {
@@ -258,8 +269,28 @@ function getPreviewIcon(kind: WorkspacePreviewKind): FileTypeIconComponent {
 }
 
 export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayProps) {
-  const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose } = props;
-  const { t } = useLocale();
+  const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose, reader } = props;
+  const { t, locale } = useLocale();
+  const layout = useContext(ConversationReaderLayout);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!reader || !isOpen) return;
+    const trigger = document.activeElement;
+    const close = closeButton.current;
+    const panel = close?.closest(".cloud-resource-reader");
+    close?.focus({ preventScroll: true });
+    return () => {
+      if (!(trigger instanceof HTMLElement)) return;
+      requestAnimationFrame(() => {
+        if (
+          trigger.isConnected &&
+          (document.activeElement === document.body || panel?.contains(document.activeElement))
+        ) {
+          trigger.focus({ preventScroll: true });
+        }
+      });
+    };
+  }, [reader, isOpen]);
   const closeAnimationTimeoutRef = useRef<number | null>(null);
   const loadSequenceRef = useRef(0);
   const previewBlobUrlRef = useRef<string | null>(null);
@@ -435,29 +466,43 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
 
   return (
     <div
+      role={reader ? "region" : undefined}
+      aria-label={reader ? t("workspaceFilePreview.title") : undefined}
+      onKeyDown={(event) => {
+        if (reader && event.key === "Escape" && !event.defaultPrevented) {
+          event.stopPropagation();
+          onRequestClose();
+        }
+      }}
       className={cn(
-        "workspace-file-preview-overlay absolute inset-0 flex min-h-0 min-w-0 transform-gpu",
-        "flex-col overflow-hidden border-r border-border bg-background",
-        "transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
-        workspaceOverlayStackClassName,
-        isVisible
-          ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
-          : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
+        reader
+          ? "cloud-resource-reader"
+          : cn(
+              "workspace-file-preview-overlay absolute inset-0 flex min-h-0 min-w-0 transform-gpu",
+              "flex-col overflow-hidden border-r border-border bg-background",
+              "transition-[opacity,transform,box-shadow] duration-200 ease-out motion-reduce:transition-none",
+              workspaceOverlayStackClassName,
+              isVisible
+                ? "pointer-events-auto translate-x-0 opacity-100 shadow-2xl"
+                : "pointer-events-none -translate-x-2 opacity-0 shadow-lg",
+            ),
       )}
+      hidden={reader && !isOpen}
+      style={reader && !isOpen ? { display: "none" } : undefined}
     >
-      <WorkspaceOverlayTitleBar />
+      {!reader && <WorkspaceOverlayTitleBar />}
       <div
         className={cn(
           "flex h-11 shrink-0 items-center gap-2",
-          "border-b border-border bg-muted/45 px-3",
+          reader ? "bg-background px-3" : "border-b border-border bg-muted/45 px-3",
         )}
       >
         <PreviewIcon className="size-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold leading-tight">
-            {t("workspaceFilePreview.title")}
+            {reader ? basename(activePath) : t("workspaceFilePreview.title")}
           </div>
-          <div className="truncate text-xs text-muted-foreground">{activePath}</div>
+          {!reader && <div className="truncate text-xs text-muted-foreground">{activePath}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {canOpenEditor && activePreviewRequest ? (
@@ -509,7 +554,31 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           >
             <RefreshCw data-refresh-icon className={cn("size-4", loading && "animate-spin")} />
           </RefreshButton>
+          {reader && layout?.canSplit && (
+            <button
+              type="button"
+              className="inline-flex size-8 items-center justify-center rounded-md hover:bg-muted"
+              aria-label={
+                layout.expanded
+                  ? locale === "zh-CN"
+                    ? "并排阅读"
+                    : "Read side by side"
+                  : locale === "zh-CN"
+                    ? "展开阅读器"
+                    : "Expand reader"
+              }
+              onClick={layout.toggleExpanded}
+            >
+              {layout.expanded ? (
+                <Minimize2 className="size-4" />
+              ) : (
+                <Maximize2 className="size-4" />
+              )}
+            </button>
+          )}
           <button
+            ref={closeButton}
+            data-cloud-reader-return={reader || undefined}
             type="button"
             className={cn(
               "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors",
@@ -549,6 +618,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
             onOpenImageInSystemViewer={() => void openExternal()}
             onOpenImagePath={openImagePath}
             onActionError={setError}
+            reader={reader}
             assertCurrent={() => {
               if (
                 !currentProps.current.isOpen ||
@@ -575,19 +645,21 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         )}
       </div>
 
-      <div
-        className={cn(
-          "flex h-8 shrink-0 items-center justify-between gap-3",
-          "border-t border-border bg-muted/35 px-3 text-xs text-muted-foreground",
-        )}
-      >
-        <span className="min-w-0 truncate">{activePath}</span>
-        {preview ? (
-          <span className="shrink-0">
-            {preview.mimeType} · {formatBytes(preview.sizeBytes)}
-          </span>
-        ) : null}
-      </div>
+      {!reader && (
+        <div
+          className={cn(
+            "flex h-8 shrink-0 items-center justify-between gap-3",
+            "border-t border-border bg-muted/35 px-3 text-xs text-muted-foreground",
+          )}
+        >
+          <span className="min-w-0 truncate">{activePath}</span>
+          {preview ? (
+            <span className="shrink-0">
+              {preview.mimeType} · {formatBytes(preview.sizeBytes)}
+            </span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -604,6 +676,7 @@ function PreviewBody(props: {
   onOpenImagePath: (path: string, direction?: ImagePreviewTransitionDirection) => void;
   onActionError: (message: string | null) => void;
   assertCurrent: () => void;
+  reader?: boolean;
 }) {
   const {
     preview,
@@ -628,10 +701,16 @@ function PreviewBody(props: {
       "audio",
       "video",
       "text",
-    ].includes(preview.kind)
+    ].includes(preview.kind) ||
+    (props.reader &&
+      (preview.kind === "markdown" || (preview.kind === "image" && imagePaths.length < 2)))
   ) {
     return (
-      <div className="h-full overflow-auto bg-background px-3 pb-3">
+      <div
+        className={
+          props.reader ? "cloud-reader-body h-full" : "h-full overflow-auto bg-background px-3 pb-3"
+        }
+      >
         <ResourcePreview
           key={`${workdir}:${preview.path}:${preview.contentHash}`}
           resource={{

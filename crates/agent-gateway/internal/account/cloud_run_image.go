@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
 	_ "image/jpeg"
 	"image/png"
 	"io"
@@ -48,14 +49,94 @@ type cloudImageReference struct {
 	ArtifactVersionID string `json:"artifact_version_id,omitempty"`
 }
 type cloudImageRequest struct {
-	Prompt     string                `json:"prompt"`
-	Name       string                `json:"name"`
-	Size       string                `json:"size,omitempty"`
-	Quality    string                `json:"quality,omitempty"`
-	Background string                `json:"background,omitempty"`
-	References []cloudImageReference `json:"references,omitempty"`
-	FamilyID   string                `json:"family_id,omitempty"`
+	Prompt      string                `json:"prompt"`
+	Name        string                `json:"name"`
+	Size        string                `json:"size,omitempty"`
+	Quality     string                `json:"quality,omitempty"`
+	Background  string                `json:"background,omitempty"`
+	References  []cloudImageReference `json:"references,omitempty"`
+	FamilyID    string                `json:"family_id,omitempty"`
+	aspectRatio string
 }
+
+// Provider canvases are wider or taller than the requested crop as needed.
+// The provider composes the subject inside the centered safe area.
+func cloudImageAspect(ratio string) (int, int, string) {
+	switch ratio {
+	case "1:1":
+		return 1, 1, "1024x1024"
+	case "4:3":
+		return 4, 3, "1536x1024"
+	case "3:4":
+		return 3, 4, "1024x1536"
+	case "3:2":
+		return 3, 2, "1536x1024"
+	case "2:3":
+		return 2, 3, "1024x1536"
+	case "16:9":
+		return 16, 9, "1536x1024"
+	case "9:16":
+		return 9, 16, "1024x1536"
+	default:
+		return 0, 0, ""
+	}
+}
+
+func applyCloudImageEditContext(request *cloudImageRequest, content json.RawMessage) {
+	var parts []map[string]any
+	if json.Unmarshal(content, &parts) != nil {
+		return
+	}
+	var original, family, guide, instruction, ratio string
+	for _, part := range parts {
+		switch part["type"] {
+		case "artifact_reference":
+			original, _ = part["version_id"].(string)
+			family, _ = part["family_id"].(string)
+		case "file_reference":
+			guide, _ = part["file_id"].(string)
+		case "image_edit_context":
+			instruction, _ = part["instruction"].(string)
+			ratio, _ = part["aspect_ratio"].(string)
+		}
+	}
+	if original == "" || instruction == "" {
+		return
+	}
+	request.References = []cloudImageReference{{ArtifactVersionID: original}}
+	if guide != "" {
+		request.References = append(request.References, cloudImageReference{FileID: guide})
+	}
+	// The operation inherits the selected source. A model-suggested family may
+	// instead refer to a different version in the history.
+	request.FamilyID = family
+	if _, _, size := cloudImageAspect(ratio); size != "" {
+		request.Size = size
+		request.aspectRatio = ratio
+		instruction += "\nCompose for a centered final crop of " + ratio + " on the provider canvas. Extend the surroundings and keep the entire subject in that safe area."
+	}
+	if len(request.Prompt)+len(instruction) <= 16000 {
+		request.Prompt += "\n\n" + instruction
+	}
+}
+
+func cropCloudImageAspect(src image.Image, ratio string) image.Image {
+	w, h, _ := cloudImageAspect(ratio)
+	bounds := src.Bounds()
+	if w == 0 || h == 0 || bounds.Dx()*h == bounds.Dy()*w {
+		return src
+	}
+	scale := min(bounds.Dx()/w, bounds.Dy()/h)
+	if scale == 0 {
+		return nil
+	}
+	width, height := w*scale, h*scale
+	origin := bounds.Min.Add(image.Pt((bounds.Dx()-width)/2, (bounds.Dy()-height)/2))
+	result := image.NewNRGBA(image.Rect(0, 0, width, height))
+	draw.Draw(result, result.Bounds(), src, origin, draw.Src)
+	return result
+}
+
 type cloudImageInput struct {
 	data []byte
 	mime string
@@ -272,7 +353,11 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 			return nil, &cloudToolRunError{code: "image_transparency_missing"}
 		}
 	}
-	if format != "png" {
+	if format != "png" || v.aspectRatio != "" {
+		decoded = cropCloudImageAspect(decoded, v.aspectRatio)
+		if decoded == nil {
+			return nil, &cloudToolRunError{code: "image_result_invalid", unknown: true}
+		}
 		var normalized bytes.Buffer
 		if err = png.Encode(&normalized, decoded); err != nil || normalized.Len() > cloudImageMaxBytes {
 			return nil, &cloudToolRunError{code: "image_result_invalid", unknown: true}
@@ -360,6 +445,7 @@ func (e *cloudRunToolExecution) executeImage(ctx context.Context, round int, cal
 	if err != nil {
 		return nil, &cloudToolRunError{code: "model_tool_invalid"}
 	}
+	applyCloudImageEditContext(&v, e.run.RequestContent)
 	var input map[string]any
 	if json.Unmarshal([]byte(call.Arguments), &input) != nil {
 		return nil, ErrCloudRunInvalid

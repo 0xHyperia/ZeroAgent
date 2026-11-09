@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLocale } from "../../i18n";
 import { ChevronDown, ChevronRight } from "../IconSet";
 import {
   DropdownMenu,
@@ -151,6 +152,8 @@ export function PreviewZoomControl({
   fitWidth?: boolean;
   percentages?: number[];
 }) {
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
   const trigger = useRef<HTMLButtonElement>(null);
   const latest = useRef({ value, actualPercent, onChange });
   latest.current = { value, actualPercent, onChange };
@@ -183,8 +186,12 @@ export function PreviewZoomControl({
           : typeof value === "number"
             ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
             : value === "fit-page"
-              ? "适合窗口"
-              : "适合宽度"}
+              ? zh
+                ? "适合窗口"
+                : "Fit to window"
+              : zh
+                ? "适合宽度"
+                : "Fit to width"}
         <ChevronDown className="size-3" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="za-preview-zoom-menu">
@@ -202,12 +209,12 @@ export function PreviewZoomControl({
           {fitWidth || fitPage ? <DropdownMenuSeparator /> : null}
           {fitWidth ? (
             <DropdownMenuRadioItem value="fit-width" closeOnClick>
-              适合宽度
+              {zh ? "适合宽度" : "Fit to width"}
             </DropdownMenuRadioItem>
           ) : null}
           {fitPage ? (
             <DropdownMenuRadioItem value="fit-page" closeOnClick>
-              缩放至适合窗口
+              {zh ? "缩放至适合窗口" : "Fit to window"}
             </DropdownMenuRadioItem>
           ) : null}
         </DropdownMenuRadioGroup>

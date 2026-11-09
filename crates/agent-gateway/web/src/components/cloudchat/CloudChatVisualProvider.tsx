@@ -1,70 +1,55 @@
 import {
   AssistantVisualContext,
   VisualCreationPending,
+  VisualCreationSettingsNotice,
 } from "@liveagent/ui/components/chat/AssistantVisuals";
-import { Settings2 } from "@liveagent/ui/components/IconSet";
-import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import {
+  type ConversationImageSources,
+  useConversationImageSources,
+} from "@liveagent/ui/components/resource-preview/conversationImageSources";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
 import type { CloudChatArtifactsClient } from "@/lib/cloudChatArtifacts";
 import type { CloudChatMessage } from "@/lib/cloudChatHistory";
 
-export function CloudChatVisualProvider({
-  children,
-  messages,
-  client,
-  running,
-  onConfigure,
-  onEdit,
-}: {
-  children: ReactNode;
-  messages: readonly CloudChatMessage[];
-  client: CloudChatArtifactsClient;
-  running: boolean;
-  onConfigure: () => void;
-  onEdit: (item: AssistantDeliverable) => void;
-}) {
-  const cache = useRef(new Map<string, Promise<Blob>>());
-  const lifecycle = useRef<AbortController | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    lifecycle.current = controller;
-    return () => {
-      controller.abort();
-      cache.current.clear();
-    };
-  }, []);
-  const loadImage = useCallback(
-    async (id: string, signal: AbortSignal) => {
-      const guard = captureAccountRequestGuard();
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      let pending = cache.current.get(id);
-      if (!pending) {
-        pending = (async () => {
-          const version = await client.get(id, lifecycle.current?.signal);
-          const result = await client.image(version, lifecycle.current?.signal);
-          result.guard();
-          return result.blob;
-        })();
-        cache.current.set(id, pending);
-        // Eight decoded receipts at most; consumers own and release their object URLs.
-        while (cache.current.size > 8) cache.current.delete(cache.current.keys().next().value!);
-        void pending.catch(() => {
-          if (cache.current.get(id) === pending) cache.current.delete(id);
-        });
-      }
-      const blob = await pending;
-      guard();
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      return blob;
+export function useCloudChatImageSources(client: CloudChatArtifactsClient, scope: string) {
+  const load = useCallback(
+    async (id: string, _variant: "original" | "thumbnail", signal: AbortSignal) => {
+      const version = await client.get(id, signal);
+      const result = await client.image(version, signal);
+      result.guard();
+      return result.blob;
     },
     [client],
   );
+  return useConversationImageSources(scope, load, "original", captureAccountRequestGuard);
+}
+export function CloudChatVisualProvider({
+  children,
+  messages,
+  running,
+  onConfigure,
+  onOpen,
+  onEdit,
+  registerImages,
+  sources,
+}: {
+  children: ReactNode;
+  messages: readonly CloudChatMessage[];
+  running: boolean;
+  onConfigure: () => void;
+  onOpen: (item: AssistantDeliverable, trigger?: HTMLElement) => void;
+  onEdit: (item: AssistantDeliverable, trigger?: HTMLElement) => void;
+  registerImages: (items: readonly AssistantDeliverable[]) => void;
+  sources: ConversationImageSources;
+}) {
   const value = useMemo(
     () => ({
-      loadImage,
+      sources,
+      openImage: onOpen,
       editImage: onEdit,
+      registerImages,
       activity: (messageId: string) => {
         const message = messages.find((message) => message.id === messageId);
         const tools =
@@ -104,37 +89,25 @@ export function CloudChatVisualProvider({
             </p>
           );
         return (
-          <div className="my-3 flex max-w-lg flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/50 px-4 py-3">
-            <div className="text-sm">
-              <p className="font-medium">
-                {last.status === "请先选择默认生图模型"
-                  ? last.status
-                  : last.status === "资料空间容量不足"
-                    ? last.status
-                    : "图像尚未生成"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {last.status === "请先选择默认生图模型"
-                  ? "设置完成后，回到当前对话继续创作。"
-                  : last.status === "资料空间容量不足"
-                    ? "整理资料空间后，再继续创作。"
-                    : "请检查默认生图模型与可用额度，再继续创作。"}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full bg-background"
-              onClick={onConfigure}
-            >
-              <Settings2 className="size-3.5" />
-              生图设置
-            </Button>
-          </div>
+          <VisualCreationSettingsNotice
+            message={
+              last.status === "请先选择默认生图模型" || last.status === "资料空间容量不足"
+                ? last.status
+                : "图像尚未生成"
+            }
+            description={
+              last.status === "请先选择默认生图模型"
+                ? "设置完成后，回到当前对话继续创作。"
+                : last.status === "资料空间容量不足"
+                  ? "整理资料空间后，再继续创作。"
+                  : "请检查默认生图模型与可用额度，再继续创作。"
+            }
+            onConfigure={onConfigure}
+          />
         );
       },
     }),
-    [loadImage, messages, running, onEdit, onConfigure],
+    [sources, messages, running, onOpen, onEdit, onConfigure, registerImages],
   );
   return (
     <AssistantVisualContext.Provider value={value}>{children}</AssistantVisualContext.Provider>

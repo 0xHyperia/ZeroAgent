@@ -1,0 +1,118 @@
+/* A resource is a second canvas, never a sheet covering the live conversation. */
+.cloud-resource-workbench {
+  position: relative;
+  z-index: var(--layer-content);
+  isolation: isolate;
+}
+.cloud-workspace-primary {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cloud-workspace-primary[hidden] {
+  display: none;
+}
+.cloud-resource-workbench[data-reader-open="true"] > .cloud-workspace-primary {
+  flex: 0 0 var(--cloud-primary-width, 44%);
+}
+.cloud-reader-divider-gap {
+  flex: 0 0 8px;
+  background: linear-gradient(to right, var(--za-surface) 50%, var(--za-surface-subtle) 50%);
+}
+.cloud-resource-workbench [data-workbench-divider="cloud-reader"] {
+  z-index: 20;
+  touch-action: none;
+}
+.cloud-resource-workbench [data-workbench-divider="cloud-reader"] > span {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, hsl(var(--foreground) / 0.25), transparent);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.cloud-resource-workbench
+  [data-workbench-divider="cloud-reader"]:is(:hover, :focus-visible, [data-resizing])
+  > span {
+  opacity: 1;
+}
+.cloud-resource-workbench
+  [data-workbench-divider="cloud-reader"]:is(:focus-visible, [data-resizing])
+  > span {
+  width: 2px;
+  background: hsl(var(--primary) / 0.65);
+}
+.cloud-resource-workbench[data-reader-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+.cloud-resource-workbench[data-reader-resizing="true"] iframe {
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .cloud-resource-workbench [data-workbench-divider="cloud-reader"] > span {
+    background: CanvasText;
+    opacity: 1;
+  }
+  .cloud-resource-workbench
+    [data-workbench-divider="cloud-reader"]:is(:focus-visible, [data-resizing])
+    > span {
+    background: Highlight;
+  }
+}
+.cloud-resource-reader {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--za-surface-subtle);
+  container: cloud-reader / inline-size;
+}
+.cloud-resource-workbench[data-reader-only="true"] .cloud-resource-reader {
+  border-inline-start: 0;
+}
+.cloud-reader-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.cloud-reader-body > :last-child {
+  min-height: 0;
+}
+.cloud-reader-body:has(.za-resource-preview) {
+  padding: 0;
+}
+.cloud-reader-body .za-resource-preview {
+  height: 100%;
+  margin-top: 0;
+}
+.cloud-resource-reader .za-resource-preview {
+  border: 0;
+  border-radius: 0;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child > .za-resource-preview {
+  flex: 1;
+}
+.cloud-reader-body:has(.za-resource-preview) > div:last-child > :not(.za-resource-preview) {
+  flex-shrink: 0;
+}
+@media (max-width: 820px) {
+  .cloud-reader-body {
+    padding: 12px;
+  }
+}

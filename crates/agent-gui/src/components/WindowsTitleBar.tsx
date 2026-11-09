@@ -1,8 +1,21 @@
 import { Maximize2, Minimize2 } from "@liveagent/ui/components/IconSet";
+import {
+  getImagePreviewWindowChrome,
+  subscribeImagePreviewWindowChrome,
+} from "@liveagent/ui/components/resource-preview/imagePreviewWindowChrome";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 
 type TauriRuntimeWindow = Window & {
   __TAURI__?: unknown;
@@ -64,12 +77,36 @@ function CaptionGlyph({ kind }: { kind: CaptionGlyphKind }) {
   );
 }
 
-export function WindowsTitleBar({ controlsOnly = false }: { controlsOnly?: boolean }) {
+export function WindowsTitleBar({
+  controlsOnly = false,
+  followImagePreview = false,
+}: {
+  controlsOnly?: boolean;
+  followImagePreview?: boolean;
+}) {
   const { t } = useLocale();
   const [isVisible, setIsVisible] = useState(() => isWindowsTauriRuntime());
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
   const appWindowRef = useRef<AppWindow | null>(null);
+  const home = useRef<HTMLDivElement>(null);
+  const slot = useSyncExternalStore(subscribeImagePreviewWindowChrome, getImagePreviewWindowChrome);
+  const [captionMount] = useState(() => {
+    if (!controlsOnly || !followImagePreview || typeof document === "undefined") return null;
+    const mount = document.createElement("div");
+    mount.style.display = "contents";
+    return mount;
+  });
+  useLayoutEffect(() => {
+    const target = slot ?? home.current;
+    if (!captionMount || !target || !isVisible) return;
+    const focused = document.activeElement;
+    target.append(captionMount);
+    if (focused instanceof HTMLElement && captionMount.contains(focused)) {
+      focused.focus({ preventScroll: true });
+    }
+  }, [captionMount, isVisible, slot]);
+  useLayoutEffect(() => () => captionMount?.remove(), [captionMount]);
 
   const getAppWindow = useCallback(() => {
     if (!appWindowRef.current) {
@@ -253,7 +290,14 @@ export function WindowsTitleBar({ controlsOnly = false }: { controlsOnly?: boole
       </button>
     </fieldset>
   );
-  if (controlsOnly) return controls;
+  if (controlsOnly) {
+    if (!captionMount) return controls;
+    return (
+      <div ref={home} className="contents">
+        {createPortal(controls, captionMount)}
+      </div>
+    );
+  }
 
   return (
     <header

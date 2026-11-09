@@ -49,6 +49,7 @@ function UserImageAttachmentCard(props: {
   workspaceRoot?: string;
   isLoading: boolean;
   compact: boolean;
+  thumbnail?: boolean;
   onRemove?: (relativePath: string) => void;
   removeLabel?: string;
   previewLabel: string;
@@ -60,6 +61,7 @@ function UserImageAttachmentCard(props: {
     workspaceRoot,
     isLoading,
     compact,
+    thumbnail,
     onRemove,
     removeLabel,
     previewLabel,
@@ -97,7 +99,11 @@ function UserImageAttachmentCard(props: {
       className={cn(
         "group relative overflow-hidden",
         "rounded-xl border border-white/60 bg-white/75 dark:border-white/[0.12] dark:bg-white/[0.06]",
-        compact ? "min-w-0 basis-third-minus-gap grow" : "w-full max-w-280px",
+        thumbnail
+          ? "za-user-image-thumbnail"
+          : compact
+            ? "min-w-0 basis-third-minus-gap grow"
+            : "w-full max-w-280px",
       )}
     >
       {onRemove ? (
@@ -189,16 +195,18 @@ function UserImageAttachmentCard(props: {
           )}
         </div>
       )}
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-medium leading-tight text-[hsl(var(--chat-user-fg)/0.85)]">
-            {file.fileName}
+      {!thumbnail && (
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-medium leading-tight text-[hsl(var(--chat-user-fg)/0.85)]">
+              {file.fileName}
+            </div>
           </div>
+          <span className="shrink-0 text-tiny tabular-nums text-[hsl(var(--chat-user-fg)/0.4)]">
+            {formatUploadedFileSize(file.sizeBytes)}
+          </span>
         </div>
-        <span className="shrink-0 text-tiny tabular-nums text-[hsl(var(--chat-user-fg)/0.4)]">
-          {formatUploadedFileSize(file.sizeBytes)}
-        </span>
-      </div>
+      )}
     </div>
   );
 }
@@ -265,6 +273,7 @@ function UserAttachmentCard(props: {
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
   imagePreviewMode: ImagePreviewMode;
   compactImageLayout: boolean;
+  thumbnail?: boolean;
   compactFileLayout: boolean;
   onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;
@@ -278,6 +287,7 @@ function UserAttachmentCard(props: {
     onLoadUploadedImagePreview,
     imagePreviewMode,
     compactImageLayout,
+    thumbnail,
     compactFileLayout,
     onOpen,
     onRemove,
@@ -294,7 +304,15 @@ function UserAttachmentCard(props: {
     Boolean(onLoadUploadedImagePreview) &&
     (imagePreviewMode === "imageKind" || hasAbsolutePath);
   const { imageSrc, isLoading } = useUploadedImagePreview(
-    shouldPreviewImage ? file : undefined,
+    useMemo(
+      () =>
+        shouldPreviewImage
+          ? hasAbsolutePath
+            ? file
+            : { ...file, absolutePath: file.relativePath }
+          : undefined,
+      [file, shouldPreviewImage, hasAbsolutePath],
+    ),
     shouldPreviewImage ? workspaceRoot : undefined,
     onLoadUploadedImagePreview,
   );
@@ -307,6 +325,7 @@ function UserAttachmentCard(props: {
         workspaceRoot={workspaceRoot}
         isLoading={isLoading}
         compact={compactImageLayout}
+        thumbnail={thumbnail}
         onRemove={onRemove}
         removeLabel={removeLabel}
         previewLabel={previewLabel}
@@ -334,9 +353,11 @@ export function UserAttachmentCards(props: {
   onOpen?: (file: PendingUploadedFile) => void;
   onRemove?: (relativePath: string) => void;
   removeLabel?: string;
+  imageStrip?: boolean;
 }) {
   const {
     files,
+    imageStrip = false,
     workspaceRoot,
     onLoadUploadedImagePreview,
     imagePreviewMode = "absolutePath",
@@ -356,9 +377,9 @@ export function UserAttachmentCards(props: {
   const closePreviewLabel = t("chat.upload.closePreview");
 
   return (
-    <div className="mb-2 flex flex-col gap-2">
+    <div className={imageStrip ? "za-user-image-strip" : "mb-2 flex flex-col gap-2"}>
       {imageFiles.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
+        <div className={imageStrip ? "za-user-image-strip-items" : "flex flex-wrap gap-2"}>
           {imageFiles.map((file) => (
             <UserAttachmentCard
               key={`${file.relativePath}-${file.absolutePath ?? file.fileName}`}
@@ -367,6 +388,7 @@ export function UserAttachmentCards(props: {
               onLoadUploadedImagePreview={onLoadUploadedImagePreview}
               imagePreviewMode={imagePreviewMode}
               compactImageLayout={compactImageLayout}
+              thumbnail={imageStrip}
               compactFileLayout={false}
               onOpen={onOpen}
               onRemove={onRemove}

@@ -132,6 +132,7 @@ type GatewayTranscriptProps = {
   showUsage?: boolean;
   usageContextWindow?: number;
   workspaceRoot?: string;
+  imagePreviewScope?: string;
   gitClient?: GitClient | null;
   onOpenFileLink?: (link: ChatFileLink) => void;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
@@ -262,30 +263,47 @@ function GatewayUserMessageBubbleBody(props: {
   const { text, attachments, workspaceRoot, onLoadUploadedImagePreview, loadCommitDetails } = props;
   const { visibleFiles, pastedTextFiles } = splitUserAttachmentsForDisplay(attachments, text);
 
+  const imageStrip =
+    onLoadUploadedImagePreview && workspaceRoot
+      ? visibleFiles.filter((file) => file.kind === "image")
+      : [];
+  const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
+
   return (
-    <div
-      className={cn(
-        "ml-auto w-fit max-w-full",
-        "whitespace-pre-wrap rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5",
-        "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
-      )}
-    >
+    <>
       <UserAttachmentCards
-        files={visibleFiles}
-        onOpen={props.onOpenAttachment}
+        files={imageStrip}
         workspaceRoot={workspaceRoot}
         onLoadUploadedImagePreview={onLoadUploadedImagePreview}
         imagePreviewMode="imageKind"
+        imageStrip
       />
-      {text ? (
-        <UserMessageContent
-          text={text}
-          pastedTextFiles={pastedTextFiles}
-          loadCommitDetails={loadCommitDetails}
-          legacyInlineFileMentions
-        />
-      ) : null}
-    </div>
+      {(text || bubbleFiles.length > 0) && (
+        <div
+          className={cn(
+            "ml-auto w-fit max-w-full",
+            "whitespace-pre-wrap rounded-2xl rounded-br-md bg-[hsl(var(--chat-user-bg))] px-4 py-2.5",
+            "font-chat text-sm leading-relaxed break-words text-[hsl(var(--chat-user-fg))] [overflow-wrap:anywhere]",
+          )}
+        >
+          <UserAttachmentCards
+            files={bubbleFiles}
+            onOpen={props.onOpenAttachment}
+            workspaceRoot={workspaceRoot}
+            onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+            imagePreviewMode="imageKind"
+          />
+          {text ? (
+            <UserMessageContent
+              text={text}
+              pastedTextFiles={pastedTextFiles}
+              loadCommitDetails={loadCommitDetails}
+              legacyInlineFileMentions
+            />
+          ) : null}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -681,6 +699,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
   showUsage: boolean;
   usageContextWindow?: number;
   workspaceRoot?: string;
+  imagePreviewScope?: string;
   gitClient?: GitClient | null;
   onOpenFileLink?: (link: ChatFileLink) => void;
   onLoadUploadedImagePreview?: UploadedImagePreviewLoader;
@@ -721,6 +740,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
     showUsage,
     usageContextWindow,
     workspaceRoot,
+    imagePreviewScope,
     gitClient,
     onOpenFileLink,
     onLoadUploadedImagePreview,
@@ -1190,7 +1210,7 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 isEditing={editingMessageId === row.key}
                 setCopiedMessageId={setCopiedMessageId}
                 setEditingMessageId={setEditingMessageId}
-                workspaceRoot={workspaceRoot}
+                workspaceRoot={imagePreviewScope ?? workspaceRoot}
                 onLoadUploadedImagePreview={onLoadUploadedImagePreview}
                 loadCommitDetails={loadCommitDetails}
                 onResendFromEdit={onResendFromEdit}
@@ -1357,6 +1377,7 @@ export function GatewayTranscript({
   showUsage = false,
   usageContextWindow,
   workspaceRoot,
+  imagePreviewScope,
   gitClient,
   onOpenFileLink,
   onLoadUploadedImagePreview,
@@ -1451,6 +1472,7 @@ export function GatewayTranscript({
           showUsage={showUsage}
           usageContextWindow={usageContextWindow}
           workspaceRoot={workspaceRoot}
+          imagePreviewScope={imagePreviewScope}
           gitClient={gitClient}
           onOpenFileLink={onOpenFileLink}
           onLoadUploadedImagePreview={onLoadUploadedImagePreview}

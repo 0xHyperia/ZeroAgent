@@ -520,6 +520,8 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
   function enqueueComposerTurnForConversation(input: {
     conversationId: string;
     composerScopeId?: string;
+    preserveComposer?: boolean;
+    imageEditInstruction?: string;
     draft: MentionComposerDraft | null;
     uploadedFiles: PendingUploadedFile[];
     /** 覆盖入队 turn 的运行时控制;缺省取当前 settings 快照。计划批准的续轮
@@ -553,11 +555,14 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
       workdir: workdirForTurn,
       commandSafetyMode: settings.system.commandSafetyMode,
       runtimeControls: input.runtimeControls ?? settings.chatRuntimeControls,
+      imageEditInstruction: input.imageEditInstruction,
     });
     setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
-    const composerScopeId = input.composerScopeId ?? conversationId;
-    setPendingUploadsForConversation(composerScopeId, []);
-    clearCachedComposerDraft(composerScopeId);
+    if (!input.preserveComposer) {
+      const composerScopeId = input.composerScopeId ?? conversationId;
+      setPendingUploadsForConversation(composerScopeId, []);
+      clearCachedComposerDraft(composerScopeId);
+    }
     if (!isConversationStopRequested(conversationId)) {
       requestQueuedChatTurnProcessing(conversationId);
     }
@@ -693,6 +698,7 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
         const accepted = await sendActionRef.current({
           composerDraftOverride: queuedTurn.draft,
           uploadedFilesOverride: queuedTurn.uploadedFiles,
+          imageEditInstruction: queuedTurn.imageEditInstruction,
           conversationIdOverride: targetConversationId,
           executionModeOverride: queuedTurn.executionMode,
           workdirOverride: queuedTurn.workdir,

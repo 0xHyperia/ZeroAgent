@@ -7,12 +7,32 @@ const uploadedFiles = loader.loadModule("@liveagent/ui/lib/chat/uploadedFiles.ts
 
 const {
   buildUserMessageContentWithUploads,
+  createUserMessageWithUploads,
+  getUserMessageAttachments,
+  getUserMessageDisplayText,
   parseUserMessageContentWithUploads,
   UPLOADED_FILES_INSTRUCTION_HEADER_LINES,
 } = uploadedFiles;
 
 const WORKSPACE = "C:\\work\\project";
 const STAGING = "C:\\Users\\AlphaCat\\.liveagent\\uploads";
+
+test("keeps image-edit geometry out of the live and restored message text", () => {
+  const original = stagedFile("42", "original.png", "image", 2048);
+  const selection = stagedFile("42", "selection.png", "image", 1024);
+  const instruction = "Erase at 25%, 50%.\nKeep surrounding pixels.";
+  for (const attachments of [[], [original, selection]]) {
+    const message = createUserMessageWithUploads("移除标记区域", attachments, 1000, [], instruction);
+    assert.equal(message.liveAgentDisplayContent, "移除标记区域");
+    assert.match(message.content, /25%, 50%/);
+    assert.deepEqual(parseUserMessageContentWithUploads(message.content, WORKSPACE), {
+      displayText: "移除标记区域", attachments, parsed: true,
+    });
+    const stored = { role: "user", content: message.content };
+    assert.equal(getUserMessageDisplayText(stored), "移除标记区域");
+    assert.deepEqual(getUserMessageAttachments(stored), attachments);
+  }
+});
 
 function stagedFile(batch, name, kind, sizeBytes) {
   return {

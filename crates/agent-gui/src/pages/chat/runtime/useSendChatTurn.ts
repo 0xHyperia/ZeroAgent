@@ -319,6 +319,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     textOverride?: string;
     composerDraftOverride?: MentionComposerDraft;
     uploadedFilesOverride?: PendingUploadedFile[];
+    imageEditInstruction?: string;
     conversationIdOverride?: string;
     executionModeOverride?: ExecutionMode;
     workdirOverride?: string;
@@ -328,6 +329,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     composerCommand?: ComposerTurnCommand;
     gatewayBridgeRequestOverride?: ActiveGatewayBridgeRequest | null;
     preserveComposerOnStart?: boolean;
+    onRunStarted?: (turnId: string, isActive: () => boolean) => void;
     beforeRuntimeStart?: () => Promise<void>;
     afterInitialHistoryPersist?: () => Promise<void>;
     editResendBaseMessageRef?: HistoryMessageRef;
@@ -603,6 +605,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       uploadedFiles,
       Date.now(),
       referencedConversations,
+      overrides?.imageEditInstruction,
     );
     if (!userMessage) {
       if (gatewayBridgeRequest) {
@@ -815,7 +818,10 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
       // deep in history when the previous run finishes, and force-pinning
       // for the next queued turn would yank them to the bottom. Manual sends
       // still pin here; transient-state cleanup must never move the viewport.
-      if (isConversationVisible() && !overrides?.preserveComposerOnStart) {
+      if (
+        isConversationVisible() &&
+        (!overrides?.preserveComposerOnStart || overrides.onRunStarted)
+      ) {
         scrollFollowRef.current?.stickToBottom();
       }
     }
@@ -1001,6 +1007,10 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
 
     setConversationStopHandler(conversationId, handleConversationStop);
     markConversationRunStarted();
+    overrides?.onRunStarted?.(
+      pendingUserMessage.id,
+      () => !conversationUiReleased && !cancellation.userStop.signal.aborted,
+    );
     if (await finishRequestedStopBeforeRuntime()) {
       return true;
     }
@@ -1475,10 +1485,21 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
     };
 
     try {
+      const imageCreation = gatewayBridgeRequest
+        ? undefined
+        : {
+            target_id: settings.customSettings.imageGenerationTargetId,
+            attachments: uploadedFiles
+              .flatMap((file) =>
+                file.kind === "image" && file.absolutePath ? [file.absolutePath] : [],
+              )
+              .slice(0, 16),
+          };
       if (effectiveIsAgentMode) {
         await chatRuntimeHost.runTurn({
           mode: "agent",
           params: {
+            imageCreation,
             locale: settings.locale,
             providerId,
             model,
@@ -1580,6 +1601,7 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         await chatRuntimeHost.runTurn({
           mode: "text",
           params: {
+            imageCreation,
             locale: settings.locale,
             providerId,
             model,

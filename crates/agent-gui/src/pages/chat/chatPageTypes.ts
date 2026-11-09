@@ -24,6 +24,7 @@ export type ChatPageProps = {
   settings: AppSettings;
   resourceHost?: ResourceHostCapabilities;
   imageStudioHost?: ImageStudioHost;
+  conversationImageStudioHost?: ImageStudioHost;
   onImageStudioWorkspaceChange?: (workspace: string) => void;
   setSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   sttProviderOverride?: SttProviderId | null;

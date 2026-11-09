@@ -68,7 +68,11 @@
     {
       "file": "0016-device-manual-run-receipts.patch",
       "sha256": "bcba2db0d54bb8b0c8e07888996ed26dfd9a3790450d803eb9f8df2e98bed342"
+    },
+    {
+      "file": "0017-conversation-images.patch",
+      "sha256": "3fbd7e171b19d5c4b5462301eaf9503996af32c7a9bde8e2353bc08b5372bcb5"
     }
   ],
-  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, and device manual run receipts"
+  "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, and native conversation images"
 }

@@ -73,6 +73,29 @@ function toolBlock(id, name, result) {
   };
 }
 
+test("conversation images stay in the reply through streaming and the next model round", () => {
+  const image = toolBlock("image", "generate_image");
+  const streaming = resolveAssistantTurnLayout(
+    [{ round: 1, key: "r1", blocks: [image], runningToolCallIds: ["image"] }],
+    { live: true },
+  );
+  assert.equal(streaming.work.length, 0);
+  assert.equal(streaming.answer[0].block.item.toolCall.id, "image");
+  assert.deepEqual(streaming.answer[0].runningToolCallIds, ["image"]);
+
+  const saved = resolveAssistantTurnLayout(
+    [
+      { round: 1, key: "r1", blocks: [toolBlock("image", "edit_image", "ok")] },
+      round("r2", "Here is the image."),
+    ],
+    { live: false },
+  );
+  assert.equal(saved.work.length, 0);
+  assert.equal(saved.answer[0].block.item.toolCall.id, "image");
+  assert.equal(saved.answer[0].block.item.toolCall.name, "edit_image");
+  assert.equal(saved.answer[1].block.text, "Here is the image.");
+});
+
 function blockRows(snapshot) {
   return snapshot.rows
     .flatMap((row) => (row.kind === "assistant-activity" ? row.units : [row]))

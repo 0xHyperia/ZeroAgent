@@ -4,7 +4,10 @@ import {
 } from "@liveagent/adapters/workspacePreview";
 import type { AppSettings, EffectiveTheme } from "@liveagent/app/lib/settings";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
-import type { WorkspaceFilePreviewOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
+import type {
+  WorkspaceFilePreviewOpenRequest,
+  WorkspaceFilePreviewOverlayProps,
+} from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import type { SftpOpenFileRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSftpPanel";
 import type { WorkspaceSshTerminalOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceSshTerminalOverlay";
 import { t as translate } from "@liveagent/ui/i18n/index";
@@ -99,6 +102,27 @@ function WorkspaceOverlayLoading(props: { className: string; label: string }) {
       <WorkspaceOverlayTitleBar />
       <div className="flex min-h-0 flex-1 items-center justify-center">{label}</div>
     </div>
+  );
+}
+
+export function WorkspaceFileReader(
+  props: WorkspaceFilePreviewOverlayProps & {
+    locale: AppSettings["locale"];
+  },
+) {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="cloud-resource-reader items-center justify-center text-sm text-muted-foreground"
+          role="status"
+        >
+          {translate("workspaceFilePreview.loading", props.locale)}
+        </div>
+      }
+    >
+      <WorkspaceFilePreviewOverlay {...props} reader />
+    </Suspense>
   );
 }
 

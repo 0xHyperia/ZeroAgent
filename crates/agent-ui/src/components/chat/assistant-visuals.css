@@ -2,8 +2,8 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  width: min(100%, 560px);
-  padding: 12px 0;
+  width: 100%;
+  padding: 5px 0 8px;
   min-width: 0;
 }
 .za-visual-main {
@@ -12,9 +12,8 @@
 }
 .za-visual-image {
   position: relative;
-  border-radius: 20px;
+  border-radius: 15px;
   overflow: hidden;
-  background: hsl(var(--muted));
   isolation: isolate;
 }
 .za-visual-image[hidden] {
@@ -28,12 +27,24 @@
   cursor: zoom-in;
   background: none;
 }
+.za-visual-open[data-image-alpha]:is(:hover, :focus-visible) {
+  background-image: conic-gradient(
+    hsl(var(--foreground) / 0.055) 25%, transparent 0 50%,
+    hsl(var(--foreground) / 0.055) 0 75%, transparent 0
+  );
+  background-size: 24px 24px;
+}
 .za-visual-open img {
   display: block;
-  width: 100%;
-  max-height: 640px;
+  width: auto;
+  max-width: 100%;
+  max-height: min(65dvh, 640px);
   object-fit: contain;
   transition: filter 0.18s;
+}
+.za-visual-image:has(.za-visual-open img) {
+  width: fit-content;
+  max-width: 100%;
 }
 .za-visual-open:focus-visible {
   outline: 3px solid hsl(var(--ring));
@@ -58,6 +69,9 @@
   background: rgb(20 20 22 / 0.72);
   border-radius: 999px;
   backdrop-filter: blur(12px);
+}
+.za-visual-image-actions button:last-child {
+  margin-inline-start: auto;
 }
 .za-visual-image-actions button:hover {
   background: rgb(20 20 22 / 0.9);
@@ -109,11 +123,11 @@
   outline-offset: 2px;
 }
 .za-visual-pending {
-  width: min(100%, 440px);
+  width: min(100%, 168px);
   aspect-ratio: 1;
   position: relative;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 15px;
   isolation: isolate;
   background: color-mix(in srgb, hsl(var(--muted)) 70%, hsl(var(--background)));
   min-width: 0;
@@ -147,13 +161,19 @@
 }
 .za-visual-pending-label {
   position: absolute;
-  left: 18px;
-  bottom: 17px;
+  inset-inline-end: 8px;
+  inset-block-end: 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: hsl(var(--muted-foreground));
+  gap: 5px;
+  font-size: 11px;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background) / 0.9);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.za-visual-image .za-visual-pending {
+  width: min(100%, 168px);
 }
 .za-visual-ellipsis {
   letter-spacing: 2px;
@@ -226,9 +246,6 @@
     width: 52px;
     height: 52px;
     flex: none;
-  }
-  .za-visual-pending {
-    width: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

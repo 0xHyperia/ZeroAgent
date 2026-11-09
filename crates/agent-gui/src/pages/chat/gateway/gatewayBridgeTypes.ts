@@ -110,6 +110,7 @@ export type SendChatAction = (overrides?: {
   textOverride?: string;
   composerDraftOverride?: MentionComposerDraft;
   uploadedFilesOverride?: PendingUploadedFile[];
+  imageEditInstruction?: string;
   conversationIdOverride?: string;
   executionModeOverride?: ExecutionMode;
   workdirOverride?: string;
@@ -119,6 +120,7 @@ export type SendChatAction = (overrides?: {
   composerCommand?: ComposerTurnCommand;
   gatewayBridgeRequestOverride?: ActiveGatewayBridgeRequest | null;
   preserveComposerOnStart?: boolean;
+  onRunStarted?: (turnId: string, isActive: () => boolean) => void;
   beforeRuntimeStart?: () => Promise<void>;
   afterInitialHistoryPersist?: () => Promise<void>;
   // Edit-resend atomically replaces this user message and its following

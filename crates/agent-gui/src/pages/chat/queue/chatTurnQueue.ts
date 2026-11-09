@@ -38,6 +38,7 @@ export type QueuedChatTurn = {
   runtimeControls: ChatRuntimeControls;
   createdAt: number;
   gatewayRequest?: QueuedGatewayChatRequest;
+  imageEditInstruction?: string;
 };
 
 export type QueuedChatTurnInput = Omit<QueuedChatTurn, "createdAt" | "id"> & {
@@ -65,6 +66,7 @@ export function createQueuedChatTurn(input: QueuedChatTurnInput): QueuedChatTurn
     runtimeControls: { ...input.runtimeControls },
     createdAt,
     gatewayRequest: input.gatewayRequest ? { ...input.gatewayRequest } : undefined,
+    imageEditInstruction: input.imageEditInstruction,
   };
 }
 

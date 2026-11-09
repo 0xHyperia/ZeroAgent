@@ -21,6 +21,7 @@ import {
 } from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
+import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
 import type {
@@ -39,6 +40,7 @@ import {
   WorkspaceToolsPanel,
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
+import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
@@ -55,10 +57,17 @@ import {
 } from "@liveagent/ui/components/workbench/WorkbenchCanvas";
 import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/WorkbenchEmptyState";
 import { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
-import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
+import {
+  WorkspaceFileReader,
+  WorkspaceOverlayHost,
+} from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { conversationImageDeliverables, parseConversationImageResult } from "@liveagent/ui/components/chat/assistant-bubble/ConversationImageTool";
+import { isConversationImageTool } from "@liveagent/ui/components/chat/assistant-bubble/assistantBubbleUtils";
+import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
+import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
 import { getAutomationState, useAutomation } from "@liveagent/ui/lib/automation/index";
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import { formatCheckpointRewoundNotification } from "@liveagent/ui/lib/chat/checkpointRewind";
@@ -136,6 +145,7 @@ import {
   surfaceProjectRef,
 } from "@liveagent/ui/lib/workbench/types";
 import {
+  type ContextType,
   type CSSProperties,
   lazy,
   Suspense,
@@ -295,6 +305,7 @@ import {
 } from "./chat/surfaces/ConversationPaneHostEnvironment";
 import { ConversationTrajectorySurface } from "./chat/surfaces/ConversationTrajectorySurface";
 import { TerminalPaneHost } from "./chat/surfaces/TerminalPaneHost";
+import { DesktopConversationImageHost } from "./chat/surfaces/useDesktopConversationImages";
 import { resolveWorkbenchPaneProject } from "./chat/workbench/paneProjectContext";
 import { sessionWorkbench } from "./chat/workbench/sessionWorkbench";
 import { commitTerminalDrop } from "./chat/workbench/terminalDropCommit";
@@ -347,6 +358,7 @@ function ChatPageContent(props: ChatPageProps) {
     setSettings,
     resourceHost,
     imageStudioHost,
+    conversationImageStudioHost,
     onImageStudioWorkspaceChange,
     sttProviderOverride,
     getMcpSettings,
@@ -2701,7 +2713,7 @@ function ChatPageContent(props: ChatPageProps) {
         onChatRuntimeControlsChange: handleChatRuntimeControlsChange,
         onPickReadableFiles: pickReadableFiles,
         onPickWorkspaceFolder: pickWorkspaceFolder,
-        onPasteFiles: importReadableFiles,
+        onPasteFiles: (files) => void importReadableFiles(files),
         onLoadUploadedImagePreview: loadComposerUploadedImagePreview,
         loadHistoryPrompts: loadComposerHistoryPrompts,
         // 提示词澄清：当前会话模型跑纯文本补全；clarifyContext 只喂轻量工作区
@@ -4625,6 +4637,79 @@ function ChatPageContent(props: ChatPageProps) {
 
   if (!active) return null;
 
+  const conversationImageHost: ContextType<typeof DesktopConversationImageHost> =
+    conversationImageStudioHost
+      ? {
+          studio: conversationImageStudioHost,
+          configure: () => onOpenSettings("image-studio"),
+          fileReaderOpen: workspaceOverlays.workspaceFilePreviewOpen,
+          closeFileReader: workspaceOverlays.requestWorkspaceFilePreviewClose,
+          submit: async (conversationId, workdir, text, instruction, files, signal, keepPreview) => {
+            const wantsAttachments = isAgentMode && files.length > 0;
+            const uploads = wantsAttachments
+              ? await importReadableFiles(files, { conversationId, workdir }, signal, false)
+              : [];
+            signal.throwIfAborted();
+            if (!uploads || (wantsAttachments && uploads.length !== files.length)) return false;
+            const draft = createTextComposerDraft(text);
+            const runtime = conversationRuntimeRegistry.getSnapshot(conversationId);
+            if (runtime?.isSending || isConversationRunning(conversationId)) {
+              return enqueueComposerTurnForConversation({
+                conversationId,
+                preserveComposer: true,
+                imageEditInstruction: instruction,
+                draft,
+                uploadedFiles: uploads,
+              });
+            }
+            return new Promise<boolean | ConversationImageEditReceipt>((resolve, reject) => {
+              const completion = Promise.resolve().then(() => {
+                signal.throwIfAborted();
+                return sendActionRef.current({
+                  conversationIdOverride: conversationId,
+                  composerDraftOverride: draft,
+                  uploadedFilesOverride: uploads,
+                  imageEditInstruction: instruction,
+                  preserveComposerOnStart: true,
+                  onRunStarted: (turnId, isActive) => {
+                    if (!keepPreview) return resolve(true);
+                    const result = completion.then(
+                      () => {
+                        const state = conversationRuntimeRegistry.getSnapshot(conversationId)?.state;
+                        const messages = state?.segments.flatMap((segment) => segment.messages) ?? [];
+                        const start = messages.findIndex(
+                          (message) => message.role === "user" && message.id === turnId,
+                        );
+                        if (start < 0) return undefined;
+                        for (const message of messages.slice(start + 1)) {
+                          if (message.role === "user") break;
+                          if (message.role === "toolResult" && isConversationImageTool(message.toolName)) {
+                            const output = parseConversationImageResult(toolResultMessageToText(message));
+                            const [image] = conversationImageDeliverables(output, locale === "zh-CN");
+                            if (image) return image;
+                          }
+                        }
+                        return undefined;
+                      },
+                      () => undefined,
+                    );
+                    resolve({
+                      result,
+                      stop: () => {
+                        if (!isActive()) return false;
+                        stopConversationActionRef.current(conversationId);
+                        return true;
+                      },
+                    });
+                  },
+                });
+              });
+              void completion.then(() => resolve(false), reject);
+            });
+          },
+        }
+      : null;
+
   return (
     <WorkbenchShell
       ref={navigationPreview.rootRef}
@@ -4660,7 +4745,7 @@ function ChatPageContent(props: ChatPageProps) {
         </AppHeaderFrame>
       ) : (
         <AppWorkbenchChrome
-          windowControls={<WindowsTitleBar controlsOnly />}
+          windowControls={<WindowsTitleBar controlsOnly followImagePreview />}
           navigationActions={
             <MacOsTitleBarToggle
               sidebarOpen={sidebarOpen}
@@ -4969,7 +5054,31 @@ function ChatPageContent(props: ChatPageProps) {
                       "--zone-font-scale": settings.customSettings.fontScale.chat,
                     } as CSSProperties
                   }
-                  chat={{ content: chatContent }}
+                  chat={{
+                    content: (
+                      <ConversationReaderWorkbench
+                        open={workspaceOverlays.workspaceFilePreviewOpen}
+                        primaryVisible
+                        readingScope={`device:${terminalProjectPathKey}`}
+                        primary={
+                          <DesktopConversationImageHost.Provider value={conversationImageHost}>
+                            {chatContent}
+                          </DesktopConversationImageHost.Provider>
+                        }
+                      >
+                        {workspaceOverlays.workspaceFilePreviewMounted && activeView === "chat" && (
+                          <WorkspaceFileReader
+                            locale={settings.locale}
+                            isOpen={workspaceOverlays.workspaceFilePreviewOpen}
+                            openRequest={workspaceOverlays.workspaceFilePreviewOpenRequest}
+                            onOpenEditor={workspaceOverlays.openWorkspaceEditorFile}
+                            onRequestClose={workspaceOverlays.requestWorkspaceFilePreviewClose}
+                            onClose={workspaceOverlays.handleWorkspaceFilePreviewClosed}
+                          />
+                        )}
+                      </ConversationReaderWorkbench>
+                    ),
+                  }}
                   scheduledTasks={showTaskWorkspace ? renderTasks(false) : undefined}
                   onOpenView={setActiveView}
                   workspaceOverlays={
@@ -4989,7 +5098,9 @@ function ChatPageContent(props: ChatPageProps) {
                       onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
                       onWorkspaceEditorHide={workspaceOverlays.handleWorkspaceEditorHide}
                       onWorkspaceEditorClose={workspaceOverlays.handleWorkspaceEditorClosed}
-                      workspaceFilePreviewMounted={workspaceOverlays.workspaceFilePreviewMounted}
+                      workspaceFilePreviewMounted={
+                        activeView !== "chat" && workspaceOverlays.workspaceFilePreviewMounted
+                      }
                       workspaceFilePreviewOpenRequest={
                         workspaceOverlays.workspaceFilePreviewOpenRequest
                       }

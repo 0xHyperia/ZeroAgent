@@ -142,12 +142,25 @@ func validateCloudContent(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, ErrCloudRunInvalid
 		}
 		references := 0
+		imageEditContexts, imageEditSources := 0, 0
 		for index, item := range value {
 			part, ok := item.(map[string]any)
 			if !ok {
 				return nil, ErrCloudRunInvalid
 			}
 			switch part["type"] {
+			case "image_edit_context":
+				instruction, ok := part["instruction"].(string)
+				if !ok || len(instruction) > 12000 || strings.TrimSpace(instruction) == "" || !cloudContentKnownFields(part, "type", "instruction", "aspect_ratio") {
+					return nil, ErrCloudRunInvalid
+				}
+				if ratio, present := part["aspect_ratio"]; present {
+					value, _ := ratio.(string)
+					if _, _, size := cloudImageAspect(value); size == "" {
+						return nil, ErrCloudRunInvalid
+					}
+				}
+				imageEditContexts++
 			case "text", "image_url":
 				clean, ok := cloudTextImagePart(part, true)
 				if !ok {
@@ -171,6 +184,7 @@ func validateCloudContent(raw json.RawMessage) (json.RawMessage, error) {
 				part["file_id"] = parsed.String()
 			case "artifact_reference":
 				references++
+				imageEditSources++
 				if references > 8 {
 					return nil, ErrCloudRunInvalid
 				}
@@ -186,6 +200,9 @@ func validateCloudContent(raw json.RawMessage) (json.RawMessage, error) {
 			default:
 				return nil, ErrCloudRunInvalid
 			}
+		}
+		if imageEditContexts > 0 && (imageEditContexts != 1 || imageEditSources != 1 || references > 2) {
+			return nil, ErrCloudRunInvalid
 		}
 	default:
 		return nil, ErrCloudRunInvalid

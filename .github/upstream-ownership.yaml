@@ -211,6 +211,15 @@
       ]
     },
     {
+      "glob": "crates/agent-gui/src/pages/chat/surfaces/useDesktopConversationImages.tsx",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "复用共享画廊和阅读布局，按设备及会话读取 K-brain 图像任务",
+        "明确的模型配置、取消、草稿保留及同一请求的回执恢复"
+      ]
+    },
+    {
       "glob": "scripts/vite-resource-preview-assets.{mjs,d.mts}",
       "ownership": "zeroagent_owned",
       "risk": "medium",

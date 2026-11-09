@@ -22,9 +22,48 @@ async function surface(t, extra = {}) {
   return { ...env, host, root };
 }
 
+test("numbered image comments send ordered points privately without a guide image", async t => {
+  const { loadModule } = await surface(t);
+  const { conversationImageCommentEdit } = loadModule(
+    "@liveagent/ui/components/resource-preview/conversationImageAnnotation.ts",
+  );
+  const edit = conversationImageCommentEdit([
+    { id: "shoulder", point: { x: 0.396, y: 0.544 }, text: "把肩章改成白色星形" },
+    { id: "badge", point: { x: 0.582, y: 0.628 }, text: "换成金黄色闪电\n保留方形底板" },
+  ]);
+  assert.equal(edit.text, "1. 把肩章改成白色星形\n2. 换成金黄色闪电\n    保留方形底板");
+  assert.match(edit.instruction, /1\. \(x: 39\.6%, y: 54\.4%\): "把肩章改成白色星形"/);
+  assert.match(edit.instruction, /2\. \(x: 58\.2%, y: 62\.8%\): "换成金黄色闪电\\n保留方形底板"/);
+  assert.equal(edit.region, undefined);
+  assert.equal(edit.keepPreview, true);
+});
+
+test("annotation eraser keeps the rest of a stroke and removes ink fully covered by multiple sweeps", async t => {
+  const { loadModule } = await surface(t);
+  const { eraseImageMarks, transformImageShape } = loadModule(
+    "@liveagent/ui/components/resource-preview/conversationImageAnnotation.ts",
+  );
+  const size = { width: 800, height: 500 };
+  const line = { kind: "line", points: [{ x: 0.25, y: 0.5 }, { x: 0.75, y: 0.5 }], color: "#e52b36", width: 8, erase: false, normalizedWidth: 0.016 };
+  const other = { ...line, points: [{ x: 0.25, y: 0.8 }, { x: 0.75, y: 0.8 }] };
+  const marks = [line, other];
+  const sweep = (from, to, y = 0.5) => ({ points: [{ x: from, y }, { x: to, y }], normalizedWidth: 0.1 });
+  assert.equal(eraseImageMarks(marks, sweep(0.3, 0.7, 0.1), size), marks);
+  const left = sweep(0.25, 0.51);
+  const partial = eraseImageMarks(marks, left, size);
+  assert.equal(partial[0].points, line.points);
+  assert.deepEqual(partial[0].cuts, [left]);
+  assert.equal(partial[1], other);
+  const moved = transformImageShape(partial[0], 0.1, 0.05);
+  assert.equal(moved.cuts[0].points[0].x, 0.35);
+  assert.deepEqual(eraseImageMarks(partial, sweep(0.49, 0.75), size), [other]);
+  assert.equal(line.cuts, undefined);
+});
+
 test("image gallery opens and edits the selected immutable result, then releases every owned URL", async t => {
   const env = await surface(t);
   const {AssistantVisualContext, AssistantImageGallery} = env.loadModule("@liveagent/ui/components/chat/AssistantVisuals.tsx");
+  const {useConversationImageSources, useConversationImageSource} = env.loadModule("@liveagent/ui/components/resource-preview/conversationImageSources.ts");
   const {host, React: R} = env;
   const opened = [], edited = [], created = [], revoked = [], signals = [];
   const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
@@ -32,17 +71,51 @@ test("image gallery opens and edits the selected immutable result, then releases
   URL.revokeObjectURL = value => revoked.push(value);
   t.after(() => {URL.createObjectURL=create; URL.revokeObjectURL=revoke;});
   const items = [image(1), image(2)];
-  const value = {loadImage: async (_id, signal) => {signals.push(signal); return new Blob(["test"]);}, editImage: item => edited.push(item.id), activity: () => null};
-  await env.act(async () => {env.root.render(R.createElement(AssistantVisualContext.Provider,{value},R.createElement(AssistantImageGallery,{items,onOpen:item=>opened.push(item.id)}))); await tick();});
+  const load = async (id, variant, signal) => {
+    signals.push([id, variant, signal]);
+    return new Blob(["test"]);
+  };
+  function Preview({sources, id}) {
+    const {source} = useConversationImageSource(sources, id, "original");
+    return R.createElement("output", null, source?.url ?? "loading");
+  }
+  function Probe({scope, previewId}) {
+    const sources = useConversationImageSources(scope, load);
+    const value = {sources, editImage: item => edited.push(item.id), activity: () => null};
+    return R.createElement(AssistantVisualContext.Provider, {value},
+      R.createElement(AssistantImageGallery, {items, onOpen: item => opened.push(item.id)}),
+      previewId && R.createElement(Preview, {key: previewId, sources, id: previewId}),
+    );
+  }
+  const render = (previewId, scope = "first") => env.act(async () => {
+    env.root.render(R.createElement(Probe, {scope, previewId}));
+    await tick();
+  });
+  await render();
   assert.equal(host.querySelectorAll(".za-visual-main img").length,1);
+  const firstUrl = host.querySelector(".za-visual-main img").getAttribute("src");
   await env.act(async () => host.querySelectorAll(".za-visual-thumbnail")[1].click());
   await env.act(tick);
   assert.equal(host.querySelector(".za-visual-main img").alt, items[1].name);
   assert.equal(host.querySelectorAll('[aria-pressed="true"]').length,1);
   await env.act(async () => {host.querySelector(".za-visual-open").click(); host.querySelector(".za-visual-image-actions button").click();});
   assert.deepEqual(opened,[items[1].id]); assert.deepEqual(edited,[items[1].id]);
+  const secondUrl = host.querySelector(".za-visual-main img").getAttribute("src");
+  for (const [id, url] of [[items[0].id, firstUrl], [items[1].id, secondUrl], [items[0].id, firstUrl]]) {
+    await render(id);
+    assert.equal(host.querySelector("output").textContent, url);
+  }
+  await render();
+  await render(items[0].id);
+  assert.equal(host.querySelector("output").textContent, firstUrl);
+  assert.equal(signals.length, 2, "opening, switching, and reopening reuse the same reads");
+  assert.equal(created.length, 2, "gallery and preview share each decoded URL");
+  await render(items[0].id, "second");
+  assert.notEqual(host.querySelector("output").textContent, firstUrl);
+  assert.ok(signals.slice(0, 2).every(([, , signal]) => signal.aborted));
+  assert.ok(revoked.includes(firstUrl) && revoked.includes(secondUrl));
   await env.act(async () => env.root.render(null));
-  assert.ok(signals.every(signal=>signal.aborted));
+  assert.ok(signals.every(([, , signal]) => signal.aborted));
   assert.deepEqual([...revoked].sort(),[...created].sort());
 });
 
@@ -51,7 +124,7 @@ test("pending creation and missing-model action follow real tool state without s
   const {CloudChatVisualProvider}=env.loadModule("src/components/cloudchat/CloudChatVisualProvider.tsx");
   const {AssistantVisualActivity}=env.loadModule("@liveagent/ui/components/chat/AssistantVisuals.tsx");
   let configured=0;
-  const props={client:{},running:true,onEdit:()=>{},onConfigure:()=>configured++};
+  const props={running:true,onOpen:()=>{},onEdit:()=>{},registerImages:()=>{},onConfigure:()=>configured++};
   const render=async (state,status,running=true) => env.act(async()=>env.root.render(env.React.createElement(CloudChatVisualProvider,{...props,running,messages:[{id:"m",presentation:{blocks:[{type:"tool",name:"generate_image",state,status}]}}]},env.React.createElement(AssistantVisualActivity,{messageId:"m"}))));
   await render("executing"); assert.ok(env.host.querySelector(".za-visual-dots")); assert.doesNotMatch(env.host.textContent, /\d+%/);
   await render("failed","请先选择默认生图模型",false);
@@ -63,17 +136,19 @@ test("pending creation and missing-model action follow real tool state without s
 
 test("image host shares private byte reads and discards reads after the conversation unmounts", async t => {
   const env=await surface(t);
-  const {CloudChatVisualProvider}=env.loadModule("src/components/cloudchat/CloudChatVisualProvider.tsx");
-  const {AssistantVisualContext}=env.loadModule("@liveagent/ui/components/chat/AssistantVisuals.tsx");
+  const {useCloudChatImageSources}=env.loadModule("src/components/cloudchat/CloudChatVisualProvider.tsx");
   let current, release, reads=0, lifecycle;
-  function Probe(){current=env.React.useContext(AssistantVisualContext);return null;}
+  function Probe(){current=useCloudChatImageSources(client,"image-test").read;return null;}
   const client={get:async(id,signal)=>{reads++; lifecycle=signal;await new Promise(resolve=>release=resolve);return{id};},image:async()=>({blob:new Blob(["test"]),guard:()=>{}})};
-  await env.act(async()=>env.root.render(env.React.createElement(CloudChatVisualProvider,{client,messages:[],running:false,onConfigure:()=>{},onEdit:()=>{}},env.React.createElement(Probe))));
+  await env.act(async()=>env.root.render(env.React.createElement(Probe)));
   const consumer=new AbortController();
-  const first=current.loadImage("image",consumer.signal), second=current.loadImage("image",consumer.signal);
+  const first=current("image",consumer.signal), second=current("image",consumer.signal);
+  await Promise.resolve();
   assert.equal(reads,1);
   consumer.abort(); await env.act(async()=>env.root.render(null)); assert.ok(lifecycle.aborted);
   release(); await assert.rejects(first,{name:"AbortError"}); await assert.rejects(second,{name:"AbortError"});
+  await assert.rejects(current("late", new AbortController().signal), {name:"AbortError"});
+  assert.equal(reads,1);
 });
 
 test("default image setting uses its own CAS preference and preserves selected group identity", async t => {

@@ -2,6 +2,8 @@ import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/Chang
 import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { ScheduledReplyPreview } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
+import { AssistantVisualContext } from "@liveagent/ui/components/chat/AssistantVisuals";
+import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -41,6 +43,7 @@ import {
   useConversationPaneRegistration,
 } from "./ConversationPaneHostEnvironment";
 import { ConversationSurface } from "./ConversationSurface";
+import { useDesktopConversationImages } from "./useDesktopConversationImages";
 import {
   beginPaneComposerDraftSession,
   restoreClearedPaneComposerDraft,
@@ -226,6 +229,11 @@ const RegisteredConversationPaneHostContent = forwardRef<
   } = binding;
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const scrollFollowRef = useRef<ScrollFollowHandle | null>(null);
+  const images = useDesktopConversationImages(
+    conversationId,
+    transcript.workspaceRoot ?? "",
+    !scheduledRun && !trajectory?.active,
+  );
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   const [composerFloatingOverhang, setComposerFloatingOverhang] = useState(0);
   const [composerCenterOffset, setComposerCenterOffset] = useState(0);
@@ -284,7 +292,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
     });
   }, [controller, isBackgroundPane]);
 
-  return (
+  const surface = (
     <ConversationSurface
       paneId={paneId}
       contentWidth={transcript.contentWidth}
@@ -299,8 +307,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
         const scheduledReply =
           scheduledRun &&
           preview &&
-          (previewStreaming ||
-            ((preview.text || preview.prompt) && !props.scheduledHistoryReady))
+          (previewStreaming || ((preview.text || preview.prompt) && !props.scheduledHistoryReady))
             ? {
                 key: `scheduled-preview:${scheduledRun.run.id}`,
                 content: (
@@ -359,6 +366,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
           ),
           composer: (
             <ChatComposerBar
+              focusImagePlacement
               {...composer}
               {...(paneSendHandler ? { onSend: paneSendHandler } : {})}
               conversationId={snapshot.conversationId}
@@ -430,6 +438,20 @@ const RegisteredConversationPaneHostContent = forwardRef<
         };
       }}
     />
+  );
+  return (
+    <ConversationReaderWorkbench
+      open={images.panel === true}
+      primaryVisible
+      readingScope={`device-image:${conversationId}`}
+      primary={
+        <AssistantVisualContext.Provider value={images.visuals ?? null}>
+          {surface}
+        </AssistantVisualContext.Provider>
+      }
+    >
+      {images.reader}
+    </ConversationReaderWorkbench>
   );
 });
 

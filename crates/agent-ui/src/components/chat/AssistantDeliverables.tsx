@@ -3,8 +3,8 @@ import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResou
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useContext, useState } from "react";
-import { AssistantImageGallery, AssistantVisualContext } from "./AssistantVisuals";
 import { ArrowUpRight, CircleHelp, Globe, SquarePen } from "../IconSet";
+import { AssistantImageGallery, AssistantVisualContext } from "./AssistantVisuals";
 import { getFileTypeIcon } from "./fileTypeIcons";
 
 /** Confirmed outputs live beside the reply, outside collapsible tool activity. */
@@ -37,7 +37,10 @@ export function AssistantDeliverables({
   return (
     <section aria-label={t("chat.deliverables.title")} className="min-w-0 py-2">
       {images.length ? (
-        <AssistantImageGallery items={images} onOpen={(item) => onOpenFileLink?.(item.link)} />
+        <AssistantImageGallery
+          items={images}
+          onOpen={visualHost?.openImage ?? ((item) => onOpenFileLink?.(item.link))}
+        />
       ) : null}
       {files.length ? (
         <ul className="grid list-none gap-2 p-0 [grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr))]">

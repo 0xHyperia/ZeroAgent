@@ -24,6 +24,11 @@ import {
   X,
 } from "@liveagent/ui/components/IconSet";
 import {
+  ConversationImagePreview,
+  useConversationImagePreview,
+} from "@liveagent/ui/components/resource-preview/ConversationImagePreview";
+import type { ConversationImageEdit } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
+import {
   type DocumentRevisionComment,
   documentRevisionText,
 } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
@@ -42,6 +47,7 @@ import type {
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
@@ -107,7 +113,10 @@ import { CloudChatResearchConfirmation } from "@/components/cloudchat/CloudChatR
 import { CloudChatResourcePanel } from "@/components/cloudchat/CloudChatResourcePanel";
 import { CloudChatResourceWorkbench } from "@/components/cloudchat/CloudChatResourceWorkbench";
 import { CloudChatSourceLinkDialog } from "@/components/cloudchat/CloudChatSourceLinkDialog";
-import { CloudChatVisualProvider } from "@/components/cloudchat/CloudChatVisualProvider";
+import {
+  CloudChatVisualProvider,
+  useCloudChatImageSources,
+} from "@/components/cloudchat/CloudChatVisualProvider";
 import { CloudContextSidebar } from "@/components/cloudchat/CloudContextSidebar";
 import { CloudConversationBranches } from "@/components/cloudchat/CloudConversationBranches";
 import { CloudConversationMoveMenu } from "@/components/cloudchat/CloudConversationMoveMenu";
@@ -957,6 +966,7 @@ export function CloudChatPage({
       : undefined;
   const attachedRunIdRef = useRef<string | null>(null);
   const latestRunRef = useRef<CloudChatRun | null>(null);
+  const previewEditRun = useRef<{ id: string; update: (run: CloudChatRun) => void } | null>(null);
   const conversationsCursorRef = useRef("");
   const conversationsInitializedRef = useRef(false);
   const conversationsEpochRef = useRef(0);
@@ -1866,6 +1876,7 @@ export function CloudChatPage({
       )
         return;
       latestRunRef.current = run;
+      if (previewEditRun.current?.id === run.id) previewEditRun.current.update(run);
       setRestoredTerminalRun(null);
       setActiveRun(run);
       setStreaming(!isCloudChatRunTerminal(run));
@@ -2700,6 +2711,11 @@ export function CloudChatPage({
     }
     const artifactId = cloudArtifactVersionFromLink(link.path);
     if (artifactId) {
+      const image = imagePreview.find(artifactId);
+      if (image) {
+        openGeneratedImage(image);
+        return;
+      }
       openConversationReader({ kind: "artifact", id: artifactId });
       return;
     }
@@ -2961,6 +2977,15 @@ export function CloudChatPage({
       setError("附件标识无效，请从文件库重新选择。");
       return;
     }
+    const originalParts = Array.isArray(original.content) ? original.content : [];
+    const imageEditContext = originalParts.find((part) => part?.type === "image_edit_context");
+    const originalImageInputs = originalParts.flatMap((part) => {
+      if (part?.type === "artifact_reference") return [`cloud-artifacts/${part.version_id}`];
+      if (part?.type === "file_reference") return [part.file_id];
+      return [];
+    });
+    const preserveImageEdit = imageEditContext && originalImageInputs.length === ids.length &&
+      originalImageInputs.every((id, i) => id === ids[i]);
     const content = ids.length
       ? [
           ...(text.trim() ? [{ type: "text", text: text }] : []),
@@ -2970,6 +2995,7 @@ export function CloudChatPage({
               ? { type: "artifact_reference", version_id: versionId }
               : { type: "file_reference", file_id: id };
           }),
+          ...(preserveImageEdit ? [imageEditContext] : []),
         ]
       : text;
     if (!text.trim() && !ids.length) {
@@ -3205,7 +3231,11 @@ export function CloudChatPage({
     await attachFileList(files);
   }
 
-  async function submitRun(pending: PendingRunSubmission, view: ConversationView) {
+  async function submitRun(
+    pending: PendingRunSubmission,
+    view: ConversationView,
+    onAccepted?: (run: CloudChatRun) => void,
+  ) {
     if (!isCurrentView(view) || submissionAbortRef.current) return;
     const controller = new AbortController();
     submissionAbortRef.current = controller;
@@ -3294,6 +3324,7 @@ export function CloudChatPage({
           (message, index) => rebound.findIndex((item) => item.id === message.id) === index,
         );
       });
+      onAccepted?.(run);
       attachRun(run, view);
       if (cancelSubmissionRef.current && !isCloudChatRunTerminal(run)) {
         try {
@@ -3305,6 +3336,7 @@ export function CloudChatPage({
         }
       }
       void refreshConversations().catch(() => undefined);
+      return true;
     } catch (cause) {
       if (controller.signal.aborted || !isCurrentView(view)) return;
       if (cause instanceof CloudChatRunRequestError && cause.status === 401)
@@ -3349,6 +3381,10 @@ export function CloudChatPage({
             ? cause.message
             : "任务提交失败",
       );
+      return (
+        cause instanceof CloudChatSubmissionUnknownError ||
+        cause instanceof CloudChatAccountQueueFullError
+      );
     } finally {
       if (submissionAbortRef.current === controller) submissionAbortRef.current = null;
     }
@@ -3378,7 +3414,12 @@ export function CloudChatPage({
     }
   }
 
-  async function send(revisionDraft?: CloudChatDraft) {
+  async function send(
+    revisionDraft?: CloudChatDraft,
+    preserveDraft = false,
+    imageEdit?: ConversationImageEdit,
+    onAccepted?: (run: CloudChatRun) => void,
+  ) {
     if (historyLoading || historyRestoreFailed || currentRunDiscovery) return;
     if (dispatchPreparationRef.current) return;
     if (historySelection) {
@@ -3395,12 +3436,15 @@ export function CloudChatPage({
     if (branchBusy || branchUnconfirmed || branchAbortRef.current || pendingBranchRef.current)
       return;
     if (pendingSubmissionRef.current) {
+      if (preserveDraft) return false;
       await submitRun(pendingSubmissionRef.current, viewRef.current);
       return;
     }
     const submittedDraft = revisionDraft ?? captureComposerDraft();
     const submittedDraftScope = viewRef.current.conversationId || "blank";
-    const submittedSavedDraft = captureSavedSnapshot(submittedDraftScope) ?? undefined;
+    const submittedSavedDraft = preserveDraft
+      ? undefined
+      : (captureSavedSnapshot(submittedDraftScope) ?? undefined);
     if (submittedSavedDraft && !pendingQueue.editingItem)
       savedDraftSyncRef.current?.markDirty(submittedSavedDraft);
     const draft = submittedDraft.composer;
@@ -3408,6 +3452,7 @@ export function CloudChatPage({
     const submittedArtifacts = submittedDraft.artifacts;
     const text = draft ? buildCloudComposerText(draft).trim() : "";
     const editingItem = pendingQueue.editingItem;
+    if (preserveDraft && editingItem) return false;
     const queueInstead = streaming || Boolean(editingItem);
     if (
       uploadingFiles ||
@@ -3496,42 +3541,44 @@ export function CloudChatPage({
           setConversations((current) => current.filter((item) => item.id !== id));
         }
         const hasResources = submittedFiles.length + submittedArtifacts.length > 0;
-        const content: unknown = hasResources
-          ? [
-              ...(text ? [{ type: "text", text }] : []),
-              ...submittedFiles.map((attachment) => ({
-                type: "file_reference",
-                file_id: attachment.id,
-              })),
-              ...submittedArtifacts.map((version) => ({
-                type: "artifact_reference",
-                version_id: version.id,
-              })),
-            ]
-          : text;
+        const buildContent = (includeMetadata: boolean) => {
+          if (!hasResources) return text;
+          const files = submittedFiles.map((file) => ({
+            type: "file_reference",
+            file_id: file.id,
+            ...(includeMetadata ? { name: file.name, mime: file.mime, size: file.size } : {}),
+          }));
+          const artifacts = submittedArtifacts.map((version) => ({
+            type: "artifact_reference",
+            version_id: version.id,
+            ...(includeMetadata
+              ? {
+                  name: version.name,
+                  mime: version.mime,
+                  size: version.size,
+                  family_id: version.family_id,
+                  number: version.number,
+                  sha256: version.sha256,
+                }
+              : {}),
+          }));
+          return [
+            ...(text ? [{ type: "text", text }] : []),
+            ...(imageEdit ? [...artifacts, ...files] : [...files, ...artifacts]),
+            ...(imageEdit
+              ? [
+                  {
+                    type: "image_edit_context",
+                    instruction: imageEdit.instruction,
+                    ...(imageEdit.aspectRatio ? { aspect_ratio: imageEdit.aspectRatio } : {}),
+                  },
+                ]
+              : []),
+          ];
+        };
+        const content = buildContent(false);
         const view = viewRef.current;
-        const optimisticContent = hasResources
-          ? [
-              ...(text ? [{ type: "text", text }] : []),
-              ...submittedFiles.map((file) => ({
-                type: "file_reference",
-                file_id: file.id,
-                name: file.name,
-                mime: file.mime,
-                size: file.size,
-              })),
-              ...submittedArtifacts.map((version) => ({
-                type: "artifact_reference",
-                version_id: version.id,
-                name: version.name,
-                mime: version.mime,
-                size: version.size,
-                family_id: version.family_id,
-                number: version.number,
-                sha256: version.sha256,
-              })),
-            ]
-          : content;
+        const optimisticContent = buildContent(true);
         if (queueInstead) {
           const input: CloudChatPendingInput = {
             client_item_id: editingItem?.client_item_id ?? createUuid(),
@@ -3546,7 +3593,7 @@ export function CloudChatPage({
           };
           const queueView = viewRef.current;
           const editing = Boolean(editingItem);
-          if (!editing)
+          if (!editing && !preserveDraft)
             queueDraftsRef.current.set(input.client_item_id, {
               view: queueView,
               draft: submittedDraft,
@@ -3558,7 +3605,7 @@ export function CloudChatPage({
             ? await pendingQueue.saveEdit(input)
             : await pendingQueue.enqueue(input);
           dispatchResult.accepted = Boolean(saved);
-          if (saved && !editing) {
+          if (saved && !editing && !preserveDraft) {
             if (submittedSavedDraft)
               void savedDraftSyncRef.current?.clearIfUnchanged(
                 submittedSavedDraft,
@@ -3589,7 +3636,7 @@ export function CloudChatPage({
         ]);
         cancelSubmissionRef.current = false;
         dispatchResult.accepted = true;
-        await submitRun(
+        const result = await submitRun(
           {
             request: {
               conversation_id: id,
@@ -3607,15 +3654,18 @@ export function CloudChatPage({
             submittedDraft,
             submittedSavedDraft,
             submittedDraftScope,
+            preserveDraft,
           },
           view,
+          onAccepted,
         );
+        if (preserveDraft) dispatchResult.accepted = result === true;
       } finally {
         dispatchPreparationRef.current = false;
         if (isCurrentView(proceedingView)) setPreparingExecution(false);
       }
     };
-    if (runtimeControls.nativeWebSearchEnabled) {
+    if (runtimeControls.nativeWebSearchEnabled && !preserveDraft) {
       requestResearchConfirmation(text, preparedView, (research) => {
         void proceed(research).catch((cause) => {
           if (isCurrentView(proceedingView))
@@ -3679,20 +3729,34 @@ export function CloudChatPage({
                 : undefined,
             copyContent,
             copyDisabledReason,
-            attachments: [
-              ...cloudFileReferences(message.content).map((file) => ({
-                relativePath: file.file_id,
-                fileName: file.name || "附件",
-                kind: attachmentKind({ mime: file.mime || "text/plain" }),
-                sizeBytes: file.size ?? 0,
-              })),
-              ...cloudArtifactReferences(message.content).map((version) => ({
-                relativePath: `cloud-artifacts/${version.version_id}`,
-                fileName: `${version.name || "成果"}${version.number ? ` · v${version.number}` : ""}`,
-                kind: "text" as const,
-                sizeBytes: version.size ?? 0,
-              })),
-            ],
+            attachments: (Array.isArray(message.content) ? message.content : []).flatMap(
+              (part): PendingUploadedFile[] => {
+                const [file] = cloudFileReferences([part]);
+                if (file)
+                  return [
+                    {
+                      relativePath: file.file_id,
+                      fileName: file.name || "附件",
+                      kind: attachmentKind({ mime: file.mime || "text/plain" }),
+                      sizeBytes: file.size ?? 0,
+                    },
+                  ];
+                const [version] = cloudArtifactReferences([part]);
+                return version
+                  ? [
+                      {
+                        relativePath: `cloud-artifacts/${version.version_id}`,
+                        fileName: `${version.name || "成果"}${version.number ? ` · v${version.number}` : ""}`,
+                        kind:
+                          attachmentKind({ mime: version.mime || "text/plain" }) === "image"
+                            ? "image"
+                            : "text",
+                        sizeBytes: version.size ?? 0,
+                      },
+                    ]
+                  : [];
+              },
+            ),
             referencedConversations: [],
             messageRef: !streaming
               ? {
@@ -3839,10 +3903,12 @@ export function CloudChatPage({
   // biome-ignore lint/correctness/useExhaustiveDependencies: Catalog-only changes also invalidate model badges.
   const modelOptions = useMemo(
     () =>
-      buildModelOptions(settings, { floatSelectedFirst: false, modelType: "text" }).map((option) => ({
-        ...option,
-        nativeWebSearchSupported: true,
-      })),
+      buildModelOptions(settings, { floatSelectedFirst: false, modelType: "text" }).map(
+        (option) => ({
+          ...option,
+          nativeWebSearchSupported: true,
+        }),
+      ),
     [settings, catalogVersion],
   );
   const selectedModelValue = providerKeyId
@@ -3967,7 +4033,8 @@ export function CloudChatPage({
     branchBusy ||
     branchUnconfirmed;
   projectSelectionLocked.current = composerLocked || streaming;
-  const workbenchSwitchBusy = streaming || uploadingFiles || resolvingResources || preparingExecution;
+  const workbenchSwitchBusy =
+    streaming || uploadingFiles || resolvingResources || preparingExecution;
   async function switchWorkbench(environment: ExecutionEnvironment, workspace: ExecutionWorkspace) {
     const view = viewRef.current;
     if (!onSwitch || workbenchSwitchBusy || !isCurrentView(view)) return;
@@ -4042,6 +4109,67 @@ export function CloudChatPage({
     (filePanel && (workspaceView !== "library" || filePanel.fileId)) ||
       (artifactPanel && (workspaceView !== "library" || artifactPanel.versionId)),
   );
+  const imageScope = JSON.stringify([
+    user.id,
+    conversationId,
+    workspaceView,
+    workbenchActive,
+    accountInvalidatedRef.current,
+  ]);
+  const imagePreview = useConversationImagePreview(imageScope);
+  const generatedImageSources = useCloudChatImageSources(artifactsClient, imageScope);
+  const loadGeneratedImage = generatedImageSources.read;
+  const loadTranscriptImage = useCallback(
+    async (_scope: string, path: string) => {
+      const view = viewRef.current;
+      const guard = captureAccountRequestGuard();
+      if (path.startsWith("cloud-artifacts/"))
+        return loadGeneratedImage(
+          path.slice("cloud-artifacts/".length),
+          new AbortController().signal,
+        );
+      const file = await filesClient.get(path);
+      if (!file.mime.startsWith("image/") || !cloudFileCanReference(file) || !isCurrentView(view))
+        return null;
+      const result = await filesClient.download(file);
+      guard();
+      result.guard();
+      return isCurrentView(view) ? result.blob.slice(0, result.blob.size, file.mime) : null;
+    },
+    [filesClient, isCurrentView, loadGeneratedImage],
+  );
+  const closeGeneratedImage = imagePreview.close;
+  const imagePreviewOpen = Boolean(imagePreview.item);
+  useEffect(() => {
+    if (readerOpen || accountSettingsOpen || customizeOpen) closeGeneratedImage();
+  }, [readerOpen, accountSettingsOpen, customizeOpen, closeGeneratedImage]);
+
+  function openGeneratedImage(item: AssistantDeliverable, edit = false, trigger?: HTMLElement) {
+    if (!isCurrentView(viewRef.current)) return;
+    if (readerOpen) closeConversationReader();
+    imagePreview.open(item, edit, trigger);
+  }
+
+  async function downloadGeneratedImage(item: AssistantDeliverable, signal: AbortSignal) {
+    const guard = captureWorkGuard();
+    const version = await artifactsClient.get(item.id, signal);
+    const result = await artifactsClient.download(version, signal);
+    guard();
+    result.guard();
+    signal.throwIfAborted();
+    const url = URL.createObjectURL(result.blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = result.filename;
+    link.hidden = true;
+    document.body.append(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
   const canWorkBesideReader = workspaceView === "library" && readerCanSplit && !sidebar.isMobile;
   const workingInSpace = canWorkBesideReader && spaceWork && readerOpen;
   const chatWorkspaceVisible = workspaceView === "chat" || workingInSpace;
@@ -4341,7 +4469,9 @@ export function CloudChatPage({
       // Settings owns its native Back handler, including the mobile list/detail step.
       if (event.defaultPrevented || accountSettingsOpen) return;
       if (projectSettings.open && projectSettings.owner === user.id) return;
-      if (composerMenu) {
+      if (imagePreviewOpen) {
+        closeGeneratedImage(true);
+      } else if (composerMenu) {
         setComposerMenu(null);
       } else if ((scheduleRoute || embeddedTask) && activeTaskReader.current) {
         closeTaskReader();
@@ -4367,9 +4497,11 @@ export function CloudChatPage({
   }, [
     accountSettingsOpen,
     artifactPanel,
+    closeGeneratedImage,
     composerMenu,
     embeddedTask,
     filePanel,
+    imagePreviewOpen,
     projectNavigation.request,
     projectSettings.open,
     projectSettings.owner,
@@ -4826,29 +4958,83 @@ export function CloudChatPage({
     savedDraft.scheduleCapture();
     composerRef.current?.focus();
   }
-  async function editGeneratedImage(item: AssistantDeliverable) {
+  async function editGeneratedImage(
+    item: AssistantDeliverable,
+    edit: ConversationImageEdit,
+    signal: AbortSignal,
+  ) {
     const view = viewRef.current,
       guard = captureWorkGuard();
-    if (composerLocked || uploadingFiles || resolvingResources) return;
-    try {
-      const version = await artifactsClient.get(item.id);
+    if (
+      composerLocked ||
+      uploadingFiles ||
+      resolvingResources ||
+      pendingSubmissionRef.current ||
+      pendingQueue.editingItem
+    )
+      return false;
+    const version = await artifactsClient.get(item.id, signal);
+    guard();
+    signal.throwIfAborted();
+    if (
+      !isCurrentView(view) ||
+      version.state !== "ready" ||
+      version.conversation_id !== view.conversationId ||
+      pendingSubmissionRef.current ||
+      pendingQueue.editingItem
+    )
+      return false;
+    const files: CloudChatFile[] = [];
+    if (edit.region) {
+      const { file, requestId } = edit.region;
+      const region = await filesClient
+        .upload(file, view.conversationId, signal, requestId)
+        .catch((error: unknown) => {
+          if (!(error instanceof CloudFileUploadUnconfirmedError)) throw error;
+          return filesClient.readUpload(requestId, signal);
+        });
       guard();
-      if (!isCurrentView(view) || version.state !== "ready") return;
-      const draft = captureComposerDraft();
-      if (!draft.artifacts.some((artifact) => artifact.id === version.id))
-        draft.artifacts.push(version);
-      if (draft.artifacts.length + draft.files.length > 8) {
-        setContextNotice("本条消息已有 8 项资料，请先移除一项。 ");
-        return;
-      }
-      restoreComposerDraft(draft, view);
-      fillStarter("使用生成图像修改这张图片：");
-      savedDraft.scheduleCapture();
-      composerRef.current?.focus();
-    } catch (cause) {
-      if (isCurrentView(view))
-        setContextNotice(cause instanceof Error ? cause.message : "图片暂不可用，请重新打开。");
+      signal.throwIfAborted();
+      if (!cloudFileCanReference(region)) return false;
+      files.push(region);
     }
+    const draft = captureComposerDraft();
+    let receipt: { result: Promise<AssistantDeliverable | undefined>; stop: () => Promise<boolean> } | undefined;
+    const accepted = await send(
+      { ...draft, files, artifacts: [version], composer: createTextComposerDraft(edit.text) },
+      true,
+      edit,
+      edit.keepPreview ? (run) => {
+        if (signal.aborted) return;
+        const result = new Promise<AssistantDeliverable | undefined>((resolve) => {
+          const finish = (image?: AssistantDeliverable) => {
+            if (previewEditRun.current?.id === run.id) previewEditRun.current = null;
+            signal.removeEventListener("abort", abort);
+            resolve(image);
+          };
+          const abort = () => finish();
+          previewEditRun.current = {
+            id: run.id,
+            update: (next) => {
+              const image = cloudChatAssistantDeliverables({
+                id: next.assistant_message_id, role: "assistant", content: next.output, presentation: next.presentation,
+              }).find((item) => item.status === "saved" && item.mime?.startsWith("image/") && item.id !== version.id);
+              if (image || isCloudChatRunTerminal(next)) finish(image);
+            },
+          };
+          signal.addEventListener("abort", abort, { once: true });
+        });
+        receipt = {
+          result,
+          stop: async () => {
+            if (!isCurrentView(view) || latestRunRef.current?.id !== run.id || isCloudChatRunTerminal(latestRunRef.current)) return false;
+            displayRun(await runsClient.cancelRun(run.id), view);
+            return true;
+          },
+        };
+      } : undefined,
+    );
+    return accepted === true ? (receipt ?? true) : false;
   }
   async function requestDocumentRevision(
     resource: CloudChatFile | CloudChatArtifactVersion,
@@ -6153,7 +6339,7 @@ export function CloudChatPage({
                 }
                 readingScope={`${user.id}:${accountInvalidatedRef.current ? "retired" : "current"}`}
                 defaultSplitRatio={workingInSpace ? 0.34 : undefined}
-                open={readerOpen}
+                open={readerOpen || imagePreview.panel}
                 headerInFlow={workingInSpace || scheduledConversation}
                 onSplitAvailabilityChange={setReaderCanSplit}
                 primaryVisible={
@@ -6204,11 +6390,13 @@ export function CloudChatPage({
                                 >
                                   <CloudChatVisualProvider
                                     key={`visuals:${user.id}:${conversationId}`}
-                                    client={artifactsClient}
+                                    sources={generatedImageSources}
                                     messages={messages}
                                     running={streaming}
                                     onConfigure={openModelPreferences}
-                                    onEdit={(item) => void editGeneratedImage(item)}
+                                    onOpen={(item, trigger) => openGeneratedImage(item, false, trigger)}
+                                    onEdit={(item, trigger) => openGeneratedImage(item, true, trigger)}
+                                    registerImages={imagePreview.register}
                                   >
                                     <GatewayTranscript
                                       navRef={transcriptNavigation}
@@ -6263,6 +6451,8 @@ export function CloudChatPage({
                                       viewportFollowing={followingTranscript}
                                       conversationId={conversationId}
                                       rows={transcriptRows}
+                                      imagePreviewScope={imageScope}
+                                      onLoadUploadedImagePreview={loadTranscriptImage}
                                       editRequest={terminalEditRequest}
                                       onEditRequestHandled={(token) =>
                                         setTerminalEditRequest((current) =>
@@ -6376,6 +6566,7 @@ export function CloudChatPage({
                                 ) : null}
                               </div>
                               <ChatComposerBar
+                                focusImagePlacement
                                 overlayHeightOwnerRef={cloudChatFrameRef}
                                 capabilities={CLOUD_COMPOSER_CAPABILITIES}
                                 feedback={composerFeedback}
@@ -6866,6 +7057,30 @@ export function CloudChatPage({
                   </>
                 )}
               >
+                {imagePreview.item && !readerOpen && (
+                  <ConversationImagePreview
+                    key={imageScope}
+                    item={imagePreview.item}
+                    items={imagePreview.items}
+                    panel={imagePreview.panel}
+                    origin={imagePreview.origin}
+                    edit={imagePreview.edit}
+                    onPanel={() => imagePreview.setPanel(true)}
+                    onPreview={() => imagePreview.setPanel(false)}
+                    onClose={closeGeneratedImage}
+                    onSelect={imagePreview.select}
+                    waitingSelected={imagePreview.waitingSelected}
+                    onSelectWaiting={imagePreview.selectWaiting}
+                    onTrackRun={imagePreview.trackRun}
+                    onStopRun={imagePreview.stopRun}
+                    run={imagePreview.run}
+                    draft={imagePreview.draft}
+                    updateDraft={imagePreview.updateDraft}
+                    sources={generatedImageSources}
+                    onEdit={editGeneratedImage}
+                    onDownload={downloadGeneratedImage}
+                  />
+                )}
                 <CloudChatResourcePresentation.Provider
                   value={
                     filePanel || artifactPanel

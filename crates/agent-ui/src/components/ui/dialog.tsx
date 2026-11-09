@@ -42,7 +42,7 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = "DialogOverlay";
 
-type DialogLayout = "center" | "fullscreen-mobile" | "bottom-sheet-mobile" | "lightbox";
+type DialogLayout = "center" | "fullscreen-mobile" | "bottom-sheet-mobile" | "lightbox" | "reader";
 
 // Dialog chrome reads one step smaller than the app default so it stays close
 // to the sidebar's 13px/11px rhythm instead of the unscaled 16/14/12.
@@ -75,18 +75,17 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
     // across that boundary.
     const inheritedFontScale = React.useContext(ZoneFontScaleContext);
     const zoneFontScale = resolveZoneFontScale(style, inheritedFontScale ?? DIALOG_FONT_SCALE);
+    const fillsViewport = layout === "lightbox" || layout === "reader";
     return (
       <DialogPortal>
-        <DialogOverlay
-          className={layout === "lightbox" ? "za-lightbox-backdrop" : undefined}
-        />
+        <DialogOverlay className={layout === "lightbox" ? "za-lightbox-backdrop" : undefined} />
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
           data-layout={layout}
           className={cn(
             "layer-modal fixed inset-0 flex min-h-0 flex-col items-center overflow-y-auto",
             "overscroll-contain px-4 pb-safe-bottom pt-safe-top",
-            layout === "lightbox" && "overflow-hidden p-0",
+            fillsViewport && "overflow-hidden p-0",
             layout === "fullscreen-mobile" &&
               "max-[720px]:items-stretch max-[720px]:overflow-hidden max-[720px]:p-0",
             layout === "bottom-sheet-mobile" &&
@@ -118,7 +117,7 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
               "za-dialog-surface border border-border/70 bg-background text-foreground outline-none",
               "transition-opacity duration-150 ease-out",
               "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
-              layout === "lightbox" &&
+              fillsViewport &&
                 "pointer-events-none fixed inset-0 m-0 h-full w-full max-w-none rounded-none border-0 bg-transparent shadow-none data-[starting-style]:scale-100 data-[ending-style]:scale-100",
               layout === "fullscreen-mobile" &&
                 "max-[720px]:my-0 max-[720px]:h-full max-[720px]:max-w-none max-[720px]:rounded-none max-[720px]:border-0",

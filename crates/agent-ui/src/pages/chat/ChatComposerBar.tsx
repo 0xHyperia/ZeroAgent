@@ -105,6 +105,7 @@ import {
   type ReactNode,
   type RefObject,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -112,6 +113,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { ConversationComposerPlacement } from "../../components/resource-preview/ConversationComposerPlacement";
+import { ConversationFocusComposer } from "../../components/resource-preview/conversationReaderLayout";
 import {
   type ComposerCapabilities,
   type ComposerPresentation,
@@ -294,6 +297,7 @@ function prefersReducedMotion() {
 }
 
 export type ChatComposerBarProps = {
+  focusImagePlacement?: boolean;
   /** Upstream default only. Product hosts explicitly supply presentation. */
   surface?: "desktop" | "web";
   presentation?: ComposerPresentation;
@@ -560,6 +564,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     statsBar,
     contextDisplayMode,
   } = props;
+  const focusComposer = useContext(ConversationFocusComposer);
+  const imageFocus = Boolean(props.focusImagePlacement && focusComposer?.target);
+  const imageEdit = props.focusImagePlacement ? focusComposer?.edit : null;
   const isInputDisabled = hostInputDisabled || draftOnly;
   const panePresentation = resolveComposerPresentation(props) === "pane";
   const { executionControls, gitControls: showGitControls } = resolveComposerControls(
@@ -614,7 +621,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const glassCardRef = useRef<HTMLDivElement | null>(null);
   const inlineLayout = props.layout === "inline" && !panePresentation && executionMode === "text";
   const singleLineInput = useInlineComposerLayout({
-    enabled: inlineLayout,
+    enabled: inlineLayout && !imageFocus,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
     hasAttachments: pendingUploadedFiles.length > 0 || Boolean(props.uploadingAttachments?.length),
     isEmpty: composerIsEmpty,
@@ -623,7 +630,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   });
   useComposerShapeMotion(
     glassCardRef,
-    inlineLayout && !isComposerExpanded,
+    inlineLayout && !isComposerExpanded && !imageFocus,
     `${props.expandedInput}:${singleLineInput}:${pendingUploadedFiles.length}`,
   );
   const conversationDragDepthRef = useRef(0);
@@ -731,7 +738,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         : "Ctrl+Enter"
       : "Enter";
   useEscapeToStopRun({
-    enabled: isSending && !stopDisabled && !hidden && approvalBar == null,
+    enabled: isSending && !stopDisabled && !hidden && !imageFocus && approvalBar == null,
     onStop,
     anchorRef: composerLayerRef,
     composerInputRef: glassCardRef,
@@ -1258,6 +1265,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   useEffect(() => {
     const composerLayer = composerLayerRef.current;
     if (!composerLayer) return;
+    const inImageFocus = () => composerLayer.closest(".za-image-focus-composer");
 
     const readMetrics = () =>
       measureComposerOverlay({
@@ -1273,7 +1281,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       let animationFrame: number | null = null;
       const measure = () => {
         animationFrame = null;
-        if (isComposerExpandedRef.current || expandAnimationRef.current) return;
+        if (isComposerExpandedRef.current || expandAnimationRef.current || inImageFocus()) return;
         const metrics = readMetrics();
         onHeightChange?.(metrics.heightPx);
         onFloatingOverhangChange?.(metrics.floatingOverhangPx);
@@ -1314,7 +1322,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     const updateComposerOverlayHeight = () => {
       // 展开态占满聊天区，保留最近一次常规高度，避免底部预留跟着跳动；
       // 展开/还原动画期间高度是中间值，同样不上报，动画结束后补测。
-      if (isComposerExpandedRef.current || expandAnimationRef.current) return;
+      if (isComposerExpandedRef.current || expandAnimationRef.current || inImageFocus()) return;
       const { heightPx, floatingOverhangPx } = readMetrics();
       chatFrame.style.setProperty("--gateway-chat-composer-overlay-height", `${heightPx}px`);
       chatFrame.style.setProperty(
@@ -1352,11 +1360,41 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     overlayHeightOwnerRef,
   ]);
 
+  const voiceControl =
+    stt.available && (!imageEdit || stt.active) ? (
+      <RuntimeControlTooltip label={stt.active ? "停止语音输入" : "开始语音输入"}>
+        <button
+          type="button"
+          disabled={isInputDisabled}
+          onClick={stt.toggle}
+          aria-label={stt.active ? "停止语音输入" : "开始语音输入"}
+          aria-pressed={stt.active}
+          className={cn(
+            "composer-toolbar-action inline-flex size-8 shrink-0 items-center justify-center rounded-full outline-hidden",
+            "transition-colors hover:bg-muted/60 focus-visible:bg-muted/60",
+            "disabled:pointer-events-none disabled:opacity-40",
+            stt.active
+              ? "bg-red-500/10 text-red-600"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {stt.state === "requesting-permission" ||
+          stt.state === "buffering" ||
+          stt.state === "stopping" ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : stt.active ? (
+            <Square className="size-3.5 fill-current" />
+          ) : (
+            <Mic className="size-4" />
+          )}
+        </button>
+      </RuntimeControlTooltip>
+    ) : null;
   const modelControls = (
     <ComposerModelControls
       presentation="inline"
       showExecutionControls={executionControls}
-      compactLabel={inlineLayout && !props.expandedInput}
+      compactLabel={imageFocus || (inlineLayout && !props.expandedInput)}
       showProviderIcon
       executionMode={executionMode}
       hasModels={hasModels}
@@ -1378,14 +1416,20 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     />
   );
   const contextTray = props.contextBar ? (
-    <div key="context-tray" data-composer-context-bar="" className="pointer-events-auto">
+    <div
+      key="context-tray"
+      data-composer-context-bar=""
+      className="pointer-events-auto"
+      hidden={imageFocus}
+    >
       {props.contextBar}
     </div>
   ) : null;
-  return (
+  const composerLayer = (
     <div
       ref={composerLayerRef}
       data-composer-layout={inlineLayout ? "inline" : "standard"}
+      data-image-focus-composer={imageFocus || undefined}
       data-composer-empty={composerIsEmpty ? "true" : "false"}
       className={cn(
         panePresentation
@@ -1398,7 +1442,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               "grid-cols-[minmax(var(--gateway-chat-column-gutter,var(--spacing-16px)),1fr)_minmax(0,min(calc(var(--chat-transcript-content-width,var(--spacing-768px))-var(--spacing-40px)),100%))_minmax(var(--gateway-chat-column-gutter,var(--spacing-16px)),1fr)] pb-[var(--gateway-chat-composer-bottom,var(--spacing-16px))] max-640:pb-[var(--gateway-chat-composer-bottom,var(--spacing-12px))]",
             ),
         isComposerExpanded && (panePresentation ? "top-14" : "top-0 pt-3"),
-        hidden && "hidden",
+        (hidden || imageEdit?.hidden) && "hidden",
       )}
     >
       {/* Start the opaque backing below the top corner radius so the card's
@@ -1662,19 +1706,19 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
           hidden={approvalBar != null}
           data-composer-draft={composerIsEmpty ? undefined : ""}
           ref={glassCardRef}
-          data-composer-single-line={singleLineInput ? "true" : "false"}
+          data-composer-single-line={singleLineInput && !imageFocus ? "true" : "false"}
           data-composer-expanded-input={props.expandedInput || undefined}
-          data-file-upload-drop-zone=""
+          data-file-upload-drop-zone={imageEdit ? undefined : ""}
           data-file-upload-conversation-id={conversationId}
-          data-workspace-path-drop-zone={workspacePathDropState ?? "idle"}
+          data-workspace-path-drop-zone={imageEdit ? undefined : (workspacePathDropState ?? "idle")}
           data-conversation-reference-drop-zone={
-            canDropConversationReference ? "enabled" : "disabled"
+            canDropConversationReference && !imageEdit ? "enabled" : "disabled"
           }
           data-conversation-reference-drop-conversation-id={conversationId}
-          onDragEnter={handleComposerDragEnter}
-          onDragOver={handleComposerDragOver}
-          onDragLeave={handleComposerDragLeave}
-          onDrop={handleComposerDrop}
+          onDragEnter={imageEdit ? undefined : handleComposerDragEnter}
+          onDragOver={imageEdit ? undefined : handleComposerDragOver}
+          onDragLeave={imageEdit ? undefined : handleComposerDragLeave}
+          onDrop={imageEdit ? undefined : handleComposerDrop}
           onKeyDown={
             isComposerExpanded
               ? (event) => {
@@ -1756,7 +1800,8 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               isComposerExpanded && "min-h-0 flex-1",
             )}
           >
-            {pendingUploadedFiles.length > 0 || props.uploadingAttachments?.length ? (
+            {!imageEdit &&
+            (pendingUploadedFiles.length > 0 || props.uploadingAttachments?.length) ? (
               <ComposerAttachmentList
                 ref={attachmentListRef}
                 className="upload-file-list relative z-10"
@@ -1796,7 +1841,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               </ComposerAttachmentList>
             ) : null}
 
-            {showComposerExpandToggle ? (
+            {showComposerExpandToggle && !imageFocus ? (
               <button
                 type="button"
                 onClick={toggleComposerExpanded}
@@ -1826,6 +1871,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               只挡文字不挡滚动条，溢出时那条 6px 轨会直接压在展开图标上。
               收窄编辑器 border box 才能把滚动条一并推到按钮左侧。 */}
             <div
+              hidden={Boolean(imageEdit)}
               className={cn(
                 "composer-editor-field",
                 "relative flex flex-1 pl-4 pr-12",
@@ -1875,10 +1921,35 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 )}
               />
             </div>
+            {imageEdit && (
+              <div className="composer-editor-field za-image-focus-edit-field">
+                <textarea
+                  data-image-edit-input
+                  rows={1}
+                  maxLength={2000}
+                  value={imageEdit.value}
+                  disabled={imageEdit.pending || imageEdit.stoppingRun}
+                  aria-label={imageEdit.label}
+                  placeholder={imageEdit.placeholder}
+                  onChange={(event) => imageEdit.onChange(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      if (imageEdit.canSend) imageEdit.onSend();
+                    }
+                  }}
+                />
+              </div>
+            )}
 
             <div className="composer-actions-row relative flex items-center justify-between gap-2 px-3 pb-2 pt-0.5">
               <div data-composer-leading="" className="flex min-w-0 flex-1 items-center gap-1">
-                {props.capabilityMenu ?? (
+                {!imageEdit && props.capabilityMenu}
+                {!imageEdit && props.capabilityMenu == null ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
@@ -1978,11 +2049,11 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                       ) : null}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                )}
+                ) : null}
 
-                {props.leadingControls}
+                {!imageEdit && props.leadingControls}
                 {/* 计划模式开启指示(Codex 风格 pill):一眼可见,点击即关。 */}
-                {isAgentMode && chatRuntimeControls.planModeEnabled ? (
+                {!imageEdit && isAgentMode && chatRuntimeControls.planModeEnabled ? (
                   <button
                     type="button"
                     disabled={controlsDisabled}
@@ -2000,7 +2071,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   </button>
                 ) : null}
 
-                {clarifyEnabled ? (
+                {clarifyEnabled && !imageFocus && !imageEdit ? (
                   <RuntimeControlTooltip label={t("chat.clarify.title")}>
                     <button
                       type="button"
@@ -2020,41 +2091,29 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     </button>
                   </RuntimeControlTooltip>
                 ) : null}
-
-                {stt.available ? (
-                  <RuntimeControlTooltip label={stt.active ? "停止语音输入" : "开始语音输入"}>
-                    <button
-                      type="button"
-                      disabled={isInputDisabled}
-                      onClick={stt.toggle}
-                      aria-label={stt.active ? "停止语音输入" : "开始语音输入"}
-                      aria-pressed={stt.active}
-                      className={cn(
-                        "composer-toolbar-action inline-flex size-8 shrink-0 items-center justify-center rounded-full outline-hidden",
-                        "transition-colors hover:bg-muted/60 focus-visible:bg-muted/60",
-                        "disabled:pointer-events-none disabled:opacity-40",
-                        stt.active
-                          ? "bg-red-500/10 text-red-600"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {stt.state === "requesting-permission" ||
-                      stt.state === "buffering" ||
-                      stt.state === "stopping" ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : stt.active ? (
-                        <Square className="size-3.5 fill-current" />
-                      ) : (
-                        <Mic className="size-4" />
-                      )}
-                    </button>
-                  </RuntimeControlTooltip>
+                {imageFocus &&
+                executionControls &&
+                commandSafetyMode &&
+                onCommandSafetyModeChange ? (
+                  <CommandSafetyModeSelector
+                    value={commandSafetyMode}
+                    planModeEnabled={chatRuntimeControls.planModeEnabled}
+                    onPlanModeChange={(planModeEnabled) =>
+                      onChatRuntimeControlsChange({ planModeEnabled })
+                    }
+                    disabled={controlsDisabled || !isAgentMode}
+                    onChange={onCommandSafetyModeChange}
+                  />
                 ) : null}
+
+                {!imageFocus ? voiceControl : null}
               </div>
 
               <div data-composer-trailing="" className="flex shrink-0 items-center gap-1">
-                {inlineLayout ? modelControls : null}
+                {inlineLayout || imageFocus ? modelControls : null}
+                {imageFocus ? voiceControl : null}
                 {inlineLayout &&
+                !imageFocus &&
                 (contextDisplayMode === "ring" || contextDisplayMode === "both") ? (
                   <ComposerContextUsageRing
                     source={contextUsageTokensSource}
@@ -2064,7 +2123,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     onConfirm={onManualCompactConfirm}
                   />
                 ) : null}
-                {canQueueDraftWhileSending ? (
+                {!imageEdit && canQueueDraftWhileSending ? (
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -2080,10 +2139,27 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 ) : null}
                 <Button
                   data-composer-primary-action={
-                    canQueueDraftWhileSending ? "queue" : isSending ? "stop" : "send"
+                    imageEdit
+                      ? imageEdit.stoppingRun ? "stop" : "send"
+                      : canQueueDraftWhileSending
+                        ? "queue"
+                        : isSending
+                          ? "stop"
+                          : "send"
                   }
-                  disabled={isSending && !canQueueDraftWhileSending ? stopDisabled : sendDisabled}
+                  disabled={
+                    imageEdit
+                      ? !imageEdit.canSend
+                      : isSending && !canQueueDraftWhileSending
+                        ? stopDisabled
+                        : sendDisabled
+                  }
+                  aria-busy={imageEdit?.pending || undefined}
                   onClick={() => {
+                    if (imageEdit) {
+                      if (imageEdit.canSend) imageEdit.onSend();
+                      return;
+                    }
                     if (canQueueDraftWhileSending) {
                       handleComposerSend();
                       return;
@@ -2096,15 +2172,25 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     handleComposerSend();
                   }}
                   size="sm"
-                  title={primaryActionTitle}
+                  title={imageEdit?.stoppingRun ? t("chat.stopGeneration") : imageEdit?.sendLabel ?? primaryActionTitle}
                   tooltipShortcut={
-                    !isSending || canQueueDraftWhileSending ? sendShortcutHint : undefined
+                    !imageEdit && (!isSending || canQueueDraftWhileSending)
+                      ? sendShortcutHint
+                      : undefined
                   }
-                  aria-label={primaryActionTitle}
-                  aria-keyshortcuts={isSending && !canQueueDraftWhileSending ? "Escape" : undefined}
+                  aria-label={imageEdit?.stoppingRun ? t("chat.stopGeneration") : imageEdit?.sendLabel ?? primaryActionTitle}
+                  aria-keyshortcuts={
+                    !imageEdit && !imageFocus && isSending && !canQueueDraftWhileSending
+                      ? "Escape"
+                      : undefined
+                  }
                   className="composer-primary-key shrink-0"
                 >
-                  {canQueueDraftWhileSending ? (
+                  {imageEdit?.pending ? (
+                    <Loader2 className="size-4 motion-safe:animate-spin" />
+                  ) : imageEdit?.stoppingRun ? (
+                    <Square className="size-3 fill-current" />
+                  ) : imageEdit || (imageFocus && !isSending) || canQueueDraftWhileSending ? (
                     <ArrowUp className="size-4" />
                   ) : isSending ? (
                     <>
@@ -2119,7 +2205,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             </div>
           </div>
 
-          {!inlineLayout ? (
+          {!inlineLayout && !imageFocus ? (
             <div
               className={cn(
                 "composer-control-deck relative z-0 flex min-h-9 shrink-0 items-center justify-between",
@@ -2171,8 +2257,15 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
         {props.contextBarPosition !== "above" ? contextTray : null}
         {/* 会话统计状态栏插槽：贴卡片下缘，与卡片同宽；审批面板可见时让位；
             只在 "ring" 展示模式下不挂载——"statsBar" 与 "both" 都渲染（§4.7）。 */}
-        {statsBar && approvalBar == null && contextDisplayMode !== "ring" ? statsBar : null}
+        {statsBar && !imageFocus && approvalBar == null && contextDisplayMode !== "ring"
+          ? statsBar
+          : null}
       </div>
     </div>
+  );
+  return props.focusImagePlacement ? (
+    <ConversationComposerPlacement>{composerLayer}</ConversationComposerPlacement>
+  ) : (
+    composerLayer
   );
 });

@@ -12,6 +12,32 @@ function jsonResponse(value, status = 200) {
   });
 }
 
+test("conversation image options are sent only to the backend that advertises the tool", async () => {
+  const imageCreation = { target_id: "it_test", attachments: ["/workspace/reference.png"] };
+  for (const supported of [false, true]) {
+    const client = createKBrainClient({
+      baseUrl: "http://127.0.0.1:47321",
+      fetch: async (url, init) => {
+        if (new URL(url).pathname === "/v1/health") {
+          return jsonResponse({
+            version: "kbrain.agent.v1",
+            status: "ok",
+            capabilities: supported ? { zeroagent_conversation_images: 1 } : {},
+          });
+        }
+        assert.deepEqual(JSON.parse(init.body).options.image_creation, supported ? imageCreation : undefined);
+        return jsonResponse({ version: "kbrain.agent.v1", conversation_id: "s", run_id: "r", accepted_seq: 1 }, 202);
+      },
+    });
+    await client.startRun({
+      conversation_id: "s",
+      client_request_id: "request",
+      prompt: "Make this image blue",
+      options: { mode: "chat", image_creation: imageCreation },
+    });
+  }
+});
+
 test("K-brain client loads through the generic TypeScript test helper", async () => {
   const client = createKBrainClient({
     baseUrl: "https://kbrain.test",

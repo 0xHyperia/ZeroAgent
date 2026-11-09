@@ -21,6 +21,27 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestCloudImageEditContextUsesSelectedOriginalAndExactRatio(t *testing.T) {
+	original, family, guide := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	req := cloudImageRequest{Prompt: "Preserve the cat.", FamilyID: uuid.NewString(),
+		References: []cloudImageReference{{FileID: guide}}}
+	applyCloudImageEditContext(&req, cloudJSON([]map[string]any{
+		{"type": "text", "text": "将宽高比设为 3:4"},
+		{"type": "artifact_reference", "version_id": original, "family_id": family},
+		{"type": "file_reference", "file_id": guide},
+		{"type": "image_edit_context", "instruction": "Extend the surroundings.", "aspect_ratio": "3:4"},
+	}))
+	if len(req.References) != 2 || req.References[0].ArtifactVersionID != original || req.References[1].FileID != guide || req.FamilyID != family || req.Size != "1024x1536" {
+		t.Fatalf("edit lost the selected inputs: %#v", req)
+	}
+	canvas := image.NewNRGBA(image.Rect(0, 0, 1024, 1536))
+	canvas.SetNRGBA(0, 86, color.NRGBA{R: 255, A: 128})
+	got := cropCloudImageAspect(canvas, req.aspectRatio)
+	if got.Bounds().Size() != image.Pt(1023, 1364) || got.At(0, 0) != (color.NRGBA{R: 255, A: 128}) {
+		t.Fatalf("expected exact centered 3:4 and original alpha, got %v and %v", got.Bounds(), got.At(0, 0))
+	}
+}
+
 func TestCloudImageSettingsAccountAndCAS(t *testing.T) {
 	for _, kind := range []string{"memory", "postgres"} {
 		t.Run(kind, func(t *testing.T) {

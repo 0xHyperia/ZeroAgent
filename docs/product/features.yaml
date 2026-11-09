@@ -194,6 +194,7 @@
         "crates/agent-gateway/cmd/cloud-space-storage/main.go",
         "crates/agent-gateway/cmd/cloud-space-quota/main.go",
         "crates/agent-ui/src/components/resource-preview/ResourcePreview.tsx",
+        "crates/agent-ui/src/components/resource-preview/ConversationReaderWorkbench.tsx",
         "crates/agent-ui/src/components/workspace-editor/WorkspaceFilePreviewOverlay.tsx",
         "crates/agent-gateway/web/src/components/cloudchat/CloudSpacePage.tsx",
         "crates/agent-gateway/web/src/lib/cloudSpace.ts",
@@ -606,10 +607,11 @@
     },
     {
       "id": "cloudchat-visual-creation",
-      "name": "CloudChat Product Design 与 ImageGen",
+      "name": "对话中的图像创作与共享画廊",
       "status": "active",
       "owner": "zeroagent",
       "surfaces": [
+        "desktop",
         "webui",
         "gateway",
         "android"
@@ -619,13 +621,16 @@
         "crates/agent-gateway/internal/account/cloud_run_skills.go",
         "crates/agent-gateway/internal/account/cloud_image_settings.go",
         "crates/agent-ui/src/components/chat/AssistantVisuals.tsx",
+        "crates/agent-gui/src/pages/chat/surfaces/useDesktopConversationImages.tsx",
+        "patches/kbrain/0017-conversation-images.patch",
         "crates/agent-gateway/web/src/pages/settings/CloudImageSettingsSection.tsx"
       ],
       "tests": [
         "crates/agent-gateway/internal/account/cloud_image_test.go",
-        "crates/agent-gateway/web/test/cloud-visual-creation.test.mjs"
+        "crates/agent-gateway/web/test/cloud-visual-creation.test.mjs",
+        "crates/agent-gui/test/chat/transcript-row-model.test.mjs"
       ],
-      "security": "ADR0067：默认生图模型按账户独立保存并使用版本比较更新；固定 USA-Zero Images 接口、密钥归属重验、私有成果配额及不可变编辑。未知结果不自动重发；拒绝供应商任意 URL，切号/切会话清理读取。真实外部模型与受控供应商验收分开。",
+      "security": "ADR0067：云端模型按账户独立保存，使用版本比较、密钥归属重验和私有成果配额；本机任务使用设备图像模型、K-brain 私有连接和会话范围。编辑创建新结果，未知提交不自动重发，切换会话清理读取。真实外部模型与受控供应商验收分开。",
       "upstream_relation": "adapt"
     },
     {

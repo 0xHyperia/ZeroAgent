@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useLayoutEffect, useRef, useState } from "react";
 import { PreviewToolbarMount } from "./PreviewChrome";
 
 /** Measure the reading pane, which can be narrow inside a wide application window. */
@@ -6,7 +6,7 @@ export function usePreviewViewport<T extends HTMLElement = HTMLDivElement>() {
   const container = useRef<T>(null);
   const chrome = useContext(PreviewToolbarMount);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = container.current;
     if (!element) return;
     const measure = () => {

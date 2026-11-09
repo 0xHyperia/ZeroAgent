@@ -20,11 +20,13 @@ import {
   type GroupedRoundBlock,
   hasActiveUserInteraction,
   isBuiltinShareToolName,
+  isConversationImageTool,
   resolveActiveThinkingEntryKey,
   resolveActiveWorkEntry,
   resolveAssistantTurnLayout,
 } from "./assistantBubbleUtils";
 import { CompactionSeamRow } from "./CompactionSeamRow";
+import { ConversationImageTool } from "./ConversationImageTool";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { MemoToolCallItem } from "./ToolCallItem";
 import { getNativeDisplayImagePayload, NativeDisplayImageBlock } from "./ToolImages";
@@ -93,7 +95,14 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     const isRedactedToolContent =
       redactToolContent && isBuiltinShareToolName(block.item.toolCall.name);
     const displayImagePayload = getNativeDisplayImagePayload(block.item);
-    if (!isRedactedToolContent && displayImagePayload) {
+    if (isConversationImageTool(block.item.toolCall.name)) {
+      content = !readOnly && !redactToolContent ? (
+        <ConversationImageTool
+          result={block.item.toolResult}
+          running={isLive && runningToolCallIds.includes(block.item.toolCall.id)}
+        />
+      ) : null;
+    } else if (!isRedactedToolContent && displayImagePayload) {
       content = <NativeDisplayImageBlock payload={displayImagePayload} readOnly={readOnly} />;
     } else if (
       !isRedactedToolContent &&

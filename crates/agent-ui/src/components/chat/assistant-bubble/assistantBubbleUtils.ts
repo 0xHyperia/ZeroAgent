@@ -617,14 +617,18 @@ export function resolveAssistantTurnLayout(
 
   if (entries.length === 0) return { work: [], interaction: [], answer: [] };
 
-  const { background, interaction } = splitInteractionEntries(entries);
+  const visualEntries = entries.filter(
+    ({ block }) => block.kind === "tool" && isConversationImageTool(block.item.toolCall.name),
+  );
+  const visuals = new Set(visualEntries);
+  const { background, interaction } = splitInteractionEntries(entries.filter((entry) => !visuals.has(entry)));
 
   const lastRound = rounds.at(-1);
   if (options.live && !isTerminalStopReason(lastRound?.meta?.stopReason)) {
     return {
       work: compactAssistantWorkEntries(background),
       interaction,
-      answer: [],
+      answer: visualEntries,
     };
   }
 
@@ -633,7 +637,7 @@ export function resolveAssistantTurnLayout(
     return {
       work: compactAssistantWorkEntries(background),
       interaction,
-      answer: [],
+      answer: visualEntries,
     };
   }
 
@@ -653,7 +657,7 @@ export function resolveAssistantTurnLayout(
   return {
     work: compactAssistantWorkEntries(background.slice(0, answerStart)),
     interaction,
-    answer: background.slice(answerStart),
+    answer: [...visualEntries, ...background.slice(answerStart)],
   };
 }
 
@@ -899,6 +903,7 @@ export function groupRoundBlocks(blocks: UiRound["blocks"]): GroupedRoundBlock[]
       flushPendingSearches();
       if (
         block.item.toolCall.name === "Image" ||
+        isConversationImageTool(block.item.toolCall.name) ||
         isTaskToolName(block.item.toolCall.name) ||
         isUserInteractionToolName(block.item.toolCall.name) ||
         block.item.toolCall.name === "ProcessWait" ||
@@ -957,7 +962,7 @@ export function isBuiltinShareToolName(name: string) {
   if (isDynamicMcpToolName(trimmed)) {
     return true;
   }
-  if (isTaskToolName(trimmed)) {
+  if (isTaskToolName(trimmed) || isConversationImageTool(trimmed)) {
     return true;
   }
   return [
@@ -994,4 +999,8 @@ export function isBuiltinShareToolName(name: string) {
     "web_fetch",
     "WebFetch",
   ].includes(trimmed);
+}
+
+export function isConversationImageTool(name: string) {
+  return name === "generate_image" || name === "edit_image";
 }

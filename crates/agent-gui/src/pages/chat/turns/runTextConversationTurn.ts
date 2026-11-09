@@ -36,6 +36,7 @@ export type PersistConversationParams = {
 };
 
 export type RunTextConversationTurnParams = {
+  imageCreation?: { target_id?: string };
   locale?: Locale;
   providerId: ProviderId;
   model: string;

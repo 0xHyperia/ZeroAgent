@@ -220,6 +220,10 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
       if (result.skipped.length > 0) {
         addNotify("warning", `以下文件已跳过：\n${result.skipped.join("\n")}`);
       }
+      const attached = getPendingUploadsForConversation(targetConversationId);
+      return result.files.filter((file) =>
+        attached.some((item) => item.relativePath === file.relativePath),
+      );
     },
     [
       addNotify,
@@ -241,6 +245,8 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
         importer: (target: UploadTarget) => Promise<SystemPickReadableFilesResponse>;
       },
       requestedTarget?: ConversationUploadTarget,
+      signal?: AbortSignal,
+      stage = true,
     ) => {
       if (uploadTaskActiveRef.current) {
         addNotify("warning", "当前正在上传文件，请稍候");
@@ -264,7 +270,9 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
       setIsUploadingFiles(true);
       try {
         const result = await task.importer(uploadTarget);
-        appendImportedFiles(uploadTarget, result, task.emptySelectionMessage);
+        if (signal?.aborted) return;
+        if (!stage) return result.files;
+        return appendImportedFiles(uploadTarget, result, task.emptySelectionMessage);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (currentConversationIdRef.current.trim() === uploadTarget.targetConversationId) {
@@ -330,9 +338,14 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
   );
 
   const importReadableFiles = useCallback(
-    async (files: File[], target?: ConversationUploadTarget) => {
+    async (
+      files: File[],
+      target?: ConversationUploadTarget,
+      signal?: AbortSignal,
+      stage = true,
+    ) => {
       if (files.length === 0) return;
-      await runUploadTask(
+      return runUploadTask(
         {
           emptySelectionMessage: "剪贴板文件均不受当前 Read 支持",
           errorFallback: "导入剪贴板文件失败",
@@ -357,6 +370,8 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
           },
         },
         target,
+        signal,
+        stage,
       );
     },
     [addNotify, runUploadTask],

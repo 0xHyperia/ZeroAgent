@@ -27,6 +27,21 @@ const UPLOADED_READABLE_FILE_KINDS = new Set<string>([
 const DISPLAY_CONTENT_FIELD = "liveAgentDisplayContent";
 const ATTACHMENTS_FIELD = "liveAgentAttachments";
 const REFERENCED_CONVERSATIONS_FIELD = "liveAgentReferencedConversations";
+const IMAGE_EDIT_CONTEXT_HEADER = "\n\n[ZeroAgent image edit context]\n";
+
+function splitImageEditContext(text: string) {
+  const index = text.lastIndexOf(IMAGE_EDIT_CONTEXT_HEADER);
+  if (index < 0) return { text, parsed: false };
+  const payload = text.slice(index + IMAGE_EDIT_CONTEXT_HEADER.length);
+  if (payload.length > 16000 || payload.includes("\n")) return { text, parsed: false };
+  try {
+    if (typeof JSON.parse(payload) === "string")
+      return { text: text.slice(0, index), parsed: true };
+  } catch {
+    // Keep messages that only resemble an app-created image edit intact.
+  }
+  return { text, parsed: false };
+}
 
 function createUserMessageId() {
   return `user-${createUuid()}`;
@@ -337,7 +352,10 @@ export function parseUserMessageContentWithUploads(
   const normalized = normalizeLogicalLineEndings(text);
   const lines = normalized.split("\n");
   const header = locateUploadedFilesInstructionHeader(lines);
-  if (!header) return unchanged;
+  if (!header) {
+    const edit = splitImageEditContext(normalized.trimEnd());
+    return edit.parsed ? { ...unchanged, displayText: edit.text, parsed: true } : unchanged;
+  }
 
   const attachments: PendingUploadedFile[] = [];
   for (const line of lines.slice(header.index + header.length)) {
@@ -348,7 +366,7 @@ export function parseUserMessageContentWithUploads(
   }
   if (attachments.length === 0) return unchanged;
 
-  const displayText = lines.slice(0, header.index).join("\n").replace(/\s+$/, "");
+  const displayText = splitImageEditContext(lines.slice(0, header.index).join("\n").trimEnd()).text;
   return {
     displayText: displayText.trim() === EMPTY_TEXT_ATTACHMENT_PLACEHOLDER ? "" : displayText,
     attachments,
@@ -381,8 +399,12 @@ export function createUserMessageWithUploads(
   files: PendingUploadedFile[],
   timestamp = Date.now(),
   referencedConversations: readonly ConversationMentionReference[] = [],
+  imageEditInstruction?: string,
 ): UploadedUserMessage | null {
-  const content = buildUserMessageContentWithUploads(userText, files);
+  const userInput = imageEditInstruction
+    ? `${userText}${IMAGE_EDIT_CONTEXT_HEADER}${JSON.stringify(imageEditInstruction)}`
+    : userText;
+  const content = buildUserMessageContentWithUploads(userInput, files);
   if (!content.trim()) return null;
 
   const message: UploadedUserMessage = {
@@ -391,7 +413,7 @@ export function createUserMessageWithUploads(
     content,
     timestamp,
   };
-  if (files.length > 0) {
+  if (files.length > 0 || imageEditInstruction) {
     message[DISPLAY_CONTENT_FIELD] = normalizeLogicalLineEndings(userText);
     message[ATTACHMENTS_FIELD] = clonePendingUploadedFiles(files);
   }
@@ -420,12 +442,20 @@ export function getUserMessageDisplayText(
   if (typeof displayContent === "string") {
     return displayContent;
   }
-  return flattenUserContent(message.content);
+  const text = flattenUserContent(message.content);
+  return text.includes(IMAGE_EDIT_CONTEXT_HEADER)
+    ? parseUserMessageContentWithUploads(text).displayText
+    : text;
 }
 
 export function getUserMessageAttachments(message: { role: string } & Record<string, unknown>) {
   const raw = message[ATTACHMENTS_FIELD];
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) {
+    const text = flattenUserContent(message.content);
+    return text.includes(IMAGE_EDIT_CONTEXT_HEADER)
+      ? parseUserMessageContentWithUploads(text).attachments
+      : [];
+  }
 
   return raw.flatMap((item) => {
     if (!item || typeof item !== "object") return [];

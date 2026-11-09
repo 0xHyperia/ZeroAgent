@@ -309,6 +309,7 @@ export type KBrainUpdateSessionRequest = {
 };
 
 export type KBrainRunOptions = {
+  image_creation?: { target_id?: string; attachments?: string[] };
   reasoning?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   mode?: "chat" | "agent";
   search?: "disabled" | "enabled";
